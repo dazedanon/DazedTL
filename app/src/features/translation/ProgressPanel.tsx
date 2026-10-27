@@ -529,6 +529,7 @@ function ApiRun({
                   batch_cached_cost: quote.batch_cost_reused,
                   batch_max_cost: quote.cost,
                 }),
+                unestimated_thinking_tokens: quote.unestimated_thinking_tokens,
               }}
               mode={mode}
             />
@@ -591,7 +592,13 @@ function ApiRun({
                   )}
                 </span>
               )}
-              {charged != null && <span>Charged {money(charged)}</span>}
+              {charged != null ? (
+                <span>Charged {money(charged)}</span>
+              ) : (
+                run.usage_cost != null && (
+                  <span>Spent {money(run.usage_cost)}</span>
+                )
+              )}
             </p>
             {/* An approval can be saved and the run still refuse to start;
                 the button that reported it is gone by then. */}

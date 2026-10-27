@@ -5,6 +5,8 @@ import math
 import re
 from collections import Counter
 
+from dazedtl.compatibility.estimate_prices import output_tokens, prices
+
 from .files import digest, unique_object
 
 # API runs under this policy send a request's lines keyed "1" to "N" instead
@@ -490,25 +492,32 @@ def sent_tokens(params, count_tokens):
     return count_tokens(sent_text(params)) + 8
 
 
-def quote(requests, configuration, count_tokens, inputs=None, cache=None):
-    """Prices the requests; ``inputs`` is the provider's own input count when
-    it has one, otherwise their approximate count. ``cache`` holds the cost of
-    Claude's cached instructions (util/claude_tokens.Cache): a Batch may reuse
-    them or write each again, so its price is the most it can cost, with the
-    price when every one is reused beside it."""
+def quote(
+    requests,
+    configuration,
+    provider,
+    count_tokens,
+    inputs=None,
+    cache=None,
+    prompts=None,
+):
+    """Prices the requests for a Batch of ``provider`` (the engine's Batch
+    provider name, None for a route without one); ``inputs`` is the
+    provider's own input count when it has one, otherwise their approximate
+    count. ``cache`` holds the cost of Claude's cached instructions
+    (util/claude_tokens.Cache) and ``prompts`` the OpenAI cache counts
+    (CACHE_COUNTS) of the requests, with the input tokens counted on the way
+    when the engine counts them; see price."""
+    prompts = prompts or {}
+    if inputs is None:
+        inputs = prompts.get("input_tokens")
     if inputs is None:
         inputs = sum(sent_tokens(item["params"], count_tokens) for item in requests)
     outputs = sum(
-        max(
-            1,
-            math.ceil(
-                count_tokens(
-                    json.dumps(
-                        provider_sources(item, configuration), ensure_ascii=False
-                    )
-                )
-                * 2.5
-            ),
+        output_tokens(
+            count_tokens(
+                json.dumps(provider_sources(item, configuration), ensure_ascii=False)
+            )
         )
         for item in requests
     )
@@ -516,20 +525,40 @@ def quote(requests, configuration, count_tokens, inputs=None, cache=None):
         {
             "requests": len(requests),
             "units": sum(len(item["sources"]) for item in requests),
+            **{key: prompts[key] for key in CACHE_COUNTS if key in prompts},
             "input_tokens": inputs,
             "output_tokens": outputs,
         },
         configuration,
+        provider,
         cache,
     )
 
 
 # What a quote counted, which pricing it again under other settings keeps.
 COUNTS = ("requests", "units", "input_tokens", "output_tokens")
+# What an OpenAI quote also counts for its automatic prompt cache.
+CACHE_COUNTS = ("cache_read_tokens", "cacheable_tokens")
 
 
-def price(counts, configuration, cache=None):
-    """A quote of counted requests at these settings' rates."""
+def counted(quote):
+    """The counts a saved quote holds."""
+    return {key: quote[key] for key in (*COUNTS, *CACHE_COUNTS) if key in quote}
+
+
+def repriceable(quote, provider):
+    """Whether a saved quote's counts can be priced for a Batch of
+    ``provider``: an OpenAI price needs its cache counts, which quotes from
+    before they were priced lack."""
+    return provider != "openai" or all(key in quote for key in CACHE_COUNTS)
+
+
+def price(counts, configuration, provider, cache=None):
+    """A quote of counted requests at these settings' rates, priced as
+    Guided prices its estimates (compatibility/estimate_prices). A Batch
+    whose provider caches prompts costs from every cached prompt reused to
+    none, and the quote's cost is the most it can cost, with the price when
+    every one is reused beside it."""
     rates = configuration["rates"]
     if any(
         type(rates.get(key)) not in (int, float)
@@ -538,44 +567,33 @@ def price(counts, configuration, cache=None):
         for key in ("input", "output")
     ):
         raise ValueError("Choose valid model pricing before estimating API work.")
-    inputs, outputs = counts["input_tokens"], counts["output_tokens"]
-    live = (inputs * rates["input"] + outputs * rates["output"]) / 1_000_000
-    factor = rates["batch_factor"]
-    batch = live * factor if factor is not None else None
-    reused = None
-    if cache is not None and cache.writes and factor is not None:
-        # Approximate input leaves out the reply schema the cache key holds.
-        uncached = max(0, inputs - cache.cached)
-
-        def priced(cached):
-            return (
-                ((uncached + cached) * rates["input"] + outputs * rates["output"])
-                / 1_000_000
-                * factor
-            )
-
-        batch, reused = priced(cache.unreused), priced(cache.reused)
-    if configuration.get("openrouterBatch"):
+    if configuration.get("openrouterBatch") and provider == "openrouter":
         from dazedtl.settings.openrouter import validate_policy
 
-        policy = validate_policy(
-            configuration["openrouterBatch"], configuration["model"]
-        )
-        batch = (inputs * policy["input"] + outputs * policy["output"]) / 1_000_000
+        # A frozen policy this version can't run is never priced.
+        validate_policy(configuration["openrouterBatch"], configuration["model"])
+    value = prices(counts, configuration, provider, cache)
+    batch = value["batch_max_cost"] if provider else None
+    reused = (
+        value["batch_cached_cost"]
+        if batch is not None and value["batch_cached_cost"] < batch
+        else None
+    )
     return {
-        **{key: counts[key] for key in COUNTS},
-        "live_cost": live,
+        **counted(counts),
+        "live_cost": value["live_cost"],
         "batch_cost": batch,
         **({"batch_cost_reused": reused} if reused is not None else {}),
         "cost": batch
         if configuration["mode"] == "batch" and batch is not None
-        else live,
+        else value["live_cost"],
         "model": configuration["model"],
         "provider": configuration["provider"],
         "rates": rates,
+        "unestimated_thinking_tokens": value["unestimated_thinking_tokens"],
         "basis": "Complete compiled requests; 2.5× source-token output allowance"
         + (
-            "; the higher Batch price has every request write its cached instructions again, the lower reuses them"
+            "; the higher Batch price reuses no cached instructions, the lower reuses every one it can"
             if reused is not None
             else ", no assumed cache savings"
         )

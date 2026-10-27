@@ -312,12 +312,15 @@ def compile_run(engine, workspace, job, plan, input_path, progress, read=None):
     if cfg["mode"] != "agent":
         progress(f"Estimating the cost of {len(pending):,} requests")
         counted = claude_inputs(engine, workspace, cfg, pending)
+        provider = engine.batch_supported(cfg)
         estimate = quote(
             pending,
             cfg,
+            provider,
             engine.token_count,
             counted.total if counted else None,
             claude_cache(engine, cfg, pending, counted),
+            engine.openai_cache(pending) if provider == "openai" else None,
         )
     progress("Saving the run")
     value = {

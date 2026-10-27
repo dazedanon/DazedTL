@@ -2361,6 +2361,65 @@ def _estimate_openai_cache_reads(prompt_token_sequences):
     return cached_tokens
 
 
+def output_allowance(source_tokens):
+    """The output tokens an estimate allows a request whose source text
+    counts ``source_tokens``: 2.5 times covers the echoed JSON scaffold plus
+    the translation's expansion."""
+    return round(source_tokens * 2.5)
+
+
+def prompt_text(params):
+    """A request's messages as the OpenAI cache estimate encodes them."""
+    return "\n".join(str(m.get("content", "")) for m in params.get("messages", []))
+
+
+def openai_cache_counts(prompt_token_sequences):
+    """The input tokens OpenAI's automatic cache may read in an ordered
+    request set, those in prompts long enough to cache (1,024 tokens), then
+    every prompt token. The prompts' tokens are read once, so they may come
+    from a generator."""
+    cacheable = total = 0
+
+    def prompts():
+        nonlocal cacheable, total
+        for tokens in prompt_token_sequences:
+            total += len(tokens)
+            if len(tokens) >= 1024:
+                cacheable += len(tokens)
+            yield tokens
+
+    return _estimate_openai_cache_reads(prompts()), cacheable, total
+
+
+def openai_prompt_cache(params):
+    """openai_cache_counts of requests with these parameters, encoded a few
+    hundred at a time as estimateBatchCost encodes them, so a big game's
+    tokens are never all held at once."""
+    enc = tiktoken.encoding_for_model("gpt-4")
+
+    def prompts():
+        for start in range(0, len(params), 512):
+            yield from enc.encode_batch(
+                [prompt_text(value) for value in params[start : start + 512]],
+                disallowed_special=(),
+            )
+
+    return openai_cache_counts(prompts())
+
+
+def claude_cache_prices(cache, dynamic, outputs, in_rate, out_rate):
+    """A Claude Batch's prices with its cached instructions
+    (claude_tokens.Cache), from per-token rates: each cache key written once
+    and read by every later request that shares it, then every request
+    writing its own, with ``dynamic`` input tokens after them."""
+    factor = batch_price_factor("anthropic")
+
+    def priced(cached):
+        return ((cached + dynamic) * in_rate + outputs * out_rate) * factor
+
+    return priced(cache.reused), priced(cache.unreused)
+
+
 @extensions.point
 def estimateCostComparison(
     input_tokens,
@@ -2490,12 +2549,7 @@ def estimateBatchCost(model=None, *, queue_file=None, log_prefix="[BATCH]"):
         chunk_params = [entry.get("params", {}) for entry in chunk]
         # Split system blocks at the cache breakpoint ("" = nothing cached).
         splits = [claude_tokens.split(params) for params in chunk_params]
-        messages = enc.encode_batch(
-            [
-                "\n".join(str(m.get("content", "")) for m in params.get("messages", []))
-                for params in chunk_params
-            ]
-        )
+        messages = enc.encode_batch([prompt_text(params) for params in chunk_params])
         dynamic = enc.encode_batch([dyn for _prefix, dyn in splits])
         payloads = enc.encode_batch([str(entry.get("payload", "")) for entry in chunk])
         for entry, params, (prefix, _dyn), message_tokens, dyn_tokens, payload_tokens in zip(
@@ -2511,9 +2565,7 @@ def estimateBatchCost(model=None, *, queue_file=None, log_prefix="[BATCH]"):
             request_params.append(params)
             request_dynamic.append(len(dyn_tokens) + len(message_tokens) + 8)
             dynamic_tokens += request_dynamic[-1]
-            # Output heuristic mirrors countTokens(): payload tokens x 2.5
-            # covers the echoed JSON scaffold plus EN expansion.
-            output_tokens += round(len(payload_tokens) * 2.5)
+            output_tokens += output_allowance(len(payload_tokens))
 
     est_model = model or next(iter(models), None) or os.getenv("model", "")
     est_provider = next(iter(providers), getBatchProvider(est_model))
@@ -2553,23 +2605,15 @@ def estimateBatchCost(model=None, *, queue_file=None, log_prefix="[BATCH]"):
     batch_max = batch_nocache
     cache_kind = None
     if est_provider == "anthropic" and cache_write_tok > 0:
-        # Claude's explicit cache: from each cache key written once and read
-        # by every later request that shares it, to every request writing
-        # its own. Batch pricing halves every charge.
-        batch_cached = ((cache.reused + dynamic_tokens) * in_rate
-                        + output_tokens * out_rate) * 0.50
-        batch_max = ((cache.unreused + dynamic_tokens) * in_rate
-                     + output_tokens * out_rate) * 0.50
+        batch_cached, batch_max = claude_cache_prices(
+            cache, dynamic_tokens, output_tokens, in_rate, out_rate
+        )
         cache_kind = "explicit"
     elif est_provider == "openai":
-        cache_read_tok = min(
-            raw_input_tok,
-            _estimate_openai_cache_reads(prompt_token_sequences),
+        cache_read_tok, cacheable_tokens, _ = openai_cache_counts(
+            prompt_token_sequences
         )
-        cacheable_tokens = sum(
-            len(tokens) for tokens in prompt_token_sequences
-            if len(tokens) >= 1024
-        )
+        cache_read_tok = min(raw_input_tok, cache_read_tok)
         cache_write_tok, max_writes, batch_cached, most = openai_cache_prices(
             raw_input_tok,
             output_tokens,
@@ -5640,7 +5684,7 @@ def countTokens(system, user, history):
     inputTotalTokens += len(enc.encode(user))
 
     # Output
-    outputTotalTokens += round(len(enc.encode(user)) * 2.5)
+    outputTotalTokens += output_allowance(len(enc.encode(user)))
 
     return [inputTotalTokens, outputTotalTokens]
 

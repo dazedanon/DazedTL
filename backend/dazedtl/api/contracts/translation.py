@@ -42,6 +42,11 @@ class TranslationQuote(TypedDict):
     # written again; batch_cost_reused when each one is reused.
     batch_cost: float | None
     batch_cost_reused: NotRequired[float]
+    # OpenAI's automatic cache, counted for pricing the quote again.
+    cache_read_tokens: NotRequired[int]
+    cacheable_tokens: NotRequired[int]
+    # The model thinks, billed as output the quote cannot predict.
+    unestimated_thinking_tokens: NotRequired[bool]
     model: str
     provider: str
     basis: str
@@ -101,6 +106,9 @@ class TranslationJob(TypedDict):
     settings_changed: NotRequired[bool]
     result: dict[str, object] | None
     usage: dict[str, float]
+    # The recorded usage priced at the run's rates in a project's state;
+    # None when the provider reports its own charge or the rates are unknown.
+    usage_cost: NotRequired[float | None]
     counts: dict[str, int]
     units: int
     accepted_units: int

@@ -240,8 +240,12 @@ class CompatibilityContracts(unittest.TestCase):
         # A switch that keeps the requests' text prices an estimate's counts
         # again instead of estimating again, so the figures must be those the
         # engine's own estimate for that model gives, pricing layers included.
+        # Assistant-led quotes the same requests by the same rule: its own
+        # formula once left out OpenAI's cache, quoting a GPT-5.6 Batch below
+        # the most it can cost.
         from dazedtl.compatibility import batch_pricing
         from dazedtl.compatibility.estimate_prices import reprice
+        from dazedtl.translation.requests import CACHE_COUNTS, price
         from util import translation
 
         class Characters:
@@ -308,14 +312,47 @@ class CompatibilityContracts(unittest.TestCase):
                     queue, {str(index): request(before, index) for index in range(3)}
                 )
                 expected = translation.estimateBatchCost(after, queue_file=queue)
+                configuration = {
+                    "mode": "batch",
+                    "model": after,
+                    "provider": "openai",
+                    "rates": dict(zip(("input", "output"), rates[after])),
+                }
                 repriced = reprice(
                     translation.estimateBatchCost(before, queue_file=queue),
-                    {
-                        "model": after,
-                        "rates": dict(zip(("input", "output"), rates[after])),
-                    },
+                    configuration,
                 )
                 self.assertEqual({key: repriced[key] for key in expected}, expected)
+                counts = TranslationEngine.openai_cache(
+                    [request(after, index) for index in range(3)]
+                )
+                self.assertEqual(
+                    counts,
+                    {key: expected[key] for key in ("input_tokens", *CACHE_COUNTS)},
+                )
+                quoted = price(
+                    {
+                        "requests": 3,
+                        "units": 3,
+                        "output_tokens": expected["output_tokens"],
+                        **counts,
+                    },
+                    configuration,
+                    "openai",
+                )
+                # An Assistant-led quote's cost is the most a Batch can cost.
+                self.assertEqual(
+                    (
+                        quoted["live_cost"],
+                        quoted["cost"],
+                        quoted.get("batch_cost_reused", quoted["cost"]),
+                    ),
+                    (
+                        expected["live_cost"],
+                        expected["batch_max_cost"],
+                        expected["batch_cached_cost"],
+                    ),
+                )
 
     def test_engine_extension_layers_reach_aliases_and_reconfigure_in_place(self):
         # Host wrappers used to reassign module attributes: aliases bound at
@@ -676,7 +713,7 @@ class CompatibilityContracts(unittest.TestCase):
             "rates": {"input": 4, "output": 20, "batch_factor": 0.5},
         }
         items = [{"params": params, "sources": {"1": "J"}} for params in requests]
-        quoted = quote(items, cfg, len, estimate.total, cache)
+        quoted = quote(items, cfg, "anthropic", len, estimate.total, cache)
         uncached, outputs = estimate.total - cache.cached, quoted["output_tokens"]
         self.assertAlmostEqual(
             quoted["cost"],
@@ -686,6 +723,22 @@ class CompatibilityContracts(unittest.TestCase):
             quoted["batch_cost_reused"],
             ((uncached + cache.reused) * 4 + outputs * 20) / 2_000_000,
         )
+        self.assertTrue(quoted["unestimated_thinking_tokens"])
+        # Its spend is priced as Guided's receipts are: its requests write
+        # five-minute caches, which Live usage doesn't say.
+        from dazedtl.compatibility.estimate_prices import usage_cost
+
+        usage = {
+            "input_tokens": 1000,
+            "output_tokens": 100,
+            "cache_creation_input_tokens": 1000,
+            "cache_read_input_tokens": 1000,
+        }
+        live = (1000 * 4 + 1000 * 4 * 1.25 + 1000 * 4 * 0.05 + 100 * 20) / 1e6
+        self.assertAlmostEqual(
+            usage_cost(usage, {**cfg, "mode": "live"}, "anthropic") or 0, live
+        )
+        self.assertAlmostEqual(usage_cost(usage, cfg, "anthropic") or 0, live / 2)
         requests[-1]["messages"][0]["content"] = "fail"
         self.assertIsNone(claude_tokens.input_tokens(client, requests, len))
 

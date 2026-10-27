@@ -263,6 +263,7 @@ GameUpdate can't update an encrypted game, so share a new patch for each update 
    Choosing another model of the same connection, or switching between **API Batch** and **Live API**, shows the waiting estimate at the new prices at once when its requests stay the same; approving then sends them with your new choice.
    Other changes, such as a Claude model or another connection, make it out of date; **Estimate again** prepares a new one without your assistant.
    After you approve, **Progress** reminds you to tell your assistant until it has checked in.
+   The estimate is priced as Guided prices its own, and once the run has sent requests, **Progress** shows what they cost beside it.
    If it goes quiet, for example at a usage limit, paste the prompt into a new session; it picks up the saved work.
    DazedTL counts the game's Japanese text itself, and **Progress** shows whether your assistant extracted all of it; it can't leave out maps or scenes on its own.
    In **Assistant only**, lines your assistant won't translate appear under **Declined lines** while it carries on.

@@ -1452,6 +1452,9 @@ export type TranslationQuote = {
   live_cost: number;
   batch_cost: number | null;
   batch_cost_reused?: number;
+  cache_read_tokens?: number;
+  cacheable_tokens?: number;
+  unestimated_thinking_tokens?: boolean;
   model: string;
   provider: string;
   basis: string;
@@ -1505,6 +1508,7 @@ export type TranslationJob = {
   settings_changed?: boolean;
   result: Record<string, unknown> | null;
   usage: Record<string, number>;
+  usage_cost?: number | null;
   counts: Record<string, number>;
   units: number;
   accepted_units: number;

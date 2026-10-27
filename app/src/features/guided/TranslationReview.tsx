@@ -19,6 +19,9 @@ const pathKey = (path: string) => path;
 /** Said wherever an estimate kept the approximate count of Claude input. */
 export const approximateClaudeInput =
   "Claude's own token count was unavailable, so the input is approximate and likely low.";
+/** Said wherever an estimate's model thinks, billed as output it can't predict. */
+export const unestimatedThinking =
+  "This model's thinking tokens are billed as output and are not included.";
 
 /**
  * An estimate's cost in one mode, a range where reusing cached instructions
@@ -66,6 +69,8 @@ export function TranslationCost({
         <strong>{estimateCost(value, mode) ?? "Price unavailable"}</strong>
         <small>
           {value.approximate_input === true && `${approximateClaudeInput} `}
+          {value.unestimated_thinking_tokens === true &&
+            `${unestimatedThinking} `}
           Final cost depends on actual usage.
         </small>
       </div>

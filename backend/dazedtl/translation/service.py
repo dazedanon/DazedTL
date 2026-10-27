@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from dazedtl.actions import history_label
+from dazedtl.compatibility.estimate_prices import usage_cost
 from dazedtl.freshness import Basis, compare
 from dazedtl.languages import pair_note
 from dazedtl.settings import language_pair
@@ -45,7 +46,7 @@ from .operations import (
 )
 from .playtest import game_fixes
 from .project import ADDED, WORK, ProjectWorkspace, options, scope
-from .requests import COUNTS, LINE_KEYS, price, sent_text
+from .requests import LINE_KEYS, counted, price, repriceable, sent_text
 from .results import Results, exported, review_digest
 
 
@@ -622,7 +623,8 @@ Additional project instructions:
         takes the current settings' prices when they change only its price
         (see repricing), with an approval token for that price; otherwise it
         notes that the settings it priced have changed. An estimate for
-        declined requests keeps its own mode, whatever the project's."""
+        declined requests keeps its own mode, whatever the project's. A
+        run's recorded usage is priced at the rates it froze."""
         current = {}
         views = []
         newest = max(
@@ -635,6 +637,15 @@ Additional project instructions:
         )
         for job in jobs:
             view = self.jobs.store.view(job, newest)
+            if job["usage"] and (job.get("configuration") or {}).get("model"):
+                try:
+                    provider = self.engine.batch_supported(job["configuration"])
+                except KeyError, ValueError:
+                    # A frozen OpenRouter policy this version refuses.
+                    provider = None
+                view["usage_cost"] = usage_cost(
+                    job["usage"], job["configuration"], provider
+                )
             frozen = job.get("configuration_sha256")
             if (
                 frozen
@@ -658,13 +669,11 @@ Additional project instructions:
                     settings, frozen, job.get("configuration")
                 )
                 if view["settings_changed"] and self.repriceable(
-                    job.get("configuration"), settings, provider
+                    job.get("configuration"), settings, provider, job["quote"]
                 ):
                     view.update(
                         mode=settings["mode"],
-                        quote=price(
-                            {key: job["quote"][key] for key in COUNTS}, settings
-                        ),
+                        quote=price(counted(job["quote"]), settings, provider),
                         approval_token=repricing.approval_token(
                             job["approval_token"], settings
                         ),
@@ -674,16 +683,17 @@ Additional project instructions:
         return views
 
     @staticmethod
-    def repriceable(before, after, provider):
+    def repriceable(before, after, provider, quote):
         """Whether a run frozen with ``before`` keeps its requests under
-        ``after``, which then only prices it again; a Batch also needs a
-        route that runs one."""
+        ``after``, which then only prices its ``quote`` again; a Batch also
+        needs a route that runs one."""
         return bool(
             before
             and after
             and repricing.priced(after)
             and (after["mode"] != "batch" or provider)
             and repricing.same_requests(before, after)
+            and repriceable(quote, provider)
         )
 
     def reprice(self, job, plan, configuration, provider):
@@ -707,7 +717,7 @@ Additional project instructions:
             "requests": requests,
             "batch_limits": limits,
         }
-        quote = price({key: job["quote"][key] for key in COUNTS}, configuration)
+        quote = price(counted(job["quote"]), configuration, provider)
         return self.jobs.store.replan(job, plan, quote), plan
 
     def reestimate(self, project_id, run_id):
@@ -734,7 +744,7 @@ Additional project instructions:
         current, provider = self.api_configuration(mode, project.root)
         if not changed_since(
             current, job["configuration_sha256"], plan["configuration"], reprice=False
-        ) or self.repriceable(plan["configuration"], current, provider):
+        ) or self.repriceable(plan["configuration"], current, provider, job["quote"]):
             return self.jobs.store.view(job)
         preparation = next(
             (
@@ -1135,7 +1145,9 @@ Additional project instructions:
                     )
             elif approval_token == repricing.approval_token(
                 job["approval_token"], current
-            ) and self.repriceable(plan["configuration"], current, provider):
+            ) and self.repriceable(
+                plan["configuration"], current, provider, job["quote"]
+            ):
                 job, plan = self.reprice(job, plan, current, provider)
             else:
                 raise ValueError(

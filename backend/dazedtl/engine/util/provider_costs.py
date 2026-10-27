@@ -83,3 +83,28 @@ def batch_price_factor(provider: str | None) -> float:
 def has_billed_cache_writes(provider: str, model: str) -> bool:
     """Return whether cache writes have a distinct price for this route."""
     return cache_write_multiplier(provider, model) != 1.0
+
+
+def usage_cost(usage: dict, provider: str, model: str, input_rate: float,
+               output_rate: float, factor: float = 1.0) -> float:
+    """Price billed usage at per-token rates with the route's cache
+    multipliers, then ``factor``: the Batch discount, or 1 for Live.
+
+    ``usage`` holds uncached ``input_tokens``, ``output_tokens``, cache reads
+    and writes as Anthropic names them, and ``thinking_tokens`` billed as
+    output; see batch_write_weight for the one-hour writes beside them.
+    """
+    def count(key: str) -> float:
+        return usage.get(key, 0) or 0
+
+    raw = (
+        count("cache_read_input_tokens") * input_rate
+        * cache_read_multiplier(provider, model)
+        + batch_write_weight(
+            provider, model, count("cache_creation_input_tokens"),
+            usage.get("cache_creation_1h_input_tokens"),
+        ) * input_rate
+        + count("input_tokens") * input_rate
+        + (count("output_tokens") + count("thinking_tokens")) * output_rate
+    )
+    return raw * factor
