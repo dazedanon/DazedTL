@@ -216,6 +216,8 @@ function standing(
     const report: ImageReportState =
       kind === "image_discovery" ? images.discovery : images.editing;
     if (report.rejected) return { state: "blocked", detail: report.rejected };
+    // The user stopped the investigation to choose the images themselves.
+    if (report.status === "stopped") return { state: "idle" };
     // A copy can hand out the same request again; it waits for a newer report.
     if (report.status === "awaiting_results" || (copied && !back))
       return waiting();

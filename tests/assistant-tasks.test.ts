@@ -80,6 +80,16 @@ test("copied tasks wait for a newer result, and dismissed ones read Not started"
     assistantTasks(recopied).map((task) => task.state),
     ["waiting"],
   );
+  // An investigation the user stopped to choose the images waits no more.
+  const stopped = {
+    ...recopied,
+    images: {
+      ...recopied.images,
+      discovery: { status: "stopped" },
+    } as ImageManagerState,
+  };
+  assert.deepEqual(assistantTasks(stopped), []);
+  assert.equal(assistantWaiting("image_discovery", stopped).waiting, false);
 
   // Preparing QA from the page copies the new task; a copy of an earlier one
   // waits only on a task its assistant prepared since, such as QA's next

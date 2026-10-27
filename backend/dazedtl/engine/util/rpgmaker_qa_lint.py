@@ -9,10 +9,11 @@ deep correction. Text identical to its source was never translated and gets
 no fixes. Some families read the whole game, such as its quoted titles and
 its glossary, from a `Game` made once per inventory.
 
-Each family names the targets it reads (`targets`): English alone, any target
-written in Latin script, or any target. The game's target, English unless its
-pair says otherwise, decides which families run, so a Japanese translation
-gets no English spacing or apostrophe fixes.
+Each family names the targets it reads (`targets`), one kind or several:
+English, any target written in Latin script, any written without spaces
+between words (Chinese, Japanese), or any target. The game's target, English
+unless its pair says otherwise, decides which families run, so a Japanese
+translation gets no English spacing or apostrophe fixes.
 """
 
 from __future__ import annotations
@@ -62,7 +63,7 @@ FAMILIES: dict[str, dict[str, str]] = {
     "lint:glossary-term": {
         "category": "terminology",
         "description": "A glossary term is rendered another way than the glossary gives it.",
-        "targets": "english",
+        "targets": "english unspaced",
     },
 }
 ORDER = tuple(FAMILIES)
@@ -124,14 +125,15 @@ class Game(NamedTuple):
 
 def applies(family: str, target: str) -> bool:
     """Whether a family checks a translation into *target*."""
-    from util.languages import LATIN, script, tag
+    from util.languages import LATIN, script, tag, target_uses_cjk
 
-    targets = FAMILIES[family]["targets"]
-    if targets == "english":
-        return tag(target) == "en"
-    if targets == "latin":
-        return script(target) == LATIN
-    return True
+    reads = {
+        "english": lambda: tag(target) == "en",
+        "latin": lambda: script(target) == LATIN,
+        "unspaced": lambda: target_uses_cjk(target),
+        "any": lambda: True,
+    }
+    return any(reads[kind]() for kind in FAMILIES[family]["targets"].split())
 
 
 def _heart_spacing(source: str, text: str, game: Game) -> str:
@@ -318,15 +320,16 @@ def game(
     manifest: dict[str, Any], glossary_text: str, target: str = DEFAULT_TARGET
 ) -> Game:
     """What the families read from a whole inventory, its glossary and the
-    language it is translated into. The glossary rules read English
-    renderings (rpgmaker_qa_glossary), so another target reads none."""
+    language it is translated into. The glossary rules read English words or
+    text written without spaces (rpgmaker_qa_glossary), so another target
+    reads none."""
     from util import rpgmaker_qa_glossary as glossary
 
     if not applies("lint:glossary-term", target):
         glossary_text = ""
     return Game(
         title_map(manifest["clusters"]),
-        glossary.build(glossary_text, manifest["records"]),
+        glossary.build(glossary_text, manifest["records"], target),
         target=target,
     )
 

@@ -148,6 +148,7 @@ Your assistant checks each shorter label in the game: DazedTL plays it in a hidd
 **Images** has four steps, and the filled button is always the next one:
 
 1. **Investigate**: copy the task; your assistant recommends the images with text players read, leaving out sound effects drawn into scenes.
+   It is optional: to skip it, tick the images to translate yourself, and while it runs, **Choose images myself** stops it and keeps what it found.
 2. **Choose**: recommended images arrive ticked under **Recommended**; untick any, or tick others under **Unsure** or **All images**.
 3. **Translate**: copy the translation task; your assistant edits copies of the ticked images.
 4. **Apply**: check the results, ask your assistant to redo any, then click **Apply to game**; applied images leave **Recommended** and **Unsure** for **Applied**.
