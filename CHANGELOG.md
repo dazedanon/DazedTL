@@ -3,6 +3,17 @@
 Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 [release.mjs](scripts/release.mjs) writes each entry from [release/notes.md](release/notes.md).
 
+## [2.40.1] - 2026-10-27
+
+### Changed
+
+- **Assistant-led:** Mistral, Custom / local and Google Gemini connections ask for replies in the same format as Guided steps when translating Live, so a server that works in one works in the other.
+
+### Fixed
+
+- **Translate** and **Assistant-led:** a game saved on Batch, opened on a connection that can't run Batch such as DeepSeek, translates Live and says why beside the method, instead of a red "This connection does not support Batch." banner and a disabled Translate, or an API Batch card that could still be chosen and saved.
+- **Settings:** clicking Settings while DazedTL is still starting no longer shows "Workspace unavailable" or leaves "Wait for the workspace to open." on the Project page; Project and Settings open once the workspace has.
+
 ## [2.40.0] - 2026-10-27
 
 ### Added
@@ -1197,6 +1208,7 @@ Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachan
 - The first release of DazedTL as a desktop app, installed from a ZIP with a START launcher and updated from inside the app.
 - **Guided steps** for RPG Maker MV, MZ and VX Ace games, and **Assistant-led** for any game.
 
+[2.40.1]: https://github.com/dazedanon/DazedTL/compare/v2.40.0...v2.40.1
 [2.40.0]: https://github.com/dazedanon/DazedTL/compare/v2.39.0...v2.40.0
 [2.39.0]: https://github.com/dazedanon/DazedTL/compare/v2.38.1...v2.39.0
 [2.38.1]: https://github.com/dazedanon/DazedTL/compare/v2.38.0...v2.38.1
