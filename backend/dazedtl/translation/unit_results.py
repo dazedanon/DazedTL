@@ -124,7 +124,9 @@ def current(source, units, language, target, found, listing):
             )
         except OSError, ValueError:
             value = None
-        for identity in holding[fingerprint] if value else ():
+        if not value:
+            continue
+        for identity in holding[fingerprint]:
             unit = wanted[identity]
             text = value["translations"][identity]
             if identity in answered or untranslated(

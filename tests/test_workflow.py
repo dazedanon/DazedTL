@@ -636,7 +636,10 @@ class WorkflowTests(unittest.TestCase):
         report = read_json(self.game / (WORK + "/progress-report.json"))
         report.update(phase=None)
         report["phases"].update(
-            translation="complete", injection="complete", qa="complete", patch="complete"
+            translation="complete",
+            injection="complete",
+            qa="complete",
+            patch="complete",
         )
         write_json(self.game / (WORK + "/progress-report.json"), report)
         # With every line translated, the next organize has nothing to send,
@@ -647,7 +650,9 @@ class WorkflowTests(unittest.TestCase):
             (third["status"], third["requests"], third["quote"]["requests"]),
             ("complete", 0, 0),
         )
-        self.assertEqual(self.service.results(self.identity, third["id"])["translated"], 4)
+        self.assertEqual(
+            self.service.results(self.identity, third["id"])["translated"], 4
+        )
         self.service.validate_current(self.identity, plan)
         # An organize prepared before the policy packs every line.
         _older, plan = organized(policy=False)

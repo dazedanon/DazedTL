@@ -237,7 +237,9 @@ def translates_nothing(request, value):
     has none to reuse and is sent again, as one holding a refusal note is."""
     sources = request["sources"]
     # Most receipts change their first line, which settles it.
-    if any(text != sources[identity] for identity, text in value["translations"].items()):
+    if any(
+        text != sources[identity] for identity, text in value["translations"].items()
+    ):
         return False
     return len(left_lines(request, value)) == len(sources)
 

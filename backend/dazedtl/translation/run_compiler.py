@@ -13,9 +13,8 @@ from pathlib import Path
 from dazedtl import system
 from dazedtl.compatibility.batch_window import RUN_POLICY as BATCH_WINDOW
 from dazedtl.settings.execution import worker_secret
-from dazedtl.storage import write_json
-
 from dazedtl.settings.language_pair import run_source
+from dazedtl.storage import write_json
 
 from . import census, organize, progress_report, skill_users, unit_results
 from .compilation import batch_sources, compile_requests

@@ -825,7 +825,9 @@ const reorganized = [
         "the Live run to end",
         async () => {
           const job = await organizedRun(page, state);
-          return ["complete", "failed", "uncertain"].includes(job.status) && job;
+          return (
+            ["complete", "failed", "uncertain"].includes(job.status) && job
+          );
         },
         5 * 60_000,
       );
