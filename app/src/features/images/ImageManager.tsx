@@ -1340,6 +1340,7 @@ function Manager({
                 >
                   <div
                     className="image-grid"
+                    inert={grid.standIn}
                     style={{
                       transform: `translateY(${range.top}px)`,
                       gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,

@@ -2,7 +2,13 @@ import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { imagesApi } from "../../api/images";
 import { messageOf } from "../../api/errors";
 import { idsBetween } from "./imageSelection";
-import { bounded, PAGE_SIZE, PageReader, type Pages } from "./imagePages";
+import {
+  begin,
+  PAGE_SIZE,
+  PageReader,
+  read,
+  type Loaded as Results,
+} from "./imagePages";
 import type {
   ImageAsset,
   ImageList,
@@ -18,31 +24,7 @@ type Filters = {
   selected_only: boolean;
 };
 type Scope = { filters: Filters; inventory: string; revision: number };
-type Loaded = {
-  scope: Scope;
-  pages: Pages;
-  /** The pages a refresh replaces, shown until each one reloads. */
-  stale: Pages;
-  total: number;
-  error: string;
-};
-/**
- * Where a scope's results start. A refresh of the same filters keeps showing
- * the pages it replaces, so tiles update in place instead of blanking; other
- * filters start empty.
- */
-const begin = (previous: Loaded, scope: Scope): Loaded => ({
-  scope,
-  pages: new Map(),
-  ...(previous.scope.filters === scope.filters
-    ? {
-        stale: bounded(new Map([...previous.stale, ...previous.pages])),
-        total: previous.total,
-      }
-    : { stale: new Map(), total: 0 }),
-  error: "",
-});
-
+type Loaded = Results<Scope>;
 /**
  * The page of images `start` to `end` of the view's matches, with the rest of
  * the view read after it so scrolling finds its images listed. `revision`
@@ -81,6 +63,7 @@ export function useImageGrid(
     scope,
     pages: new Map(),
     stale: new Map(),
+    previousView: false,
     total: 0,
     error: "",
   }));
@@ -98,14 +81,14 @@ export function useImageGrid(
         imagesApi.list(projectId, { ...options, offset, limit }, () => current),
       show: (pages, total) =>
         setLoaded((previous) => ({
-          ...(previous.scope === scope ? previous : begin(previous, scope)),
+          ...read(previous, scope),
           pages,
           total,
           error: "",
         })),
       fail: (error) =>
         setLoaded((previous) => ({
-          ...(previous.scope === scope ? previous : begin(previous, scope)),
+          ...read(previous, scope),
           error: messageOf(error),
         })),
       from: () => shownFrom(),
@@ -137,15 +120,16 @@ export function useImageGrid(
   useEffect(() => {
     reader.current?.want(wantedKey.split(",").filter(Boolean).map(Number));
   }, [wantedKey, scope]);
-  const shown = (index: number) => {
+  const shown = (index: number, standIn = false) => {
     const offset = Math.floor(index / PAGE_SIZE) * PAGE_SIZE;
-    return (grid.pages.get(offset) ?? grid.stale.get(offset))?.[
+    return (grid.pages.get(offset) ??
+      (standIn || !grid.previousView ? grid.stale.get(offset) : undefined))?.[
       index % PAGE_SIZE
     ];
   };
   const items: { index: number; asset: ImageAsset }[] = [];
   for (let index = start; index < end; index++) {
-    const asset = shown(index);
+    const asset = shown(index, true);
     if (asset) items.push({ index, asset });
   }
   const listed = useMemo(
@@ -204,6 +188,8 @@ export function useImageGrid(
     listed,
     // Stale pages stand in while a refresh reloads them.
     loading: !grid.error && missing.some((offset) => !grid.stale.has(offset)),
+    /** The previous view's tiles stand in, so clicks wait for this view's. */
+    standIn: grid.previousView,
     error: grid.error,
     /** The ids of matches `first` to `last`, as shown or read for the view. */
     ids: (first: number, last: number) =>

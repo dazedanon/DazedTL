@@ -11,7 +11,11 @@ import {
   virtualRows,
 } from "../app/src/features/images/imageSelection.ts";
 import { ThumbnailQueue } from "../app/src/features/images/thumbnails.ts";
-import { PageReader } from "../app/src/features/images/imagePages.ts";
+import {
+  begin,
+  PageReader,
+  read,
+} from "../app/src/features/images/imagePages.ts";
 import { imageFlow } from "../app/src/features/images/imageFlow.ts";
 import type {
   ImageAsset,
@@ -146,6 +150,28 @@ test("a view's pages read ahead show once, and a page on screen at once", async 
   await settle(300);
   await settle(400);
   assert.deepEqual(shown, [[0], [0, 100, 200], [0, 100, 200, 300, 400]]);
+});
+
+test("switching views keeps the last one's tiles until the next one's first page", () => {
+  // Protect against a blank grid frame on every switch between views.
+  const page = new Map([[0, [{ id: "img/a.png" } as ImageAsset]]]);
+  const all = { filters: { status: "all" } };
+  const list = { filters: { status: "list" } };
+  const shown = {
+    scope: all,
+    pages: page,
+    stale: new Map(),
+    previousView: false,
+    total: 1,
+    error: "",
+  };
+  const switched = begin(shown, list);
+  assert.deepEqual(
+    [switched.stale, switched.previousView, switched.total],
+    [page, true, 1],
+  );
+  const arrived = read(switched, list);
+  assert.deepEqual([arrived.stale.size, arrived.previousView], [0, false]);
 });
 
 test("Images leads with the step its saved work reaches", () => {

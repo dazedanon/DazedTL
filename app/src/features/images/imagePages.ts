@@ -11,6 +11,47 @@ export const bounded = (pages: Pages) => {
   return pages;
 };
 
+export type Loaded<Scope extends { filters: unknown }> = {
+  scope: Scope;
+  pages: Pages;
+  /** The pages a refresh replaces, shown until each one reloads. */
+  stale: Pages;
+  /**
+   * The stale pages are the previous view's, which stand in until this
+   * view's first page is read, so switching views never draws an empty grid.
+   */
+  previousView: boolean;
+  total: number;
+  error: string;
+};
+/**
+ * Where a scope's results start. A refresh of the same filters keeps showing
+ * the pages it replaces, so tiles update in place instead of blanking; other
+ * filters keep the previous view on screen until their first page arrives.
+ */
+export const begin = <Scope extends { filters: unknown }>(
+  previous: Loaded<Scope>,
+  scope: Scope,
+): Loaded<Scope> => ({
+  scope,
+  pages: new Map(),
+  stale: bounded(new Map([...previous.stale, ...previous.pages])),
+  previousView:
+    previous.previousView || previous.scope.filters !== scope.filters,
+  total: previous.total,
+  error: "",
+});
+/** A read result for `scope`, which replaces another view's stand-ins. */
+export const read = <Scope extends { filters: unknown }>(
+  previous: Loaded<Scope>,
+  scope: Scope,
+): Loaded<Scope> => {
+  const base = previous.scope === scope ? previous : begin(previous, scope);
+  return base.previousView
+    ? { ...base, stale: new Map(), previousView: false }
+    : base;
+};
+
 /** The view's pages, nearest to `from` first, as many as are kept. */
 const nearestPages = (from: number, total: number) =>
   Array.from({ length: Math.ceil(total / PAGE_SIZE) }, (_, page) => ({
