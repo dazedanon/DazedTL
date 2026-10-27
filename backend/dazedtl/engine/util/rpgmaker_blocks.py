@@ -86,7 +86,10 @@ def command_lists(document: Any, path: tuple = ()) -> Iterator[tuple[tuple, list
 
 
 def code(command: Any) -> int | None:
-    return command.get("code") if isinstance(command, dict) else None
+    """A command's code, or None for one it cannot read, such as a malformed
+    command whose code is no number, which no block holds."""
+    value = command.get("code") if isinstance(command, dict) else None
+    return value if type(value) is int else None
 
 
 def emptied(command: Any) -> bool:
