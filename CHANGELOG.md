@@ -3,6 +3,12 @@
 Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 [release.mjs](scripts/release.mjs) writes each entry from [release/notes.md](release/notes.md).
 
+## [2.36.3] - 2026-10-27
+
+### Fixed
+
+- **Checkpoints:** a game update given the game's current version that was cancelled or failed no longer leaves its release as the game's original files, which made some untranslated text read as translated and left it out of runs, patches and going back.
+
 ## [2.36.2] - 2026-10-27
 
 ### Fixed
@@ -1120,6 +1126,7 @@ Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachan
 - The first release of DazedTL as a desktop app, installed from a ZIP with a START launcher and updated from inside the app.
 - **Guided steps** for RPG Maker MV, MZ and VX Ace games, and **Assistant-led** for any game.
 
+[2.36.3]: https://github.com/dazedanon/DazedTL/compare/v2.36.2...v2.36.3
 [2.36.2]: https://github.com/dazedanon/DazedTL/compare/v2.36.1...v2.36.2
 [2.36.1]: https://github.com/dazedanon/DazedTL/compare/v2.36.0...v2.36.1
 [2.36.0]: https://github.com/dazedanon/DazedTL/compare/v2.35.0...v2.36.0
