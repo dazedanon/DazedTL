@@ -16,6 +16,7 @@ from util.freshness import (
     signature,
     signature_settled,
 )
+from util.original_values import Originals
 from util.paths import new_folder
 from util.qa.advance import _screen_targets
 from util.qa.briefs import _task_instructions, write_instructions
@@ -240,6 +241,7 @@ def prepare_task(
     origins: Iterable[str] | None = None,
     screen_groups: list[list[str]] | None = None,
     storage_key: str | None = None,
+    originals: Originals | None = None,
 ) -> tuple[Path, dict[str, Any]]:
     """Create or reuse one immutable QA task and its exhaustive screen bundles.
 
@@ -279,6 +281,10 @@ def prepare_task(
     again keeps its review, but reads that report again, since plugin
     settings, custom data files and the plugin task's decisions change it
     without changing the inventory.
+
+    *originals*, the game's original files where the app recorded them,
+    give the never-translated report the source of text that keeps none
+    (util/original_values).
 
     *screen_groups*, the items of each screen bundle another task made, packs
     a new task's screen the same way when it holds the same items, so that
@@ -368,7 +374,7 @@ def prepare_task(
             task = _read_json(existing)
             if task.get("schema") != TASK_SCHEMA:
                 raise ValueError(f"Existing QA task has an unsupported schema: {task_dir}")
-            report = preflight(data, manifest, kept)
+            report = preflight(data, manifest, kept, originals)
             with _task_lock(task_dir):
                 _write_report(task_dir, report)
                 # The README names the game's folder, which may have moved.
@@ -385,7 +391,7 @@ def prepare_task(
             write_manifest(manifest, staging / "inventory.json")
             _atomic_write_json(staging / "inventory-validation.json", validation)
             # Japanese never translated is reported, never silently skipped.
-            _atomic_write_json(staging / "preflight.json", preflight(data, manifest, kept))
+            _atomic_write_json(staging / "preflight.json", preflight(data, manifest, kept, originals))
             _atomic_write_json(staging / "context.json", context)
             reviewed = (
                 _earlier_reviews(games, context, layout, origins)

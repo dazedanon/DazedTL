@@ -224,6 +224,69 @@ class QAEngineTests(unittest.TestCase):
         texts = [text["text"] for item in report["sources"] for text in item["texts"]]
         self.assertEqual(texts, ["まだ訳されていない"], report["sources"])
 
+    def test_text_without_a_source_reads_against_the_original_files(self):
+        # A Chinese translation keeps no source in plugin settings, custom
+        # data files or a map name translated before names kept one, and
+        # read without one its hanzi are Japanese left: the report listed
+        # them all. Read against the game's original files they are
+        # translated, and only the Japanese never translated is left.
+        import sys
+
+        reading = sys.modules["util.languages"].reading
+
+        def game(folder, title, intro, quest, place):
+            root = Path(folder)
+            (root / "data").mkdir(parents=True)
+            (root / "js").mkdir()
+            plugins = [
+                {"name": name, "status": True, "parameters": {"Text": text}}
+                for name, text in (("TitleMessage", title), ("Intro", intro))
+            ]
+            (root / "js/plugins.js").write_text(
+                f"var $plugins =\n{json.dumps(plugins, ensure_ascii=False)};\n",
+                encoding="utf-8",
+            )
+            for name, document in (
+                ("Quests.json", {"quests": [{"title": quest}]}),
+                ("Map001.json", {"displayName": place, "events": []}),
+            ):
+                (root / "data" / name).write_text(
+                    json.dumps(document, ensure_ascii=False), encoding="utf-8"
+                )
+            return root
+
+        def texts(report):
+            return sorted(
+                text["text"] for item in report["sources"] for text in item["texts"]
+            )
+
+        with (
+            tempfile.TemporaryDirectory() as current,
+            tempfile.TemporaryDirectory() as original,
+            reading("Japanese", "Simplified Chinese"),
+        ):
+            data = (
+                game(current, "欢迎来到魔法世界！", "はじめに", "寻找魔王", "起始之村")
+                / "data"
+            )
+            originals = preflight.Originals(
+                game(
+                    original,
+                    "ようこそ、魔法の世界へ！",
+                    "はじめに",
+                    "魔王をさがせ",
+                    "はじまりの村",
+                )
+            )
+            self.assertEqual(
+                texts(preflight.preflight(data, {"records": []})),
+                ["はじめに", "寻找魔王", "欢迎来到魔法世界！", "起始之村"],
+            )
+            self.assertEqual(
+                texts(preflight.preflight(data, {"records": []}, (), originals)),
+                ["はじめに"],
+            )
+
     def test_wrapped_rows_may_repeat_their_row_start_codes(self):
         # Fuuma's banner: fitting the second row to its window repeats its \>,
         # which refused every correction that wrapped it.

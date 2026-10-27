@@ -5,7 +5,7 @@ import os
 import re
 import util.dazedwrap as dazedwrap
 from util.languages import ENGLISH, source_pattern, tag
-from util import rpgmaker_blocks, rpgmaker_rewrap, rpgmaker_scope
+from util import original_values, rpgmaker_blocks, rpgmaker_rewrap, rpgmaker_scope
 from util import rpgmaker_script_strings as script_strings
 import threading
 import time
@@ -591,6 +591,7 @@ def openFiles(filename):
     file_kind = mvmz_file_kind(filename)
     with open("files/" + filename, "r", encoding="utf-8-sig") as f:
         data = json.load(f)
+    with _MIRRORS.opened(_mirror(filename, data)):
 
         # Map Files
         if file_kind == "Map":
@@ -991,7 +992,12 @@ def _apply_event_parameter_originals(snapshots: list[tuple[dict, list]]) -> None
 
 # Text still to translate is what util/source_text reads as Japanese, the
 # rule Guided's line counts share, and labels and map names are sent only
-# while they hold it. Level 3 reads it for the run's language pair, so a
+# while they hold it. Level 4 reads a value that keeps no source of its own
+# against the game's original file (util/original_values), which the app
+# stages in the run's folder: plugin command arguments, scripts, labels and
+# names a translation left unchanged elsewhere read translated, and a name
+# translated before it kept a source keeps the original's. Level 3 reads it
+# for the run's language pair, so a
 # Chinese translation's hanzi read translated and only its kana left; level 2
 # reads a value against the Japanese it was translated from, where the game
 # keeps it, so a lone kana or mark the source holds, such as a kaomoji's ﾉ,
@@ -999,7 +1005,7 @@ def _apply_event_parameter_originals(snapshots: list[tuple[dict, list]]) -> None
 # with an older sourceText request policy keeps its level, and one frozen
 # without it keeps reading Japanese by LANGREGEX and sending labels and map
 # names on every pass, so its requests keep their identities.
-SOURCE_TEXT = 3
+SOURCE_TEXT = 4
 
 
 def _has_japanese_text(text, source=None) -> bool:
@@ -1033,6 +1039,47 @@ def _has_japanese_text(text, source=None) -> bool:
     return bool(re.search(LANGREGEX, sample.replace("\u3000", " ")))
 
 
+# The open data files paired with their originals (level 4).
+_MIRRORS = original_values.Mirrors()
+_ORIGINALS: dict[str, original_values.Originals] = {}
+_ORIGINALS_LOCK = threading.Lock()
+
+
+def _originals() -> original_values.Originals:
+    """The run's staged originals, in its folder beside files/."""
+    folder = str(Path(original_values.FOLDER).resolve())
+    with _ORIGINALS_LOCK:
+        if folder not in _ORIGINALS:
+            _ORIGINALS.clear()
+            _ORIGINALS[folder] = original_values.Originals(folder)
+        return _ORIGINALS[folder]
+
+
+def _mirror(filename, data):
+    """*data*, the data file *filename*, paired with its original from
+    level 4, or None."""
+    return _originals().mirror(filename, data) if SOURCE_TEXT >= 4 else None
+
+
+def _original_of(node):
+    """The original of a list or dict of an open data file from level 4,
+    or None (util/original_values)."""
+    if SOURCE_TEXT < 4:
+        return None
+    for mirror in _MIRRORS.mirrors():
+        found = mirror.of(node)
+        if found is not None:
+            return found
+    return None
+
+
+def _recorded(node, *path) -> str | None:
+    """From level 4, the source the game's original file gives the value at
+    *path* below *node*, a list or dict of an open data file, where it keeps
+    none of its own: the original's value where it differs; else None."""
+    return _MIRRORS.source(node, *path) if SOURCE_TEXT >= 4 else None
+
+
 def _keeps_source(text, source) -> bool:
     """Whether a translation *text* of *source* reads as source text left
     without it but translated against it, as a Chinese translation that
@@ -1058,6 +1105,19 @@ def _keep_source(owner, field: str, source, text) -> None:
     if not isinstance(original, dict):
         original = owner["_original"] = {}
     original[field] = source
+
+
+def _labels(event) -> list:
+    """An event's labels (util/rpgmaker_scope), each with its source, from
+    level 4 the game's original file's where the event keeps none."""
+    return rpgmaker_scope.labels(event, _original_of(event))
+
+
+def _note_source(owner) -> str | None:
+    """From level 4, the source of a database entry's note, its _original's
+    or the game's original file's, which each label a note tag finds reads
+    against; None below level 4."""
+    return _entry_field_source(owner, "note") if SOURCE_TEXT >= 4 else None
 
 
 def _batch_phase() -> str:
@@ -1136,16 +1196,41 @@ def _param_source(cmd, index: int) -> str | None:
         return orig
     tree = cmd.get("_original")
     params = tree.get("parameters") if isinstance(tree, dict) else None
-    if not isinstance(params, dict) or index >= len(cmd.get("parameters") or []):
+    if isinstance(params, dict) and index < len(cmd.get("parameters") or []):
+        slot = params.get(str(index))
+        if isinstance(slot, str):
+            return slot
+    if cmd.get("code") in rpgmaker_blocks.ROW_CODES:
+        # A message's or comment's rows keep their own source, and their
+        # count may change with translation.
         return None
-    slot = params.get(str(index))
-    return slot if isinstance(slot, str) else None
+    return _recorded(cmd, "parameters", index)
+
+
+def _command_source(cmd, index: int, *path) -> str | None:
+    """From level 4, the source of the value at *path* in parameters[index]
+    of an event command: path-mirrored in its _original, else from the
+    game's original file. A string a handler finds inside that value, such
+    as a script's quoted text, reads against the whole value's source. None
+    below level 4, whose runs read these values without one."""
+    if SOURCE_TEXT < 4:
+        return None
+    if not path:
+        return _param_source(cmd, index)
+    tree = cmd.get("_original")
+    slot = tree.get("parameters") if isinstance(tree, dict) else None
+    for part in (index, *path):
+        slot = slot.get(str(part)) if isinstance(slot, dict) else None
+    if isinstance(slot, str):
+        return slot
+    return _recorded(cmd, "parameters", index, *path)
 
 
 def _param_text(cmd, index: int) -> str:
     """parameters[index] as its source has it: the _original, scalar or
-    path-mirrored, or the parameter itself."""
-    orig = _scalar_original(cmd)
+    path-mirrored, or from level 4 the game's original file's, or the
+    parameter itself."""
+    orig = _param_source(cmd, index)
     if orig is not None:
         return orig
     params = _source_parameters(cmd)
@@ -1414,13 +1499,14 @@ def _apply_original(cmd, raw_source: str) -> None:
 
 
 def _choice_source(cmd, index: int) -> str | None:
-    """_original[index] of a code 102 choice, or None."""
+    """_original[index] of a code 102 choice, else from level 4 the game's
+    original file's choice, or None."""
     orig_list = cmd.get("_original")
     if isinstance(orig_list, list) and index < len(orig_list):
         slot = orig_list[index]
         if slot is not None and str(slot).strip():
             return str(slot)
-    return None
+    return _recorded(cmd, "parameters", 0, index)
 
 
 def _choice_text(cmd, index: int) -> str:
@@ -1608,8 +1694,17 @@ def _split_choice_condition_suffix(text: str) -> tuple[str, str]:
 
 
 def _122_inner_source(cmd) -> str | None:
-    """Code 122's inner quoted value as the game keeps it in _original, or None."""
-    return _scalar_original(cmd)
+    """Code 122's inner quoted value as the game keeps it in _original, else
+    from level 4 as the game's original file has it, or None."""
+    orig = _scalar_original(cmd)
+    if orig is not None:
+        return orig
+    original = _original_of(cmd)
+    if original is None:
+        return None
+    return original_values.source(
+        _122_inner_current(cmd), _122_inner_current(original)
+    )
 
 
 def _122_inner_text(cmd) -> str | None:
@@ -1814,11 +1909,12 @@ def _entry_orig(entry) -> dict:
 
 
 def _entry_field_source(entry, field: str) -> str | None:
-    """_original[field] of a database entry's scalar field, or None."""
+    """_original[field] of a database entry's scalar field, else from level
+    4 the game's original file's, or None."""
     slot = _entry_orig(entry).get(field)
     if slot is not None and not isinstance(slot, (dict, list)) and str(slot).strip():
         return str(slot)
-    return None
+    return _recorded(entry, field)
 
 
 def _entry_field_text(entry, field: str) -> str:
@@ -1870,13 +1966,14 @@ def _system_orig(data) -> dict:
 
 
 def _system_scalar_source(data, field: str) -> str | None:
-    """Root _original[field] of System.json, or None."""
+    """Root _original[field] of System.json, else from level 4 the game's
+    original file's, or None."""
     orig = data.get("_original") if isinstance(data, dict) else None
     if isinstance(orig, dict):
         slot = orig.get(field)
         if slot is not None and not isinstance(slot, (dict, list)) and str(slot).strip():
             return str(slot)
-    return None
+    return _recorded(data, field)
 
 
 def _system_scalar_text(data, field: str) -> str:
@@ -1906,7 +2003,8 @@ def _apply_system_scalar_original(data, field: str, raw: str) -> None:
 
 
 def _system_list_source(data, list_name: str, index: int) -> str | None:
-    """_original[list_name][str(index)] of System.json, or None."""
+    """_original[list_name][str(index)] of System.json, else from level 4
+    the game's original file's, or None."""
     orig = data.get("_original") if isinstance(data, dict) else None
     if isinstance(orig, dict):
         list_orig = orig.get(list_name)
@@ -1914,7 +2012,7 @@ def _system_list_source(data, list_name: str, index: int) -> str | None:
             slot = list_orig.get(str(index))
             if slot is not None and str(slot).strip():
                 return str(slot)
-    return None
+    return _recorded(data, list_name, index)
 
 
 def _system_list_text(data, list_name: str, index: int) -> str:
@@ -1949,7 +2047,8 @@ def _apply_system_list_original(data, list_name: str, index: int, raw: str) -> N
 
 
 def _system_terms_source(data, category: str, index: int) -> str | None:
-    """_original.terms[category][str(index)] of System.json, or None."""
+    """_original.terms[category][str(index)] of System.json, else from
+    level 4 the game's original file's, or None."""
     orig = data.get("_original") if isinstance(data, dict) else None
     if isinstance(orig, dict):
         terms_orig = orig.get("terms")
@@ -1959,7 +2058,7 @@ def _system_terms_source(data, category: str, index: int) -> str | None:
                 slot = cat_orig.get(str(index))
                 if slot is not None and str(slot).strip():
                     return str(slot)
-    return None
+    return _recorded(data, "terms", category, index)
 
 
 def _system_terms_text(data, category: str, index: int) -> str:
@@ -1998,7 +2097,8 @@ def _apply_system_terms_original(data, category: str, index: int, raw: str) -> N
 
 
 def _system_terms_message_source(data, key: str) -> str | None:
-    """_original.terms.messages[key] of System.json, or None."""
+    """_original.terms.messages[key] of System.json, else from level 4 the
+    game's original file's, or None."""
     orig = data.get("_original") if isinstance(data, dict) else None
     if isinstance(orig, dict):
         terms_orig = orig.get("terms")
@@ -2008,7 +2108,7 @@ def _system_terms_message_source(data, key: str) -> str | None:
                 slot = msg_orig.get(key)
                 if slot is not None and str(slot).strip():
                     return str(slot)
-    return None
+    return _recorded(data, "terms", "messages", key)
 
 
 def _system_terms_message_text(data, key: str) -> str:
@@ -2156,8 +2256,9 @@ def prepareBatchMapNames() -> list[int]:
             continue
         filename_sources.append((filename, display_name))
         source_files.setdefault(display_name, []).append(filename)
+        original = _originals().data(filename) if SOURCE_TEXT >= 4 else None
         if not SOURCE_TEXT or _text_needs_translation(
-            display_name, rpgmaker_scope.kept(document, "displayName")
+            display_name, rpgmaker_scope.kept(document, "displayName", original)
         ):
             needed.add(filename)
     # Older runs send every name again, finished or not.
@@ -2267,7 +2368,7 @@ def parseMap(data, filename):
                 # Count note labels; older runs send each one again.
                 count += sum(
                     not SOURCE_TEXT or _text_needs_translation(label.text, label.source)
-                    for label in rpgmaker_scope.labels(evt)
+                    for label in _labels(evt)
                 )
 
                 # Count commands in pages (rough estimate)
@@ -2311,12 +2412,15 @@ def parseMap(data, filename):
         # can never fall through to a full-price single-string API request.
         if "Map" in filename:
             prepared_name = _preparedBatchMapName(filename)
-            name_source = rpgmaker_scope.kept(data, "displayName")
+            name_source = rpgmaker_scope.kept(
+                data, "displayName", _original_of(data)
+            )
+            # A name that keeps no source of its own keeps the game's
+            # original one, never its own earlier translation.
+            kept_source = data["displayName"] if name_source is None else name_source
             if prepared_name is not None:
                 if filename not in _BATCH_MAP_NAME_REJECTED:
-                    _keep_source(
-                        data, "displayName", data["displayName"], prepared_name
-                    )
+                    _keep_source(data, "displayName", kept_source, prepared_name)
                 data["displayName"] = prepared_name
                 if filename in _BATCH_MAP_NAME_REJECTED and filename not in MISMATCH:
                     MISMATCH.append(filename)
@@ -2324,6 +2428,7 @@ def parseMap(data, filename):
             elif SOURCE_TEXT and not _text_needs_translation(
                 data["displayName"], name_source
             ):
+                _keep_source(data, "displayName", name_source, data["displayName"])
                 pbar.update(1)
             else:
                 batch_phase = (os.getenv("BATCH_PHASE") or "").strip().lower()
@@ -2346,9 +2451,7 @@ def parseMap(data, filename):
                 translated_name = str(translated_name).replace('"', "")
                 # A rejected reply gives the name back, which is no translation.
                 if len(MISMATCH) == rejected:
-                    _keep_source(
-                        data, "displayName", data["displayName"], translated_name
-                    )
+                    _keep_source(data, "displayName", kept_source, translated_name)
                 data["displayName"] = translated_name
         
         # Batch translate <LB> event names
@@ -2381,7 +2484,8 @@ def _map_pages(events, totalTokens):
                 if match and (
                     not SOURCE_TEXT
                     or _text_needs_translation(
-                        match[1], rpgmaker_scope.tag_source(event, tag)
+                        match[1],
+                        rpgmaker_scope.tag_source(event, tag, _original_of(event)),
                     )
                 ):
                     tok = translateNoteOmitSpace(event, match)
@@ -2519,20 +2623,24 @@ def translateLBNames(events):
     totalTokens = [0, 0]
     
     # Collect events with <LB> tag that have translatable names
-    lb_events = []  # List of (event_index, original_name)
+    lb_events = []  # List of (event_index, original_name, source)
     for idx, event in enumerate(events):
-        for label in rpgmaker_scope.labels(event):
-            if label.field == "name" and (
+        for label in _labels(event):
+            if label.field != "name":
+                continue
+            if (
                 _text_needs_translation(label.text, label.source)
                 if SOURCE_TEXT
                 else _has_japanese_text(label.text)
             ):
-                lb_events.append((idx, label.text))
+                lb_events.append((idx, label.text, label.source))
+            else:
+                _keep_source(event, "name", label.source, label.text)
     
     # Batch translate if we have any
     if lb_events:
         mismatched = len(MISMATCH)
-        names_to_translate = [item[1] for item in lb_events]
+        names_to_translate = [name for _idx, name, _source in lb_events]
         response = translateAI(
             names_to_translate,
             ctx("names.generic"),
@@ -2544,11 +2652,18 @@ def translateLBNames(events):
         totalTokens[1] += response[1][1]
         
         # Apply translations back to events
-        for i, (evt_idx, name) in enumerate(lb_events):
+        for i, (evt_idx, name, source) in enumerate(lb_events):
             if i < len(translated_names):
                 translated = translated_names[i].replace('"', "").replace(" ", "_")
                 if not rejected:
-                    _keep_source(events[evt_idx], "name", name, translated)
+                    # A name that keeps no source of its own keeps the
+                    # game's original one, never its earlier translation.
+                    _keep_source(
+                        events[evt_idx],
+                        "name",
+                        name if source is None else source,
+                        translated,
+                    )
                 events[evt_idx]["name"] = translated
     
     return totalTokens
@@ -3354,7 +3469,7 @@ def searchNames(data, pbar, context, filename, saved=None):
                     if "Client:" in match_text or "Client :" in match_text:
                         continue
                     # Skip if IGNORETLTEXT is enabled and no Japanese text
-                    if IGNORETLTEXT and not _has_japanese_text(match_text):
+                    if IGNORETLTEXT and not _has_japanese_text(match_text, _note_source(entry)):
                         continue
                     # Normalize for AI (collapse intra-paragraph \n, keep headers)
                     notesBatch.append(_normalize_sg_desc(match_text))
@@ -3363,7 +3478,7 @@ def searchNames(data, pbar, context, filename, saved=None):
                 for m in matches:
                     match_text = m if isinstance(m, str) else m[0]
                     # Skip if IGNORETLTEXT is enabled and no Japanese text
-                    if IGNORETLTEXT and not _has_japanese_text(match_text):
+                    if IGNORETLTEXT and not _has_japanese_text(match_text, _note_source(entry)):
                         continue
                     notesBatch.append(match_text)
                     notesBatchMap.append((idx, regex, match_text, wordwrap))
@@ -4691,7 +4806,9 @@ def _searchCodes(page, pbar, jobList, filename):
                             acExist = False
 
                         # Skip if IGNORETLTEXT is enabled and no Japanese text
-                        if IGNORETLTEXT and not _has_japanese_text(jaString):
+                        if IGNORETLTEXT and not _has_japanese_text(
+                            jaString, _command_source(codeList[i], 3, argVar)
+                        ):
                             return
 
                         # If there isn't any Japanese in the text just skip
@@ -4773,7 +4890,9 @@ def _searchCodes(page, pbar, jobList, filename):
                         if (
                             argVar not in translated_plugin_args
                             and isinstance(value, str)
-                            and _has_japanese_text(value)
+                            and _has_japanese_text(
+                                value, _command_source(codeList[i], 3, argVar)
+                            )
                             and not custom_patterns.structured(value)
                         ):
                             translatePlugins(argVar, None)
@@ -4788,7 +4907,9 @@ def _searchCodes(page, pbar, jobList, filename):
                         and codeList[i]["parameters"][1] == "OPEN_GALLERY"):
                     p2 = codeList[i]["parameters"][2]
                     if isinstance(p2, str) and p2.strip():
-                        if not (IGNORETLTEXT and not _has_japanese_text(p2)):
+                        if not (IGNORETLTEXT and not _has_japanese_text(
+                            p2, _command_source(codeList[i], 2)
+                        )):
                             if setData:
                                 list357.append(p2)
                             else:
@@ -4885,7 +5006,9 @@ def _searchCodes(page, pbar, jobList, filename):
                             jaString = remaining[: len(remaining) - len(suffix)] if suffix else remaining
 
                             # Skip if IGNORETLTEXT is enabled and no Japanese text
-                            skip = IGNORETLTEXT and not _has_japanese_text(jaString)
+                            skip = IGNORETLTEXT and not _has_japanese_text(
+                                jaString, _command_source(codeList[i], 3, "Text:json")
+                            )
                             if not skip and jaString.strip():
                                 # Pass 1
                                 if setData:
@@ -4977,7 +5100,9 @@ def _searchCodes(page, pbar, jobList, filename):
                         continue
 
                     # Skip if IGNORETLTEXT is enabled and no Japanese text
-                    if IGNORETLTEXT and not _has_japanese_text(kvValue):
+                    if IGNORETLTEXT and not _has_japanese_text(
+                        kvValue, _command_source(codeList[i], 0)
+                    ):
                         i += 1
                         continue
 
@@ -5209,7 +5334,9 @@ def _searchCodes(page, pbar, jobList, filename):
                                 textMatch = re.search(regex, param)
                                 if textMatch:
                                     text = _pat355655_captured_text(textMatch)
-                                    if not (IGNORETLTEXT and not _has_japanese_text(text)):
+                                    if not (IGNORETLTEXT and not _has_japanese_text(
+                                        text, _command_source(codeList[j], 0)
+                                    )):
                                         textLines.append(text)
                                         textLineIndices.append(j)
                                 j += 1
@@ -5258,7 +5385,9 @@ def _searchCodes(page, pbar, jobList, filename):
                                 if not re.search(r'[a-zA-Z一-龠ぁ-ゔァ-ヴーａ-ｚＡ-Ｚ０-９\uFF61-\uFF9F]', cap):
                                     continue
 
-                                if IGNORETLTEXT and not _has_japanese_text(cap):
+                                if IGNORETLTEXT and not _has_japanese_text(
+                                    cap, _command_source(codeList[i], 0)
+                                ):
                                     continue
 
                                 if setData:
@@ -5304,7 +5433,9 @@ def _searchCodes(page, pbar, jobList, filename):
                         for s in strings:
                             if not re.search(r'[a-zA-Z一-龠ぁ-ゔァ-ヴーａ-ｚＡ-Ｚ０-９\uFF61-\uFF9F]', s):
                                 continue
-                            if IGNORETLTEXT and not _has_japanese_text(s):
+                            if IGNORETLTEXT and not _has_japanese_text(
+                                s, _command_source(codeList[i], 0)
+                            ):
                                 continue
                             translatable.append(s)
                         
@@ -5314,7 +5445,9 @@ def _searchCodes(page, pbar, jobList, filename):
                         if nameMatch:
                             n = nameMatch.group(1)
                             if re.search(r'[a-zA-Z一-龠ぁ-ゔァ-ヴーａ-ｚＡ-Ｚ０-９\uFF61-\uFF9F]', n):
-                                if not (IGNORETLTEXT and not _has_japanese_text(n)):
+                                if not (IGNORETLTEXT and not _has_japanese_text(
+                                    n, _command_source(codeList[i], 0)
+                                )):
                                     nameStr = n
                                     response = getSpeaker(n)
                                     translatedName = response[0]
@@ -5365,7 +5498,9 @@ def _searchCodes(page, pbar, jobList, filename):
                                 continue
                             if not re.search(r'[a-zA-Z一-龠ぁ-ゔァ-ヴーａ-ｚＡ-Ｚ０-９\uFF61-\uFF9F]', s):
                                 continue
-                            if IGNORETLTEXT and not _has_japanese_text(s):
+                            if IGNORETLTEXT and not _has_japanese_text(
+                                s, _command_source(codeList[i], 0)
+                            ):
                                 continue
                             translatable.append(s)
                             translatableIndices.append(idx)
@@ -5484,7 +5619,9 @@ def _searchCodes(page, pbar, jobList, filename):
                     match355 = re.search(mtxtRegex, jaString)
                     if match355:
                         text = match355.group(1)
-                        if not (IGNORETLTEXT and not _has_japanese_text(text)):
+                        if not (IGNORETLTEXT and not _has_japanese_text(
+                            text, _command_source(codeList[i], 0)
+                        )):
                             textLines.append(text)
                             textLineIndices.append(i)
 
@@ -5496,7 +5633,9 @@ def _searchCodes(page, pbar, jobList, filename):
                             textMatch = re.search(mtxtRegex, param)
                             if textMatch:
                                 text = textMatch.group(1)
-                                if not (IGNORETLTEXT and not _has_japanese_text(text)):
+                                if not (IGNORETLTEXT and not _has_japanese_text(
+                                    text, _command_source(codeList[j], 0)
+                                )):
                                     textLines.append(text)
                                     textLineIndices.append(j)
                         j += 1
@@ -5569,7 +5708,9 @@ def _searchCodes(page, pbar, jobList, filename):
                     if nameMatch:
                         n = nameMatch.group(1)
                         if re.search(r'[a-zA-Z一-龠ぁ-ゔァ-ヴーａ-ｚＡ-Ｚ０-９\uFF61-\uFF9F]', n):
-                            if not (IGNORETLTEXT and not _has_japanese_text(n)):
+                            if not (IGNORETLTEXT and not _has_japanese_text(
+                                n, _command_source(codeList[i], 0)
+                            )):
                                 nameStr = n
                                 response = getSpeaker(n)
                                 translatedName = response[0]
@@ -5580,7 +5721,9 @@ def _searchCodes(page, pbar, jobList, filename):
                     if textMatch:
                         t = textMatch.group(1)
                         if re.search(r'[a-zA-Z一-龠ぁ-ゔァ-ヴーａ-ｚＡ-Ｚ０-９\uFF61-\uFF9F]', t):
-                            if not (IGNORETLTEXT and not _has_japanese_text(t)):
+                            if not (IGNORETLTEXT and not _has_japanese_text(
+                                t, _command_source(codeList[i], 0)
+                            )):
                                 textStr = t
 
                     if textStr or nameStr:
@@ -6028,7 +6171,9 @@ def _searchCodes(page, pbar, jobList, filename):
 
                     for match in matchList:
                         # Skip if IGNORETLTEXT is enabled and no Japanese text
-                        if IGNORETLTEXT and not _has_japanese_text(match):
+                        if IGNORETLTEXT and not _has_japanese_text(
+                            match, _command_source(codeList[i], j)
+                        ):
                             continue
 
                         # Look up translation from code 122 cache (file-backed)
@@ -6519,7 +6664,7 @@ def searchSS(state, pbar):
             for m in matches:
                 match_text = m if isinstance(m, str) else m[0]
                 # Skip if IGNORETLTEXT is enabled and no Japanese text
-                if IGNORETLTEXT and not _has_japanese_text(match_text):
+                if IGNORETLTEXT and not _has_japanese_text(match_text, _note_source(state)):
                     continue
                 notesBatch.append(match_text)
                 notesBatchMap.append((regex, match_text, wordwrap))

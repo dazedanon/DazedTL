@@ -75,9 +75,13 @@ BATTLE_MESSAGE_USERS = "battle-message-users-v2"
 # reads as Japanese, the rule Guided's line counts share, and finished labels
 # and map names are not sent again. A run frozen without it reads Japanese by
 # LANGREGEX and sends map names and labels on every pass.
-SOURCE_TEXT = "source-letters-v3"
+SOURCE_TEXT = "source-letters-v4"
 # Each source-text policy a saved run may hold, by the engine level it
-# enables: v3 reads a value for the run's language pair, so a Chinese
+# enables: v4 reads a value that keeps no source of its own against the
+# game's original files, staged in the run's folder, so a Chinese plugin
+# command argument, script string or label reads translated and a name
+# translated before it kept a source keeps the original's; v3 reads a value
+# for the run's language pair, so a Chinese
 # translation's hanzi read translated and only its kana left; v2 reads a
 # value against the Japanese it was translated from, so a lone kana or mark
 # the source holds, such as a kaomoji's ﾉ, reads translated, and the run
@@ -86,7 +90,8 @@ SOURCE_TEXT = "source-letters-v3"
 SOURCE_TEXT_LEVELS = {
     "source-letters-v1": 1,
     "source-letters-v2": 2,
-    SOURCE_TEXT: 3,
+    "source-letters-v3": 3,
+    SOURCE_TEXT: 4,
 }
 # Each battle-message-users policy a saved run may hold, by the parser level it
 # enables: v2 also treats a party of one actor as that actor.

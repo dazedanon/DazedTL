@@ -18,6 +18,7 @@ has.
 
 from __future__ import annotations
 
+import hashlib
 import stat
 import uuid
 from contextlib import contextmanager
@@ -196,6 +197,69 @@ def recorded_now(root):
         root, original_files.PREPARED, _current_version(root)
     ) or original_files.chosen(root, original_files.FOUND)
     return row.commit if row else None
+
+
+def stage(
+    root,
+    names,
+    current,
+    target,
+    *,
+    data=None,
+    plugins=False,
+    stopped=lambda: False,
+):
+    """Writes under `target`, laid out as the game is (`data/<name>`,
+    `js/plugins.js`; engine util/original_values), the recorded original of
+    each data file of `names`, such as Map001.json, whose copy in the folder
+    `current` differs from it, and with `plugins` the original plugin list
+    where the game's differs. `data` is the game's data folder, else the
+    record's `data` or `www/data`. Writes nothing for a game whose original
+    files are not recorded, or not yet; returns whether they are."""
+    root = Path(root)
+    commit = recorded_now(root) if original_files.recorded(root) else None
+    if commit is None:
+        return False
+    entries = original_files.files(root, commit)
+    if data is not None:
+        folder = Path(data).resolve().relative_to(root.resolve()).as_posix()
+        prefix = "" if folder == "." else folder.removesuffix("data")
+    else:
+        prefix = next(
+            (
+                prefix
+                for prefix in ("", "www/")
+                if any(f"{prefix}data/{name}" in entries for name in names)
+            ),
+            "",
+        )
+    wanted = [
+        (f"{prefix}data/{name}", Path(current) / name, f"data/{name}") for name in names
+    ]
+    if plugins:
+        wanted.append(
+            (f"{prefix}js/plugins.js", root / prefix / "js/plugins.js", "js/plugins.js")
+        )
+    rows = []
+    for name, path, staged in wanted:
+        if name not in entries:
+            continue
+        _mode, blob, size = entries[name]
+        if _blob(path, len(blob)) != blob:
+            rows.append((blob, staged, size))
+    original_files.write(root, rows, target, stopped)
+    return True
+
+
+def _blob(path, length):
+    """The Git blob ID of the file at `path` in a repository whose IDs are
+    `length` hex digits long, or None without the file."""
+    try:
+        raw = Path(path).read_bytes()
+    except OSError:
+        return None
+    digest = hashlib.sha256 if length == 64 else hashlib.sha1
+    return digest(b"blob %d\0" % len(raw) + raw).hexdigest()
 
 
 def under_patch(

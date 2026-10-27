@@ -19,7 +19,10 @@ TASK_SCHEMA = "rpgmaker-qa-task-v3"
 # without a bump. Tasks from before this version was kept, up to 2.24.0,
 # count as version 1. Version 2 reads Japanese left against each line's source
 # in the game's language pair, so a Chinese translation's hanzi are no residue.
-QA_RULES_VERSION = 2
+# Version 3 reads data, plugin settings and custom data that keep no source
+# against the game's original files, so the never-translated report leaves
+# out a Chinese translation of them.
+QA_RULES_VERSION = 3
 CHECKPOINT_SCHEMA = "rpgmaker-qa-checkpoint-v3"
 BUNDLE_SCHEMA = "rpgmaker-qa-bundle-v3"
 SCREEN_RESULT_SCHEMA = "rpgmaker-qa-screen-result-v2"

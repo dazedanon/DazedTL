@@ -20,6 +20,8 @@ from pathlib import Path
 from typing import Any, Callable, Iterable
 
 from util import rpgmaker_blocks as blocks
+from util.original_values import Mirror, Originals, at
+from util.original_values import source as differing
 from util.rpgmaker_markers import (
     MARKER_SETTINGS,
     SUPPORTED_CODE408_MARKERS,
@@ -28,7 +30,7 @@ from util.rpgmaker_markers import (
 )
 from util.rpgmaker_qa_reach import MAY_SHOW, Reach
 from util.rpgmaker_scope import kept
-from util.source_text import holds_source, words_left
+from util.source_text import source_left, words_left
 
 _MAP_RE = re.compile(r"Map\d+\.json")
 # Plugin parameters that hold code or an asset path rather than text.
@@ -220,13 +222,35 @@ def _system_source(original: Any, path: tuple) -> str | None:
 
 
 def _untranslated(
-    name: str, document: Any, covered: set[str], markers: frozenset[str], rows: list
+    name: str,
+    document: Any,
+    covered: set[str],
+    markers: frozenset[str],
+    rows: list,
+    original: Any = None,
 ) -> None:
+    """The texts of one data file never translated: those that keep no
+    source and read left against the game's *original* file where it gives
+    one (util/original_values). A message's or comment's rows read without
+    it, since translation may change how many there are."""
+    mirror = Mirror(document, original) if original is not None else None
     for path, value, kind, translated, _source in visible_texts(
         name, document, markers
     ):
-        if not translated and words_left(value) and pointer(path) not in covered:
+        if translated or pointer(path) in covered:
+            continue
+        source = None
+        if mirror is not None and kind != "comment text":
+            command = at(document, path[:-2]) if kind == "event text" else None
+            if not (isinstance(command, dict) and command.get("code") in (401, 405)):
+                source = mirror.source(at(document, path[:-1]), path[-1])
+        if words_left(value, source):
             _entry(rows, name, path, value, kind)
+
+
+def _leaf_sources(original: Any) -> dict[tuple, str]:
+    """Every string of an original value by its path (`_leaves`)."""
+    return {} if original is None else dict(_leaves(original))
 
 
 def _text(value: str) -> str:
@@ -242,18 +266,37 @@ def _text(value: str) -> str:
         value = inner
 
 
-def _settings(entries: list[Any]) -> list[tuple[tuple, str]]:
+def _settings(
+    entries: list[Any], originals: Iterable[Any] | None = None
+) -> list[tuple[tuple, str]]:
     """Each turned-on plugin's Japanese settings that may be text players
     read, rather than code, an asset path or the comment markers it looks
-    for, by where they are."""
+    for, by where they are. A setting reads against the game's original
+    plugin list where it gives one (util/original_values): the setting of
+    the plugin at the same place, or of the one plugin of that name."""
+    original = list(originals or ())
+    named: dict[Any, list[Any]] = {}
+    for plugin in original:
+        if isinstance(plugin, dict):
+            named.setdefault(plugin.get("name"), []).append(plugin)
     found = []
-    for plugin in entries:
+    for index, plugin in enumerate(entries):
         if not isinstance(plugin, dict) or plugin.get("status") is not True:
             continue
+        counterpart = original[index] if index < len(original) else None
+        if not (
+            isinstance(counterpart, dict)
+            and counterpart.get("name") == plugin.get("name")
+        ):
+            same = named.get(plugin.get("name"), [])
+            counterpart = same[0] if len(same) == 1 else None
+        sources = _leaf_sources(
+            counterpart.get("parameters") if counterpart is not None else None
+        )
         for parts, value in _leaves(plugin.get("parameters") or {}):
             if (
                 parts[0] not in MARKER_SETTINGS
-                and holds_source(value)
+                and source_left(value, differing(value, sources.get(parts)))
                 and not _SCRIPT_RE.search(value)
                 and not _ASSET_PATH_RE.match(value)
             ):
@@ -277,12 +320,16 @@ def preflight(
     data_root: str | Path,
     manifest: dict[str, Any],
     kept: Iterable[dict[str, Any]] = (),
+    originals: Originals | None = None,
 ) -> dict[str, Any]:
     """Japanese that players may read and the QA inventory does not hold.
 
     *kept* names the plugin settings the plugin task keeps in Japanese on
     purpose, each by plugin, parameter path and the value it decided on; a
-    setting is left out while it still holds that value.
+    setting is left out while it still holds that value. A text that keeps
+    no source reads against the game's *originals* where they give one, so
+    a translation that keeps the source's kanji, as Chinese does, reads
+    translated.
     """
     data = Path(data_root).expanduser().resolve()
     covered: dict[str, set[str]] = {}
@@ -304,13 +351,15 @@ def preflight(
                 covered.get(path.name, set()),
                 markers,
                 rows["untranslated"],
+                originals.data(path.name) if originals else None,
             )
             reach.scan(path.name, document)
         else:
+            sources = _leaf_sources(originals.data(path.name) if originals else None)
             for parts, value in _leaves(document):
-                if holds_source(value):
+                if source_left(value, differing(value, sources.get(parts))):
                     _entry(rows["custom_data"], path.name, parts, value, "custom data")
-    settings = _settings(entries)
+    settings = _settings(entries, originals.plugins() if originals else None)
     plugins = {
         "reach": {
             name: list(reach.plugin(name))

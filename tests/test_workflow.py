@@ -1042,6 +1042,39 @@ class WorkflowTests(unittest.TestCase):
             job = self.service.operation(self.identity, action, {})
             self.assertEqual(job["action"], action)
 
+    def test_originals_stage_only_the_files_a_translation_changed(self):
+        # A run reads a value that keeps no source of its own against the
+        # game's original file (engine util/original_values): the record's
+        # files that differ from the game's are staged, laid out as the game
+        # is, and a game whose originals are not recorded stages none.
+        from dazedtl.translation import originals
+
+        with TemporaryDirectory() as folder:
+            game, staged = Path(folder) / "game", Path(folder) / "staged"
+            for name, text in (
+                ("www/data/Map001.json", "はじまりの村"),
+                ("www/data/Map002.json", "森"),
+                ("www/js/plugins.js", "var $plugins = [];"),
+            ):
+                (game / name).parent.mkdir(parents=True, exist_ok=True)
+                (game / name).write_text(text, encoding="utf-8")
+            names = ["Map001.json", "Map002.json"]
+            self.assertFalse(originals.stage(game, names, game / "www/data", staged))
+            original_files.record(game, original_files.FOUND)
+            (game / "www/data/Map001.json").write_text("起始之村", encoding="utf-8")
+            self.assertTrue(
+                originals.stage(game, names, game / "www/data", staged, plugins=True)
+            )
+            self.assertEqual(
+                sorted(
+                    path.relative_to(staged).as_posix() for path in staged.rglob("*.*")
+                ),
+                ["data/Map001.json"],
+            )
+            self.assertEqual(
+                (staged / "data/Map001.json").read_text("utf-8"), "はじまりの村"
+            )
+
     def test_start_over_restores_the_original_and_sets_the_attempt_aside(self):
         # Starting over must put every original file back as one checkpoint,
         # keeping the attempt in the game's Git history and the record of its

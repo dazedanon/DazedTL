@@ -22,6 +22,29 @@ DECLINED_SPEAKERS = (
 )
 
 
+def stage_originals(directory, plan, policy):
+    """Stages in a run's folder the game's recorded originals of its files
+    (translation/originals `stage`), for an RPG Maker MV/MZ run whose
+    frozen request policy reads them (engine util/original_values); a run
+    of a game whose originals are not recorded reads without them."""
+    from util.original_values import FOLDER
+
+    from dazedtl.settings.preferences import SOURCE_TEXT_LEVELS
+    from dazedtl.translation import originals
+
+    level = SOURCE_TEXT_LEVELS.get(str((policy or {}).get("sourceText")), 0)
+    if plan.get("engine") != "RPG Maker MV/MZ" or level < 4:
+        return
+    if not plan.get("context_source"):
+        return
+    originals.stage(
+        plan["context_source"],
+        [item["name"] for item in plan["files"]],
+        plan["source"],
+        Path(directory) / FOLDER,
+    )
+
+
 def canceled_before_submission(job, directory, *, finishing=False):
     """Recognize an explicit declined preflight, never a generic worker failure."""
     logs = job.get("log")
@@ -564,5 +587,6 @@ def manual_jobs(source, workspace, lock, allow_providers):
                     )
                 # Included before the native plan hash is computed and launch starts.
                 plan["dazedtl_request_policy"] = deepcopy(self.request_policy)
+            stage_originals(directory, plan, self.request_policy)
 
     return ManualJobs(workspace, lock, allow_providers=allow_providers)

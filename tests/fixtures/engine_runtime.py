@@ -3316,7 +3316,7 @@ try:
             answers = [replied(value) for value in values]
             return [answers if isinstance(text, list) else answers[0], [0, 0]]
 
-        def engine_pass(file, document, vxace):
+        def engine_pass(file, document, vxace, **settings):
             kind = str(parser.mvmz_file_kind(file))
             parsers = {
                 "Map": parser.parseMap,
@@ -3334,11 +3334,14 @@ try:
                     if file in DB_FILES
                     else {**PHASE1_CONFIG, "CODE408": True}
                 ),
+                **settings,
             }
             sent.clear()
             with (
                 patch.multiple(parser, **options),
                 patch.dict(os.environ, {"DAZED_GAME_ROOT": str(lines_game)}),
+                # As openFiles reads a file, against its staged original.
+                parser._MIRRORS.opened(parser._mirror(file, document)),
             ):
                 if kind in parsers:
                     result = parsers[kind](document, file)
@@ -3630,6 +3633,56 @@ try:
                     {**policy, "sourceText": "source-letters-v2"},
                 )
                 assert len(engine_pass("Map004.json", chinese, False)) == 7
+
+            # A map translated before names kept their source keeps none,
+            # nor do a note label and a plugin command's argument: read
+            # against the game's original file, which the app stages in the
+            # run's folder, none is sent again, and the map and the <LB>
+            # event keep the original's name as their source. Runs frozen
+            # with the third source-text policy send them again.
+            def upgraded(name, label, sign, message):
+                event = deepcopy(variant_events[0])
+                event.update(id=1, name=label, note=f"<LB><dn:{sign}>")
+                event["pages"][0]["list"] = [
+                    step(
+                        357,
+                        "TorigoyaMZ_NotifyMessage",
+                        "notify",
+                        "",
+                        {"message": message},
+                    ),
+                    step(0),
+                ]
+                return {"displayName": name, "events": [None, event]}
+
+            staged = lines_game / "originals/data"
+            staged.mkdir(parents=True)
+            (staged / "Map007.json").write_text(
+                json.dumps(
+                    upgraded("はじまりの村", "旅人の家", "古い井戸", "ようこそ")
+                ),
+                "utf-8",
+            )
+            chinese = upgraded("起始之村", "旅人之家", "古井", "欢迎")
+            configure_states(
+                {"engine": "MVMZ"}, temporary, {**policy, "sourceText": SOURCE_TEXT}
+            )
+            with reading("Japanese", "Chinese"):
+                older = deepcopy(chinese)
+                assert engine_pass("Map007.json", chinese, False, CODE357=True) == []
+                assert chinese["_original"] == {"displayName": "はじまりの村"}
+                assert chinese["events"][1]["_original"] == {"name": "旅人の家"}
+                configure_states(
+                    {"engine": "MVMZ"},
+                    temporary,
+                    {**policy, "sourceText": "source-letters-v3"},
+                )
+                assert engine_pass("Map007.json", older, False, CODE357=True) == [
+                    "起始之村",
+                    "旅人之家",
+                    "古井",
+                    "欢迎",
+                ]
             configure_states(
                 {"engine": "MVMZ"}, temporary, {**policy, "sourceText": SOURCE_TEXT}
             )

@@ -19,11 +19,15 @@ source, as a Chinese one keeps a name's kanji, the map or event keeps that
 source in its own `_original`, under the field holding it (:func:`kept`), so
 the translation reads translated. A note label reads against the note an
 event keeps, such as an assistant's write keeps; the engine keeps none, since
-a note holds other tags too.
+a note holds other tags too. Where a map or event keeps no source, a reader
+holding the game's original map gives it from there (util/original_values),
+as its *original*.
 """
 
 import re
 from typing import Any, NamedTuple
+
+from util.original_values import source as differing
 
 # Note tags whose text a plugin shows over the event, in the order the
 # engine translates them.
@@ -80,20 +84,35 @@ class Label(NamedTuple):
     source: str | None = None
 
 
-def kept(owner: Any, field: str) -> str | None:
+def kept(owner: Any, field: str, original: Any = None) -> str | None:
     """The source a map or event keeps for its *field* in `_original`, as
-    the field held it before a translation that kept letters of it; None
-    where it keeps none."""
-    original = owner.get("_original") if isinstance(owner, dict) else None
-    value = original.get(field) if isinstance(original, dict) else None
-    return value if isinstance(value, str) else None
+    the field held it before a translation that kept letters of it; else,
+    given the map or event in the game's *original* file, its field there
+    where it differs (util/original_values `source`); None without one."""
+    record = owner.get("_original") if isinstance(owner, dict) else None
+    value = record.get(field) if isinstance(record, dict) else None
+    if isinstance(value, str):
+        return value
+    if isinstance(owner, dict) and isinstance(original, dict):
+        return differing(owner.get(field), original.get(field))
+    return None
 
 
-def tag_source(event: Any, tag: re.Pattern[str]) -> str | None:
+def tag_source(
+    event: Any, tag: re.Pattern[str], original: Any = None
+) -> str | None:
     """The source of the label note *tag* finds in an event's note, as the
-    note the event keeps has it, or None."""
+    note the event keeps has it, else as the event's *original* note has it
+    where it differs; or None."""
     source = kept(event, "note")
-    match = tag.search(source) if source is not None else None
+    if source is None:
+        source = original.get("note") if isinstance(original, dict) else None
+        if not isinstance(source, str):
+            return None
+        match = tag.search(note(event))
+        found = tag.search(source)
+        return differing(match[1], found[1]) if match and found else None
+    match = tag.search(source)
     return match[1] if match else None
 
 
@@ -103,16 +122,17 @@ def note(event: Any) -> str:
     return value if isinstance(value, str) else "" if value is None else str(value)
 
 
-def labels(event: Any) -> list[Label]:
+def labels(event: Any, original: Any = None) -> list[Label]:
     """The labels a map event shows: its name under <LB>, then the first
-    text of each note tag."""
+    text of each note tag, each with its source (:func:`kept`), from the
+    event's *original* where it keeps none."""
     found = []
     text = note(event)
     name = event.get("name") if isinstance(event, dict) else None
     if NAME_TAG in text and isinstance(name, str) and name:
-        found.append(Label("name", name, kept(event, "name")))
+        found.append(Label("name", name, kept(event, "name", original)))
     for tag in NOTE_TAGS:
         match = tag.search(text)
         if match:
-            found.append(Label("note", match[1], tag_source(event, tag)))
+            found.append(Label("note", match[1], tag_source(event, tag, original)))
     return found
