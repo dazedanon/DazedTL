@@ -395,6 +395,64 @@ class CensusTests(unittest.TestCase):
         _report, uncovered = census.coverage(scan(game), sources[:3], [], [])
         self.assertEqual(uncovered, [])
 
+    def test_plugins_count_as_the_game_loads_them(self):
+        # The assistant translated plugins the game never runs: a disabled
+        # entry, a plugin's later entry, DazedTL's own update check, and the
+        # choice help markers MPP_ChoiceEX finds its comments by.
+        plugins = [
+            {"name": "Old", "status": False, "parameters": {"text": "古い文章"}},
+            {"name": "Hud", "status": True, "parameters": {"label": "所持金"}},
+            {"name": "Hud", "status": True, "parameters": {"label": "使わない"}},
+            {"name": "Dazed_Update", "status": True, "parameters": {"t": "更新"}},
+            {
+                "name": "MPP_ChoiceEX",
+                "status": True,
+                "parameters": {"Choice Help Commands": '["選択肢ヘルプ"]'},
+            },
+        ]
+        game = {
+            "www/js/plugins.js": f"var $plugins =\n{json.dumps(plugins)};\n".encode(),
+            "www/js/plugins/Old.js": 'var a = "古い";'.encode(),
+            "www/js/plugins/Hud.js": 'var b = "表示";'.encode(),
+            "www/js/plugins/Dazed_Update.js": 'var c = "更新";'.encode(),
+        }
+        data = {name: value for name, value in game.items()}
+        result = census.scan(
+            sorted(data),
+            data.__getitem__,
+            Decoders(),
+            own=["www/js/plugins/Dazed_Update.js"],
+        )
+        counted = {(entry["file"], *entry["runs"]) for entry in result["entries"]}
+        self.assertEqual(
+            counted,
+            {
+                ("www/js/plugins.js", "所持金"),
+                ("www/js/plugins.js", "選択肢ヘルプ"),
+                ("www/js/plugins/Hud.js", "表示"),
+            },
+        )
+        report, uncovered = census.coverage(result, ["所持金", "表示"], [], [])
+        self.assertEqual((uncovered, report["set_aside"]), ([], 1))
+        # MZ loads one plugin by its file name, whatever folder it is in.
+        plugins[2]["name"] = "Other/Hud"
+        game["www/js/plugins.js"] = f"var $plugins =\n{json.dumps(plugins)};\n".encode()
+        for core, runs in (
+            ({}, {"所持金", "使わない"}),
+            ({"www/js/rmmz_core.js": b""}, {"所持金"}),
+        ):
+            files = {**game, **core}
+            loaded = census.scan(sorted(files), files.__getitem__, Decoders())
+            self.assertEqual(
+                {
+                    run
+                    for entry in loaded["entries"]
+                    if entry["field"].endswith("/label")
+                    for run in entry["runs"]
+                },
+                runs,
+            )
+
     def test_an_english_game_counts_its_english_and_units_cover_it(self):
         # An English game's text is Latin letters: none of it may read as
         # finished, and codes, tags and Japanese are no English runs.

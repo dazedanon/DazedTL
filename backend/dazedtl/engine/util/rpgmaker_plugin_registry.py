@@ -9,6 +9,7 @@ import stat
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Iterable
 
 import jsbeautifier
 from util import system
@@ -269,6 +270,28 @@ def loaded_entries(content: str) -> tuple[dict, ...]:
     last entry; only edits need the stricter layout (see plugin_entries)."""
     array_start = _assignment_array_start(content)
     return tuple(entry.value for entry in _read_entries(content, array_start, len(content)))
+
+
+def loads(entries: Iterable[object], mz: bool) -> tuple[bool, ...]:
+    """Whether the game loads each entry of its plugin list, in order: the
+    first enabled entry of a plugin, never a disabled one or a later entry
+    of the same plugin, such as an empty divider plugin listed many times.
+    MZ (*mz*) compares file names, so Author/Plugin and Other/Plugin are one
+    plugin there. The one loader rule for what a game runs."""
+    loaded, flags = set(), []
+    for entry in entries:
+        name = entry.get("name") if isinstance(entry, dict) else None
+        key = name.rsplit("/", 1)[-1] if mz and isinstance(name, str) else name
+        load = (
+            isinstance(entry, dict)
+            and entry.get("status") is True
+            and isinstance(name, str)
+            and key not in loaded
+        )
+        if load:
+            loaded.add(key)
+        flags.append(load)
+    return tuple(flags)
 
 
 def entry_texts(content: str) -> tuple[tuple[dict, str], ...]:

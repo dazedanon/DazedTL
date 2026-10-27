@@ -920,11 +920,9 @@ class PluginService:
                 "enabled": True,
             }
         }
-        # The game loads the first enabled entry of a plugin and skips later
-        # ones, such as an empty divider plugin listed many times. MZ compares
-        # file names, so Author/Plugin and Other/Plugin are one plugin there.
-        mz = (root / (prefix + "js/rmmz_core.js")).is_file()
-        loaded, statuses = set(), {}
+        from util.rpgmaker_markers import MZ_CORE
+        from util.rpgmaker_plugin_registry import loads
+
         for entry in parsed["plugins"]:
             if (
                 not isinstance(entry, dict)
@@ -934,12 +932,14 @@ class PluginService:
                 raise ValueError(
                     "Every plugin entry needs a static name, status and parameter object."
                 )
-            name = safe_name(entry.get("name"))
-            key = name.rsplit("/", 1)[-1] if mz else name
-            entry["loads"] = entry["status"] and key not in loaded
-            if entry["loads"]:
-                loaded.add(key)
-            statuses[name] = statuses.get(name, False) or entry["loads"]
+            safe_name(entry.get("name"))
+        mz = (root / (prefix + MZ_CORE)).is_file()
+        statuses = {}
+        for entry, load in zip(
+            parsed["plugins"], loads(parsed["plugins"], mz), strict=True
+        ):
+            entry["loads"] = load
+            statuses[entry["name"]] = statuses.get(entry["name"], False) or load
         for name, enabled in statuses.items():
             path = prefix + "js/plugins/" + name + ".js"
             # A listed plugin whose file is gone has no text to translate.

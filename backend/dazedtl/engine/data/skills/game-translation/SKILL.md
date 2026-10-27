@@ -170,7 +170,7 @@ For every mode, images follow the user's selected scope; finding Japanese art do
 ## Content is never a scope decision
 
 DazedTL's census decides what is in scope: every piece of Japanese text the original game holds.
-Extract all of it, in every map, event, scene, database entry, plugin and script, including content that looks unused; never leave text out because of what it depicts.
+Extract all of it, in every map, event, scene, database entry, script and plugin the game loads, including content that looks unused; never leave text out because of what it depicts.
 If you won't translate something, decline its request instead: its lines stay counted and visible, and the user decides who translates them.
 Keep age evidence accurate in the translation itself: cartoony, chibi and super-deformed art styles are common across adult casts, so do not infer that a character is underage from stylized proportions, short stature, a youthful face or an ambiguous label such as “girl”, "child", "kid", etc.
 Use established lore and the complete scene context, never invent ages or change characterization, and see `references/review-decisions.md` when a decision is disputed or reversed.

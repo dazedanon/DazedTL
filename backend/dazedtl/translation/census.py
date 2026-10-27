@@ -31,7 +31,9 @@ from dazedtl.languages import (
 # Raised whenever the census counts text it did not before, so a saved
 # census reads out of date and is counted again (operations.census_stale).
 # 2: comment lines a game's plugins show players, such as choice help.
-VERSION = 2
+# 3: only the plugins the game loads, without DazedTL's own Set up files, and
+#    the comment markers a plugin's settings list set aside.
+VERSION = 3
 
 _RUN = re.compile(source_pattern("census_run", JAPANESE))
 _WORD = re.compile(source_pattern("census_word", JAPANESE))
@@ -281,25 +283,41 @@ def read_json(name, text, markers=frozenset()):
     return [(kind, *row) for row in walk(document, shown=shown)]
 
 
-def read_plugins(text):
-    """MV/MZ js/plugins.js: the $plugins array, with struct parameters that
-    are themselves JSON read in place."""
+# The field segment of a plugin setting that lists the comment markers whose
+# lines the plugin shows (rpgmaker_markers.MARKER_SETTINGS); the plugin finds
+# the comments by them, so they stay as the game wrote them.
+MARKER_SETTING = "[markers]"
+
+
+def read_plugins(text, mz=False, own=frozenset()):
+    """MV/MZ js/plugins.js: the entries of the $plugins array the game loads
+    (rpgmaker_plugin_registry.loads; *mz* for MZ's rule), with struct
+    parameters that are themselves JSON read in place. Entries of DazedTL's
+    own plugins, named in *own* in lower case, hold no game text."""
+    from util.rpgmaker_markers import MARKER_SETTINGS
+    from util.rpgmaker_plugin_registry import loads
+
     start, end = text.find("["), text.rfind("]")
     plugins = _json(text[start : end + 1]) if 0 <= start < end else None
     if not isinstance(plugins, list):
         return None
     rows = []
-    for index, plugin in enumerate(plugins):
-        if not isinstance(plugin, dict):
+    for index, (plugin, load) in enumerate(
+        zip(plugins, loads(plugins, mz), strict=True)
+    ):
+        if not load or plugin["name"].casefold() in own:
             continue
-        name = str(plugin.get("name", ""))
+        name = plugin["name"]
         if isinstance(plugin.get("description"), str):
             rows.append(
                 (f"{index}/description", f"{name}/description", plugin["description"])
             )
         parameters = plugin.get("parameters")
         for key, raw in (parameters if isinstance(parameters, dict) else {}).items():
-            key = key if _KEY.fullmatch(key) else "*"
+            if key in MARKER_SETTINGS:
+                key = MARKER_SETTING
+            elif not _KEY.fullmatch(key):
+                key = "*"
             rows.extend(_parameter(raw, f"{index}/parameters/{key}", f"{name}/{key}"))
     return [("rpgmaker:plugins", *row) for row in rows]
 
@@ -691,17 +709,20 @@ def read_wolf(document):
     return rows
 
 
-def read(name, data, beside_game=True, markers=frozenset()):
+def read(name, data, beside_game=True, markers=frozenset(), mz=False, own=frozenset()):
     """The rows of one readable game file, or None when it cannot be read;
     beside_game is False for a decoded dump, whose top files aren't readmes.
-    markers are the comment markers of the game's plugins (plugin_markers)."""
+    markers are the comment markers of the game's plugins (plugin_markers);
+    mz and own are read_plugins'."""
+    from util.rpgmaker_markers import PLUGIN_LIST
+
     suffix = PurePosixPath(name).suffix.casefold()
     text = decode_text(data)
     if text is None:
         return None
     lowered = "/" + name.casefold()
-    if lowered.endswith("/js/plugins.js"):
-        return read_plugins(text)
+    if lowered.endswith("/" + PLUGIN_LIST):
+        return read_plugins(text, mz, own)
     if suffix == ".json":
         return read_json(name, text, markers)
     if suffix == ".js":
@@ -922,6 +943,7 @@ BUILT_IN = [
         ]
     ),
     ("rpgmaker:plugins", "*/description", "not_displayed"),
+    ("rpgmaker:plugins", f"*/{MARKER_SETTING}/**", "identifier"),
     ("document", "line", "not_displayed"),
     ("*", "other_language", "other_language"),
     # Unity Addressables' catalog lists asset addresses.
@@ -1316,6 +1338,7 @@ def scan(
     progress=lambda _message: None,
     peek=None,
     language=JAPANESE,
+    own=(),
 ):
     """The census of a game's files.
 
@@ -1324,45 +1347,103 @@ def scan(
     archive. decoders: marshal(data) -> Marshal value, rgssad(data) ->
     [(name, data)] and wolf(names) -> [(name, document)] for WolfDawn files.
     decoded: (name, data) pairs of the assistant's decoded dump, if any.
+    own: DazedTL's own files Set up installed (len_patch_scope.setup_files),
+    which hold no game text.
     """
     found, unreadable, opened, needs_dump, wolf = [], [], [], [], []
     head = peek or (lambda name, size: load(name)[:size])
     from util.rpgmaker_markers import (
+        MZ_CORE,
         PLUGIN_LIST,
         beside_data,
         comment_markers,
         read_plugin_list,
     )
+    from util.rpgmaker_plugin_registry import loads
 
-    # Each MV/MZ plugin list by its name, and the comment markers it shows.
-    plugin_lists, markers = {}, {}
+    own = {name.casefold() for name in own}
+    own_plugins = frozenset(
+        PurePosixPath(name).stem
+        for name in own
+        if ("/" + name).rpartition("/")[0].endswith("/js/plugins")
+    )
+    names = [name for name in names if name.casefold() not in own]
+    # Each MV/MZ plugin list by its name, every file name seen, and by plugin
+    # list the comment markers its game shows and the plugins it lists and
+    # loads.
+    plugin_lists, known, games = {}, set(), {}
 
     def plugin_list(name, data):
-        if ("/" + name.casefold()).endswith("/" + PLUGIN_LIST):
+        known.add(name.casefold())
+        lowered = "/" + name.casefold()
+        if lowered.endswith("/" + PLUGIN_LIST):
             plugin_lists[name.casefold()] = data
-            markers.pop(name.casefold(), None)
+            games.pop(name.casefold(), None)
+        elif lowered.endswith("/" + MZ_CORE):
+            games.clear()
+
+    def game(key):
+        """What the plugin list *key* tells of its game: (comment markers,
+        whether it is MZ, the plugins it lists, the plugins it loads)."""
+        if key not in games:
+            data = plugin_lists.get(key)
+            text = decode_text(data() if callable(data) else data) if data else None
+            entries = read_plugin_list(text) if text else ()
+            mz = key.removesuffix(PLUGIN_LIST) + MZ_CORE in known
+            loaded = [
+                entry
+                for entry, load in zip(entries, loads(entries, mz), strict=True)
+                if load
+            ]
+            games[key] = (
+                comment_markers(loaded),
+                mz,
+                {
+                    entry["name"].casefold()
+                    for entry in entries
+                    if isinstance(entry.get("name"), str)
+                },
+                {entry["name"].casefold() for entry in loaded},
+            )
+        return games[key]
 
     def markers_for(name):
         """The comment markers of the game an MV/MZ data file is in, from
         the plugin list beside its data folder."""
         if not _rpgmaker_data(name):
             return frozenset()
-        key = beside_data(PurePosixPath(name).parent).as_posix().casefold()
-        if key not in markers:
-            data = plugin_lists.get(key)
-            text = decode_text(data() if callable(data) else data) if data else None
-            markers[key] = comment_markers(read_plugin_list(text) if text else ())
-        return markers[key]
+        return game(beside_data(PurePosixPath(name).parent).as_posix().casefold())[0]
+
+    def never_loaded(name):
+        """Whether *name* is the file of a plugin its game's plugin list names
+        but never loads, as Plugin files leaves it out."""
+        lowered = "/" + name.casefold()
+        at = lowered.rfind("/js/plugins/")
+        key = lowered[1 : at + 1] + PLUGIN_LIST
+        if at < 0 or not lowered.endswith(".js") or key not in plugin_lists:
+            return False
+        plugin = lowered[at + len("/js/plugins/") : -len(".js")]
+        _markers, _mz, listed, loaded = game(key)
+        return plugin in listed and plugin not in loaded
+
+    def plugin_file(name):
+        lowered = "/" + name.casefold()
+        return lowered.endswith("/" + PLUGIN_LIST) or "/js/plugins/" in lowered
 
     for name in names:
         plugin_list(name, lambda name=name: load(name))
 
     def take(name, data, source):
+        if never_loaded(name):
+            return
         if PurePosixPath(name).suffix.casefold() in {".rxdata", ".rvdata", ".rvdata2"}:
             try:
                 rows = read_marshal(name, marshal_tree(decoders.marshal(data)))
             except ValueError:
                 rows = None
+        elif ("/" + name.casefold()).endswith("/" + PLUGIN_LIST):
+            _markers, mz, _listed, _loaded = game(name.casefold())
+            rows = read(name, data, source == "tool", mz=mz, own=own_plugins)
         else:
             rows = read(name, data, source == "tool", markers_for(name))
         if rows is None:
@@ -1443,13 +1524,14 @@ def scan(
                 unreadable.append(name)
             else:
                 found.extend(entries(rows, name, "tool", language))
-    # A dump's MV/MZ data waits for its plugin list, which may come later.
+    # A dump's MV/MZ data and plugins wait for their plugin list and MZ's
+    # core script, which may come later.
     waiting = []
     for name, data in decoded or []:
         plugin_list(name, data)
-        if candidate(name) != "read":
+        if candidate(name) != "read" or name.casefold() in own:
             continue
-        if _rpgmaker_data(name):
+        if _rpgmaker_data(name) or plugin_file(name):
             waiting.append((name, data))
         else:
             take(name, data, "assistant_dump")

@@ -1,0 +1,22 @@
+{
+  "description": "A disabled plugin, OldTitle, and TitleMessage listed again with other text; the game loads neither, so the census and Plugin files leave both out.",
+  "plugins": [
+    {
+      "name": "OldTitle",
+      "status": false,
+      "description": "古いタイトル表示です。",
+      "parameters": {
+        "text": "使われない文章"
+      }
+    },
+    {
+      "name": "TitleMessage",
+      "status": true,
+      "description": "タイトルに文章を表示します",
+      "parameters": {
+        "text": "二度目の設定は読まれない",
+        "fontSize": "28"
+      }
+    }
+  ]
+}

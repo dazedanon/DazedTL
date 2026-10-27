@@ -80,7 +80,9 @@ def take_census(
     """The census of the untranslated game, read from its recorded prepared
     original rather than the working copy, which gains English as work goes
     on. The assistant's decoded dump, if named, adds engines the tool can't
-    decode itself."""
+    decode itself. DazedTL's own Set up files are no game text."""
+    from util.len_patch_scope import setup_files
+
     from . import census
 
     snapshot = originals.prepared(workspace, project_id, source, state)
@@ -114,6 +116,7 @@ def take_census(
             progress,
             snapshot.peek,
             game_source(source),
+            setup_files(source),
         )
     result.update(snapshot=snapshot.id, decoded_folder=decoded or None)
     write_json(census_path(workspace, project_id), result)

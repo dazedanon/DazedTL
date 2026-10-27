@@ -44,6 +44,9 @@ def comment_markers(entries: Iterable[Any]) -> frozenset[str]:
 
 
 PLUGIN_LIST = "js/plugins.js"
+# The core script an MZ game loads beside its plugin list, which tells MZ's
+# loader rule from MV's (rpgmaker_plugin_registry.loads).
+MZ_CORE = "js/rmmz_core.js"
 
 
 def read_plugin_list(text: str) -> tuple[dict, ...]:
