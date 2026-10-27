@@ -3878,6 +3878,11 @@ SPEAKER_CONTEXT = False
 # per run: older runs keep their request identities.
 SAME_LINE_SPEAKERS = False
 
+# A Name\m[N]\z[N] line is a nameplate only when a name comes before the
+# codes, so a message opening with them sends its first line. Frozen per run:
+# older runs keep reading that line as a nameplate and never send it.
+CODE_NAMEPLATES = False
+
 
 def _standalone_speaker(name):
     # Re-exported [Name] lines are implicit nameplates, unlike explicit 101
@@ -4248,7 +4253,7 @@ def _searchCodes(page, pbar, jobList, filename):
 
                 # m and z Codes
                 match = re.search(r"(.*?)[\\]+m\[\d+?\][\\]+z\[\d+?\]", speakerWork)
-                if match:
+                if match and (match.group(1).strip() or not CODE_NAMEPLATES):
                     speakerList.append(match.group(1))
                     if "\\c" in speakerList[0]:
                         speakerList = re.findall(
