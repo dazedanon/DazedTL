@@ -1,5 +1,14 @@
 <!-- The next release's notes; see docs/development.md#release-notes. -->
 
+### Added
+
+- **Assistant-led:** a **Release** tab builds a clean game ZIP, or saves your assistant's patch ZIP under a name and folder you choose, as Guided's Release does, for any engine; once your assistant has packaged the patch, the **Patch** phase on **Progress** shows its ZIP with **Open folder**.
+- **GameUpdate:** in Assistant-led, your assistant now adds GameUpdate to WOLF, Unity and TyranoScript games too, so players can update the patch; a WOLF translation then ships its data loose in the `Data` folder, since GameUpdate takes out a repacked `Data.wolf`.
+
+### Changed
+
+- **Release:** a patch ZIP built from the translation version you pushed for GameUpdate now carries its GameUpdate configuration, as the clean game ZIP does, so players who extract it can update with GameUpdate later.
+
 ### Fixed
 
 - **Assistant-led:** counting an RPG Maker MV/MZ game's text no longer stops at a broken event command in its data; the rest of the file is counted as before.
