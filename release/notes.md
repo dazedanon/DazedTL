@@ -12,6 +12,7 @@
 
 ### Fixed
 
+- **Translate:** in an RPG Maker MV/MZ game whose messages start with `\m[N]\z[N]` codes, the first line of a longer message is now translated instead of staying in Japanese however often you translate again. Cost estimates made before updating read as outdated once; runs you already approved or sent keep going as they were estimated.
 - **Release:** a clean game ZIP or patch ZIP now reads **Outdated** after a game update, a write or an undo that only adds files, such as new maps, instead of **Done**, in Guided and Assistant-led.
 - **Assistant-led:** counting an RPG Maker MV/MZ game's text no longer stops at a broken event command in its data; the rest of the file is counted as before.
 - **Images:** when a scan or a new image folder brings images your assistant hasn't examined yet, **Images** now asks to investigate them instead of reading **Done**, as the assistant's `images --status` already did, and look-alike image families only group images in the folder **Images** reads.
