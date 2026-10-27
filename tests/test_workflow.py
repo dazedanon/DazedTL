@@ -616,6 +616,9 @@ class WorkflowTests(unittest.TestCase):
         second, plan = organized()
         self.assertEqual([list(row["sources"]) for row in plan["requests"]], [["a/2"]])
         self.assertEqual(second["quote"]["units"], 1)
+        # Compiling organize's plan by hand made a run without the kept lines.
+        with self.assertRaisesRegex(ValueError, "Run organize --input"):
+            self.service.compile(self.identity, "./" + plan["input_path"])
         # Progress reads the kept line left and the others translated.
         index = read_json(self.game / EXPORT)
         self.assertEqual(

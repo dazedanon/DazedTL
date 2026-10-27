@@ -6,6 +6,7 @@ per-line facts the extractor recorded, so it works the same for every engine.
 """
 
 from math import ceil
+from pathlib import PurePosixPath
 
 from .files import digest
 from .project import WORK
@@ -309,6 +310,16 @@ def plan_path(value):
     """Plans are named by their content, so one an older run is bound to is
     never overwritten."""
     return PLANS + digest(value) + ".json"
+
+
+def owns(relative):
+    """Whether a game-relative path names one of organize's plans. Only
+    organize compiles them: its run also carries the lines it left out with
+    an earlier translation (run_compiler.compile_run's reused), which the
+    plan doesn't hold."""
+    return (
+        str(PurePosixPath(relative).parent).casefold() == PLANS.rstrip("/").casefold()
+    )
 
 
 def summary(units, value):

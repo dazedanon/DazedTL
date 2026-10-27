@@ -895,6 +895,12 @@ Additional project instructions:
         _record, project = self.project(project_id)
         if "input_path" in arguments:
             project.artifact(arguments["input_path"])
+            if action == "compile" and organize.owns(arguments["input_path"]):
+                # Its run would miss the lines organize kept from earlier
+                # requests, as would an estimate repeating such a compile.
+                raise ValueError(
+                    "This plan is organize's own, without the lines it kept from earlier requests. Run organize --input with your units file again; it compiles the plan itself."
+                )
         selected = project.read()["options"]
         cfg, batch_provider = self.api_configuration(
             mode or self.run_mode(project), project.root

@@ -116,17 +116,13 @@ async function startScreen(state) {
 async function openApp(state) {
   await startProvider(state);
   const env = await startScreen(state);
-  state.app = {
-    debug: await freePort(),
-    inspect: await freePort(),
-  };
-  state.app.pid = await startApp({
+  // An app that fails to start leaves no process or ports to reach.
+  state.app = {};
+  state.app = await startApp({
     root: state.root,
     profile: state.profile,
     tag: state.tag,
     log: path.join(state.work, "logs/app.log"),
-    debug: state.app.debug,
-    inspect: state.app.inspect,
     env: {
       ...env,
       // The OpenAI preset reaches the stand-in, which offers Batch offline;

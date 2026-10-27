@@ -24,7 +24,7 @@ import { extract } from "./tar.mjs";
 import { writeStaged } from "./update.mjs";
 import { entries } from "./zip.mjs";
 import { Page, until, message } from "./testkit/cdp.mjs";
-import { freePort } from "./testkit/app.mjs";
+import { debugArgs, reportedPorts } from "./testkit/app.mjs";
 import { startProvider, translated } from "./testkit/provider.mjs";
 import { addVariant, makeGame } from "./testkit/games.mjs";
 import { previousRelease } from "./testkit/checkout.mjs";
@@ -60,6 +60,11 @@ const install = path.join(journey, "DazedTL-main (1)", "DazedTL-main");
 const profile = path.join(journey, "プロファイル (テスト)");
 const game = path.join(journey, "ゲーム", "魔法少女の冒険 体験版 (1.0)");
 const logs = path.join(work, "logs");
+// START's detached launch writes Electron's output of its latest start here.
+const electronLog = path.join(
+  os.tmpdir(),
+  `dazedtl-${crypto.createHash("sha256").update(install).digest("hex").slice(0, 12)}.log`,
+);
 const shots = path.join(logs, "screenshots");
 fs.mkdirSync(shots, { recursive: true });
 
@@ -200,8 +205,12 @@ const startFailed = ({ code, output }) =>
     `START exited with ${code}:\n${output.trim().split(/\r?\n/).slice(-20).join("\n")}`,
   );
 
-/** Runs START as a user's double-click does and waits for it to finish. */
-async function runStart(label, args, timeout) {
+/**
+ * Runs START as a user's double-click does, the app open to DevTools, and
+ * waits for it to finish; a START that opened the app sets `port` and
+ * `inspect` to the ports it took.
+ */
+async function runStart(label, timeout) {
   const log = fs.createWriteStream(path.join(logs, `${label}.log`));
   const child = windows
     ? spawn(
@@ -210,7 +219,7 @@ async function runStart(label, args, timeout) {
           "/d",
           "/s",
           "/c",
-          `""${path.join(install, "START.bat")}" ${args.join(" ")}"`,
+          `""${path.join(install, "START.bat")}" ${debugArgs.join(" ")}"`,
         ],
         {
           cwd: path.dirname(install),
@@ -219,7 +228,7 @@ async function runStart(label, args, timeout) {
           stdio: ["ignore", "pipe", "pipe"],
         },
       )
-    : spawn("bash", [path.join(install, "START.sh"), ...args], {
+    : spawn("bash", [path.join(install, "START.sh"), ...debugArgs], {
         cwd: path.dirname(install),
         env: userEnvironment(),
         stdio: ["ignore", "pipe", "pipe"],
@@ -248,6 +257,16 @@ async function runStart(label, args, timeout) {
     });
   });
   log.end();
+  if (code === 0)
+    try {
+      ({ debug: port, inspect } = reportedPorts(
+        fs.readFileSync(electronLog, "utf8"),
+      ));
+    } catch (error) {
+      throw new Error(
+        `START opened no app to drive: ${message(error)}\nSTART's output:\n${output.trim().split(/\r?\n/).slice(-20).join("\n")}`,
+      );
+    }
   return { code, output, seconds: (Date.now() - started) / 1000 };
 }
 
@@ -408,9 +427,9 @@ async function translateAndApply(task, check) {
 
 const failures = [];
 const stand_in = await startProvider({ folder: path.join(logs, "provider") });
-const port = await freePort();
-const inspect = await freePort();
-const debug = [`--remote-debugging-port=${port}`, `--inspect=${inspect}`];
+// The DevTools and inspector ports the app took at its latest START.
+let port = 0;
+let inspect = 0;
 /** @type {Page | undefined} */
 let page;
 // The project helper an assistant's copied task runs, without its command.
@@ -435,7 +454,7 @@ async function liveJourney() {
   });
 
   await step("First START installs and opens the app", async () => {
-    let result = await runStart("start-1", debug, 15 * 60_000);
+    let result = await runStart("start-1", 15 * 60_000);
     const fix = /^\s*(sudo install .+apparmor_parser .+)$/m.exec(
       result.output,
     )?.[1];
@@ -444,7 +463,7 @@ async function liveJourney() {
       // the way a user would, then start again.
       console.log(`Applying the AppArmor fix START printed:\n${fix}`);
       execFileSync("sh", ["-c", fix], { stdio: "inherit" });
-      result = await runStart("start-1b", debug, 10 * 60_000);
+      result = await runStart("start-1b", 10 * 60_000);
     }
     if (result.code !== 0) throw startFailed(result);
     if (!fs.existsSync(shortcut))
@@ -701,7 +720,7 @@ async function liveJourney() {
   );
 
   await step("Second START opens the same project without setup", async () => {
-    const result = await runStart("start-2", debug, 5 * 60_000);
+    const result = await runStart("start-2", 5 * 60_000);
     if (result.code !== 0) throw startFailed(result);
     const repeated = /^(Downloading|Installing|Creating|Building).*$/m.exec(
       result.output,
@@ -827,7 +846,7 @@ async function upgradeJourney(tag) {
   const version = await step("Stage this checkout as an update", stageCheckout);
 
   await step("START applies the update and opens the project", async () => {
-    const result = await runStart("start-update", debug, 15 * 60_000);
+    const result = await runStart("start-update", 15 * 60_000);
     if (result.code !== 0) throw startFailed(result);
     const installed = JSON.parse(
       fs.readFileSync(path.join(install, "release/manifest.json"), "utf8"),
@@ -920,12 +939,6 @@ try {
   for (const item of appProcesses()) killTree(item.pid);
   await stand_in.close();
   // Electron's output from the detached launch, and the app's own records.
-  const hash = crypto
-    .createHash("sha256")
-    .update(install)
-    .digest("hex")
-    .slice(0, 12);
-  const electronLog = path.join(os.tmpdir(), `dazedtl-${hash}.log`);
   if (fs.existsSync(electronLog))
     fs.copyFileSync(electronLog, path.join(logs, "electron.log"));
   const records = path.join(profile, "diagnostics");

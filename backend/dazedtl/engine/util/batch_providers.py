@@ -14,7 +14,6 @@ import os
 import tempfile
 from pathlib import Path
 from typing import Any, Iterable, Mapping
-from urllib.parse import urlparse
 
 from util import system
 from util import extensions
@@ -32,12 +31,6 @@ KIMI_API_URL = "https://api.moonshot.ai/v1"
 # Kimi K3 has no Batch API.
 # https://platform.kimi.ai/docs/guide/use-batch-api
 KIMI_BATCH_MODELS = frozenset({"kimi-k2.6", "kimi-k2.7-code"})
-
-
-def is_kimi_api(api_url: str | None = None) -> bool:
-    """Return whether an endpoint is Kimi's own API."""
-    url = os.getenv("api", "") if api_url is None else str(api_url or "")
-    return (urlparse(url.strip()).hostname or "").lower() == "api.moonshot.ai"
 
 
 TERMINAL_OPENAI_STATUSES = frozenset({
@@ -66,7 +59,7 @@ class BatchProviderJobError(RuntimeError):
 def detect_batch_provider(model: str = "", api_url: str | None = None,
                           api_provider: str | None = None) -> str | None:
     """Return the supported batch backend for the current route."""
-    from dazedtl.settings.providers import native_openai
+    from dazedtl.settings.providers import own_api
 
     model_l = str(model or "").lower()
     address = (os.getenv("api", "") if api_url is None else str(api_url or "")).strip()
@@ -79,9 +72,9 @@ def detect_batch_provider(model: str = "", api_url: str | None = None,
         return PROVIDER_ANTHROPIC
     if provider == "gemini" or "generativelanguage.googleapis.com" in url:
         return PROVIDER_GEMINI
-    if provider == "openai" and is_kimi_api(url):
+    if provider == "openai" and own_api("kimi", address):
         return PROVIDER_KIMI if model_l in KIMI_BATCH_MODELS else None
-    if provider == "openai" and (not url or native_openai(address)):
+    if provider == "openai" and (not url or own_api("openai", address)):
         return PROVIDER_OPENAI
     return None
 
@@ -207,13 +200,14 @@ def _write_jsonl(requests: Iterable[dict]) -> Path:
     return path
 
 
-def _openai_batch_body(provider: str, params: dict) -> dict:
-    """Materialize one OpenAI-format JSONL body for a provider batch.
+def _openai_batch_body(provider: str, params: dict, *, batch: bool = True) -> dict:
+    """Materialize one OpenAI-format JSONL body for a provider batch, or with
+    ``batch`` false, the same body for a Live request.
 
     Gemini's live OpenAI compatibility endpoint accepts strict JSON Schema,
     but its batch-file validator currently rejects nested schema ``type``
-    fields.  Match the live client's existing compatibility fallback by using
-    JSON-object mode for Gemini batches; the consume pass still performs the
+    fields, so the route's format rule (settings/providers.response_format)
+    gives Gemini batches JSON-object mode; the consume pass still performs the
     normal line-count, control-code, and untranslated-content validation.
     """
     body = dict(params)
@@ -236,9 +230,18 @@ def _openai_batch_body(provider: str, params: dict) -> dict:
         model = str(body.get("model") or "")
         if model.startswith("models/"):
             body["model"] = model.removeprefix("models/")
-        response_format = body.get("response_format") or {}
-        if response_format.get("type") == "json_schema":
-            body["response_format"] = {"type": "json_object"}
+        schema = (body.get("response_format") or {}).get("json_schema")
+        if batch and schema:
+            from dazedtl.settings.providers import response_format
+
+            body["response_format"] = response_format(
+                provider,
+                "",
+                body["model"],
+                schema.get("schema"),
+                schema.get("name"),
+                batch=True,
+            )
     return body
 
 
@@ -667,7 +670,7 @@ def execute_live_request(provider: str, params: dict, *, client=None) -> dict:
             "thinking_tokens": thinking,
         }
 
-    body = _openai_batch_body(provider, params)
+    body = _openai_batch_body(provider, params, batch=False)
     try:
         response = client.chat.completions.create(**body)
     except Exception as exc:

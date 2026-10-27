@@ -12,7 +12,6 @@ import random
 import unicodedata
 import tiktoken
 import urllib.request
-from urllib.parse import urlsplit
 from importlib import import_module
 from types import SimpleNamespace
 import hashlib
@@ -38,7 +37,7 @@ from util.provider_costs import (
     has_billed_cache_writes,
 )
 from util import claude_tokens, request_debug
-from util.batch_providers import KIMI_API_URL, is_kimi_api
+from util.batch_providers import KIMI_API_URL
 from util import extensions
 from util.sfx_reference import build_sfx_reference_text
 from util.vocab import decorative_glossary_alias, split_glossary_row
@@ -2841,9 +2840,9 @@ def _submit_translation_batches_unlocked(file_set=None, cost_estimate=None):
         or str(previous_state.get("endpoint") or "").strip()
         or current_endpoint
     )
-    from dazedtl.settings.providers import native_openai
+    from dazedtl.settings.providers import own_api
 
-    native = provider == "openai" and native_openai(submitted_endpoint)
+    native = provider == "openai" and own_api("openai", submitted_endpoint)
     token_costs = {}
     sequential_limit = previous_state.get("sequential_token_limit", 0)
     if native:
@@ -4723,21 +4722,9 @@ def _is_official_openai_api(api_provider=None, api_url=None):
     ).strip()
     if provider != "openai" or not endpoint:
         return provider == "openai" and not endpoint
-    from dazedtl.settings.providers import native_openai
+    from dazedtl.settings.providers import own_api
 
-    return native_openai(endpoint)
-
-
-def _is_deepseek_api(api_url=None):
-    """Return whether a request targets DeepSeek's own API."""
-    endpoint = (
-        os.getenv("api", "") if api_url is None else str(api_url or "")
-    ).strip()
-    try:
-        hostname = urlsplit(endpoint).hostname
-    except ValueError:
-        hostname = None
-    return hostname == "api.deepseek.com"
+    return own_api("openai", endpoint)
 
 
 @extensions.point
@@ -4982,6 +4969,9 @@ def buildOpenAIRequest(system, user, history, penalty, formatType, model,
         raise ValueError("User content cannot be empty")
 
     provider = (api_provider or os.getenv("API_PROVIDER", "openai")).lower()
+    from dazedtl.settings.providers import own_api, response_format
+
+    endpoint = os.getenv("api", "") if api_url is None else str(api_url or "")
     model_l = str(model or "").lower()
     gpt6_family = re.search(r"(?:^|/)gpt-6-(astra|sol|luna)(?:-|$)", model_l)
     is_deepseek = "deepseek" in model_l
@@ -5029,12 +5019,12 @@ def buildOpenAIRequest(system, user, history, penalty, formatType, model,
     completion_field = (
         _is_official_openai_api(provider, api_url)
         or provider == "kimi"
-        or (provider == "openai" and is_kimi_api(api_url))
+        or (provider == "openai" and own_api("kimi", endpoint))
     )
     # DeepSeek's own API allows far longer replies than other DeepSeek hosts,
     # and its models think by default within max_tokens.
     # https://api-docs.deepseek.com/api/create-chat-completion
-    deepseek_api = _is_deepseek_api(api_url)
+    deepseek_api = own_api("deepseek", endpoint)
     if is_deepseek and not deepseek_api:
         completion_ceiling = COMPAT_TRANSLATION_OUTPUT_TOKENS
     elif completion_field or provider == "gemini" or deepseek_api:
@@ -5053,16 +5043,12 @@ def buildOpenAIRequest(system, user, history, penalty, formatType, model,
         params["max_tokens"] = completion_limit
 
     if formatType == "json" and numLines is not None:
-        params["response_format"] = (
-            {"type": "json_object"}
-            if is_deepseek else {
-                "type": "json_schema",
-                "json_schema": {
-                    "name": "translation_response",
-                    "strict": True,
-                    "schema": createTranslationSchema(numLines),
-                },
-            }
+        params["response_format"] = response_format(
+            provider,
+            endpoint,
+            model,
+            createTranslationSchema(numLines),
+            "translation_response",
         )
     if provider == "gemini":
         params["temperature"] = 0
@@ -5119,7 +5105,6 @@ def translateText(system, user, history, penalty, formatType, model, numLines=No
         and any(x in model.lower() for x in ("claude", "sonnet", "haiku", "opus"))
         and (not _live_api_check or "anthropic" in _live_api_check.lower())
     )
-    _is_deepseek = model and "deepseek" in model.lower()
     _is_mistral = not _is_claude and isMistralAPI()
 
     # Build message list.
@@ -5149,22 +5134,6 @@ def translateText(system, user, history, penalty, formatType, model, numLines=No
     ):
         msg.append({"role": "user", "content": context_block})
 
-    # Response format per provider:
-    # OpenAI/Gemini: json_schema  |  Deepseek: json_object  |  text: omit entirely
-
-    if formatType == "json" and numLines is not None:
-        if _is_deepseek:
-            # Deepseek: use json_object (no strict schema support)
-            responseFormat = {"type": "json_object"}
-        else:
-            # OpenAI, Claude, Gemini: use json_schema with strict enforcement
-            responseFormat = {
-                "type": "json_schema",
-                "json_schema": {"name": "translation_response", "strict": True, "schema": createTranslationSchema(numLines)}
-            }
-    else:
-        responseFormat = {"type": "text"}
-
     # Content to TL - ensure user content is not empty
     if not user or not str(user).strip():
         raise ValueError("User content cannot be empty")
@@ -5191,47 +5160,6 @@ def translateText(system, user, history, penalty, formatType, model, numLines=No
     openai.api_key = _live_key or ("not-needed" if _live_key_optional else "")
 
     api_provider = _live_provider
-
-    # Omit response_format for plain text — some providers reject {"type": "text"}.
-    params = {
-        "model": model,
-        "messages": msg,
-    }
-    if responseFormat.get("type") != "text":
-        params["response_format"] = responseFormat
-
-    # Provider-specific parameters
-    if api_provider == "gemini":
-        params["temperature"] = 0
-        
-        # Handle thinking budget for Gemini
-        thinking_budget_str = os.getenv("GEMINI_THINKING_BUDGET")
-        if thinking_budget_str:
-            try:
-                thinking_budget = int(thinking_budget_str)
-                params["extra_body"] = {
-                    'google': {
-                        'thinking_config': {
-                            'thinking_budget': thinking_budget
-                        }
-                    }
-                }
-            except (ValueError, TypeError):
-                pass
-        
-    # frequency_penalty is unsupported on the Gemini OpenAI compat layer
-    elif _is_claude:
-        params["temperature"] = 0
-        # cache_control is set on the system message content block above.
-    elif _is_mistral:
-        params["temperature"] = 0
-        params["max_tokens"] = _translation_completion_limit(user)
-    else:  # Default to OpenAI behavior
-        if "gpt-5" in model:
-            params["reasoning_effort"] = "none" if "gpt-5.6" in model else "minimal"
-        else:
-            params["temperature"] = 0
-            params["frequency_penalty"] = penalty
 
     # One canonical OpenAI-compatible builder feeds both live requests and
     # JSONL batch rows. Keep responseFormat in sync for the existing live
