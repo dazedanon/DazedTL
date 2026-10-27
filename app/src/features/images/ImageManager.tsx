@@ -818,10 +818,12 @@ function Manager({
     ? rejected
     : flow.step === "investigate"
       ? flow.waiting.investigation
-        ? state.discovery.scope === "all"
-          ? "Your assistant is examining every image again. Its recommendations replace your list as it saves them."
-          : "Your assistant is examining the images. The ones it recommends are ticked to translate as it saves them."
-        : "Your assistant examines the game's images and recommends the ones with text players read."
+        ? `${
+            state.discovery.scope === "all"
+              ? "Your assistant is examining every image again. Its recommendations replace your list as it saves them."
+              : "Your assistant is examining the images. The ones it recommends are ticked to translate as it saves them."
+          } Choose images myself stops it and keeps what it found.`
+        : "Your assistant examines the game's images and recommends the ones with text players read. To skip it, tick the images to translate yourself."
       : flow.step === "choose"
         ? flow.listed
           ? `${imageCount(flow.listed)} to translate. Untick any to leave out, or tick other images to add them.`
@@ -892,7 +894,8 @@ function Manager({
   }[] = [
     {
       value: "list",
-      label: "Recommended",
+      // The user's own ticks are not recommendations.
+      label: flow.investigated ? "Recommended" : "To translate",
       shown: flow.listed > flow.applied,
       count: scoped?.list ?? flow.listed - flow.applied,
     },
@@ -1042,6 +1045,13 @@ function Manager({
       }
     >
       {moreMenu}
+      {flow.stoppable && (
+        <ActionControl
+          label="Choose images myself"
+          disabled={busy}
+          {...step("stop_investigation", "Stopping…")}
+        />
+      )}
       {flow.step === "investigate" && (
         <ActionControl
           label="Copy investigation task"
@@ -1132,7 +1142,18 @@ function Manager({
           >
             <StepProgress
               label="Image translation steps"
-              steps={imageSteps}
+              steps={imageSteps.map((item) =>
+                // One the user stopped to choose the images is left
+                // unfinished, and Investigate is done only once images were
+                // examined.
+                item.id === "investigate" && flow.step !== "investigate"
+                  ? flow.stopped
+                    ? { ...item, state: "started" as const }
+                    : !flow.investigated
+                      ? { ...item, state: "next" as const }
+                      : item
+                  : item,
+              )}
               current={
                 flow.step === "done"
                   ? imageSteps.length

@@ -259,7 +259,8 @@ def _ledger_records(root, signature, consumed, filename=None):
 
 
 def _read_ledger(root, consumed, filename):
-    from dazedtl.translation.refusals import CLARIFICATION, refused
+    from dazedtl.translation import derived
+    from dazedtl.translation.refusals import CLARIFICATION, RULES_VERSION, refused
 
     connection = ledger(root)
     if connection is None:
@@ -283,6 +284,12 @@ def _read_ledger(root, consumed, filename):
                     "SELECT identity,source,response FROM validated_items"
                 )
             }
+        # Refusal verdicts are kept beside the ledger, by the response and
+        # its sources: reading every line of every response again took most
+        # of a restart's read of a long run. Like the rows, they are read
+        # again with the ledger instead of staying in memory.
+        verdicts = derived.Store(Path(root) / "log" / derived.NAME)
+        section, used = f"refusals/{RULES_VERSION}", set()
         # A page at a time: a long run's bodies are never all in memory.
         result, signatures = [], []
         for values in ledger_pages(connection, _FIELDS, filename=filename):
@@ -337,9 +344,14 @@ def _read_ledger(root, consumed, filename):
                 response = {"text": json.dumps(response, ensure_ascii=False)}
             elif isinstance(response, dict) and "content" in response:
                 response = {**response, "text": response["content"]}
-            entry["provider_refusal"] = response is not None and refused(
-                response, source or {}
-            )
+            entry["provider_refusal"] = False
+            if response is not None:
+                verdict = digest(derived.key(response, source or {}).encode())
+                used.add(verdict)
+                entry["provider_refusal"] = verdicts.get(section, verdict)
+                if not isinstance(entry["provider_refusal"], bool):
+                    entry["provider_refusal"] = refused(response, source or {})
+                    verdicts.put(section, verdict, entry["provider_refusal"])
             if entry["state"] != "rejected" and entry["provider_refusal"]:
                 entry.update(
                     state="rejected",
@@ -363,6 +375,9 @@ def _read_ledger(root, consumed, filename):
                 )
             )
             result.append(entry)
+    if filename is None:
+        verdicts.keep(section, used)
+    verdicts.save()
     link_clarifications(result, signatures)
     link_retries(result)
     return result

@@ -16,6 +16,9 @@ a Batch rewrote most of them, hands them to reader processes
 ([derived_worker](derived_worker.py)) and shows them as still being read
 (`reading`), so the request returns at once; the next look finds what they
 saved. Execution and explicit inspection read for themselves.
+
+A run keeps its refusal verdicts the same way, in a Store beside its ledger
+that each read of the ledger loads again (compatibility/process_view).
 """
 
 import json

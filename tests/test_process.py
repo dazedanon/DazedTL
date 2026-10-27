@@ -590,6 +590,40 @@ class ProcessTests(unittest.TestCase):
                 },
             )
 
+    def test_saved_refusal_verdicts_are_read_again_under_a_new_rule(self):
+        # Refusal verdicts are kept beside the ledger across restarts. One kept
+        # under an older rule must not hide a refusal the new rule finds in a
+        # response an older worker accepted.
+        from dazedtl.translation import refusals
+
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+
+            def state():
+                # Each read is a restart's first.
+                process_view._LEDGERS.entries.clear()
+                (row,) = process_view.ledger_records(root) or [None]
+                return row and row["state"]
+
+            evidence = Evidence(root, "translate")
+            evidence.local.filename, evidence.local.sources = "Items.json", ["a"]
+            params = {"messages": [{"role": "user", "content": '{"Line1":"薬"}'}]}
+            evidence.prepared(params, "validated")
+            with evidence.connect() as connection:
+                connection.execute(
+                    "UPDATE requests SET raw_response=? WHERE id=1",
+                    (json.dumps({"text": "Translation declined."}),),
+                )
+            with (
+                patch.object(refusals, "RULES_VERSION", 0),
+                patch.object(refusals, "refused", return_value=False),
+            ):
+                self.assertEqual(state(), "validated")
+            self.assertEqual(state(), "rejected")
+            # The next restart reads the verdict this one kept.
+            with patch.object(refusals, "refused", side_effect=AssertionError):
+                self.assertEqual(state(), "rejected")
+
     def test_completed_live_rejections_release_only_exact_returned_attempts(self):
         # Old Live rows stopped at "received" and blocked all later estimates.
         # Only a complete, unchanged run and exact unambiguous rejection record

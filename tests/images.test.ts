@@ -153,6 +153,9 @@ test("Images leads with the step its saved work reaches", () => {
   );
   // An investigation that leaves nothing ticked finishes Images.
   assert.equal(at({ examined: 2, uncertain: 1 }, "complete"), "done");
+  // One the user stopped leaves them to choose, ticked or not yet.
+  assert.equal(at({ examined: 1 }, "stopped"), "choose");
+  assert.equal(at({ examined: 1, selected: 2 }, "stopped"), "choose");
 });
 
 const draft = (selection: string[], scroll = 0): ImageDraft => ({

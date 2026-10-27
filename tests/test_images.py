@@ -20,6 +20,7 @@ from dazedtl.compatibility import original_files
 from dazedtl.compatibility.images import ImageCompatibility
 from dazedtl.foreign_work import ForeignWorkError
 from dazedtl.images import ImageService, recipes, validation
+from dazedtl.images import service as service_module
 from dazedtl.images.inventory import png_metadata
 from dazedtl.projects.store import Projects
 from dazedtl.storage import write_bytes, write_json
@@ -475,6 +476,80 @@ class ImageTests(unittest.TestCase):
             (0, 0, {"all": 2, "list": 0, "uncertain": 0, "ready": 0, "applied": 1}, 0),
         )
         self.assertEqual(editing["assets"][0]["id"], "img/A.png")
+
+    def test_the_user_can_stop_an_investigation_and_choose_the_images(self):
+        # Protect against a waiting investigation holding up translation: the
+        # user stops it, keeps what it saved and their own ticks, and the
+        # stopped request never reports or resumes again.
+        result = self.service.action(
+            self.identity, "discovery_task", {"scope": "remaining"}
+        )
+        request = read_json(Path(result["request"]))
+        hashes = {row["id"]: row["sourceHash"] for row in request["assets"]}
+
+        def finding(identity, classification):
+            return {
+                "id": identity,
+                "sourceHash": hashes[identity],
+                "classification": classification,
+                "method": "visual",
+                "examined": classification != "not_examined",
+                "reason": "",
+                "evidence": "contact sheet 1",
+                "variants": [],
+            }
+
+        def save(*rows):
+            write_json(
+                request["report"],
+                {
+                    "version": 1,
+                    "kind": "discovery",
+                    "projectId": self.identity,
+                    "requestId": request["id"],
+                    "inventoryRevision": request["inventoryRevision"],
+                    "complete": False,
+                    "assets": list(rows),
+                },
+            )
+
+        self.choose(["img/B.png"])
+        save(
+            finding("img/A.png", "recommended"),
+            finding("img/B.png", "not_examined"),
+        )
+        state = self.service.action(self.identity, "stop_investigation")["state"]
+        self.assertEqual(
+            (
+                state["discovery"]["status"],
+                state["selection"],
+                state["counts"]["examined"],
+            ),
+            ("stopped", ["img/B.png", "img/A.png"], 1),
+        )
+        # A later save is not read, and its assistant hears why.
+        save(finding("img/A.png", "no_text"), finding("img/B.png", "no_text"))
+        self.service.action(self.identity, "pickup")
+        self.assertEqual(
+            self.service.list(self.identity, filter="recommended")["total"], 1
+        )
+        with self.assertRaisesRegex(ValueError, "stopped to choose the images"):
+            self.service.action(self.identity, "refresh_findings")
+        for step in ("status", "investigate"):
+            reply = self.service.assistant(self.identity, step)
+            self.assertEqual((reply["next"], reply["task"]), ("translate", ""))
+            self.assertIn(service_module.USER_CHOSE, reply["problems"])
+        self.assertTrue(self.service.progress_units(self.identity)["complete"])
+        # Copying the investigation again starts afresh.
+        again = self.service.action(
+            self.identity, "discovery_task", {"scope": "remaining"}
+        )
+        fresh = read_json(Path(again["request"]))
+        self.assertNotEqual(fresh["id"], request["id"])
+        self.assertEqual(
+            ([row["id"] for row in fresh["assets"]], fresh["resumeReport"]),
+            (["img/B.png"], ""),
+        )
 
     def test_an_assistant_led_assistant_runs_the_steps_and_its_progress_completes(
         self,
