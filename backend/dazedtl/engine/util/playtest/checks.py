@@ -545,9 +545,7 @@ def static_checks(
     checks.untranslated(kept, originals)
     checks.codes()
     checks.descriptions()
-    checks.plugin_code(
-        [entry for entry in entries if entry.get("status") is True], reach, literals
-    )
+    checks.plugin_code(list(entries.loaded()), reach, literals)
     return {
         "schema": SCHEMA,
         "engine": checks.engine,

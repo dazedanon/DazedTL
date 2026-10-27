@@ -25,6 +25,7 @@ from util.original_values import source as differing
 from util.rpgmaker_markers import (
     MARKER_SETTINGS,
     SUPPORTED_CODE408_MARKERS,
+    PluginList,
     comment_markers,
     data_plugins,
 )
@@ -267,9 +268,9 @@ def _text(value: str) -> str:
 
 
 def _settings(
-    entries: list[Any], originals: Iterable[Any] | None = None
+    plugins: PluginList, originals: Iterable[Any] | None = None
 ) -> list[tuple[tuple, str]]:
-    """Each turned-on plugin's Japanese settings that may be text players
+    """Each loaded plugin's Japanese settings that may be text players
     read, rather than code, an asset path or the comment markers it looks
     for, by where they are. A setting reads against the game's original
     plugin list where it gives one (util/original_values): the setting of
@@ -280,8 +281,9 @@ def _settings(
         if isinstance(plugin, dict):
             named.setdefault(plugin.get("name"), []).append(plugin)
     found = []
-    for index, plugin in enumerate(entries):
-        if not isinstance(plugin, dict) or plugin.get("status") is not True:
+    # By place in the list, which the original list's entry shares.
+    for index, (plugin, load) in enumerate(zip(plugins, plugins.loads())):
+        if not load:
             continue
         counterpart = original[index] if index < len(original) else None
         if not (
@@ -336,8 +338,7 @@ def preflight(
     for record in manifest["records"]:
         covered.setdefault(record["file"], set()).update(record["live_pointers"])
     plugins = data_plugins(data)
-    entries = list(plugins)
-    reach = Reach(data, entries)
+    reach = Reach(data, plugins)
     markers = comment_markers(plugins)
     rows: dict[str, list[dict[str, Any]]] = {"untranslated": [], "custom_data": []}
     for path in sorted(data.glob("*.json"), key=lambda item: item.name):
@@ -360,7 +361,7 @@ def preflight(
             for parts, value in _leaves(document):
                 if source_left(value, differing(value, sources.get(parts))):
                     _entry(rows["custom_data"], path.name, parts, value, "custom data")
-    settings = _settings(entries, originals.plugins() if originals else None)
+    settings = _settings(plugins, originals.plugins() if originals else None)
     plugins = {
         "reach": {
             name: list(reach.plugin(name))
