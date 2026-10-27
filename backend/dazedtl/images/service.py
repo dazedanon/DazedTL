@@ -72,6 +72,9 @@ USER_CHOSE = (
 )
 # The view of the list to translate, without the images already in the game.
 LIST_VIEW = {"showSelected": True, "status": "not_applied"}
+# The view settings a user browses by. Once they change one, the grid stays
+# where they put it.
+BROWSING = ("status", "showSelected", "folder", "query", "scroll")
 
 
 def now():
@@ -385,7 +388,7 @@ class ImageService:
                 **{
                     key: item
                     for key, item in value.items()
-                    if key not in {"selection", "view", "profile"}
+                    if key not in {"selection", "view", "profile", "browsed"}
                 },
                 "discovery": discovery,
             }
@@ -590,6 +593,11 @@ class ImageService:
                         or not 0 <= item < 100_000_000
                     ):
                         raise ValueError("Invalid image scroll position.")
+                if any(
+                    key in BROWSING and item != value["view"].get(key)
+                    for key, item in view.items()
+                ):
+                    value["browsed"] = True
                 value["view"].update(view)
             discovery = changes.get("discovery", {})
             if not isinstance(discovery, dict) or set(discovery) - {"scope", "folders"}:
@@ -2213,8 +2221,9 @@ class ImageService:
             for row in updates:
                 index.put(db, row, row.get("generation", ""))
         # New recommendations are ticked to translate, and the grid opens on
-        # the list so the user reviews it next. An image already translated
-        # stays in the list whatever a later finding says.
+        # the list so the user reviews it next, unless they have browsed the
+        # images, which a report arriving mid-browse must not undo. An image
+        # already translated stays in the list whatever a later finding says.
         listed = [
             row["id"]
             for row in updates
@@ -2235,7 +2244,8 @@ class ImageService:
                     + listed
                 )
             )
-            value["view"].update(LIST_VIEW, folder="", query="", scroll=0)
+            if not value.get("browsed"):
+                value["view"].update(LIST_VIEW, folder="", query="", scroll=0)
             index.selected(value["selection"])
         # Completion is accumulated across partial saves of this exact request:
         # a request whose every image has a result is answered, flag or not, so
