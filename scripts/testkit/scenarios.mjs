@@ -1085,6 +1085,32 @@ export const scenarios = {
       ],
     ],
   },
+  "images-archived": {
+    description:
+      "An Assistant-led project on the wolf game: the assistant decodes Data/Picture.wolf into a folder, translates its lettered title through the Images steps on that folder, packs the archive again and checkpoints it into the patch.",
+    game: "wolf",
+    steps: () => [
+      assistantLed[0],
+      assistantLed[1],
+      [
+        "The assistant translates the archived images and packs them again",
+        async ({ page, state }) => {
+          const project_id = (await page.call("workspace_snapshot")).application
+            .project.id;
+          const { handoff } = await page.call("translation_prepare", {
+            project_id,
+          });
+          if (!handoff.includes("images --scan --root <folder>"))
+            throw new Error(
+              "The starting prompt names no decoded image folder.",
+            );
+          console.log(
+            `\n  ${(await assistant(page, state, "archived-images")).trim().replaceAll("\n", "\n  ")}`,
+          );
+        },
+      ],
+    ],
+  },
   "assistant-written": {
     description:
       "An Assistant-led project the assistant translated whole and wrote into the game, its choice labels and help markers kept in Japanese.",

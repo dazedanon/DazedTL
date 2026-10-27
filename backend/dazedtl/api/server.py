@@ -554,7 +554,7 @@ class Application:
             project_id, self.images.action(project_id, action, options)
         )
 
-    def translation_images(self, project_id, step):
+    def translation_images(self, project_id, step, root=None):
         """One Images step for an Assistant-led project's own assistant. A
         Guided project's Images task stays the user's to apply."""
         record, project = self.translation.project(project_id)
@@ -566,7 +566,7 @@ class Application:
             raise ValueError(
                 "Image text is outside this project's scope; report any remaining baked text instead."
             )
-        result = self.images.assistant(project_id, step)
+        result = self.images.assistant(project_id, step, root)
         try:
             self.translation.sync_images(project_id)
         except ValueError as exc:

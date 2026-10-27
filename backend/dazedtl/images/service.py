@@ -618,18 +618,20 @@ class ImageService:
                     text(folder, "Discovery folder", 2000)
                 value["discovery"]["folders"] = sorted(set(folders))
             if "imageRoot" in changes:
-                if self.jobs.get(project_id, {}).get("status") == "running":
-                    raise ValueError(
-                        "Stop the current image scan before changing its folder."
-                    )
-                value["profile"] = {
-                    "imageRoot": text(changes["imageRoot"], "Loose image folder", 2000)
-                }
-                self._profile(project_id, value)
+                self._image_root(project_id, value, changes["imageRoot"])
             self._save(project_id, value)
             if "selection" in changes:
                 self._index(project_id).selected(value["selection"])
             return self.state(project_id)
+
+    def _image_root(self, project_id, value, root):
+        """Points a game without RPG Maker MV/MZ's img folder at the folder of
+        loose images to index, the user's choice or the folder an assistant
+        decoded the game's image archives into; the next scan reads it."""
+        if self.jobs.get(project_id, {}).get("status") == "running":
+            raise ValueError("Stop the current image scan before changing its folder.")
+        value["profile"] = {"imageRoot": text(root, "Loose image folder", 2000)}
+        self._profile(project_id, value)
 
     def _ids(self, project_id, identities, *, allow_empty=False):
         if (
@@ -1302,17 +1304,35 @@ class ImageService:
                 raise ValueError("Unknown image action.")
             return {"state": self.state(project_id)}
 
-    def assistant(self, project_id, step):
+    def assistant(self, project_id, step, root=None):
         """Runs one Images step for an Assistant-led project's own assistant,
         which also does the user's part: its recommendations stay the list,
-        and it applies the images it translated and reviewed."""
+        and it applies the images it translated and reviewed. `root`, with
+        the scan, names the game-relative folder it decoded the game's image
+        archives into, which the steps then read and write instead."""
         if step not in ASSISTANT_STEPS:
             raise ValueError(
                 "Choose an image step: " + ", ".join(ASSISTANT_STEPS) + "."
             )
+        if root is not None:
+            if step != "scan":
+                raise ValueError("Name an image folder with images --scan only.")
+            if self.record(project_id)[0]["engine"] == "MVMZ":
+                raise ValueError(
+                    "RPG Maker MV/MZ images are read from the game's img folder; "
+                    "run images --scan without --root."
+                )
+            with self.lock:
+                value = self._load(project_id)
+                self._image_root(project_id, value, root)
+                self._save(project_id, value)
         profile = self.state(project_id)["profile"]
         if not profile["supported"]:
-            raise ValueError(profile["reason"])
+            raise ValueError(
+                "DazedTL found no folder of loose images in this game. If its "
+                "images sit in archives, decode them with Len's tools into a "
+                "folder in the game and run images --scan --root <folder>."
+            )
         task, result = None, None
         # An investigation the user stopped to choose the images stays stopped.
         stopped = _stopped(self._load(project_id))

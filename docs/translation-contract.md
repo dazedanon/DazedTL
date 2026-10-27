@@ -19,8 +19,9 @@ The helper cannot publish plugin files; final runtime Apply stays in the app.
 Read the active request before resuming after a lost reply.
 
 An Assistant-led project that includes image text runs the Images steps with `images --scan`, `--investigate`, `--translate` and `--apply`; `images --status` names the next one.
+On a game whose images sit in archives, the assistant decodes them with Len's tools into a folder in the game and names it with `images --scan --root <folder>`, as `census --decoded` names decoded text; the steps then read and write that folder, and the assistant packs it into the archive again.
 Investigate and Translate save the same request-bound tasks Guided's Images task hands out, as files to follow, and the next step reads their saved reports.
-The assistant also does the user's part: its recommendations stay the list, and Apply publishes the translated, reviewed images and returns the runtime files to add to the patch manifest.
+The assistant also does the user's part: its recommendations stay the list, and Apply publishes the translated, reviewed images, whose checkpoint takes the files it changed into the patch.
 The app turns the Image Manager's list into the image records that progress reports and packaging count.
 An image in the list counts until it is applied, one its translation skipped drops out, and the records complete once every image has a finding.
 Images is its own progress phase; a report that leaves it out gets it from these records, complete once they are and active once they list an image.
