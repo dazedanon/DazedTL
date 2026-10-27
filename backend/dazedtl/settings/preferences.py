@@ -43,6 +43,11 @@ SPEAKER_CONTEXT = "event-speaker-context-v1"
 # Name「text, is sent only as the [Speaker]: prefix, so the model does not
 # write it into the message a second time.
 SAME_LINE_SPEAKERS = "event-same-line-speakers-v1"
+# A line holding a plugin's \m[N]\z[N] codes is a nameplate only when a name
+# comes before them. A message opening with the codes, as in
+# \m[2]\z[1454]あら…, read as an empty nameplate, so its first line was never
+# sent and stayed in Japanese however often the run was retried.
+CODE_NAMEPLATES = "event-code-nameplates-v1"
 # Small RPG Maker event pages of one file share a request, each page labelled,
 # because each request otherwise repeats the full system prompt: a 970-map
 # game's Maps & events estimate fell from 4,089 to 2,173 requests and from
@@ -106,6 +111,20 @@ SHORT_OUTPUTS = "short-outputs-v1"
 BATTLE_MESSAGE_USERS_LEVELS = {
     "battle-message-users-v1": 1,
     BATTLE_MESSAGE_USERS: 2,
+}
+# The policies above that every new run freezes, by plan key, in its Guided
+# settings and its request policy alike (settings/store).
+FROZEN_POLICIES = {
+    "choiceCollection": CHOICE_COLLECTION,
+    "speakerContext": SPEAKER_CONTEXT,
+    "sameLineSpeakers": SAME_LINE_SPEAKERS,
+    "codeNameplates": CODE_NAMEPLATES,
+    "pagePacking": PAGE_PACKING,
+    "reuseStretches": REUSE_STRETCHES,
+    "mapNameIdentities": MAP_NAME_IDENTITIES,
+    "battleMessageUsers": BATTLE_MESSAGE_USERS,
+    "sourceText": SOURCE_TEXT,
+    "shortOutputs": SHORT_OUTPUTS,
 }
 
 DEFAULT_OPTIONS = {

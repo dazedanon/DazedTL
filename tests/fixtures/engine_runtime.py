@@ -393,6 +393,7 @@ try:
         from dazedtl.settings.preferences import (
             BATTLE_MESSAGE_USERS,
             CHOICE_COLLECTION,
+            CODE_NAMEPLATES,
             PAGE_PACKING,
             SAME_LINE_SPEAKERS,
             SOURCE_TEXT,
@@ -1095,6 +1096,7 @@ try:
             "choiceCollection": CHOICE_COLLECTION,
             "speakerContext": SPEAKER_CONTEXT,
             "sameLineSpeakers": SAME_LINE_SPEAKERS,
+            "codeNameplates": CODE_NAMEPLATES,
         }
         with patch.multiple(parser, **options):
             for generation in (policy, policy, {}, policy):
@@ -1181,6 +1183,30 @@ try:
                 assert calls == [([f"[Hana]: {body}\n再生しますか？"], "")], calls
                 assert result[1]["parameters"] == ["[Hana]\nHello."], result
                 assert result[1]["_original"] == "\n".join(label), result
+            # A message opening with a plugin's \m[N]\z[N] codes read as a
+            # nameplate with no name, so its first line was never sent and
+            # stayed in Japanese; a name before the codes still makes one.
+            # Older frozen runs keep their request bodies.
+            message = [r"\m[2]\z[1454]あら、釣りをするのね。", "頑張って釣ってね。"]
+            for generation, body in (
+                ({}, message[1]),
+                (policy, "あら、釣りをするのね。\n頑張って釣ってね。"),
+            ):
+                configure_states({"engine": "MVMZ"}, temporary, generation)
+                result = parse(
+                    [name("ママ"), *(command(401, [line]) for line in message)]
+                )
+                assert calls == [([f"[Hana]: {body}"], "")], calls
+            assert result[1]["parameters"] == [r"\m[2]\z[1454]Hello."], result
+            parse(
+                [
+                    name(""),
+                    command(401, [r"ママ\m[2]\z[1454]"]),
+                    command(401, [message[1]]),
+                ]
+            )
+            assert calls == [([f"[Hana]: {message[1]}"], "")], calls
+            assert names and set(names) == {"ママ"}, names
             with patch.object(parser, "INLINE401SPEAKERS", True):
                 parse([name(""), command(401, ["花「こんにちは」"])])
                 assert calls == [(['[Hana]: "こんにちは"'], "")], calls

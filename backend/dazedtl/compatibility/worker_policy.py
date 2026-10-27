@@ -11,6 +11,7 @@ from dazedtl import system
 from dazedtl.settings.preferences import (
     BATTLE_MESSAGE_USERS_LEVELS,
     CHOICE_COLLECTION,
+    CODE_NAMEPLATES,
     GENERATION_PARAMETERS,
     MAP_NAME_IDENTITIES,
     PAGE_PACKING,
@@ -68,6 +69,9 @@ def configure_states(plan, root, policy):
         )
         cast(Any, module).SAME_LINE_SPEAKERS = bool(
             policy and policy.get("sameLineSpeakers") == SAME_LINE_SPEAKERS
+        )
+        cast(Any, module).CODE_NAMEPLATES = bool(
+            policy and policy.get("codeNameplates") == CODE_NAMEPLATES
         )
         cast(Any, module).PAGE_PACKING = bool(
             policy and policy.get("pagePacking") == PAGE_PACKING
@@ -171,6 +175,7 @@ def install(*, coordinator=False):
             or policy.get("choiceCollection") not in (None, CHOICE_COLLECTION)
             or policy.get("speakerContext") not in (None, SPEAKER_CONTEXT)
             or policy.get("sameLineSpeakers") not in (None, SAME_LINE_SPEAKERS)
+            or policy.get("codeNameplates") not in (None, CODE_NAMEPLATES)
             or policy.get("pagePacking") not in (None, PAGE_PACKING)
             or policy.get("reuseStretches") not in (None, REUSE_STRETCHES)
             or policy.get("mapNameIdentities") not in (None, MAP_NAME_IDENTITIES)
