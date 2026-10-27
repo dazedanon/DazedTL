@@ -199,6 +199,10 @@ class ImageManagerState(TypedDict):
     observationRevision: NotRequired[str]
     inventoryRevision: str
     counts: ImageCounts
+    investigated: Annotated[
+        bool,
+        "Whether every image in the folder has a finding, is in the game or is excluded.",
+    ]
     folders: list[ImageFolder]
     selection: list[str]
     view: ImageView

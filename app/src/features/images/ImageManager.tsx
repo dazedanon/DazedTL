@@ -897,8 +897,9 @@ function Manager({
   }[] = [
     {
       value: "list",
-      // The user's own ticks are not recommendations.
-      label: flow.investigated ? "Recommended" : "To translate",
+      // The user's own ticks are not recommendations; once the assistant
+      // examined images, the list holds its recommendations.
+      label: counts.examined ? "Recommended" : "To translate",
       whole: flow.listed - flow.applied,
     },
     { value: "uncertain", label: "Unsure", whole: counts.uncertain },
@@ -964,7 +965,7 @@ function Manager({
           Investigate the {imageCount(counts.notExamined)} not examined
         </MenuItem>
       )}
-      {flow.step !== "investigate" && flow.investigated && (
+      {flow.step !== "investigate" && !!counts.examined && (
         <MenuItem
           disabled={jobRunning}
           onSelect={() => void perform("discovery_task", { scope: "all" })}

@@ -29,6 +29,7 @@ from . import families, recipes
 from .inventory import (
     Index,
     PreviewCache,
+    image_folder,
     inspect_row,
     png_metadata,
     png_preview,
@@ -125,12 +126,12 @@ def receipt_view(receipt):
     return view
 
 
-def _folder(value):
-    """The game-relative folder the list covers: the loose image folder the
-    user or an assistant chose, or the whole inventory when none is chosen,
-    as for RPG Maker MV/MZ's img folder."""
-    folder = (value.get("profile") or {}).get("imageRoot", "")
-    return "" if folder == "." else folder
+def _investigated(value, counts):
+    """Whether the images are investigated: the folder Images reads is
+    scanned and every image in it has a finding or is settled, in the game
+    or excluded, so an investigation of the remaining images has nothing
+    left to ask. The Images task and images --status both read this."""
+    return bool(value["inventoryRevision"]) and not counts["notExamined"]
 
 
 def _stopped(value):
@@ -411,7 +412,7 @@ class ImageService:
                     WORK + "/inventory.sqlite3",
                     exists=False,
                 ),
-                _folder(value),
+                image_folder(value),
             )
             self.indexes[project_id].selected(value["selection"])
         return self.indexes[project_id]
@@ -437,6 +438,7 @@ class ImageService:
                     status="interrupted",
                     message="The previous scan was interrupted. Refresh inventory to resume indexing.",
                 )
+            counts = index.counts()
             return {
                 "projectId": project_id,
                 "name": project["name"],
@@ -446,7 +448,8 @@ class ImageService:
                 "revision": self._preferences_revision(value),
                 "observationRevision": self._observation_revision(value),
                 "inventoryRevision": value["inventoryRevision"],
-                "counts": index.counts(),
+                "counts": counts,
+                "investigated": _investigated(value, counts),
                 "folders": index.folders(),
                 "selection": deepcopy(value["selection"]),
                 "view": deepcopy(value["view"]),
@@ -653,10 +656,13 @@ class ImageService:
         """Saves the profile whose folder Images reads. The list, its view
         and its scopes keep only the images in that folder; the others'
         rows, applied files and receipts stay, and their rows return with
-        the folder."""
+        the folder. Another folder is not scanned yet: its scan records its
+        inventory and groups its families."""
         value["profile"] = profile
         index = self._index(project_id)
-        index.folder = _folder(value)
+        if index.folder != image_folder(value):
+            index.folder = image_folder(value)
+            value["inventoryRevision"] = ""
         value["selection"] = [
             identity for identity in value["selection"] if index.holds(identity)
         ]
@@ -1219,8 +1225,8 @@ class ImageService:
                                 "These filenames differ only by letter case and cannot be patched safely on Windows."
                             )
                             index.put(db, self._status(row), generation)
-                    # Variant families are grouped over the whole inventory,
-                    # so only a complete scan regroups them.
+                    # Variant families are grouped over the folder's whole
+                    # inventory, so only a complete scan regroups them.
                     index.refresh_families()
                     value = self._load(project_id)
                     fingerprint = hashlib.sha256()
@@ -1529,17 +1535,7 @@ class ImageService:
         """Whether the list to translate is settled: every image is
         investigated, or the user stopped the investigation to choose the
         images themselves."""
-        return _stopped(value) or self._investigated(project_id)
-
-    def _investigated(self, project_id):
-        """Whether every image has a finding or is settled, which is when an
-        investigation of the remaining images has nothing left to ask."""
-        return not any(
-            not (row.get("finding") or {}).get("examined")
-            and row["state"] != "applied"
-            and row["classification"] != "excluded"
-            for row in self._index(project_id).rows()
-        )
+        return _stopped(value) or _investigated(value, self._index(project_id).counts())
 
     def progress_units(self, project_id):
         """The Images flow as Len image progress records: each image in the
@@ -1597,11 +1593,7 @@ class ImageService:
         # Images not yet examined; applied and excluded ones are settled.
         if scope == "remaining":
             identities = [
-                row["id"]
-                for row in self._index(project_id).rows()
-                if not (row.get("finding") or {}).get("examined")
-                and row["state"] != "applied"
-                and row["classification"] != "excluded"
+                row["id"] for row in self._index(project_id).rows(filter="remaining")
             ]
             if not identities:
                 raise ValueError("Every image has been investigated.")

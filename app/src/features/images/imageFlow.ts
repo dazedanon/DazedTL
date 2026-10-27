@@ -26,7 +26,10 @@ const withAssistant = (status: string) =>
   status === "awaiting_results" || status === "partial";
 
 export function imageFlow(
-  state: Pick<ImageManagerState, "counts" | "discovery" | "editing">,
+  state: Pick<
+    ImageManagerState,
+    "counts" | "investigated" | "discovery" | "editing"
+  >,
   waits: ImageWaiting = {
     investigation: withAssistant(state.discovery.status),
     translation: withAssistant(state.editing.status),
@@ -46,8 +49,9 @@ export function imageFlow(
   const review = counts.selectedNeedsReview || 0;
   // The list's images not yet in the game, which a translation task covers.
   const toTranslate = listed - applied - (counts.selectedSkipped || 0);
-  const investigated =
-    counts.examined > 0 || state.discovery.status === "complete";
+  // The backend decides whether every image is investigated, as images
+  // --status reads it.
+  const investigated = state.investigated;
   // Applying what was translated finishes Images; an image the list still
   // holds untranslated, or one ticked later, can start another round without
   // reopening it. An investigation that leaves nothing ticked finishes too.

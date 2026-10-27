@@ -109,6 +109,27 @@ def describe_png(image):
     return result
 
 
+def image_folder(state):
+    """The game-relative folder the Image Manager reads, from its saved
+    state: the loose image folder the user or an assistant chose, or the
+    whole inventory when none is chosen, as for RPG Maker MV/MZ's img
+    folder."""
+    folder = (state.get("profile") or {}).get("imageRoot", "").rstrip("/")
+    return "" if folder == "." else folder
+
+
+# Images an investigation of the remaining images asks about: not examined
+# yet, and neither in the game nor excluded, which settles them.
+REMAINING = "examined=0 AND state!='applied' AND classification!='excluded'"
+
+
+def holds(folder, identity):
+    """Whether an image, or a list folder, is in the folder the Image Manager
+    reads, as Index.within() reads it; every image is when it has none."""
+    folder = folder.rstrip("/")
+    return not folder or identity == folder or identity.startswith(folder + "/")
+
+
 class Index:
     def __init__(self, path, folder=""):
         self.path = path
@@ -126,10 +147,8 @@ class Index:
         return "instr(id,?)=1", (self.folder.rstrip("/") + "/",)
 
     def holds(self, identity):
-        """Whether an image, or a list folder, is in the folder, as within()
-        reads it."""
-        folder = self.folder.rstrip("/")
-        return not folder or identity == folder or identity.startswith(folder + "/")
+        """Whether an image, or a list folder, is in the folder."""
+        return holds(self.folder, identity)
 
     def _prepare(self):
         """Create the parent folder, the sqlite file and the assets schema.
@@ -245,6 +264,8 @@ class Index:
         # Applied.
         if filter == "not_applied":
             parts.append("state!='applied'")
+        elif filter == "remaining":
+            parts.append(REMAINING)
         elif filter and filter != "all":
             parts.append("(classification=? OR state=?)")
             parameters.extend((filter, filter))
@@ -357,13 +378,8 @@ class Index:
                 + " AND classification='uncertain' AND state!='applied'",
                 values,
             ).fetchone()[0]
-            # Images in the game and excluded ones are settled, so they are
-            # not left for an investigation of the remaining images.
             remaining = db.execute(
-                "SELECT count(*) FROM assets WHERE "
-                + within
-                + " AND examined=0 AND state!='applied'"
-                " AND classification!='excluded'",
+                "SELECT count(*) FROM assets WHERE " + within + " AND " + REMAINING,
                 values,
             ).fetchone()[0]
             return {
@@ -401,34 +417,48 @@ class Index:
         )
 
     def families(self, db=None):
-        """Variant families among the indexed originals, one size at a time."""
+        """Variant families among the indexed originals in the folder, one
+        size at a time."""
         if db is None:
             with self.connection() as connection:
                 return self.families(connection)
+        within, values = self.within()
         found = []
         for width, height, mode, count in db.execute(
-            "SELECT width, height, mode, count(*) FROM family_tiles"
-            " GROUP BY width, height, mode HAVING count(*) > 1"
+            "SELECT width, height, mode, count(*) FROM family_tiles WHERE "
+            + within
+            + " GROUP BY width, height, mode HAVING count(*) > 1",
+            values,
         ).fetchall():
             found += families.group_size(
                 width,
                 height,
                 db.execute(
-                    "SELECT id, data FROM family_tiles WHERE width=? AND height=? AND mode IS ?",
-                    (width, height, mode),
+                    "SELECT id, data FROM family_tiles WHERE "
+                    + within
+                    + " AND width=? AND height=? AND mode IS ?",
+                    (*values, width, height, mode),
                 ),
                 count,
             )
         return found
 
     def refresh_families(self):
-        """Record each family once and on each member the family it belongs
-        to, after a scan. Nothing is grouped again until a signature changes."""
+        """Record each family in the folder once and on each member the
+        family it belongs to, after a scan or a change of folder. Nothing is
+        grouped again until a signature or the folder changes; images outside
+        the folder belong to no family until it returns to theirs."""
         with self.connection() as db:
-            stale = db.execute(
-                "SELECT value FROM meta WHERE key='familiesStale'"
-            ).fetchone()
-            if stale and stale[0] == "0":
+            grouped = dict(
+                db.execute(
+                    "SELECT key, value FROM meta"
+                    " WHERE key IN ('familiesStale', 'familiesFolder')"
+                )
+            )
+            if (
+                grouped.get("familiesStale") == "0"
+                and grouped.get("familiesFolder", "") == self.folder
+            ):
                 return [
                     json.loads(data)
                     for (data,) in db.execute("SELECT data FROM family_groups")
@@ -477,9 +507,10 @@ class Index:
                             )
                         )
                 db.executemany("UPDATE assets SET data=? WHERE id=?", changes)
-            db.execute(
-                "INSERT INTO meta(key,value) VALUES('familiesStale','0') "
-                "ON CONFLICT(key) DO UPDATE SET value=excluded.value"
+            db.executemany(
+                "INSERT INTO meta(key,value) VALUES(?,?) "
+                "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                (("familiesStale", "0"), ("familiesFolder", self.folder)),
             )
             return found
 

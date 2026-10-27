@@ -1224,6 +1224,12 @@ class ImageFolderTests(unittest.TestCase):
                     "folders": ["Graphics/Pictures"],
                 },
             )
+            # A folder not scanned yet is neither investigated nor done.
+            service.update(
+                identity, service.state(identity)["revision"], {"imageRoot": "decoded"}
+            )
+            self.assertEqual(service.assistant(identity, "status")["next"], "scan")
+            self.assertFalse(service.state(identity)["investigated"])
             scan("decoded")
             state = service.state(identity)
             self.assertEqual(state["selection"], [])
@@ -1240,8 +1246,12 @@ class ImageFolderTests(unittest.TestCase):
             self.assertEqual(
                 [row["id"] for row in listed["items"]], ["decoded/Pictures/Menu.png"]
             )
+            status = service.assistant(identity, "status")
+            self.assertEqual(status["counts"]["indexed"], 1)
+            # The Images task reads the same "investigated" as images --status:
+            # the new folder's image is not examined yet.
             self.assertEqual(
-                service.assistant(identity, "status")["counts"]["indexed"], 1
+                (state["investigated"], status["next"]), (False, "investigate")
             )
             # The first folder's images come back, as they were, with it.
             scan("Graphics")

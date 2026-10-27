@@ -275,6 +275,7 @@ test("the Project page continues with the next step and keeps a later saved posi
     projectId: state.projectId,
     discovery: { status: "complete" },
     editing: { status: "complete" },
+    investigated: true,
     counts: {
       examined: 2,
       applied: 1,
