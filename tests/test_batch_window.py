@@ -14,6 +14,7 @@ from dazedtl.compatibility.batch_window import (
     install_worker,
     reserve_clarification,
     scope,
+    workspace_of,
 )
 from dazedtl.compatibility.process_view import saved
 from dazedtl.storage import write_json
@@ -102,7 +103,10 @@ class BatchWindowTests(unittest.TestCase):
             self.assertEqual(window.fill(task), 3)
             self.assertEqual(window.providers.submit_batch.call_count, 3)
             self.assertEqual(
-                active_tokens(window.root, scope(window.plan), window.count, 10), 10
+                active_tokens(
+                    workspace_of(window.root), scope(window.plan), window.count, 10
+                ),
+                10,
             )
             self.finish(window, 0, status="in_progress", succeeded=1)
             self.assertEqual(
@@ -111,7 +115,10 @@ class BatchWindowTests(unittest.TestCase):
             self.finish(window, 0)
             self.assertEqual(window.fill(task), 1)  # Others are still in progress.
             self.assertEqual(
-                active_tokens(window.root, scope(window.plan), window.count, 10), 9
+                active_tokens(
+                    workspace_of(window.root), scope(window.plan), window.count, 10
+                ),
+                9,
             )
             self.assertEqual(
                 read_json(window.root / "log/batch_state.json")["status"], "submitted"
@@ -134,7 +141,10 @@ class BatchWindowTests(unittest.TestCase):
             self.assertEqual(bounded.fill(task2), 8)
             self.assertEqual(bounded.providers.submit_batch.call_count, 4)
             self.assertEqual(
-                active_tokens(bounded.root, scope(bounded.plan), bounded.count, 8), 8
+                active_tokens(
+                    workspace_of(bounded.root), scope(bounded.plan), bounded.count, 8
+                ),
+                8,
             )
             state = read_json(window.root / "log/batch_state.json")
             state["batches"].pop()
@@ -349,5 +359,108 @@ class BatchWindowTests(unittest.TestCase):
             self.assertFalse(retry_once()["ready"])
             provider.submit.assert_called_once()
             self.assertEqual(
-                active_tokens(retry.root, scope(retry.plan), retry.count, 10), 3
+                active_tokens(
+                    workspace_of(retry.root), scope(retry.plan), retry.count, 10
+                ),
+                3,
+            )
+
+    def test_assistant_led_clarifications_share_the_guided_window(self):
+        # An Assistant-led run on a Guided run's OpenAI connection sends its
+        # clarification Batch only once the shared window has room, and the
+        # window counts the Assistant-led run's provider jobs in flight.
+        from dazedtl.translation.jobs import RunStore
+        from dazedtl.translation.refusals import POLICY
+        from dazedtl.translation.runner import Runner
+
+        from tests.test_translation import BatchProvider, register, request
+
+        with TemporaryDirectory() as directory:
+            base = Path(directory)
+            game = base / "game"
+            game.mkdir()
+            register(base, "project", game)
+            write_json(
+                base / "settings/settings.json",
+                {
+                    "version": 3,
+                    "connections": [
+                        {"id": "connection", "runtime_name": "same-connection"}
+                    ],
+                },
+            )
+            guided, task = self.fixture(base, "guided", [8])
+            guided.fill(task)
+            store = RunStore(base)
+            job = store.create(
+                "project",
+                {
+                    "version": 1,
+                    "kind": "translation",
+                    "source": str(game),
+                    "complete": True,
+                    "requests": [
+                        {
+                            **request("refused"),
+                            "params": {
+                                "model": "fixture",
+                                "tokens": 3,
+                                "messages": [],
+                            },
+                            "input_tokens": 3,
+                        }
+                    ],
+                    "configuration": {
+                        "mode": "batch",
+                        "model": "fixture",
+                        "connection_id": "connection",
+                        "endpoint": "https://api.openai.com/v1",
+                        "refusalRetry": POLICY,
+                    },
+                    "batch_limits": [50, 100000, 10],
+                },
+                {"cost": 1},
+            )
+            store.authorize(job)
+
+            class Provider(BatchProvider):
+                def input_tokens(self, _params):
+                    return 3
+
+                def submit(self, items):
+                    super().submit(items)
+                    return {"id": "original" if self.calls == 1 else "clarified"}
+
+                def status(self, identity):
+                    return {
+                        **super().status(identity),
+                        "api_status": "completed" if self.ended else "running",
+                    }
+
+                def collect(self, _identity, mapping):
+                    refusal = {"text": "I cannot translate explicit sexual content."}
+                    return {key: refusal for key in mapping.values()}, [], {}
+
+            provider = Provider()
+
+            def step():
+                Runner(store, job["id"], provider, lambda: None).step()
+                return store.load(job["id"])[0]
+
+            step()
+            self.assertEqual(
+                active_tokens(base, scope(guided.plan), guided.count, 10), 11
+            )
+            provider.ended = True
+            waiting = step()
+            self.assertEqual(waiting["status"], "waiting")
+            self.assertEqual(
+                waiting["message"], "Waiting for available Batch token capacity."
+            )
+            self.assertEqual(provider.calls, 1)
+            self.finish(guided, 0)
+            step()
+            self.assertEqual(provider.calls, 2)
+            self.assertEqual(
+                active_tokens(base, scope(guided.plan), guided.count, 10), 3
             )

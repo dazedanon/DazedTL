@@ -4,6 +4,7 @@ import json
 import os
 import time
 from contextlib import contextmanager
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -27,12 +28,34 @@ def scope(plan):
     )
 
 
+def run_scope(workspace, configuration, names=None):
+    """The connection an Assistant-led run's frozen configuration sends
+    with, named the way scope() names a Guided plan's; `names` are the saved
+    connections' runtime names by ID, read from Settings when not given."""
+    from dazedtl.settings.execution import connection_names
+
+    if names is None:
+        names = connection_names(Path(workspace))
+    return (
+        names.get(configuration.get("connection_id")),
+        str(configuration.get("endpoint", "")).rstrip("/"),
+        configuration.get("model"),
+    )
+
+
+def workspace_of(root):
+    """The app workspace holding a Guided run folder, engine/manual/jobs/<run>."""
+    return Path(root).parents[3]
+
+
 @contextmanager
-def capacity_lock(root, identity):
+def capacity_lock(workspace, identity):
     # Separate from the app lock: private workers share this connection/model
     # budget without holding the UI/API lock during uploads.
+    engine = Path(workspace) / "engine"
+    engine.mkdir(exist_ok=True)
     folder = project_path(
-        root.parents[2],
+        engine,
         "batch-capacity/" + digest(identity) + "/workspace.lock",
         exists=False,
     ).parent
@@ -79,14 +102,28 @@ def chunks(requests, submitted, tokens, available, target, limits):
     return result
 
 
-def active_tokens(root, identity, count, allowance):
-    """Count known pending jobs and uncertain creates on the same connection.
+def active_tokens(workspace, identity, count, allowance):
+    """Count known pending jobs and uncertain creates on the same connection,
+    Guided's and Assistant-led's, which share the provider's window.
 
     Partial request progress cannot release a Batch's tokens. Older receipts
     without token estimates are counted from their retained exact payloads.
     """
-    used, seen = 0, set()
-    for folder in root.parent.iterdir():
+    seen = set()
+    used = guided_tokens(
+        Path(workspace) / "engine/manual/jobs", identity, count, allowance, seen
+    )
+    if used >= allowance:
+        return used
+    return used + run_tokens(workspace, identity, count, allowance, seen)
+
+
+def guided_tokens(jobs, identity, count, allowance, seen):
+    """active_tokens of the Guided runs in the folder `jobs`."""
+    if not jobs.is_dir():
+        return 0
+    used = 0
+    for folder in jobs.iterdir():
         if not folder.is_dir() or folder.is_symlink():
             continue
         state = saved(folder, "batch_state.json")
@@ -156,48 +193,148 @@ def active_tokens(root, identity, count, allowance):
             used += estimate
         # Clarifications share the same provider quota, including creates whose
         # returned ID has not yet been recorded.
-        for path in (folder / "log/clarifications").glob("*.summary.json"):
-            summary = saved(folder, "clarifications/" + path.name)
-            if summary.get("original_id") not in {row["id"] for row in matching}:
+        pending = clarification_tokens(
+            folder, {row["id"] for row in matching}, count, seen
+        )
+        if pending is None:
+            return allowance
+        used += pending
+    return used
+
+
+def clarification_tokens(folder, originals, count, seen):
+    """The tokens of the run folder's sent, unfinished clarification Batches
+    of the provider jobs `originals`, or None when a payload is unknown."""
+    used = 0
+    for path in (folder / "log/clarifications").glob("*.summary.json"):
+        summary = saved(folder, "clarifications/" + path.name)
+        if summary.get("original_id") not in originals:
+            continue
+        pending = [
+            row
+            for row in summary.get("batches", [])
+            if row.get("state") in {"sending", "submitted"}
+            and row.get("api_status") not in TERMINAL
+        ]
+        if not pending:
+            continue
+        detail = saved(
+            folder, "clarifications/" + path.name.replace(".summary.json", ".json")
+        )
+        detailed = {
+            (
+                row.get("id"),
+                tuple(item["key"] for item in row.get("items", [])),
+            ): row
+            for row in detail.get("batches", [])
+        }
+        for row in pending:
+            if row.get("id") and row["id"] in seen:
                 continue
-            pending = [
-                row
-                for row in summary.get("batches", [])
-                if row.get("state") in {"sending", "submitted"}
-                and row.get("api_status") not in TERMINAL
-            ]
-            if not pending:
-                continue
-            detail = saved(
-                folder, "clarifications/" + path.name.replace(".summary.json", ".json")
-            )
-            detailed = {
+            items = detailed.get(
                 (
                     row.get("id"),
                     tuple(item["key"] for item in row.get("items", [])),
-                ): row
-                for row in detail.get("batches", [])
-            }
-            for row in pending:
-                if row.get("id") and row["id"] in seen:
-                    continue
-                items = detailed.get(
-                    (
-                        row.get("id"),
-                        tuple(item["key"] for item in row.get("items", [])),
-                    ),
-                    {},
-                ).get("items")
-                if not items or any("params" not in item for item in items):
-                    return allowance
-                used += sum(count(item["params"]) for item in items)
-                if row.get("id"):
-                    seen.add(row["id"])
+                ),
+                {},
+            ).get("items")
+            if not items or any("params" not in item for item in items):
+                return None
+            used += sum(count(item["params"]) for item in items)
+            if row.get("id"):
+                seen.add(row["id"])
+    return used
+
+
+# The longest an OpenAI Batch runs before it expires. A polled run saves its
+# record every pass, so one unsaved for longer has no job left at the provider.
+COMPLETION_WINDOW = timedelta(hours=25)
+
+# Each sent chunk's input tokens by its run's plan and custom ID: the plans of
+# large games are slow to read, and an approved plan never changes.
+_chunk_tokens = {}
+
+
+def run_tokens(workspace, identity, count, allowance, seen):
+    """active_tokens of the Assistant-led runs: their provider jobs sent and
+    not yet ended, including a create whose returned ID was not recorded,
+    and their clarification Batches. A record no run can read is skipped,
+    since no worker can send from it."""
+    from dazedtl.settings.execution import connection_names
+    from dazedtl.translation.files import read_json
+    from dazedtl.translation.jobs import RunStore
+
+    runs = Path(workspace) / "translation/runs"
+    if not runs.is_dir():
+        return 0
+    store, used = RunStore(workspace), 0
+    names = connection_names(Path(workspace))
+    oldest = datetime.now(UTC) - COMPLETION_WINDOW
+    for folder in runs.iterdir():
+        path = folder / "job.json"
+        if folder.is_symlink() or not path.is_file():
+            continue
+        try:
+            job = read_json(path)
+            updated = datetime.fromisoformat(job["updated"])
+        except KeyError, TypeError, ValueError:
+            continue
+        configuration = job.get("configuration") or {}
+        if (
+            configuration.get("mode") != "batch"
+            or updated < oldest
+            or run_scope(workspace, configuration, names) != identity
+        ):
+            continue
+        chunks = job.get("batches") or []
+        for chunk in chunks:
+            if (
+                chunk.get("state") not in {"submitting", "submitted"}
+                or chunk.get("api_status") in TERMINAL
+                or chunk.get("id")
+                and chunk["id"] in seen
+            ):
+                continue
+            key = (job.get("plan_sha256"), chunk["items"][0]["custom_id"])
+            if key not in _chunk_tokens:
+                try:
+                    requests = {
+                        row["id"]: row for row in store.plan(folder, job)["requests"]
+                    }
+                    _chunk_tokens[key] = sum(
+                        requests[item["request"]].get("input_tokens")
+                        or count(requests[item["request"]]["params"])
+                        for item in chunk["items"]
+                    )
+                except KeyError, ValueError:
+                    return allowance  # Unknown paid work never becomes free capacity.
+            used += _chunk_tokens[key]
+            if chunk.get("id"):
+                seen.add(chunk["id"])
+        pending = clarification_tokens(
+            folder, {chunk["id"] for chunk in chunks if chunk.get("id")}, count, seen
+        )
+        if pending is None:
+            return allowance
+        used += pending
     return used
 
 
 @contextmanager
+def reserve(workspace, identity, items, count, limit):
+    """Whether the clarification `items` fit the connection's window now,
+    held while they are sent so another worker cannot take the same room."""
+    with capacity_lock(workspace, identity) as acquired:
+        if not acquired:
+            yield False
+            return
+        used = active_tokens(workspace, identity, count, limit)
+        yield sum(count(item["params"]) for item in items) <= max(0, limit - used)
+
+
+@contextmanager
 def reserve_clarification(root, plan, items, count, limit):
+    """reserve for a Guided run's clarification Batch."""
     if (
         plan.get("batch_link")
         or urlsplit(plan.get("settings", {}).get("api", "")).hostname
@@ -206,13 +343,24 @@ def reserve_clarification(root, plan, items, count, limit):
     ):
         yield True
         return
-    root = Path(root)
-    with capacity_lock(root, scope(plan)) as acquired:
-        if not acquired:
-            yield False
-            return
-        used = active_tokens(root, scope(plan), count, limit)
-        yield sum(count(item["params"]) for item in items) <= max(0, limit - used)
+    with reserve(workspace_of(root), scope(plan), items, count, limit) as available:
+        yield available
+
+
+@contextmanager
+def reserve_run_clarification(workspace, configuration, items, count, limit):
+    """reserve for an Assistant-led run's clarification Batch; `limit` is
+    its frozen plan's Batch token allowance."""
+    if (
+        urlsplit(configuration.get("endpoint", "")).hostname != "api.openai.com"
+        or not limit
+    ):
+        yield True
+        return
+    with reserve(
+        workspace, run_scope(workspace, configuration), items, count, limit
+    ) as available:
+        yield available
 
 
 class BatchWindow:
@@ -231,7 +379,7 @@ class BatchWindow:
         return self.tokens[key]
 
     def fill(self, task):
-        with capacity_lock(self.root, scope(self.plan)) as acquired:
+        with capacity_lock(workspace_of(self.root), scope(self.plan)) as acquired:
             if not acquired:
                 return 0
             with self.translation._batch_submit_lock():
@@ -300,7 +448,9 @@ class BatchWindow:
                 available = max(
                     0,
                     limit
-                    - active_tokens(self.root, scope(self.plan), self.count, limit),
+                    - active_tokens(
+                        workspace_of(self.root), scope(self.plan), self.count, limit
+                    ),
                 )
                 # Keep several independently completing jobs in the window;
                 # one straggler should not retain the entire token allowance.

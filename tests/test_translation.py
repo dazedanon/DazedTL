@@ -1064,7 +1064,12 @@ class TranslationTests(unittest.TestCase):
         # The journal sends only its saved clarified payloads, so a changed
         # request or Batch must stop it. A record from before version 2, which
         # kept every original request, must still continue its run.
+        from contextlib import nullcontext
+
         from dazedtl.translation.batch_refusals import advance, journal
+
+        def send(*args):
+            return advance(*args, reserve=lambda _items: nullcontext(True))
 
         requests = {
             "good": {
@@ -1088,20 +1093,18 @@ class TranslationTests(unittest.TestCase):
             def status(self, _identity):
                 return {"ended": False, "api_status": "running", "counts": {}}
 
-        advance(self.root, "original", requests, responses, {}, Provider())
+        send(self.root, "original", requests, responses, {}, Provider())
         path = journal(self.root, "original")
         record = json.loads(path.read_bytes())
         self.assertNotIn("requests", record)
         changed = {**requests, "refused": {**requests["refused"], "model": "other"}}
         for version in (2, None):
             with self.subTest(version=version):
-                waiting = advance(
-                    self.root, "original", requests, None, None, Provider()
-                )
+                waiting = send(self.root, "original", requests, None, None, Provider())
                 self.assertEqual(waiting["responses"], responses)
                 for other in (changed, {"good": requests["good"]}):
                     with self.assertRaises(ValueError):
-                        advance(self.root, "original", other, None, None, Provider())
+                        send(self.root, "original", other, None, None, Provider())
             # The same journal as an earlier version wrote it.
             record = {
                 key: value
