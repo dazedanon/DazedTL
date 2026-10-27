@@ -61,6 +61,34 @@ def result(identity, text='{"line":"Potion\\\\C[0]"}', **extra):
     }
 
 
+# 108 input tokens at 0.8 and 250 output tokens at 3 per million, the Batch
+# rates POLICY gives MODEL.
+QUOTED = (108 * 0.8 + 250 * 3) / 1_000_000
+
+
+class OpenRouterQuoteTests(unittest.TestCase):
+    """A quote reads the real engine, outside the stand-in util package."""
+
+    def test_quotes_use_absolute_batch_rates_once(self):
+        # Input/output discounts can differ. An estimate may not halve
+        # already discounted rates again.
+        cfg = {
+            "mode": "batch",
+            "model": MODEL,
+            "provider": "openrouter",
+            "openrouterBatch": POLICY,
+            "rates": {"input": 2, "output": 8, "batch_factor": None},
+        }
+        # Each request also counts 8 tokens of message framing.
+        quoted = quote(
+            [{"params": {}, "sources": {"line": "薬"}}],
+            cfg,
+            "openrouter",
+            lambda _: 100,
+        )
+        self.assertEqual(quoted["cost"], QUOTED)
+
+
 class OpenRouterBatchTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -409,24 +437,9 @@ class OpenRouterBatchTests(unittest.TestCase):
         ):
             client.collect("paid", {"one": "key1"})
 
-    def test_quotes_and_native_file_costs_use_absolute_batch_rates_once(self):
-        # Input/output discounts can differ. Neither estimates nor native
-        # per-file/global accounting may halve already discounted rates again.
-        cfg = {
-            "mode": "batch",
-            "model": MODEL,
-            "provider": "openrouter",
-            "openrouterBatch": POLICY,
-            "rates": {"input": 2, "output": 8, "batch_factor": None},
-        }
-        # Each request also counts 8 tokens of message framing.
-        quoted = quote(
-            [{"params": {}, "sources": {"line": "薬"}}],
-            cfg,
-            "openrouter",
-            lambda _: 100,
-        )
-        self.assertEqual(quoted["cost"], (108 * 0.8 + 250 * 3) / 1_000_000)
+    def test_native_file_costs_use_absolute_batch_rates_once(self):
+        # Input/output discounts can differ. Native per-file/global accounting
+        # may not halve already discounted rates again.
         native_value = {
             "model": MODEL,
             "provider": "openrouter",
@@ -462,7 +475,7 @@ class OpenRouterBatchTests(unittest.TestCase):
             for _ in range(2):
                 openrouter_pricing.configure(translation, POLICY)
                 self.assertEqual(
-                    translation.estimateCostComparison()["batch_cost"], quoted["cost"]
+                    translation.estimateCostComparison()["batch_cost"], QUOTED
                 )
                 self.assertAlmostEqual(
                     translation.calculateCost(130, 20, MODEL),
