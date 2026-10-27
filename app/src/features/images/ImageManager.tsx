@@ -886,6 +886,24 @@ function Manager({
   // nothing left to translate.
   const listDone =
     shown === "list" && !value.view.folder && !value.view.query.trim();
+  // Before the assistant examined the images, an empty list waits for the
+  // investigation rather than having nothing left.
+  const unexamined = listDone && flow.unexamined;
+  // The Investigate step's action, which an empty list waiting for it offers
+  // too.
+  const investigation = {
+    label: "Copy investigation task",
+    disabled: busy || !counts.indexed,
+    disabledReason: counts.indexed ? "" : "Index the images first.",
+    ...step("discovery_task", "Copying…"),
+    // While a task waits, copying it again hands out the same task.
+    onClick: () =>
+      void perform("discovery_task", {
+        scope: flow.waiting.investigation
+          ? state.discovery.scope || "remaining"
+          : "remaining",
+      }),
+  };
   // Which views show follows the whole game, so the switch keeps its shape;
   // their numbers follow the folder and search, as the grid does.
   const scoped = grid.views;
@@ -1037,19 +1055,8 @@ function Manager({
       )}
       {flow.step === "investigate" && (
         <ActionControl
-          label="Copy investigation task"
+          {...investigation}
           variant={flow.waiting.investigation ? "default" : "primary"}
-          disabled={busy || !counts.indexed}
-          disabledReason={counts.indexed ? "" : "Index the images first."}
-          {...step("discovery_task", "Copying…")}
-          // While a task waits, copying it again hands out the same task.
-          onClick={() =>
-            void perform("discovery_task", {
-              scope: flow.waiting.investigation
-                ? state.discovery.scope || "remaining"
-                : "remaining",
-            })
-          }
         />
       )}
       {translating && (
@@ -1292,46 +1299,64 @@ function Manager({
                       ? "No images indexed"
                       : folderSearch
                         ? "No matches in this folder"
-                        : listDone
-                          ? "Nothing left to translate"
-                          : "No matching images"}
+                        : unexamined
+                          ? counts.examined
+                            ? "Some images not examined yet"
+                            : "Not examined yet"
+                          : listDone
+                            ? "Nothing left to translate"
+                            : "No matching images"}
                   </h3>
                   {/* A search inside a folder looks only there, which the grid
                   alone does not show. */}
-                  {(!counts.indexed || folderSearch || hidden > 0) && (
+                  {(!counts.indexed ||
+                    folderSearch ||
+                    unexamined ||
+                    hidden > 0) && (
                     <p>
                       {!counts.indexed
                         ? "Index the image library to begin discovery or choose images yourself."
                         : folderSearch
                           ? `The search looks only in ${value.view.folder}.`
-                          : `${hidden.toLocaleString()} ${hidden === 1 ? "image in your list is" : "images in your list are"} outside this view.`}
+                          : unexamined
+                            ? flow.waiting.investigation
+                              ? "Your assistant's recommendations appear here as it saves them."
+                              : "Your assistant recommends the images to translate once it examines them."
+                            : `${hidden.toLocaleString()} ${hidden === 1 ? "image in your list is" : "images in your list are"} outside this view.`}
                     </p>
                   )}
-                  <Button
-                    onClick={() =>
-                      !counts.indexed
-                        ? perform("scan")
+                  {/* While the assistant examines them, the list fills here. */}
+                  {unexamined ? (
+                    !flow.waiting.investigation && (
+                      <ActionControl {...investigation} />
+                    )
+                  ) : (
+                    <Button
+                      onClick={() =>
+                        !counts.indexed
+                          ? perform("scan")
+                          : folderSearch
+                            ? changeView({ folder: "" }, true)
+                            : changeView(
+                                {
+                                  query: "",
+                                  status: "all",
+                                  folder: "",
+                                  showSelected: false,
+                                },
+                                true,
+                              )
+                      }
+                    >
+                      {!counts.indexed
+                        ? "Index images"
                         : folderSearch
-                          ? changeView({ folder: "" }, true)
-                          : changeView(
-                              {
-                                query: "",
-                                status: "all",
-                                folder: "",
-                                showSelected: false,
-                              },
-                              true,
-                            )
-                    }
-                  >
-                    {!counts.indexed
-                      ? "Index images"
-                      : folderSearch
-                        ? "Search all folders"
-                        : listDone
-                          ? "Show all images"
-                          : "Clear filters"}
-                  </Button>
+                          ? "Search all folders"
+                          : listDone
+                            ? "Show all images"
+                            : "Clear filters"}
+                    </Button>
+                  )}
                 </div>
               ) : (
                 <div

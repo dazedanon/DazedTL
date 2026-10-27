@@ -328,6 +328,9 @@ class CensusTests(unittest.TestCase):
             }
         ]
         page = [
+            # A malformed command stopped the whole census; the commands
+            # after it are counted as before.
+            {"code": [408], "parameters": []},
             command(102, ["森", "村"], -1, 0, 2, 0),
             command(402, 0, "森"),
             command(108, "選択肢ヘルプ"),
