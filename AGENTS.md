@@ -4,42 +4,27 @@
 
 - Preserve existing user changes and the sibling DazedMTLTool repository.
 - Work on the `dev` branch; `main` changes only through `node scripts/release.mjs`.
-- Keep changes focused; preserve engine parsing, context, and translation behavior.
 - Land one feature or fix at a time: merge it into `dev` and verify it there before starting the next.
   Run sessions in parallel only for areas that share no files, and never collect several feature branches to merge together at release time.
-- Queue work that spans several areas, reworks a rule or saved data, or touches files a running queue item owns in `~/DazedTranslations/DazedTL-plan.md` with the `dazedtl-plan` skill instead of starting it directly; one coordinator session starts each item once what it waits for has landed.
-- When a change is done, land it yourself with the `dazedtl-land` skill instead of waiting to be asked.
 - Put problems you notice outside the task under New in the bug list (`~/DazedTranslations/DazedTL-bugs.md`) instead of fixing them; the `dazedtl-triage` skill works through it.
-- Run every session and subagent you start or propose on Opus 5.5 (`claude-opus-5-5`, Agent model `opus`), never Sonnet or Haiku, and always pass its effort explicitly instead of letting it inherit yours:
-  - Extra high (`xhigh`): the hardest work, where a wrong call costs most, such as reworking a rule already patched several times or debugging after a fix did not hold, and the queue coordinator, whose decisions steer other sessions.
-  - High: design, reworks, hard debugging, and triage, which works out causes and starts fix sessions.
-  - Medium: known one-area fixes, reviews, probes, merges, pushes and mechanical edits.
-  - Never low.
-  - A session that starts others runs at the highest effort it hands out, since `start_session` cannot start one above its starter's.
+- Run every session and subagent you start or propose on Opus 5.5 (`claude-opus-5-5`, Agent model `opus`), never Sonnet or Haiku, and pass its effort explicitly: `xhigh` for the queue coordinator and the hardest calls, such as a rule already patched several times or a fix that did not hold; `high` for design, reworks, hard debugging and triage; `medium` for known one-area fixes, reviews, probes, merges, pushes and mechanical edits; never `low`.
+  A session that starts others runs at the highest effort it hands out, since `start_session` cannot start one above its starter's.
 - Before fixing a bug, read the git history of the code involved.
   If the same behavior was fixed before, stop and report the root cause with a proposed rework instead of patching it again.
 - Give each rule one definition, such as how a text block's rows are grouped or how a file's status is counted, and call it from every place that needs it.
   When a fix touches a rule that is defined in more than one place, merge the copies first, or report them if merging is large.
 - Follow the ownership boundaries in [architecture](docs/architecture.md) and reuse its shared UI and state mechanisms.
-- Follow the [navigation and responsiveness boundary](docs/architecture.md#navigation-and-responsiveness) when adding screens, tabs, action handlers, or observed state.
-- Use the Qt GUI as the guided workflow reference, following the [reference and runtime distinction](docs/architecture.md#ownership).
-- Use the [UX principles](docs/architecture.md#ux-principles) as the ongoing design and review guide for this tool.
-- Build new screens, dialogs and menus from the [visual design rules](docs/architecture.md#visual-design) and the page, tab, dialog and menu rules in [workflow and shared presentation](docs/architecture.md#workflow-and-shared-presentation); add a token or shared component instead of a one-off value or layout.
-- Default to compact, task-focused layouts. Show each status once; omit zero-value counters, repeated explanations, finished progress bars, and technical identifiers from routine views. Keep related text and actions close, and put diagnostics in the dedicated inspector. Keep window dimensions stable when switching tabs; compact the content inside them. Do not use disclosure dropdowns to hide an overstuffed layout; shorten long text with an explicit expand action when needed.
-- Add functional pages incrementally; keep prototype translation routes and synthetic output out of the product.
+- For screens, action handlers or observed state, follow the [UX principles](docs/architecture.md#ux-principles), [visual design](docs/architecture.md#visual-design), [workflow and shared presentation](docs/architecture.md#workflow-and-shared-presentation) and [navigation and responsiveness](docs/architecture.md#navigation-and-responsiveness) sections, including their review steps.
 - Keep credentials, games, run files, logs, and caches outside the source tree.
 - Key saved work on its inputs and an explicit version, never on hashes of source files; see [persistence](docs/architecture.md#persistence-and-settings).
-- Use `rg` for repository searches.
 - For project-helper connection failures, follow the [sandboxed connection guidance](docs/translation-contract.md#sandboxed-connections).
 
 ## Documentation
 
-- Keep the README a short, plain-language page for installing, getting started and current limitations; many users can use AI but cannot program.
-  The [development guide](docs/development.md) holds setup, checks and releases, the [user guide](docs/user-guide.md) using the app, architecture boundaries and decision rationale, and AGENTS working rules.
-- Keep each fact in one place; link to authoritative code or documentation instead of copying it.
-- Update affected documentation in the same change; remove obsolete guidance.
-- Add a document only for a distinct reader need that existing documentation cannot serve concisely.
-- Prefer working code examples over copied snippets; avoid feature inventories, function catalogs, and progress diaries.
+- Keep each fact in one place and link to the authoritative code or document instead of copying it; the [documentation list](docs/development.md#documentation) says what each document holds.
+- Update affected documentation in the same change and remove obsolete guidance.
+  Add a document only for a reader need no existing one serves, and write no feature inventories, function catalogs or progress diaries.
+- Add a rule to this file only when most sessions need it and no script can enforce it; otherwise enforce it in a script, or put it in the document or skill where it applies.
 
 ## Testing
 
@@ -47,29 +32,12 @@
   [Checks](docs/development.md#checks) lists what each covers, focused test commands, and the formatter.
 - Run the [live test](docs/development.md#live-test) for changes to setup, launching, updates, file or process handling, or other platform-specific behavior; CI runs it on Windows and Linux.
 - Test every new feature end to end on Linux, as a user would, before reporting it done.
-- Land with `node scripts/land.mjs` ([landing](docs/development.md#landing)): it merges `dev`, runs the checks above and fast-forwards `dev` one landing at a time, without waiting for CI.
-  CI, Windows included, runs on `dev` after landing; a run still red is fixed forward or reverted by the session cutting the release, which reruns it once first.
-  To run it on a branch first, push the branch to GitHub and run `gh workflow run CI --ref <branch>`.
-  To reproduce a Windows problem, use the [Windows run](docs/development.md#live-test) workflow first.
-  Keep the Windows VM for what CI cannot show: a fresh Windows without the Visual C++ runtime or Git, Defender behavior, and real games that need Windows to run.
 - Reproduce bugs and test features end to end from a [test scenario](docs/development.md#test-scenarios).
   When none fits, add a scenario, game variant or stand-in mode there instead of building a private kit of games, profiles, providers or drivers.
-- UI changes require visual review of affected layouts against the [responsive layout guidance](docs/architecture.md#workflow-and-shared-presentation). Check resizing and reflow where relevant. Exercise long labels/paths and idle, pending, success, and error states; check alignment, text-to-action gaps, clipping, overflow, and redundant status text. Report unverified states.
-- For navigation or observer changes, verify that switching already-loaded views with clean drafts completes while a backend read is stalled, sends no navigation or refresh RPC, and survives a late snapshot. Reuse the [observer tests](tests/application.test.ts); retain draft recovery, project ownership, and execution guards.
-- Use shared layout primitives and spacing tokens, including ActionList/ActionRow for repeated action rows. Fix reusable layout defects in the shared primitive; do not compensate with per-button widths, fixed text heights, or clipped feedback.
-- Routine reversible actions should start on one click. Keep review where the user must approve cost, scope, or consequential changes; do not remove execution checks or duplicate-submission guards.
-- Action buttons must acknowledge pending work and show success or failure near the control; check saved artifacts on disk before presenting them as available.
 - Turn each bug's reproduction into a test that fails without the fix and commit it with the fix, unless the bug is a kind the skip rule below lists.
-- Before adding a test, name the concrete failure it protects against and search for overlapping coverage.
-- Extend an existing case for a distinct risk when readable; use the cheapest level that reliably catches the failure.
-- Reserve application tests for a few critical user journeys; use direct tests for difficult parsing, reconciliation, and other isolated logic.
-- Skip tests for trivial wrappers, constants, exact wording, incidental CSS, source substrings, framework guarantees, and duplicated behavior.
-- Keep tests hermetic with small generated or committed fixtures; no real providers, user games, credentials, or local workspace dependencies.
-- The full test suite has a hard 10-second wall-clock budget, including runner startup, fixtures, and teardown; builds and dependency installation are separate.
-  CI's slower runners use the larger budgets set in its [workflow](.github/workflows/ci.yml).
-- Measure the full suite with `node scripts/test.mjs`, which prints its runtime, before adding or expanding tests; at 10 seconds or more, pause additions and ask the user to choose removing redundant tests, refactoring for speed, or increasing the limit.
-- If added coverage reaches the limit, report the overrun and present the same choices before proceeding with more tests.
-- Do not bypass the budget by silently deleting or skipping tests, splitting suites, weakening checks, or raising the limit.
+- Give each new test a concrete failure it catches, at the cheapest level that catches it reliably: extend an overlapping case when it stays readable, keep application tests to a few critical journeys, and test parsing, reconciliation and other isolated logic directly.
+- Skip tests for trivial wrappers, constants, exact wording, incidental CSS, source substrings, framework guarantees, and duplicated behavior; keep tests hermetic, with no real providers, user games, credentials, or local workspace.
+- If `node scripts/test.mjs` reports its [budget](docs/development.md#checks) exceeded, stop adding tests and ask the user to choose between removing redundant tests, making them faster or raising the limit; never delete, skip, split or weaken tests to get under it.
 - Do not optimize for test counts or coverage percentages; report checks run, relevant runtime results, and unverified behavior.
 
 ## Foundation behaviors to protect
@@ -78,4 +46,4 @@
 - Project and run ownership remain correct through switching, interruption, and resume.
 - File operations preserve source games and reject invalid destinations; credentials remain isolated from renderer responses and drafts.
 - Paid work requires the intended approval and cannot be submitted twice by repeated input or retries.
-- Engine changes preserve control codes, speakers, glossary/context rules, and output formatting.
+- Engine changes preserve parsing, control codes, speakers, glossary/context rules, and output formatting.

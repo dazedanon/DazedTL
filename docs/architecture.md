@@ -215,6 +215,7 @@ Plugin and image progress in the game folder belongs to the project that saved i
 Strive for [Nielsen's ten usability heuristics](https://www.nngroup.com/articles/ten-usability-heuristics/) when designing and reviewing this tool.
 Make current state and the next useful action visible; use translation tasks and familiar language; offer clear exits and recovery; keep shared controls consistent; prevent scope and spending mistakes; make prerequisites visible instead of requiring memory; support both guided and experienced use; prioritize relevant actions; give errors a practical recovery path; and put concise help beside the task that needs it.
 Use these principles to evaluate real workflows, rather than adding extra panels or confirmation steps to satisfy a checklist.
+Routine reversible actions start on one click; a review stays only where the user approves cost, scope or a consequential change, and execution checks and duplicate-submission guards always stay.
 Give each idea one name and keep it everywhere: Apply only means writing into the game (settings are saved or used); Checkpoints are the game's Git commits, one per change, which the user views, goes back to, undoes or copies, and a game update merges a new official version into them; Line widths are the per-line character limits DazedTL wraps translated text to, with the rows a message window shows.
 Assistant-led is the UI name of the method built on Len's game-translation skills; code and records keep the `len` identifier.
 Its starting prompt runs the whole method without the user: it asks only for spending approval, a missing API connection, denied access or a decision no source evidence settles, and a check it cannot make stays pending instead of stopping the run.
@@ -269,10 +270,13 @@ Layouts must remain readable and usable from small laptop monitors to large 4K m
 Every page centers one content column, `--content-width`; a workspace whose grid and preview use every pixel, the Images task, is a wide [PageLayout](../app/src/ui/PageLayout.tsx) instead, whose body alone spans the window inside the gutter while its other frame rows keep the column.
 Frame rows (page headers, stage strip, task tabs, messages, scrolling bodies and footers) span the window and pad their content to that column, and rows that do not scroll reserve the body's scrollbar gutter, so every edge matches across screens and window sizes.
 Fill editors and file lists keep a minimum height and the body scrolls instead; a dialog whose tabs differ in height stacks them with [StackedTabPanels](../app/src/ui/Tabs.tsx), so switching tabs keeps its size; rows grow with feedback rather than fixing heights or clipping content.
+Default to compact, task-focused layouts: switching tabs keeps the window's size, so compact the content inside it instead.
+Never hide an overstuffed layout behind disclosure dropdowns; shorten long text with an explicit expand action.
+Review a layout change by resizing it where it reflows, with long labels and paths and in its idle, pending, success and error states; check alignment, text-to-action gaps, clipping, overflow and redundant status text, and report any state left unverified.
 
 #### Shared components
 
-Compose shared primitives with design tokens, and fix a reusable layout defect in the primitive, not per screen:
+Compose shared primitives with design tokens, and fix a reusable layout defect in the primitive instead of compensating per screen with per-button widths, fixed text heights or clipped feedback:
 [ActionList and ActionRow](../app/src/ui/ActionList.tsx) for repeated label and action rows, [Menu](../app/src/ui/Menu.tsx) for action lists that open from a button, [ComboBox](../app/src/ui/ComboBox.tsx) for editable suggestions, [Modal](../app/src/ui/Modal.tsx) with [DialogHeader and DialogBody](../app/src/ui/Dialog.tsx) for dialogs, [JobStatus](../app/src/ui/JobStatus.tsx) for operation summaries, [StatusMark](../app/src/ui/StatusMark.tsx) and [StatusIcon](../app/src/ui/StatusIcon.tsx) for status, [Notice](../app/src/ui/Notice.tsx) for inline notes, [StatusPanel](../app/src/ui/StatusPanel.tsx) for work that is not the user's own, [FileName](../app/src/ui/FileName.tsx), [PathInput](../app/src/ui/PathInput.tsx) and [PathText](../app/src/ui/PathText.tsx) for names and paths, and [ActionSlot](../app/src/ui/ActionSlot.tsx) for a tab's footer action.
 Shortcuts come from [useShortcut](../app/src/state/useShortcut.ts), scoped to the visible screen and the top dialog; nothing that spends, applies or packages gets a shortcut.
 
@@ -285,6 +289,8 @@ Each status shows once: a status heading that shows an action's outcome, such as
 Saved operation indexes carry their action identity, so feedback stays beside the right control after navigation or restart, and [FeedbackOwners](../app/src/ui/FeedbackOwners.tsx) holds both links in one scope: a page's fallback message shows only errors no mounted control reports, and a control only successes no mounted heading shows.
 Keep failures beside their action or in the run or file inspector; never aggregate historical errors into page-wide reminders or counters.
 Saved results, worker logs, frozen scope and record identifiers belong to the inspector's Technical view, not routine views.
+Routine views also leave out zero-value counters, finished progress bars and repeated explanations.
+A control presents a saved artifact as available only after checking it on disk.
 
 #### Guided stages and tasks
 
@@ -360,6 +366,7 @@ Task Options panels configure the task in place; they must not act as navigation
 Keep cross-task navigation in the phase/task controls, and reuse settings controls inside the owning task's panel.
 Route application screens and Guided workflow locations through the shared navigation methods exposed by `useApplication`; keep feature-local view choices in their owning UI state.
 Switching an already-loaded view with clean drafts must not require a Python request or await a project snapshot.
+A navigation or observer change proves this in the [observer tests](../tests/application.test.ts): the switch completes while a backend read is stalled, sends no navigation or refresh request and survives a late snapshot, and draft recovery, project ownership and execution guards still hold.
 Retain usable page data across revisits where its ownership and invalidation rules permit; scope any missing-data load and its pending feedback to the feature that needs it.
 [App](../app/src/app/App.tsx) and the [Guided workspace hook](../app/src/features/guided/workspace/useGuidedWorkspace.tsx) provide working examples.
 Automatic refreshes yield to the next operation in a chained action, so saving a draft and then navigating does not insert a discarded project read between them.

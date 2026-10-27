@@ -95,6 +95,7 @@ gh run download <run id> -n logs
 ```
 
 The ref must be pushed to GitHub, and the workflow file must be on `main` before GitHub offers it.
+Reproduce a Windows problem with this workflow first, and keep the Windows VM for what CI cannot show: a fresh Windows without the Visual C++ runtime or Git, Defender behavior, and real games that need Windows to run.
 
 Wait for a commit's CI with `node scripts/ci-wait.mjs <sha> [--branch <b>]`, never with `gh run watch` or a `gh run list` loop.
 Parallel sessions share GitHub's 5,000-call hourly API limit, which those commands exhaust.
@@ -253,6 +254,7 @@ Never edit `CHANGELOG.md` by hand; [changelog.mjs](../scripts/changelog.mjs) rea
 
 ## Documentation
 
+- The [README](../README.md) is a short, plain-language page for installing, getting started and current limitations, for people who use AI but cannot program.
 - The [user guide](user-guide.md) explains the app's workflows, API setup, backups and diagnostics.
 - [Architecture](architecture.md) covers code ownership, boundaries and design decisions.
 - The [translation contract](translation-contract.md) is for engine adapter authors and assistant integrations.
