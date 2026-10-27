@@ -419,13 +419,19 @@ class OpenRouterBatchTests(unittest.TestCase):
             "openrouterBatch": POLICY,
             "rates": {"input": 2, "output": 8, "batch_factor": None},
         }
-        # Each request also counts 8 tokens of message framing.
-        quoted = quote(
-            [{"params": {}, "sources": {"line": "薬"}}],
-            cfg,
-            "openrouter",
-            lambda _: 100,
-        )
+        # Each request also counts 8 tokens of message framing. A quote reads
+        # the real engine's util package, which the stand-in one hides, so it
+        # passed only after another module imported util.translation first.
+        self.modules.stop()
+        try:
+            quoted = quote(
+                [{"params": {}, "sources": {"line": "薬"}}],
+                cfg,
+                "openrouter",
+                lambda _: 100,
+            )
+        finally:
+            self.modules.start()
         self.assertEqual(quoted["cost"], (108 * 0.8 + 250 * 3) / 1_000_000)
         native_value = {
             "model": MODEL,
