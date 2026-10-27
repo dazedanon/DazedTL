@@ -3,6 +3,7 @@
 ### Changed
 
 - **Images:** investigating is optional: tick the images to translate yourself to skip it, or click **Choose images myself** while your assistant investigates to stop it and keep what it found; before an investigation the list's tab reads **To translate** instead of **Recommended**.
+- **Images:** big games open Images and switch between **Recommended**, **All images** and folders faster: thumbnails load near where you are looking instead of for the whole list, a thumbnail shown again isn't read from the game again, the grid no longer flashes empty and the tabs no longer shift.
 
 ### Fixed
 
