@@ -654,51 +654,6 @@ def _is_map_name_batch(request_instructions) -> bool:
     return "rpg location name" in lowered
 
 
-def translation_content_warnings(original_items, translated_items, langRegex):
-    """Return non-blocking content concerns that should remain reviewable."""
-    if not isinstance(original_items, list):
-        original_items = [original_items]
-        translated_items = [translated_items]
-
-    warning_indices = []
-    warnings = []
-    for i, (orig, trans) in enumerate(zip(original_items, translated_items)):
-        orig_str = str(orig).strip()
-        trans_str = str(trans).strip()
-        if not orig_str or orig_str == "Placeholder Text":
-            continue
-        if not re.search(langRegex, orig_str):
-            continue
-
-        line_warnings = []
-        has_bracketed_control = bool(re.search(r'\\[A-Z]\[', trans_str))
-        orig_text, trans_text = content_text(orig_str), content_text(trans_str)
-        if len(trans_text) <= 1 and len(orig_text) > 3 and not has_bracketed_control:
-            line_warnings.append(
-                f"Line{i+1}: Translation unusually short ('{trans_str}') for "
-                f"'{orig_str[:50]}...'"
-            )
-        elif (
-            len(orig_text) > 10
-            and len(trans_text) <= 2
-            and not has_bracketed_control
-            and not trans_text.isalnum()
-        ):
-            line_warnings.append(
-                f"Line{i+1}: Translation suspiciously short ('{trans_str}') for "
-                f"'{orig_str[:50]}...'"
-            )
-        if re.search(r"(.)\1{44,}", trans_str):
-            line_warnings.append(
-                f"Line{i+1}: Excessive character repetition (possible model glitch)"
-            )
-
-        if line_warnings:
-            warning_indices.append(i)
-            warnings.extend(line_warnings)
-
-    return warning_indices, warnings
-
 # Load .env, strip accidental whitespace, set base URL / org / API key.
 # Gemini/Mistral use their endpoints only when no custom API URL is set.
 load_dotenv()
@@ -6463,13 +6418,6 @@ def translateAI(text, history, config, filename=None, pbar=None, lock=None,
                                                 f"  ... and {len(content_reasons) - 5} more issues"
                                             )
                                 else:
-                                    _, content_warnings = translation_content_warnings(
-                                        clean_tItem, extracted, config.langRegex
-                                    )
-                                    if content_warnings and pbar:
-                                        pbar.write("Translation content warning:")
-                                        for warning in content_warnings[:5]:
-                                            pbar.write(f"  - {warning}")
                                     # Set translations (line count matches, placeholders valid, and content is good)
                                     final_translations = [
                                         _clean_extracted_line(line) for line in extracted
@@ -6528,13 +6476,6 @@ def translateAI(text, history, config, filename=None, pbar=None, lock=None,
                                         for reason in content_reasons:
                                             pbar.write(f"  - {reason}")
                                 else:
-                                    _, content_warnings = translation_content_warnings(
-                                        tItem, final_cleaned, config.langRegex
-                                    )
-                                    if content_warnings and pbar:
-                                        pbar.write("Translation content warning:")
-                                        for warning in content_warnings:
-                                            pbar.write(f"  - {warning}")
                                     # Accept output - all validations passed
                                     final_cleaned = corner_quotes(
                                         final_cleaned,

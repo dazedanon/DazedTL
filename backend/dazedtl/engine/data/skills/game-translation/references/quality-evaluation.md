@@ -21,20 +21,19 @@ This file covers: the two-gate split, how to *select* what to review when the co
 
 **Keep the mechanical gate and the quality judgement in separate columns, and exclude lines that fail the gate from judging rather than ranking them last.** A model that drops `\C[3]` already fails placeholder validation. Letting the judge also rank it last on prose double-counts one defect and hides whether its writing was good.
 
-Four automatic checks per returned line:
+Three automatic checks per returned line:
 
 | Check | Runs against | Failure |
 |---|---|---|
 | Placeholder validation | **protected** source vs **raw** translation | per-placeholder `expected N, found M` |
 | Control-code validation | original source vs **restored** translation | code set changed |
 | Hard content failure | translation | too short to carry meaning, runaway repetition, residual source-language text |
-| Warnings (non-blocking) | translation | increments `warning_segments`, leaves `valid=True` |
 
-Warning triggers worth encoding, all non-blocking:
+The short-output and repetition triggers of the hard content failure, with lengths measured without codes and placeholders:
 
 ```
-len(out) == 1 and len(src) > 3  and "\\" not in src   # 1 char out, no \X[ code in source
-len(out) <= 2 and len(src) > 10
+len(out) <= 1 and len(src) > 3                          # unless the output keeps an uppercase \X[ code
+len(out) <= 2 and len(src) > 10 and not out.isalnum()
 re.search(r"(.)\1{44,}", out)                          # runaway character repetition
 ```
 
