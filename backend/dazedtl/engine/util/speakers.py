@@ -15,10 +15,11 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Callable
 from pathlib import Path
 
 from util import rpgmaker_blocks as blocks
-from util.languages import ENGLISH, source_pattern
+from util.languages import ENGLISH, shares_kanji, source_pattern
 from util.paths import DATA_DIR
 from util.target_text import name_translated, title_case
 
@@ -54,6 +55,37 @@ SPEAKER_PREFIX_OPTIONAL_RE = re.compile(
 # belong to no game file. Run records keep them under this name instead, which
 # the app's run inspector (compatibility/process_view.py) reads back.
 NAMES_FILE = "speakers"
+
+# Kana a speaker's name translated into a target that shares the source's
+# kanji must not hold: the long vowel mark and half-width voicing marks
+# included, which util/languages KANA leaves out as no letters of their own.
+_NAME_KANA = re.compile(r"[ぁ-ゖァ-ヺー\uFF66-\uFF9F]")
+
+
+def speaker_translated(
+    source: str,
+    translated: str,
+    target: str,
+    left: Callable[[str], bool],
+    mixed: bool = False,
+) -> bool:
+    """Whether *translated* reads as the speaker name *source* translated
+    into *target*. A target that shares the source's kanji, such as Japanese
+    into Simplified Chinese, writes the name in them, so only kana is left.
+    Another target, Japanese included, has a source in another script: the
+    name must differ from its source and hold no text *left* reads as the
+    source's, unless *mixed* and it holds Latin letters, as WOLF's localized
+    names such as ``EN_セルリア`` do."""
+    normalized = str(translated or "").strip()
+    if not normalized:
+        return False
+    if shares_kanji(target=target):
+        return _NAME_KANA.search(normalized) is None
+    if normalized.casefold() == str(source or "").strip().casefold():
+        return False
+    return not left(normalized) or (
+        mixed and re.search(r"[A-Za-z]", normalized) is not None
+    )
 
 
 def strip_speaker_prefix(text: str) -> str:

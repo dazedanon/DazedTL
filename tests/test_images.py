@@ -379,11 +379,39 @@ class ImageTests(unittest.TestCase):
         later = {**found[1], "classification": "not_examined", "examined": False}
         state = self.report(request, [found[0], later])["state"]
         self.assertEqual(state["discovery"]["status"], "partial")
-        # A report that answers every image completes without its flag.
+        # Recommendations open the list in a view the user never chose.
+        self.assertTrue(state["view"]["showSelected"])
+        # A report that answers every image completes without its flag, and
+        # leaves the view the user is browsing as it was.
+        self.service.update(
+            self.identity,
+            state["revision"],
+            {
+                "view": {
+                    "showSelected": False,
+                    "status": "all",
+                    "folder": "img",
+                    "query": "B",
+                    "scroll": 120,
+                }
+            },
+        )
         state = self.report(request, found)["state"]
         self.assertEqual(state["discovery"]["status"], "complete")
         self.assertEqual(state["selection"], ["img/A.png"])
-        self.assertTrue(state["view"]["showSelected"])
+        self.assertEqual(
+            {
+                key: state["view"][key]
+                for key in ("showSelected", "status", "folder", "query", "scroll")
+            },
+            {
+                "showSelected": False,
+                "status": "all",
+                "folder": "img",
+                "query": "B",
+                "scroll": 120,
+            },
+        )
         # An image the user took out stays out when the report saves again.
         self.choose([])
         found[0]["reason"] = "Japanese title"
