@@ -3,6 +3,13 @@
 Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 [release.mjs](scripts/release.mjs) writes each entry from [release/notes.md](release/notes.md).
 
+## [2.36.1] - 2026-10-27
+
+### Fixed
+
+- **Translate:** in a Japanese game translated into Chinese, plugin command text, scripts, event labels and map names that a translation kept in Chinese are no longer sent again on every run, and map names translated before 2.35.0 keep their Japanese source instead of being sent and changed once more.
+- **Text QA:** in a Japanese game translated into Chinese, the list of text never translated no longer shows translated plugin settings, custom data and map names. A Text QA task still in review prepares again once after the update.
+
 ## [2.36.0] - 2026-10-26
 
 ### Changed
@@ -1104,6 +1111,7 @@ Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachan
 - The first release of DazedTL as a desktop app, installed from a ZIP with a START launcher and updated from inside the app.
 - **Guided steps** for RPG Maker MV, MZ and VX Ace games, and **Assistant-led** for any game.
 
+[2.36.1]: https://github.com/dazedanon/DazedTL/compare/v2.36.0...v2.36.1
 [2.36.0]: https://github.com/dazedanon/DazedTL/compare/v2.35.0...v2.36.0
 [2.35.0]: https://github.com/dazedanon/DazedTL/compare/v2.34.5...v2.35.0
 [2.34.5]: https://github.com/dazedanon/DazedTL/compare/v2.34.4...v2.34.5
