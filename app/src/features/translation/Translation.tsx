@@ -49,13 +49,14 @@ import { unavailableReason } from "../../ui/displayText";
 import { useOperationEnd } from "../../state/useOperationEnd";
 import { TextQaTab } from "./TextQaTab";
 import { PlaytestTab } from "./PlaytestTab";
+import { ReleaseTab } from "./ReleaseTab";
 import { jobTime } from "../guided/workspace/model";
 import { playtestActions } from "../guided/playtestView";
 import { finalCheckOpen } from "../guided/qaView";
 import { assistantRunState } from "./assistantPhases";
 
 export type TranslationView =
-  "progress" | "options" | "context" | "images" | "qa" | "playtest";
+  "progress" | "options" | "context" | "images" | "qa" | "playtest" | "release";
 type View = TranslationView;
 
 export default function Translation({
@@ -199,6 +200,7 @@ function Workspace({
           },
         ]
       : []),
+    ...(state.release ? [{ id: "release" as const, label: "Release" }] : []),
   ];
   const disabled = state.active || action.busy || draft.committing;
   const edit = <K extends keyof TranslationOptions>(
@@ -422,6 +424,16 @@ function Workspace({
               assistantRunState(state.progress, started, finalCheck) !== "done"
             }
             copy={copyControl()}
+          />
+        )}
+        {view === "release" && state.release && (
+          <ReleaseTab
+            state={state}
+            release={state.release}
+            action={action}
+            disabled={disabled}
+            showOptions={() => void show("options")}
+            copy={copyControl("default")}
           />
         )}
         {view === "images" && (

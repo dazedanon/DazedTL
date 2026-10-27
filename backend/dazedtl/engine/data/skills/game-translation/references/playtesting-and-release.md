@@ -396,37 +396,15 @@ caption. Preserve separate internal project IDs and save-directory names, then
 read the exact title from the running process. A title change does not imply a
 logo redraw. See [engine-gamemaker.md](engine-gamemaker.md) for the measured case.
 
-The denylist below describes exclusions from a contaminated working tree.
-Write the intentionally small player README into the assembled payload after
-that filtering; do not accidentally omit it with the development documentation.
+## Release archives are DazedTL's
 
-## Build the release archive with an explicit denylist
+Do not assemble a release archive yourself.
+`operation package` builds the local patch ZIP, and the user builds a clean game ZIP or saves the patch ZIP where they choose under **Release** in the app.
+Both follow DazedTL's release rules in `DAZEDTL_ROOT/../translation/release.py`, which every workflow shares:
 
-**Assume the working folder is contaminated, and anchor the workspace names to the
-ROOT only.** A real game legitimately ships `data/`, docs-shaped folders and `.md`
-files deep in its tree, so a blanket recursive denylist strips game content.
-
-**Exclude anywhere in the tree:** the tool's own dot-directory, `.git`, `.hg`, `.svn`,
-`__pycache__`, `.pytest_cache`, `.mypy_cache`, `.ruff_cache`, any directory named
-`save`/`saves`/`savedata`/`save_data`, any file starting with `.env`, `.DS_Store`,
-`desktop.ini`, `Thumbs.db`, patch scripts and their state files, and any file ending
-`.bak`/`.backup`/`.orig`/`.tmp`/`.rpgsave`/`.sav`.
-
-**Exclude at the root only:** `files`, `translated`, `log`, `logs`, `scripts`,
-`skills`, `docs`, `test`, `tests`, agent and editor directories (`.agents`, `.claude`,
-`.codex`, `.cursor`, `.vscode`, `.idea`, `.github`), `glossary.txt`, `vocab.txt`,
-`translation_quirks.txt`, `readme.md`, `todo.md`, `requirements.txt`, `.gitignore`,
-`.gitattributes`, `.editorconfig`, and any root file with suffix
-`.md`/`.markdown`/`.rst`/`.doc`/`.docx`/`.pdf` or whose name starts with `save`.
-
-Rules for the walker itself:
-
-- **Return a reason string per exclusion** so the operator sees why each file was
-  dropped.
-- **Never follow symlinks.**
-- **Prune directories top-down** so an excluded directory is never descended.
-- **Default the output path beside the game root** (`<root>-public.zip`), so a re-run
-  never archives the previous archive.
+- A clean game ZIP holds only the game's own files, as its recorded original has them, and the translation's; notes, downloads, saves, logs, caches, credentials and tool folders left in the game folder stay out, each with its reason in the review.
+- The game's folder inside a clean game ZIP takes the archive's name, in English letters for VX Ace.
+- GameUpdate's `gameupdate/patch-config.txt` goes into either ZIP only when the game's commit is the verified public version, which the ZIP then stamps in `gameupdate/previous_patch_sha.txt`; otherwise it stays out, so GameUpdate fetches the published patch on a player's first update.
 
 Shipping the working folder directly leaks `.env` and API keys, the whole
 request-dump log, personal saves, and the paid translation corpus.

@@ -13,9 +13,9 @@ the choice labels and help markers the game finds by their Japanese stay),
 images (index the game's images and investigate them, recommending each
 whose file name starts with text_), archived-images (decode a WOLF game's
 Data/Picture.wolf into a folder, translate its text_ images through the
-Images steps on that folder, pack it again and checkpoint it) or
-checkpoint, the operation assistants
-started before the app checkpointed their work ran. Each step reports the
+Images steps on that folder, pack it again and checkpoint it),
+checkpoint, the operation assistants started before the app checkpointed
+their work ran, or package (report QA done and package the patch). Each step reports the
 phase it enters, as the starting prompt asks, and write reports QA once it
 is done.
 HELPER is a JSON list: the project helper's command without its subcommand.
@@ -344,6 +344,27 @@ class Assistant:
     def checkpoint(self, message="translation: write English"):
         self.operation("checkpoint", {"manifest": MANIFEST, "message": message})
 
+    def package(self):
+        """Reports QA done, which records its evidence, and packages the
+        patch, as the starting prompt's last steps do."""
+        done = dict.fromkeys(
+            ("preparation", "extraction", "translation", "injection", "qa"),
+            "complete",
+        )
+        path = self.work / "report.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "phase": "patch",
+                    "text": f"{WORK}/translation-units.json",
+                    "phases": {**done, "patch": "active"},
+                }
+            ),
+            encoding="utf-8",
+        )
+        self.helper("progress", "--input", path.relative_to(self.game).as_posix())
+        print("Packaged:", self.operation("package")["result"]["path"])
+
     def help_markers(self):
         """The comment heads MPP_ChoiceEX shows as a choice's help, from its
         Choice Help Commands parameter, as the game's plugins.js sets it."""
@@ -472,6 +493,10 @@ class Assistant:
         results = json.loads((self.game / saved["path"]).read_text(encoding="utf-8"))
         by_file: dict[str, dict[str, str]] = {}
         for identity, value in results.get("translations", results).items():
+            # What organize --complete added from the census, such as the
+            # title, this extractor never writes back.
+            if "#" in identity:
+                continue
             name, _, pointer = identity.partition("/")
             by_file.setdefault(name, {})["/" + pointer] = value
         staged = self.work / "staged" / self.data
@@ -606,6 +631,7 @@ def main() -> None:
             "images",
             "archived-images",
             "checkpoint",
+            "package",
         ],
     )
     parser.add_argument("--helper-json", required=True)

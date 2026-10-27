@@ -268,7 +268,9 @@ GameUpdate can't update an encrypted game, so share a new patch for each update 
    DazedTL counts the game's Japanese text itself, and **Progress** shows whether your assistant extracted all of it; it can't leave out maps or scenes on its own.
    In **Assistant only**, lines your assistant won't translate appear under **Declined lines** while it carries on.
    Estimate them with your API connection and approve, or copy a prompt that has another coding assistant translate only those lines; your assistant picks up the translations once they're saved.
-5. To try again from scratch, stop your assistant and choose **Start over…** on **Progress**.
+5. Once your assistant has packaged the patch, the **Patch** phase on **Progress** shows its ZIP with **Open folder**.
+   **Release** builds a clean game ZIP, or saves the patch ZIP under a name and folder you choose, as Guided's [Release](#5-release) does; the patch waits for your assistant's QA.
+6. To try again from scratch, stop your assistant and choose **Start over…** on **Progress**.
    It puts back the original game files as a new checkpoint, so the attempt stays under **Checkpoints**, and moves your assistant's work and the playtest's fixes to `.dazedtl/archived`; save games, Image Manager work, older backups and your options stay, and so do the glossary and notes unless you clear **Keep glossary and notes**.
 
 Your assistant's session uses its own plan in every mode, so on a limited plan pick a smaller model or lower reasoning effort.
@@ -283,6 +285,7 @@ GameUpdate lets players update to your latest translation from its public Git re
 It is separate from [game updates](#game-updates), which merge a new official version of the game.
 
 Set up adds `GameUpdate.bat` for Windows, `GameUpdate_linux.sh` for Linux, the `gameupdate` folder and a `README.md` that tells players how to patch and becomes the repository's front page.
+In Assistant-led, your assistant adds them to RPG Maker, WOLF, Unity and TyranoScript games; GameUpdate copies the patch's files over the game, so a WOLF translation ships its data loose in the `Data` folder instead of a repacked `Data.wolf`, which GameUpdate takes out.
 MV and MZ games also get a startup check that warns players when the repository has a newer version and links to it; offline or after an error, the game starts as usual.
 Set up never replaces a game's existing `README.md`; to get the current one, delete it and choose **Recreate GameUpdate files** under **Preparation tools**.
 
@@ -313,9 +316,9 @@ A file with only `username`, `repo` and `branch` uses GitLab on `gitgud.io`.
 The translation's checkpoints also hold the game's glossary, settings and skills in its `.dazedtl` folder, so they are pushed to the repository with the translation.
 Players never get them: the game's `.gitattributes` keeps `.dazedtl` out of the downloads GameUpdate applies and out of patch ZIPs.
 
-Before building a clean game ZIP for players, push the translation to the repository branch it tracks.
+Before building a clean game ZIP or a patch ZIP for players, push the translation to the repository branch it tracks.
 **Release** then writes that commit into the ZIP's `gameupdate/previous_patch_sha.txt`, so GameUpdate knows which version players start from; the game folder itself doesn't change.
-Without the pushed commit, the clean ZIP leaves out `patch-config.txt`, as patch ZIPs always do, so GameUpdate stays off in it.
+Without the pushed commit, the ZIP leaves out `patch-config.txt`, so GameUpdate stays off in it until players download the published patch.
 
 ## Checkpoints
 

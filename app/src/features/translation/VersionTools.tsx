@@ -1,4 +1,3 @@
-import { PathText } from "../../ui/PathText";
 import { useState } from "react";
 import type { ReactNode } from "react";
 import type { TranslationState } from "../../api/contracts";
@@ -91,21 +90,6 @@ export function VersionTools({
             !version.trim() || (!untranslated && !original.trim()),
           )}
         </div>
-      </Section>
-      <Section title="Build a local patch">
-        <div className="actions">
-          {control(
-            "package",
-            "Build local patch",
-            {},
-            !state.git?.configured || state.progress?.phases.qa !== "complete",
-          )}
-        </div>
-        {state.lifecycle.delivery && (
-          <p className="translation-path">
-            Last package: <PathText path={state.lifecycle.delivery.path} wrap />
-          </p>
-        )}
       </Section>
     </div>
   );

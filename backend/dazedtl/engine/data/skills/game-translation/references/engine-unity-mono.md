@@ -209,8 +209,8 @@ one you can hand out. A full repack is the game itself and a licensing question,
 a technical one.
 
 Verify by running the distribution copy and confirming no `LogOutput.log` and no
-`untranslated.txt` appear. The general release discipline, including the archive
-denylist, is in `playtesting-and-release.md`.
+`untranslated.txt` appear. The general release discipline, including what a
+release archive holds, is in `playtesting-and-release.md`.
 
 **Windows gotcha:** `[` and `]` are wildcards to PowerShell's path parser, so a
 folder like `Game [English v1.0]` makes `Copy-Item`/`Compress-Archive` match nothing

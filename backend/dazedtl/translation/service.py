@@ -31,6 +31,7 @@ from . import (
     repricing,
     run_compiler,
 )
+from .assistant_release import AssistantRelease
 from .census import HELP_SEGMENT
 from .compilation import verify_compilation
 from .files import digest, evidence, project_path, read_json, verify_evidence
@@ -48,6 +49,21 @@ from .playtest import game_fixes
 from .project import ADDED, WORK, ProjectWorkspace, options, scope
 from .requests import LINE_KEYS, counted, price, repriceable, sent_text
 from .results import Results, exported, review_digest
+
+# The lifecycle record's fields the renderer reads; a ZIP's file stamps stay
+# in the backend, which compares them.
+DELIVERY_FIELDS = ("path", "commit", "game_version", "updater_stamp", "files")
+
+
+def lifecycle_view(state):
+    value = {key: item for key, item in state.items() if key != "release"}
+    if isinstance(state.get("delivery"), dict):
+        value["delivery"] = {
+            key: state["delivery"][key]
+            for key in DELIVERY_FIELDS
+            if key in state["delivery"]
+        }
+    return value
 
 
 def priced_mode(finishes, run_mode, project_mode):
@@ -109,6 +125,7 @@ OPERATIONS = {
     "census": ("Find the game's text to translate", {"decoded"}),
     "checkpoint": (history_label("checkpoint"), {"manifest", "message"}),
     "package": ("Package local translation patch", set()),
+    "gameupdate": ("Install GameUpdate", set()),
     "stage_update": (
         "Copy the new release for comparison",
         {"official", "version", "patch"},
@@ -140,6 +157,10 @@ USER_OPERATIONS = {
     "checkpoint_back": ("Go back to a checkpoint", {"commit"}),
     "checkpoint_undo": ("Undo a checkpoint", {"commit"}),
     "checkpoint_copy": ("Save a copy of a checkpoint", {"commit", "destination"}),
+    # Release's builds of the ZIP its review planned: a clean game ZIP, and
+    # the assistant's patch saved where the user chose.
+    "release": (history_label("release"), {"plan", "sha256"}),
+    "package": (history_label("release_patch"), {"plan", "sha256"}),
 }
 
 
@@ -163,6 +184,7 @@ class Translation:
         # And the Image Manager's progress for Assistant-led image records.
         self.image_units: Callable[[str], dict | None] | None = None
         self.game_update = GameUpdate(self)
+        self.releases = AssistantRelease(self)
 
     def project(self, identity):
         record = self.projects.get(identity)
@@ -415,7 +437,10 @@ class Translation:
             ),
             "git": git,
             "gameUpdate": self.game_update.state(project_id),
-            "lifecycle": saved_lifecycle,
+            "lifecycle": lifecycle_view(saved_lifecycle),
+            "release": self.releases.view(project_id, project.root, saved_lifecycle)
+            if record.get("method") == "len"
+            else None,
             "originalsRecorded": originals.available(
                 self.workspace, project_id, project.root, saved_lifecycle
             ),
@@ -598,7 +623,7 @@ This project uses the new DazedTL app as its state and execution owner. Keep the
 After a connection failure, inspect state and the relevant run before retrying any state-changing command; a lost response does not prove the action failed. Never blindly repeat a paid submission or project operation. The helper prints structured JSON; never copy API keys or the local connection token into game files, prompts, or arguments. If the app remains unreachable with permitted access, save local work and resume with the same prompt once the app is available. The app does not run the coding assistant itself.
 
 1. Inspect saved state, artifacts, existing Git branches and runs. Identify the engine using identify --engine <name> --evidence <project-relative investigation report>. Reuse valid work. When resuming, check the game files against Git and any saved hashes before trusting earlier notes, since a crash can undo a finished step such as a canary restore; restore and recheck anything changed, and record only checks whose output you saw. Do not re-submit in-flight work or regenerate reviewed translations merely because a session resumed. If state includes a legacyRun, recover it with legacy --action resume/export; only the user approves its submissions, in DazedTL. Preserve and review its exported results before importing matching receipts into the new request store.
-2. Before modifying runtime game files yourself, run operation record_original and wait for its saved job to complete. DazedTL keeps the original game's files in the game's own Git repository, under refs/dazedtl/originals, and records them itself before its first write to the game. Do not create full workspace copies, timestamped checkpoint directories or ZIPs inside .dazedtl. Keep existing older backups in .dazedtl/backups; never manually edit or prune them. Investigate the engine and adapt Len's tools in .dazedtl/len-method/work. RPG Maker uses operation rpgmaker_prepare. For VX Ace it first converts Data into ace_json, the files you translate and write, and sets an archive beside Game.exe aside in .dazedtl/ace, since the game reads nothing else while it is there. Honor the saved Forge choice. Other engines keep their native preparation and byte-preservation rules.
+2. Before modifying runtime game files yourself, run operation record_original and wait for its saved job to complete. DazedTL keeps the original game's files in the game's own Git repository, under refs/dazedtl/originals, and records them itself before its first write to the game. Do not create full workspace copies, timestamped checkpoint directories or ZIPs inside .dazedtl. Keep existing older backups in .dazedtl/backups; never manually edit or prune them. Investigate the engine and adapt Len's tools in .dazedtl/len-method/work. RPG Maker uses operation rpgmaker_prepare. For VX Ace it first converts Data into ace_json, the files you translate and write, and sets an archive beside Game.exe aside in .dazedtl/ace, since the game reads nothing else while it is there. Honor the saved Forge choice. For WOLF, Unity and TyranoScript, run operation gameupdate, which installs GameUpdate so players can update the patch; GameUpdate copies the patch over the game and takes out a WOLF game's Data.wolf, so ship WOLF data loose in Data, never a repacked Data.wolf. Other engines keep their native preparation and byte-preservation rules.
 3. Prepare a complete runtime patch-file manifest and establish Git through operation git_setup, supplying the actual game version, manifest, and untranslated-source attestation after inspecting the game. Existing baselines and branches must be reused. Never place {target} on original. DazedTL records the prepared game's files in Git too, for source mappings. Do not invent a source release number; use initial-unversioned when no official label exists. Then prove the delivery path with the skill's canary before bulk translation: write a few visible strings through the real injection path, verify that they read back from the installed files and survive the engine's round trip, read the window title with a script where the engine allows, and restore the game byte for byte, checked against hashes saved before the canary. Looking at the running game is optional; if you cannot capture it, record the visual check as pending and continue.
 4. Complete the shared setup investigation. Keep glossary, context and voice guidance in their shared files; preserve user edits. Record what runtime substitutions stand for, such as \\N[1] or \\V[3] or the engine's equivalents, in game.md, which every request carries. Then run census, which counts every piece of {source} text in the original game itself, and wait for its run. What it counts is the scope: every map, event, scene, database entry, script and plugin the game loads, including ones that look unused; it leaves out plugins the game's plugin list turns off or lists again. Never leave text out because of its content; scope is not yours to decide. If census lists archives it can't read, decode them with Len's tools into a folder in the game and run census --decoded <folder>.
 5. Write Len's extractor for this engine as code and save everything in scope as source units in the format units-format prints: one unit per message the player reads at once, with lines the engine stores separately, such as RPG Maker's consecutive 401 commands, joined by newlines; IDs your injector maps back, scene and group keys in play order, each line's kind, the speaker the engine's own evidence names (nameplates, face or speaker codes) or null, and literal protected tokens and layout bounds. Never inherit the previous speaker or infer identity or gender from speech style; unknown speakers are valid. Apart from requests you translate or review yourself, move game text only with scripts: never paste, retype, summarize or quote {source} or translated game text in your replies or in files you write by hand. Run organize --input <project-relative units file>, adding --complete once the units cover the census, as API estimates require. It groups the lines into requests, compiles the run and replies with counts; when it names text that isn't extracted, fix the extractor and organize again, using the locations in census-uncovered.json. Text players never see, such as file names, internal names, comments, script code and another language's translation table, can be set aside only by rules in .dazedtl/len-method/work/scope-rules.json: version 1, rules of kind, field and reason (asset_name, identifier, comment, script_code, not_displayed or other_language), each optionally limited to files matching a path pattern (file) or to exact runs (values), such as a script format's {source} command words. Dialogue, choices and names in formats DazedTL reads itself can't be set aside, nor can comment lines a game's plugins show players, such as RPG Maker choice help (field {HELP_SEGMENT}): extract each comment's lines as one unit and leave the marker line above them as the game wrote it, since the plugin finds them by it. Keep the units file unchanged while its run is in use. The translating model reads the surrounding {source}, so scene and line notes are not needed.
@@ -962,6 +987,31 @@ Additional project instructions:
             raise ValueError(
                 f"The text export counts {translated:,} lines, fewer than the {inventory['units']:,} organize --complete accepted. Export every unit before packaging."
             )
+
+    def package_ready(self, project_id):
+        """Refuses a patch of a translation that isn't finished and checked:
+        QA complete with current evidence, the audited scope translated and
+        the whole census extracted."""
+        _record, project = self.project(project_id)
+        selected = project.read()["options"]
+        if not lifecycle(self.workspace, project_id).get("runtime_manifest"):
+            raise ValueError(
+                "Register the patch's runtime manifest with Git setup first."
+            )
+        self.sync_images(project_id)
+        progress = self.engine.progress(project.root, selected, verify=True)
+        if progress.get("warnings") or progress["phases"].get("qa") != "complete":
+            raise ValueError(
+                "Complete and record current QA evidence before packaging the translation."
+            )
+        for metric in ("text", "images") if selected["include_images"] else ("text",):
+            counts = progress["metrics"][metric]
+            if counts["total"] is None or counts["translated"] != counts["total"]:
+                raise ValueError(
+                    "Finish the audited translation scope before packaging; unknown totals are not complete."
+                )
+        self.require_inventory(project_id, progress["metrics"]["text"]["total"])
+        delivery.verify(project.root, full=True)
 
     def validate_current(self, project_id, plan, *, compiled=True, index=None):
         """Refuses a plan its project, sources or baseline no longer match.
@@ -1472,6 +1522,11 @@ If you won't translate a request, skip it and go on; it stays declined. Use the 
             return self.update_task(project_id)
         return self._operation(project_id, action, arguments, OPERATIONS[action])
 
+    def user_operation(self, project_id, action, arguments):
+        """An operation started from the app's own controls, which the
+        project helper cannot reach, such as Release's builds."""
+        return self._operation(project_id, action, arguments, USER_OPERATIONS[action])
+
     def guided_operation(self, project_id, action, arguments):
         # Called only after the UI's one-use guided preview is consumed. This
         # entrypoint is deliberately absent from the RPC/helper method table.
@@ -1533,6 +1588,7 @@ If you won't translate a request, skip it and go on; it stays declined. Use the 
             "version_apply": {"preview_id"},
             "discard_release": {"stage"},
             "release_patch": {"plan", "sha256"},
+            "release": {"plan", "sha256"},
             "checkpoint_back": {"commit"},
             "checkpoint_undo": {"commit"},
             "checkpoint_copy": {"commit", "destination"},
@@ -1595,23 +1651,7 @@ If you won't translate a request, skip it and go on; it stays declined. Use the 
             if folder is not None:
                 extra = {**(extra or {}), "publications": str(folder)}
         if action == "package":
-            self.sync_images(project_id)
-            progress = self.engine.progress(project.root, selected, verify=True)
-            if progress.get("warnings") or progress["phases"].get("qa") != "complete":
-                raise ValueError(
-                    "Complete and record current QA evidence before packaging the translation."
-                )
-            for metric in (
-                ("text", "images") if selected["include_images"] else ("text",)
-            ):
-                counts = progress["metrics"][metric]
-                if counts["total"] is None or counts["translated"] != counts["total"]:
-                    raise ValueError(
-                        "Finish the audited translation scope before packaging; unknown totals are not complete."
-                    )
-            self.require_inventory(project_id, progress["metrics"]["text"]["total"])
-            delivery.verify(project.root, full=True)
-        if action == "package":
+            self.package_ready(project_id)
             # The patch carries GameUpdate's current config.
             self.game_update.sync(project_id)
         self.settings.prepare_engine()

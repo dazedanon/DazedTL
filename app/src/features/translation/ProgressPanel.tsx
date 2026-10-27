@@ -12,6 +12,7 @@ import { useMinute } from "../../state/useMinute";
 import { useLanguages } from "../../app/LanguagesProvider";
 import type { useAction } from "../../state/useAction";
 import { ActionControl } from "../../ui/ActionControl";
+import { ActionList } from "../../ui/ActionList";
 import { AssistantTask } from "../../ui/AssistantTask";
 import { Button } from "../../ui/Button";
 import { DialogBody, DialogHeader } from "../../ui/Dialog";
@@ -41,6 +42,8 @@ import {
 import { assistantRunState, phaseStates } from "./assistantPhases";
 import { DeclinedLines } from "./DeclinedLines";
 import { modeLabels } from "./OptionsPanel";
+import { OpenReleaseFolder } from "./ReleaseTab";
+import { ReleaseArtifactRow } from "../guided/Release";
 import { StartOver } from "./StartOver";
 
 /** The assistant reports at least every 10 minutes while it works. */
@@ -113,6 +116,8 @@ export function ProgressPanel({
       ["running", "waiting"].includes(job.status),
   );
   const total = text && (text.total ?? text.discovered);
+  // The patch the assistant packaged, or Release saved, for the Patch phase.
+  const patch = state.release?.artifacts.find((item) => item.kind === "patch");
   const qaQuestions =
     qa && !qa.applied && qa.current
       ? qa.questions.filter((row) => !row.choice).length
@@ -215,6 +220,21 @@ export function ProgressPanel({
               </span>
             )}
           </p>
+        )}
+        {patch && (
+          <ActionList>
+            <ReleaseArtifactRow
+              title="Patch ZIP"
+              artifact={patch}
+              open={
+                <OpenReleaseFolder
+                  artifact={patch}
+                  action={action}
+                  feedbackKey="patch-open"
+                />
+              }
+            />
+          </ActionList>
         )}
         {operation && <JobStatus job={operation} />}
       </AssistantTask>

@@ -42,6 +42,52 @@ def runtime_manifest(source, relative):
     return with_dazedtl_files(source, read_json(project_path(source, relative)))
 
 
+def release_plan_path(workspace, project_id, kind):
+    """Where Release's review of a ZIP of `kind`, game or patch, saves the
+    plan its build runs."""
+    return (
+        Path(workspace) / "translation/projects" / project_id / f"release-{kind}.json"
+    )
+
+
+def release_plan(workspace, project_id, arguments, kind):
+    """The release plan a build was given, as its review saved it."""
+    path = release_plan_path(workspace, project_id, kind)
+    payload = read_json(path) if path.is_file() else None
+    if (
+        arguments.get("plan") != path.relative_to(workspace).as_posix()
+        or not isinstance(payload, dict)
+        or digest(payload) != arguments.get("sha256")
+        or payload.get("version") != 1
+        or payload.get("project_id") != project_id
+        or payload.get("kind") != kind
+    ):
+        raise ValueError("The release plan changed. Review the ZIP again.")
+    return payload
+
+
+def translation_files(engine, source, options, manifest_path):
+    """The game's files the translation changed or added, its patch's, which
+    a clean game ZIP holds beside the game's own and its freshness compares;
+    none before Git is set up."""
+    if not engine.git_status(source, options)["configured"]:
+        return []
+    manifest = (
+        runtime_manifest(source, manifest_path) if manifest_path else {"files": {}}
+    )
+    return [
+        name
+        for name in engine.patch_files(source, manifest, stamped=False)["files"]
+        if (Path(source) / name).is_file()
+    ]
+
+
+def now():
+    from datetime import UTC, datetime
+
+    return datetime.now(UTC).isoformat()
+
+
 def census_path(workspace, project_id):
     return Path(workspace) / "translation/projects" / project_id / "census.json"
 
@@ -321,16 +367,14 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
         output.parent.mkdir(parents=True, exist_ok=True)
         with staging_folder(output.parent, ".dazedtl-patch-") as temporary:
             manifest = runtime_manifest(source, payload["manifest"])
-            # The translation version keeps GameUpdate's config for publishing;
-            # a local patch leaves it out.
             packaged = engine.package(
                 source,
                 options,
                 manifest,
                 temporary,
-                updater=False,
                 original_names=original_names(),
             )
+            packaged.pop("paths")
             verify_evidence(source, payload["evidence"])
             inputs = input_stamps(source, payload["evidence"])
             if (
@@ -353,6 +397,18 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
     elif action == "package":
         require_baseline(engine, source, options, state)
         from .delivery import verify
+        from .release import (
+            destination as release_destination,
+        )
+        from .release import (
+            git_identity,
+            input_stamps,
+            output_hash,
+            publish,
+        )
+        from .release import (
+            stamp as file_stamp,
+        )
 
         manifest_path = state.get("runtime_manifest")
         if not manifest_path:
@@ -363,16 +419,87 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
             raise ValueError(
                 "Record QA for the patch's runtime manifest before packaging with Assistant-led."
             )
+        # Release saves the patch where the user chose, as its review read it.
+        planned = (
+            release_plan(workspace, job["project_id"], arguments, "patch")
+            if arguments.get("plan")
+            else None
+        )
+        if planned and (
+            git_identity(engine.git_status(source, options)) != planned["git"]
+        ):
+            raise ValueError(
+                "Version tracking changed after the package preview. Review the patch again."
+            )
         engine.outside_edits(source)
         save(for_action(action), manifest_path)
-        result = engine.package(
-            source,
-            options,
-            runtime_manifest(source, manifest_path),
-            Path(workspace) / "deliveries" / job["project_id"],
-            original_names=original_names(),
+        manifest = runtime_manifest(source, manifest_path)
+        if planned:
+            output = release_destination(
+                source, workspace, engine.source, planned["output"]
+            )
+            if output_hash(output) != planned["output_hash"]:
+                raise ValueError(
+                    "The release destination changed. Review the output again."
+                )
+            if stopped():
+                raise InterruptedError(stopped_note("release_patch"))
+            output.parent.mkdir(parents=True, exist_ok=True)
+            with staging_folder(output.parent, ".dazedtl-patch-") as temporary:
+                packaged = engine.package(
+                    source,
+                    options,
+                    manifest,
+                    temporary,
+                    original_names=original_names(),
+                )
+                result = {
+                    **packaged,
+                    **publish(
+                        packaged["path"],
+                        output,
+                        planned["output_hash"],
+                        stopped=stopped,
+                    ),
+                }
+        else:
+            result = engine.package(
+                source,
+                options,
+                manifest,
+                Path(workspace) / "deliveries" / job["project_id"],
+                original_names=original_names(),
+            )
+            identity = file_stamp(result["path"])
+            result.update(stamp=identity, size=identity[2], saved=now())
+        # Release and Progress compare the game's files with the patch's.
+        result["inputs"] = input_stamps(source, result.pop("paths"))
+        state["delivery"] = {**result, "kind": "patch"}
+        # The job keeps what the ZIP holds; the file stamps stay in the record.
+        result = {key: value for key, value in result.items() if key != "inputs"}
+    elif action == "release":
+        from .release import build_game
+        from .release import destination as release_destination
+
+        planned = release_plan(workspace, job["project_id"], arguments, "game")
+        output = release_destination(
+            source, workspace, engine.source, planned["output"]
         )
-        state["delivery"] = result
+        manifest_path = state.get("runtime_manifest")
+        result = build_game(
+            source,
+            output,
+            planned["scope"],
+            planned["output_hash"],
+            progress,
+            engine=engine.detect(source),
+            inputs=lambda: translation_files(engine, source, options, manifest_path),
+            stopped=stopped,
+        )
+        state["release"] = result
+        result = {key: value for key, value in result.items() if key != "inputs"}
+    elif action == "gameupdate":
+        result = engine.install_gameupdate(source, log=progress)
     elif action == "stage_update":
         official = Path(arguments["official"]).expanduser().resolve(strict=True)
         if (

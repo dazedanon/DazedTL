@@ -1069,6 +1069,14 @@ def routes(app):
         app.translation.checkpoint,
         lambda value, _params: value,
     )
+    # Absent from the helper's methods too: Release is the user's.
+    for name, function in (
+        ("form", app.translation.releases.save_form),
+        ("destination", app.translation.releases.destination),
+        ("preview", app.translation.releases.preview),
+        ("build", app.translation.releases.build),
+    ):
+        methods["project_release_" + name] = (function, lambda value, _params: value)
     methods["translation_images"] = (
         app.translation_images,
         lambda value, _params: value,

@@ -5,6 +5,7 @@ from typing import Literal, NotRequired, TypedDict
 import typing_extensions
 
 from dazedtl.api.contracts.common import Documents
+from dazedtl.api.contracts.guided import PackageSummary, ReleaseArtifact, ReleaseNames
 from dazedtl.api.contracts.runs import LegacyRun
 from dazedtl.api.contracts.settings import Forge
 
@@ -336,6 +337,38 @@ class GameUpdateStatus(TypedDict):
     remote: str
 
 
+class AssistantReleaseForm(TypedDict):
+    """The Assistant-led Release options the user last chose."""
+
+    kind: Literal["game", "patch"]
+    name: str
+    names: ReleaseNames
+    directory: str
+
+
+class AssistantRelease(TypedDict):
+    form: AssistantReleaseForm
+    # The last clean game ZIP Release built and the last patch ZIP, wherever
+    # it was saved.
+    artifacts: list[ReleaseArtifact]
+
+
+class ReleasePreview(TypedDict):
+    """The review of an Assistant-led release ZIP, and the plan its build
+    runs."""
+
+    action: Literal["release", "release_patch"]
+    label: str
+    destination: str
+    files: int
+    paths: list[str]
+    package: PackageSummary
+    overwrite: bool
+    game_version: str | None
+    plan: str
+    sha256: str
+
+
 class TranslationState(ProjectOptions):
     engine: str
     legacyRun: LegacyRun | None
@@ -351,6 +384,8 @@ class TranslationState(ProjectOptions):
     git: GitStatus | None
     gameUpdate: GameUpdateStatus
     lifecycle: Lifecycle
+    # Release's options and ZIPs; None for a Guided project.
+    release: AssistantRelease | None
     # Whether the game's original files are kept: in its Git repository, or
     # in a backup saved before that.
     originalsRecorded: bool

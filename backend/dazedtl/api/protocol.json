@@ -1,5 +1,5 @@
 {
-  "version": "dd636904d6ef73cb",
+  "version": "657cf45a5e757360",
   "methods": {
     "workspace_snapshot": {
       "refresh": false,
@@ -362,6 +362,22 @@
       "duringClose": false
     },
     "project_checkpoint": {
+      "refresh": true,
+      "duringClose": false
+    },
+    "project_release_form": {
+      "refresh": true,
+      "duringClose": true
+    },
+    "project_release_destination": {
+      "refresh": false,
+      "duringClose": false
+    },
+    "project_release_preview": {
+      "refresh": true,
+      "duringClose": false
+    },
+    "project_release_build": {
       "refresh": true,
       "duringClose": false
     },

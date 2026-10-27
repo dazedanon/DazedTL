@@ -1,6 +1,7 @@
 import { request } from "./transport";
 import { imagesApi } from "./images";
 import type {
+  AssistantReleaseForm,
   AssistantTaskKind,
   ImageEditorSave,
   Screen,
@@ -185,6 +186,24 @@ export const api = {
       request("translation_operation", { project_id, action, arguments: args }),
     startOver: (project_id: string, keep_context: boolean) =>
       request("project_start_over", { project_id, keep_context }),
+    releaseForm: (project_id: string, value: AssistantReleaseForm) =>
+      request("project_release_form", { project_id, value }),
+    releaseDestination: (
+      project_id: string,
+      output: string,
+      kind: AssistantReleaseForm["kind"],
+    ) => request("project_release_destination", { project_id, output, kind }),
+    releasePreview: (
+      project_id: string,
+      kind: AssistantReleaseForm["kind"],
+      output: string,
+    ) => request("project_release_preview", { project_id, kind, output }),
+    releaseBuild: (
+      project_id: string,
+      kind: AssistantReleaseForm["kind"],
+      plan: string,
+      sha256: string,
+    ) => request("project_release_build", { project_id, kind, plan, sha256 }),
     gameUpdate: (
       project_id: string,
       action: "save" | "keep" | "replace" | "defaults",

@@ -414,7 +414,10 @@ app
         )
           outputs.add(result.backups);
         if (method === "workspace_snapshot") {
-          for (const artifact of result?.guided?.artifacts || []) {
+          for (const artifact of [
+            ...(result?.guided?.artifacts || []),
+            ...(result?.translation?.release?.artifacts || []),
+          ]) {
             if (
               artifact.available === true &&
               typeof artifact.folder === "string"

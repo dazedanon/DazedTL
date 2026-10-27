@@ -5,7 +5,7 @@ import shutil
 from pathlib import Path, PurePosixPath
 
 from dazedtl import system
-from dazedtl.storage import staging_folder, write_json
+from dazedtl.storage import write_json
 from dazedtl.translation.files import digest, live_path, project_path, read_json
 
 
@@ -104,27 +104,15 @@ def unlist_inspector(source):
 
 
 def release_scope(source, known):
-    from util.release_package import ReleasePackageError, _release_patch_sha
+    from dazedtl.translation.release import game_scope
 
-    from dazedtl.translation.release import inventory
-
-    try:
-        public_version = _release_patch_sha(Path(source))
-    except ReleasePackageError:
-        public_version = None
-    return inventory(source, public_version, known)
+    return game_scope(source, known)
 
 
 def run_release(plan, log):
     from desktop.backend.workflow_actions import validate_plan
 
-    from dazedtl.translation.release import (
-        destination,
-        game_folder,
-        input_stamps,
-        publish,
-        write_archive,
-    )
+    from dazedtl.translation.release import build_game, destination
 
     validate_plan(plan)
     source = Path(plan["project"]["source"])
@@ -132,49 +120,27 @@ def run_release(plan, log):
     from .runtime import ENGINE_ROOT
 
     output = destination(source, workspace, ENGINE_ROOT, plan["options"]["output"])
-    folder = game_folder(output, plan["project"]["engine"])
-    expected = plan["release_scope"]
     packing = ace_packing_state(plan["project"], plan["folder"])
     if not packing["current"]:
         raise ValueError(packing["message"])
-    if release_scope(source, expected["known"]) != expected:
-        raise ValueError(
-            "The package contents or public version changed. Build a new release preview."
-        )
-    output.parent.mkdir(parents=True, exist_ok=True)
-    with staging_folder(output.parent, ".dazedtl-release-") as temporary:
-        staged = temporary / output.name
-        write_archive(source, staged, expected, log, folder=folder)
+
+    def check():
         validate_plan(plan)
         if not ace_packing_state(plan["project"], plan["folder"])["current"]:
             raise ValueError(
                 "Ace packing evidence changed during packaging. Its partial archive was discarded."
             )
-        if release_scope(source, expected["known"]) != expected:
-            raise ValueError(
-                "The game or public version changed during packaging. Its partial archive was discarded."
-            )
-        # Later checks compare only the runtime files translation work
-        # changes, not the whole game. An applied image edited outside Images
-        # still packages; that archive just cannot be compared later.
-        try:
-            inputs = input_stamps(source, runtime_files(source))
-        except ValueError:
-            inputs = None
-        saved = publish(
-            staged,
-            output,
-            plan["output_hash"],
-            stopped=getattr(log, "stopped", lambda: False),
-        )
-    return {
-        **saved,
-        "kind": "game",
-        "inputs": inputs,
-        "files": len(expected["files"]) + bool(expected["updater_stamp"]),
-        "excluded": len(expected["exclusions"]),
-        "updater_stamp": bool(expected["updater_stamp"]),
-    }
+
+    return build_game(
+        source,
+        output,
+        plan["release_scope"],
+        plan["output_hash"],
+        log,
+        engine=plan["project"]["engine"],
+        inputs=lambda: runtime_files(source),
+        check=check,
+    )
 
 
 def guard(project, folder):

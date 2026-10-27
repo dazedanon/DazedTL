@@ -334,6 +334,23 @@ with engine.context():
     names = zipfile.ZipFile(packaged["path"]).namelist()
     assert "data/System.json" in names and updater.CONFIG not in names, names
     assert not any(name.startswith(".dazedtl") for name in names), names
+    # The verified public version's patch carries the config and stamps the
+    # version, as its clean game ZIP does; Guided's patch once always left
+    # the config out, so a player's GameUpdate found no repository.
+    public = temporary / "public.git"
+    git(temporary, "init", "-q", "--bare", str(public))
+    git(published, "remote", "add", "public", str(public))
+    branch = git(published, "branch", "--show-current").strip()
+    git(published, "push", "-q", "public", f"HEAD:{branch}")
+    git(published, "branch", f"--set-upstream-to=public/{branch}")
+    with patch("util.release_package._configured_patch_branch", return_value=branch):
+        stamped = engine.package(published, options, manifest, temporary / "public")
+    with zipfile.ZipFile(stamped["path"]) as archive:
+        assert updater.CONFIG in archive.namelist(), archive.namelist()
+        assert archive.read("gameupdate/previous_patch_sha.txt").decode().strip() == (
+            git(published, "rev-parse", "HEAD").strip()
+        )
+    git(published, "remote", "remove", "public")
     # A removed skill leaves Git with the next checkpoint.
     (published / ".dazedtl/skills/game.md").unlink()
     assert ".dazedtl/skills/game.md" not in checkpoint()
