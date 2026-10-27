@@ -7,9 +7,11 @@ inputs its key names, so it holds while those do, and a Store keeps it in
 the project's Guided folder across restarts. A section names its own
 version, which its owner raises when its code derives something else from
 the same inputs (file_lines COUNT_VERSION, event_text MATCH_VERSION,
-guided_runs LITERALS_VERSION for comparison literals); a
-store of another format, or a section of another version, reads empty. The
-store is a cache: deleting it only makes the next look read the files again.
+guided_runs LITERALS_VERSION for comparison literals), and the version of
+each rule it calls that another module owns, such as refusals RULES_VERSION
+for the line counts; a store of another format, or a section of another
+version, reads empty. The store is a cache: deleting it only makes the next
+look read the files again.
 
 A look that would read many files, such as the first at a big game or after
 a Batch rewrote most of them, hands them to reader processes

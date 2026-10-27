@@ -24,6 +24,7 @@ from dazedtl.translation import (
     file_lines,
     header_review,
     preparation,
+    refusals,
     speaker_setup,
 )
 from dazedtl.translation.file_preview import text_fields
@@ -4140,14 +4141,20 @@ class GuidedTests(unittest.TestCase):
                 inputs.line_counts(phases, frozenset(), counting), expected
             )
             self.assertEqual(counting, [])
-            # A rule change counts again.
-            with (
-                patch.object(file_lines, "COUNT_VERSION", 2),
-                patch.object(derived.Store, "read") as read,
+            # A change to what counts as a line, or as a refusal note,
+            # counts again.
+            for rule, attribute in (
+                (file_lines, "COUNT_VERSION"),
+                (refusals, "RULES_VERSION"),
             ):
-                inputs.line_counts(phases, frozenset(), counting)
-            self.assertEqual(sorted(counting), sorted(phases))
-            self.assertEqual(len(read.call_args.args[0]), 2)
+                counting = []
+                with (
+                    patch.object(rule, attribute, 2),
+                    patch.object(derived.Store, "read") as read,
+                ):
+                    inputs.line_counts(phases, frozenset(), counting)
+                self.assertEqual(sorted(counting), sorted(phases))
+                self.assertEqual(len(read.call_args.args[0]), 2)
 
     def test_a_look_waits_for_event_files_without_reading_findings_out_of_date(self):
         # A look left many event files' built-in matches to readers; until

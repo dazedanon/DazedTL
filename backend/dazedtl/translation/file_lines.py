@@ -29,6 +29,8 @@ import re
 from collections.abc import Callable, Iterator
 from typing import Any, NamedTuple
 
+from . import refusals
+
 _MAP = re.compile(r"Map\d+\.json")
 # Database fields the database pass translates, beyond those players read in
 # menus: map names, which some plugins show.
@@ -397,10 +399,16 @@ def may_hold_notes(raw: bytes, original_blob: str | None) -> bool:
 
 
 # Raise when count() or read_counts() return other counts for the same bytes
-# and inputs, such as after a change to what counts as a line, as translated or
-# as a refusal note: the counts the profile keeps (translation/derived) are
-# then read again.
+# and inputs, such as after a change to what counts as a line or as
+# translated: the counts the profile keeps (translation/derived) are then read
+# again. What counts as a refusal note is refusals.RULES_VERSION, which their
+# section names too (`counts_section`).
 COUNT_VERSION = 1
+
+
+def counts_section() -> str:
+    """The derived store section of the counts read_counts() gives."""
+    return f"lines/{COUNT_VERSION}.{refusals.RULES_VERSION}"
 
 
 def read_counts(
