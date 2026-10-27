@@ -12,6 +12,26 @@ def connection_summary(settings):
     return {key: connection[key] for key in ("name", "model")} if connection else None
 
 
+def batch_unavailable(settings):
+    """Why the active connection cannot run Batch, or "" when it can or no
+    connection with a key and a model is chosen yet, as both workflows keep
+    Batch until the user picks one."""
+    if not (settings.connection_summary() or {}).get("model"):
+        return ""
+    defaults = settings.translation_defaults()
+    if not defaults.get("model") or defaults.get("batch_supported"):
+        return ""
+    return defaults.get("batch_reason") or "This connection can't run Batch."
+
+
+def runnable_mode(settings, mode, live):
+    """The method a saved `mode` runs in: Batch on a connection that cannot
+    run it is Live, named `live` by the workflow. The saved choice stays, so
+    a connection that runs Batch brings it back; the page reads drafts the
+    same way (app/src/features/translation/runnableMode.ts)."""
+    return live if mode == "batch" and batch_unavailable(settings) else mode
+
+
 def entries_per_request(settings):
     """The active model's entries per request, or the default without a
     connection, so requests organized in any mode also fit a later API run."""

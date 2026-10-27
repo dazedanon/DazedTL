@@ -54,6 +54,7 @@ import { jobTime } from "../guided/workspace/model";
 import { playtestActions } from "../guided/playtestView";
 import { finalCheckOpen } from "../guided/qaView";
 import { assistantRunState } from "./assistantPhases";
+import { runnableMode } from "./runnableMode";
 
 export type TranslationView =
   "progress" | "options" | "context" | "images" | "qa" | "playtest" | "release";
@@ -119,6 +120,15 @@ function Workspace({
   // keeps its failure beside itself.
   const owned = useOwnedFeedback(action.key);
   const draft = useProjectOptions(state, action.report);
+  // A draft's Batch reads as Live while the connection cannot run it.
+  const options = {
+    ...draft.value.options,
+    mode: runnableMode(
+      draft.value.options.mode,
+      state.batchUnavailable,
+      "live",
+    ),
+  };
   const [view, setView] = useState<View>(initialView);
   const [editorAssets, setEditorAssets] = useState<string[] | null>(null);
   const [imageFooter, setImageFooter] = useState<HTMLDivElement | null>(null);
@@ -334,7 +344,7 @@ function Workspace({
             <PageBody>
               <ProgressPanel
                 state={state}
-                options={draft.value.options}
+                options={options}
                 action={action}
                 openProject={openProject}
                 showOptions={() => void show("options")}
@@ -361,7 +371,7 @@ function Workspace({
               <OptionsPanel
                 project={project}
                 state={state}
-                options={draft.value.options}
+                options={options}
                 edit={edit}
                 disabled={disabled}
                 settings={settings}

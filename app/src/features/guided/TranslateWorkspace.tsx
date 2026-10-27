@@ -28,6 +28,7 @@ export function TranslateWorkspace({
   state,
   phase,
   values,
+  mode,
   run,
   estimate,
   currentEstimate,
@@ -45,6 +46,9 @@ export function TranslateWorkspace({
   state: GuidedState;
   phase: Phase;
   values: GuidedOptions;
+  /** The method shown and run, which reads Batch as Live while the
+   * connection cannot run it. */
+  mode: GuidedOptions["mode"];
   run?: Job;
   estimate?: Job | null;
   currentEstimate: boolean;
@@ -63,6 +67,7 @@ export function TranslateWorkspace({
   children?: ReactNode;
 }) {
   const languages = useLanguages();
+  const unavailable = state.provider.batchUnavailable;
   const rows = useMemo(
     () =>
       state.files.filter(
@@ -108,26 +113,26 @@ export function TranslateWorkspace({
       <div className="translation-toolbar" aria-label="Translation setup">
         <SegmentedControl
           label="Translation method"
-          value={values.mode === "batch" ? "batch" : "translate"}
+          value={mode}
           disabled={disabled || locked}
           onChange={(mode) => change("mode", mode)}
           options={[
             {
               value: "batch",
               label: "Batch",
-              disabled: !state.provider.batchSupported,
-              title: state.provider.batchSupported
-                ? "Review Batch pricing before submitting"
-                : state.provider.batchReason ||
-                  "Unavailable for this connection",
+              disabled: !!unavailable,
+              title: unavailable || "Review Batch pricing before submitting",
             },
             { value: "translate", label: "Live" },
           ]}
         />
-        <small className="translation-method-hint">
-          {state.provider.batchSupported
-            ? "Batch recommended · often 50% cheaper"
-            : `Live · saves results as they arrive. ${state.provider.batchReason || "This connection does not support Batch."}`}
+        {/* Why Batch is off stays when a narrow, short window hides the
+            recommendation. */}
+        <small
+          className="translation-method-hint"
+          data-reason={unavailable ? "" : undefined}
+        >
+          {unavailable || "Batch recommended · often 50% cheaper"}
         </small>
         {/* The model follows the method controls, so the note that a model
             was saved grows into free space instead of moving them. */}

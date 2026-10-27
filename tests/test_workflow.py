@@ -214,6 +214,7 @@ class WorkflowTests(unittest.TestCase):
             source_language=lambda: settings_data["sourceLanguage"],
             _connection=Settings._connection,
             _configured=Settings._configured,
+            connection_summary=lambda: connection_summary(self.settings),
             model_defaults=lambda *_args, **_kwargs: {},
             translation_defaults=lambda: {"batch_supported": True},
             game_update=dict,
@@ -1267,6 +1268,30 @@ class WorkflowTests(unittest.TestCase):
         write_json(self.profile / "settings/settings.json", changed)
         with self.assertRaises(ValueError):
             worker_secret(self.profile, plan["configuration"])
+
+    def test_a_saved_batch_runs_live_on_a_connection_that_cannot_run_batch(self):
+        # A project saved on API Batch, opened on a Live-only connection such
+        # as DeepSeek's, runs Live and says why instead of refusing its run.
+        # The page's options keep Batch, so saving another option there keeps
+        # it too, and a Batch connection brings it back.
+        live_only = {"model": "fixture-model", "batch_supported": False}
+        self.settings.translation_defaults = lambda: live_only
+        self.assertEqual(self.service.run_mode(self.project), "live")
+        self.assertEqual(
+            self.service.state(self.identity)["batchUnavailable"],
+            "This connection can't run Batch.",
+        )
+        selected = self.service.options(self.project)
+        self.service.save(
+            self.identity,
+            selected["revision"],
+            {**selected["options"], "instructions": "Keep honorifics."},
+        )
+        self.settings.translation_defaults = lambda: {
+            **live_only,
+            "batch_supported": True,
+        }
+        self.assertEqual(self.service.run_mode(self.project), "batch")
 
     def test_options_draft_matching_the_saved_options_does_not_block_work(self):
         # Turning a choice off and on again leaves a draft the page shows as

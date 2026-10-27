@@ -5,6 +5,7 @@ from copy import deepcopy
 from pathlib import Path
 
 from dazedtl.freshness import Digests
+from dazedtl.settings.execution import batch_unavailable, runnable_mode
 from dazedtl.storage import write_json
 
 from . import (
@@ -367,15 +368,9 @@ class Guided:
         return {"saved": True}
 
     def preferences(self, native):
-        mode = native["mode"]
-        if mode not in {"batch", "translate"}:
-            # Offline launches record "estimate"; start new work in a method the
-            # active connection can run, so a fresh game shows no Batch error.
-            mode = (
-                "batch"
-                if self.settings.translation_defaults().get("batch_supported")
-                else "translate"
-            )
+        # Offline launches record "estimate"; new work starts on Batch, which
+        # run_mode and the page read as Live while the connection can't run it.
+        mode = native["mode"] if native["mode"] in {"batch", "translate"} else "batch"
         supported = self.supported_files(native)
         return {
             "revision": native["revision"],
@@ -387,6 +382,13 @@ class Guided:
                 "phase1_comments": native["phase1_comments"],
             },
         }
+
+    def run_mode(self, native):
+        """The method Translate runs in: a saved Batch the connection cannot
+        run is Live, which the page shows from the same rule."""
+        return runnable_mode(
+            self.settings, self.preferences(native)["values"]["mode"], "translate"
+        )
 
     def supported_files(self, native):
         return set(self.backend.phase_files(native, "database")) | set(
@@ -877,6 +879,7 @@ class Guided:
             ],
             "provider": {
                 **self.settings.translation_defaults(),
+                "batch_unavailable": batch_unavailable(self.settings),
                 "credential_ready": self.settings.ready(),
                 "connection": (self.settings.connection_summary() or {}).get(
                     "name", "No connection selected"

@@ -860,8 +860,9 @@ class GuidedProvider(TypedDict):
     connection: str
     model: str
     defaultMode: RunMode
-    batchSupported: bool
-    batchReason: NotRequired[str]
+    # Why the connection cannot run Batch, "" when it can or none is ready;
+    # the method then reads and runs as Live.
+    batchUnavailable: str
     ready: bool
     enabled: bool
 
