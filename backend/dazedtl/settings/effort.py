@@ -356,10 +356,12 @@ def model_list(provider, rows):
         return result
     for row in rows:
         model = row.get("id") if isinstance(row, dict) else None
+        # Runs name a model by its own ID, never its `:batch` listing.
         if (
             not isinstance(model, str)
             or not 0 < len(model) <= 200
             or any(ord(char) < 32 for char in model)
+            or model.endswith(":batch")
         ):
             continue
         value = read(row)
@@ -480,7 +482,9 @@ def frozen(provider, model, options, listed=None):
     if resolved != notes and (
         level is not None or resolved["default"] != notes["default"]
     ):
-        value["thinkingEffortListed"] = listed
+        # With the default the notes fill in, so a later version's notes
+        # never rename what a frozen run's review names.
+        value["thinkingEffortListed"] = {**listed, "default": resolved["default"]}
     return value
 
 
@@ -506,18 +510,16 @@ class Choices(TypedDict):
 def describe(provider, model, listed=None) -> Choices:
     """The choices Settings offers for a model: the provider default first,
     then each level the model takes, and where those come from."""
+    resolved = profile(provider, model, listed)
     value: Choices = {
         "options": [
             {"value": None, "label": summary(provider, model, None, listed)},
-            *(
-                {"value": level, "label": label(level)}
-                for level in levels(provider, model, listed)
-            ),
+            *({"value": level, "label": label(level)} for level in resolved["levels"]),
         ]
     }
     if listed is not None and provider in LISTED:
         value["source"] = f"From {LISTED[provider]}'s model list"
-    elif levels(provider, model):
+    elif resolved["levels"]:
         value["source"] = "From DazedTL's model notes"
     return value
 

@@ -316,8 +316,8 @@ def worker_environment(workspace, plan):
     """A run worker's environment: local runs get no credential and no network."""
     # The app's diagnostics folder, where the worker records a crash.
     # A test scenario's OpenAI preset names its stand-in, which counts as
-    # OpenAI's own API (settings/providers.own_api), and so do its Anthropic
-    # and OpenRouter presets, which a run's provider is read from.
+    # OpenAI's own API (settings/providers.own_api); its Anthropic and
+    # OpenRouter presets name it too, and a run's provider is read from them.
     env = system_environment(
         "DAZEDTL_DIAGNOSTICS",
         "DAZEDTL_TEST_OPENAI_ENDPOINT",
