@@ -11,6 +11,7 @@ import { appEnvironment, stopApp } from "../scripts/testkit/app.mjs";
 import { until } from "../scripts/testkit/cdp.mjs";
 import { ciScenarios } from "../scripts/testkit/ci.mjs";
 import { displayName } from "../scripts/testkit/display.mjs";
+import { startProvider } from "../scripts/testkit/provider.mjs";
 import { testsWithRetry, withRetry } from "../scripts/testkit/retry.mjs";
 
 test("CI runs every test scenario, so a new one cannot land unchecked", () => {
@@ -80,6 +81,45 @@ test("a test run that fails on a busy machine runs again once the load falls, wa
   waited = 0;
   assert.equal((await testsWithRetry(suite(1, 1), deps(4))).passed, false);
   assert.equal(waited, 300_000);
+});
+
+test("the stand-in records each request's JSON body and never its credentials", async () => {
+  const folder = fs.mkdtempSync(path.join(os.tmpdir(), "dazedtl-stand-in-"));
+  const provider = await startProvider({ folder });
+  try {
+    const sent = {
+      model: "stand-in",
+      reasoning_effort: "high",
+      messages: [{ role: "user", content: "Reply with OK." }],
+    };
+    const response = await fetch(`${provider.url}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: "Bearer sk-test-secret",
+      },
+      body: JSON.stringify(sent),
+    });
+    assert.equal(response.status, 200);
+    await fetch(`${provider.url}/models`, {
+      headers: { Authorization: "Bearer sk-test-secret" },
+    });
+    await until(
+      "both requests recorded",
+      () => provider.requests().length === 2,
+    );
+    const [chat, models] = provider.requests();
+    assert.deepEqual(chat.body, sent);
+    assert.equal(models.route, "/models");
+    assert.equal("body" in models, false);
+    assert.doesNotMatch(
+      fs.readFileSync(path.join(folder, "requests.jsonl"), "utf8"),
+      /sk-test-secret/,
+    );
+  } finally {
+    await provider.close();
+    fs.rmSync(folder, { recursive: true, force: true });
+  }
 });
 
 test("two runs whose work folders share a last part get different displays", () => {

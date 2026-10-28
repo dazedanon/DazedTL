@@ -29,9 +29,13 @@
 //   the field is ignored, as many servers do. Settings' effort check, which
 //   asks "Reply with OK.", is answered "OK".
 //
-// Every request is recorded in <folder>/requests.jsonl; uploaded files and
-// Batches are kept in <folder>/batches. It also stands in for ntfy.sh at
-// /ntfy.sh/ and keeps each phone notification in <folder>/phone.jsonl.
+// Every request is recorded in <folder>/requests.jsonl as its time, method,
+// route, status and, for a JSON body, that body, so a check can confirm a
+// field such as `reasoning_effort` reached the server (`recordedRequests`
+// reads it); headers, and with them any credential, are never recorded.
+// Uploaded files and Batches are kept in <folder>/batches. It also stands in
+// for ntfy.sh at /ntfy.sh/ and keeps each phone notification, whose body the
+// record leaves out, in <folder>/phone.jsonl.
 //
 // Its model lists stand in for the Anthropic and OpenRouter presets' too,
 // under /api.anthropic.com and /openrouter.ai/api, with the effort data
@@ -262,6 +266,18 @@ function keyedLines(params) {
 }
 
 /**
+ * Every request the stand-in in `folder` recorded so far, leaving out a last
+ * line it is still writing.
+ * @param {string} folder
+ */
+export function recordedRequests(folder) {
+  const lines = fs
+    .readFileSync(path.join(folder, "requests.jsonl"), "utf8")
+    .split("\n");
+  return lines.slice(0, -1).map((line) => JSON.parse(line));
+}
+
+/**
  * Starts the stand-in. `folder` holds its mode file and records.
  * @param {{ folder: string, port?: number }} options
  */
@@ -484,6 +500,15 @@ export async function startProvider({ folder, port = 0 }) {
       const url = (request.url || "").split("?")[0];
       const at = url.indexOf("/v1/");
       const route = at >= 0 ? url.slice(at + 3) : url;
+      // A file upload is multipart and stays out of the record, and a phone
+      // notification's topic stays in phone.jsonl alone.
+      let sent;
+      try {
+        if (body.length && route !== "/ntfy.sh/")
+          sent = JSON.parse(body.toString("utf8"));
+      } catch {
+        sent = undefined;
+      }
       const reply = (status, value, raw) => {
         record.write(
           JSON.stringify({
@@ -491,6 +516,7 @@ export async function startProvider({ folder, port = 0 }) {
             method: request.method,
             route,
             status,
+            body: sent,
           }) + "\n",
         );
         response.writeHead(status, {
@@ -634,12 +660,7 @@ export async function startProvider({ folder, port = 0 }) {
     port: bound,
     url: `http://127.0.0.1:${bound}/v1`,
     /** Every request so far, from the record. */
-    requests: () =>
-      fs
-        .readFileSync(path.join(folder, "requests.jsonl"), "utf8")
-        .split("\n")
-        .filter(Boolean)
-        .map((line) => JSON.parse(line)),
+    requests: () => recordedRequests(folder),
     close: () =>
       new Promise((resolve) => {
         for (const wait of held) clearInterval(wait);

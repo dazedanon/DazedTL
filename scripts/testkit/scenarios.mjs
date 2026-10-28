@@ -13,7 +13,7 @@ import {
   makeRelease,
   release,
 } from "./games.mjs";
-import { model, translated } from "./provider.mjs";
+import { model, recordedRequests, translated } from "./provider.mjs";
 import {
   chooseFolder,
   connect,
@@ -870,11 +870,9 @@ async function openFolder(page, state, game, method) {
 
 /** How many Batches the stand-in was asked to create. */
 const created = (state) =>
-  fs
-    .readFileSync(path.join(state.work, "provider/requests.jsonl"), "utf8")
-    .split("\n")
-    .filter((line) => line.includes('"method":"POST","route":"/batches"'))
-    .length;
+  recordedRequests(path.join(state.work, "provider")).filter(
+    (item) => item.method === "POST" && item.route === "/batches",
+  ).length;
 
 // Settings and Assistant-led preparation wait while a Guided run works, so
 // both come before the database Batch, and the estimate is approved after it.
