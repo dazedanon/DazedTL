@@ -5956,7 +5956,7 @@ def _searchCodes(page, pbar, jobList, filename):
                         codeList[i]["parameters"][0] = translatedText
 
                 # LL_GalgeChoiceWindowMV Choices
-                if "LL_GalgeChoiceWindowMV setChoices":
+                if "LL_GalgeChoiceWindowMV setChoices" in jaString:
                     match = re.search(r"LL_GalgeChoiceWindowMV setChoices (.+)", jaString)
                     if match:
                         jaString = match.group(1)
