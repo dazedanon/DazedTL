@@ -333,3 +333,29 @@ def clarifies(sent, params):
     """Whether a saved payload is the clarification of `params`, compared
     without copying the request."""
     return sent == _appended(params)
+
+
+class ClarifyOnce:
+    """The rule for clarifying a run's refused Live requests, which Guided and
+    Assistant-led both follow: only under POLICY, at most once per request,
+    and journaled before it is sent, so a crash or a lost response never
+    becomes another paid call.
+
+    Each method keeps the journal in its own saved format: `journal` answers
+    `identity in journal`, and `journal.record(identity, params)` journals
+    the payload about to be sent (Guided keeps it as its request row)."""
+
+    def __init__(self, policy, journal):
+        self.enabled = policy == POLICY
+        self.journal = journal
+
+    def allowed(self, identity):
+        return self.enabled and identity not in self.journal
+
+    def begin(self, identity, params):
+        """Journal the clarification of `params` and return it to send."""
+        if not self.allowed(identity):
+            raise RuntimeError("This request may not be clarified again.")
+        sent = clarified(params)
+        self.journal.record(identity, sent)
+        return sent

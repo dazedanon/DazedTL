@@ -5,7 +5,7 @@ from types import SimpleNamespace
 from typing import Any
 
 from dazedtl.translation.files import digest
-from dazedtl.translation.refusals import MESSAGE, clarified, field, refused
+from dazedtl.translation.refusals import MESSAGE, ClarifyOnce, field, refused
 
 from .process_view import source_values
 
@@ -110,20 +110,55 @@ def send_once(translation, evidence, params):
         client.close()
 
 
-class RefusalRetry:
-    """Retries one refused translateText call with a clarification, at most once."""
+class SavedRetries:
+    """Guided's clarification journal: a `clarification_retries` row per
+    call, holding the request it ended on and, once known, the response a
+    retry of the call replays. The clarified payload itself is kept as the
+    params of its own request row (evidence.record)."""
 
-    def __init__(
-        self, evidence, call_signature, *, allow_clarification=False, translation=None
-    ):
-        self.evidence, self.signature = evidence, call_signature
-        self.allow_clarification = allow_clarification
-        self.translation = translation
+    def __init__(self, evidence):
+        self.evidence = evidence
         with evidence.connect() as connection:
             connection.execute(
                 "CREATE TABLE IF NOT EXISTS clarification_retries "
                 "(identity TEXT PRIMARY KEY, response TEXT, request_id INTEGER)"
             )
+
+    def __contains__(self, identity):
+        return self.saved(identity) is not None
+
+    def saved(self, identity):
+        with self.evidence.connect() as connection:
+            return connection.execute(
+                "SELECT response,request_id FROM clarification_retries WHERE identity=?",
+                (identity,),
+            ).fetchone()
+
+    def record(self, identity, _params, response=None):
+        """Journal the call on the request it is at; with no response yet,
+        a retry before `answer` must be reconciled instead of paid again."""
+        with self.evidence.connect() as connection:
+            connection.execute(
+                "INSERT INTO clarification_retries VALUES (?,?,?)",
+                (identity, response, self.evidence.local.current),
+            )
+
+    def answer(self, identity, response):
+        with self.evidence.connect() as connection:
+            connection.execute(
+                "UPDATE clarification_retries SET response=?,request_id=? WHERE identity=?",
+                (response, self.evidence.local.current, identity),
+            )
+
+
+class RefusalRetry:
+    """Retries one refused translateText call with a clarification, at most once."""
+
+    def __init__(self, evidence, call_signature, *, policy=None, translation=None):
+        self.evidence, self.signature = evidence, call_signature
+        self.journal = SavedRetries(evidence)
+        self.clarify = ClarifyOnce(policy, self.journal)
+        self.translation = translation
 
     def reject(self, response):
         evidence = self.evidence
@@ -153,11 +188,7 @@ class RefusalRetry:
         cursors = getattr(evidence.local, "request_cursors", {})
         cursor = cursors.setdefault(identity, getattr(evidence.local, "cursor", 0))
         evidence.local.cursor = cursor
-        with evidence.connect() as connection:
-            saved = connection.execute(
-                "SELECT response,request_id FROM clarification_retries WHERE identity=?",
-                (identity,),
-            ).fetchone()
+        saved = self.journal.saved(identity)
         if saved:
             if saved[0] is None:
                 raise RuntimeError(
@@ -174,28 +205,19 @@ class RefusalRetry:
         self.reject(response)
         first = receipt(response)
         first_usage = first["usage"]
-        if not self.allow_clarification:
+        if not self.clarify.enabled:
+            # Unlike Assistant-led, Guided journals a refusal it may not
+            # clarify, so a validation retry of the call replays it unpaid.
             first.update(content=None, refusal=MESSAGE)
-            with evidence.connect() as connection:
-                connection.execute(
-                    "INSERT INTO clarification_retries VALUES (?,?,?)",
-                    (
-                        identity,
-                        json.dumps(first, ensure_ascii=False),
-                        evidence.local.current,
-                    ),
-                )
+            self.journal.record(identity, None, json.dumps(first, ensure_ascii=False))
             return restored(first)
-        with evidence.connect() as connection:
-            connection.execute(
-                "INSERT INTO clarification_retries VALUES (?,NULL,?)",
-                (identity, evidence.local.current),
-            )
+        # Guided clarifies the params of the attempt that was refused, a
+        # validation retry's correction prefix included.
         with evidence.connect() as connection:
             row = connection.execute(
                 "SELECT params FROM requests WHERE id=?", (evidence.local.current,)
             ).fetchone()
-        params = clarified(json.loads(row[0]))
+        params = self.clarify.begin(identity, json.loads(row[0]))
         evidence.local.cursor = cursor
         print(
             "Provider declined a translation; clarifying the fictional adult context once.",
@@ -208,13 +230,5 @@ class RefusalRetry:
             # Force native validation failure even for a refusal in valid JSON.
             value.update(content=None, refusal=MESSAGE)
         value["usage"] = {key: first_usage[key] + value["usage"][key] for key in USAGE}
-        with evidence.connect() as connection:
-            connection.execute(
-                "UPDATE clarification_retries SET response=?,request_id=? WHERE identity=?",
-                (
-                    json.dumps(value, ensure_ascii=False),
-                    evidence.local.current,
-                    identity,
-                ),
-            )
+        self.journal.answer(identity, json.dumps(value, ensure_ascii=False))
         return restored(value)

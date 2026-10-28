@@ -17,7 +17,7 @@ from .refusals import (
     POLICY as REFUSAL_POLICY,
 )
 from .refusals import (
-    clarified,
+    ClarifyOnce,
     refused,
 )
 from .requests import from_provider, provider_sources
@@ -59,6 +59,20 @@ def kept_message(failing):
     return "Kept in the original text, as no usable translation: " + "; ".join(
         f"{identity} ({reason})" for identity, reason in failing.items()
     )
+
+
+class JobRetries:
+    """Assistant-led's clarification journal: the run record's
+    `refusal_retries`, the clarified payload sent for each request."""
+
+    def __init__(self, job):
+        self.job = job
+
+    def __contains__(self, identity):
+        return identity in self.job.get("refusal_retries", {})
+
+    def record(self, identity, params):
+        self.job.setdefault("refusal_retries", {})[identity] = params
 
 
 class Runner:
@@ -282,6 +296,9 @@ class Runner:
             }
 
     def live(self):
+        clarify = ClarifyOnce(
+            self.plan["configuration"].get("refusalRetry"), JobRetries(self.job)
+        )
         for identity, request in self.requests.items():
             state = self.job["states"][identity]["state"]
             # A request asking another's payload waits for its answer.
@@ -315,19 +332,12 @@ class Runner:
                 )
                 return
             self.accept(identity, response)
-            if (
-                refused(response, self.sources(identity))
-                and self.plan["configuration"].get("refusalRetry") == REFUSAL_POLICY
-                and identity not in self.job.get("refusal_retries", {})
-            ):
+            if refused(response, self.sources(identity)) and clarify.allowed(identity):
                 if self.store.stopped(self.job["id"]):
                     self.save("stopped", "Stopped before the clarification retry.")
                     return
                 self.validate_current()
-                params = clarified(request["params"])
-                # Journal the exact second payload before sending. A crash or
-                # lost response must never turn this allowance into another call.
-                self.job.setdefault("refusal_retries", {})[identity] = params
+                params = clarify.begin(identity, request["params"])
                 self.job["states"][identity] = {
                     "state": "sending",
                     "message": "Clarifying the translation context once.",

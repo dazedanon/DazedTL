@@ -1671,3 +1671,138 @@ class TranslationTests(unittest.TestCase):
                     organize.units_input({"version": 1, "units": units})
                 self.assertIn(named, str(caught.exception))
                 self.assertNotIn("秘密", str(caught.exception))
+
+
+class ClarifyOnceTests(unittest.TestCase):
+    def test_both_journals_clarify_a_request_once_and_record_it_before_sending(self):
+        # Guided and Assistant-led keep the clarify-once journal in their own
+        # saved formats; the rule over them must be the same for both.
+        import sqlite3
+        from contextlib import closing, contextmanager
+        from types import SimpleNamespace
+
+        from dazedtl.compatibility.refusal_retry import SavedRetries
+        from dazedtl.translation.refusals import CLARIFICATION, POLICY, ClarifyOnce
+        from dazedtl.translation.runner import JobRetries
+
+        params = {"model": "m", "messages": [{"role": "user", "content": "x"}]}
+        with TemporaryDirectory() as folder:
+            path = Path(folder) / "evidence.sqlite"
+
+            @contextmanager
+            def connect():
+                with closing(sqlite3.connect(path)) as connection, connection:
+                    yield connection
+
+            evidence = SimpleNamespace(
+                connect=connect, local=SimpleNamespace(current=7)
+            )
+            job = {}
+            for name, journal in (
+                ("guided", SavedRetries(evidence)),
+                ("assistant", JobRetries(job)),
+            ):
+                with self.subTest(journal=name):
+                    self.assertFalse(ClarifyOnce(None, journal).allowed("a"))
+                    clarify = ClarifyOnce(POLICY, journal)
+                    self.assertTrue(clarify.allowed("a"))
+                    sent = clarify.begin("a", params)
+                    self.assertEqual(sent["messages"][-1]["content"], CLARIFICATION)
+                    self.assertEqual(len(params["messages"]), 1)
+                    # The record is what a restart reads: a new run over the
+                    # same journal must not clarify the request again.
+                    self.assertIn("a", journal)
+                    self.assertFalse(ClarifyOnce(POLICY, journal).allowed("a"))
+                    with self.assertRaises(RuntimeError):
+                        clarify.begin("a", params)
+                    self.assertTrue(clarify.allowed("b"))
+            self.assertEqual(job, {"refusal_retries": {"a": sent}})
+            with closing(sqlite3.connect(path)) as connection:
+                self.assertEqual(
+                    connection.execute(
+                        "SELECT * FROM clarification_retries"
+                    ).fetchall(),
+                    [("a", None, 7)],
+                )
+
+    def test_guided_clarifies_the_refused_attempt_and_replays_its_journal(self):
+        # Guided resends the attempt that was refused, a validation retry's
+        # prefix included, and a validation retry of the call then replays
+        # the journal unpaid; with clarification off it replays the refusal.
+        import sqlite3
+        from contextlib import closing, contextmanager
+        from inspect import signature
+        from types import SimpleNamespace
+
+        from dazedtl.compatibility import refusal_retry
+        from dazedtl.translation.refusals import MESSAGE, POLICY, clarified
+
+        def translateText(system, user, history=None):
+            raise AssertionError
+
+        def answer(content=None, refusal=None):
+            return SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        finish_reason="stop",
+                        message=SimpleNamespace(content=content, refusal=refusal),
+                    )
+                ],
+                usage=SimpleNamespace(prompt_tokens=3, completion_tokens=2),
+            )
+
+        paths = []
+
+        @contextmanager
+        def connect():
+            with closing(sqlite3.connect(paths[-1])) as connection, connection:
+                yield connection
+
+        user = 'Fix the JSON. {"Line1":"はい。"}'
+        for policy in (POLICY, None):
+            with self.subTest(policy=policy), TemporaryDirectory() as folder:
+                paths.append(Path(folder) / "evidence.sqlite")
+                with connect() as connection:
+                    connection.execute(
+                        "CREATE TABLE requests "
+                        "(id INTEGER PRIMARY KEY, params TEXT, response TEXT)"
+                    )
+                evidence = SimpleNamespace(
+                    connect=connect,
+                    local=SimpleNamespace(current=None),
+                    update=lambda *_args: None,
+                )
+                natives, sent = [], []
+
+                def native(system, user, history=None):
+                    params = {"messages": [{"role": "user", "content": user}]}
+                    natives.append(params)
+                    with connect() as connection:
+                        evidence.local.current = connection.execute(
+                            "INSERT INTO requests(params) VALUES (?)",
+                            (json.dumps(params),),
+                        ).lastrowid
+                    return answer(refusal="No.")
+
+                def send_once(_translation, _evidence, params):
+                    sent.append(params)
+                    return answer(content='{"Line1":"Yes."}')
+
+                retry = refusal_retry.RefusalRetry(
+                    evidence, signature(translateText), policy=policy
+                )
+                with patch.object(refusal_retry, "send_once", send_once):
+                    first = retry(native, "system", user)
+                    again = retry(native, "system", '{"Line1":"はい。"}')
+                self.assertEqual(len(natives), 1)
+                if policy:
+                    self.assertEqual(sent, [clarified(natives[0])])
+                    self.assertEqual(
+                        first.choices[0].message.content, '{"Line1":"Yes."}'
+                    )
+                    self.assertEqual(first.usage.prompt_tokens, 6)
+                else:
+                    self.assertEqual(sent, [])
+                    self.assertEqual(first.choices[0].message.refusal, MESSAGE)
+                self.assertEqual(again.choices[0].message, first.choices[0].message)
+                self.assertEqual(again.usage.prompt_tokens, 0)

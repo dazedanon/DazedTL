@@ -446,8 +446,6 @@ class Evidence:
                 )
             return response
 
-        from dazedtl.translation.refusals import POLICY as REFUSAL_POLICY
-
         retry = None
         if self.mode == "translate":
             from .refusal_retry import RefusalRetry
@@ -456,10 +454,9 @@ class Evidence:
                 self,
                 signature(translation.translateText),
                 translation=translation,
-                allow_clarification=(self.plan.get("dazedtl_request_policy") or {}).get(
+                policy=(self.plan.get("dazedtl_request_policy") or {}).get(
                     "refusalRetry"
-                )
-                == REFUSAL_POLICY,
+                ),
             )
 
         if self.mode == "translate":
