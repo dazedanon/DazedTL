@@ -194,9 +194,7 @@ def preserve_originals(source, translated, *, filename: str, language=None):
     _align(source, translated)
     result = copy.deepcopy(translated)
     _inherit(source, result)
-    if isinstance(source, dict):
-        own = (source.get("_original") or {}).get("locale") or source.get("locale")
-        write_locale(result, filename, language, own)
+    write_locale(result, filename, language, source)
     _walk(source, result, system=filename == "System.json")
     return result
 

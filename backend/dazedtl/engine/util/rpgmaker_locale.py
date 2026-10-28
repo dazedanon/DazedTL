@@ -17,16 +17,24 @@ from util.languages import LATIN, active_target, script
 ENGLISH_LOCALE = "en_US"
 
 
-def write_locale(document, filename: str, target=None, original=None) -> bool:
+def write_locale(document, filename: str, target=None, source=None) -> bool:
     """Give *document*, when it is a System.json with a locale, the locale
-    for *target*, the run's target when None, in place; *original* is the
-    game's own locale, the document's when None. Says whether it changed."""
+    for *target*, the run's target when None, in place. The game's own
+    locale is the one *source*, the file *document* translates (itself when
+    None), keeps under ``_original``, else its live one. Says whether it
+    changed."""
     if filename != "System.json" or not isinstance(document, dict):
         return False
     current = document.get("locale")
     if not isinstance(current, str):
         return False
-    own = original if isinstance(original, str) and original else current
+    source = source if isinstance(source, dict) else document
+    kept = source.get("_original")
+    own = (kept.get("locale") if isinstance(kept, dict) else None) or source.get(
+        "locale"
+    )
+    if not isinstance(own, str) or not own:
+        own = current
     locale = ENGLISH_LOCALE if script(target or active_target()) == LATIN else own
     document["locale"] = locale
     return locale != current

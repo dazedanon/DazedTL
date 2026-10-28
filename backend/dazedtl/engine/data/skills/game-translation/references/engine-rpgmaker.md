@@ -1334,7 +1334,7 @@ Outside DazedTL, the engine script's `write-rpgmaker-json --source --translated 
 Existing destination originals survive clean-baseline reinjection.
 Do not manufacture source from live English, or run an unadapted injector against the game before taking the snapshot.
 
-The pure `util.len_originals.preserve_originals(source, translated, filename=...)` helper also supports in-process adapters: snapshot the actual document before editing and serialize the returned annotated copy.
+The pure `util.len_originals.preserve_originals(source, translated, filename=..., language=...)` helper also supports in-process adapters: snapshot the actual document before editing and serialize the returned annotated copy; pass the target language so `System.json` gets its locale.
 The operation checks the existing destination too and replaces one file atomically only after validation.
 It preserves the staged BOM, newline convention and indentation/minified form.
 
