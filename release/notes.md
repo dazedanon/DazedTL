@@ -8,4 +8,5 @@
 
 ### Fixed
 
+- **Text QA:** Apply and Undo of a correction now work on a finished QA task prepared before Text QA recorded Line widths, instead of failing.
 - **Playtest:** a game the playtest can't play, such as one without its engine's scripts, now reads Skipped with the reason once the final check ends without a play, instead of Blocked while Text QA and Progress read done.

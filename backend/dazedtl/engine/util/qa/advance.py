@@ -49,6 +49,7 @@ from util.qa.storage import (
     _load_task,
     _read_json,
     _task_lock,
+    review_layout,
     task_json,
 )
 
@@ -84,9 +85,10 @@ def _deep_items(
     before carries that `prior_review` to reconcile with newer evidence."""
     context = _read_json(root / "context.json")
     task = task_json(root)
+    layout = review_layout(task)
     records, clusters = _record_maps(manifest)
     game = _lint_game(root, manifest)
-    lint_accepted = _lint_decisions(checkpoint, declined, manifest, task["layout"], game)
+    lint_accepted = _lint_decisions(checkpoint, declined, manifest, layout, game)
     compact = {item["id"]: item for item in _compact_items(manifest, context)}
     by_source: dict[str, list[dict]] = defaultdict(list)
     for cluster in manifest["clusters"]:
@@ -94,7 +96,7 @@ def _deep_items(
     data_root = Path(task["data_root"])
     failed_checks = _database_checks(manifest, data_root)
     for cluster_id, found in [
-        *_fit_checks(manifest, task["layout"]).items(),
+        *_fit_checks(manifest, layout).items(),
         *_interface_checks(_capture_folder(root), manifest).items(),
     ]:
         failed_checks[cluster_id] = [*failed_checks.get(cluster_id, []), *found]
@@ -154,7 +156,7 @@ def _deep_items(
                 "choice_context": record.get("choice_context"),
                 **(
                     {"box": box}
-                    if (box := _box(record, task["layout"])) else {}
+                    if (box := _box(record, layout)) else {}
                 ),
                 **(
                     {"database_values": sorted(
@@ -499,7 +501,7 @@ def _advance_unlocked(
             manifest,
             _declined_scope(root, checkpoint, manifest),
             offered,
-            task["layout"],
+            review_layout(task),
         )
         bundles = _bundle_items(
             items,

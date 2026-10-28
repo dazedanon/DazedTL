@@ -18,7 +18,7 @@ from util.qa.fitting import _box, _fit, _operation_writes, _window, _written
 from util.qa.records import _changes, _record_maps, _set_pointer
 from util.qa.schema import _utc_now
 from util.qa.selection import _cluster_by_identity
-from util.qa.storage import _atomic_write_json, _read_json
+from util.qa.storage import _atomic_write_json, _read_json, review_layout
 from util.rpgmaker_qa_manifest import resolve_pointer
 from util.rpgmaker_screens import screen_of, shown_text
 
@@ -289,7 +289,7 @@ def _interface_after(
                     "live_transform": record["live_transform"],
                     "expected": record["live"],
                     "replacement": _written(
-                        record, change["correction"], task.get("layout")
+                        record, change["correction"], review_layout(task)
                     ),
                 }
                 try:

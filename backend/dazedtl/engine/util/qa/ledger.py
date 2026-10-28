@@ -29,6 +29,7 @@ from util.qa.storage import (
     _task_lock,
     answers,
     read_task,
+    recorded_layout,
 )
 from util.rpgmaker_qa_manifest import build_manifest
 
@@ -215,7 +216,7 @@ def _derive_ledger(
             # Editorial confirmed the correction, which passed every check,
             # as the game holds it once applied.
             for written in {
-                _written(records[identity], change["correction"], task.get("layout"))
+                _written(records[identity], change["correction"], recorded_layout(task))
                 for identity in change["identities"]
             }:
                 corrected = _pair_key(change["source"], written)
@@ -254,7 +255,7 @@ def _derive_ledger(
         ),
         "guidance": _guidance_lines(context),
         # Text fits its window only under the Line widths it was reviewed with.
-        "layout": _layout_key(task.get("layout")),
+        "layout": _layout_key(recorded_layout(task)),
     }
 
 
