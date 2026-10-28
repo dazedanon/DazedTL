@@ -31,8 +31,9 @@ DEFAULT_BATCH_INPUT_TOKENS = 400_000
 # preferences expose no override for the first two; the provider's defaults
 # apply, without guessing a model's capabilities. The thinking effort a user
 # chooses per model is frozen beside it as `thinkingEffort`, only while the
-# model takes that level (settings/effort), and written in after the omission;
-# a run frozen without it sends no effort.
+# model takes that level (settings/effort), with the provider's model-list
+# record (`thinkingEffortListed`) where that decides it, and written in after
+# the omission; a run frozen without it sends no effort.
 GENERATION_PARAMETERS = "provider-defaults-v1"
 # Built-in menu choices are requested only on the first event pass, keeping
 # their scene context, so the write pass cannot queue a duplicate during

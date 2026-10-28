@@ -166,6 +166,7 @@ Without it, on Linux the scenario's private KWin and stand-in end with the comma
 `node scripts/scenario.mjs clean --work <dir>` stops every process the scenario started and removes its folder.
 `node scripts/scenario.mjs live [--work <dir>] [--upgrade-from <tag>]` runs the [live test](#live-test) in a private KWin of its own.
 Scenario connections reach only the stand-in: the custom connection names it, and the OpenAI preset points at it through `DAZEDTL_TEST_OPENAI_ENDPOINT`, which run workers follow too.
+The Anthropic and OpenRouter presets point at it through `DAZEDTL_TEST_ANTHROPIC_ENDPOINT` and `DAZEDTL_TEST_OPENROUTER_ENDPOINT`, which run workers follow too: their connection checks read its model lists, which carry each provider's thinking effort data, and OpenRouter's Live requests reach its chat completions, while it answers no Anthropic request.
 Guided and Assistant-led runs on that preset count it as OpenAI's own API ([`own_api`](../backend/dazedtl/settings/providers.py)), so their Batches wait in the Batch token allowance as on OpenAI.
 Phone notifications go to its ntfy stand-in through `DAZEDTL_TEST_NTFY_SERVER`, which keeps them in `provider/phone.jsonl`.
 Other requests from the backend and window go to a proxy that is not there; run workers start without proxy settings, so a new provider path needs the run's own address.

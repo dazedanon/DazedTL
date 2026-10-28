@@ -107,7 +107,12 @@ def configuration(settings, mode, *, cached_only=False, unpriced=False, pair=Non
         "maxOutputTokens": preferences.output_allowance(
             selected.get("maxOutputTokens"), defaults.get("maxOutputTokens")
         ),
-        **effort.frozen(connection["provider"], connection["model"], selected),
+        **effort.frozen(
+            connection["provider"],
+            connection["model"],
+            selected,
+            effort.record(connection, connection["model"]),
+        ),
         "refusalRetry": REFUSAL_POLICY,
         "entries_per_request": entries_per_request(settings),
         "rates": {

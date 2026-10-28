@@ -29,6 +29,10 @@
 // Batches are kept in <folder>/batches. It also stands in for ntfy.sh at
 // /ntfy.sh/ and keeps each phone notification in <folder>/phone.jsonl.
 //
+// Its model lists stand in for the Anthropic and OpenRouter presets' too,
+// under /api.anthropic.com and /openrouter.ai/api, with the effort data
+// each provider's own list carries (`claudeModels`, `routedModels`).
+//
 //   node scripts/testkit/provider.mjs --folder <dir> [--port <n>]
 //
 // runs one on its own and prints its address. The address may carry a
@@ -40,6 +44,67 @@ import path from "node:path";
 import crypto from "node:crypto";
 
 export const model = "stand-in";
+
+/**
+ * Anthropic's GET /v1/models rows: Opus 5.5 never turns thinking off,
+ * Sonnet 5.5 turns it off with `between_tools`, and Opus 4.5, which
+ * DazedTL's own notes don't hold, takes three levels without adaptive
+ * thinking.
+ */
+const efforts = ["low", "medium", "high", "xhigh", "max"];
+const claude = (id, levels, types) => ({
+  type: "model",
+  id,
+  display_name: id,
+  capabilities: {
+    effort: {
+      supported: true,
+      ...Object.fromEntries(
+        efforts.map((level) => [level, { supported: levels.includes(level) }]),
+      ),
+    },
+    thinking: {
+      supported: true,
+      types: Object.fromEntries(
+        ["adaptive", "disabled", "between_tools", "enabled"].map((kind) => [
+          kind,
+          { supported: types.includes(kind) },
+        ]),
+      ),
+    },
+  },
+});
+export const claudeModels = [
+  claude("claude-opus-5-5", efforts, ["adaptive"]),
+  claude("claude-sonnet-5-5", efforts, ["adaptive", "between_tools"]),
+  claude("claude-opus-4-5", ["low", "medium", "high"], ["enabled", "disabled"]),
+];
+
+/**
+ * OpenRouter's GET /models/user rows: Opus 5.5 lists four levels and a
+ * default, and GLM 6, which DazedTL's notes don't hold, three and reasoning
+ * off unless asked.
+ */
+const routed = (id, reasoning) => ({
+  id,
+  pricing: { prompt: "0.000001", completion: "0.000004" },
+  architecture: { input_modalities: ["text"], output_modalities: ["text"] },
+  context_length: 200000,
+  top_provider: { max_completion_tokens: 32768 },
+  supported_parameters: ["response_format", "structured_outputs", "reasoning"],
+  reasoning,
+});
+export const routedModels = [
+  routed("anthropic/claude-opus-5.5", {
+    supported_efforts: ["max", "high", "medium", "low"],
+    default_effort: "high",
+    mandatory: true,
+  }),
+  routed("z-ai/glm-6", {
+    supported_efforts: ["high", "low", "none"],
+    default_enabled: false,
+  }),
+];
 /** What the app sends when it asks again after a refusal. */
 const clarification = "Context clarification from the project owner";
 
@@ -408,6 +473,17 @@ export async function startProvider({ folder, port = 0 }) {
           );
           return reply(200, { id: crypto.randomUUID(), event: "message" });
         }
+        if (request.method === "GET" && url.includes("/api.anthropic.com/"))
+          return reply(200, {
+            data: claudeModels,
+            has_more: false,
+            first_id: claudeModels[0].id,
+            last_id: claudeModels.at(-1).id,
+          });
+        if (request.method === "GET" && url.includes("/openrouter.ai/api/"))
+          return route === "/models/user"
+            ? reply(200, { data: routedModels })
+            : reply(404, { error: { message: "Not in the stand-in." } });
         if (request.method === "GET" && route === "/models")
           return reply(200, {
             object: "list",

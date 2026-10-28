@@ -150,6 +150,9 @@ async function openApp(state) {
       DAZEDTL_TEST_OPENAI_ENDPOINT: `${state.provider.url.replace(/\/v1$/, "")}/api.openai.com/v1`,
       OPENAI_BASE_URL: `${state.provider.url.replace(/\/v1$/, "")}/api.openai.com/v1`,
       DAZEDTL_TEST_NTFY_SERVER: `${state.provider.url.replace(/\/v1$/, "")}/ntfy.sh/`,
+      // The Anthropic and OpenRouter presets check against its model lists.
+      DAZEDTL_TEST_ANTHROPIC_ENDPOINT: `${state.provider.url.replace(/\/v1$/, "")}/api.anthropic.com`,
+      DAZEDTL_TEST_OPENROUTER_ENDPOINT: `${state.provider.url.replace(/\/v1$/, "")}/openrouter.ai/api/v1`,
       ...state.env,
     },
   });

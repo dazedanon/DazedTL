@@ -677,8 +677,11 @@ class Jobs:
                 "GIT_CONFIG_NOSYSTEM",
                 "GIT_ATTR_NOSYSTEM",
                 # A test scenario's OpenAI preset names its stand-in, which
-                # counts as OpenAI's own API (settings/providers.own_api).
+                # counts as OpenAI's own API (settings/providers.own_api), and
+                # so do its Anthropic and OpenRouter presets.
                 "DAZEDTL_TEST_OPENAI_ENDPOINT",
+                "DAZEDTL_TEST_ANTHROPIC_ENDPOINT",
+                "DAZEDTL_TEST_OPENROUTER_ENDPOINT",
                 FOLDER,
             }
         }

@@ -10,6 +10,7 @@ export function FieldRow({
   label,
   help,
   helpDisplay = "text",
+  note,
   error,
   children,
   wide = false,
@@ -18,13 +19,16 @@ export function FieldRow({
   label: string;
   help?: string;
   helpDisplay?: "text" | "popover";
+  /** A quiet line under the help, such as where a value comes from. */
+  note?: string;
   error?: string;
   children: (props: ControlProps) => ReactNode;
   wide?: boolean;
 }) {
   const description =
-    [help && `${id}-help`, error && `${id}-error`].filter(Boolean).join(" ") ||
-    undefined;
+    [help && `${id}-help`, note && `${id}-note`, error && `${id}-error`]
+      .filter(Boolean)
+      .join(" ") || undefined;
   return (
     <div className="field-row">
       {help && helpDisplay === "popover" ? (
@@ -46,6 +50,7 @@ export function FieldRow({
         {help && helpDisplay === "text" && (
           <small id={`${id}-help`}>{help}</small>
         )}
+        {note && <small id={`${id}-note`}>{note}</small>}
         {error && (
           <small className="field-error" id={`${id}-error`} role="alert">
             {error}

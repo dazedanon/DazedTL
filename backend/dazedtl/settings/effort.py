@@ -3,9 +3,11 @@ none is sent, and how a choice is written into a request.
 
 Settings, runs of both methods and the legacy evaluation all read this one
 table. A request carries an effort only when its provider, its exact model ID
-and the level are a row here; every other request sends nothing, exactly as
-runs did before the choice existed, so no run sends a level its provider
-does not document; a run whose provider refuses its level anyway stops with
+and the level are a row here, or of the provider's own model list where the
+connection check keeps one (``LISTED``, ``profile``); every other request
+sends nothing, exactly as runs did before the choice existed, so no run sends
+a level its provider does not document; a run whose provider refuses its
+level anyway stops with
 one message (``rejection``). The table is checked where a choice is saved
 (settings/store), where a run freezes it (settings/execution and the Guided
 request policy) and where a request is built (``apply``).
@@ -33,6 +35,7 @@ policy (before 2026-10-03); they still send them, byte for byte, because
 """
 
 import re
+from typing import NotRequired, TypedDict
 
 # Every level any provider takes, cheapest first.
 LEVELS = ("none", "minimal", "low", "medium", "high", "xhigh", "max")
@@ -248,23 +251,204 @@ def model_id(model):
     return str(model or "").strip().lower().removeprefix("models/")
 
 
-def profile(provider, model):
-    """(levels, provider default) for a connection's provider identity
-    (settings/providers PROVIDERS) and model: no levels for a model or
-    provider the table doesn't know, whose default is unknown too."""
+# The providers whose own model list, which the connection check downloads,
+# says which efforts each model takes: Anthropic's GET /v1/models
+# (`capabilities.effort` and `capabilities.thinking.types`) and OpenRouter's
+# GET /models/user (`reasoning`). The lists of OpenAI, Gemini, DeepSeek, Kimi
+# and Mistral say nothing about effort, so their models keep the notes above.
+LISTED = {"anthropic": "Anthropic", "openrouter": "OpenRouter"}
+# A connection keeps at most as many records as its OpenRouter catalog.
+MAX_LISTED = 2000
+_OFF = (None, "disabled", "between_tools")
+
+
+def _record(levels=(), default=None, off=None, adaptive=False):
+    """How one model takes an effort: the levels it takes, the level its
+    provider uses when none is sent (None: unknown), the `thinking` type that
+    turns Claude's thinking off and whether a level turns Claude's adaptive
+    thinking on."""
+    return {
+        "levels": [level for level in LEVELS if level in levels],
+        "default": default,
+        "off": off,
+        "adaptive": adaptive,
+    }
+
+
+def _supported(value):
+    return isinstance(value, dict) and value.get("supported") is True
+
+
+def anthropic_record(row):
+    """The record one row of Anthropic's model list gives, or None where the
+    row doesn't say, which leaves the model to the notes. `disabled` is listed
+    as unsupported exactly where sending it is refused, as on Opus 5.5;
+    Sonnet 5.5 turns thinking off with `between_tools` instead. The list
+    names no default level."""
+    capabilities = row.get("capabilities")
+    if not isinstance(capabilities, dict):
+        return None
+    effort = capabilities.get("effort")
+    thinking = capabilities.get("thinking")
+    types = thinking.get("types") if isinstance(thinking, dict) else None
+    if not isinstance(effort, dict) or type(effort.get("supported")) is not bool:
+        return None
+    if not effort["supported"]:
+        return _record()
+    if not isinstance(types, dict):
+        return None
+    off = (
+        "disabled"
+        if _supported(types.get("disabled"))
+        else "between_tools"
+        if _supported(types.get("between_tools"))
+        else None
+    )
+    return _record(
+        [level for level in _FULL if _supported(effort.get(level))]
+        + (["none"] if off else []),
+        off=off,
+        adaptive=_supported(types.get("adaptive")),
+    )
+
+
+def openrouter_record(row):
+    """The record one row of OpenRouter's model list gives, or None where the
+    row doesn't say. OpenRouter maps a level a model doesn't list to the
+    nearest one it lists, so only listed levels are offered; a `mandatory`
+    model refuses "none", and a null `supported_efforts` has no allowlist,
+    which leaves the model to the notes. A model whose list shows no
+    `reasoning` parameter takes no effort."""
+    parameters = row.get("supported_parameters")
+    if isinstance(parameters, list) and "reasoning" not in parameters:
+        return None if "reasoning_effort" in parameters else _record()
+    reasoning = row.get("reasoning")
+    if not isinstance(reasoning, dict):
+        return None
+    efforts = reasoning.get("supported_efforts")
+    if not isinstance(efforts, list):
+        return None
+    offered = [
+        level
+        for level in efforts
+        if not (level == "none" and reasoning.get("mandatory") is True)
+    ]
+    named = reasoning.get("default_effort")
+    return _record(
+        offered,
+        "none"
+        if reasoning.get("default_enabled") is False
+        else named
+        if isinstance(named, str) and named in LEVELS
+        else None,
+    )
+
+
+def model_list(provider, rows):
+    """{model ID: record} from the rows of *provider*'s model list, for each
+    model whose row says which efforts it takes; empty for a provider whose
+    list doesn't."""
+    read = {"anthropic": anthropic_record, "openrouter": openrouter_record}.get(
+        provider
+    )
+    result = {}
+    if read is None:
+        return result
+    for row in rows:
+        model = row.get("id") if isinstance(row, dict) else None
+        if (
+            not isinstance(model, str)
+            or not 0 < len(model) <= 200
+            or any(ord(char) < 32 for char in model)
+        ):
+            continue
+        value = read(row)
+        if value is not None:
+            result[model_id(model)] = value
+        if len(result) >= MAX_LISTED:
+            break
+    return result
+
+
+def valid(value):
+    """A saved or frozen record, which must be one this module made."""
+    if (
+        not isinstance(value, dict)
+        or set(value) != {"levels", "default", "off", "adaptive"}
+        or not isinstance(value["levels"], list)
+        or value["levels"] != [level for level in LEVELS if level in value["levels"]]
+        or not (value["default"] is None or value["default"] in LEVELS)
+        or value["off"] not in _OFF
+        or type(value["adaptive"]) is not bool
+    ):
+        raise ValueError("This model's saved thinking efforts are invalid.")
+    return value
+
+
+def valid_list(value):
+    """A connection's saved records, by model ID."""
+    if not isinstance(value, dict) or len(value) > MAX_LISTED:
+        raise ValueError("This connection's saved thinking efforts are invalid.")
+    for model, item in value.items():
+        if not isinstance(model, str) or not 0 < len(model) <= 200:
+            raise ValueError("This connection's saved thinking efforts are invalid.")
+        valid(item)
+    return value
+
+
+def record(connection, model):
+    """*model*'s record from *connection*'s last check, or None: a
+    connection checked before records were kept, a provider whose list
+    names no effort, or a model its list doesn't describe."""
+    if not connection or connection.get("provider") not in LISTED:
+        return None
+    return connection.get("efforts", {}).get(model_id(model))
+
+
+def _notes(provider, model):
     model = model_id(model)
     if provider == "openrouter":
-        return _routed(model) if model in _OPENROUTER else ((), None)
-    return _NATIVE.get(provider, {}).get(model, ((), None))
+        levels, default = _routed(model) if model in _OPENROUTER else ((), None)
+    else:
+        levels, default = _NATIVE.get(provider, {}).get(model, ((), None))
+    claude = provider == "anthropic" and bool(levels)
+    return _record(
+        levels,
+        default,
+        # Sonnet 5.5 refuses "disabled"; it turns thinking off with
+        # "between_tools", which takes no other field.
+        ("between_tools" if model == "claude-sonnet-5-5" else "disabled")
+        if claude and "none" in levels
+        else None,
+        claude,
+    )
 
 
-def levels(provider, model):
-    return profile(provider, model)[0]
+def profile(provider, model, listed=None):
+    """How *model* on *provider*, a connection's identity (settings/providers
+    PROVIDERS), takes an effort, as a record. *listed* is the model's record
+    from its provider's own model list (``record``), which decides the
+    levels; without one, DazedTL's notes above decide. Levels never mix the
+    two sources; the default the notes name stands in where the list names
+    none, as Anthropic's never does. A model neither knows takes no level and
+    its default is unknown."""
+    notes = _notes(provider, model)
+    if listed is None or provider not in LISTED:
+        return notes
+    return {
+        **listed,
+        "levels": list(listed["levels"]),
+        "default": listed["default"] or notes["default"],
+    }
 
 
-def takes(provider, model, level):
+def levels(provider, model, listed=None):
+    return tuple(profile(provider, model, listed)["levels"])
+
+
+def takes(provider, model, level, listed=None):
     """Whether a request to *model* on *provider* may carry *level*."""
-    return level in levels(provider, model)
+    return level in levels(provider, model, listed)
 
 
 def checked(level):
@@ -274,45 +458,68 @@ def checked(level):
     return level
 
 
-def chosen(provider, model, level):
+def chosen(provider, model, level, listed=None):
     """The level a new run freezes for a saved choice: the choice while the
     model takes it, else None, which leaves the effort to the provider."""
-    return level if level is not None and takes(provider, model, level) else None
+    return (
+        level if level is not None and takes(provider, model, level, listed) else None
+    )
 
 
-def frozen(provider, model, options):
+def frozen(provider, model, options, listed=None):
     """What a new run freezes for a model's saved options, beside its other
-    request settings: nothing when it sends no effort, so runs that send none
-    keep the settings, and estimates, they had before the choice existed."""
-    level = chosen(provider, model, options.get("thinkingEffort"))
-    return {} if level is None else {"thinkingEffort": level}
+    request settings: nothing when it sends no effort and the notes describe
+    it, so runs that send none keep the settings, and estimates, they had
+    before the choice existed. The model list's record is frozen too when it,
+    not the notes, decides what the run sends or the default its review
+    names, so a later check never changes a frozen run."""
+    level = chosen(provider, model, options.get("thinkingEffort"), listed)
+    value = {} if level is None else {"thinkingEffort": level}
+    notes = _notes(provider, model)
+    resolved = profile(provider, model, listed)
+    if resolved != notes and (
+        level is not None or resolved["default"] != notes["default"]
+    ):
+        value["thinkingEffortListed"] = listed
+    return value
 
 
 def label(level):
     return LABELS[level]
 
 
-def summary(provider, model, level):
+def summary(provider, model, level, listed=None):
     """What a run sends, as the run summary names it: "Low", or
     "Provider default (Medium)" when it sends none."""
     if level is not None:
         return label(level)
-    default = profile(provider, model)[1]
+    default = profile(provider, model, listed)["default"]
     return "Provider default" + (f" ({label(default)})" if default else "")
 
 
-def describe(provider, model):
+class Choices(TypedDict):
+    # As api/contracts/settings ThinkingEffort.
+    options: list[dict]
+    source: NotRequired[str]
+
+
+def describe(provider, model, listed=None) -> Choices:
     """The choices Settings offers for a model: the provider default first,
-    then each level the model takes."""
-    return {
+    then each level the model takes, and where those come from."""
+    value: Choices = {
         "options": [
-            {"value": None, "label": summary(provider, model, None)},
+            {"value": None, "label": summary(provider, model, None, listed)},
             *(
                 {"value": level, "label": label(level)}
-                for level in levels(provider, model)
+                for level in levels(provider, model, listed)
             ),
         ]
     }
+    if listed is not None and provider in LISTED:
+        value["source"] = f"From {LISTED[provider]}'s model list"
+    elif levels(provider, model):
+        value["source"] = "From DazedTL's model notes"
+    return value
 
 
 def unsampled(params):
@@ -322,23 +529,22 @@ def unsampled(params):
         params.pop(field, None)
 
 
-def apply(params, provider, model, level):
-    """*params* with *level* written in when it is a row of the table, and
-    unchanged otherwise, so an unknown level never reaches a provider."""
-    if level is None or not takes(provider, model, level):
+def apply(params, provider, model, level, listed=None):
+    """*params* with *level* written in when the model takes it (``profile``)
+    and unchanged otherwise, so an unknown level never reaches a provider."""
+    resolved = profile(provider, model, listed)
+    if level is None or level not in resolved["levels"]:
         return params
     params = dict(params)
     if provider == "anthropic":
         if level == "none":
-            # Sonnet 5.5 refuses "disabled"; it turns thinking off with
-            # "between_tools", which takes no other field.
-            params["thinking"] = {
-                "type": "between_tools"
-                if model_id(model) == "claude-sonnet-5-5"
-                else "disabled"
-            }
+            if resolved["off"] is None:
+                return params
+            params["thinking"] = {"type": resolved["off"]}
         else:
-            params["thinking"] = {"type": "adaptive"}
+            # A model without adaptive thinking takes the effort alone.
+            if resolved["adaptive"]:
+                params["thinking"] = {"type": "adaptive"}
             params["output_config"] = {
                 **params.get("output_config", {}),
                 "effort": level,
@@ -392,13 +598,17 @@ _THINKS_BY_DEFAULT = re.compile(
 )
 
 
-def thinks(provider, model, level=None):
+def thinks(provider, model, level=None, listed=None):
     """Whether requests at *level* (None: the provider's default) make the
     model think, billing tokens an estimate leaves out. *provider* is the
     engine's Batch provider name, which is the connection's identity for
     every provider the table holds."""
-    if level is None or not takes(provider, model, level):
-        level = profile(provider, model)[1]
+    resolved = profile(provider, model, listed)
+    if level is None or level not in resolved["levels"]:
+        level = resolved["default"]
+    elif provider == "anthropic" and not resolved["adaptive"]:
+        # Sent alone, the effort turns no thinking on.
+        return False
     if level is not None:
         return level != "none"
     normalized = model_id(model)

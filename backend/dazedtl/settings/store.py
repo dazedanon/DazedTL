@@ -24,7 +24,9 @@ def efforts(connection, state, configured):
         if (
             level is not None
             and level != saved.get(model, {}).get("thinkingEffort")
-            and not effort.takes(provider, model, level)
+            and not effort.takes(
+                provider, model, level, effort.record(connection, model)
+            )
         ):
             raise ValueError(
                 f"{model} doesn't take thinking effort {effort.label(level)}. "
@@ -144,6 +146,8 @@ class Settings:
                 preferences.model_options(connection.get("model_options"))
                 if "catalog" in connection:
                     openrouter.validate_catalog(connection["catalog"])
+                if "efforts" in connection:
+                    effort.valid_list(connection["efforts"])
                 if "batch_endpoints" in connection:
                     openrouter.validate_endpoints(connection["batch_endpoints"])
                 host = providers.openrouter_host(connection.get("openrouter_host", ""))
@@ -586,7 +590,12 @@ class Settings:
                     {key: item for key, item in cached[1].items() if key != "host"},
                     stale=time.monotonic() - cached[0] > 600,
                 )
-            return {**value, "thinkingEffort": effort.describe("openrouter", model)}
+            return {
+                **value,
+                "thinkingEffort": effort.describe(
+                    "openrouter", model, effort.record(active, model)
+                ),
+            }
         if cached_only:
             cached = getattr(
                 getattr(self.adapter, "model_defaults", None), "cached", None
@@ -595,7 +604,9 @@ class Settings:
         return {
             **self.adapter.model_defaults.describe(model),
             "thinkingEffort": effort.describe(
-                active["provider"] if active else None, model
+                active["provider"] if active else None,
+                model,
+                effort.record(active, model),
             ),
         }
 
@@ -1014,6 +1025,11 @@ class Settings:
                 if unchanged and old and provider == "openrouter"
                 else {}
             ),
+            **(
+                {"efforts": old["efforts"]}
+                if unchanged and old and "efforts" in old
+                else {}
+            ),
         }
         state["connections"] = (
             [
@@ -1064,6 +1080,8 @@ class Settings:
         latest["check"] = result["check"]
         if result["models"] is not None:
             latest["models"] = result["models"]
+        if "efforts" in result:
+            latest["efforts"] = result["efforts"]
         if "catalog" in result:
             latest["catalog"] = result["catalog"]
             latest["batch_endpoints"] = result.get("batch_endpoints", {})
@@ -1174,7 +1192,10 @@ class Settings:
                     configured.get("maxOutputTokens"), defaults.get("maxOutputTokens")
                 ),
                 **effort.frozen(
-                    active["provider"] if active else None, values["model"], configured
+                    active["provider"] if active else None,
+                    values["model"],
+                    configured,
+                    effort.record(active, values["model"]),
                 ),
                 "refusalRetry": REFUSAL_POLICY,
                 "stateGrouping": "compatible-states-v1",

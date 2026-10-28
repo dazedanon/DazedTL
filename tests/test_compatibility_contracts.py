@@ -648,6 +648,39 @@ class CompatibilityContracts(unittest.TestCase):
             with self.assertRaises(Exception) as caught:
                 translation.translateText("s", "u", [], 0, "json", "gpt-6.1-sol")
             self.assertIs(caught.exception, refused)
+            # A model DazedTL's notes don't know takes the levels its
+            # provider's model list gave the run, which also names its default.
+            listed = {
+                "levels": ["low", "high"],
+                "default": "low",
+                "off": None,
+                "adaptive": False,
+            }
+            plan["settings"].update(api="https://openrouter.ai/api/v1")
+            for level, named in ((None, "Provider default (Low)"), ("high", "High")):
+                plan["dazedtl_request_policy"] = {
+                    **policy,
+                    "thinkingEffortListed": listed,
+                    **({} if level is None else {"thinkingEffort": level}),
+                }
+                write_json(root / "plan.json", plan)
+                environment.prepare(root)
+                translation.estimateCostComparison = point(
+                    Mock(return_value={"model": "z-ai/glm-6"})
+                )
+                environment.prepare(root)
+                self.assertEqual(
+                    translation.estimateCostComparison()["thinking_effort"], named
+                )
+                self.assertEqual(
+                    translation.buildOpenAIRequest("z-ai/glm-6")["extra_body"],
+                    baseline["extra_body"]
+                    if level is None
+                    else {**baseline["extra_body"], "reasoning": {"effort": "high"}},
+                )
+            plan["settings"].update(api="https://api.openai.com/v1")
+            plan["dazedtl_request_policy"] = policy
+            write_json(root / "plan.json", plan)
             for legacy in (
                 {
                     key: value

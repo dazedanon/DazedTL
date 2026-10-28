@@ -394,6 +394,7 @@ Removing a connection stops its unfinished runs from resuming, so DazedTL tells 
 - **Output token allowance** caps each reply at 32,768 tokens, or less when the model allows less.
 - **Thinking effort** is how hard the model thinks before it replies; **Provider default** sends none, so the provider uses its own level, which DazedTL names when it knows it.
   Only the levels the model takes are offered, so a run never fails on one; higher effort costs more output tokens, and the review before you approve a run shows the effort it sends.
+  For Anthropic and OpenRouter the levels come from the provider's own model list, read when you check the connection; for other providers they come from DazedTL's notes, and a line under the choice says which.
   Models DazedTL doesn't know, and **Custom / local** servers, use the provider default.
 - For OpenAI, **Batch token allowance** caps how much Batch work runs at once; raise it to your account's limit from [OpenAI Limits](https://platform.openai.com/settings/organization/limits).
 - Prices come from the model catalog; models it doesn't know need your own rates, and 0 is fine for free models.

@@ -447,6 +447,10 @@ class SettingsTests(unittest.TestCase):
             result = providers.check(connection)
             self.assertEqual(result["check"]["status"], "verified")
             self.assertEqual(result["models"], models)
+            # The list's effort data is kept where a row has any: this model
+            # shows no reasoning parameter, the others nothing at all.
+            self.assertEqual(result["efforts"][models[0]]["levels"], [])
+            self.assertNotIn(models[1], result["efforts"])
             self.assertEqual(
                 str(requests[0].url), "https://openrouter.ai/api/v1/models/user"
             )
@@ -1510,6 +1514,369 @@ class SettingsTests(unittest.TestCase):
                         }
                     },
                 )
+
+    def test_a_model_list_decides_which_efforts_its_models_take(self):
+        # Where a provider's own model list says which efforts a model takes,
+        # Settings and runs follow it instead of DazedTL's notes, never a mix
+        # of both, so a level the provider stopped taking is never sent; rows
+        # that say nothing, and connections checked before, keep the notes,
+        # and a run keeps the record it froze.
+        from dazedtl.compatibility.translation import request_payload
+        from dazedtl.settings import effort
+
+        full = ("low", "medium", "high", "xhigh", "max")
+
+        def claude(model, levels=full, types=("adaptive",)):
+            kinds = ("adaptive", "disabled", "between_tools", "enabled")
+            return {
+                "id": model,
+                "capabilities": {
+                    "effort": {
+                        "supported": True,
+                        **{level: {"supported": level in levels} for level in full},
+                    },
+                    "thinking": {
+                        "supported": True,
+                        "types": {kind: {"supported": kind in types} for kind in kinds},
+                    },
+                },
+            }
+
+        listed = effort.model_list(
+            "anthropic",
+            [
+                claude("claude-opus-5-5"),
+                claude("claude-sonnet-5-5", types=("adaptive", "between_tools")),
+                # Narrower than the notes: no xhigh or max.
+                claude(
+                    "claude-opus-5", ("low", "medium", "high"), ("adaptive", "disabled")
+                ),
+                # Unknown to the notes, with effort but no adaptive thinking.
+                claude("claude-opus-4-5", ("low", "medium", "high"), ("disabled",)),
+                {
+                    "id": "claude-haiku-4-5",
+                    "capabilities": {"effort": {"supported": False}},
+                },
+                {"id": "no-capabilities"},
+                {"id": "malformed", "capabilities": {"effort": {"supported": "yes"}}},
+                {
+                    "id": "no-thinking-types",
+                    "capabilities": {"effort": {"supported": True}, "thinking": {}},
+                },
+                {"id": 7},
+                "row",
+            ],
+        )
+        self.assertEqual(
+            sorted(listed),
+            [
+                "claude-haiku-4-5",
+                "claude-opus-4-5",
+                "claude-opus-5",
+                "claude-opus-5-5",
+                "claude-sonnet-5-5",
+            ],
+        )
+        for record in listed.values():
+            self.assertIs(effort.valid(record), record)
+        self.assertEqual(effort.model_list("openai", [{"id": "gpt-6.1-sol"}]), {})
+        sonnet, opus, older = (
+            listed[model]
+            for model in ("claude-sonnet-5-5", "claude-opus-5", "claude-opus-4-5")
+        )
+        self.assertEqual(sonnet["levels"], ["none", *full])
+        self.assertEqual(
+            effort.apply({}, "anthropic", "claude-sonnet-5-5", "none", sonnet),
+            {"thinking": {"type": "between_tools"}},
+        )
+        self.assertFalse(effort.takes("anthropic", "claude-opus-5", "max", opus))
+        sent = {"model": "claude-opus-5", "temperature": 0}
+        self.assertIs(
+            effort.apply(sent, "anthropic", "claude-opus-5", "max", opus), sent
+        )
+        # Anthropic's list names no default, so the notes' default stands.
+        self.assertEqual(
+            effort.describe("anthropic", "claude-opus-5", opus),
+            {
+                "options": [
+                    {"value": None, "label": "Provider default (High)"},
+                    {"value": "none", "label": "Off"},
+                    {"value": "low", "label": "Low"},
+                    {"value": "medium", "label": "Medium"},
+                    {"value": "high", "label": "High"},
+                ],
+                "source": "From Anthropic's model list",
+            },
+        )
+        self.assertEqual(
+            effort.apply(sent, "anthropic", "claude-opus-4-5", "low", older),
+            {"model": "claude-opus-5", "output_config": {"effort": "low"}},
+        )
+        # Sent alone, that effort turns no thinking on.
+        self.assertFalse(effort.thinks("anthropic", "claude-opus-4-5", "low", older))
+        self.assertEqual(
+            effort.describe(
+                "anthropic", "claude-haiku-4-5", listed["claude-haiku-4-5"]
+            ),
+            {
+                "options": [{"value": None, "label": "Provider default"}],
+                "source": "From Anthropic's model list",
+            },
+        )
+        self.assertEqual(
+            effort.describe("anthropic", "claude-opus-5").get("source"),
+            "From DazedTL's model notes",
+        )
+        self.assertNotIn("source", effort.describe("custom", "local-model"))
+        # Only Anthropic's and OpenRouter's lists say anything about effort.
+        self.assertEqual(
+            effort.levels("openai", "gpt-6.1-sol", older),
+            effort.levels("openai", "gpt-6.1-sol"),
+        )
+
+        routed = effort.model_list(
+            "openrouter",
+            [
+                {
+                    "id": "anthropic/claude-opus-5.5",
+                    "supported_parameters": ["reasoning", "response_format"],
+                    "reasoning": {
+                        "supported_efforts": ["max", "high", "low", "none"],
+                        "default_effort": "high",
+                        "mandatory": True,
+                    },
+                },
+                {
+                    "id": "z-ai/glm-6",
+                    "reasoning": {
+                        "supported_efforts": ["high", "extreme", None, "low"],
+                        "default_enabled": False,
+                    },
+                },
+                {"id": "openai/gpt-4.1", "supported_parameters": ["response_format"]},
+                {"id": "x/no-allowlist", "reasoning": {"supported_efforts": None}},
+                {"id": "x/malformed", "reasoning": "high"},
+                {"id": "x/other-field", "supported_parameters": ["reasoning_effort"]},
+            ],
+        )
+        self.assertEqual(
+            routed,
+            {
+                "anthropic/claude-opus-5.5": {
+                    "levels": ["low", "high", "max"],
+                    "default": "high",
+                    "off": None,
+                    "adaptive": False,
+                },
+                "z-ai/glm-6": {
+                    "levels": ["low", "high"],
+                    "default": "none",
+                    "off": None,
+                    "adaptive": False,
+                },
+                "openai/gpt-4.1": {
+                    "levels": [],
+                    "default": None,
+                    "off": None,
+                    "adaptive": False,
+                },
+            },
+        )
+        glm = routed["z-ai/glm-6"]
+        self.assertEqual(
+            [
+                option["label"]
+                for option in effort.describe("openrouter", "z-ai/glm-6", glm)[
+                    "options"
+                ]
+            ],
+            ["Provider default (Off)", "Low", "High"],
+        )
+        self.assertEqual(
+            effort.apply({}, "openrouter", "z-ai/glm-6", "high", glm),
+            {"extra_body": {"reasoning": {"effort": "high"}}},
+        )
+        # The notes would offer Medium for Opus 5.5; OpenRouter's list does not.
+        self.assertFalse(
+            effort.takes(
+                "openrouter",
+                "anthropic/claude-opus-5.5",
+                "medium",
+                routed["anthropic/claude-opus-5.5"],
+            )
+        )
+        self.assertEqual(
+            effort.summary("openrouter", "z-ai/glm-6", None, glm),
+            "Provider default (Off)",
+        )
+
+        # A run freezes the record only where it, not the notes, decides what
+        # the run sends or the default its review names.
+        self.assertEqual(
+            effort.frozen(
+                "anthropic",
+                "claude-opus-5-5",
+                {"thinkingEffort": "low"},
+                listed["claude-opus-5-5"],
+            ),
+            {"thinkingEffort": "low"},
+        )
+        self.assertEqual(effort.frozen("anthropic", "claude-opus-4-5", {}, older), {})
+        self.assertEqual(
+            effort.frozen(
+                "anthropic", "claude-opus-4-5", {"thinkingEffort": "low"}, older
+            ),
+            {"thinkingEffort": "low", "thinkingEffortListed": older},
+        )
+        self.assertEqual(
+            effort.frozen("openrouter", "z-ai/glm-6", {}, glm),
+            {"thinkingEffortListed": glm},
+        )
+        for invalid in (
+            {**older, "levels": ["low", "low"]},
+            {**older, "levels": ["high", "low"]},
+            {**older, "default": "extreme"},
+            {**older, "off": "sometimes"},
+            {**older, "adaptive": 1},
+            {**older, "extra": True},
+        ):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                effort.valid(invalid)
+        with self.assertRaises(ValueError):
+            effort.valid_list({"": older})
+
+        options = {
+            "entriesPerRequest": None,
+            "pricing": "custom",
+            "inputRate": 1,
+            "outputRate": 2,
+        }
+        connection = {
+            "id": "first",
+            "runtime_name": "first-key",
+            "name": "First",
+            "provider": "anthropic",
+            "protocol": "anthropic",
+            "endpoint": "",
+            "secret": "fixture-secret",
+            "keyless": False,
+            "organization": "",
+            "model": "claude-opus-4-5",
+            "model_options": {"claude-opus-4-5": options},
+            "models": [],
+            "check": providers.unchecked(),
+        }
+        adapter = SimpleNamespace(
+            settings_metadata=lambda: {
+                "values": {
+                    "language": "English",
+                    "model": "claude-opus-4-5",
+                    "api": "",
+                    "API_PROVIDER": "anthropic",
+                }
+            },
+            allow_providers=True,
+            validate_route=lambda _: None,
+            provider_defaults=lambda _: {"batch_supported": True},
+            model_defaults=SimpleNamespace(
+                cached=lambda _model: {}, describe=lambda _model: {}
+            ),
+            manual=SimpleNamespace(request_policy=None),
+            install_settings=Mock(),
+        )
+        state = {
+            "version": 3,
+            "revision": 0,
+            "sourceLanguage": "Japanese",
+            "values": {"language": "English", "model": "claude-opus-4-5"},
+            "legacy": {"values": {}, "engines": {}, "draft": None},
+            "model_options": {},
+            "active": "first",
+            "draft": None,
+            "connections": [connection],
+        }
+        with TemporaryDirectory() as temporary:
+            path = Path(temporary) / "settings/settings.json"
+            write_json(path, state)
+            settings = Settings(temporary, adapter)
+            view = settings.describe()
+            # A connection checked before records were kept: the notes,
+            # which don't know this model, decide.
+            self.assertEqual(
+                settings.model_defaults("first", "claude-opus-4-5")["thinkingEffort"],
+                {"options": [{"value": None, "label": "Provider default"}]},
+            )
+            with self.assertRaisesRegex(ValueError, "doesn't take thinking effort Low"):
+                settings.save(
+                    view["revision"],
+                    "first",
+                    view["values"],
+                    {"claude-opus-4-5": {**options, "thinkingEffort": "low"}},
+                )
+            checked = {
+                "check": {
+                    "status": "verified",
+                    "message": "Authentication verified.",
+                    "checkedAt": "2026-10-28T00:00:00+00:00",
+                },
+                "models": ["claude-opus-4-5"],
+                "efforts": {"claude-opus-4-5": older},
+            }
+            with patch.object(providers, "check", return_value=checked):
+                view = settings.check_connection(view["revision"], "first")
+            self.assertEqual(
+                settings.model_defaults("first", "claude-opus-4-5")["thinkingEffort"][
+                    "source"
+                ],
+                "From Anthropic's model list",
+            )
+            view = settings.save(
+                view["revision"],
+                "first",
+                view["values"],
+                {"claude-opus-4-5": {**options, "thinkingEffort": "low"}},
+            )
+            frozen = configuration(settings, "live")
+            self.assertEqual(frozen["thinkingEffortListed"], older)
+            settings.prepare_engine("translate")
+            self.assertEqual(
+                adapter.manual.request_policy["thinkingEffortListed"], older
+            )
+            row = logical_request(
+                {"id": "scene", "sources": {"line": "はい。"}},
+                {
+                    "user": "Lines:",
+                    "system": "Translate.",
+                    "glossary": "",
+                    "sfx_reference": "",
+                    "preceding_japanese_source_context": "",
+                    "request_instructions": "",
+                },
+            )
+            payload = request_payload(row, {**frozen, "lineKeys": LINE_KEYS})
+            self.assertEqual(payload["output_config"]["effort"], "low")
+            self.assertNotIn("thinking", payload)
+            # A later check that drops the level leaves the frozen run as it
+            # was, and new runs fall back to the provider default.
+            with patch.object(
+                providers,
+                "check",
+                return_value={
+                    **checked,
+                    "efforts": {"claude-opus-4-5": {**older, "levels": ["high"]}},
+                },
+            ):
+                settings.check_connection(view["revision"], "first")
+            self.assertEqual(
+                request_payload(row, {**frozen, "lineKeys": LINE_KEYS})[
+                    "output_config"
+                ]["effort"],
+                "low",
+            )
+            self.assertNotIn("thinkingEffort", configuration(settings, "live"))
+            # The saved records survive a reload.
+            reloaded = Settings(temporary, adapter)._read()["connections"][0]
+            self.assertEqual(reloaded["efforts"]["claude-opus-4-5"]["levels"], ["high"])
 
     def test_compiled_batch_limits_use_the_frozen_allowance_only_for_native_openai(
         self,

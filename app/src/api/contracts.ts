@@ -2011,6 +2011,7 @@ export type EffortOption = {
 the provider default first, then each level the model takes. */
 export type ThinkingEffort = {
   options: EffortOption[];
+  source?: string;
 };
 
 export type ModelDefaults = {
