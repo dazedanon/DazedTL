@@ -1457,3 +1457,40 @@ class DecodedImagePatchTests(unittest.TestCase):
         delivery = {**built, "stamp": stamp(built["path"])}
         delivery.update(basis(self.game, delivery.pop("paths")))
         self.assertTrue(current(delivery, self.game))
+
+    def test_undoing_an_apply_into_a_decoded_folder_puts_its_original_back(self):
+        # Undoing the apply deleted the decoded image, which only the apply
+        # had brought onto the branch, so Images read it missing and the
+        # archive packed again would lose it.
+        from dazedtl.compatibility.checkpoint_history import go_back, undo
+
+        picture = "decoded/Picture/title.png"
+        original = (self.game / picture).read_bytes()
+
+        def reads():
+            state = self.service.state(self.identity)
+            path = self.game / picture
+            raw = path.read_bytes() if path.exists() else None
+            counts = state["counts"]
+            return raw, counts["applied"], counts["needsReview"], counts["missing"]
+
+        candidate = self.reviewed_candidate(picture)
+        self.service.assistant(self.identity, "apply")
+        log = self.git("log", "-3", "--format=%H %s").decode().splitlines()
+        (applied, kept, setup), subjects = zip(*(row.split(" ", 1) for row in log))
+        self.assertEqual(
+            subjects[:2],
+            (
+                "Translate: Apply translated images",
+                "Translate: Keep the decoded images' originals",
+            ),
+        )
+        undone = undo(self.game, applied)
+        self.assertEqual(reads(), (original, 0, 1, 0))
+        undo(self.game, undone["commit"])
+        self.assertEqual(reads(), (candidate, 1, 0, 0))
+        go_back(self.game, kept)
+        self.assertEqual(reads(), (original, 0, 1, 0))
+        # Before the checkpoint keeping it, it was the decoded original too.
+        go_back(self.game, setup)
+        self.assertEqual(reads(), (original, 0, 1, 0))

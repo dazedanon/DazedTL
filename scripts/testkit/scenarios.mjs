@@ -1555,6 +1555,13 @@ export const scenarios = {
             .project.id;
           const title = path.join(state.game, "decoded/Picture/text_title.png");
           const translated = fs.readFileSync(title);
+          // The decoded original Images kept when it prepared the title.
+          const original = fs.readFileSync(
+            path.join(
+              state.game,
+              ".dazedtl/image_manager/guided/originals/decoded/Picture/text_title.png",
+            ),
+          );
           const applied = async () =>
             (await page.call("images_state", { project_id })).counts.applied;
           await page.click("Project");
@@ -1563,12 +1570,14 @@ export const scenarios = {
           await page.click(/^Undo this change/);
           await page.waitText("Undone;");
           await page.idle();
+          // It deleted the decoded title, which the archive packed again
+          // would then lose.
           if (
-            (fs.existsSync(title) &&
-              fs.readFileSync(title).equals(translated)) ||
+            !fs.existsSync(title) ||
+            !fs.readFileSync(title).equals(original) ||
             (await applied()) !== 0
           )
-            throw new Error("The undo left the translated title applied.");
+            throw new Error("The undo left the decoded title unrestored.");
           await page.click(
             /^More actions for Undid “Apply translated images”,/,
           );

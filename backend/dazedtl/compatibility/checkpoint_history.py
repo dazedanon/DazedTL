@@ -12,10 +12,12 @@ What a file is at a checkpoint (`_Game.wanted`): its content in the
 checkpoint's tree. A file the patch did not hold then is the original game's,
 so it takes the `original` branch's bytes for that version, or, since that
 branch holds only the patch too, the bytes the game's record of its original
-files has for that version ([original_files](original_files.py)). A file none
-of them holds did not exist then and goes, unless the game has no record for
-that version, when its earlier bytes are unknown and it stays as it is. A
-game set up before its original files were kept in Git reads them, for the
+files has for that version ([original_files](original_files.py)). An image
+an assistant decoded from the game's archives, which no record holds, was
+then the decoded original the first later checkpoint of that version
+keeping it holds (`DECODED_ORIGINALS`). A file none of them holds did not
+exist then and goes, unless the game has no record for that version, when
+its earlier bytes are unknown and it stays as it is. A game set up before its original files were kept in Git reads them, for the
 current version, from the backup it saved then (`original`, from
 [originals](../translation/originals.py)).
 
@@ -54,6 +56,7 @@ from dazedtl.translation.git_status_cache import RepositoryStatusCache
 
 from .checkpoint_commits import (
     ACTION_TRAILER,
+    DECODED_ORIGINALS,
     OUTSIDE,
     OUTSIDE_EDITS,
     STAGE_TRAILER,
@@ -473,7 +476,7 @@ class _Game:
     """The files of a game as of one of its checkpoints, against the game
     as it is now."""
 
-    def __init__(self, root, target, original=None):
+    def __init__(self, root, target, original=None, later=()):
         from util.paths import LEN_PATCH_GITIGNORE_BEGIN
         from util.version_update.git_workflow import read_objects
 
@@ -498,6 +501,19 @@ class _Game:
             or self.saved is not None
             or (bool(self.original_tip) and LEN_PATCH_GITIGNORE_BEGIN not in rules)
         )
+        # The decoded originals of images the target's version kept after
+        # it, from `later`, the checkpoints after the state it restores,
+        # newest first, so the oldest keeping one wins.
+        self.decoded = {
+            path: (new_mode, new_blob)
+            for entry in later
+            if entry.action == DECODED_ORIGINALS.action
+            and entry.version == target.version
+            for path, (_mode, new_mode, _blob, new_blob, status) in (
+                entry.changes.items()
+            )
+            if status == "A" and path not in _RULES
+        }
 
     def _recorded(self, version):
         """The recorded original game's files at `version`: the prepared
@@ -567,6 +583,8 @@ class _Game:
             return self.recorded[path]
         if self.saved is not None and path in self.saved.files:
             return (SAVED, path)
+        if path in self.decoded:
+            return self.decoded[path]
         # One the target lacked didn't exist then.
         if _project_file(path):
             return None
@@ -704,7 +722,7 @@ def go_back(
         # The gateway recorded the edits made outside DazedTL first.
         entries = _since(root, game, entries)
         index = _restorable(entries, commit)
-        state = _Game(root, entries[index], original)
+        state = _Game(root, entries[index], original, entries[:index])
         plan = _plan(state, _diff(root, commit, "HEAD"), state.tree(commit))
         written = _apply(game, root, plan, stopped, state)
     undone = [entry.commit for entry in entries[:index]]
@@ -746,7 +764,8 @@ def put_back(
     ):
         check()
         entries = _log(root)
-        state = _Game(root, entries[_restorable(entries, commit)], original)
+        index = _restorable(entries, commit)
+        state = _Game(root, entries[index], original, entries[:index])
         plan = _plan(state, paths, state.tree(commit))
         written = _apply(game, root, plan, stopped, state)
     return {"files": written, "commit": _head(root, game)}
@@ -767,7 +786,7 @@ def to_original(game, keep=lambda _path: False, stopped=lambda: False, original=
     root = game.root
     entries = _log(root)
     span = _current_span(entries)
-    state = _Game(root, span[-1], original)
+    state = _Game(root, span[-1], original, span)
     if not state.original_tip:
         raise ValueError("The game's Git history has no original branch.")
     head = state.tree("HEAD")
@@ -824,7 +843,8 @@ def undo(
                 f"{_names(files)}."
             )
         check()
-        state = _Game(root, target, original)
+        # It puts back the state before the checkpoint, which came later.
+        state = _Game(root, target, original, entries[: index + 1])
         parent = entries[index + 1].commit if index + 1 < len(entries) else None
         plan = _plan(state, target.changes, state.tree(parent) if parent else {})
         written = _apply(game, root, plan, stopped, state)
@@ -871,9 +891,10 @@ def save_copy(
     translation, into a new folder in `parent`; the game stays as it is."""
     root = Path(root).resolve()
     entries = _log(root)
-    target = entries[_index(entries, commit)]
+    index = _index(entries, commit)
+    target = entries[index]
     folder = copy_folder(root, parent, target.version, target.time)
-    state = _Game(root, target)
+    state = _Game(root, target, later=entries[:index])
     tree = state.tree(commit)
     # Edits made outside DazedTL are not in any checkpoint yet.
     changed = _diff(root, commit, "HEAD") | _pending(root)

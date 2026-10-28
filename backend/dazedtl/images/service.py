@@ -2477,6 +2477,8 @@ class ImageService:
         with index.connection() as db:
             for row in allowed:
                 index.put(db, row, row.get("generation", ""))
+        if allowed and profile.get("decoded"):
+            self._keep_decoded(project_id, root, profile, allowed)
         if allowed:
             # The editable copies are DazedTL's own records, but making them
             # may add DazedTL's rules to the game's .gitignore.
@@ -2498,6 +2500,37 @@ class ImageService:
         value["lastAction"] = {"action": "prepare", "saved": now(), **result}
         self._save(project_id, value)
         return {"state": self.state(project_id), "result": result}
+
+    def _keep_decoded(self, project_id, root, profile, rows):
+        """Takes the originals of `rows`, images in a folder an assistant
+        decoded from the game's archives, onto the translation branch as
+        their own checkpoint before an apply changes them, kept out of
+        players' downloads: no record of the game's original files holds
+        them, so undoing or going back past the apply puts them back from
+        it ([checkpoint_history](../compatibility/checkpoint_history.py))."""
+        from dazedtl.compatibility.checkpoint_commits import (
+            DECODED_ORIGINALS,
+            running,
+        )
+
+        originals = [
+            row["runtime"]
+            for row in rows
+            if row.get("sourceHash") == row.get("originalRuntimeHash")
+        ]
+        if not originals:
+            return
+        with (
+            running(DECODED_ORIGINALS),
+            self.backend.game_write(
+                root,
+                self.projects.get(project_id).get("backend_id"),
+                paths=[*originals, ".gitattributes"],
+                pack=False,
+            ) as game,
+        ):
+            self.adapter.withhold(root, profile["imageRoot"])
+            game.wrote(*originals)
 
     def _review(self, project_id, action, options):
         identities = self._chosen(project_id, options)

@@ -284,14 +284,16 @@ class ImageCompatibility:
             if result.errors:
                 self._restore_auxiliary(previous, result.errors)
             elif profile.get("decoded"):
-                self._withhold(root, profile["imageRoot"])
+                # Images prepared before Prepare kept decoded originals join
+                # the branch only here.
+                self.withhold(root, profile["imageRoot"])
             return self._result(root, result)
         except Exception:
             self._restore_auxiliary(previous, [])
             raise
 
     @staticmethod
-    def _withhold(root, folder):
+    def withhold(root, folder):
         """Keeps the decoded `folder` out of the downloads of the game's
         patch, which carry its images inside the archive packed again."""
         from util.paths import decoded_images_gitattributes_text
