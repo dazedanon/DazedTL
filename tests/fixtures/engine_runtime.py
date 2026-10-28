@@ -453,6 +453,59 @@ try:
         # Setup read saved guesses such as a cameo's 存子 "Sonko" as approved
         # spellings; they now say they were translated without their story.
         assert "Unverified nameplate" in saved_names, saved_names
+        # A WOLF map saved its progress after each page with that page's
+        # tokens, read in a `finally`: a failing first page had none yet, so
+        # an UnboundLocalError hid its error, a run's stop included, and a
+        # failing later page saved progress with the page before's tokens.
+        from modules import wolf
+        from util import translation as stops
+
+        wolf_fails = {}
+
+        def wolf_page(page_list, *_args):
+            text = page_list[0]["stringArgs"]
+            source, text[0] = text[0], "EN:" + text[0]
+            if wolf_fails.get(source):
+                raise wolf_fails[source]
+            return [3, 1]
+
+        def wolf_map(*fails):
+            wolf_fails.update(zip(("一頁", "二頁"), fails))
+            pages = [
+                {"list": [{"code": 101, "stringArgs": [text]}]} for text in wolf_fails
+            ]
+            return {"events": [None, {"pages": pages}]}
+
+        wolf_root = temporary / "wolf-pages"
+        wolf_root.mkdir()
+        saved = wolf_root / "translated/Map001.json"
+        directory = os.getcwd()
+        os.chdir(wolf_root)
+        try:
+            with (
+                patch.object(wolf, "searchCodes", wolf_page),
+                patch.object(stops, "RUN_STOPS", True),
+            ):
+                stop = stops.RunStoppingError("Stopped.")
+                try:
+                    wolf.parseMap(wolf_map(stop, None), "Map001.json")
+                except stops.RunStoppingError as error:
+                    assert error is stop, error
+                else:
+                    raise AssertionError("A WOLF map went on after a run's stop.")
+                failure = ValueError("Refused.")
+                result = wolf.parseMap(wolf_map(failure, None), "Map001.json")
+                assert result[1:] == [[0, 0], failure], result
+                assert not saved.exists(), saved.read_text("utf-8")
+                result = wolf.parseMap(wolf_map(None, failure), "Map001.json")
+                assert result[1:] == [[3, 1], failure], result
+                pages = json.loads(saved.read_text("utf-8"))["events"][1]["pages"]
+                assert [page["list"][0]["stringArgs"][0] for page in pages] == [
+                    "EN:一頁",
+                    "二頁",
+                ], pages
+        finally:
+            os.chdir(directory)
         # A name a registered reference game already translated is reused
         # instead of guessed: that game read 存子 as Aruko.
         from util import reference_games

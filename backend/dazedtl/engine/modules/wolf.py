@@ -269,7 +269,9 @@ def parseMap(data, filename):
             for page in event["pages"]:
                 totalLines += len(page["list"])
 
-    # Process pages synchronously and persist after each
+    # Process pages synchronously and save progress after each that finishes,
+    # with its own tokens; a failing page saves no progress, and its error
+    # reaches the caller unchanged.
     with tqdm(bar_format=BAR_FORMAT, position=POSITION, total=totalLines, leave=LEAVE) as pbar:
         pbar.desc = filename
         pbar.total = totalLines
@@ -279,14 +281,13 @@ def parseMap(data, filename):
                     if page is not None:
                         try:
                             tt = searchCodes(page["list"], pbar, None, filename)
-                            totalTokens[0] += tt[0]
-                            totalTokens[1] += tt[1]
                         except run_stop_errors():
                             raise
                         except Exception as e:
                             return [data, totalTokens, e]
-                        finally:
-                            maybe_save_progress_json(data, filename, tt)
+                        totalTokens[0] += tt[0]
+                        totalTokens[1] += tt[1]
+                        maybe_save_progress_json(data, filename, tt)
     return [data, totalTokens, None]
 
 
