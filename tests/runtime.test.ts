@@ -16,6 +16,7 @@ import { once } from "node:events";
 import { createInterface } from "node:readline";
 import { rendererFailure } from "../app/src/app/rendererErrors.ts";
 import { homeRelative } from "../app/src/ui/displayPath.ts";
+import { tailExcerpt } from "../app/src/ui/excerpt.ts";
 
 const turn = () => new Promise<void>((resolve) => setImmediate(resolve));
 
@@ -396,4 +397,21 @@ test("paths inside the home folder read home-relative, and only there", () => {
     "~\\Games\\X",
   );
   assert.equal(homeRelative("/tmp/Game", ""), "/tmp/Game");
+});
+
+// A failed run's collapsed Run log started mid-word, cut at a character count.
+test("a log's collapsed tail starts at a line, or at a word in one long line", () => {
+  const log = [
+    "Found 10 files",
+    "x".repeat(30),
+    "[API_ERROR] rejected",
+    "Failed",
+  ];
+  assert.equal(tailExcerpt(log.join("\n"), 40), "[API_ERROR] rejected\nFailed");
+  assert.equal(tailExcerpt(log.join("\n"), 480), log.join("\n"));
+  assert.equal(
+    tailExcerpt("The provider rejected the request: HTTP 400", 20),
+    "request: HTTP 400",
+  );
+  assert.equal(tailExcerpt("one two three", 5), "three");
 });
