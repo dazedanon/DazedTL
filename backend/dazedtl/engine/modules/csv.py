@@ -15,7 +15,7 @@ from dotenv import load_dotenv
 from retry import retry
 from tqdm import tqdm
 from util.languages import source_pattern
-from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost
+from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost, run_stop_errors
 from util.speakers import strip_speaker_prefix
 import tempfile
 
@@ -196,6 +196,8 @@ def parseCSV(readFile, writeFile, filename):
             response = translateCSV(data, pbar, writeFile, writer, filename, None)
             totalTokens[0] = response[0]
             totalTokens[1] = response[1]
+        except run_stop_errors():
+            raise
         except Exception:
             traceback.print_exc()
     return [data, totalTokens, None]
@@ -418,7 +420,7 @@ def translateCSV(data, pbar, writeFile, writer, filename, translatedList):
                         writer.writerow(row)
             flush_progress_csv(writeFile, writer, data)
 
-    except Exception:
+    except Exception as error:
         traceback.print_exc()
 
         # Write all Data
@@ -427,6 +429,10 @@ def translateCSV(data, pbar, writeFile, writer, filename, translatedList):
                 for row in data:
                     writer.writerow(row)
         flush_progress_csv(writeFile, writer, data)
+        # The output file is already truncated, so a run's stop still writes
+        # every row before it ends the file.
+        if isinstance(error, run_stop_errors()):
+            raise
         return totalTokens
 
     return totalTokens

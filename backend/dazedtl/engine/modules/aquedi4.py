@@ -15,7 +15,7 @@ from dotenv import load_dotenv
 from retry import retry
 from tqdm import tqdm
 from util.languages import source_pattern
-from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost
+from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost, run_stop_errors
 # from modules.json import translateSimpleKeyValueJSON
 import tempfile
 from util import system
@@ -73,6 +73,8 @@ def handleAquedi4(filename, estimate):
             TOKENS[0] += translatedData[1][0]
             TOKENS[1] += translatedData[1][1]
 
+    except run_stop_errors():
+        raise
     except Exception as e:
         traceback.print_exc()
         return "Fail"
@@ -116,6 +118,8 @@ def parseAquedi4JSON(data, filename):
                 totalTokens[1] += result[1]
             else:
                 pbar.write(f"Warning: {filename} is not in the expected simple key-value format. Skipping.")
+        except run_stop_errors():
+            raise
         except Exception as e:
             traceback.print_exc()
             return [data, totalTokens, e]

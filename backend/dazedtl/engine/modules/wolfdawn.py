@@ -72,6 +72,7 @@ from util.translation import (
     speaker_source_lookup_keys,
     split_vocab_source_aliases,
     nameplate_gloss_for_alias,
+    run_stop_errors,
 )
 from util import speakers as wolf_speakers
 from util import vocab as wolf_vocab
@@ -658,6 +659,8 @@ def parseDocument(data, filename):
 
             try:
                 response = translateAI(sources, [])
+            except run_stop_errors():
+                raise
             except Exception as e:
                 return [data, totalTokens, e]
 

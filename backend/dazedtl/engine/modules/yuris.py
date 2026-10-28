@@ -18,6 +18,7 @@ from util.translation import (
     calculateCost,
     getPricingConfig,
     translateAI as sharedtranslateAI,
+    run_stop_errors,
 )
 from util import system
 
@@ -201,6 +202,8 @@ def handleYuris(filename, estimate):
             with LOCK:
                 TOKENS[0] += translatedData[1][0]
                 TOKENS[1] += translatedData[1][1]
+    except run_stop_errors():
+        raise
     except Exception:
         traceback.print_exc()
         return "Fail"
@@ -235,6 +238,8 @@ def parseYuris(data, filename):
             result = translateYuris(data, filename)
             totalTokens[0] += result[0]
             totalTokens[1] += result[1]
+        except run_stop_errors():
+            raise
         except Exception as e:
             traceback.print_exc()
             return [data, totalTokens, e]

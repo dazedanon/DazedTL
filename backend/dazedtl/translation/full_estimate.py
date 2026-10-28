@@ -104,12 +104,13 @@ class FullEstimate:
             return digest({"app": release, "tasks": rows})
         return digest({"version": ESTIMATE_VERSION, "tasks": rows})
 
-    def basis(self, tasks, result=None):
-        """The basis of ``tasks`` or, with ``result``, of the saved estimate,
-        with the price rules it was priced under. One a listed release saved
-        for these tasks reads as made under version 1. Versions up to 2.34.3
-        bound each task to the game folder (GuidedRuns.saved); one they saved
-        for these tasks reads as theirs."""
+    def basis(self, tasks, result=None, routes=()):
+        """The basis of ``tasks``, with the price rules an estimate priced on
+        ``routes`` needs (repricing.route_rules), or, with ``result``, of the
+        saved estimate, with the price rules it was priced under. One a
+        listed release saved for these tasks reads as made under version 1.
+        Versions up to 2.34.3 bound each task to the game folder
+        (GuidedRuns.saved); one they saved for these tasks reads as theirs."""
         current = {
             key: self.fingerprint(tasks, key) for key in ("fingerprint", "shape")
         }
@@ -119,7 +120,7 @@ class FullEstimate:
                 {},
                 current["fingerprint"],
                 current["shape"],
-                repricing.current_rules(),
+                repricing.route_rules(*routes),
             )
         located = [{**task, **(task.get("legacy") or {})} for task in tasks]
         saved, version = {}, ESTIMATE_VERSION
@@ -145,7 +146,8 @@ class FullEstimate:
         """What changed since ``result`` was estimated, or None while it is
         current. With ``reprice``, settings that differ only in prices not
         known yet count as the same."""
-        saved, current = self.basis(tasks, result), self.basis(tasks)
+        saved = self.basis(tasks, result)
+        current = self.basis(tasks, routes=self.routes(result))
         return compare(
             saved,
             current,
@@ -155,6 +157,13 @@ class FullEstimate:
                 result["configuration"], self.configuration(tasks)
             ),
         )
+
+    @staticmethod
+    def routes(result):
+        """The routes a saved estimate's tasks were priced on: the Batch
+        provider each task's counts record (repricing.route_rules)."""
+        measured = result.get("measured") or {}
+        return [counts.get("provider") for counts in measured.values()]
 
     @staticmethod
     def configuration(tasks):

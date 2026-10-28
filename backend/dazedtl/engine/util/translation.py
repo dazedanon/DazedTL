@@ -2065,6 +2065,14 @@ def run_stop(error=None):
     return _run_stops[0] if _run_stops else None
 
 
+def run_stop_errors():
+    """The errors the broad file and parse handlers of the engines outside RPG
+    Maker let through: a run's stop under the run-stop policy, so the file
+    ends there; none in a run frozen without it, which fails only the file,
+    as when approved."""
+    return (RunStoppingError,) if RUN_STOPS else ()
+
+
 # A consume miss is the file's failure reason beside its name in the run's
 # banner, so it says what happened and what to do in plain words.
 MISSING_BATCH_RESULT = {

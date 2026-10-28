@@ -6,19 +6,37 @@ import re
 from datetime import UTC, datetime
 
 # The version of the rules that price counted tokens: a Batch discount, a
-# cache read or write multiple, the Live formula. Raise it with any change
-# that prices the same counts differently. Every quote and estimate saved for
-# later display or approval records the version it was priced under, and one
-# priced under another version is priced again from its counts on its next
-# view, or reads outdated when its counts can't be (translation/repricing).
+# cache read or write multiple, the Live formula. Every quote and estimate
+# saved for later display or approval records the version it was priced
+# under (PRICE_RULES_VERSION). One priced under an older version than the
+# one its route's rules last changed at (ROUTE_PRICE_RULES) is priced again
+# from its counts on its next view, or reads outdated when its counts can't
+# be (translation/repricing); one on a route a fix left alone stands.
+# A figure's route is the Batch provider that priced it, as
+# batch_providers.detect_batch_provider names it, "openrouter" for an
+# OpenRouter Batch and None for a route without one: an estimate's Live price
+# is its rates alone, and every rule that prices its cache or discount
+# follows that provider.
+# A change that prices the same counts differently sets each route it
+# changes to the next version here, or EVERY_ROUTE_PRICE_RULES when it
+# changes them all, which raises PRICE_RULES_VERSION.
 # A change to what is counted, such as the output allowance, changes the
 # counts themselves and raises the counting kind's own version instead.
 # 1: every figure saved before figures recorded it. 2: OpenAI's per-model
-# cache prices (2.48.0) and every rule before them. 3: no cache reads in an
-# OpenAI Batch on the models whose Batch doesn't cache (openai_batch_caches).
-# 4: an OpenAI Batch that writes the cache but expects no reads shows its
-# price with those writes (translation.openai_cache_prices).
-PRICE_RULES_VERSION = 4
+# cache prices (2.48.0) and every rule before them, on every route. 3, OpenAI:
+# no cache reads in an OpenAI Batch on the models whose Batch doesn't cache
+# (openai_batch_caches). 4, OpenAI: an OpenAI Batch that writes the cache but
+# expects no reads shows its price with those writes
+# (translation.openai_cache_prices).
+EVERY_ROUTE_PRICE_RULES = 2
+ROUTE_PRICE_RULES = {"openai": 4}
+PRICE_RULES_VERSION = max(EVERY_ROUTE_PRICE_RULES, *ROUTE_PRICE_RULES.values())
+
+
+def route_price_rules(route: str | None) -> int:
+    """The price rules version at which ``route``'s rules last changed: a
+    figure priced on it under that version or a later one is current."""
+    return max(EVERY_ROUTE_PRICE_RULES, ROUTE_PRICE_RULES.get(route or "", 0))
 
 
 def received_at(created=None) -> str:
