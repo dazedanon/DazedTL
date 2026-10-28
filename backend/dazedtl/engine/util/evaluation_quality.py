@@ -63,9 +63,9 @@ JUDGE_REPLY_TOKENS = 150
 # the share of fixed lines it flags, for the defect question and for the
 # pairwise one. A measured change in a rate is the true change times J, so
 # 0.70 keeps at least 70% of every effect. Equal sensitivity and specificity
-# of 0.85 reach it; the set's own labels are right about 93% of the time
-# (docs/development.md#quality-measurement), so a judge agreeing with every
-# right label still clears it (0.93 + 0.93 - 1 = 0.86).
+# of 0.85 reach it. The calibration takes QA's findings as true and, for the
+# defect question, is circular, so a judge's J is an upper bound
+# (docs/development.md#comparing-a-change says what was checked and why).
 CALIBRATION_MINIMUM = 0.70
 BOOTSTRAP_SAMPLES = 2000
 METRICS = {
@@ -826,6 +826,8 @@ def judge_tasks(config: dict, loaded: dict, lines: dict[str, dict[str, dict]]) -
     for item in loaded["items"]:
         if item["type"] != "defect" or judged_by_glossary(item):
             continue
+        # The judge reads the reviewer's description of this very draft, so
+        # flagging it is easier than flagging a new line's wording.
         add(f"calibration/draft/{item['key']}", _defect_task(config, language, item, item["draft"]), True)
         add(f"calibration/accepted/{item['key']}", _defect_task(config, language, item, item["accepted"]), False)
         add(f"calibration/pair/{item['key']}",

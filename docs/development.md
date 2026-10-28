@@ -199,7 +199,8 @@ Each correction gets one kind:
 | other | The rest, such as a header naming the wrong speaker |
 
 A recurring group is three or more different lines of one game that took the same fix, by finding family or by the same few words taken out and put in.
-The labels come from rules on the reviewer's category and reason, then the text; a hand check of 73 corrections drawn across 8 games found 68 right, and the rules now fix 4 of the 5 misses.
+The labels come from rules on the reviewer's category and reason, then the text; a hand check of 73 corrections drawn across 8 games found 68 kind labels right, and the rules now fix 4 of the 5 misses.
+That check covered only each correction's kind; no check has measured whether QA's defects are real errors.
 Readings of continuity and of whom a line addresses were right only 4 and 6 times in 10, so those corrections take their category's kind instead.
 
 ### Comparing a change
@@ -232,6 +233,7 @@ Requests go in slices whose most possible cost fits what the cap has left, so a 
 
 A comparison scores only the items' target lines, cheapest first: the validity rate of the mechanical gate, which says nothing of quality; a glossary correction by whether the line keeps its glossary rows' English exactly; another correction by a blind judge asked whether the line repeats the defect the reviewer described; and a control by a blind judge asked whether the line is worse in meaning or voice than the accepted one.
 Every comparison calibrates its judge on the corrections' first drafts, which it must flag, and the corrections, which it must pass, and withholds the judge's scores below the `CALIBRATION_MINIMUM` the code justifies.
+That calibration takes QA's findings as true ([what was checked](#quality-measurement)), and the defect judge sees the reviewer's description of the very draft it must flag, so its separation is an upper bound on how well it reads a new line's wording.
 A gain or a regression counts only beyond the noise floor, the largest gap between the baseline's two runs that their interval admits, and with an interval that excludes no change; `--stand-in-judge` answers from the set's labels for dry runs and measures nothing.
 
 A targeted item file is a set file whose header has `"kind": "targeted"`, its own `name` and `version`, and no `split` on its items, which never join the held-out half.
