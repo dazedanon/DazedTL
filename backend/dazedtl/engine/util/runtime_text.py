@@ -224,7 +224,8 @@ def validate_control_codes(original_items, translated_items, replacements_by_lin
     return not errors, errors
 
 
-_ASSET_RE = re.compile('|'.join(ASSET_PATTERNS))
+# An asset code in any case and slash count, as a plugin may spell it.
+_ASSET_RE = re.compile('|'.join(ASSET_PATTERNS), re.IGNORECASE)
 _CODE_NAME_RE = re.compile(r'[\\]+([A-Za-z_][A-Za-z0-9_]*)\[')
 
 
@@ -248,7 +249,7 @@ def validate_unmasked_control_codes(source, translated, source_text):
         name = _CODE_NAME_RE.match(code)
         if (
             name
-            and not _ASSET_RE.fullmatch(code)
+            and not _ASSET_RE.fullmatch("\\" + code.lstrip("\\"))
             and _CONTROL_CODE_RE.fullmatch(code)
             and source_text.search(code[name.end():])
         ):

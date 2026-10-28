@@ -771,11 +771,11 @@ def reply(identity, source, target="English"):
     """Readable text in the target language that keeps the line count and
     each line's control codes in order, as DazedTL requires, unique to the
     line."""
-    from util.runtime_text import extract_control_codes
+    from util.runtime_text import split_protected_codes
 
     return "\n".join(
         (f"テスト行{mark}。" if target == "Japanese" else f"Tested line {mark}.")
-        + "".join(" " + code for code in extract_control_codes(line))
+        + "".join(" " + code for code in split_protected_codes(line)[1::2])
         for line, mark in (
             (line, hashlib.sha256(f"{identity}:{number}".encode()).hexdigest()[:6])
             for number, line in enumerate(source.split("\n"))
