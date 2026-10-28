@@ -37,7 +37,7 @@ from util.qa.schema import (
 )
 from util.qa.scope import _declined_scope
 from util.qa.selection import _cluster_by_identity, _scene_position, _scene_records
-from util.qa.storage import _read_json
+from util.qa.storage import _read_json, review_layout
 
 SCREEN_VERDICTS = frozenset({"suspect", "needs-context"})
 MOTIF_DISPOSITIONS = frozenset({"preserved", "suspect", "uncertain-playtest"})
@@ -701,7 +701,7 @@ def _scene_check(
         "clusters": _cluster_by_identity(manifest),
         "declined_identities": identities,
         "declined_scenes": scenes,
-        "layout": _read_json(root / "task.json")["layout"],
+        "layout": review_layout(_read_json(root / "task.json")),
     }
 
 

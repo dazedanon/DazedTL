@@ -190,6 +190,30 @@ def read_task(task_dir: str | Path) -> tuple[Path, dict, dict]:
     return root, task, checkpoint
 
 
+def recorded_layout(task: dict[str, Any]) -> dict[str, Any] | None:
+    """The Line widths a task was prepared with (see fitting.task_layout), or
+    None for a task prepared before tasks recorded them. Applying and undoing
+    read None as no width checks: each correction is written as its reviewer
+    wrote it, which is how such a task applied it. The ledger reads it the
+    same way, so a later task's widths never match it and the task's text-fit
+    clearances go to review again; a review rebuilt from it reads the game's
+    saved widths."""
+    return task.get("layout")
+
+
+def review_layout(task: dict[str, Any]) -> dict[str, Any]:
+    """The Line widths review work fits and checks corrections against. A task
+    prepared before tasks recorded them is too old to advance: it predates QA
+    rules versions too, so _load_task refuses it before review reads this."""
+    layout = recorded_layout(task)
+    if layout is None:
+        raise ValueError(
+            "This QA task was prepared before Text QA recorded Line widths, so "
+            "it takes no more review; prepare QA again"
+        )
+    return layout
+
+
 def rules_changed(task: dict[str, Any], checkpoint: dict[str, Any]) -> bool:
     """Whether an update changed QA's rules while this task was in review, so
     it takes no more review and QA is prepared again. A finished task keeps
