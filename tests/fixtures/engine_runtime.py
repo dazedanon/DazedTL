@@ -412,6 +412,21 @@ try:
                 parser._vocab_speaker_lookup("農夫の魂（夫）")
                 == "Farmer's Soul (Husband)"
             ), saved_names
+        # Speakers joined only a section headed exactly "Game Characters", so
+        # a decorated one got a second section above it, and a section an
+        # older import appended stayed apart.
+        saved_names = parser._merge_speaker_rows_into_game_characters(
+            "# Game Characters · キャラクター\nニーナ / ネーナ (Nina)\n\n"
+            "# Speakers\nミカ (Mika)\n\n# Items\n薬 (Potion)\n\n"
+            "# game characters\nサンク (Sank) - Male\n",
+            [("リナ", "Rina"), ("ネーナ", "Nena")],
+        )
+        assert saved_names == (
+            "# Game Characters · キャラクター\nニーナ / ネーナ (Nina)\n"
+            "サンク (Sank) - Male\nミカ (Mika)\n"
+            "リナ (Rina) - Unverified nameplate, translated without its story.\n\n"
+            "# Items\n薬 (Potion)\n\n"
+        ), saved_names
         # A Japanese to Simplified Chinese run judged a speaker's hanzi name
         # Japanese left, so every dialogue line kept the kana nameplate.
         with patch.object(parser, "LANGUAGE", "Simplified chinese"):
@@ -507,7 +522,9 @@ try:
         (harvest / "log").mkdir(parents=True)
         glossary = ensure_game_glossary(harvest)
         game_text = "# Items\n薬 (Potion)\n毒 (Poison)\n\n# Skills\n火 (Fire)\n\n"
-        game_text += "# Game Characters\nサンク (Sank) - Male\n\n"
+        game_text += (
+            "# Game Characters\nサンク (Sank) - Male\nニーナ / ネーナ (Nina)\n\n"
+        )
         base_text = BASE_SEPARATOR + "# Honorifics\nさん (san)\n"
         glossary.write_text(game_text + base_text, encoding="utf-8", newline="\n")
         items = [None] + [
@@ -538,9 +555,11 @@ try:
                 ), text
                 # SRPG Studio fills the same sections; its characters stay as
                 # curated, while a name translated again takes its new spelling.
+                # A name a hand-written row lists as a variant gained a
+                # conflicting row, and Assistant-led's import then refused.
                 srpg.update_vocab_section(
                     "Game Characters",
-                    [("サンク", "Sunk"), ("新人", "Newbie")],
+                    [("サンク", "Sunk"), ("ネーナ", "Nena"), ("新人", "Newbie")],
                     curated=True,
                 )
                 srpg.update_vocab_section("Items", [("毒", "Venom")])
@@ -548,8 +567,14 @@ try:
                 expected = game_text.replace(
                     "毒 (Poison)", "毒 (Venom)\n新薬 (EN:新薬)"
                 )
-                expected = expected.replace("Male\n", "Male\n新人 (Newbie)\n")
+                expected = expected.replace("(Nina)\n", "(Nina)\n新人 (Newbie)\n")
                 assert text == expected + base_text, text
+                from util.len_translation import LenProject, import_glossary
+
+                imported = import_glossary(
+                    LenProject(harvest), {"names": {"リナ": {"en": "Rina"}}}
+                )
+                assert imported["added"] == 1, imported
         finally:
             os.chdir(directory)
 

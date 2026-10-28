@@ -58,6 +58,18 @@ def joined_received_at(route: str | None, *times: str | None) -> str | None:
     return times[-1]
 
 
+# An OpenAI model by its name, on OpenAI's API or any other host, with or
+# without a host's "openai/" prefix: GPT models and the o-series reasoning
+# models. The open-weight gpt-oss models are not OpenAI's to price.
+_OPENAI_MODEL = re.compile(r"(?:^|/)(?:gpt-\d|chatgpt-|o\d(?:[-:]|$))")
+
+
+def is_openai_model(model: str) -> bool:
+    """Whether ``model`` names an OpenAI model, priced at OpenAI's cache
+    prices wherever it runs (batch_providers.live_price_route)."""
+    return bool(_OPENAI_MODEL.search(str(model or "").lower()))
+
+
 def _openai_model_at_least(model: str, major: int, minor: int) -> bool:
     match = re.search(
         r"(?:^|/)gpt-(\d+)\.(\d+)(?:\D|$)",
@@ -104,11 +116,12 @@ def batch_write_weight(provider: str, model: str, writes: float,
 # that don't read at 0.1 times, the default
 # (https://developers.openai.com/api/docs/pricing): GPT-4o, GPT-4o mini, o1
 # and o3-mini at half, GPT-4.1, o3 and o4-mini at a quarter, GPT-6.1 Sol and
-# Terra at a twentieth. Searched in order, so o3-mini is found before o3.
+# Terra at a twentieth. Searched in order, so o3-mini is found before o3; an
+# OpenRouter variant such as ":nitro" reads as its model.
 _OPENAI_CACHE_READS = (
-    (re.compile(r"(?:^|/)(?:gpt-4o|o1|o3-mini)(?:-|$)"), 0.50),
-    (re.compile(r"(?:^|/)(?:gpt-4\.1|o3|o4-mini)(?:-|$)"), 0.25),
-    (re.compile(r"(?:^|/)gpt-6\.1-(?:sol|terra)(?:-|$)"), 0.05),
+    (re.compile(r"(?:^|/)(?:gpt-4o|o1|o3-mini)(?:[-:]|$)"), 0.50),
+    (re.compile(r"(?:^|/)(?:gpt-4\.1|o3|o4-mini)(?:[-:]|$)"), 0.25),
+    (re.compile(r"(?:^|/)gpt-6\.1-(?:sol|terra)(?:[-:]|$)"), 0.05),
 )
 
 

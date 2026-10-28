@@ -382,13 +382,10 @@ def _vocab_speaker_lookup(speaker: str) -> str | None:
                 continue
             if not _speaker_translation_valid(speaker, en):
                 continue
-            category_name = str(category or "").lstrip("#").strip().casefold()
-            primary = re.split(r"\s*[·・|/]\s*", category_name, maxsplit=1)[0]
-            priority = {"game characters": 3, "speakers": 2}.get(primary, 1)
             aliases = split_vocab_source_aliases(jp)
             alias_group = len(aliases) > 1
             # Prefer Game Characters, then multi-alias curated rows.
-            rank = priority * 10 + (1 if alias_group else 0)
+            rank = wolf_vocab.character_priority(category) * 10 + alias_group
             if rank > best_priority:
                 best_priority = rank
                 # Apply short/title rules against the live source nameplate so

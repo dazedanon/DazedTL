@@ -45,6 +45,7 @@ from util.batch_providers import KIMI_API_URL, live_price_route, openai_usage
 from util import extensions
 from util.sfx_reference import build_sfx_reference_text
 from util.vocab import (
+    character_priority,
     decorative_glossary_alias,
     glossary_category,
     split_glossary_row,
@@ -4399,7 +4400,7 @@ def _vocab_index(vocabPairs):
         if not isinstance(candidate_term, tuple) or len(candidate_term) != 2:
             continue
         candidate_primary = glossary_category(candidate_category)
-        priority = {"game characters": 2, "speakers": 1}.get(candidate_primary, 0)
+        priority = character_priority(candidate_category)
         if not priority:
             continue
         source = candidate_term[0]
@@ -4642,8 +4643,7 @@ def createContextParts(config, subbedText, formatType, history=None, *, speaker_
         # normalization/honorific/OCR lookup keys.
         character_sources = set()
         for term, _line, category in vocabPairs:
-            primary = glossary_category(category)
-            if isinstance(term, tuple) and primary in {"game characters", "speakers"}:
+            if isinstance(term, tuple) and character_priority(category):
                 character_sources.update(split_vocab_source_aliases(term[0]))
         tags = []
         for name in speaker_names:
