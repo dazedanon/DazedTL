@@ -243,6 +243,55 @@ class TranslationTests(unittest.TestCase):
             review_digest(sources["moan"], "Mm♥ Ah..."),
         )
 
+    def test_results_keep_their_sources_control_codes_as_guided_does(self):
+        # Assistant-led checked only the tokens an extractor listed, so a
+        # reply that dropped a colour code, broke its scope or translated a
+        # sound's name reached the game.
+        sources = {
+            "colour": "\\C[2]名前\\C[0]はここにいる。",
+            "sound": "\\SE[タイプライター]カタカタと音がする。",
+            "wolf": "\\c[2]勇者\\c[0]がやって来た。",
+            "ruby": "\\r[漢字,かんじ]を読めるかな？",
+        }
+        row = logical_request({"id": "scene", "sources": sources}, {"user": ""})
+        good = {
+            # Codes may move with the translation's word order.
+            "colour": "Here is \\C[2]Name\\C[0].",
+            "sound": "\\SE[タイプライター]Clack, clack, it goes.",
+            "wolf": "\\c[2]The hero\\c[0] has come.",
+            # A ruby's reading is source text, translated with its line.
+            "ruby": "Can you read \\r[kanji,kanji]?",
+        }
+        for identity, reply in {
+            "colour": "\\C[2]Name is here.",
+            "sound": "\\SE[Typewriter]Clack, clack, it goes.",
+            "wolf": "The hero has come.",
+        }.items():
+            with (
+                self.subTest(identity=identity),
+                self.assertRaisesRegex(
+                    ValueError,
+                    f"{identity} is no usable translation: its control codes",
+                ),
+            ):
+                result_files.translated(row, {**good, identity: reply})
+        with self.assertRaisesRegex(ValueError, "formatting scope order changed"):
+            result_files.translated(
+                row, {**good, "colour": "\\C[0]Name\\C[2] is here."}
+            )
+        self.assertEqual(result_files.translated(row, good), good)
+        self.assertEqual(
+            result_files.translated(row, {**good, "ruby": "Can you read this kanji?"})[
+                "ruby"
+            ],
+            "Can you read this kanji?",
+        )
+        # A paid result keeps such a line in its source text, as for any
+        # line that fails the content check.
+        output, failing = result_files.kept(row, {**good, "wolf": "The hero has come."})
+        self.assertEqual(output, {**good, "wolf": sources["wolf"]})
+        self.assertEqual(list(failing), ["wolf"])
+
     def test_results_export_lines_as_guided_cleans_every_reply_line(self):
         # Assistant-led exported curly apostrophes, 「」, 。 and stray っ that
         # Guided's reply cleanup writes as ', ", . and nothing.

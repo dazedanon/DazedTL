@@ -179,6 +179,8 @@ An Agent or reviewed-import receipt contains request_sha256 and translations, wh
 Save it in the game workspace and use accept with its relative path.
 Missing, duplicate, unexpected or empty outputs and broken declared controls are rejected before acceptance.
 So is a translation that fails Guided's content check ([validate_translation_content](../backend/dazedtl/engine/util/translation.py)), such as one collapsed to a mark or its masks, repeating without end or still holding source text, unless it gives the source back unchanged.
+So is one that changes its source's backslash control codes or the colour, font and speed scopes they open and close, whether or not its unit lists them, by Guided's control-code check ([runtime_text](../backend/dazedtl/engine/util/runtime_text.py) `validate_unmasked_control_codes`); a code whose argument holds source-language text, such as a ruby, may be translated, except a sound or other asset code, which the game finds by its name.
+Saved records are not checked again.
 An API run keeps such a line in its source text and accepts the rest of its request, as Guided's Batch keeps it, with the lines it kept named in the request's state ([results.kept](../backend/dazedtl/translation/results.py)); a request with no line that passes is set to failed, as for any rejected result, and nothing is sent again by itself.
 
 For an intentional correction, also supply replaces_sha256 equal to the current result_sha256.

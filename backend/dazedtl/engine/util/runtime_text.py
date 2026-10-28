@@ -12,13 +12,19 @@ _GENERAL_CONTROL_PATTERN = (
 )
 _ORPHAN_BACKSLASH_PATTERN = r'[\\]+(?=[^\W\d_])'
 
-PROTECTED_PATTERNS = [
+# Codes that name a game asset, such as a sound file, which the game finds
+# by the name as the source spells it, whatever language it is in.
+ASSET_PATTERNS = [
     r'\\SE\[[^\]]+\]',      # \SE[sound_effect_name]
     r'\\ME\[[^\]]+\]',      # \ME[music_effect_name]
     r'\\BGM\[[^\]]+\]',     # \BGM[background_music_name]
     r'\\BGS\[[^\]]+\]',     # \BGS[background_sound_name]
     r'_pum\[[^\]]+\]',      # _pum[name]
     r'\\VS\[[^\]]+\]',      # \VS[name]
+]
+
+PROTECTED_PATTERNS = [
+    *ASSET_PATTERNS,
     # General RPG Maker/plugin controls. Preserve the full spelling, parameter,
     # slash count, and order rather than asking the model to reproduce them.
     _GENERAL_CONTROL_PATTERN,
@@ -216,6 +222,57 @@ def validate_control_codes(original_items, translated_items, replacements_by_lin
                 + ", ".join(changed_scopes)
             )
     return not errors, errors
+
+
+_ASSET_RE = re.compile('|'.join(ASSET_PATTERNS))
+_CODE_NAME_RE = re.compile(r'[\\]+([A-Za-z_][A-Za-z0-9_]*)\[')
+
+
+def validate_unmasked_control_codes(source, translated, source_text):
+    """validate_control_codes for one line its request sent with its codes
+    as the source holds them, unmasked, as Assistant-led sends them.
+
+    A code whose bracketed parameter holds source-language text (the
+    compiled pattern *source_text*), such as a ruby ``\\r[漢字,かんじ]`` or a
+    font name, may be translated with its line, so it is left out on both
+    sides: in the source, and each code of its name in the translation that
+    the source doesn't hold as written. An asset code, such as
+    ``\\SE[タイプライター]``, is checked as the source spells it, since the game
+    finds the file by it.
+    """
+    source, translated = str(source), str(translated)
+    parts = split_protected_codes(source)
+    free_names, kept = set(), []
+    for index in range(1, len(parts), 2):
+        code = parts[index]
+        name = _CODE_NAME_RE.match(code)
+        if (
+            name
+            and not _ASSET_RE.fullmatch(code)
+            and _CONTROL_CODE_RE.fullmatch(code)
+            and source_text.search(code[name.end():])
+        ):
+            free_names.add(name.group(1).casefold())
+            # A space, so the codes on either side stay apart.
+            parts[index] = " "
+        else:
+            kept.append(code)
+
+    def free(match):
+        code = match.group()
+        name = _CODE_NAME_RE.match(code)
+        if name and name.group(1).casefold() in free_names and code not in kept:
+            return " "
+        return code
+
+    if free_names:
+        translated = _CONTROL_CODE_RE.sub(free, translated)
+    return validate_control_codes(
+        "".join(parts),
+        translated,
+        {0: {_PLACEHOLDER.format(index): code for index, code in enumerate(kept)}},
+    )
+
 
 def protect_script_codes(text):
     """

@@ -1,6 +1,7 @@
 """Accepted results are bound to source plus context, shared across all transports."""
 
 import os
+import re
 import stat
 from collections import Counter
 from functools import partial
@@ -160,9 +161,12 @@ def _refusal(request, translations):
 def _content_failures(request, translations):
     """Each line of translations that fails Guided's content check
     (util/translation `validate_translation_content`), such as one collapsed
-    to a mark or repeating without end, with why. A line given back as its
-    source is left alone, as Guided keeps a line it could not translate in
-    its original text."""
+    to a mark or repeating without end, or its control-code check
+    (util/runtime_text `validate_unmasked_control_codes`), such as one that
+    drops a colour code or breaks its scope, whether or not its constraints
+    name the code, with why. A line given back as its source is left alone,
+    as Guided keeps a line it could not translate in its original text."""
+    from util.runtime_text import validate_unmasked_control_codes
     from util.translation import validate_translation_content
 
     from dazedtl.languages import reading, source_pattern
@@ -176,18 +180,33 @@ def _content_failures(request, translations):
         return {}
     context = request["context"]
     language, target = source_language(context), target_language(context)
+    pattern = source_pattern(language=language)
     with reading(language, target):
         _valid, invalid, reasons = validate_translation_content(
             [request["sources"][identity] for identity in identities],
             [translations[identity] for identity in identities],
-            source_pattern(language=language),
+            pattern,
             target,
             protected=[protected_tokens(request, identity) for identity in identities],
         )
-    return {
+    content = {
         identities[index]: reason.split(": ", 1)[-1]
         for index, reason in zip(invalid, reasons, strict=True)
     }
+    source_text = re.compile(pattern)
+    failures = {}
+    for identity in identities:
+        if identity in content:
+            failures[identity] = content[identity]
+            continue
+        valid, errors = validate_unmasked_control_codes(
+            request["sources"][identity], translations[identity], source_text
+        )
+        if not valid:
+            failures[identity] = (
+                f"its control codes differ from the source's ({errors[0].split(': ', 1)[-1]})"
+            )
+    return failures
 
 
 def _checked(request, translations, keep):
