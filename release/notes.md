@@ -1,5 +1,9 @@
 <!-- The next release's notes; see docs/development.md#release-notes. -->
 
+### Added
+
+- **Settings:** a **Custom / local** connection, and a model of another provider that DazedTL doesn't know, can now take a **Thinking effort**: **Check an effort** sends the server one short request at that level, free on a local server and a fraction of a cent elsewhere, and runs can send a level once the server accepts it. A refused level shows the server's reason and stays unavailable, and changing the connection's address clears its checks.
+
 ### Changed
 
 - **Estimates:** the whole-game **Cost estimate** and an Assistant-led estimate waiting on **Progress** made before an update that corrects DazedTL's prices now show the corrected price the next time you see them, and approving approves that price, instead of keeping the old price until a setting changed. Claude estimates, which can't be priced again that way, ask you to **Estimate again** once. Runs you already approved keep the price you approved.
