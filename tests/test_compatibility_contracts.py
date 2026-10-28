@@ -884,6 +884,15 @@ class CompatibilityContracts(unittest.TestCase):
                 0.03 + 0.9 * 0.30 * 0.25 + 0.12,
             ),
             (
+                # OpenRouter passes on OpenAI's own cache prices, so GPT-4.1
+                # there reads at a quarter too, not at the default tenth.
+                "openai",
+                "https://openrouter.ai/api/v1",
+                "openai/gpt-4.1",
+                hits(prompt_tokens_details={"cached_tokens": 900_000}),
+                0.03 + 0.9 * 0.30 * 0.25 + 0.12,
+            ),
+            (
                 "kimi",
                 "https://api.moonshot.ai/v1",
                 "kimi-k2.6",
@@ -1004,11 +1013,53 @@ class CompatibilityContracts(unittest.TestCase):
             spent("claude-sonnet-5-5", "custom", "https://proxy.example/v1") or 0,
             claude,
         )
+        # OpenAI models read and write their cache at OpenAI's prices on any
+        # host too: they read at 0.1x and wrote at 1x off OpenAI's API.
+        writes = 0.05 * 3
+        for model, provider, endpoint, cost in (
+            ("openai/gpt-4o", "openrouter", router, uncached + 0.9 * 3 * 0.5 + writes),
+            (
+                "gpt-4.1",
+                "custom",
+                "http://localhost:8080/v1",
+                uncached + 0.9 * 3 * 0.25 + writes,
+            ),
+            (
+                # An OpenRouter variant reads as its model.
+                "openai/o4-mini:nitro",
+                "openrouter",
+                router,
+                uncached + 0.9 * 3 * 0.25 + writes,
+            ),
+            (
+                "openai/gpt-6.1-sol",
+                "openrouter",
+                router,
+                uncached + 0.9 * 3 * 0.05 + writes * 1.25,
+            ),
+            (
+                "openai/gpt-5.6-terra",
+                "openrouter",
+                router,
+                uncached + 0.9 * 3 * 0.10 + writes * 1.25,
+            ),
+        ):
+            with self.subTest(model):
+                self.assertAlmostEqual(spent(model, provider, endpoint) or 0, cost)
         # Every other route keeps its price to the cent.
         reads = uncached + 0.05 * 3
         for model, provider, endpoint, protocol, batch, cost in (
             (
                 "openai/gpt-5.4-mini",
+                "openrouter",
+                router,
+                "openai",
+                None,
+                reads + 0.9 * 3 * 0.10,
+            ),
+            (
+                # Open-weight, not OpenAI's to price.
+                "openai/gpt-oss-120b",
                 "openrouter",
                 router,
                 "openai",

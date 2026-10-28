@@ -17,6 +17,7 @@ from typing import Any, Iterable, Mapping
 
 from util import system
 from util import extensions
+from util.provider_costs import is_openai_model
 
 
 PROVIDER_ANTHROPIC = "anthropic"
@@ -83,14 +84,17 @@ def live_price_route(model: str = "", api_url: str | None = None,
                      api_provider: str | None = None) -> str:
     """The provider whose cache prices a Guided Live response on this route
     is priced at (provider_costs.usage_cost): Anthropic's for a Claude model
-    on any host, as Guided has always priced Claude; a Batch provider's on
-    its own API; Kimi's or DeepSeek's on theirs; otherwise none, the default
-    rates. The current route is the engine's settings."""
+    and OpenAI's for an OpenAI model on any host, as OpenRouter passes on
+    their own cache prices; a Batch provider's on its own API; Kimi's or
+    DeepSeek's on theirs; otherwise none, the default rates. The current
+    route is the engine's settings."""
     from dazedtl.settings.providers import own_api
 
     if any(part in str(model or "").lower()
            for part in ("claude", "sonnet", "haiku", "opus")):
         return PROVIDER_ANTHROPIC
+    if is_openai_model(model):
+        return PROVIDER_OPENAI
     detected = detect_batch_provider(model, api_url, api_provider)
     if detected:
         return detected
