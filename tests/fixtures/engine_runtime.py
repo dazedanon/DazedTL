@@ -2686,6 +2686,20 @@ try:
 
         from util import subprocess_runner, translation_task
 
+        # A failed worker's error is its closing ERROR line, which the Run log
+        # leaves out, not its traceback's first line, the first of chained
+        # errors.
+        rejected = "The provider rejected the request: HTTP 400 - No."
+        assert (
+            translation_task._process_error(
+                "Traceback (most recent call last):\n"
+                "Exception: API call failed: Error code: 400\n"
+                f"util.translation.RequestRejectedError: {rejected}",
+                ["[API_ERROR] " + rejected, "ERROR:" + rejected],
+            )
+            == rejected
+        )
+
         def consume(name, _estimate):
             with translation._global_accurate_cost_lock:
                 translation._global_accurate_cost += 0.25
