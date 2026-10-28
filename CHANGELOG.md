@@ -3,6 +3,16 @@
 Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 [release.mjs](scripts/release.mjs) writes each entry from [release/notes.md](release/notes.md).
 
+## [2.51.0] - 2026-10-28
+
+### Added
+
+- **Settings:** a **Custom / local** connection, and a model of another provider that DazedTL doesn't know, can now take a **Thinking effort**: **Check an effort** sends the server one short request at that level, free on a local server and a fraction of a cent elsewhere, and runs can send a level once the server accepts it. A refused level shows the server's reason and stays unavailable, and changing the connection's address clears its checks.
+
+### Fixed
+
+- **Estimates:** an Assistant-led estimate, and a Guided estimate priced again after a model switch, for a model whose thinking effort levels came from the provider's model list now name that model's default effort and say that thinking tokens aren't estimated, as Guided's own estimates already did.
+
 ## [2.50.0] - 2026-10-28
 
 ### Changed
@@ -1327,6 +1337,7 @@ Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachan
 - The first release of DazedTL as a desktop app, installed from a ZIP with a START launcher and updated from inside the app.
 - **Guided steps** for RPG Maker MV, MZ and VX Ace games, and **Assistant-led** for any game.
 
+[2.51.0]: https://github.com/dazedanon/DazedTL/compare/v2.50.0...v2.51.0
 [2.50.0]: https://github.com/dazedanon/DazedTL/compare/v2.49.0...v2.50.0
 [2.49.0]: https://github.com/dazedanon/DazedTL/compare/v2.48.0...v2.49.0
 [2.48.0]: https://github.com/dazedanon/DazedTL/compare/v2.47.0...v2.48.0
