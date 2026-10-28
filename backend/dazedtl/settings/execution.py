@@ -112,7 +112,6 @@ def configuration(settings, mode, *, cached_only=False, unpriced=False, pair=Non
         "rates": {
             "input": input_rate,
             "output": output_rate,
-            "batch_factor": None,
             "source": "custom"
             if selected["pricing"] == "custom"
             else defaults.get("source"),

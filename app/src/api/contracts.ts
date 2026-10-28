@@ -1459,7 +1459,7 @@ export type QuoteRates = {
   input: number;
   output: number;
   source: string;
-  batch_factor: number | null;
+  batch_factor?: number | null;
 };
 
 export type TranslationQuote = {

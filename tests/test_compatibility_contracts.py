@@ -721,10 +721,16 @@ class CompatibilityContracts(unittest.TestCase):
             "mode": "batch",
             "model": "claude-opus-5-5",
             "provider": "anthropic",
-            "rates": {"input": 4, "output": 20, "batch_factor": 0.5},
+            # Older runs froze a Batch discount; the provider's own decides.
+            "rates": {"input": 4, "output": 20, "batch_factor": 0.25},
         }
         items = [{"params": params, "sources": {"1": "J"}} for params in requests]
         quoted = quote(items, cfg, "anthropic", len, estimate.total, cache)
+        current = {**cfg, "rates": {"input": 4, "output": 20}}
+        self.assertEqual(
+            quote(items, current, "anthropic", len, estimate.total, cache)["cost"],
+            quoted["cost"],
+        )
         uncached, outputs = estimate.total - cache.cached, quoted["output_tokens"]
         self.assertAlmostEqual(
             quoted["cost"],
@@ -750,6 +756,10 @@ class CompatibilityContracts(unittest.TestCase):
             usage_cost(usage, {**cfg, "mode": "live"}, "anthropic") or 0, live
         )
         self.assertAlmostEqual(usage_cost(usage, cfg, "anthropic") or 0, live / 2)
+        self.assertEqual(
+            usage_cost(usage, current, "anthropic"),
+            usage_cost(usage, cfg, "anthropic"),
+        )
         requests[-1]["messages"][0]["content"] = "fail"
         self.assertIsNone(claude_tokens.input_tokens(client, requests, len))
 

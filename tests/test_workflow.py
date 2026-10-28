@@ -158,9 +158,6 @@ class Engine:
     def openai_cache(_requests):
         return {"cache_read_tokens": 0, "cacheable_tokens": 0}
 
-    def batch_factor(self, provider):
-        return 0.5 if provider else None
-
     def batch_limits(self, _configuration):
         # OpenAI's own endpoint also caps the input tokens a Batch queues.
         return [50, 100000, 1000000]
@@ -1378,6 +1375,9 @@ class WorkflowTests(unittest.TestCase):
             self.identity, selected["revision"], {**selected["options"], "mode": "live"}
         )
         run = self.prepared(self.service.compile(self.identity, self.plan_path))
+        # The provider's Batch discount prices it, so the run freezes none.
+        _job, frozen = self.service.jobs.store.load(run["id"])
+        self.assertNotIn("batch_factor", frozen["configuration"]["rates"])
         connection = self.settings_data["connections"][0]
         options = connection["model_options"]
         options["half-price"] = {**options["fixture-model"], "inputRate": 0.5}
@@ -1454,7 +1454,8 @@ class WorkflowTests(unittest.TestCase):
                     "model": "deepseek-flash",
                     "provider": "deepseek",
                     "endpoint": "https://api.deepseek.com",
-                    "rates": {"input": 0.30, "output": 1.20},
+                    # Approved before runs stopped freezing a Batch discount.
+                    "rates": {"input": 0.30, "output": 1.20, "batch_factor": 0.5},
                 },
                 "batch_limits": [50, 100000],
             },

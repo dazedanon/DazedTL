@@ -1,5 +1,9 @@
 <!-- The next release's notes; see docs/development.md#release-notes. -->
 
+### Changed
+
+- **Estimates:** an API estimate made before this update and not yet approved may read as outdated once, in Guided and Assistant-led, because its Batch price now comes only from the provider's own Batch discount; estimate again to approve it. Runs already approved or sent keep running, collecting and resuming without a new approval.
+
 ### Fixed
 
 - **DeepSeek:** what a run spent, Assistant-led's **Spent** and **Recorded usage** and Guided's cost, no longer charges the peak price for every request: requests DeepSeek answered outside its peak hours now cost half, as DeepSeek bills them; requests recorded before this update keep the peak price.

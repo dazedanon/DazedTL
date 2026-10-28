@@ -29,7 +29,9 @@ class QuoteRates(TypedDict):
     input: float
     output: float
     source: str
-    batch_factor: float | None
+    # Only in quotes of older runs, which froze the Batch discount;
+    # compatibility/estimate_prices decides it now.
+    batch_factor: NotRequired[float | None]
 
 
 class TranslationQuote(TypedDict):

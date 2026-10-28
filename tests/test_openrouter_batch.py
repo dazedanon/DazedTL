@@ -78,7 +78,7 @@ class OpenRouterQuoteTests(unittest.TestCase):
             "model": MODEL,
             "provider": "openrouter",
             "openrouterBatch": POLICY,
-            "rates": {"input": 2, "output": 8, "batch_factor": None},
+            "rates": {"input": 2, "output": 8},
         }
         # Each request also counts 8 tokens of message framing.
         quoted = quote(

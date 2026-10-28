@@ -992,7 +992,8 @@ Additional project instructions:
 
     def api_configuration(self, mode, root, *, cached_only=False, unpriced=False):
         """The settings a run on the game at *root* compiled now would
-        freeze, with the Batch route that sets its price factor."""
+        freeze, with the Batch route that prices it
+        (compatibility/estimate_prices)."""
         cfg = configuration(
             self.settings,
             mode,
@@ -1011,7 +1012,6 @@ Additional project instructions:
             # Earlier runs froze no policy and keep sending unit IDs.
             cfg["lineKeys"] = LINE_KEYS
             batch_provider = self.engine.batch_supported(cfg)
-            cfg["rates"]["batch_factor"] = self.engine.batch_factor(batch_provider)
         return cfg, batch_provider
 
     def organize(self, project_id, input_path, complete=False):
