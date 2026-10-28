@@ -234,15 +234,28 @@ def _lazy_module_handler(module_name, handler_name):
     return run
 
 
-def _process_error(text):
-    """The error a failed worker reported, from its "ERROR:" line or the last
-    exception it printed, else all it wrote."""
+def _process_error(text, output=()):
+    """The error a failed worker reported: its "ERROR:" line on standard
+    output (*output*), which the Run log leaves out, else the "ERROR:" line or
+    the first exception printed in *text*, its standard error, else all of
+    *text*. A traceback names the first of chained errors, the ERROR line the
+    one the worker ended with."""
+    for line in output:
+        if line.startswith("ERROR:"):
+            return line[6:]
     for line in text.split("\n"):
         if line.startswith("ERROR:"):
             return line[6:]
         if ("NameError:" in line or "Error:" in line) and ":" in line:
             return line.split(":", 1)[1].strip()
     return text
+
+
+def _logged(line):
+    """Whether a worker's output line reaches the Run log: not its RESULT
+    marker, parsed instead, nor its closing ERROR marker, whose error the
+    run's "Process error" line reports."""
+    return bool(line) and not line.startswith(("RESULT:", "ERROR:"))
 
 
 def translation_module(name):
@@ -798,9 +811,8 @@ class TranslationTaskCore:
                         # Forward each line to the log as it is read, rather than
                         # buffering the whole run and flushing it after the
                         # process exits — a long translation was otherwise a
-                        # blank log until it finished. RESULT: is an internal
-                        # marker parsed below and is never shown.
-                        if line and not line.startswith('RESULT:'):
+                        # blank log until it finished.
+                        if _logged(line):
                             self.emit_log(line)
                 process.stdout.close()
 
@@ -880,7 +892,7 @@ class TranslationTaskCore:
                 except:
                     clean_error = "Unicode encoding error in process output"
 
-                actual_error = _process_error(clean_error)
+                actual_error = _process_error(clean_error, stdout_lines)
                 self.emit_log(f"❌ Process error: {actual_error}")
                 # Return the actual error so it can be used to determine if file is unsupported
                 return ("SUBPROCESS_ERROR", actual_error)
@@ -976,6 +988,8 @@ class TranslationTaskCore:
 
         finished = queue.Queue()
         stderr_lines = []
+        # The ERROR line the worker ends with, for a file it did not finish.
+        reported = []
         # Chunks that kept their original text in the file being translated,
         # counted as a worker per file counted them.
         mismatches = [0]
@@ -1023,8 +1037,10 @@ class TranslationTaskCore:
                                 count,
                             )
                     finished.put((filename, result))
-                elif line and kind != "RESULT":
+                elif _logged(line):
                     self.emit_log(line)
+                elif line.startswith("ERROR:"):
+                    reported.append(line)
             finished.put(None)
 
         def read_stderr():
@@ -1072,7 +1088,9 @@ class TranslationTaskCore:
                     self.running_processes.remove(process)
         if current is not None and not self.should_stop:
             # The worker exited without finishing the file it was handed.
-            error = _process_error("\n".join(stderr_lines).strip() or "Unknown error")
+            error = _process_error(
+                "\n".join(stderr_lines).strip() or "Unknown error", reported
+            )
             self.emit_log(f"❌ Process error: {error}")
             report(current, ("SUBPROCESS_ERROR", error))
 

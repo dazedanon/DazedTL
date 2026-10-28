@@ -389,11 +389,19 @@ pre {
     margin-bottom: var(--space-3);
   }
 }
-.page-layout--editor > [role="tabpanel"] {
+.page-layout--editor > [role="tabpanel"],
+.page-layout--editor > .ui-tab-stack > [role="tabpanel"] {
   display: flex;
   flex-direction: column;
   flex: 1;
   min-height: 0;
+}
+/* Stacked panels fill the page below its tabs, whatever the tallest holds,
+   so each scrolls its own body as a lone panel does. */
+.page-layout--editor > .ui-tab-stack {
+  flex: 1;
+  min-height: 0;
+  grid-template-rows: minmax(0, 1fr);
 }
 /* A page's messages are a frame row of their own, so a banner's right edge
    meets the gutter the header, tabs and body reserve. */

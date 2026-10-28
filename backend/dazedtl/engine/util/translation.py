@@ -6391,10 +6391,10 @@ def translateAI(text, history, config, filename=None, pbar=None, lock=None,
                     )
                 except Exception as api_err:
                     err_msg = f"[API_ERROR] {api_err}"
-                    # Print to stdout so the GUI captures it immediately
+                    # Print to stdout so the GUI captures it immediately, and
+                    # only there: the progress bar's write goes to stdout too,
+                    # which printed each failed attempt twice in the Run log.
                     print(err_msg, flush=True)
-                    if pbar:
-                        pbar.write(err_msg)
                     # Also write to the translation log file for persistence
                     try:
                         Path(config.logFilePath).parent.mkdir(parents=True, exist_ok=True)

@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import ModelOptionsEditor from "./ModelOptionsEditor";
 import type {
   Connection,
@@ -29,8 +29,6 @@ export default function TranslationDefaults({
   running,
   error,
   notice,
-  advanced,
-  setAdvanced,
   edit,
   editModelOptions,
   save,
@@ -43,14 +41,12 @@ export default function TranslationDefaults({
   running: boolean;
   error: string;
   notice: string;
-  /** Whether Advanced model options is open; Settings keeps it across tabs. */
-  advanced: boolean;
-  setAdvanced: (open: boolean) => void;
   edit: (key: keyof PreferenceValues, value: string) => void;
   editModelOptions: (model: string, value: ModelOptions) => void;
   save: () => void;
   revert: () => void;
 }) {
+  const [advanced, setAdvanced] = useState(false);
   const form = useRef<HTMLFormElement>(null);
   useSaveForm(form);
   return (
@@ -74,7 +70,6 @@ export default function TranslationDefaults({
           />
           <details
             className="settings-advanced"
-            open={advanced}
             onToggle={(event) => setAdvanced(event.currentTarget.open)}
           >
             <summary>Advanced model options</summary>

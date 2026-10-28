@@ -27,17 +27,29 @@ FLAGGED = re.compile(
 )
 
 
-def stop_message(detail):
-    """The one message a run stops with after *detail*'s error repeated."""
+def provider_error(detail):
+    """How the provider's error *detail* (provider_responses error_evidence)
+    reads in a run's messages: its status and its own message, without the
+    SDK's and the engine's wrapping."""
     text = detail["message"].strip()
     if not text.endswith((".", "!", "?")):
         text += "."
+    return f"HTTP {detail['status']} - {text}"
+
+
+def stop_message(detail):
+    """The one message a run stops with after *detail*'s error repeated."""
     return (
         f"The provider rejected {REPEATS} requests in a row with the same error, "
-        f"so the run stopped without sending the rest: HTTP {detail['status']} - "
-        f"{text} Check the model and the connection in Settings, then start the "
-        "run again. Rejected requests are not billed."
+        f"so the run stopped without sending the rest: {provider_error(detail)} "
+        "Check the model and the connection in Settings, then start the run "
+        "again. Rejected requests are not billed."
     )
+
+
+def rejection_message(detail):
+    """The message a request the provider rejected fails with."""
+    return f"The provider rejected the request: {provider_error(detail)}"
 
 
 class Record:
@@ -117,12 +129,13 @@ def guarded(translation, record, native, *args, **kwargs):
         detail = error_evidence(error, secret)
         if detail["status"] not in DETERMINISTIC:
             raise
+        rejected = translation.RequestRejectedError(rejection_message(detail))
         if FLAGGED.search(f"{detail.get('code') or ''} {detail['message']}"):
-            raise translation.RequestRejectedError(str(error)) from error
+            raise rejected from error
         stop = record.reject(detail)
         if stop is not None:
             raise translation.RunStoppingError(stop) from error
-        raise translation.RequestRejectedError(str(error)) from error
+        raise rejected from error
     record.clear()
     return response
 

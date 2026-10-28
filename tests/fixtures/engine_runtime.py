@@ -2684,9 +2684,10 @@ try:
                 ("RPG Maker MV/MZ", (".json",), None),
                 runner_script=stop_runner,
             )
-            errors, handed = [], []
+            errors, handed, logged = [], [], []
             stop_task.file_error_signal.connect(lambda *args: errors.append(args))
             stop_task.progress_signal.connect(lambda *args: handed.append(args[2]))
+            stop_task.log_signal.connect(logged.append)
             with patch.dict(
                 os.environ,
                 {
@@ -2709,12 +2710,24 @@ try:
                 assert stop_task.run_stop is None, case
             elif stopped is True:
                 # The two rejections before the stop failed their own files.
-                assert "The model `gone` does not exist." in errors[0][1], case
+                # They read as the provider's own error, which the run's
+                # message names, not the SDK's and the engine's wrapping.
+                assert errors[0][1] == (
+                    "The provider rejected the request: HTTP 400 - The model "
+                    "`gone` does not exist."
+                ), case
                 assert errors[0][1] == errors[1][1], case
                 assert errors[2][1].startswith(
                     "The provider rejected 3 requests in a row with the same error"
                 ), case
                 assert stop_task.run_stop == errors[2][1], case
+                # The Run log reads each request's error once, and each
+                # failed file's once more: the worker's closing ERROR marker
+                # and a second copy through its progress bar repeated them.
+                kinds = [
+                    line.split(" ", 1)[0] for line in logged if "does not exist" in line
+                ]
+                assert kinds == ["[API_ERROR]", "❌"] * 2 + ["[API_ERROR]"], logged
             else:
                 assert errors == [("Map001.json", stopped)], case
                 assert stop_task.run_stop == stopped, case
@@ -2791,6 +2804,20 @@ try:
         from io import StringIO
 
         from util import subprocess_runner, translation_task
+
+        # A failed worker's error is its closing ERROR line, which the Run log
+        # leaves out, not its traceback's first line, the first of chained
+        # errors.
+        rejected = "The provider rejected the request: HTTP 400 - No."
+        assert (
+            translation_task._process_error(
+                "Traceback (most recent call last):\n"
+                "Exception: API call failed: Error code: 400\n"
+                f"util.translation.RequestRejectedError: {rejected}",
+                ["[API_ERROR] " + rejected, "ERROR:" + rejected],
+            )
+            == rejected
+        )
 
         def consume(name, _estimate):
             with translation._global_accurate_cost_lock:
