@@ -952,9 +952,9 @@ export type PlaytestState = {
   coverage?: PlaytestCoverage;
   since?: PlaytestSince;
   unreadable?: string;
-  /** Nothing plays the game, the latest report is of the game as it is, and no text problem waits for QA; a report that could not play settles it once it names no crash to fix. MV/MZ's QA task finishes then. */
+  /** Nothing plays the game, the latest report is of the game as it is, and no text problem waits for QA; a report that could not play settles it once no crash stops it. MV/MZ's QA task finishes then. */
   settled: boolean;
-  /** Crashes the assistant fixes, which stop the game. */
+  /** Crashes that stop the game before the playtest can play it, which the assistant fixes; none once it played. */
   stopping: number;
   /** Text problems in a current report that wait for QA's next round. */
   waiting: number;
@@ -1887,6 +1887,20 @@ export type BackupSnapshot = {
 export type BackupCatalog = {
   snapshots: BackupSnapshot[];
   warnings: string[];
+};
+
+/** Whether the game's main font draws U+00A0, and its file; when that is
+unknown, why the font was not read. See engine/util/word_spacing.py. */
+export type NbspCoverage = {
+  drawn: boolean | null;
+  font?: string;
+  fallbackFonts?: string;
+  unread?: string;
+};
+
+export type WordSpacing = {
+  rule: string;
+  nbsp: NbspCoverage;
 };
 
 /** Compiled request context; Len's method requests may carry further keys. */
@@ -3503,6 +3517,7 @@ export type RpcContract = {
   translation_requests: { request: RunRequest; response: RunRequestState[] };
   translation_results: { request: RunRequest; response: TranslationResults };
   translation_backups: { request: ProjectRequest; response: BackupCatalog };
+  translation_word_spacing: { request: ProjectRequest; response: WordSpacing };
   translation_update_task: { request: ProjectRequest; response: UpdateTask };
   translation_release: {
     request: TranslationReleaseRequest;

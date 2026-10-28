@@ -815,6 +815,8 @@ try:
                         "(C) Gotcha Gotcha Games",
                     )
                 ),
+                command(356, ["D_TEXT 時刻 24"]),
+                command(356, ["D_TEXT 地図 24"]),
                 command(0, []),
             ]
             staged = deepcopy(source)
@@ -839,6 +841,10 @@ try:
                     item["parameters"] = row
                 elif row is not None:
                     item["parameters"] = [row]
+            # A space splits a plugin command into more arguments than its
+            # source; joined words keep the count.
+            staged[12]["parameters"] = ["D_TEXT Current time 24"]
+            staged[13]["parameters"] = ["D_TEXT World_map 24"]
             files = {}
             for name, value in (
                 ("source", source),
@@ -854,6 +860,18 @@ try:
                 files["source"], files["staged"], game, Layout.from_widths(tight)
             )
             assert written["fitted"] == 3 and not written["misfits"], written
+            assert (written["split_commands"], written["split_count"]) == (
+                [
+                    {
+                        "file": "Map001.json",
+                        "pointer": "/list/12/parameters/0",
+                        "text": "D_TEXT Current time 24",
+                        "arguments": 4,
+                        "source_arguments": 3,
+                    }
+                ],
+                1,
+            ), written
             fitted = json.loads(game.read_text(encoding="utf-8"))["list"]
             assert [item["parameters"][0] for item in fitted[1:5]] == [
                 "",

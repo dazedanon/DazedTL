@@ -8,7 +8,13 @@ import type {
 import type { DisplayState } from "../../ui/displayStatus";
 
 export type PlaytestPhase =
-  "not_started" | "running" | "done" | "outdated" | "blocked";
+  | "not_started"
+  | "running"
+  | "done"
+  | "unplayed"
+  | "outdated"
+  | "stopped"
+  | "unreadable";
 
 /** Why the playtest last started did not finish, when it ended after the
  * report shown. */
@@ -28,28 +34,38 @@ export function playtestFailure(
   return ended > report ? job.message || "it stopped." : "";
 }
 
-/** Where the playtest stands, from its report and whether one is running. */
+/**
+ * Where the playtest stands, from its report and whether one is running. A
+ * crash stops the game before the tour can play it when the backend counts
+ * one (playtest.stopping); a report of the game as it is that could not play
+ * it otherwise ends without a play, as the final check does once it settles.
+ */
 export function playtestPhase(
   playtest: PlaytestState,
   running: boolean,
 ): PlaytestPhase {
   if (running) return "running";
-  if (!playtest.report && !playtest.unreadable) return "not_started";
-  // A report the app can't read, or a tour that could not play the game.
-  if (playtest.unreadable || !playtest.played) return "blocked";
-  return playtest.current ? "done" : "outdated";
+  if (playtest.unreadable) return "unreadable";
+  if (!playtest.report) return "not_started";
+  if (!playtest.current) return "outdated";
+  if (playtest.stopping) return "stopped";
+  return playtest.played ? "done" : "unplayed";
 }
 
 /** The operations that play the game: a playtest, and a check of the
  * assistant's fixes. */
 export const playtestActions = ["release_playtest", "playtest_fix"];
 
+// A play the game could not have is skipped, with its reason, as a window
+// measurement the game could not give is.
 export const playtestDisplay: Record<PlaytestPhase, DisplayState> = {
   not_started: "not_started",
   running: "working",
   done: "done",
+  unplayed: "skipped",
   outdated: "outdated",
-  blocked: "blocked",
+  stopped: "blocked",
+  unreadable: "blocked",
 };
 
 // The kind "japanese" is source text left in any source language; it keeps

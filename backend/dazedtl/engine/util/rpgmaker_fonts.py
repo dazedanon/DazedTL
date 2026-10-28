@@ -97,14 +97,15 @@ class Cmap:
             elif form == 12:
                 yield _Format12(table, offset)
 
-    def covers(self, character: str) -> bool:
+    def covers(self, character: str, damaged: bool | None = True) -> bool | None:
         """Whether the font draws *character*; a damaged entry reads as
-        drawn, so the layout check lists only what the font surely lacks."""
+        *damaged*, drawn by default, so the layout check lists only what the
+        font surely lacks."""
         code = ord(character)
         try:
             return any(subtable.glyph(code) for subtable in self.subtables)
         except (struct.error, IndexError):
-            return True
+            return damaged
 
 
 class _Format4:
@@ -174,6 +175,27 @@ def main_font(data: Path) -> tuple[Path | None, str]:
     return (fonts / found.group(1) if found else None), ""
 
 
+def main_cmap(data: Path) -> tuple[dict[str, Any], Cmap | None]:
+    """The game's main font as a layout check reports it, its file
+    (``font``) and fallback fonts (``fallbackFonts``), or why it was not
+    read (``unread``), and its character map, or None. *data* is the
+    game's data folder."""
+    path, fallback = main_font(data)
+    result: dict[str, Any] = {"fallbackFonts": fallback} if fallback else {}
+    if path is None:
+        return {**result, "unread": "The game names no font file."}, None
+    try:
+        result["font"] = path.resolve().relative_to(data.parent.resolve()).as_posix()
+    except ValueError:
+        return {**result, "unread": "The game names a font outside its folder."}, None
+    try:
+        return result, Cmap(path.read_bytes())
+    except OSError:
+        return {**result, "unread": "The game's font file is missing."}, None
+    except FontUnreadable as error:
+        return {**result, "unread": f"The game's font could not be read: {error}."}, None
+
+
 def fallback_glyphs(data: str | Path, source: str | None = None) -> dict[str, Any]:
     """The characters the game's text draws that its main font lacks, the
     most frequent first, with how often each appears and the cells the
@@ -182,20 +204,9 @@ def fallback_glyphs(data: str | Path, source: str | None = None) -> dict[str, An
     out, as translation replaces them; a target's own, such as the kana and
     kanji of a Japanese translation of an English game, are listed."""
     data = Path(data)
-    path, fallback = main_font(data)
-    result: dict[str, Any] = {"fallbackFonts": fallback} if fallback else {}
-    if path is None:
-        return {**result, "unread": "The game names no font file."}
-    try:
-        result["font"] = path.resolve().relative_to(data.parent.resolve()).as_posix()
-    except ValueError:
-        return {**result, "unread": "The game names a font outside its folder."}
-    try:
-        cmap = Cmap(path.read_bytes())
-    except OSError:
-        return {**result, "unread": "The game's font file is missing."}
-    except FontUnreadable as error:
-        return {**result, "unread": f"The game's font could not be read: {error}."}
+    result, cmap = main_cmap(data)
+    if cmap is None:
+        return result
     source_letter = letters(source)
     counts: Counter[str] = Counter()
     for file in sorted(data.glob("*.json")):

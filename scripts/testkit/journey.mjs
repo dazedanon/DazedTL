@@ -204,3 +204,14 @@ export async function buildPatch(page) {
     throw new Error(`The patch ZIP holds DazedTL's own ${own.join(", ")}.`);
   return files;
 }
+
+/** The Playtest panel on screen: its state and description. */
+export const playtestPanel = (page) =>
+  page.evaluate(`(() => {
+    const panel = [...document.querySelectorAll("section.status-panel")].find(
+      (item) => item.querySelector("h3")?.textContent === "Playtest" && item.getClientRects().length,
+    );
+    return panel
+      ? { state: panel.dataset.state, description: panel.querySelector(".status-panel-header > p")?.textContent || "" }
+      : null;
+  })()`);

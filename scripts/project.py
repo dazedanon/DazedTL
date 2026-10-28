@@ -377,6 +377,10 @@ def main():
     commands.add_parser(
         "backups", help="List local restore points and older profile backups"
     )
+    commands.add_parser(
+        "word-spacing",
+        help="Print how to join a translation's words in RPG Maker plugin commands and note tags, and whether this game's font draws U+00A0",
+    )
     speakers = commands.add_parser(
         "speakers",
         help="Read speaker discovery results; --scan applies evidenced rules and runs the local parser without API calls",

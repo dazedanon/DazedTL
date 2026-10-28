@@ -50,6 +50,25 @@ def game_fixes(playtest, kept):
     )
 
 
+def layout_check(playtest, target, record):
+    """How the assistant confirms Line widths for an RPG Maker MV/MZ game
+    with the layout check and reads its result, in both methods' prompts:
+    `playtest` is the helper's playtest command, `target` the language the
+    check shows and `record` where the assistant names the glyphs its font
+    lacks."""
+    return f"""For an RPG Maker MV/MZ game the app confirms them itself: write the candidate widths, such as
+{{"width": 55, "faceWidth": 50, "listWidth": 70, "messageRows": 4}}, to a JSON file and run
+`{playtest} --layout FILE --wait 10`. It shows {target} exactly that wide in the game's message window
+with and without a face and in its help window, and `layout.probes` gives each one's widest line,
+the room the window gives it, its rows and its capture file; look at the captures. A probe `fits`
+only with `layout.headroom` characters spare after its widest line, as fonts and fallback glyphs
+draw differently on other computers; `spare` and `spareCharacters` give the margin and `suggested`
+the most characters that keep it. Save widths whose probes fit, checking a `suggested` width again.
+`layout.fallback` lists the characters of the game's text its font lacks, with how often each
+appears, how many characters the fitter counts it as (`counted`) and how wide the game drew it
+(`drawn`); keep more spare for one drawn wider than counted, and name them in {record}."""
+
+
 def final_check(playtest, plugins, qa):
     """The playtest's part of the copied Text QA task for an RPG Maker MV/MZ
     game: the final check the assistant runs with QA, given the helper's
@@ -78,12 +97,15 @@ Below, PLAYTEST stands for `{playtest}`, PLUGINS for `{plugins}` and QA for `{qa
 PLAYS = ("release_playtest", "playtest_fix")
 
 
-def stopping(problems):
-    """The report's crashes, which the assistant fixes, so a game the
-    playtest could not play is not done with until they are."""
+def stopping(state):
+    """Crashes that stop the game before the playtest can play it, which the
+    assistant fixes, so the check is not done with until they are; a report
+    that played the game lists its crashes with its other problems."""
+    if state.get("played"):
+        return []
     return [
         problem
-        for problem in problems
+        for problem in state["problems"]
         if problem["kind"] == "crash" and problem["fix"] == "game"
     ]
 
@@ -101,7 +123,7 @@ def settled(state, running):
     game now, the latest report is of the game as it is, and no problem in
     translated text waits for QA's next round. QA's apply changes the game's
     data, so a current report played it with QA's corrections. A report that
-    could not play the game settles it too once it names no crash for the
+    could not play the game settles it too once no crash stops it for the
     assistant to fix, as for a game without its engine's scripts."""
     return (
         not running
@@ -109,17 +131,18 @@ def settled(state, running):
         and state["current"]
         and not state.get("unreadable")
         and not waiting(state)
-        and (bool(state.get("played")) or not stopping(state["problems"]))
+        and not stopping(state)
     )
 
 
 def described(state, running):
-    """The playtest's state with what both methods' QA tasks and the helper
-    read from it: whether it settled, and its crash and waiting counts."""
+    """The playtest's state with what both methods' QA tasks and Playtest
+    panels and the helper read from it: whether it settled, and its crash and
+    waiting counts."""
     return {
         **state,
         "settled": settled(state, running),
-        "stopping": len(stopping(state["problems"])),
+        "stopping": len(stopping(state)),
         "waiting": waiting(state),
     }
 
@@ -386,7 +409,7 @@ class Playtest:
                 + ": run qa --prepare, review it and run qa --apply, then run "
                 "playtest --run again."
             )
-        elif not state.get("played") and state["stopping"]:
+        elif state["stopping"]:
             following = (
                 "The game stops before the playtest can play it: fix that crash in "
                 "the fixes file and run playtest --fix."

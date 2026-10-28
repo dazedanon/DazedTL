@@ -15,6 +15,7 @@ import {
   unfinishedRun,
 } from "../app/src/features/guided/workflow.ts";
 import { guidedProgress } from "../app/src/features/guided/progress.ts";
+import { playtestPhase } from "../app/src/features/guided/playtestView.ts";
 
 test("saved runs choose their owning task instead of native progress labels", () => {
   const translation = {
@@ -361,4 +362,22 @@ test("the Project page continues with the next step and keeps a later saved posi
   assert.equal(done(), true);
   state.readiness.playtest.settled = false;
   assert.equal(done(), false);
+  // A report of the game as it is that could not play it settles the check
+  // once no crash stops the game, and the Playtest panel beside Text QA says
+  // it ended without a play rather than Blocked; a crash keeps both open.
+  state.readiness.playtest = {
+    ...state.readiness.playtest,
+    played: false,
+    gaps: ["The game's engine scripts are missing."],
+    settled: true,
+  };
+  assert.equal(done(), true);
+  assert.equal(playtestPhase(state.readiness.playtest, false), "unplayed");
+  state.readiness.playtest = {
+    ...state.readiness.playtest,
+    settled: false,
+    stopping: 1,
+  };
+  assert.equal(done(), false);
+  assert.equal(playtestPhase(state.readiness.playtest, false), "stopped");
 });

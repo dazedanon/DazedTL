@@ -30,7 +30,6 @@ MATCH_VERSION = 1
 HITS = f"hits/{MATCH_VERSION}"
 # An original game file's digest and size in bytes, by its Git blob.
 ORIGINALS = "originals"
-SPACING = {"space", "nbsp", "underscore"}
 FINDING = {
     "decision",
     "confidence",
@@ -334,6 +333,8 @@ class EventText:
         return builtins
 
     def request(self, project_id, native):
+        from util.word_spacing import nbsp_drawn
+
         catalog = self.catalog()
         context = self.context(project_id, native, catalog)
         if not context["files"]:
@@ -342,21 +343,32 @@ class EventText:
             )
         path = self.guided.path(project_id, "event-text-request")
         previous = read_json(path) if path.exists() else None
+        # Whether the game's font draws U+00A0, which decides where nbsp
+        # spacing may be chosen. It is read again for each investigation and
+        # stays out of the fingerprint, so findings are not investigated
+        # again for it.
+        font = {"nbsp": nbsp_drawn(native["data"])}
         if previous and not compare(
             Basis(previous.get("version"), {}, previous.get("fingerprint")),
             Basis(REQUEST_VERSION, {}, context["fingerprint"]),
         ):
+            if previous.get("nbsp") != font["nbsp"]:
+                previous = {**previous, **font}
+                write_json(path, previous)
             return previous
         value = {
             **context,
             "request_id": uuid.uuid4().hex,
             "controls": catalog["controls"],
             "parser_source": catalog["source"],
+            **font,
         }
         write_json(path, value)
         return value
 
     def instructions(self, request, command):
+        from util.word_spacing import RULE
+
         report = {
             key: request[key]
             for key in ("version", "request_id", "project_id", "engine", "fingerprint")
@@ -383,7 +395,7 @@ Inspect all matching occurrences in selected event files. Read the wider event c
 For 122, check the entire start/end assignment range, operation and expression, all variable uses, comparisons, internal keys, IDs, filenames, and plugin/script consumers. The parser checks only the starting ID and replaces the expression; keep mixed, unproven or internally used assignments off.
 For 357, report actual installed plugin names, commands and argument keys. Registered selections use fixed keys and substring header matches, plus the built-ins listed in the request. For 355/655, report capture boundaries and multiline behavior, plus every built-in match. Its variable-writing patterns are not protected by 122 IDs.
 For 356, one switch enables every built-in handler; found command names are evidence, not individual configurable filters. Check 657 message values and 108 supported notetags.
-356 and 108 translations join their words with "_" by default, since plugins split commands on spaces. For each built-in handler or marker found, read how its plugin parses and draws the text, and set its spacing: "space" when the plugin reads the rest of the text or joins the words back, and a space cannot change how it reads its other arguments (such as a trailing number read as a size); "nbsp" (U+00A0, drawn as a space) when it splits only on the plain space, as MV's command356 split(" ") does, and uses one argument whole; "underscore" only when it splits on any whitespace, such as a \\s pattern, which U+00A0 also matches. Underscores a plugin draws as they are do not hold a source off; note them in observations.
+For each 356 built-in handler and 108 marker found, set its spacing by this rule. {RULE} The request's nbsp tells whether this game's main font draws U+00A0 (drawn) and names its file; when drawn is null it says why the font was not read, so check the font yourself before choosing nbsp. Underscores a plugin draws as they are do not hold a source off; note them in observations.
 keep lists the exact original parameters[0] of each 356 command or 108 comment holding an internal value, such as a placeholder, key or file name; the engine leaves those untranslated.
 When players see text in 355/655 scripts, 356 commands, 108 comments or 357 plugin commands that no registered entry or built-in handler captures, add this game's own entry to that source's custom list rather than leaving the text out. 355/655, 356 and 108 entries are patterns {{"name": "short label", "regex": "..."}}: a Python regular expression searched in each command's original text, each 355 or 655 line on its own, whose last capturing group is the text translated; a capture without Japanese stays as it is. A 355/655 pattern may add "script", exact text in its script's first (355) line, to read only that script's lines; capture the text inside its quotes, and the engine escapes the translation for them. 356 and 108 patterns also take "spacing", chosen as above. 357 entries are handlers {{"plugin": "exact plugin name", "command": "exact command name", "args": ["argument keys holding plain text"]}}; a struct or list argument cannot be translated in place. A custom entry takes its command before registered entries and built-in handlers, so match only text they miss and nothing internal. Bound an outer repeat around another repeat, as in (a+){1, 5}, never (a+)+. Custom entries count only for a source reported enable/high/safe; --apply refuses one that captures no Japanese in the selected event files, or two patterns capturing one command.
 Only recommend enable/high/safe when translating every remaining occurrence affected by the proposed settings is safe: text players see, or text they cannot reach, such as labels on unused test maps. Internal values must be left out by targets or keep, including built-ins and overlapping registry matches. Otherwise report review or skip with mixed/uncertain coverage. Explicitly list excluded internal/logic uses and unsupported finer filtering. Do not claim an exclusion is enforced unless targets or keep enforce it. Keep uncertain sources off. Report missing glossary evidence for review; retain existing selective glossary/context behavior.
@@ -549,11 +561,13 @@ After saving, run `{command} --apply`. It validates the report and saves its rec
                     )
                 notes = []
                 if key in WORDED:
+                    from util.word_spacing import CHOICES
+
                     spacing, keep = finding["spacing"], finding["keep"]
                     if (
                         not isinstance(spacing, dict)
                         or set(spacing) - set(row["builtins"])
-                        or set(spacing.values()) - SPACING
+                        or set(spacing.values()) - set(CHOICES)
                     ):
                         raise ValueError(
                             "Spacing must map this code's built-in handlers to space, nbsp or underscore."

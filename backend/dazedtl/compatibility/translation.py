@@ -831,6 +831,19 @@ class TranslationEngine:
 
         return Layout.of_game(root)
 
+    def word_spacing(self, root):
+        """The rule for joining a translation's words in plugin commands and
+        note tags, and whether the game's main font draws U+00A0."""
+        from util.project_scanner import find_data_folder
+        from util.word_spacing import RULE, nbsp_drawn
+
+        data, engine = find_data_folder(root)
+        if data is None or engine != "MVMZ":
+            nbsp = {"drawn": None, "unread": "This game is not RPG Maker MV or MZ."}
+        else:
+            nbsp = nbsp_drawn(data)
+        return {"rule": RULE, "nbsp": nbsp}
+
     def save_line_widths(self, root, widths):
         """Saves the Line widths an assistant measured for a game, where
         Guided keeps them too, and returns them as saved."""

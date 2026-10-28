@@ -22,6 +22,7 @@ import {
   translateTask,
   applyTask,
   buildPatch,
+  playtestPanel,
 } from "./journey.mjs";
 import { entries } from "../zip.mjs";
 
@@ -1476,7 +1477,7 @@ export const scenarios = {
   },
   "assistant-released": {
     description:
-      "An Assistant-led project the assistant translated and wrote, but for one line its extractor missed, then played, that line translated through its extraction and injection once Text QA counted it never translated, reviewed with Text QA through the project helper, one correction applied, and played again before packaging; Progress holds QA at Final check until that playtest settles, its Patch phase shows the patch ZIP, and Release builds a clean game ZIP and saves the patch ZIP, with QA's correction and that line, where it suggests.",
+      "An Assistant-led project the assistant translated and wrote, but for one line its extractor missed, then played, that line translated through its extraction and injection once Text QA counted it never translated, reviewed with Text QA through the project helper, one correction applied, and played again before packaging; Progress holds QA at Final check until that playtest settles, the Playtest tab then reads Skipped for the game it could not play, its Patch phase shows the patch ZIP, and Release builds a clean game ZIP and saves the patch ZIP, with QA's correction and that line, where it suggests.",
     steps: () => [
       [
         "Open the game Assistant-led, the assistant translating, without image text",
@@ -1514,6 +1515,31 @@ export const scenarios = {
         },
       ],
       ...assistantQa,
+      [
+        "The Playtest tab reads the play the game could not have as skipped, the final check ended, as Progress does",
+        async ({ page, state }) => {
+          // The fixture game has no engine scripts to play, and its report
+          // names no crash, so the final check settled without a play.
+          await page.click("Playtest");
+          await until(
+            "the Playtest tab to read Skipped, ending the final check",
+            async () => {
+              const shown = await playtestPanel(page);
+              if (
+                shown?.state === "skipped" &&
+                shown.description.includes("final check ends without a play")
+              )
+                return true;
+              // The timeout names what it read last.
+              throw new Error(`It reads ${JSON.stringify(shown)}.`);
+            },
+          );
+          await page.shot(
+            path.join(state.work, "logs", "playtest-skipped.png"),
+          );
+          await page.click("Progress");
+        },
+      ],
       [
         "The assistant packages the patch",
         async ({ page, state }) =>

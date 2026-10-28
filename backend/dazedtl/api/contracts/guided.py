@@ -674,9 +674,13 @@ class PlaytestState(TypedDict):
         bool,
         "Nothing plays the game, the latest report is of the game as it is, and "
         "no text problem waits for QA; a report that could not play settles it "
-        "once it names no crash to fix. MV/MZ's QA task finishes then.",
+        "once no crash stops it. MV/MZ's QA task finishes then.",
     ]
-    stopping: Annotated[int, "Crashes the assistant fixes, which stop the game."]
+    stopping: Annotated[
+        int,
+        "Crashes that stop the game before the playtest can play it, which the "
+        "assistant fixes; none once it played.",
+    ]
     waiting: Annotated[
         int, "Text problems in a current report that wait for QA's next round."
     ]

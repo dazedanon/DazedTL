@@ -1168,6 +1168,25 @@ else:
     raise AssertionError("A correction no longer in the game was undone.")
 assert apply(qa.correction_map(task, [stratum]))
 assert message(STRATUM["_original"]) == "Rest on the first stratum"
+# A task prepared before tasks recorded Line widths has no layout, and its
+# corrections still undo and apply, unfitted.
+task_file = task / "task.json"
+recorded = task_file.read_bytes()
+task_file.write_text(
+    json.dumps(
+        {
+            key: value
+            for key, value in json.loads(recorded).items()
+            if key not in {"layout", "rules_version"}
+        }
+    ),
+    encoding="utf-8",
+)
+assert apply(qa.correction_map(task, [stratum], undo=True))
+assert message(STRATUM["_original"]) == "Rest on Stratum 1"
+assert apply(qa.correction_map(task, [stratum]))
+assert message(STRATUM["_original"]) == "Rest on the first stratum"
+task_file.write_bytes(recorded)
 qa_storage.QA_RULES_VERSION = qa_prepare.QA_RULES_VERSION = qa.QA_RULES_VERSION
 
 # Database checks send what reviewers read apart to deep review with their

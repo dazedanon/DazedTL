@@ -1020,6 +1020,7 @@ def routes(app):
         "save_document",
         "prepare",
         "backups",
+        "word_spacing",
         "update_task",
         "release",
         "compile",

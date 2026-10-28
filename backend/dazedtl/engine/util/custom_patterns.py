@@ -13,6 +13,7 @@ from functools import lru_cache
 from re import _constants, _parser
 
 from util.source_text import holds_source
+from util.word_spacing import CHOICES
 
 # Event code -> the engine option holding its patterns.
 CODE_KEYS = {355: "CUSTOM_355655", 655: "CUSTOM_355655", 356: "CUSTOM_356", 108: "CUSTOM_108"}
@@ -24,7 +25,6 @@ LABELS = {
     HANDLER_KEY: "Custom plugin command handlers",
 }
 KEYS = tuple(LABELS)
-SPACING = ("space", "nbsp", "underscore")
 QUOTES = "'\"`"
 _REPEATS = (_constants.MAX_REPEAT, _constants.MIN_REPEAT, _constants.POSSESSIVE_REPEAT)
 
@@ -91,7 +91,7 @@ def _pattern(entry, key):
     if "script" in entry:
         value["script"] = _text(entry["script"], f"Custom pattern {name}'s script", 1000)
     if "spacing" in entry:
-        if entry["spacing"] not in SPACING:
+        if entry["spacing"] not in CHOICES:
             raise ValueError(
                 f"Custom pattern {name}'s spacing must be space, nbsp or underscore."
             )
@@ -165,13 +165,6 @@ def quote(text, start, end):
     if 0 < start and end < len(text) and text[start - 1] == text[end] in QUOTES:
         return text[end]
     return ""
-
-
-def join_words(text, spacing):
-    """Keeps a translation's words together the way its plugin reads them."""
-    if spacing == "space":
-        return text
-    return text.replace(" ", "\u00a0" if spacing == "nbsp" else "_")
 
 
 def structured(value):

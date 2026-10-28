@@ -84,9 +84,20 @@ class PlaytestTests(unittest.TestCase):
                 False,
                 True,
             ),
+            "it played, a crash among its problems": (
+                report(problems=[crash]),
+                False,
+                True,
+            ),
         }
         for name, (state, running, expected) in cases.items():
             self.assertEqual(described(state, running)["settled"], expected, name)
-        self.assertEqual(described(report(problems=[crash]), False)["stopping"], 1)
+        # Only a crash that kept the tour from playing stops the check, so
+        # both methods' Playtest panels read Blocked for it and no other.
+        stopping = [
+            described(report(played=played, problems=[crash]), False)["stopping"]
+            for played in (False, True)
+        ]
+        self.assertEqual(stopping, [1, 0])
         # A report the game outgrew holds no text for QA's next round.
         self.assertEqual(described(report(current=False), False)["waiting"], 0)
