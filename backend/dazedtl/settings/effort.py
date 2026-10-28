@@ -482,9 +482,9 @@ def frozen(provider, model, options, listed=None):
     if resolved != notes and (
         level is not None or resolved["default"] != notes["default"]
     ):
-        # With the default the notes fill in, so a later version's notes
-        # never rename what a frozen run's review names.
-        value["thinkingEffortListed"] = {**listed, "default": resolved["default"]}
+        # The list's record with the default the notes fill in, so a later
+        # version's notes never rename what a frozen run's review names.
+        value["thinkingEffortListed"] = resolved
     return value
 
 
