@@ -235,6 +235,13 @@ def _process_error(text):
     return text
 
 
+def _logged(line):
+    """Whether a worker's output line reaches the Run log: not its RESULT
+    marker, parsed instead, nor its closing ERROR marker, whose error the
+    run's "Process error" line already reports."""
+    return bool(line) and not line.startswith(("RESULT:", "ERROR:"))
+
+
 def translation_module(name):
     """Resolve exactly one registered engine without importing its SDKs yet."""
     for label, extensions, module, handler in TRANSLATION_MODULE_SPECS:
@@ -788,9 +795,8 @@ class TranslationTaskCore:
                         # Forward each line to the log as it is read, rather than
                         # buffering the whole run and flushing it after the
                         # process exits — a long translation was otherwise a
-                        # blank log until it finished. RESULT: is an internal
-                        # marker parsed below and is never shown.
-                        if line and not line.startswith('RESULT:'):
+                        # blank log until it finished.
+                        if _logged(line):
                             self.emit_log(line)
                 process.stdout.close()
 
@@ -1013,7 +1019,7 @@ class TranslationTaskCore:
                                 count,
                             )
                     finished.put((filename, result))
-                elif line and kind != "RESULT":
+                elif _logged(line):
                     self.emit_log(line)
             finished.put(None)
 

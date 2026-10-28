@@ -2631,9 +2631,10 @@ try:
                 ("RPG Maker MV/MZ", (".json",), None),
                 runner_script=stop_runner,
             )
-            errors, handed = [], []
+            errors, handed, logged = [], [], []
             stop_task.file_error_signal.connect(lambda *args: errors.append(args))
             stop_task.progress_signal.connect(lambda *args: handed.append(args[2]))
+            stop_task.log_signal.connect(logged.append)
             with patch.dict(
                 os.environ,
                 {
@@ -2662,6 +2663,13 @@ try:
                     "The provider rejected 3 requests in a row with the same error"
                 ), case
                 assert stop_task.run_stop == errors[2][1], case
+                # The Run log reads each request's error once, and each
+                # failed file's once more: the worker's closing ERROR marker
+                # and a second copy through its progress bar repeated them.
+                kinds = [
+                    line.split(" ", 1)[0] for line in logged if "does not exist" in line
+                ]
+                assert kinds == ["[API_ERROR]", "❌"] * 2 + ["[API_ERROR]"], logged
             else:
                 assert errors == [("Map001.json", stopped)], case
                 assert stop_task.run_stop == stopped, case
