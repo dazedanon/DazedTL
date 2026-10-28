@@ -159,6 +159,7 @@ The stand-in's replies are not real translations: it answers any other line with
 `--work <dir>` chooses the folder; otherwise it is printed.
 
 `--app` leaves the app running and prints its DevTools and inspector ports and the project helper command; `node scripts/scenario.mjs app --work <dir>` starts it again later.
+Without it, on Linux the scenario's private KWin and stand-in end with the command however it ends, a kill included, and its app with that KWin; with it they stay until `stop` or `clean`.
 `node scripts/scenario.mjs drive --work <dir>` with `text`, `click <accessible name>` (the whole name), `click-prefix <start of a name>` (for names ending in something that varies, such as a History row's date), `call <method> <params>`, `eval` or `shot <file>` drives it, and scripts import the same driver from [scripts/testkit/cdp.mjs](../scripts/testkit/cdp.mjs).
 `node scripts/scenario.mjs provider --work <dir> '<mode>'` changes how the stand-in answers: the keys it names replace those of its mode and the others stay, such as the game variant's own replies, so `'{"hold":false}'` releases a held Batch. Such as `{"stall":true}`, `{"refuse":["text"]}` or `{"long":["text"]}`, which makes lines holding the text come back as a long English message; [its header](../scripts/testkit/provider.mjs) lists the modes.
 `node scripts/scenario.mjs clean --work <dir>` stops every process the scenario started and removes its folder.

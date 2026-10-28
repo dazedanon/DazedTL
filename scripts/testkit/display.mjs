@@ -78,12 +78,67 @@ export function displayName(/** @type {string} */ work) {
   return `dazedtl-${part}-${crypto.randomBytes(3).toString("hex")}`;
 }
 
+// The first process of a group `spawnGroup` binds: once the process that
+// started it has gone, the whole group ends.
+const boundGroup = [
+  "trap 'trap - TERM; kill -TERM 0' TERM",
+  // A starter that died before the kernel was asked to signal it never will.
+  '[ "$PPID" = "$1" ] || exit 1',
+  "shift",
+  '"$@" &',
+  "wait $!",
+].join("\n");
+
+/**
+ * Spawns `command` in a process group of its own, which `stopGroup` ends,
+ * and which on Linux ends with this process however it ends, a SIGKILL
+ * included: the kernel sends SIGTERM to the group's first process when this
+ * one dies (`setpriv --pdeathsig`), and that ends the whole group, which
+ * dbus-run-session would not, since it exits at SIGTERM without passing it
+ * on. Call it from the main thread, whose end the kernel signals. A group
+ * meant to outlive this process, such as the display a scenario leaves its
+ * app running in, is spawned with `outlive`.
+ * @param {string} command
+ * @param {string[]} args
+ * @param {{ stdio?: import("node:child_process").StdioOptions, outlive?: boolean }} [options]
+ */
+export function spawnGroup(command, args, { stdio, outlive = false } = {}) {
+  const bound = !outlive && process.platform === "linux";
+  if (bound && spawnSync("which", ["setpriv"]).status !== 0)
+    throw new Error(
+      "A test process group needs setpriv, from util-linux, to end with what started it.",
+    );
+  return spawn(
+    bound ? "setpriv" : command,
+    bound
+      ? [
+          "--pdeathsig",
+          "TERM",
+          "sh",
+          "-c",
+          boundGroup,
+          "sh",
+          String(process.pid),
+          command,
+          ...args,
+        ]
+      : args,
+    { detached: true, stdio },
+  );
+}
+
 /**
  * Starts a virtual KWin named `name` and returns its display. Its log goes to
- * `log`.
- * @param {{ name: string, log: string, width?: number, height?: number }} options
+ * `log`. It ends with this process unless it is to `outlive` it.
+ * @param {{ name: string, log: string, width?: number, height?: number, outlive?: boolean }} options
  */
-export async function startDisplay({ name, log, width = 1400, height = 1000 }) {
+export async function startDisplay({
+  name,
+  log,
+  width = 1400,
+  height = 1000,
+  outlive = false,
+}) {
   if (process.platform !== "linux")
     throw new Error("A private display needs Linux with KWin.");
   if (spawnSync("which", ["kwin_wayland"]).status !== 0)
@@ -104,7 +159,7 @@ export async function startDisplay({ name, log, width = 1400, height = 1000 }) {
       `A private display cannot start here: ${sandboxed}. Run scenarios outside the sandbox.`,
     );
   const output = fs.openSync(log, "a");
-  const child = spawn(
+  const child = spawnGroup(
     "dbus-run-session",
     [
       "--",
@@ -120,7 +175,7 @@ export async function startDisplay({ name, log, width = 1400, height = 1000 }) {
       "--height",
       String(height),
     ],
-    { detached: true, stdio: ["ignore", output, output] },
+    { stdio: ["ignore", output, output], outlive },
   );
   fs.closeSync(output);
   let exited = false;
