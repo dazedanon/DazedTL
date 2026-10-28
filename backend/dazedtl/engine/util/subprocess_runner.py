@@ -10,6 +10,7 @@ from pathlib import Path
 import io
 import json
 import threading
+import time
 from contextlib import nullcontext
 
 # Set UTF-8 encoding for stdout to handle Unicode characters
@@ -50,15 +51,40 @@ def monitor_progress():
         progress_event.wait(0.1)
 
 
-def _report_run_stop(filename, error=None, result=None):
+def _file_start():
+    """When a file began: what this process had paid for then
+    (util/translation paid_usage), nothing before a module loaded the
+    translator, and the time."""
+    translation = sys.modules.get("util.translation")
+    paid = (
+        {"input": 0, "output": 0, "cost": 0.0}
+        if translation is None
+        else translation.paid_usage()
+    )
+    return paid, time.monotonic()
+
+
+def _report_run_stop(filename, error=None, result=None, start=None):
     """Reports the stop of a run frozen with the run-stop policy
-    (util/translation run_stop) as *filename*'s result, with the TOTAL its
-    handler returned when a module caught the stop, which tells the run to
-    take no further file; False when the run goes on."""
+    (util/translation run_stop) as *filename*'s result, which tells the run to
+    take no further file; False when the run goes on. The result is the TOTAL
+    its handler returned when a module caught the stop. When the handler
+    reported no TOTAL, as when the stop left it, the file's receipt is what
+    this process paid for since *start*, its _file_start, logged as the
+    file's line, so its paid requests reach the run's records."""
     translation = sys.modules.get("util.translation")
     stop = None if translation is None else translation.run_stop(error)
     if stop is None:
         return False
+    from util.translation_task import _result_figures, format_receipt
+
+    if start is not None and _result_figures(result) is None:
+        paid, began = start
+        spent = translation.paid_usage(paid)
+        if spent["input"] or spent["output"] or spent["cost"]:
+            spent["seconds"] = time.monotonic() - began
+            result = format_receipt(filename, spent, "✗")
+            print(result, flush=True)
     print(
         "RUN_STOPPED:"
         + json.dumps(
@@ -156,6 +182,7 @@ def run_handler(project_root, module_name, filename, estimate_only):
                         rpgmakermvmz.configureBatchMapNames(filenames)
 
                 for current_filename in filenames:
+                    start = None
                     try:
                         if rpgmakermvmz is not None:
                             # Separate subprocesses used to provide fresh totals for
@@ -164,10 +191,11 @@ def run_handler(project_root, module_name, filename, estimate_only):
                             rpgmakermvmz.TOKENS[:] = [0, 0]
                             rpgmakermvmz.TIMETOTAL = 0
                             reset_accurate_cost()
+                        start = _file_start()
                         handler_result = handler(current_filename, estimate_only)
                         # A module that caught the run's stop still ends it.
                         if _report_run_stop(
-                            current_filename, result=handler_result
+                            current_filename, result=handler_result, start=start
                         ):
                             break
                         if multi_file:
@@ -187,7 +215,7 @@ def run_handler(project_root, module_name, filename, estimate_only):
                                 flush=True,
                             )
                     except Exception as exc:
-                        if _report_run_stop(current_filename, exc):
+                        if _report_run_stop(current_filename, exc, start=start):
                             break
                         if not multi_file:
                             raise

@@ -226,9 +226,14 @@ def _write_jsonl(requests: Iterable[dict]) -> Path:
     return path
 
 
-def _openai_batch_body(provider: str, params: dict, *, batch: bool = True) -> dict:
-    """Materialize one OpenAI-format JSONL body for a provider batch, or with
-    ``batch`` false, the same body for a Live request.
+def _gemini_model(model) -> str:
+    """Gemini's OpenAI-compatible endpoints name a model without the
+    ``models/`` prefix of Google's own API."""
+    return str(model or "").removeprefix("models/")
+
+
+def _openai_batch_body(provider: str, params: dict) -> dict:
+    """Materialize one OpenAI-format JSONL body for a provider batch.
 
     Gemini's live OpenAI compatibility endpoint accepts strict JSON Schema,
     but its batch-file validator currently rejects nested schema ``type``
@@ -253,11 +258,9 @@ def _openai_batch_body(provider: str, params: dict, *, batch: bool = True) -> di
             body.update(extra_body)
 
     if provider == PROVIDER_GEMINI:
-        model = str(body.get("model") or "")
-        if model.startswith("models/"):
-            body["model"] = model.removeprefix("models/")
+        body["model"] = _gemini_model(body.get("model"))
         schema = (body.get("response_format") or {}).get("json_schema")
-        if batch and schema:
+        if schema:
             from dazedtl.settings.providers import response_format
 
             body["response_format"] = response_format(
@@ -704,7 +707,13 @@ def execute_live_request(provider: str, params: dict, *, client=None) -> dict:
             "thinking_tokens": thinking,
         }
 
-    body = _openai_batch_body(provider, params, batch=False)
+    # The SDK takes these as its keyword arguments and merges ``extra_body``
+    # into the HTTP body itself, refusing its fields, such as ``thinking`` or
+    # OpenRouter's ``provider``, as arguments of their own; a Batch file's
+    # body (_openai_batch_body) is that HTTP body instead.
+    body = dict(params)
+    if provider == PROVIDER_GEMINI:
+        body["model"] = _gemini_model(body.get("model"))
     try:
         response = client.chat.completions.create(**body)
     except Exception as exc:
