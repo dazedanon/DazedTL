@@ -3,6 +3,20 @@
 Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 [release.mjs](scripts/release.mjs) writes each entry from [release/notes.md](release/notes.md).
 
+## [2.47.0] - 2026-10-28
+
+### Changed
+
+- **Estimates:** an API estimate made before this update and not yet approved may read as outdated once, in Guided and Assistant-led, because its Batch price now comes only from the provider's own Batch discount; estimate again to approve it. Runs already approved or sent keep running, collecting and resuming without a new approval.
+
+### Fixed
+
+- **DeepSeek:** what a run spent, Assistant-led's **Spent** and **Recorded usage** and Guided's cost, no longer charges the peak price for every request: requests DeepSeek answered outside its peak hours now cost half, as DeepSeek bills them; requests recorded before this update keep the peak price.
+- **Recorded cost:** what a Guided Live run spent now charges prompt text the provider's cache answered at its cache price, as DeepSeek, OpenAI, Kimi and others bill it and as Assistant-led's **Spent** does, instead of the full input price, and counts Gemini's thinking as output; runs recorded before this update keep their cost.
+- **Assistant-led:** after you copy or restore your DazedTL profile, Progress no longer says "The text count is out of date" for a count that is still current, and packaging no longer refuses it until your assistant counts again.
+- **Assistant-led:** after a guidance edit, your assistant can again correct a line that organizing kept from an earlier run: the newest run takes the correction, where before both runs refused it. A correction now also keeps the review of each line it leaves unchanged.
+- **Assistant-led:** an API Batch on OpenAI no longer sends its Batches one at a time, each as big as the whole Batch token allowance, which made a big game slow and could leave it waiting for capacity until a Guided Batch on the same connection finished: each Batch now takes at most a quarter of the allowance, as Guided's do, and several run at once; after one fails, those already sent still finish, and no further one is sent until **Resume saved run**. When one's sending is left uncertain, for example by a dropped connection, or its results do not match its requests, those already sent still finish too, and the run then waits for that Batch to be attached with **Attach provider job**. Runs approved before this update keep sending one at a time.
+
 ## [2.46.0] - 2026-10-28
 
 ### Changed
@@ -1284,6 +1298,7 @@ Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachan
 - The first release of DazedTL as a desktop app, installed from a ZIP with a START launcher and updated from inside the app.
 - **Guided steps** for RPG Maker MV, MZ and VX Ace games, and **Assistant-led** for any game.
 
+[2.47.0]: https://github.com/dazedanon/DazedTL/compare/v2.46.0...v2.47.0
 [2.46.0]: https://github.com/dazedanon/DazedTL/compare/v2.45.0...v2.46.0
 [2.45.0]: https://github.com/dazedanon/DazedTL/compare/v2.44.0...v2.45.0
 [2.44.0]: https://github.com/dazedanon/DazedTL/compare/v2.43.0...v2.44.0
