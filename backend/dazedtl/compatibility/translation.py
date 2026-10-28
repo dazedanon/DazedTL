@@ -955,12 +955,14 @@ class TranslationEngine:
                 else value
             )
 
+        layout = self.line_layout(root)
         result = preserve_originals(
             read_json(source),
             without_metadata(read_json(translated)),
             filename=output.name,
+            language=layout.target,
         )
-        fit = fit_written(result, output.name, self.line_layout(root))
+        fit = fit_written(result, output.name, layout)
         with write_game(root, paths=[relative]) as game:
             if _run_git(root, "rev-parse", "original").stdout.strip() != commit:
                 raise ValueError("The original branch changed during source rebasing.")

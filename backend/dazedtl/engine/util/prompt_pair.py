@@ -161,8 +161,8 @@ def pair_note(source, target) -> str:
         )
     if not english_target:
         parts.append(
-            "Their rules for English text, such as contractions, the ASCII "
-            "apostrophe and the en_US locale, do not apply; write as "
+            "Their rules for English text, such as contractions and the ASCII "
+            "apostrophe, do not apply; write as "
             f"{target} games are written."
         )
     return " ".join(parts) + "\n\n"

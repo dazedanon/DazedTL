@@ -1334,7 +1334,7 @@ Outside DazedTL, the engine script's `write-rpgmaker-json --source --translated 
 Existing destination originals survive clean-baseline reinjection.
 Do not manufacture source from live English, or run an unadapted injector against the game before taking the snapshot.
 
-The pure `util.len_originals.preserve_originals(source, translated, filename=...)` helper also supports in-process adapters: snapshot the actual document before editing and serialize the returned annotated copy.
+The pure `util.len_originals.preserve_originals(source, translated, filename=..., language=...)` helper also supports in-process adapters: snapshot the actual document before editing and serialize the returned annotated copy; pass the target language so `System.json` gets its locale.
 The operation checks the existing destination too and replaces one file atomically only after validation.
 It preserves the staged BOM, newline convention and indentation/minified form.
 
@@ -1396,15 +1396,15 @@ A QA correction pass **writes only the live field, never `_original`**, and addr
 
 Write translated strings back into the JSON preserving key order and structure, and ship `data/*.json` (MV: `www/data/`) as **loose files over the original**. The game loads them directly, no repack.
 
-For every English MV/MZ output, set `System.json.locale` to `en_US` regardless of host OS.
-The source-preserving Len writer enforces it when the System locale field is present and retains the original locale under `_original`.
-A missing locale in a custom schema requires an explicit adapter; do not declare the locale check complete without an English live value.
+The source-preserving Len writer gives `System.json` its locale by the rule Guided's Apply uses, `util.rpgmaker_locale.write_locale`: `en_US` for a target written in Latin letters, regardless of host OS, and the game's own locale otherwise.
+It sets it when the System locale field is present and retains the original locale under `_original`.
+A missing locale in a custom schema requires an explicit adapter; for a Latin-script target, do not declare the locale check complete without an `en_US` live value.
 Bundle required MSVC runtime DLLs only when the selected game needs them.
 
 ### English locale and plugin compatibility
 
 Check the installed `data/System.json` or `www/data/System.json`, not only the extraction store.
-Keep its live `locale` at `en_US`; retain the original source locale without modifying the untranslated baseline.
+For a Latin-script target keep its live `locale` at `en_US`; retain the original source locale without modifying the untranslated baseline.
 This selects the engine's English input behavior and can also select different font or UI branches.
 Scan the shipped runtime and enabled plugins for `$dataSystem.locale`, `isJapanese`, `isChinese`, `isKorean`, locale comparisons and font/name-input overrides.
 Trace each relevant enabled consumer before deciding which branches need checks; a search hit alone is not a defect.

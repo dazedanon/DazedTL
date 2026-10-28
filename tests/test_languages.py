@@ -567,3 +567,67 @@ class LanguageTests(unittest.TestCase):
             )
             self.assertIn("\\n", variable)
             self.assertNotIn("\\n[", variable)
+
+    def test_both_methods_give_system_json_the_locale_for_its_target(self):
+        # Assistant-led wrote en_US for every target and Guided none, so a
+        # Guided English patch kept ja_JP and name entry offered kana.
+        from types import ModuleType
+
+        from dazedtl.compatibility.text import prepare_publication
+        from dazedtl.translation import publication
+        from util.len_originals import write_rpgmaker_json
+
+        from tests.engine import replaced_modules
+
+        actions = ModuleType("desktop.backend.workflow_actions")
+        actions.validate_plan = lambda _plan: None
+        system = {"gameTitle": "塔", "locale": "ja_JP", "switches": ["", "開いた"]}
+        staged = {**system, "gameTitle": "Tower", "switches": ["", "Opened"]}
+        for target, locale in (
+            ("English", "en_US"),
+            ("Spanish", "en_US"),
+            ("Simplified Chinese", "ja_JP"),
+            ("Korean", "ja_JP"),
+        ):
+            with TemporaryDirectory() as folder:
+                root, work = Path(folder, "game"), Path(folder, "work")
+                for path, value in (
+                    (root / "data/System.json", system),
+                    (work / "translated/System.json", staged),
+                    (work / "staged.json", staged),
+                    (work / "source.json", system),
+                ):
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_text(json.dumps(value, ensure_ascii=False), "utf-8")
+                save_language_pair(root, "Japanese", target)
+                plan = {
+                    "project": {
+                        "source": str(root),
+                        "data": str(root / "data"),
+                        "engine": "MVMZ",
+                    },
+                    "folder": str(work),
+                    "action": "export_selected",
+                    "options": {"files": ["System.json"]},
+                }
+                with replaced_modules({actions.__name__: actions}):
+                    prepare_publication(plan)
+                publication.publish(work, root, plan["publication"])
+                applied = json.loads((root / "data/System.json").read_text("utf-8"))
+                self.assertEqual(applied["locale"], locale, target)
+                self.assertEqual(applied["gameTitle"], "Tower", target)
+                # Assistant-led over the source, then again over its own
+                # write, which an earlier version left en_US for any target.
+                layout = rewrap.Layout.of_game(root)
+                game = work / "System.json"
+                for previous in (None, {**system, "locale": "en_US"}):
+                    if previous:
+                        previous["_original"] = {"locale": "ja_JP"}
+                        game.write_text(json.dumps(previous), "utf-8")
+                    write_rpgmaker_json(
+                        work / "source.json", work / "staged.json", game, layout
+                    )
+                    written = json.loads(game.read_text("utf-8"))
+                    self.assertEqual(written["locale"], locale, target)
+                    if locale != "ja_JP":
+                        self.assertEqual(written["_original"]["locale"], "ja_JP")

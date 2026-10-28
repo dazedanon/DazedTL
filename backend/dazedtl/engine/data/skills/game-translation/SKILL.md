@@ -18,7 +18,7 @@ The translation must preserve meaning and character voice in natural English, al
 This skill and its references are written for the default pair, a Japanese game translated into English.
 DazedTL also translates other pairs whose languages use different scripts, such as an English game into Japanese; the brief that starts the run names the pair when it is not Japanese into English, and the request contexts DazedTL compiles carry it.
 For another pair, read Japanese as the game's source language and English as the target wherever the guidance names the languages.
-Guidance about Japanese itself (honorifics, kana and kanji, dropped pronouns, particles, the SFX dictionary and the base glossary's Japanese forms) applies to a Japanese source only, and rules for English text (contractions, the ASCII apostrophe, `System.json.locale` set to `en_US`) apply to an English target only.
+Guidance about Japanese itself (honorifics, kana and kanji, dropped pronouns, particles, the SFX dictionary and the base glossary's Japanese forms) applies to a Japanese source only, and rules for English text (contractions, the ASCII apostrophe) apply to an English target only.
 The methodology itself (coverage, extraction, protected controls, fitting, injection, QA and delivery) applies to every pair.
 
 ## One prompt owns the whole run
@@ -198,7 +198,7 @@ Reread the message before committing and remove anything a player who hasn't fin
    Check headings, icons, dynamic values and body text separately.
    Read compact JP-to-EN UI pairs for meaning and consistent names; automated checks cannot detect every misleading label.
 7. Inject reviewed output and check the actual installed files, independent source/live mappings and save identity.
-   For MV/MZ, use the source-preserving writer and set `System.json.locale` to `en_US` on every English output; check locale-sensitive plugins and English name input as described in `references/engine-rpgmaker.md`.
+   For MV/MZ, use the source-preserving writer, which gives `System.json` its locale for the target; check locale-sensitive plugins and name input as described in `references/engine-rpgmaker.md`.
 8. Run targeted native checks for affected renderers, windows, triggers and save behavior using `references/playtesting-and-release.md`.
    Record which scenes ran, which fixtures were synthetic and what remains untested.
    A full playthrough or a second tester is optional unless the user requests it; do not spend days grinding routes to finish a text QA task.
