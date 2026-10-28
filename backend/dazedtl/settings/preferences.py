@@ -64,6 +64,16 @@ PAGE_PACKING = "event-pages-v1"
 # frozen without it, and a call with one stretch, send each stretch with its
 # preceding source.
 REUSE_STRETCHES = "shared-stretches-v1"
+# Every stretch after the start of a call is labelled with the lines just
+# before it and their earlier translations, under a heading naming the run's
+# target (engine util/request_packing call_stretches), also when it is the
+# request's only stretch, so a rerun resending one stretch of a partly reused
+# scene continues the English around it; a stretch at the call's start keeps
+# the call's own history, and a call's history that is a list keeps its
+# source before the quoted lines. Runs frozen without it label only a request's
+# several stretches, and send a lone one with no line before it when the
+# call's history is no list, as MV/MZ dialogue's is not.
+STRETCH_NEIGHBOURS = "stretch-neighbours-v1"
 # A Batch's grouped map display names are identified by the maps they name, as
 # a Live run identifies each map's name, and each translation is saved under
 # every one of those maps, so either run reuses the other's whichever map a
@@ -123,6 +133,7 @@ FROZEN_POLICIES = {
     "codeNameplates": CODE_NAMEPLATES,
     "pagePacking": PAGE_PACKING,
     "reuseStretches": REUSE_STRETCHES,
+    "stretchNeighbours": STRETCH_NEIGHBOURS,
     "mapNameIdentities": MAP_NAME_IDENTITIES,
     "battleMessageUsers": BATTLE_MESSAGE_USERS,
     "sourceText": SOURCE_TEXT,

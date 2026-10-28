@@ -65,14 +65,25 @@ def shared_requests(spans, size):
     return groups
 
 
-def stretch_notes(group, values, saved, source):
+def stretch_notes(group, values, saved, source, heading=None, own_history=False):
     """Each stretch's lines in the shared request and the lines before it:
     earlier translations with their source, or the call's own preceding
-    source before its first line (util/request_packing.stretch_note)."""
-    from util.request_packing import STRETCH_CONTEXT, lines_label, stretch_note
+    source before its first line (util/request_packing.stretch_note), under
+    *heading*, Guided's frozen one by default. With *own_history*, as under
+    the stretch-neighbours policy, a stretch at the call's start is left to
+    the call's own history instead."""
+    from util.request_packing import (
+        STRETCH_CONTEXT,
+        STRETCHES,
+        lines_label,
+        stretch_note,
+    )
 
     labelled, position = [], 0
     for start, end in group:
+        if own_history and not start:
+            position += end - start
+            continue
         before = [
             (values[index], saved[index])
             for index in range(max(0, start - STRETCH_CONTEXT), start)
@@ -81,7 +92,7 @@ def stretch_notes(group, values, saved, source):
         ]
         labelled.append((lines_label(position + 1, position + end - start), before))
         position += end - start
-    return stretch_note(labelled)
+    return stretch_note(labelled, heading or STRETCHES)
 
 
 def kept(source, response):
@@ -125,6 +136,7 @@ class Evidence:
         plan=None,
         *,
         share_stretches=False,
+        stretch_neighbours=False,
         map_name_identities=False,
         source_aware=False,
     ):
@@ -133,6 +145,11 @@ class Evidence:
         # Runs frozen before the reuse-stretches policy keep a request per
         # stretch, so their Batch requests rebuild identically.
         self.share_stretches = share_stretches
+        # Runs frozen with the stretch-neighbours policy label every stretch
+        # after the call's start, alone in its request too; older runs label
+        # only a request's several stretches, so their Batch requests rebuild
+        # identically.
+        self.stretch_neighbours = stretch_neighbours
         # Runs frozen with the map-name-identities policy identify each line
         # of a call gathering several files' lines, the grouped map display
         # names, in its own files; older runs identify it in the calling file,
@@ -558,10 +575,18 @@ class Evidence:
             Under the reuse-stretches policy, stretches between reused lines
             share requests up to the request size, each labelled with the lines
             before it; otherwise, and for a call with one stretch, each
-            stretch is sent with its preceding source. Each request's mismatch keeps its own
-            lines' native fallback, and every attempt's usage counts.
+            stretch is sent with its preceding source. Under the
+            stretch-neighbours policy, every stretch after the call's start is
+            labelled, and one at its start keeps the call's own history. Each
+            request's mismatch keeps its own lines' native fallback, and every
+            attempt's usage counts.
             """
-            from util.request_packing import stretches
+            from util.prompt_pair import run_language
+            from util.request_packing import (
+                STRETCH_CONTEXT,
+                call_stretches,
+                stretches,
+            )
 
             values = bound.arguments["text"]
             config = bound.arguments.get("config")
@@ -580,18 +605,39 @@ class Evidence:
                     ]
                 history = part.arguments.get("history")
                 start = group[0][0]
-                if len(group) > 1:
+                if len(group) > 1 or (self.stretch_neighbours and start):
                     source, instructions = translation._request_context_parts(
                         history,
                         part.arguments.get("context_kind"),
                         part.arguments.get("request_instructions"),
                     )
+                    if self.stretch_neighbours:
+                        # The request keeps the source before its first
+                        # stretch that it had without the note: the call's
+                        # own history, and for a stretch after the call's
+                        # start, when that history is a list, the lines
+                        # before it the note does not quote.
+                        note = stretch_notes(
+                            group,
+                            values,
+                            saved,
+                            source,
+                            call_stretches(
+                                run_language(getattr(config, "language", None))
+                            ),
+                            own_history=True,
+                        )
+                        if start and isinstance(history, list):
+                            limit = getattr(config, "maxHistory", 10)
+                            earlier = values[: max(0, start - STRETCH_CONTEXT)]
+                            source = [*source, *earlier][-limit:]
+                        elif start:
+                            source = []
+                    else:
+                        note, source = stretch_notes(group, values, saved, source), []
                     part.arguments["history"] = {
-                        "instructions": [
-                            *instructions,
-                            stretch_notes(group, values, saved, source),
-                        ],
-                        "source_items": [],
+                        "instructions": [*instructions, note],
+                        "source_items": source,
                     }
                     if "request_instructions" in part.arguments:
                         part.arguments["request_instructions"] = None

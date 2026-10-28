@@ -25,13 +25,32 @@ def _before(target):
     )
 
 
-# Guided's heading, for the stretches of one call, which its runs froze.
+# Guided asks for each line's own format, since its stretches of one call are
+# sent as the call's lines.
+_FORMAT = (
+    "Keep every line in the same format as its source line, including any "
+    "name at its start."
+)
+
+# Guided's heading, for the stretches of one call, which its runs froze
+# before the stretch-neighbours policy (settings/preferences).
 STRETCHES = (
     "These lines are separate stretches of one scene; the lines between them "
     f"were translated earlier. Each stretch below {_before('English')} "
-    "Keep every line in the same format as its source line, including any "
-    "name at its start. The stretches:"
+    f"{_FORMAT} The stretches:"
 )
+
+
+def call_stretches(target):
+    """Guided's heading under the stretch-neighbours policy: it also labels a
+    call's one stretch, and leaves a stretch at the call's start to the
+    call's own history, so it counts no stretches; its target need not be
+    English."""
+    return (
+        "These lines continue a scene whose other lines were translated "
+        f"earlier. Each stretch of them below {_before(target)} "
+        f"{_FORMAT} The stretches:"
+    )
 
 
 def scene_stretches(target):

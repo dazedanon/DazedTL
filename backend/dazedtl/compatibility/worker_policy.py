@@ -21,6 +21,7 @@ from dazedtl.settings.preferences import (
     SMALL_KANA,
     SOURCE_TEXT_LEVELS,
     SPEAKER_CONTEXT,
+    STRETCH_NEIGHBOURS,
     batch_input_tokens,
     output_tokens,
 )
@@ -186,6 +187,7 @@ def install(*, coordinator=False):
             or policy.get("codeNameplates") not in (None, CODE_NAMEPLATES)
             or policy.get("pagePacking") not in (None, PAGE_PACKING)
             or policy.get("reuseStretches") not in (None, REUSE_STRETCHES)
+            or policy.get("stretchNeighbours") not in (None, STRETCH_NEIGHBOURS)
             or policy.get("mapNameIdentities") not in (None, MAP_NAME_IDENTITIES)
             or policy.get("sourceText") not in (None, *SOURCE_TEXT_LEVELS)
             or policy.get("shortOutputs") not in (None, SHORT_OUTPUTS)
@@ -253,6 +255,8 @@ def install(*, coordinator=False):
                 plan["mode"],
                 plan,
                 share_stretches=policy.get("reuseStretches") == REUSE_STRETCHES,
+                stretch_neighbours=policy.get("stretchNeighbours")
+                == STRETCH_NEIGHBOURS,
                 map_name_identities=policy.get("mapNameIdentities")
                 == MAP_NAME_IDENTITIES,
                 source_aware=SOURCE_TEXT_LEVELS.get(str(policy.get("sourceText")), 0)

@@ -1203,6 +1203,128 @@ class ProcessTests(unittest.TestCase):
             module.translateAI(values[:2])
             self.assertTrue(module.THREAD_CTX.last_translation_had_mismatch)
 
+    def test_every_reuse_stretch_after_a_calls_start_quotes_its_translated_neighbours(
+        self,
+    ):
+        # A Guided rerun resending one stretch of a partly reused scene sent
+        # it with no preceding line on MV/MZ dialogue, whose history is "",
+        # so its voice could break from the reused English around it.
+        from util import translation
+
+        values = ["一", "二", "三", "四"]
+        keys = request_scope.identities(
+            "Items.json", "database", values, request_scope.source_locations(values)
+        )
+        english = dict(zip(values, ["One", "Two", "Three", "Four"]))
+        heading = (
+            "These lines continue a scene whose other lines were translated "
+            "earlier. Each stretch of them below lists the lines just before it, "
+            "with their earlier Spanish after →; continue the scene from them. "
+            "Keep every line in the same format as its source line, including "
+            "any name at its start. The stretches:"
+        )
+        with TemporaryDirectory() as temporary:
+
+            def sent(reused, history, neighbours):
+                root = Path(temporary) / f"{reused}-{neighbours}-{len(sent.runs)}"
+                sent.runs.append(root)
+                write_json(root / "files/Items.json", values)
+                plan = {
+                    "workflow": {"phase": "database"},
+                    "dazedtl_continuation": {
+                        keys[index]: {
+                            "source": values[index],
+                            "response": english[values[index]],
+                        }
+                        for index in reused
+                    },
+                }
+                requests = []
+
+                def ai(text, history, config, filename):
+                    requests.append((text, history))
+                    return [[value + "!" for value in text], [1, 1]]
+
+                fake = SimpleNamespace(
+                    queue_batch_request=point(lambda *_: "unused"),
+                    _join_queued_request=point(lambda kept, _entry: kept),
+                    BATCH_LOCK=threading.RLock(),
+                    _batch_queue_pending={},
+                    _write_request_debug_log=point(lambda *_: None),
+                    translateText=point(lambda *_: None),
+                    translateAI=point(ai),
+                    _request_context_parts=translation._request_context_parts,
+                    _thread_local=threading.local(),
+                    last_translation_had_mismatch=lambda: False,
+                    get_batch_phase=lambda: None,
+                )
+                Evidence(
+                    root,
+                    "translate",
+                    plan,
+                    share_stretches=True,
+                    stretch_neighbours=neighbours,
+                ).install(fake)
+                config = SimpleNamespace(batchSize=50, language="Spanish")
+                fake.translateAI(values, history, config, "Items.json")
+                return requests
+
+            sent.runs = []
+            # One stretch after reused lines quotes them, whatever the call's
+            # history holds; a list's source before them stays, without the
+            # lines the note quotes.
+            quoted = heading + "\n- lines 1-2\n  一 → One\n  二 → Two"
+            for history, source in [("", []), (["前"], ["前"])]:
+                self.assertEqual(
+                    sent([0, 1], history, True),
+                    [
+                        (
+                            ["三", "四"],
+                            {"instructions": [quoted], "source_items": source},
+                        )
+                    ],
+                )
+            self.assertEqual(
+                sent([0, 1, 2], ["前"], True),
+                [
+                    (
+                        ["四"],
+                        {
+                            "instructions": [
+                                heading + "\n- line 1\n  二 → Two\n  三 → Three"
+                            ],
+                            "source_items": ["前", "一"],
+                        },
+                    )
+                ],
+            )
+            # Runs frozen before the policy build today's requests.
+            self.assertEqual(sent([0, 1], "", False), [(["三", "四"], "")])
+            self.assertEqual(
+                sent([0, 1], ["前"], False), [(["三", "四"], ["前", "一", "二"])]
+            )
+            # A stretch at the call's start keeps the call's own history.
+            for neighbours in [True, False]:
+                self.assertEqual(
+                    sent([2, 3], ["前"], neighbours), [(["一", "二"], ["前"])]
+                )
+            # Sharing a request with a later stretch, it still does, and only
+            # the later one is labelled.
+            self.assertEqual(
+                sent([1, 2], ["前"], True),
+                [
+                    (
+                        ["一", "四"],
+                        {
+                            "instructions": [
+                                heading + "\n- line 2\n  二 → Two\n  三 → Three"
+                            ],
+                            "source_items": ["前"],
+                        },
+                    )
+                ],
+            )
+
     def test_a_run_approved_before_the_short_output_measure_reuses_what_its_estimate_counted(
         self,
     ):
