@@ -44,7 +44,9 @@ export function useShortcut(
   const handle = useEffectEvent((event: KeyboardEvent) => {
     const root = scope.current;
     if (!action || !root || event.defaultPrevented || !matches(event)) return;
-    if (!root.getClientRects().length) return;
+    // A hidden page has no boxes, and a hidden stacked tab panel keeps its
+    // boxes but is invisible.
+    if (!root.checkVisibility({ visibilityProperty: true })) return;
     const dialog = [...document.querySelectorAll("dialog[open]")].at(-1);
     if (dialog && !dialog.contains(root)) return;
     if (!inFields && editable(event.target)) return;

@@ -1,4 +1,4 @@
-import { useRef, type ReactNode } from "react";
+import { createContext, useContext, useRef, type ReactNode } from "react";
 export interface Tab<T extends string> {
   id: T;
   label: ReactNode;
@@ -97,9 +97,18 @@ export function TabPanel({
     </div>
   );
 }
+const PanelShown = createContext(true);
+/**
+ * Whether the tab panel around the caller shows. A hidden stacked panel stays
+ * mounted, so work it would start on its own, such as a request, waits until
+ * it shows again.
+ */
+export const useTabPanelShown = () => useContext(PanelShown);
 /**
  * Every tab's panel stacked in one cell, so switching tabs keeps the size
- * of the tallest; the hidden panels stay laid out but invisible and inert.
+ * of the tallest and each panel's place, such as its scroll position, open
+ * disclosures and choices; the hidden panels stay laid out but invisible and
+ * inert. On an editor page the panels fill the page below its tabs instead.
  */
 export function StackedTabPanels<T extends string>({
   id,
@@ -121,7 +130,7 @@ export function StackedTabPanels<T extends string>({
           inert={key !== value}
           data-active={key === value}
         >
-          {panel}
+          <PanelShown value={key === value}>{panel}</PanelShown>
         </div>
       ))}
     </div>

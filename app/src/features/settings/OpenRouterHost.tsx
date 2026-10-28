@@ -3,6 +3,7 @@ import { api } from "../../api/client";
 import { useAction } from "../../state/useAction";
 import { Button } from "../../ui/Button";
 import { FieldRow } from "../../ui/FieldRow";
+import { useTabPanelShown } from "../../ui/Tabs";
 
 type Host = { slug: string; name: string };
 // Public, model-scoped suggestions survive editor and tab revisits. Refresh is
@@ -40,13 +41,15 @@ export function OpenRouterHost({
       }, notice),
     [model, run],
   );
+  // A hidden Settings tab reads them once it shows.
+  const shown = useTabPanelShown();
   useEffect(() => {
     mounted.current = true;
-    if (model && checksEnabled && !hostLists.has(model)) void load();
+    if (shown && model && checksEnabled && !hostLists.has(model)) void load();
     return () => {
       mounted.current = false;
     };
-  }, [model, checksEnabled, load]);
+  }, [shown, model, checksEnabled, load]);
   const selected = hosts?.find((host) => host.slug === value);
   return (
     <FieldRow
