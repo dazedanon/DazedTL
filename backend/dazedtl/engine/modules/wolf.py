@@ -15,7 +15,7 @@ from dotenv import load_dotenv
 from retry import retry
 from tqdm import tqdm
 from util.languages import source_pattern
-from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost, getPricingConfig, calculateCost
+from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost, getPricingConfig, calculateCost, run_stop_errors
 from util.speakers import strip_speaker_prefix
 from util import system
 
@@ -269,7 +269,9 @@ def parseMap(data, filename):
             for page in event["pages"]:
                 totalLines += len(page["list"])
 
-    # Process pages synchronously and persist after each
+    # Process pages synchronously and save progress after each that finishes,
+    # with its own tokens; a failing page saves no progress, and its error
+    # reaches the caller unchanged.
     with tqdm(bar_format=BAR_FORMAT, position=POSITION, total=totalLines, leave=LEAVE) as pbar:
         pbar.desc = filename
         pbar.total = totalLines
@@ -279,12 +281,13 @@ def parseMap(data, filename):
                     if page is not None:
                         try:
                             tt = searchCodes(page["list"], pbar, None, filename)
-                            totalTokens[0] += tt[0]
-                            totalTokens[1] += tt[1]
+                        except run_stop_errors():
+                            raise
                         except Exception as e:
                             return [data, totalTokens, e]
-                        finally:
-                            maybe_save_progress_json(data, filename, tt)
+                        totalTokens[0] += tt[0]
+                        totalTokens[1] += tt[1]
+                        maybe_save_progress_json(data, filename, tt)
     return [data, totalTokens, None]
 
 
@@ -856,6 +859,8 @@ def searchCodes(events, pbar, jobList, filename):
             # Set Data
             events = codeList
 
+    except run_stop_errors():
+        raise
     except IndexError as e:
         traceback.print_exc()
         raise Exception(str(e) + "Failed to translate: " + initialJAString) from None
@@ -2645,6 +2650,8 @@ def searchDB(events, pbar, jobList, filename):
             jobList.append(dbValueListTL)
             searchDB(events, pbar, jobList, filename)
 
+    except run_stop_errors():
+        raise
     except IndexError as e:
         traceback.print_exc()
         raise Exception(str(e) + "Failed to translate: " + initialJAString) from None

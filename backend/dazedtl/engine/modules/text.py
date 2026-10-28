@@ -14,7 +14,7 @@ from dotenv import load_dotenv
 from retry import retry
 from tqdm import tqdm
 from util.languages import source_pattern
-from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost, getPricingConfig, calculateCost
+from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost, getPricingConfig, calculateCost, run_stop_errors
 from util.speakers import SPEAKER_TAG_RE, extract_dialogue_after_speaker, strip_speaker_prefix
 import tempfile
 from util import system
@@ -162,6 +162,8 @@ def parseText(readFile, filename):
             result = translateTxt(data, filename, [])
             totalTokens[0] += result[0]
             totalTokens[1] += result[1]
+        except run_stop_errors():
+            raise
         except Exception as e:
             traceback.print_exc()
             return [data, totalTokens, e]

@@ -32,6 +32,7 @@ from util.translation import (
     translateAI as sharedtranslateAI,
     getPricingConfig,
     calculateCost,
+    run_stop_errors,
 )
 
 # Globals
@@ -236,6 +237,8 @@ def openFiles(filename):
                     f"[Input: {imageTokens[0]}][Output: {imageTokens[1]}]"
                     + Fore.RESET
                 )
+        except run_stop_errors():
+            raise
         except Exception:
             traceback.print_exc()
             return [data, totalTokens, "Fail"]
@@ -253,6 +256,8 @@ def handleImageText(filename, estimate):
     start = time.time()
     try:
         translatedData = openFiles(filename)
+    except run_stop_errors():
+        raise
     except Exception:
         traceback.print_exc()
         return "Fail"

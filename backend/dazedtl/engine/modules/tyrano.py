@@ -14,7 +14,7 @@ from dotenv import load_dotenv
 from retry import retry
 from tqdm import tqdm
 from util.languages import source_pattern
-from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost
+from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost, run_stop_errors
 from util.speakers import strip_speaker_prefix
 import tempfile
 from util import system
@@ -164,6 +164,8 @@ def parseTyrano(readFile, filename):
             result = translateTyrano(data, filename, [])
             totalTokens[0] += result[0]
             totalTokens[1] += result[1]
+        except run_stop_errors():
+            raise
         except Exception as e:
             traceback.print_exc()
             return [data, totalTokens, e]

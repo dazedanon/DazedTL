@@ -280,14 +280,16 @@ class GuidedRuns:
     def changed(cls, record, inputs, *, reprice=True, estimate=None):
         """What changed since a run bound to ``record`` was made, or None
         while it is current for ``inputs``; for an estimate run, its
-        ``estimate`` priced under older price rules changed too. With
-        ``reprice``, settings that differ only in prices not known yet count
-        as the same."""
+        ``estimate`` priced under older price rules than its route's
+        (repricing.route_rules) changed too. With ``reprice``, settings that
+        differ only in prices not known yet count as the same."""
         saved = cls.saved(record, inputs)
         current = Basis(RUN_VERSION, {}, inputs["fingerprint"], inputs["shape"])
         if estimate is not None:
             saved = replace(saved, prices=repricing.rules(estimate))
-            current = replace(current, prices=repricing.current_rules())
+            current = replace(
+                current, prices=repricing.route_rules(estimate.get("provider"))
+            )
         return compare(
             saved,
             current,

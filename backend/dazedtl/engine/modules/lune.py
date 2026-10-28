@@ -14,7 +14,7 @@ from dotenv import load_dotenv
 from retry import retry
 from tqdm import tqdm
 from util.languages import source_pattern
-from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost
+from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost, run_stop_errors
 import tempfile
 from util import system
 
@@ -101,6 +101,8 @@ def handleLune(filename, estimate):
                 with LOCK:
                     TOKENS[0] += translatedData[1][0]
                     TOKENS[1] += translatedData[1][1]
+        except run_stop_errors():
+            raise
         except Exception:
             return "Fail"
 
@@ -160,6 +162,8 @@ def parseJSON(data, filename):
             result = translateJSON(data, pbar)
             totalTokens[0] += result[0]
             totalTokens[1] += result[1]
+        except run_stop_errors():
+            raise
         except Exception as e:
             return [data, totalTokens, e]
     return [data, totalTokens, None]

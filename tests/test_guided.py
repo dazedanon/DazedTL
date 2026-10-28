@@ -663,10 +663,21 @@ class GuidedTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "current estimate"):
             self.guided.preview(self.identity, "start", options={"mode": "batch"})
         self.assertIsNone(reopened())
-        # Under today's rules it stands as saved.
-        estimate["price_rules"] = current_rules()
-        self.assertEqual(quote()["job"]["estimate"], estimate)
-        self.assertEqual(reopened(), identity)
+        # Under today's rules it stands as saved, as under any version since
+        # its route's rules last changed: versions 3 and 4 changed OpenAI's
+        # Batch prices, Claude's last changed at 2.
+        for rules in (2, 3, current_rules()):
+            estimate["price_rules"] = rules
+            self.assertTrue(quote()["current"])
+            self.assertEqual(quote()["job"]["estimate"], estimate)
+            self.assertEqual(reopened(), identity)
+        # An OpenAI Batch estimate priced before them is priced again.
+        estimate.update(
+            provider="openai", price_rules=3, cache_read_tokens=0, cacheable_tokens=0
+        )
+        shown = quote()
+        self.assertTrue(shown["current"])
+        self.assertEqual(shown["job"]["estimate"]["price_rules"], current_rules())
 
     def test_translate_reopens_an_unchanged_estimate_until_its_work_is_approved(self):
         # Each Translate click estimated the whole selection again, minutes on
@@ -810,6 +821,19 @@ class GuidedTests(unittest.TestCase):
         self.assertFalse(current())
         self.guided.full_estimate.start(self.identity)
         self.assertEqual(len(plans), 2)
+        # A fix to another route's rules leaves it standing: versions 3 and 4
+        # changed OpenAI's Batch prices, Claude's last changed at 2.
+        saved["price_rules"] = 3
+        kept = status()
+        self.assertTrue(kept["current"])
+        self.assertIs(kept["result"], saved)
+        # An OpenAI Batch estimate priced before them is priced again.
+        saved["measured"]["dialogue"].update(
+            provider="openai", cache_read_tokens=0, cacheable_tokens=0
+        )
+        fixed = status()
+        self.assertTrue(fixed["current"])
+        self.assertEqual(fixed["result"]["price_rules"], current_rules())
         saved["measured"]["dialogue"]["provider"] = "custom"
         saved.update(price_rules=current_rules())
         saved["tasks"][0]["liveCost"] = 0.01
