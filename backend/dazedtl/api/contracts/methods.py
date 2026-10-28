@@ -368,6 +368,16 @@ class RunIndexRequest(TypedDict):
     index: int
 
 
+class RunRequestChoice(TypedDict):
+    """A run's request by its index, or by its request_sha256, which also
+    reaches an earlier request whose lines organize kept for the run."""
+
+    project_id: str
+    run_id: str
+    index: NotRequired[int]
+    request_sha256: NotRequired[str]
+
+
 class TranslationStartRequest(TypedDict):
     project_id: str
     run_id: str
@@ -811,7 +821,7 @@ METHODS: dict[str, Method] = {
     "translation_compile": Method(InputPathRequest, TranslationJob),
     "translation_organize": Method(TranslationOrganizeRequest, TranslationJob),
     "translation_run": Method(RunRequest, TranslationJob, refresh=False),
-    "translation_request": Method(RunIndexRequest, RequestPreview, refresh=False),
+    "translation_request": Method(RunRequestChoice, RequestPreview, refresh=False),
     "translation_requests": Method(RunRequest, list[RunRequestState], refresh=False),
     "translation_results": Method(RunRequest, TranslationResults, refresh=False),
     "translation_backups": Method(ProjectRequest, BackupCatalog, refresh=False),

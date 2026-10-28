@@ -1955,7 +1955,8 @@ export type RequestResult = {
 
 export type RequestPreview = {
   run_id: string;
-  index: number;
+  index?: number;
+  kept?: string[];
   total: number;
   request: PreparedRequest;
   result: RequestResult | null;
@@ -3069,6 +3070,15 @@ export type RunIndexRequest = {
   index: number;
 };
 
+/** A run's request by its index, or by its request_sha256, which also
+reaches an earlier request whose lines organize kept for the run. */
+export type RunRequestChoice = {
+  project_id: string;
+  run_id: string;
+  index?: number;
+  request_sha256?: string;
+};
+
 export type TranslationStartRequest = {
   project_id: string;
   run_id: string;
@@ -3547,7 +3557,7 @@ export type RpcContract = {
     response: TranslationJob;
   };
   translation_run: { request: RunRequest; response: TranslationJob };
-  translation_request: { request: RunIndexRequest; response: RequestPreview };
+  translation_request: { request: RunRequestChoice; response: RequestPreview };
   translation_requests: { request: RunRequest; response: RunRequestState[] };
   translation_results: { request: RunRequest; response: TranslationResults };
   translation_backups: { request: ProjectRequest; response: BackupCatalog };
