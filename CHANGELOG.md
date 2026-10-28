@@ -3,6 +3,18 @@
 Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 [release.mjs](scripts/release.mjs) writes each entry from [release/notes.md](release/notes.md).
 
+## [2.43.0] - 2026-10-27
+
+### Added
+
+- **Assistant-led:** on WOLF, Unity, TyranoScript and other games that Text QA can't read, the assistant now checks its translations with Text QA's text rules, such as glossary names, changed numbers and untranslated lines, and corrects each problem or notes why the line is right.
+
+### Fixed
+
+- **Assistant-led:** a translation that drops a line's colour, sound or other control code, such as `\C[2]` or `\SE[...]`, or closes a colour before it opens is now refused, or kept in its original text in an API run, as Guided does, so the game no longer shows wrong colours, raw codes or a missing sound; runs already written into the game are not reopened.
+- **Translation:** a moan the model leaves with small kana in an English line, such as `milk゛ぅぅぅ♡`, is now written as `milk゛uuu♡` instead of being sent again or kept in Japanese, in Guided and Assistant-led alike; runs started before keep their lines as they were.
+- **RPG Maker MV/MZ:** a game translated into English or another language written in Latin letters now gets the English locale from Guided's Apply too, so name entry offers Latin letters instead of kana, and Assistant-led keeps the game's own locale for other targets, such as Chinese, instead of switching it to English; games already applied change only on their next Apply or write.
+
 ## [2.42.0] - 2026-10-27
 
 ### Changed
@@ -1238,6 +1250,7 @@ Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachan
 - The first release of DazedTL as a desktop app, installed from a ZIP with a START launcher and updated from inside the app.
 - **Guided steps** for RPG Maker MV, MZ and VX Ace games, and **Assistant-led** for any game.
 
+[2.43.0]: https://github.com/dazedanon/DazedTL/compare/v2.42.0...v2.43.0
 [2.42.0]: https://github.com/dazedanon/DazedTL/compare/v2.41.0...v2.42.0
 [2.41.0]: https://github.com/dazedanon/DazedTL/compare/v2.40.2...v2.41.0
 [2.40.2]: https://github.com/dazedanon/DazedTL/compare/v2.40.1...v2.40.2
