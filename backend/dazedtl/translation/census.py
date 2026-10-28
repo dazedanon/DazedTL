@@ -6,7 +6,9 @@ an entry with its file, exact location, a kind from a fixed vocabulary and a
 field: the location with every index and data-named key wildcarded, which is
 what scope rules match, so no rule can single out one map, event or scene.
 Coverage compares Japanese runs, so an extractor may split lines, join them
-with separators or mask control codes without losing track of a line.
+with separators or mask control codes without losing track of a line. Lines
+holding Japanese punctuation but no letters are listed apart (unsent): a
+translation writes them in its own form without a request.
 """
 
 from __future__ import annotations
@@ -33,13 +35,17 @@ from dazedtl.languages import (
 # 2: comment lines a game's plugins show players, such as choice help.
 # 3: only the plugins the game loads, without DazedTL's own Set up files, and
 #    the comment markers a plugin's settings list set aside.
-VERSION = 3
+# 4: lines of Japanese punctuation without letters, listed apart (unsent).
+VERSION = 4
 
 _RUN = re.compile(source_pattern("census_run", JAPANESE))
 _WORD = re.compile(source_pattern("census_word", JAPANESE))
 _ENGLISH_RUN = re.compile(ENGLISH_RUN)
 _LATIN = re.compile(f"[{LATIN_LETTERS}]")
 _CODES = re.compile(MARKUP)
+# A punctuation mark of a census run: not the ideographic space, which only
+# pads, nor a full-width letter or digit.
+_MARK = re.compile(r"[^\u3000\uff10-\uff19\uff21-\uff3a\uff41-\uff5a]")
 
 
 def runs(text, language=JAPANESE):
@@ -56,6 +62,23 @@ def runs(text, language=JAPANESE):
             if _LATIN.search(match)
         ]
     return [match for match in _RUN.findall(text) if _WORD.search(match)]
+
+
+def marks(text, language=JAPANESE):
+    """Runs of Japanese punctuation, such as 「……」 or ！？, on the lines of
+    *text* that hold no Japanese word, each a census run with a mark
+    (_MARK). Such a line is never sent: a translation writes it in its own
+    form (util/target_text unsent_text). A line counts alone, so a unit
+    that joins it to a message's other lines still holds it."""
+    if language != JAPANESE or not isinstance(text, str):
+        return []
+    return [
+        match
+        for line in text.split("\n")
+        if not runs(line)
+        for match in _RUN.findall(line)
+        if _MARK.search(match)
+    ]
 
 
 def counted_language(census):
@@ -1116,12 +1139,12 @@ def rules_input(value, fields, files=None, language=JAPANESE):
 # --- Census entries and coverage ------------------------------------------------
 
 
-def entries(rows, name, source, language=JAPANESE):
+def entries(rows, name, source, language=JAPANESE, read=runs):
     """Census entries for one file's rows: only strings that hold text in
-    the source *language*."""
+    the source *language*, or with *read* marks, its unsent lines."""
     result = []
     for kind, location, field, text in rows or []:
-        found = runs(text, language)
+        found = read(text, language)
         if found:
             result.append(
                 {
@@ -1136,16 +1159,22 @@ def entries(rows, name, source, language=JAPANESE):
     return result
 
 
+def _every(census):
+    """The census's entries and its unsent lines, which scope rules match
+    alike."""
+    return [*census["entries"], *census.get("unsent", ())]
+
+
 def fields(census):
     result = {}
-    for entry in census["entries"]:
+    for entry in _every(census):
         result.setdefault(entry["kind"], set()).add(entry["field"])
     return result
 
 
 def files(census):
     result = {}
-    for entry in census["entries"]:
+    for entry in _every(census):
         result.setdefault(entry["kind"], set()).add(entry["file"])
     return result
 
@@ -1271,6 +1300,30 @@ def coverage(census, sources, glossary, rules):
     }, uncovered
 
 
+def unsent(census, sources, rules):
+    """How many runs of the census's unsent lines no rule sets aside, how
+    many of them units hold, and the entries of the others. Apart from
+    coverage: a line nobody extracts ships as the game wrote it, but no
+    words are missing from the translation."""
+    available = Counter(run for text in sources for run in marks(text))
+    scope = Scope(rules)
+    counts, missing = Counter(), []
+    for entry in census.get("unsent", ()):
+        left = []
+        for run in entry["runs"]:
+            if scope.rule(entry, run) is not None:
+                continue
+            counts["runs"] += 1
+            if available[run] > 0:
+                available[run] -= 1
+                counts["extracted"] += 1
+            else:
+                left.append(run)
+        if left:
+            missing.append({**entry, "runs": left})
+    return {"runs": counts["runs"], "extracted": counts["extracted"]}, missing
+
+
 def summary(uncovered, limit=20):
     """Uncovered runs counted by kind and field, never by text."""
     counts = Counter()
@@ -1381,7 +1434,7 @@ def scan(
     own: DazedTL's own files Set up installed (len_patch_scope.setup_files),
     which hold no game text.
     """
-    found, unreadable, opened, needs_dump, wolf = [], [], [], [], []
+    found, unsent, unreadable, opened, needs_dump, wolf = [], [], [], [], [], []
     head = peek or (lambda name, size: load(name)[:size])
     from util.rpgmaker_markers import (
         MZ_CORE,
@@ -1476,6 +1529,7 @@ def scan(
             unreadable.append(name)
         else:
             found.extend(entries(rows, name, source, language))
+            unsent.extend(entries(rows, name, source, language, marks))
 
     for count, name in enumerate(names, 1):
         how = candidate(name, head)
@@ -1550,6 +1604,7 @@ def scan(
                 unreadable.append(name)
             else:
                 found.extend(entries(rows, name, "tool", language))
+                unsent.extend(entries(rows, name, "tool", language, marks))
     # A dump's MV/MZ data and plugins wait for their plugin list and MZ's
     # core script, which may come later.
     waiting = []
@@ -1566,6 +1621,7 @@ def scan(
     result = {
         "version": VERSION,
         "entries": found,
+        "unsent": unsent,
         "unreadable": sorted(unreadable),
         "opened": sorted(opened),
         "needs_dump": sorted(needs_dump),

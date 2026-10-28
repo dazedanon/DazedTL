@@ -317,6 +317,62 @@ class CensusTests(unittest.TestCase):
             report["rules"],
         )
 
+    def test_punctuation_only_text_is_listed_apart_from_coverage(self):
+        # Lines with Japanese punctuation but no letters, which Guided writes
+        # without a request, shipped in Japanese form when no unit held them.
+        event = {
+            "name": "",
+            "pages": [
+                {
+                    "list": [
+                        command(401, "「……」"),
+                        command(401, "！？"),
+                        command(401, "よく来たな。　"),
+                        command(108, "！！"),
+                        command(357, "Popup", "show", "", {"text": "？"}),
+                        command(401, "　"),
+                        command(401, "１００"),
+                    ]
+                }
+            ],
+        }
+        result = scan({"www/data/Map001.json": {"events": [None, event]}})
+        self.assertEqual(result["version"], census.VERSION)
+        self.assertEqual(
+            [entry["runs"] for entry in result["entries"]], [["よく来たな。　"]]
+        )
+        rules = census.rules_input(
+            {
+                "version": 1,
+                "rules": [
+                    {
+                        "kind": "rpgmaker:map",
+                        "field": "**/*[code=357:*]/**",
+                        "reason": "not_displayed",
+                    }
+                ],
+            },
+            census.fields(result),
+        )
+        # The comment and the rule's plugin command are set aside; a unit
+        # joining a message's lines still covers its punctuation-only one.
+        for sources, extracted in (
+            ([], 0),
+            (["「……」\n！？"], 3),
+            (["！？"], 1),
+            (["よく来たな。\n！？"], 1),
+        ):
+            with self.subTest(sources=sources):
+                report, missing = census.unsent(result, sources, rules)
+                self.assertEqual(report, {"runs": 3, "extracted": extracted})
+                self.assertEqual(
+                    sum(len(entry["runs"]) for entry in missing), 3 - extracted
+                )
+        coverage, _uncovered = census.coverage(result, ["「……」\n！？"], [], rules)
+        self.assertEqual(
+            (coverage["runs"], coverage["extracted"], coverage["untraced"]), (1, 0, 0)
+        )
+
     def test_comments_a_plugin_shows_players_count_as_their_text(self):
         # MPP_ChoiceEX shows the lines under a choice help marker; a census
         # that set every comment aside read full coverage with them Japanese.

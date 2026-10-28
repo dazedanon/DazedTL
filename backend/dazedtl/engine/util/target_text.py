@@ -120,7 +120,9 @@ def english_punctuation(text, quotes=True):
 # target its writers have always differed, and each keeps its own form, so
 # Japanese to English output stays as it was:
 # - ROWS: a parser writing message, scroll and choice rows it never sends
-#   (MV/MZ): every mark in its English form (english_punctuation).
+#   (MV/MZ), and an Assistant-led run writing the lines no request sends
+#   (translation/results unsent_line): every mark in its English form
+#   (english_punctuation).
 # - SKIPPED: translate() handing back a value it skips: the reply cleanup
 #   (clean_reply), so ・・・ and ！？ stay full-width, 。 is always a period,
 #   【】 become [] and the small っ is left out.

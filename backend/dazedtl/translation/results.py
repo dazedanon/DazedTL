@@ -368,6 +368,17 @@ def exported_line(request, identity, text, quotes=True):
     return normalize(source, line, target)
 
 
+def unsent_line(source, target, quotes=True):
+    """What a translation into *target* writes for a line whose source holds
+    no source letters, such as 「……」 or ！？, which no request sends: every
+    mark in its English form, as Guided writes the message and choice rows
+    it never sends (util/target_text ROWS), corner brackets as quotes when
+    *quotes*."""
+    from util.target_text import ROWS, unsent_text
+
+    return unsent_text(source, target, ROWS, quotes)
+
+
 def exported(request, value, quotes=True):
     """A saved result's translations as the game gets them (exported_line).
     The receipt keeps what was accepted."""
@@ -631,6 +642,30 @@ class Results:
             units.append(row)
         return units
 
+    def converted_units(self, converted, identities, target, quotes=True):
+        """The export rows of a run's units no request sends (organize
+        `unsent`), written by the tool (unsent_line) and marked converted.
+        Never sent, they need no review, as Guided reviews no such line."""
+        units = []
+        for identity in identities:
+            unit = converted[identity]
+            source = unit["source"]
+            translation = unsent_line(source, target, quotes)
+            units.append(
+                {
+                    "id": digest(["converted", identity]),
+                    "source_id": identity,
+                    "source": source,
+                    "kind": unit["kind"],
+                    "speaker": unit["speaker"],
+                    "converted": True,
+                    "translation": translation,
+                    "translated_from_sha256": digest(source.encode("utf-8")),
+                    "reviewed_sha256": review_digest(source, translation),
+                }
+            )
+        return units
+
     def export(self, plan):
         """Writes the plan's progress export and replies with its path and
         whether any translation in it changed. Only parts whose requests or
@@ -661,7 +696,7 @@ class Results:
         counted = partial(_rewritten, _requests(plan), quotes) if older else _content
         # Each part's inputs, which fix its rows, ending with the signature of
         # a result file they read, and how its rows are built.
-        groups = [
+        groups: list[tuple[tuple[tuple, ...], partial[list]]] = [
             (
                 tuple(
                     (row["fingerprint"], listing.get(row["fingerprint"], _NONE)[1])
@@ -692,6 +727,23 @@ class Results:
             )
             groups.append(
                 (inputs, partial(self.reused_units, reused, group, listing, quotes))
+            )
+        # Then the units no request sends, which the tool writes itself.
+        converted = plan.get("converted") or {}
+        identities = list(converted)
+        for start in range(0, len(identities), PART_UNITS):
+            group = identities[start : start + PART_UNITS]
+            target = plan["configuration"]["language"]
+            # They read no result file, so none has a signature to settle.
+            inputs = tuple(
+                (identity, target, *converted[identity].values(), None)
+                for identity in group
+            )
+            groups.append(
+                (
+                    inputs,
+                    partial(self.converted_units, converted, group, target, quotes),
+                )
             )
         # The rows of each part written or removed, before and after: a run
         # holding the same rows in other parts, as one organize left every
