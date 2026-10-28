@@ -691,13 +691,16 @@ def current(value, source):
     """Whether a saved archive still matches the game's runtime files.
 
     None means the archive predates recorded inputs, so it cannot be compared.
-    Images applied after the build also make it outdated, as does a change
+    Images applied after the build also make it outdated, but for those
+    decoded from the game's archives, which it never holds, as does a change
     its record was marked outdated by (operations.outdate_patch), and a
     checkpoint since its build that added, changed or removed another file a
     release may hold, as a game update adding maps does. A record without
     its checkpoint, or one Git can no longer read, is compared by its inputs
     alone.
     """
+    from util.paths import decoded_image_files
+
     from dazedtl.compatibility.checkpoint_commits import changed_since
 
     if not available(value) or value.get("outdated"):
@@ -706,9 +709,10 @@ def current(value, source):
     if not isinstance(inputs, dict):
         return None
     try:
+        applied = set(applied_images(source))
         if not all(
             _unchanged(source, path, saved) for path, saved in inputs.items()
-        ) or not set(applied_images(source)) <= set(inputs):
+        ) or not applied - decoded_image_files(source, applied) <= set(inputs):
             return False
     except OSError, ValueError:
         return False

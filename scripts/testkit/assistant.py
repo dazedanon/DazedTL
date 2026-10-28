@@ -15,7 +15,8 @@ the choice labels and help markers the game finds by their Japanese stay),
 images (index the game's images and investigate them, recommending each
 whose file name starts with text_), archived-images (decode a WOLF game's
 Data/Picture.wolf into a folder, translate its text_ images through the
-Images steps on that folder, pack it again and checkpoint it),
+Images steps on that folder, pack it again and checkpoint it, checking that
+the patch's download holds the image only inside the archive),
 checkpoint, the operation assistants started before the app checkpointed
 their work ran, play (run the release playtest and wait for it, printing
 where it stands), untranslated (translate the text Text QA counts as never
@@ -41,6 +42,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import zipfile
 from pathlib import Path
 
 from PIL import Image
@@ -241,7 +243,7 @@ class Assistant:
         starting prompt says for images in archives: decoded with WolfDawn
         into a folder the game doesn't read, run through the Images steps on
         that folder, packed into the archive again and checkpointed. Prints
-        what the steps and the patch's Git hold."""
+        what the steps, the patch's Git and its download hold."""
         self.report("images")
         found = subprocess.run(
             [*self.command, "images", "--status"],
@@ -367,6 +369,32 @@ class Assistant:
         print(
             "Patch:",
             ", ".join(name for name in tracked if name and not name.startswith(".")),
+        )
+        # GameUpdate downloads the patch as the forge's archive of the
+        # branch, which carries the decoded image only inside Picture.wolf.
+        with tempfile.TemporaryDirectory() as folder:
+            download = Path(folder) / "download.zip"
+            subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    str(self.game),
+                    "archive",
+                    "--format=zip",
+                    "--output",
+                    str(download),
+                    "HEAD",
+                ],
+                check=True,
+            )
+            with zipfile.ZipFile(download) as archive:
+                files = [name for name in archive.namelist() if not name.endswith("/")]
+        if "Data/Picture.wolf" not in files or any(
+            name.startswith(DECODED + "/") for name in files
+        ):
+            raise SystemExit("The patch download holds " + ", ".join(files))
+        print(
+            "Download:", ", ".join(name for name in files if not name.startswith("."))
         )
         self.report("patch")
 

@@ -6,6 +6,7 @@ import os
 import re
 import stat
 import tempfile
+from collections.abc import Iterable
 from contextlib import contextmanager
 from contextvars import ContextVar
 from functools import lru_cache
@@ -159,6 +160,17 @@ GAME_TOOL_GITATTRIBUTES_RULES = tuple(
 GAME_TOOL_GITATTRIBUTES_COMMENT = (
     "# DazedTL's glossary, settings and skills, and VX Ace's ace_json, stay out"
     " of players' downloads.\n"
+)
+# Images applied into a folder an assistant decoded from the game's archives
+# stay on the translation branch, so checkpoints restore them, but players
+# get them only inside the archive the assistant packs again. An
+# export-ignore rule DazedTL marks with its own attribute keeps the folder
+# out of every download, and the patch's file lists read the rule back
+# (decoded_image_files).
+DECODED_IMAGES_ATTRIBUTE = "dazedtl-decoded-images"
+DECODED_IMAGES_GITATTRIBUTES_COMMENT = (
+    "# Images decoded from the game's archives reach players inside the"
+    " archives.\n"
 )
 
 _ROOT_DATA_FILES = (
@@ -446,6 +458,69 @@ def game_tool_gitattributes_text(existing: str) -> str:
     if len(missing) == len(GAME_TOOL_GITATTRIBUTES_RULES):
         existing += GAME_TOOL_GITATTRIBUTES_COMMENT
     return existing + "".join(rule + "\n" for rule in missing)
+
+
+def _decoded_images_rule(folder: str) -> str:
+    """The .gitattributes rule for the game-relative `folder`, its glob
+    characters escaped and, holding a space or quote, quoted as Git reads
+    such a pattern."""
+    pattern = "/" + re.sub(r"([*?\[\\])", r"\\\1", folder)
+    if re.search(r'[\s"]', pattern):
+        pattern = '"' + pattern.replace("\\", "\\\\").replace('"', '\\"') + '"'
+    return f"{pattern} export-ignore {DECODED_IMAGES_ATTRIBUTE}"
+
+
+def decoded_images_gitattributes_text(existing: str, folder: str) -> str:
+    """Return a game's .gitattributes with the rule keeping `folder`, images
+    decoded from the game's archives, out of players' downloads, once."""
+    rule = _decoded_images_rule(folder)
+    if rule in {line.strip() for line in existing.splitlines()}:
+        return existing
+    if existing and not existing.endswith("\n"):
+        existing += "\n"
+    if DECODED_IMAGES_ATTRIBUTE not in existing:
+        existing += DECODED_IMAGES_GITATTRIBUTES_COMMENT
+    return existing + rule + "\n"
+
+
+def _decoded_image_folders(attributes: str) -> list[str]:
+    """The folders the rules decoded_images_gitattributes_text writes name."""
+    folders = []
+    for line in attributes.splitlines():
+        line = line.strip()
+        if line.startswith('"'):
+            quoted = re.match(r'"((?:[^"\\]|\\.)*)"(.*)', line)
+            if not quoted:
+                continue
+            pattern = re.sub(r"\\(.)", r"\1", quoted[1])
+            attributes_named = quoted[2].split()
+        else:
+            pattern, *attributes_named = line.split() or [""]
+        if (
+            DECODED_IMAGES_ATTRIBUTE in attributes_named
+            and "export-ignore" in attributes_named
+            and pattern.startswith("/")
+        ):
+            folders.append(re.sub(r"\\(.)", r"\1", pattern[1:]))
+    return folders
+
+
+def decoded_image_files(game_root: str | Path, names: Iterable[str]) -> set[str]:
+    """The game-relative `names` under a folder of images decoded from the
+    game's archives that its .gitattributes keeps out of players' downloads:
+    the translation branch keeps them, but no patch or game ZIP holds them."""
+    names = set(names)
+    attributes = Path(game_root) / ".gitattributes"
+    if not names or attributes.is_symlink() or not attributes.is_file():
+        return set()
+    folders = _decoded_image_folders(
+        attributes.read_text(encoding="utf-8", errors="surrogateescape")
+    )
+    return {
+        name
+        for name in names
+        if any(name.startswith(folder + "/") for folder in folders)
+    }
 
 
 def game_metadata_dir(game_root: str | Path, *, create: bool = False) -> Path:

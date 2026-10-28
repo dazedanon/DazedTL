@@ -2262,6 +2262,7 @@ export type ImageProfile = {
   id: string;
   label: string;
   imageRoot?: string;
+  decoded?: boolean;
   supported: boolean;
   reason?: string;
   context: string;

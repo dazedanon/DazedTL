@@ -5,6 +5,7 @@ import shutil
 import subprocess
 import time
 import unittest
+import zipfile
 from base64 import b64decode
 from contextlib import nullcontext, redirect_stdout
 from copy import deepcopy
@@ -58,7 +59,7 @@ class FixtureImages:
     def __init__(self):
         self.calls = []
 
-    def profile(self, root, engine, image_root=""):
+    def profile(self, root, engine, image_root="", decoded=False):
         return {
             "id": "generic",
             "label": "Loose PNGs",
@@ -1230,8 +1231,12 @@ class ImageFolderTests(unittest.TestCase):
             )
             self.assertEqual(service.assistant(identity, "status")["next"], "scan")
             self.assertFalse(service.state(identity)["investigated"])
+            # The user's folder ships its images; the assistant naming the
+            # same folder marks it decoded from the game's archives.
+            self.assertFalse(service.state(identity)["profile"]["decoded"])
             scan("decoded")
             state = service.state(identity)
+            self.assertTrue(state["profile"]["decoded"])
             self.assertEqual(state["selection"], [])
             self.assertEqual(
                 (state["view"]["folder"], state["discovery"]["folders"]), ("", [])
@@ -1344,3 +1349,111 @@ class AppliedImagePatchTests(unittest.TestCase):
             LenProject(self.game), ["data/Map001.json"], dry_run=True
         )
         self.assertNotIn(picture, scoped["untrack"])
+
+
+class DecodedImagePatchTests(unittest.TestCase):
+    """Images an assistant decoded from a game's archives into a folder the
+    game never reads, applied there through the Images steps."""
+
+    scan, choose, request, report, recipe, reviewed_candidate = (
+        ImageTests.scan,
+        ImageTests.choose,
+        ImageTests.request,
+        ImageTests.report,
+        ImageTests.recipe,
+        ImageTests.reviewed_candidate,
+    )
+    git = AppliedImagePatchTests.git
+
+    def setUp(self):
+        from dazedtl.compatibility.translation import TranslationEngine
+        from util.len_git import setup_git
+        from util.len_translation import LenProject
+
+        temporary = TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        root = Path(temporary.name)
+        self.game = root / "game"
+        shutil.copytree(Path(__file__).parent / "fixtures/mz-game", self.game)
+        self.engine = TranslationEngine(root / "engine")
+        self.manifest = {"files": {"data/Map001.json": {}}}
+        self.engine.audit_scope(self.game, self.manifest)
+        setup_git(LenProject(self.game), version="1.0", current_is_untranslated=True)
+        # Decoded after Git was set up, as from the game's archive.
+        write_bytes(self.game / "decoded/Picture/title.png", png())
+        projects = Projects(root / "profile")
+        self.identity = projects.open({"source": str(self.game), "engine": "WOLF"})[
+            "id"
+        ]
+        backend = SimpleNamespace(
+            source=root / "engine",
+            workspace=root / "engine",
+            context=nullcontext,
+            game_write=game_write,
+        )
+        translation = SimpleNamespace(
+            workspace=root / "profile",
+            idle=lambda _: None,
+            clean_drafts=lambda _: None,
+            writable=lambda _: None,
+        )
+        self.service = ImageService(
+            projects,
+            translation,
+            SETTINGS,
+            backend,
+            adapter=ImageCompatibility(backend),
+        )
+        self.service.assistant(self.identity, "scan", "decoded")
+        self.scan()
+
+    def test_a_decoded_image_stays_on_the_branch_but_out_of_every_zip(self):
+        # The patch ZIP and the clean game ZIP held the decoded image beside
+        # the archive the assistant packed it into again.
+        picture = "decoded/Picture/title.png"
+        self.assertTrue(self.service.state(self.identity)["profile"]["decoded"])
+        candidate = self.reviewed_candidate(picture)
+        step = self.service.assistant(self.identity, "apply")
+        self.assertEqual((step["next"], step["applied"]), ("done", [picture]))
+        # The branch keeps it, so checkpoints restore it.
+        self.assertEqual(self.git("show", "HEAD:" + picture), candidate)
+        self.assertIn(
+            b"/decoded export-ignore dazedtl-decoded-images",
+            self.git("show", "HEAD:.gitattributes"),
+        )
+        self.assertFalse(self.git("status", "--porcelain"))
+        for stamped in (True, False):
+            self.assertNotIn(
+                picture,
+                self.engine.patch_files(self.game, self.manifest, stamped=stamped)[
+                    "files"
+                ],
+            )
+        # GameUpdate's forge downloads are Git archives too.
+        with zipfile.ZipFile(
+            BytesIO(self.git("archive", "--format=zip", "HEAD"))
+        ) as archive:
+            names = archive.namelist()
+        self.assertIn("data/Map001.json", names)
+        self.assertNotIn(picture, names)
+        # The patch ZIP the assistant packages leaves it out too, and still
+        # reads current with the image applied that it never holds.
+        from dazedtl.translation.release import basis, current, stamp
+
+        built = self.engine.package(
+            self.game,
+            {
+                "mode": "agent",
+                "include_images": False,
+                "instructions": "",
+                "include_glossary_base": False,
+                "install_forge": False,
+            },
+            self.manifest,
+            self.game.parent / "deliveries",
+        )
+        with zipfile.ZipFile(built["path"]) as archive:
+            self.assertEqual(archive.namelist(), ["data/", "data/Map001.json"])
+        delivery = {**built, "stamp": stamp(built["path"])}
+        delivery.update(basis(self.game, delivery.pop("paths")))
+        self.assertTrue(current(delivery, self.game))

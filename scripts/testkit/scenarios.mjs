@@ -1505,7 +1505,7 @@ export const scenarios = {
   },
   "images-archived": {
     description:
-      "An Assistant-led project on the wolf game: the assistant decodes Data/Picture.wolf into a folder, translates its lettered title through the Images steps on that folder, packs the archive again and checkpoints it into the patch.",
+      "An Assistant-led project on the wolf game: the assistant decodes Data/Picture.wolf into a folder, translates its lettered title through the Images steps on that folder, packs the archive again and checkpoints it into the patch, whose download holds the title only inside the archive; Release builds a clean game ZIP without the decoded folder, and the apply is undone in Checkpoints and put back.",
     game: "wolf",
     steps: () => [
       assistantLed[0],
@@ -1525,6 +1525,63 @@ export const scenarios = {
           console.log(
             `\n  ${(await assistant(page, state, "archived-images")).trim().replaceAll("\n", "\n  ")}`,
           );
+        },
+      ],
+      [
+        "Release builds a clean game ZIP with the archive the image was packed into, not the decoded image",
+        async ({ page }) => {
+          await page.click("Release");
+          const [folder, name] = await page.evaluate(
+            `[document.querySelector("[aria-label='Save in']").value, document.querySelector(".guided-package-fields input").value]`,
+          );
+          await page.click("Build clean game ZIP");
+          // Done, not Outdated, with the applied image it leaves out.
+          await page.waitText("Last saved game ZIP\nDone", 5 * 60_000);
+          const top = name.replace(/\.zip$/, "");
+          const files = [...entries(fs.readFileSync(path.join(folder, name)))]
+            .map((entry) => entry.path)
+            .filter((entry) => !entry.endsWith("/"));
+          if (
+            !files.includes(`${top}/Data/Picture.wolf`) ||
+            files.some((entry) => entry.startsWith(`${top}/decoded/`))
+          )
+            throw new Error(`The clean game ZIP holds ${files.join(", ")}.`);
+        },
+      ],
+      [
+        "Undo the image apply in Checkpoints, then undo the undo",
+        async ({ page, state }) => {
+          const project_id = (await page.call("workspace_snapshot")).application
+            .project.id;
+          const title = path.join(state.game, "decoded/Picture/text_title.png");
+          const translated = fs.readFileSync(title);
+          const applied = async () =>
+            (await page.call("images_state", { project_id })).counts.applied;
+          await page.click("Project");
+          await page.click("Checkpoints");
+          await page.click(/^More actions for Apply translated images,/);
+          await page.click(/^Undo this change/);
+          await page.waitText("Undone;");
+          await page.idle();
+          if (
+            (fs.existsSync(title) &&
+              fs.readFileSync(title).equals(translated)) ||
+            (await applied()) !== 0
+          )
+            throw new Error("The undo left the translated title applied.");
+          await page.click(
+            /^More actions for Undid “Apply translated images”,/,
+          );
+          await page.click(/^Undo this change/);
+          await until("the redo to finish", async () =>
+            (await page.text()).includes("Redid “Apply translated images”"),
+          );
+          await page.idle();
+          if (
+            !fs.readFileSync(title).equals(translated) ||
+            (await applied()) !== 1
+          )
+            throw new Error("Undoing the undo left the title untranslated.");
         },
       ],
     ],
