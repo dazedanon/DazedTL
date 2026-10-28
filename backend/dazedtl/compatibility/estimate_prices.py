@@ -30,6 +30,14 @@ def output_tokens(source_tokens):
     return output_allowance(source_tokens)
 
 
+def output_multiple():
+    """The output an estimate allows per source-text token, which a quote's
+    basis names."""
+    from util.translation import OUTPUT_ALLOWANCE
+
+    return OUTPUT_ALLOWANCE
+
+
 def output_rules(quote):
     """The ``output_tokens`` rule version a saved quote counted by; one saved
     before quotes recorded it reads as version 1."""
@@ -48,7 +56,11 @@ def prices(counts, configuration, provider, cache=None):
     ``batch_max_cost`` with none; ``batch_cost`` is the price a Translate
     estimate shows.
     """
-    from util.provider_costs import PRICE_RULES_VERSION, batch_price_factor
+    from util.provider_costs import (
+        PRICE_RULES_VERSION,
+        batch_price_factor,
+        shown_batch_price,
+    )
     from util.translation import claude_cache_prices, openai_cache_prices
 
     from dazedtl.settings.effort import summary, thinks
@@ -114,35 +126,21 @@ def prices(counts, configuration, provider, cache=None):
         # The reads stay as counted, so the estimate is priced again for
         # another model from them; the hits are what this model's Batch reads.
         reads = min(inputs, counts["cache_read_tokens"])
-        hits, writes, max_writes, cached, most = openai_cache_prices(
-            inputs,
-            outputs,
-            reads,
-            counts["cacheable_tokens"],
-            model,
-            in_rate,
-            out_rate,
-            nocache,
-        )
         value.update(
             cache_read_tokens=reads,
-            cache_write_tokens=writes,
-            batch_cached_cost=cached,
-            # Without billed writes, the cached prefixes estimateBatchCost
-            # counted beside the rest of the input.
-            cache_max_write_tokens=inputs - counts.get("dynamic_tokens", inputs)
-            if max_writes is None
-            else max_writes,
-            uses_prompt_cache=bool(hits),
-            cache_kind="automatic" if hits else None,
+            **openai_cache_prices(
+                inputs,
+                outputs,
+                reads,
+                counts["cacheable_tokens"],
+                counts.get("dynamic_tokens", inputs),
+                model,
+                in_rate,
+                out_rate,
+                nocache,
+            ),
         )
-        if most is not None:
-            value["batch_max_cost"] = most
-    value["batch_cost"] = (
-        value["batch_cached_cost"]
-        if value["uses_prompt_cache"]
-        else value["batch_nocache_cost"]
-    )
+    value["batch_cost"] = value[shown_batch_price(value)]
     return value
 
 

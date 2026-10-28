@@ -1435,10 +1435,11 @@ class CompatibilityContracts(unittest.TestCase):
             ("openai/gpt-4.1-mini", None),
         ):
             with self.subTest(model):
-                hits, _writes, _most_writes, cached, _most = openai_cache_prices(
-                    1_000_000, 100_000, 900_000, 1_000_000, model, 2e-6, 8e-6, 1.4
+                value = openai_cache_prices(
+                    1_000_000, 100_000, 900_000, 1_000_000, 0, model, 2e-6, 8e-6, 1.4
                 )
-                self.assertEqual(hits, 0 if read is None else 900_000)
+                cached = value["batch_cached_cost"]
+                self.assertEqual(value["uses_prompt_cache"], read is not None)
                 self.assertAlmostEqual(cached, (0.2 + 1.8 * (read or 1) + 0.8) / 2)
                 # Assistant-led's quote offers a reused figure only when the
                 # Batch reads, and approves the same most either way.
@@ -1466,11 +1467,62 @@ class CompatibilityContracts(unittest.TestCase):
                     self.assertAlmostEqual(quoted["batch_cost_reused"], cached)
         # GPT-6.1 Sol reads at a twentieth and writes the rest of its
         # cacheable input at 1.25 times.
-        hits, writes, _most_writes, cached, _most = openai_cache_prices(
-            1_000_000, 100_000, 800_000, 1_000_000, "gpt-6.1-sol", 2e-6, 8e-6, 1.4
+        value = openai_cache_prices(
+            1_000_000, 100_000, 800_000, 1_000_000, 0, "gpt-6.1-sol", 2e-6, 8e-6, 1.4
         )
-        self.assertEqual((hits, writes), (800_000, 200_000))
-        self.assertAlmostEqual(cached, (0.5 + 1.6 * 0.05 + 0.8) / 2)
+        self.assertEqual(value["cache_write_tokens"], 200_000)
+        self.assertAlmostEqual(value["batch_cached_cost"], (0.5 + 1.6 * 0.05 + 0.8) / 2)
+
+    def test_an_openai_batch_that_only_writes_the_cache_shows_those_writes(self):
+        # A GPT-5.6-or-later Batch whose cacheable prompts share no prefix
+        # expects no reads, but OpenAI's Batch still bills each prompt's
+        # cache write at 1.25 times input. Its Guided Batch price and the
+        # whole-game estimate's once showed the price without a cache, below
+        # the most the Batch costs.
+        from dazedtl.compatibility.estimate_prices import prices
+        from dazedtl.compatibility.full_estimate import prices as row_prices
+
+        value = prices(
+            {
+                "input_tokens": 1_000_000,
+                "output_tokens": 100_000,
+                "cache_read_tokens": 0,
+                "cacheable_tokens": 600_000,
+                "dynamic_tokens": 1_000_000,
+            },
+            {"model": "gpt-6.1-sol", "rates": {"input": 2, "output": 8}},
+            "openai",
+        )
+        most = (0.8 + 0.6 * 1.25 * 2 + 0.8) / 2
+        self.assertEqual(
+            (value["cache_write_tokens"], value["cache_kind"]), (600_000, "automatic")
+        )
+        self.assertAlmostEqual(value["batch_cost"], most)
+        self.assertAlmostEqual(value["batch_max_cost"], most)
+        self.assertEqual(
+            {
+                key: value
+                for key, value in row_prices(value).items()
+                if key in ("promptCache", "batchCost", "batchMaxCost")
+            },
+            {"promptCache": True, "batchCost": most, "batchMaxCost": most},
+        )
+        # A -pro model's Batch has no prompt cache, so it writes none either.
+        pro = prices(
+            {
+                "input_tokens": 1_000_000,
+                "output_tokens": 100_000,
+                "cache_read_tokens": 0,
+                "cacheable_tokens": 600_000,
+                "dynamic_tokens": 1_000_000,
+            },
+            {"model": "gpt-6.1-pro", "rates": {"input": 2, "output": 8}},
+            "openai",
+        )
+        self.assertEqual(
+            (pro["cache_write_tokens"], pro["uses_prompt_cache"]), (0, False)
+        )
+        self.assertAlmostEqual(pro["batch_max_cost"], (2 + 0.8) / 2)
 
     def test_a_stopped_batch_records_its_cache_reads_as_a_completed_one_does(self):
         # A canceled Batch's paid rows once added their whole prompt to

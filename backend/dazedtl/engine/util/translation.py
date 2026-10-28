@@ -37,6 +37,7 @@ from util.provider_costs import (
     has_billed_cache_writes,
     openai_batch_caches,
     received_at,
+    shown_batch_price,
     time_price_factor,
     time_priced_route,
     uncached_usage,
@@ -2385,11 +2386,18 @@ def _estimate_openai_cache_reads(prompt_token_sequences):
     return cached_tokens
 
 
+# The output tokens an estimate allows per source-text token: the echoed JSON
+# scaffold plus the translation's expansion. A change raises
+# estimate_prices.OUTPUT_RULES_VERSION for Assistant-led quotes and the
+# versions Guided's saved estimates follow (guided_runs.RUN_VERSION,
+# full_estimate.ESTIMATE_VERSION).
+OUTPUT_ALLOWANCE = 2.5
+
+
 def output_allowance(source_tokens):
     """The output tokens an estimate allows a request whose source text
-    counts ``source_tokens``: 2.5 times covers the echoed JSON scaffold plus
-    the translation's expansion."""
-    return round(source_tokens * 2.5)
+    counts ``source_tokens`` (OUTPUT_ALLOWANCE times)."""
+    return round(source_tokens * OUTPUT_ALLOWANCE)
 
 
 def prompt_text(params):
@@ -2501,28 +2509,38 @@ def unestimatedThinking(provider, model):
 
 
 def openai_cache_prices(
-    inputs, outputs, reads, cacheable, model, in_rate, out_rate, plain
+    inputs, outputs, reads, cacheable, dynamic, model, in_rate, out_rate, plain
 ):
-    """An OpenAI Batch's prices with its automatic prompt cache, from token
-    counts and per-token rates. ``reads`` are the input tokens expected to hit
-    the cache, ``cacheable`` those in prompts long enough to cache, and
+    """An OpenAI Batch's cache figures and prices with its automatic prompt
+    cache, from token counts and per-token rates, as estimateBatchCost and
+    estimate_prices.prices both report them. ``reads`` are the input tokens
+    expected to hit the cache, ``cacheable`` those in prompts long enough to
+    cache, ``dynamic`` those after each request's cached prefix, and
     ``plain`` the Batch's price without a cache, as the caller priced it.
 
-    Cached inputs cost the model's cache-read price (cache_read_multiplier);
+    Cached inputs cost the model's cache-read price (cache_read_multiplier)
+    and, on models that bill them, written ones its cache-write price;
     Batch then applies its own discount (batch_price_factor). A model whose
-    Batch doesn't cache (openai_batch_caches) expects no hits.
-    Returns the cache hits it expects, the tokens written, then (for models
-    that bill writes) the most that can be written, the price with the
-    expected hits, which is ``plain`` when nothing is read or written, and
-    the price with none, which is None with the most written for models that
-    don't bill writes.
+    Batch doesn't cache (openai_batch_caches) expects no hits and writes
+    nothing.
+    ``batch_cached_cost`` is the price with the expected hits, ``plain`` when
+    nothing is read on models that don't bill writes, and ``batch_max_cost``
+    the price with none, every cacheable prompt written on models that bill
+    writes. The estimate
+    expects the cache, and shows its cached price (shown_batch_price), when it
+    reads or writes any of it: a Batch whose prompts share no prefix still
+    writes them.
     """
-    if not openai_batch_caches(model):
+    caches = openai_batch_caches(model)
+    if not caches:
         reads = 0
     multiplier = cache_write_multiplier("openai", model)
     factor = batch_price_factor("openai")
-    writes, max_writes, most = 0, None, None
-    if has_billed_cache_writes("openai", model):
+    # Without billed writes, the cached prefixes counted beside the rest of
+    # the input.
+    writes, max_writes, most = 0, inputs - dynamic, plain
+    billed = caches and has_billed_cache_writes("openai", model)
+    if billed:
         writes = max(0, min(inputs - reads, cacheable - reads))
         # Without a hit, every cacheable prompt is written instead.
         max_writes = min(inputs, cacheable)
@@ -2537,10 +2555,18 @@ def openai_cache_prices(
         + reads * in_rate * cache_read_multiplier("openai", model)
         + outputs * out_rate
     ) * factor
-    if not reads and max_writes is None:
+    expected = bool(reads or writes)
+    if not reads and not billed:
         # The same price, without the rounding of another formula.
         cached = plain
-    return reads, writes, max_writes, cached, most
+    return {
+        "cache_write_tokens": writes,
+        "cache_max_write_tokens": max_writes,
+        "batch_cached_cost": cached,
+        "batch_max_cost": most,
+        "uses_prompt_cache": expected,
+        "cache_kind": "automatic" if expected else None,
+    }
 
 
 @extensions.point
@@ -2655,20 +2681,22 @@ def estimateBatchCost(model=None, *, queue_file=None, log_prefix="[BATCH]"):
         # The reads stay as counted, so the estimate is priced again for
         # another model from them; the hits are what this model's Batch reads.
         cache_read_tok = min(raw_input_tok, cache_read_tok)
-        hits, cache_write_tok, max_writes, batch_cached, most = openai_cache_prices(
+        cached = openai_cache_prices(
             raw_input_tok,
             output_tokens,
             cache_read_tok,
             cacheable_tokens,
+            dynamic_tokens,
             est_model,
             in_rate,
             out_rate,
             batch_nocache,
         )
-        if max_writes is not None:
-            cache_max_write_tok, batch_max = max_writes, most
-        if hits:
-            cache_kind = "automatic"
+        cache_write_tok = cached["cache_write_tokens"]
+        cache_max_write_tok = cached["cache_max_write_tokens"]
+        batch_cached = cached["batch_cached_cost"]
+        batch_max = cached["batch_max_cost"]
+        cache_kind = cached["cache_kind"]
     else:
         # We do not create Gemini explicit cache resources for these jobs.
         # Implicit hits are not guaranteed, so only expose the worst case.
@@ -2755,11 +2783,7 @@ def estimateTranslationCosts(model=None):
         return None
     estimate = dict(estimate)
     estimate["batch_supported"] = True
-    estimate["batch_cost"] = (
-        estimate["batch_cached_cost"]
-        if estimate.get("uses_prompt_cache")
-        else estimate["batch_nocache_cost"]
-    )
+    estimate["batch_cost"] = estimate[shown_batch_price(estimate)]
     estimate["basis"] = "request_queue"
     return estimate
 

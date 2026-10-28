@@ -298,7 +298,6 @@ def row(task, estimate):
         "requests": int(number(estimate, "requests")),
         "inputTokens": int(number(estimate, "input_tokens")),
         "outputTokens": int(number(estimate, "output_tokens")),
-        "promptCache": bool(estimate.get("uses_prompt_cache")),
         "approximateInput": bool(estimate.get("approximate_input")),
         **prices(estimate),
     }
@@ -306,9 +305,11 @@ def row(task, estimate):
 
 def prices(estimate):
     """A task line's prices, from its estimate."""
-    cached = bool(estimate.get("uses_prompt_cache"))
-    batch = number(estimate, "batch_cached_cost" if cached else "batch_nocache_cost")
+    from util.provider_costs import shown_batch_price
+
+    batch = number(estimate, shown_batch_price(estimate))
     return {
+        "promptCache": bool(estimate.get("uses_prompt_cache")),
         "liveCost": number(estimate, "live_cost"),
         "batchCost": batch,
         "batchMaxCost": max(batch, number(estimate, "batch_max_cost")),
