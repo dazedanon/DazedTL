@@ -40,7 +40,12 @@ from util import claude_tokens, request_debug
 from util.batch_providers import KIMI_API_URL
 from util import extensions
 from util.sfx_reference import build_sfx_reference_text
-from util.vocab import decorative_glossary_alias, split_glossary_row
+from util.vocab import (
+    decorative_glossary_alias,
+    glossary_category,
+    split_glossary_row,
+    split_vocab_source_aliases,
+)
 from util.languages import (
     JAPANESE,
     LATIN_LETTERS,
@@ -3998,27 +4003,6 @@ def _parsed_vocab(vocabText):
     return tuple(pairs)
 
 
-_VOCAB_SOURCE_ALIAS_SPLIT_RE = re.compile(r"\s*[\/／]\s*")
-
-
-def split_vocab_source_aliases(source: str) -> list[str]:
-    """Expand ``ニーナ / ネーナ・エヴァンス`` into individual source keys.
-
-    Curated Game Characters rows often list orthographic or full-name variants
-    separated by ASCII or fullwidth slashes. Speaker lookup and glossary matching
-    must treat each variant as covered by the same English gloss.
-    """
-    text = str(source or "").strip()
-    if not text:
-        return []
-    parts = [
-        part.strip()
-        for part in _VOCAB_SOURCE_ALIAS_SPLIT_RE.split(text)
-        if part.strip()
-    ]
-    return parts or [text]
-
-
 def normalize_vocab_source_key(source: str) -> str:
     """NFKC-normalize a glossary/speaker source for coverage checks."""
     return unicodedata.normalize("NFKC", str(source or "")).strip()
@@ -4395,10 +4379,7 @@ def _vocab_index(vocabPairs):
     for candidate_term, candidate_line, candidate_category in vocabPairs:
         if not isinstance(candidate_term, tuple) or len(candidate_term) != 2:
             continue
-        candidate_name = str(candidate_category or "").lstrip("#").strip().casefold()
-        candidate_primary = re.split(
-            r"\s*[·・|/]\s*", candidate_name, maxsplit=1
-        )[0]
+        candidate_primary = glossary_category(candidate_category)
         priority = {"game characters": 2, "speakers": 1}.get(candidate_primary, 0)
         if not priority:
             continue
@@ -4433,10 +4414,7 @@ def _vocab_index(vocabPairs):
         texts = []
         if isinstance(term, tuple):
             japanese_term, english_term = term
-            category_name = str(category or "").lstrip("#").strip().casefold()
-            category_primary = re.split(
-                r"\s*[·・|/]\s*", category_name, maxsplit=1
-            )[0]
+            category_primary = glossary_category(category)
             source_aliases = split_vocab_source_aliases(japanese_term)
             texts.extend([japanese_term, english_term, *source_aliases])
             if category_primary == "game characters":
@@ -4497,10 +4475,7 @@ def buildMatchedVocabText(vocabPairs, subbedText, history=None):
         if isinstance(term, tuple):
             # Check both Japanese and English terms
             japanese_term, english_term = term
-            category_name = str(category or "").lstrip("#").strip().casefold()
-            category_primary = re.split(
-                r"\s*[·・|/]\s*", category_name, maxsplit=1
-            )[0]
+            category_primary = glossary_category(category)
             component_targets = character_component_sources.get(japanese_term)
             speaker_alias_match = _speaker_alias_in_text(
                 japanese_term, textToSearch
@@ -4648,7 +4623,7 @@ def createContextParts(config, subbedText, formatType, history=None, *, speaker_
         # normalization/honorific/OCR lookup keys.
         character_sources = set()
         for term, _line, category in vocabPairs:
-            primary = re.split(r"\s*[·・|/]\s*", str(category or "").lstrip("#").strip().casefold(), maxsplit=1)[0]
+            primary = glossary_category(category)
             if isinstance(term, tuple) and primary in {"game characters", "speakers"}:
                 character_sources.update(split_vocab_source_aliases(term[0]))
         tags = []

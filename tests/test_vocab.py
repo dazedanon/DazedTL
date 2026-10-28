@@ -6,6 +6,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from util.len_translation import LenProject, import_glossary
 from util.paths import ensure_game_glossary
 from util.vocab import BASE_SEPARATOR, update_vocab_section
 
@@ -68,6 +69,40 @@ class GlossarySectionTests(unittest.TestCase):
         # Not merging still replaces the section, as other callers rely on.
         text = self.update("Skills", [("水", "Water")])
         self.assertIn("# Skills\n水 (Water)\n\n", text)
+
+    def test_importing_adds_to_the_sections_already_there(self):
+        # Assistant-led's import appended a second "# Game Characters" header
+        # after the existing text, which Guided's merge never read, so it could
+        # add a row the second section held.
+        self.write("# Game Characters\nサンク (Sank) - Male\nニーナ / ネーナ (Nina)")
+        project = LenProject(self.root)
+        result = import_glossary(
+            project,
+            {
+                "names": {
+                    "リナ": {"en": "Rina", "gender": "female"},
+                    "ネーナ": {"en": "Nina"},
+                },
+                "terms": {"魔石": "Magic Stone"},
+            },
+        )
+        self.assertEqual((result["added"], result["preserved"]), (2, 1))
+        merged = (
+            "# Game Characters\nサンク (Sank) - Male\nニーナ / ネーナ (Nina)\n"
+            "リナ (Rina) - gender: female\n\n# Game Terms\n魔石 (Magic Stone)\n\n"
+            + BASE
+        )
+        self.assertEqual(self.glossary.read_text(encoding="utf-8"), merged)
+        # A name a slash variant covers with the same translation is no new row.
+        self.assertEqual(
+            self.update("Game Characters", [("ニーナ", "Nina")], merge=True), merged
+        )
+        before = self.glossary.read_bytes()
+        with self.assertRaisesRegex(ValueError, "conflicts"):
+            import_glossary(
+                project, {"names": {"リナ": {"en": "Lina"}, "新人": {"en": "Newbie"}}}
+            )
+        self.assertEqual(self.glossary.read_bytes(), before)
 
 
 if __name__ == "__main__":

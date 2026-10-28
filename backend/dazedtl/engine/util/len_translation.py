@@ -293,8 +293,8 @@ def import_glossary(project: LenProject, document: dict) -> dict:
     Existing decisions are preserved. Any conflicting source/alias aborts the entire import.
     Non-display identifiers remain extraction metadata in the original JSON, never prompt rows.
     """
-    from util.translation import parseVocabWithCategories, split_vocab_source_aliases
-    from util.vocab import read_game_vocab, write_game_vocab
+    from util.translation import parseVocabWithCategories
+    from util.vocab import append_vocab_rows, glossary_row_sources
 
     _validate_project(project)
     if not isinstance(document, dict):
@@ -327,7 +327,7 @@ def import_glossary(project: LenProject, document: dict) -> dict:
         parsed = parseVocabWithCategories(f"{category}\n{source} ({target})")
         if not parsed or parsed[0][0] != (source, target):
             raise ValueError(f"Cannot represent {source} ({target}) in the shared glossary format.")
-        aliases = split_vocab_source_aliases(source) if category == "# Game Characters" else [source]
+        aliases = glossary_row_sources(source, category)
         if any(pair.issubset(aliases) for pair in protected_pairs):
             raise ValueError(f"Give protected identities in {source} separate name entries.")
         for alias in aliases:
@@ -360,29 +360,28 @@ def import_glossary(project: LenProject, document: dict) -> dict:
     for source, target in terms.items():
         add(source, target, "", "# Game Terms")
 
-    current = read_game_vocab(project.game_root, create=False)
-    existing: dict[str, str] = {}
-    for pair, _line, category in parseVocabWithCategories(current):
-        if not isinstance(pair, tuple):
-            continue
-        source, target = pair
-        aliases = split_vocab_source_aliases(source) if category in {"# Game Characters", "# Speakers"} else [source]
-        for alias in aliases:
-            if alias in existing and existing[alias] != target:
-                raise ValueError(f"Resolve conflicting existing glossary entries for {alias} first.")
-            existing[alias] = target
-    conflicts = [source for source, (target, *_rest) in candidates.items() if source in existing and existing[source] != target]
-    if conflicts:
-        raise ValueError("Import conflicts with the shared glossary: " + ", ".join(conflicts))
-    additions = {source: entry for source, entry in candidates.items() if source not in existing}
-    if additions:
-        pieces = [current.rstrip()]
-        for category in ("# Game Characters", "# Game Terms"):
-            rows = [f"{source} ({target})" + (f" - {notes}" if notes else "")
-                    for source, (target, notes, owner) in additions.items() if owner == category]
-            if rows:
-                pieces.append(category + "\n" + "\n".join(rows))
-        write_game_vocab("\n\n".join(pieces) + "\n", project.game_root)
+    additions: dict[str, tuple[str, str, str]] = {}
+
+    def sections(current: str) -> dict[str, list[tuple[str, str, str]]]:
+        """The rows to add to the glossary as it is under the write lock."""
+        existing: dict[str, str] = {}
+        for pair, _line, category in parseVocabWithCategories(current):
+            if not isinstance(pair, tuple):
+                continue
+            source, target = pair
+            for alias in glossary_row_sources(source, category):
+                if alias in existing and existing[alias] != target:
+                    raise ValueError(f"Resolve conflicting existing glossary entries for {alias} first.")
+                existing[alias] = target
+        conflicts = [source for source, (target, *_rest) in candidates.items() if source in existing and existing[source] != target]
+        if conflicts:
+            raise ValueError("Import conflicts with the shared glossary: " + ", ".join(conflicts))
+        additions.update((source, entry) for source, entry in candidates.items() if source not in existing)
+        return {owner.removeprefix("# "): [(source, target, notes) for source, (target, notes, category) in additions.items()
+                                           if category == owner]
+                for owner in ("# Game Characters", "# Game Terms")}
+
+    append_vocab_rows(sections, game_root=project.game_root)
     return {"added": len(additions), "preserved": len(candidates) - len(additions),
             "glossary_file": str(game_glossary_path(project.game_root, migrate=False)),
             "extraction_metadata": document.get("do_not_translate", [])}

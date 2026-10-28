@@ -35,8 +35,8 @@ BASE_SEPARATOR = GLOSSARY_BASE_SEPARATOR
 
 _EMPTY_PLACEHOLDER = "# Add character glossary entries here\n"
 
-# Guards the read-modify-write in update_vocab_section against concurrent
-# translation file-threads clobbering each other's sections.
+# Guards each glossary write, and the read-modify-write of a merge, against
+# concurrent translation file-threads clobbering each other's sections.
 _VOCAB_LOCK = threading.Lock()
 
 # Collect freezes the glossary for collect-time prompts and for rematching
@@ -170,8 +170,28 @@ def write_game_vocab(game_text: str, game_root=None) -> None:
     base_text = (
         base_path.read_text(encoding="utf-8") if base_path.is_file() else ""
     )
-    combined = game_text + "\n\n" + BASE_SEPARATOR + base_text
-    _path(game_root).write_text(combined, encoding="utf-8", newline="\n")
+    with _VOCAB_LOCK:
+        _replace_glossary(
+            _path(game_root), game_text + "\n\n" + BASE_SEPARATOR + base_text
+        )
+
+
+def _replace_glossary(path: Path, text: str) -> None:
+    """Replace the glossary in one step, so a reader never sees half of it.
+    Callers hold :data:`_VOCAB_LOCK`."""
+    tmp_path = path.with_suffix(
+        path.suffix + f".{os.getpid()}.{threading.get_ident()}.tmp"
+    )
+    tmp_path.write_text(text, encoding="utf-8", newline="\n")
+    system.replace(tmp_path, path)
+
+
+def _read_glossary(game_root=None) -> str:
+    """The whole glossary as a merge starts from it: a named game's without
+    creating it, else the active glossary, which may be the user's own file."""
+    if game_root is None:
+        return _path(None).read_text(encoding="utf-8")
+    return read_game_glossary(game_root, create=False)
 
 
 def _norm(s: str) -> str:
@@ -205,10 +225,56 @@ def split_glossary_row(line: str) -> tuple[str, str, str] | None:
 UNVERIFIED_NAMEPLATE = "Unverified nameplate"
 
 
+def glossary_row(source: str, translation: str, notes: str = "") -> str:
+    """One glossary row: ``source (translation)``, with ``- notes`` after it
+    when there are any."""
+    return f"{source} ({translation})" + (f" - {notes}" if notes else "")
+
+
 def unverified_nameplate_row(source: str, translation: str, origin: str) -> str:
     """A glossary row for a nameplate translated apart from its story, marked
     for Project Setup to confirm or correct."""
-    return f"{source} ({translation}) - {UNVERIFIED_NAMEPLATE}, {origin}."
+    return glossary_row(source, translation, f"{UNVERIFIED_NAMEPLATE}, {origin}.")
+
+
+_SOURCE_ALIAS_SPLIT_RE = re.compile(r"\s*[\/／]\s*")
+_CATEGORY_NAME_SPLIT_RE = re.compile(r"\s*[·・|/]\s*")
+# Sections whose ``A / B`` sources list variants of one name.
+ALIAS_CATEGORIES = frozenset({"game characters", "speakers"})
+
+
+def split_vocab_source_aliases(source: str) -> list[str]:
+    """Expand ``ニーナ / ネーナ・エヴァンス`` into individual source keys.
+
+    Curated Game Characters rows often list orthographic or full-name variants
+    separated by ASCII or fullwidth slashes. Speaker lookup and glossary matching
+    must treat each variant as covered by the same English gloss.
+    """
+    text = str(source or "").strip()
+    if not text:
+        return []
+    parts = [
+        part.strip()
+        for part in _SOURCE_ALIAS_SPLIT_RE.split(text)
+        if part.strip()
+    ]
+    return parts or [text]
+
+
+def glossary_category(header) -> str:
+    """A section header's category name, ``"game characters"`` for
+    ``# Game Characters · キャラクター``."""
+    name = str(header or "").lstrip("#").strip().casefold()
+    return _CATEGORY_NAME_SPLIT_RE.split(name, maxsplit=1)[0]
+
+
+def glossary_row_sources(source: str, header) -> list[str]:
+    """The sources a row in section ``header`` covers: each slash variant in a
+    character or speaker section, as requests match them, else the whole
+    source."""
+    if glossary_category(header) in ALIAS_CATEGORIES:
+        return split_vocab_source_aliases(source)
+    return [source]
 
 
 def is_unverified_nameplate(rest: str) -> bool:
@@ -269,17 +335,26 @@ def normalize_generated_glossary_pair(source: str, target: str) -> tuple[str, st
 
 
 def _merge_section_rows(
-    section_body: str, pairs: dict[str, str], *, overwrite: bool = False
+    category: str,
+    section_body: str,
+    entries: dict[str, tuple[str, str]],
+    *,
+    overwrite: bool = False,
 ) -> list[str]:
-    """Return a section's rows with ``pairs`` merged in.
+    """Return a section's rows with ``entries`` (source to translation and
+    notes) merged in.
 
     Existing rows stay exactly as written, including a note after the
     translation (``サンク (Sank) - Male``), and sources the section lacks are
-    appended. With ``overwrite`` a source already present takes its new
-    translation, unless its row carries a note: that row was written by hand.
+    appended after them. A source the section holds already, or covers with
+    the same translation through a slash variant of a character or speaker
+    row (``ニーナ / ネーナ (Nina)``), is not added again. With ``overwrite`` a
+    source already present takes its new translation, unless its row carries
+    a note: that row was written by hand.
     """
     rows = section_body.rstrip().splitlines()
     present = set()
+    covered: set[tuple[str, str]] = set()
     for index, row in enumerate(rows):
         text = row.strip()
         found = _SECTION_ROW_SOURCE_RE.match(text)
@@ -287,10 +362,102 @@ def _merge_section_rows(
             continue
         source = found.group(1)
         present.add(source)
-        if overwrite and source in pairs and _SECTION_PLAIN_ROW_RE.match(text):
-            rows[index] = f"{source} ({pairs[source]})"
-    rows.extend(f"{src} ({dst})" for src, dst in pairs.items() if src not in present)
+        parsed = split_glossary_row(text)
+        if parsed:
+            covered.update(
+                (alias, parsed[1])
+                for alias in glossary_row_sources(parsed[0], category)
+            )
+        if overwrite and source in entries and _SECTION_PLAIN_ROW_RE.match(text):
+            rows[index] = glossary_row(source, entries[source][0])
+    rows.extend(
+        glossary_row(source, target, notes)
+        for source, (target, notes) in entries.items()
+        if source not in present and (source, target) not in covered
+    )
     return rows
+
+
+def _section_pattern(category: str) -> re.Pattern:
+    """A ``# {category}`` section of the game part, up to the next header.
+    Handles '#Cat', '# Cat', '## Cat', etc."""
+    return re.compile(
+        rf"^([\t ]*#+\s*{re.escape(category)}\s*$\r?\n)(.*?)(?=^[\t ]*#|\Z)",
+        re.MULTILINE | re.DOTALL,
+    )
+
+
+def _merge_section(
+    game_part: str,
+    category: str,
+    entries: dict[str, tuple[str, str]],
+    *,
+    merge: bool,
+    overwrite: bool = False,
+) -> str:
+    """The game part with ``entries`` merged into, or replacing, the first
+    ``# {category}`` section, which is added at the end when there is none."""
+    pattern = _section_pattern(category)
+    match = pattern.search(game_part)
+    if merge and match:
+        block_lines = _merge_section_rows(
+            category, match.group(2), entries, overwrite=overwrite
+        )
+    else:
+        block_lines = [glossary_row(src, *entry) for src, entry in entries.items()]
+    new_block = f"# {category}\n" + "\n".join(block_lines) + "\n\n"
+    if match:
+        return pattern.sub(lambda _m: new_block, game_part, count=1)
+    new_game = game_part.rstrip("\n")
+    if new_game:
+        new_game += "\n\n"
+    return new_game + new_block
+
+
+def _change_game_vocab(change, game_root=None) -> None:
+    """Run one read-modify-write of the glossary's game part.
+
+    ``change`` takes the game part and returns its new text; it may raise to
+    leave the file as it was. The base section stays intact, the change holds
+    :data:`_VOCAB_LOCK` from read to write, and the file is replaced in one
+    step.
+    """
+    with _VOCAB_LOCK:
+        existing = _read_glossary(game_root)
+        game_part, base_part = _split_base(existing)
+        new_game = change(game_part)
+        if new_game == game_part:
+            return
+        if base_part:
+            combined = new_game.rstrip("\n") + "\n\n" + base_part
+        else:
+            combined = new_game
+        if combined == existing:
+            return
+        _replace_glossary(_path(game_root), combined)
+
+
+def append_vocab_rows(sections, *, game_root=None) -> None:
+    """Add rows to the game glossary's sections, never changing a row there.
+
+    ``sections`` maps a category (``"Game Characters"``) to ``(source,
+    translation, notes)`` rows, written ``source (translation) - notes`` after
+    the section's own rows; a source the section has already is skipped (see
+    :func:`_merge_section_rows`). A category without a section gets one at the
+    end. ``sections`` may instead be a function that receives the game part
+    as it is read under the lock and returns them, or raises to leave the
+    file untouched.
+    """
+
+    def change(game_part: str) -> str:
+        wanted = sections(game_part) if callable(sections) else sections
+        for category, rows in wanted.items():
+            entries = {source: (target, notes) for source, target, notes in rows}
+            if entries:
+                game_part = _merge_section(game_part, category, entries, merge=True)
+        return game_part
+
+    _change_game_vocab(change, game_root)
 
 
 def update_vocab_section(
@@ -315,7 +482,8 @@ def update_vocab_section(
       rows. When nothing survives filtering the file is left untouched.
     - ``merge``: when True, keep existing rows for this category as written,
       including notes after the translation, and only add sources that are not
-      already present (names.json stays authoritative).
+      already present (names.json stays authoritative), as
+      :func:`append_vocab_rows` does.
     - ``overwrite``: with ``merge``, a source already present takes its new
       translation instead of keeping the old one, except on a row with a note.
       A pass that translated only some of a category's names uses both, so the
@@ -324,14 +492,14 @@ def update_vocab_section(
     Collect skips writes (source text is still untranslated). Consume writes
     immediately so sequential Pass 2 files can load harvested names.
     """
-    dedup: dict[str, str] = {}
+    dedup: dict[str, tuple[str, str]] = {}
     for src, dst in pairs:
         src, dst = normalize_generated_glossary_pair(src, dst)
         if not src:
             continue
         if dst is None or _norm(dst) == "" or _norm(dst) == _norm(src):
             continue
-        dedup[str(src)] = str(dst)
+        dedup[str(src)] = (str(dst), "")
     if not dedup:
         return
 
@@ -339,49 +507,12 @@ def update_vocab_section(
         # Collect leaves source text untranslated; nothing useful to harvest.
         return
 
-    with _VOCAB_LOCK:
-        glossary_path = _path(game_root)
-        existing = glossary_path.read_text(encoding="utf-8")
-
-        # Keep the auto-appended base section (separator + base glossary) intact.
-        game_part, base_part = _split_base(existing)
-
-        # Match this category's section up to the next '#' header or end of the
-        # game portion. Handles '#Cat', '# Cat', '## Cat', etc.
-        pattern = re.compile(
-            rf"^([\t ]*#+\s*{re.escape(category)}\s*$\r?\n)(.*?)(?=^[\t ]*#|\Z)",
-            re.MULTILINE | re.DOTALL,
-        )
-        match = pattern.search(game_part)
-        if merge and match:
-            block_lines = _merge_section_rows(
-                match.group(2), dedup, overwrite=overwrite
-            )
-        else:
-            block_lines = [f"{src} ({dst})" for src, dst in dedup.items()]
-        new_block = f"# {category}\n" + "\n".join(block_lines) + "\n\n"
-
-        if match:
-            new_game = pattern.sub(lambda _m: new_block, game_part, count=1)
-        else:
-            new_game = game_part.rstrip("\n")
-            if new_game:
-                new_game += "\n\n"
-            new_game += new_block
-
-        if base_part:
-            combined = new_game.rstrip("\n") + "\n\n" + base_part
-        else:
-            combined = new_game
-
-        if combined == existing:
-            return
-
-        tmp_path = glossary_path.with_suffix(
-            glossary_path.suffix + f".{os.getpid()}.{threading.get_ident()}.tmp"
-        )
-        tmp_path.write_text(combined, encoding="utf-8", newline="\n")
-        system.replace(tmp_path, glossary_path)
+    _change_game_vocab(
+        lambda game_part: _merge_section(
+            game_part, category, dedup, merge=merge, overwrite=overwrite
+        ),
+        game_root,
+    )
 
 
 def merge_reviewed_character_names(content: str, pairs) -> str:
@@ -407,7 +538,7 @@ def merge_reviewed_character_names(content: str, pairs) -> str:
         if prefix is None:
             result.append(line)
             continue
-        aliases = {unicodedata.normalize("NFKC", value.strip()).casefold() for value in re.split(r"[/／]", prefix.group(1))}
+        aliases = {unicodedata.normalize("NFKC", value).casefold() for value in split_vocab_source_aliases(prefix.group(1))}
         matches = aliases & incoming.keys()
         if not matches:
             result.append(line)
@@ -444,11 +575,7 @@ def remove_vocab_section(category: str, *, game_root=None) -> None:
 
         game_part, base_part = _split_base(existing)
 
-        pattern = re.compile(
-            rf"^[\t ]*#+\s*{re.escape(category)}\s*$\r?\n.*?(?=^[\t ]*#|\Z)",
-            re.MULTILINE | re.DOTALL,
-        )
-        new_game = pattern.sub("", game_part, count=1)
+        new_game = _section_pattern(category).sub("", game_part, count=1)
         if new_game == game_part:
             return
         new_game = re.sub(r"\n{3,}", "\n\n", new_game).rstrip("\n")
@@ -458,8 +585,4 @@ def remove_vocab_section(category: str, *, game_root=None) -> None:
             combined = new_game + "\n" if new_game else ""
         if combined == existing:
             return
-        tmp_path = glossary_path.with_suffix(
-            glossary_path.suffix + f".{os.getpid()}.{threading.get_ident()}.tmp"
-        )
-        tmp_path.write_text(combined, encoding="utf-8", newline="\n")
-        system.replace(tmp_path, glossary_path)
+        _replace_glossary(glossary_path, combined)
