@@ -15,7 +15,7 @@ from dotenv import load_dotenv
 from retry import retry
 from tqdm import tqdm
 from util.languages import source_pattern
-from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost, getPricingConfig, calculateCost
+from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost, getPricingConfig, calculateCost, run_stop_errors
 from util.speakers import strip_speaker_prefix
 from util import system
 
@@ -281,6 +281,8 @@ def parseMap(data, filename):
                             tt = searchCodes(page["list"], pbar, None, filename)
                             totalTokens[0] += tt[0]
                             totalTokens[1] += tt[1]
+                        except run_stop_errors():
+                            raise
                         except Exception as e:
                             return [data, totalTokens, e]
                         finally:
@@ -856,6 +858,8 @@ def searchCodes(events, pbar, jobList, filename):
             # Set Data
             events = codeList
 
+    except run_stop_errors():
+        raise
     except IndexError as e:
         traceback.print_exc()
         raise Exception(str(e) + "Failed to translate: " + initialJAString) from None
@@ -2645,6 +2649,8 @@ def searchDB(events, pbar, jobList, filename):
             jobList.append(dbValueListTL)
             searchDB(events, pbar, jobList, filename)
 
+    except run_stop_errors():
+        raise
     except IndexError as e:
         traceback.print_exc()
         raise Exception(str(e) + "Failed to translate: " + initialJAString) from None

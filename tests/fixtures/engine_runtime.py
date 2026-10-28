@@ -2665,6 +2665,57 @@ try:
             else:
                 assert errors == [("Map001.json", stopped)], case
                 assert stop_task.run_stop == stopped, case
+        # Outside RPG Maker the stop leaves the module's parse and file
+        # handlers too, so the stopped file fails instead of being written
+        # out as finished; a run frozen before the policy still writes each
+        # refused file untranslated and goes on, as when approved. A file the per-file executor started
+        # before the stop meets it without sending.
+        texts = ["Text1.json", "Text2.json"]
+        for number, text_file in enumerate(texts, 1):
+            (stop_root / "files" / text_file).write_text(
+                json.dumps(
+                    {f"村人{number}の話を聞いてくれ。": "TODO"}, ensure_ascii=False
+                ),
+                encoding="utf-8",
+            )
+        for policy, sends in (("1", 1), ("0", 2)):
+            Record(stop_root).reset()
+            (stop_root / "sent.txt").unlink(missing_ok=True)
+            for text_file in texts:
+                (stop_root / "translated" / text_file).unlink(missing_ok=True)
+            stop_task = TranslationTask(
+                stop_root, ("JSON", (".json",), None), runner_script=stop_runner
+            )
+            errors, handed = [], []
+            stop_task.file_error_signal.connect(lambda *args: errors.append(args))
+            stop_task.progress_signal.connect(lambda *args: handed.append(args[2]))
+            with patch.dict(
+                os.environ,
+                {
+                    **stop_environment,
+                    "STAND_IN_REFUSES": "effort",
+                    "STAND_IN_POLICY": policy,
+                },
+            ):
+                result = stop_task._run_files(texts, False)
+            case = (policy, result, errors)
+            assert handed == texts[: len(handed)], (case, handed)
+            requests = (stop_root / "sent.txt").read_text().split()
+            assert len(requests) == sends, (case, requests)
+            written = sorted(
+                path.name for path in (stop_root / "translated").glob("Text*.json")
+            )
+            if policy == "1":
+                assert result == "Fail", case
+                assert errors[0] == ("Text1.json", refused_effort), case
+                assert errors == [(name, refused_effort) for name in handed], case
+                assert stop_task.run_stop == refused_effort, case
+                assert written == [], (case, written)
+            else:
+                assert result != "Fail", case
+                assert handed == texts and errors == [], case
+                assert stop_task.run_stop is None, case
+                assert written == texts, (case, written)
         # That worker saves a Batch's files one after another; a file missing
         # a result must not keep the files after it from saving theirs. Each
         # file reports only its own exact cost, which the run's TOTAL adds up.

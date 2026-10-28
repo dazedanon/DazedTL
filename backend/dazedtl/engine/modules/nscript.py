@@ -14,7 +14,7 @@ from dotenv import load_dotenv
 from retry import retry
 from tqdm import tqdm
 from util.languages import source_pattern
-from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost
+from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost, run_stop_errors
 import tempfile
 from util import system
 from util.game_encoding import UnwritableText, writable
@@ -123,6 +123,8 @@ def handleOnscripter(filename, estimate):
             with open("translated/" + filename, "w", encoding="cp932", errors="ignore") as outFile:
                 outFile.writelines(lines)
             tqdm.write(getResultString(translatedData, end - start, filename))
+        except run_stop_errors():
+            raise
         except Exception:
             traceback.print_exc()
             return "Fail"
@@ -184,6 +186,8 @@ def parseOnscripter(readFile, filename):
             result = translateOnscripter(data, pbar, filename, [])
             totalTokens[0] += result[0]
             totalTokens[1] += result[1]
+        except run_stop_errors():
+            raise
         except Exception as e:
             traceback.print_exc()
             return [data, totalTokens, e]
