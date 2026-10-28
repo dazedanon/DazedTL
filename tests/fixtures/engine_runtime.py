@@ -2584,6 +2584,8 @@ try:
             "def provider(_native, *_args, **_kwargs):\n"
             "    with open(folder / 'sent.txt', 'a') as sent:\n"
             "        sent.write('sent\\n')\n"
+            "    if os.environ.get('STAND_IN_PAYS') and len((folder / 'sent.txt').read_text().split()) == 1:\n"
+            "        return openai.types.chat.ChatCompletion.model_validate({'id': 'paid', 'object': 'chat.completion', 'created': 0, 'model': 'gpt-stand-in', 'choices': [{'index': 0, 'finish_reason': 'stop', 'message': {'role': 'assistant', 'content': '{}'}}], 'usage': {'prompt_tokens': 11, 'completion_tokens': 3, 'total_tokens': 14}})\n"
             "    message = {'effort': \"Unsupported value: 'reasoning_effort' does not support 'high'.\", 'model': 'The model `gone` does not exist.'}[refused]\n"
             "    request = httpx2.Request('POST', 'https://stand-in.test/v1/chat/completions')\n"
             "    try:\n"
@@ -2716,6 +2718,37 @@ try:
                 assert handed == texts and errors == [], case
                 assert stop_task.run_stop is None, case
                 assert written == texts, (case, written)
+        # A file that paid for a response before the stop left its handler
+        # keeps it on its receipt: the run's records read its log line, and
+        # the run's TOTAL its result.
+        from dazedtl.compatibility.process_view import file_receipt
+
+        Record(stop_root).reset()
+        (stop_root / "sent.txt").unlink(missing_ok=True)
+        stop_task = TranslationTask(
+            stop_root, ("JSON", (".json",), None), runner_script=stop_runner
+        )
+        logged = []
+        stop_task.log_signal.connect(logged.append)
+        with patch.dict(
+            os.environ,
+            {
+                **stop_environment,
+                "STAND_IN_REFUSES": "effort",
+                "STAND_IN_POLICY": "1",
+                "STAND_IN_PAYS": "1",
+            },
+        ):
+            assert stop_task._run_files(texts, False) == "Fail"
+        assert stop_task.run_stop == refused_effort
+        assert len((stop_root / "sent.txt").read_text().split()) == 2
+        paid = stop_task.receipts["Text1.json"]
+        assert (paid["input"], paid["output"]) == (11, 3), paid
+        assert [
+            receipt
+            for receipt in (file_receipt(line, texts) for line in logged)
+            if receipt
+        ] == [("Text1.json", paid, True)], logged
         # That worker saves a Batch's files one after another; a file missing
         # a result must not keep the files after it from saving theirs. Each
         # file reports only its own exact cost, which the run's TOTAL adds up.

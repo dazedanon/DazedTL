@@ -115,16 +115,26 @@ def _receipt(figures):
     receipt["input"], receipt["output"] = int(receipt["input"]), int(receipt["output"])
     return receipt
 
+def format_receipt(name, figures, mark="✓") -> str:
+    """A receipt's log line, which _result_figures and the run's records
+    (compatibility/process_view file_receipt) read back: *name*'s tokens,
+    cost and seconds, then whether it finished."""
+    return (
+        f"{name}: [Input: {int(figures['input'])}]"
+        f"[Output: {int(figures['output'])}]"
+        f"[Cost: ${figures['cost']:,.4f}][{round(figures['seconds'], 1)}s] {mark}"
+    )
+
 def format_run_total(receipts) -> str:
     """The run's TOTAL: every file's receipt added up, in the receipts' own
     format."""
     receipts = list(receipts)
-    cost = sum(receipt["cost"] for receipt in receipts)
-    seconds = sum(receipt["seconds"] for receipt in receipts)
-    return (
-        f"TOTAL: [Input: {sum(receipt['input'] for receipt in receipts)}]"
-        f"[Output: {sum(receipt['output'] for receipt in receipts)}]"
-        f"[Cost: ${cost:,.4f}][{round(seconds, 1)}s] ✓"
+    return format_receipt(
+        "TOTAL",
+        {
+            key: sum(receipt[key] for receipt in receipts)
+            for key in ("input", "output", "cost", "seconds")
+        },
     )
 
 def format_estimate_total(comparison) -> str:
@@ -1306,10 +1316,7 @@ class TranslationTaskCore:
             "cost": round(cost, 4),
             "seconds": round(seconds, 1),
         }
-        self.emit_log(
-            f"Speakers: [Input: {receipt['input']}][Output: {receipt['output']}]"
-            f"[Cost: ${receipt['cost']:,.4f}][{receipt['seconds']}s] ✓"
-        )
+        self.emit_log(format_receipt("Speakers", receipt))
         earlier = self.receipts.get(NAMES_FILE)
         if earlier is not None:
             receipt = {key: earlier[key] + value for key, value in receipt.items()}
