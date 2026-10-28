@@ -108,6 +108,7 @@ Automatic local consumption requires a durable fetched marker and submission rec
 The [OpenAI Batch window](../backend/dazedtl/compatibility/batch_window.py) gives each provider job at most a quarter of the input-token allowance (`job_tokens`, for both workflows), so a slow request cannot hold the whole window.
 Guided and Assistant-led runs on one connection share that window: it counts both workflows' provider jobs in flight, and every Batch either sends, clarifications included, waits in it for room.
 An Assistant-led run sends its chunks in order while the window has room, several in flight, and a chunk without room stays `queued` in its run record; after a failed chunk it sends no further chunk, collects the ones already sent, then ends failed, and Resume sends the rest.
+A chunk whose submission or results must be reconciled (an uncertain submit, a chunk left without its provider job ID, or an unmatched job) likewise stops further sends while the chunks already sent are collected; the run then ends uncertain until that chunk is attached, and is never sent again.
 Runs frozen before those policies (`batch_chunks` and `batch_window` in the plan) send one chunk at a time, each up to the whole allowance, and before `batch_window` without waiting for room.
 Provider reads and downloads run outside the API lock and feed the application observer through cached observations.
 

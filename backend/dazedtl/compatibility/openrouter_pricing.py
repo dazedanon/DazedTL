@@ -1,4 +1,4 @@
-"""Use frozen absolute Batch rates without changing native parser accounting."""
+"""Price an OpenRouter Batch at its policy's frozen absolute rates."""
 
 LAYER = "openrouter-pricing"
 
@@ -15,12 +15,9 @@ def batch_cost(policy, regular, output, reads=0, writes=0):
 
 
 def configure(translation, policy):
-    """Parsers share these extension points, so file totals use the same rates."""
-    points = (
-        translation.estimateCostComparison,
-        translation.translateAI,
-        translation.calculateCost,
-    )
+    """Every Batch price of the run, its estimate, file lines and TOTAL,
+    comes from the policy's frozen rates."""
+    points = (translation.estimateCostComparison, translation.batch_usage_cost)
     if policy is None:
         for point in points:
             point.remove(LAYER)
@@ -41,63 +38,24 @@ def configure(translation, policy):
             }
         return value
 
-    def counters():
-        return tuple(
-            getattr(translation._thread_local, "file_batch_" + name, 0)
-            for name in ("regular", "output", "read", "write")
+    def price(native, usage, model, provider):
+        # The policy's absolute rates already hold the Batch discount, so they
+        # replace the engine's Live rates instead of being halved again.
+        if provider != "openrouter" or model != policy["model"]:
+            return native(usage, model, provider)
+
+        def count(key):
+            return usage.get(key, 0) or 0
+
+        return batch_cost(
+            policy,
+            count("input_tokens"),
+            count("output_tokens") + count("thinking_tokens"),
+            count("cache_read_input_tokens"),
+            count("cache_creation_input_tokens"),
         )
 
-    def native_cost(model, values):
-        regular, output, reads, writes = values
-        pricing = translation.getPricingConfig(model)
-        multiplier = translation.cache_write_multiplier("openrouter", model)
-        return (
-            (
-                (regular + reads * 0.1 + writes * multiplier) * pricing["inputAPICost"]
-                + output * pricing["outputAPICost"]
-            )
-            * 0.5
-            / 1_000_000
-        )
-
-    def translate(native, *args, **kwargs):
-        before = counters()
-        value = native(*args, **kwargs)
-        if translation.get_batch_phase() == "consume":
-            delta = tuple(after - old for after, old in zip(counters(), before))
-            # Native translateAI charges the same token deltas at half of the
-            # Live rate. Correct that accumulator while keeping its guards,
-            # caching, validation, and per-file token counters unchanged.
-            native_charged = (
-                delta[0] > 0
-                or delta[1] > 0
-                or any(
-                    name in policy["model"].lower()
-                    for name in ("claude", "sonnet", "haiku", "opus")
-                )
-            )
-            correction = batch_cost(policy, *delta) - (
-                native_cost(policy["model"], delta) if native_charged else 0
-            )
-            with translation._global_accurate_cost_lock:
-                translation._global_accurate_cost += correction
-        return value
-
-    def calculate(native, input_tokens, output_tokens, model):
-        values = counters()
-        per_file = getattr(
-            translation._thread_local, "file_cost_window_active", False
-        ) or getattr(translation._thread_local, "file_cost_ready", False)
-        value = native(input_tokens, output_tokens, model)
-        if (
-            model == policy["model"]
-            and translation.get_batch_phase() == "consume"
-            and per_file
-        ):
-            value += batch_cost(policy, *values) - native_cost(model, values)
-        return value
-
-    for point, layer in zip(points, (comparison, translate, calculate), strict=True):
+    for point, layer in zip(points, (comparison, price), strict=True):
         point.layer(LAYER, layer)
     from util import batch_history
 

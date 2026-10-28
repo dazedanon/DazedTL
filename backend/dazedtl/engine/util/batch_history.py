@@ -30,7 +30,7 @@ from util.translation import (
     _read_batch_file,
     _read_batch_queue,
     _write_batch_file,
-    getPricingConfig,
+    batch_usage_cost,
 )
 from util.batch_providers import (
     _google_client as get_google_client,
@@ -40,7 +40,6 @@ from util.batch_providers import (
     one_hour_writes,
     retrieve_batch as provider_retrieve_batch,
 )
-from util.provider_costs import batch_price_factor, usage_cost
 from util import extensions
 
 BATCH_HISTORY_FILE = Path("log/batch_history.json")
@@ -567,15 +566,7 @@ def _usage_from_message(u) -> dict:
 @extensions.point
 def _price_usage(usage: dict, model: str, provider: str = "anthropic") -> float:
     """Price real batch usage with cache multipliers and the Batch discount."""
-    pricing = getPricingConfig(model)
-    return usage_cost(
-        usage,
-        provider,
-        model,
-        pricing["inputAPICost"] / 1_000_000,
-        pricing["outputAPICost"] / 1_000_000,
-        batch_price_factor(provider),
-    )
+    return batch_usage_cost(usage, model, provider)
 
 
 def _sum_usage_from_results(client, batch_id: str, custom_ids: dict) -> tuple[dict, int, int]:

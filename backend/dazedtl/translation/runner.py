@@ -48,6 +48,21 @@ SHARED_PAYLOADS = "shared-payloads-v1"
 # ends with it once the chunks sent before it ended, and a Resume of that
 # failed run sends the rest, as it does for a run sending one at a time.
 STOPPED_SENDING = "stopped_sending"
+# A chunk's message of why it must be reconciled (unconfirmed).
+UNRESOLVED = "unresolved"
+UNMATCHED = "Returned request IDs are incomplete or belong to another job. Attach the matching job before proceeding."
+
+
+def unconfirmed(chunk):
+    """Whether the chunk's provider job must be attached (attach_batch)
+    before the run goes on: its submission may have succeeded without a
+    recorded job ID, or its job's results did not match its requests. A run
+    with several chunks in flight then sends no further chunk but collects
+    the chunks known to be sent, and ends uncertain with the first such
+    chunk's message (UNRESOLVED); a run sending one at a time ends at once."""
+    return chunk["state"] == "unmatched" or (
+        chunk["state"] == "submitting" and not chunk["id"]
+    )
 
 
 def askers(requests):
@@ -531,17 +546,25 @@ class Runner:
                     "Polling stopped. Saved provider jobs remain available for collection.",
                 )
                 return
-            if chunk["state"] == "submitting" and not chunk["id"]:
+            if unconfirmed(chunk) and not chunk["id"]:
                 for item in chunk["items"]:
-                    self.job["states"][item["request"]] = {
-                        "state": "uncertain",
-                        "message": "Attach the matching provider job before resuming.",
-                    }
-                self.save(
-                    "uncertain",
+                    # A later pass keeps the message its submission gave.
+                    if self.job["states"][item["request"]]["state"] != "uncertain":
+                        self.job["states"][item["request"]] = {
+                            "state": "uncertain",
+                            "message": "Attach the matching provider job before resuming.",
+                        }
+                chunk.setdefault(
+                    UNRESOLVED,
                     "Submission may have succeeded; a provider job ID must be reconciled.",
                 )
-                return
+                if not self.several:
+                    self.save("uncertain", chunk[UNRESOLVED])
+                    return
+                continue
+            if self.several and unconfirmed(chunk):
+                # An unmatched job is attached before it is polled again.
+                continue
             cancel = self.store.cancel_requested(self.job["id"])
             if cancel and not chunk["id"]:
                 chunk["state"] = "canceled"
@@ -554,14 +577,20 @@ class Runner:
                 continue
             if not chunk["id"]:
                 # Chunks are sent in order, so every later one is unsent too.
-                if self.several and STOPPED_SENDING in self.job:
+                if self.several and (
+                    STOPPED_SENDING in self.job or self.unresolved_message()
+                ):
                     if chunk["state"] == "queued":
                         chunk["state"] = "pending"
                     break
                 if held:
                     break
                 if not self.submit(chunk):
-                    if self.several and chunk["state"] in {"queued", "rejected"}:
+                    if self.several and chunk["state"] in {
+                        "queued",
+                        "rejected",
+                        "submitting",
+                    }:
                         if chunk["state"] == "queued":
                             waiting = self.job["message"]
                         break
@@ -589,11 +618,11 @@ class Runner:
                     # collects its canceled job also settles the later chunks.
                     if cancel and chunk["state"] == "complete":
                         continue
-                    if not self.several or chunk["state"] == "unmatched":
+                    if not self.several:
                         return
-                    # Still processing, or a provider failure that halted
-                    # further sends (halt).
-                    if chunk["state"] != "complete":
+                    # Still processing, a provider failure that halted
+                    # further sends (halt), or unmatched (unconfirmed).
+                    if chunk["state"] not in {"complete", "unmatched"}:
                         waiting = self.job["message"]
                     continue
                 responses, usage = collected
@@ -715,7 +744,8 @@ class Runner:
                 if not self.several:
                     return
         if self.several:
-            halted = self.job.get(STOPPED_SENDING)
+            unresolved = self.unresolved_message()
+            halted = unresolved or self.job.get(STOPPED_SENDING)
             canceled = self.store.cancel_requested(self.job["id"])
             if waiting:
                 self.save(
@@ -725,12 +755,36 @@ class Runner:
                     else waiting,
                 )
                 return
+            if unresolved:
+                # A failed chunk's STOPPED_SENDING stays, so the run ends
+                # failed once the reconciled chunk is collected.
+                self.save("uncertain", unresolved)
+                return
             if halted:
                 del self.job[STOPPED_SENDING]
                 if not canceled:
                     self.save("failed", halted)
                     return
         self.finish()
+
+    def unresolved(self, chunk, message):
+        """Records why the chunk is unconfirmed: the run ends uncertain with
+        `message`, or, with several chunks in flight, first collects the
+        chunks known to be sent, saved at the pass's end (batch)."""
+        chunk[UNRESOLVED] = message
+        if not self.several:
+            self.save("uncertain", message)
+
+    def unresolved_message(self):
+        """The message of the run's first unconfirmed chunk, or None."""
+        return next(
+            (
+                chunk.get(UNRESOLVED, UNMATCHED)
+                for chunk in self.job["batches"]
+                if unconfirmed(chunk)
+            ),
+            None,
+        )
 
     def halt(self, message):
         """Sends no further chunk after a failed one: the run ends failed with
@@ -812,9 +866,8 @@ class Runner:
                 chunk["state"] = "rejected"
                 self.halt("Review the rejected submission.")
             else:
-                self.save(
-                    "uncertain",
-                    "The provider submission must be reconciled before retrying.",
+                self.unresolved(
+                    chunk, "The provider submission must be reconciled before retrying."
                 )
             return False
         chunk.update(id=value["id"], state="submitted")
@@ -856,8 +909,8 @@ class Runner:
                         }
                 for identity, response in responses.items():
                     self.accept(identity, response)
-                self.save(
-                    "uncertain",
+                self.unresolved(
+                    chunk,
                     "Verify the attached provider job before preparing any retry.",
                 )
                 return None
@@ -892,10 +945,7 @@ class Runner:
                 if identity in mapping.values():
                     self.accept(identity, response)
             chunk["state"] = "unmatched"
-            self.save(
-                "uncertain",
-                "Returned request IDs are incomplete or belong to another job. Attach the matching job before proceeding.",
-            )
+            self.unresolved(chunk, UNMATCHED)
             return None
         return responses, usage
 
@@ -922,7 +972,24 @@ class Runner:
         every change its earlier passes made can skip it."""
         if recover:
             self.recover()
-        if any(row["state"] == "uncertain" for row in self.job["states"].values()):
+        uncertain = {
+            identity
+            for identity, row in self.job["states"].items()
+            if row["state"] == "uncertain"
+        }
+        # With several chunks in flight a Batch pass collects the chunks sent
+        # beside unconfirmed ones, and sends nothing more (unconfirmed).
+        if uncertain and not (
+            self.several
+            and self.plan["configuration"]["mode"] == "batch"
+            and uncertain
+            <= {
+                item["request"]
+                for chunk in self.job["batches"]
+                if unconfirmed(chunk)
+                for item in chunk["items"]
+            }
+        ):
             self.finish()
             return
         if self.plan["configuration"]["mode"] == "batch":
