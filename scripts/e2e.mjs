@@ -3,8 +3,6 @@
 // breaks before users do. CI runs it on both systems; see the live test in
 // docs/development.md.
 //
-//   node scripts/e2e.mjs [--work <folder>] [--upgrade-from <tag> | previous]
-//
 // With --upgrade-from, the release at that tag, or the latest one before
 // this checkout's own with "previous", runs its own journey on the
 // same game, then this checkout updates that install the way the app does and
@@ -37,12 +35,13 @@ import {
   buildPatch,
   playtestPanel,
 } from "./testkit/journey.mjs";
+import { e2eOptions, readOptions } from "./testkit/options.mjs";
 
+const { option } = readOptions(
+  "Usage: node scripts/e2e.mjs [--work <empty folder>] [--upgrade-from <tag> | previous]",
+  e2eOptions,
+);
 const windows = process.platform === "win32";
-const option = (name) => {
-  const index = process.argv.indexOf(name);
-  return index >= 0 ? process.argv[index + 1] : undefined;
-};
 const work = path.resolve(
   option("--work") || fs.mkdtempSync(path.join(os.tmpdir(), "dazedtl-e2e-")),
 );

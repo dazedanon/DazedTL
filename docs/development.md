@@ -85,6 +85,7 @@ A check that fails is run once more, as the CI flake rule does: one that passes 
 A check that passes leaves only its log; a failed one keeps its folder beside the logs.
 Before the second run clears a check's folder, the first run's logs folders, with the app's own logs, are copied to `<name>.first` beside its log.
 `--jobs <n>` sets how many run at once (half the processors, at most 10, by default) and `--work <empty folder>` where they run; like the scenarios, it runs outside a sandbox and downloads the runtimes the live tests install.
+`--help` prints its usage, and an option it does not know stops it with that usage before anything starts, as it does the scenario, live test and QA check scripts ([options.mjs](../scripts/testkit/options.mjs)).
 
 The [Windows run](../.github/workflows/windows-run.yml) workflow runs one Bash command after setup on a disposable Windows machine and keeps the logs folders under `$WORK`:
 

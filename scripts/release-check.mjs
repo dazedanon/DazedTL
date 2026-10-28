@@ -4,8 +4,6 @@
 // test side by side, each in a private display of its own. Prints one table of
 // what passed and failed, with each one's log. See "Live test" in
 // docs/development.md.
-//
-//   node scripts/release-check.mjs [--jobs <n>] [--work <folder>]
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -15,12 +13,13 @@ import { ensureRenderer } from "./testkit/app.mjs";
 import { checkout, previousRelease } from "./testkit/checkout.mjs";
 import { withRetry } from "./testkit/retry.mjs";
 import { ciScenarios } from "./testkit/ci.mjs";
+import { readOptions } from "./testkit/options.mjs";
 
 requireNode();
-const option = (name) => {
-  const index = process.argv.indexOf(name);
-  return index >= 0 ? process.argv[index + 1] : undefined;
-};
+const { option } = readOptions(
+  "Usage: node scripts/release-check.mjs [--jobs <n>] [--work <empty folder>]",
+  { "--jobs": "value", "--work": "value" },
+);
 const work = path.resolve(
   option("--work") ||
     fs.mkdtempSync(path.join(os.tmpdir(), "dazedtl-release-check-")),

@@ -843,12 +843,137 @@ class CompatibilityContracts(unittest.TestCase):
                 translation._log_live_response(
                     "openai", {}, SimpleNamespace(created=created, usage=usage)
                 )
-                translation._record_timed_cost(usage, "deepseek-flash")
+                translation._record_live_cost(usage, "deepseek-flash")
             for _call in ("file", "TOTAL"):
                 self.assertAlmostEqual(
                     translation.calculateCost(2_000_000, 2_000_000, "deepseek-flash"),
                     1.50 + 0.75,
                 )
+
+    def test_guided_live_spend_prices_cache_hits_as_assistant_led_spent_does(self):
+        # Guided's recorded Live cost priced every prompt token at the full
+        # input rate, so a run whose prompts mostly hit the provider's cache
+        # read several times what DeepSeek, OpenAI or Kimi billed and what
+        # Assistant-led's Spent says for the same work.
+        import os
+        import threading
+        from datetime import UTC, datetime
+
+        from dazedtl.compatibility.estimate_prices import usage_cost
+        from openai.types import CompletionUsage
+        from util import translation
+        from util.batch_providers import execute_live_request
+        from util.translation_task import _names_cost
+
+        def hits(**extra):
+            return CompletionUsage(
+                prompt_tokens=1_000_000,
+                completion_tokens=100_000,
+                total_tokens=1_100_000,
+                **extra,
+            )
+
+        # Monday 26 October 2026 at 12:00 UTC is off-peak on DeepSeek.
+        noon = datetime(2026, 10, 26, 12, tzinfo=UTC).timestamp()
+        # Each route's prompt of 1M tokens, 900k of them cache hits as it
+        # reports them, and 100k output, at $0.30 and $1.20 per 1M.
+        for provider, endpoint, model, usage, cost in (
+            (
+                "deepseek",
+                "https://api.deepseek.com",
+                "deepseek-v4-flash",
+                hits(
+                    prompt_cache_hit_tokens=900_000,
+                    prompt_cache_miss_tokens=100_000,
+                ),
+                # Off-peak halves the cache-read price too.
+                (0.03 + 0.9 * 0.006 + 0.12) / 2,
+            ),
+            (
+                "openai",
+                "https://api.openai.com/v1",
+                "gpt-5.4-mini",
+                hits(prompt_tokens_details={"cached_tokens": 900_000}),
+                0.03 + 0.9 * 0.03 + 0.12,
+            ),
+            (
+                "kimi",
+                "https://api.moonshot.ai/v1",
+                "kimi-k2.6",
+                hits(cached_tokens=900_000),
+                0.03 + 0.9 * 0.30 * 0.16 / 0.95 + 0.12,
+            ),
+        ):
+            with (
+                self.subTest(provider),
+                patch.dict(os.environ, {"api": endpoint, "API_PROVIDER": "openai"}),
+                patch.object(
+                    translation,
+                    "getPricingConfig",
+                    return_value={"inputAPICost": 0.30, "outputAPICost": 1.20},
+                ),
+                patch.object(translation, "_thread_local", threading.local()),
+                patch.object(translation, "_global_accurate_cost", 0.0),
+            ):
+                translation._log_live_response(
+                    "openai", {}, SimpleNamespace(created=noon, usage=usage)
+                )
+                translation._record_live_cost(usage, model)
+                for _call in ("file", "TOTAL"):
+                    self.assertAlmostEqual(
+                        translation.calculateCost(1_000_000, 100_000, model), cost
+                    )
+                # A file nothing was sent for cost nothing, though the run's
+                # total has grown.
+                self.assertEqual(translation.calculateCost(0, 0, model), 0)
+                # A names step's receipt is what its own responses cost, not
+                # the run's total, though its per-request lines have closed
+                # the cost window.
+                before = translation.priced_cost()
+                translation._record_live_cost(usage, model)
+                translation.calculateCost(1_000_000, 100_000, model)
+                names = SimpleNamespace(
+                    calculateCost=translation.calculateCost, MODEL=model
+                )
+                self.assertAlmostEqual(
+                    _names_cost(names, 1_000_000, 100_000, before), cost
+                )
+                # Assistant-led's Spent for the same response.
+                body = {
+                    "choices": [{"message": {"content": "{}"}}],
+                    "usage": usage.model_dump(),
+                }
+                client = SimpleNamespace(
+                    chat=SimpleNamespace(
+                        completions=SimpleNamespace(
+                            create=lambda body=body, **_kwargs: body
+                        )
+                    )
+                )
+                answer = execute_live_request(
+                    "openai" if provider == "deepseek" else provider,
+                    {"model": model, "messages": []},
+                    client=client,
+                )
+                counts = {
+                    "input_tokens": answer["prompt_tokens"]
+                    - answer["cache_read_input_tokens"],
+                    "output_tokens": answer["completion_tokens"],
+                    "cache_read_input_tokens": answer["cache_read_input_tokens"],
+                }
+                spent = usage_cost(
+                    counts,
+                    {
+                        "mode": "live",
+                        "model": model,
+                        "endpoint": endpoint,
+                        "rates": {"input": 0.30, "output": 1.20},
+                    },
+                    provider,
+                    [{**counts, "received_at": translation._thread_local.received_at}],
+                )
+                assert spent is not None
+                self.assertAlmostEqual(spent, cost)
 
     def test_a_stopped_batch_records_its_cache_reads_as_a_completed_one_does(self):
         # A canceled Batch's paid rows once added their whole prompt to

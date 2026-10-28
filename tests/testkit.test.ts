@@ -1,9 +1,12 @@
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import fs from "node:fs";
 import { once } from "node:events";
+import os from "node:os";
+import path from "node:path";
 import readline from "node:readline";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 import { appEnvironment, stopApp } from "../scripts/testkit/app.mjs";
 import { until } from "../scripts/testkit/cdp.mjs";
 import { ciScenarios } from "../scripts/testkit/ci.mjs";
@@ -188,4 +191,41 @@ test("a scenario app under a test display gets none of the desktop session", () 
     appEnvironment(desktop, {}, "linux").DBUS_SESSION_BUS_ADDRESS,
     desktop.DBUS_SESSION_BUS_ADDRESS,
   );
+});
+
+test("the scripts that start apps, displays or long checks refuse an option they do not know before starting anything", async () => {
+  // A work folder with files, which each script refuses too, so one that
+  // read past the option would stop at that instead of starting.
+  const work = fs.mkdtempSync(path.join(os.tmpdir(), "dazedtl-options-"));
+  fs.mkdirSync(path.join(work, "QA チェック (前版)"));
+  fs.writeFileSync(path.join(work, "QA チェック (前版)", "kept"), "");
+  const script = (name: string) =>
+    fileURLToPath(new URL(`../scripts/${name}`, import.meta.url));
+  const run = (args: string[]) =>
+    new Promise<{ code: unknown; output: string }>((resolve) =>
+      execFile(process.execPath, args, (error, stdout, stderr) =>
+        resolve({ code: error ? error.code : 0, output: stdout + stderr }),
+      ),
+    );
+  try {
+    const [help, ...refused] = await Promise.all([
+      run([script("release-check.mjs"), "--help", "--work", work]),
+      ...[
+        ["release-check.mjs"],
+        ["e2e.mjs"],
+        ["qa-upgrade.mjs"],
+        ["scenario.mjs", "fresh"],
+      ].map(([name, ...args]) =>
+        run([script(name), ...args, "--bogus", "--work", work]),
+      ),
+    ]);
+    assert.equal(help.code, 0, help.output);
+    assert.match(help.output, /^Usage: node scripts\/release-check\.mjs/);
+    for (const result of refused) {
+      assert.equal(result.code, 2, result.output);
+      assert.match(result.output, /^Unknown option --bogus\.\n\nUsage:/);
+    }
+  } finally {
+    fs.rmSync(work, { recursive: true, force: true });
+  }
 });
