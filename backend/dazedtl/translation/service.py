@@ -797,11 +797,12 @@ Additional project instructions:
     def checkpoints(self, project_id):
         """The Checkpoints tab's timeline; read when the tab opens and after
         each write, never by a poll."""
+        from dazedtl.compatibility import game_write
         from dazedtl.compatibility.checkpoint_history import timeline
 
         _record, project = self.project(project_id)
-        options = project.read()["options"]
-        if not self.engine.git_status(project.root, options).get("configured"):
+        # The read each write checks, which a write's checkpoint keeps.
+        if game_write.checkout(project.root) is None:
             return {"version": "", "outside": [], "versions": [], "backups": None}
         return timeline(project.root)
 

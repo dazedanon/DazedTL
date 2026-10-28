@@ -49,7 +49,10 @@ from typing import TYPE_CHECKING
 
 from dazedtl.system import unlink, write_bytes
 from dazedtl.translation.files import digest, project_path
-from dazedtl.translation.git_status_cache import RepositoryStatusCache
+from dazedtl.translation.git_status_cache import (
+    RepositoryStatusCache,
+    checkout_signature,
+)
 
 if TYPE_CHECKING:
     from util.version_update.git_workflow import Checkout
@@ -65,9 +68,10 @@ unrecorded = ContextVar("game_writes_unrecorded", default=frozenset())
 # game's original files.
 requesting = ContextVar("game_writes_requesting", default=False)
 # Git's metadata alone decides whether a checkout can take a write, so while
-# it is unchanged a write's check costs a few file stats, not the three Git
-# processes of a read, which Windows starts slowly.
-_statuses = RepositoryStatusCache(stable=True)
+# what a read of it reads is unchanged, as each checkpoint leaves it, a
+# write's check costs a few file reads, not the three Git processes of a
+# read, which Windows starts slowly.
+_statuses = RepositoryStatusCache(stable=True, signer=checkout_signature)
 
 
 class GameWrite:
@@ -106,6 +110,8 @@ class GameWrite:
         Read it before writing."""
         if self._point is None or self._point.phase is not None:
             return None
+        if self._point.start:
+            return self._point.start
         from .checkpoint_commits import _git
 
         return _git(self.root, "rev-parse", "HEAD").stdout.strip()
@@ -145,22 +151,29 @@ class GameWrite:
         self.everything = True
 
 
-def _checkout(root) -> Checkout | None:
+def checkout(root) -> Checkout | None:
     """The read of the game's own repository when its Git is set up, which
-    takes a checkpoint of each write, or None; refuses while the checkout
-    can't take the write."""
+    takes a checkpoint of each write, or None; the one writes check, which
+    the Checkpoints tab reads too. Its commits may be older than the
+    branches', as a checkpoint keeps it; it refuses a game whose settings it
+    can't read or whose DazedTL folders are links."""
     # A game takes translation work only in a repository of its own; one
     # whose Git is not set up has no checkout to keep.
     from util.paths import game_git_set_up
 
+    root = Path(root).resolve()
     if not game_git_set_up(root):
         return None
+    status = _statuses.get(str(root), root, lambda: _read(root))
+    return status if status is not None and status.configured else None
+
+
+def _checkout(root) -> Checkout | None:
+    """`checkout`, refusing while the checkout can't take the write."""
     from dazedtl.translation.operations import checkout_issue
 
-    status = _statuses.get(str(root), root, lambda: _read(root))
-    if status is None or not status.configured:
-        return None
-    if issue := checkout_issue(vars(status)):
+    status = checkout(root)
+    if status is not None and (issue := checkout_issue(vars(status))):
         raise ValueError(issue)
     return status
 
