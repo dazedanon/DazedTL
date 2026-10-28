@@ -37,8 +37,11 @@ def file_signature(path):
         return None
 
 
-def repository_signature(root):
-    """What changes when the repository's metadata changes, from a few stats."""
+def repository_signature(root, *, index=True):
+    """What changes when the repository's metadata changes, from a few stats.
+    Without `index`, what changes with refs, HEAD, config, logs and operations
+    under way: `git status` rewrites the index for about a second after a
+    write, which it reports no change by."""
     git = Path(root) / ".git"
     try:
         head = git.stat()
@@ -48,6 +51,8 @@ def repository_signature(root):
         return (head.st_mtime_ns, head.st_size)
     parts = []
     for name in MARKERS:
+        if name == "index" and not index:
+            continue
         try:
             value = (git / name).stat()
             parts.append((name, value.st_mtime_ns, value.st_size))
@@ -56,6 +61,11 @@ def repository_signature(root):
     for tree in TREES:
         parts.extend(_files(git / tree))
     return tuple(parts)
+
+
+def metadata_signature(root):
+    """`repository_signature` without the index."""
+    return repository_signature(root, index=False)
 
 
 def checkout_signature(root):
