@@ -581,6 +581,11 @@ const changedFile = (run: Job, name: string) =>
   run.changedOutputs !== undefined
     ? run.changedOutputs.includes(name)
     : !madeNoRequest(run, name) && !!run.process?.fileMetrics?.[name];
+/** The files whose translation from this run is in the game. An output the
+ * same as the file it read, such as one with nothing to translate, is in the
+ * game without an Apply, so it counts as no applied translation. */
+export const appliedFiles = (run: Job) =>
+  (run.appliedOutputs || []).filter((name) => changedFile(run, name));
 /**
  * The runs a file in a translation task reads, from the observer's
  * newest-first runs: `owner`, the newest current run that includes the file,
@@ -722,13 +727,25 @@ export function countedFileStatus(
   if (!counted.lines)
     return fileState("done", "Nothing to translate in this file.");
   if (counted.translated < counted.lines) {
-    const detail =
+    if (counted.translated || counted.notes)
+      return fileState(
+        "needs_review",
+        run && uncertainSubmission(name, run)
+          ? unconfirmed
+          : linesLeft(counted, source),
+      );
+    // Untouched, the file reads Not started, with why when the run did send
+    // its requests or its help lines are left.
+    return fileState(
+      "not_started",
       run && uncertainSubmission(name, run)
-        ? "Its submission could not be confirmed. Check Run history before sending it again."
-        : linesLeft(counted, source);
-    return counted.translated || counted.notes
-      ? fileState("needs_review", detail)
-      : fileState("not_started", counted.help ? detail : "");
+        ? unconfirmed
+        : run && requestsFailed(name, run)
+          ? failedRequests
+          : counted.help
+            ? linesLeft(counted, source)
+            : "",
+    );
   }
   return !state.readiness.outputs.includes(name) ||
     state.readiness.applied.includes(name)
@@ -757,6 +774,23 @@ export function fileStatus(
   return fileState(
     "needs_review",
     `${count(notes, "line holds", "lines hold")} a refusal note an earlier run saved instead of a translation. Translate sends ${notes === 1 ? "it" : "them"} again.`,
+  );
+}
+/** Why a file reads as it does when a run's request for it may still be at
+ * the provider (uncertainSubmission). */
+const unconfirmed =
+  "Its submission could not be confirmed. Check Run history before sending it again.";
+/** Why an untouched file reads Not started when its requests failed
+ * (requestsFailed). */
+const failedRequests =
+  "Its requests failed without returning any lines; Translate sends them again.";
+/** Whether a run's requests for a file that left its queue all failed,
+ * returning no lines, so the run left the file as it was. */
+function requestsFailed(name: string, run: Job) {
+  const states = run.process?.files?.[name]?.states || [];
+  return (
+    states.includes("failed") &&
+    states.every((state) => ["queued", "failed"].includes(state))
   );
 }
 /** A Live request still marked sent when its worker stopped, or any without
@@ -893,7 +927,7 @@ function runFileStatus(
   const incomplete = fileState(
     "needs_review",
     uncertainSubmission(name, run)
-      ? "Its submission could not be confirmed. Check Run history before sending it again."
+      ? unconfirmed
       : "Some lines were rejected or not saved; Inspect shows which.",
   );
   const partial =
@@ -908,11 +942,8 @@ function runFileStatus(
   // returned no lines, so either way the run left the file untouched.
   if (partial || states.some((state) => !["queued", "failed"].includes(state)))
     return incomplete;
-  if (states.includes("failed"))
-    return fileState(
-      "not_started",
-      "Its requests failed without returning any lines; Translate sends them again.",
-    );
+  if (requestsFailed(name, run))
+    return fileState("not_started", failedRequests);
   return idle;
 }
 

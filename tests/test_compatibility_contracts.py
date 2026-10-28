@@ -838,6 +838,17 @@ class CompatibilityContracts(unittest.TestCase):
                 ["ok", "Rejected", "ok", "ok"],
             )
             self.assertFalse(record.exists())
+            # Its message is the provider's own, which the file's error and
+            # the run's message show, not the SDK's and engine's wrapping.
+            replies[:] = [provider_error(400), "ok"]
+            with self.assertRaises(Rejected) as caught:
+                first.translateText("s", "u")
+            self.assertEqual(
+                str(caught.exception),
+                "The provider rejected the request: HTTP 400 - The model `gone` "
+                "does not exist.",
+            )
+            self.assertEqual(first.translateText("s", "u"), "ok")
             # Prompts a safety system flagged share one error, but the next
             # need not be flagged: each fails its call alone.
             flagged = provider_error(
@@ -1106,6 +1117,93 @@ class CompatibilityContracts(unittest.TestCase):
                     translation.calculateCost(2_000_000, 2_000_000, "deepseek-flash"),
                     1.50 + 0.75,
                 )
+
+    def test_assistant_led_live_sends_extra_body_fields_in_the_request(self):
+        # Assistant-led Live handed extra_body's fields to the real OpenAI SDK
+        # as keyword arguments, which it refuses with a TypeError before
+        # sending: DeepSeek or Kimi with thinking off, and every OpenRouter
+        # request with its routing field, failed.
+        import httpx2
+        import openai
+        from dazedtl.compatibility import request_parameters
+        from util.batch_providers import execute_live_request
+
+        sent = []
+
+        def reply(request):
+            sent.append(json.loads(request.content))
+            return httpx2.Response(
+                200,
+                json={
+                    "id": "fixture",
+                    "object": "chat.completion",
+                    "created": 1,
+                    "model": "fixture",
+                    "choices": [
+                        {
+                            "index": 0,
+                            "message": {"role": "assistant", "content": "{}"},
+                            "finish_reason": "stop",
+                        }
+                    ],
+                    "usage": {
+                        "prompt_tokens": 1,
+                        "completion_tokens": 1,
+                        "total_tokens": 2,
+                    },
+                },
+            )
+
+        client = openai.OpenAI(
+            api_key="fixture-key",
+            base_url="https://stand-in.test/v1",
+            max_retries=0,
+            http_client=httpx2.Client(transport=httpx2.MockTransport(reply)),
+        )
+        self.addCleanup(client.close)
+        messages = [{"role": "user", "content": "薬"}]
+        google = {"google": {"thinking_config": {"thinking_budget": 512}}}
+        for provider, params, expected in (
+            *(
+                (
+                    "openai",
+                    request_parameters.thinking(
+                        {"model": model, "messages": messages},
+                        {"model": model, "thinkingEffort": "none"},
+                        identity,
+                    ),
+                    {"thinking": {"type": "disabled"}},
+                )
+                for identity, model in (
+                    ("deepseek", "deepseek-v4-flash"),
+                    ("kimi", "kimi-k2.6"),
+                )
+            ),
+            (
+                "openai",
+                request_parameters.structured_output(
+                    {"model": "openai/gpt-6.1-sol", "messages": messages},
+                    {"type": "object"},
+                ),
+                {"provider": {"require_parameters": True}},
+            ),
+            # Gemini takes its extensions under its own extra_body field,
+            # never as a top-level google field.
+            (
+                "gemini",
+                {
+                    "model": "gemini-3-flash",
+                    "messages": messages,
+                    "extra_body": {"extra_body": google},
+                },
+                {"extra_body": google},
+            ),
+        ):
+            with self.subTest(params["model"]):
+                execute_live_request(provider, params, client=client)
+                body = sent.pop()
+                self.assertEqual({key: body[key] for key in expected}, expected)
+                self.assertNotIn("google", body)
 
     def test_guided_live_spend_prices_cache_hits_as_assistant_led_spent_does(self):
         # Guided's recorded Live cost priced every prompt token at the full
