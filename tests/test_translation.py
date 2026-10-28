@@ -260,6 +260,11 @@ class TranslationTests(unittest.TestCase):
             "sound": "\\SE[タイプライター]カタカタと音がする。",
             "wolf": "\\c[2]勇者\\c[0]がやって来た。",
             "ruby": "\\r[漢字,かんじ]を読めるかな？",
+            # A name in a code's argument is kept as written, as Guided
+            # keeps it; _pum has no backslash.
+            "font": "\\fn[和風]名前はここにいる。",
+            "face": "\\face[主人公]こんにちは。",
+            "pum": "_pum[名前]音がする。",
         }
         row = logical_request({"id": "scene", "sources": sources}, {"user": ""})
         good = {
@@ -269,14 +274,23 @@ class TranslationTests(unittest.TestCase):
             "wolf": "\\c[2]The hero\\c[0] has come.",
             # A ruby's reading is source text, translated with its line.
             "ruby": "Can you read \\r[kanji,kanji]?",
+            "font": "\\fn[和風]Name is here.",
+            "face": "\\face[主人公]Hello.",
+            "pum": "_pum[名前]A sound plays.",
         }
-        for identity, reply in {
-            "colour": "\\C[2]Name is here.",
-            "sound": "\\SE[Typewriter]Clack, clack, it goes.",
-            "wolf": "The hero has come.",
-        }.items():
+        for identity, reply in [
+            ("colour", "\\C[2]Name is here."),
+            ("sound", "\\SE[Typewriter]Clack, clack, it goes."),
+            ("wolf", "The hero has come."),
+            ("font", "Name is here."),
+            ("font", "\\fn[Wafu]\\fn[Wafu]Name is here."),
+            ("face", "\\face[Hero]Hello."),
+            ("pum", "A sound plays."),
+            ("pum", "_pum[名前]_pum[名前]A sound plays."),
+            ("ruby", "Can you read \\r[kanji,kanji] \\r[kan,ji]?"),
+        ]:
             with (
-                self.subTest(identity=identity),
+                self.subTest(identity=identity, reply=reply),
                 self.assertRaisesRegex(
                     ValueError,
                     f"{identity} is no usable translation: its control codes",

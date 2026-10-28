@@ -1,7 +1,6 @@
 """Accepted results are bound to source plus context, shared across all transports."""
 
 import os
-import re
 import stat
 from collections import Counter
 from functools import partial
@@ -207,14 +206,13 @@ def _content_failures(request, translations):
         identities[index]: reason.split(": ", 1)[-1]
         for index, reason in zip(invalid, reasons, strict=True)
     }
-    source_text = re.compile(pattern)
     failures = {}
     for identity in identities:
         if identity in content:
             failures[identity] = content[identity]
             continue
         valid, errors = validate_unmasked_control_codes(
-            request["sources"][identity], translations[identity], source_text
+            request["sources"][identity], translations[identity]
         )
         if not valid:
             failures[identity] = (
