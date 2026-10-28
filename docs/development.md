@@ -170,6 +170,37 @@ To add a scenario, add its steps to [scripts/testkit/scenarios.mjs](../scripts/t
 To add a kind of game content, add a folder to [tests/fixtures/game-variants](../tests/fixtures/game-variants) whose `variant.json` describes it; [games.mjs](../scripts/testkit/games.mjs) says what it can change.
 The headless playtest runner, the scripted Text QA reviewer, the scripted Plugin files assistant and the scripted Assistant-led assistant sit beside them in [scripts/testkit](../scripts/testkit).
 
+## Quality measurement
+
+A change that shapes translated text is judged by what Text QA has to correct, counted the same way every time.
+[qa_corrections.py](../backend/dazedtl/engine/scripts/qa_corrections.py) reads the QA records of finished games and only reads them:
+
+```sh
+.venv/bin/python backend/dazedtl/engine/scripts/qa_corrections.py report <profile>/workspace/engine/workflows <game folder>...
+.venv/bin/python backend/dazedtl/engine/scripts/qa_corrections.py export <same targets> --out <file outside the games and this checkout>
+```
+
+A target is a Text QA task folder, a folder holding task folders such as the workspace's `engine/workflows`, or a game folder, whose `.dazedtl/qa-receipts` hold the deep reviews of a game whose task folders are gone; `--workspace <workspace>` adds the workspace's tasks of the game folders named.
+A game's receipts are read only when none of its tasks is, and their text before and after QA comes from the Git commit that applied them.
+`report` prints each game's corrected lines by kind, per 1,000 translated lines, and the fixes that recur most; `export` writes the corrections as JSON Lines whose header names its `VERSION` and inputs, the dataset regression sets are built from.
+The rules, the counting unit and the export's fields are defined once in [qa_corrections](../backend/dazedtl/engine/util/qa_corrections.py).
+
+A line is a source text within one data file, since a file's repeated labels and lines share one translation; the translated lines are those the tasks' inventories list.
+Each correction gets one kind:
+
+| Kind | What QA changed |
+| --- | --- |
+| fit/format | Only line breaks, spacing, punctuation or layout, or a fix the reviewer filed as formatting |
+| glossary/name | A term or name, glossary lints included |
+| meaning | What the line says, by the reviewer's meaning, reference or gameplay category |
+| fluency | How it reads, by the reviewer's fluency, voice, emotion, humor, wordplay or interface category |
+| legacy output | What older tools left in the text, such as a doubled speaker name or Japanese never translated |
+| other | The rest, such as a header naming the wrong speaker |
+
+A recurring group is three or more different lines of one game that took the same fix, by finding family or by the same few words taken out and put in.
+The labels come from rules on the reviewer's category and reason, then the text; a hand check of 73 corrections drawn across 8 games found 68 right, and the rules now fix 4 of the 5 misses.
+Readings of continuity and of whom a line addresses were right only 4 and 6 times in 10, so those corrections take their category's kind instead.
+
 ## GameUpdate
 
 [gameupdate](../backend/dazedtl/engine/gameupdate) is the player updater that Set up copies into each game's root folder; [project_preparation.py](../backend/dazedtl/engine/util/project_preparation.py) decides what is copied and which existing files are kept.
@@ -261,4 +292,5 @@ Never edit `CHANGELOG.md` by hand; [changelog.mjs](../scripts/changelog.mjs) rea
 - [Architecture](architecture.md) covers code ownership, boundaries and design decisions.
 - The [translation contract](translation-contract.md) is for engine adapter authors and assistant integrations.
 - The [text QA redesign](text-qa-redesign.md) plans the next version of text QA.
+- [Quality measurement](#quality-measurement) says how to count what Text QA corrects and export it as the dataset quality comparisons use.
 - [AGENTS.md](../AGENTS.md) holds contribution rules.
