@@ -6,6 +6,7 @@
 
 ### Fixed
 
+- **Assistant-led:** a line that translates, drops or repeats a code holding a name, such as a font `\fn[...]`, a face `\face[...]` or a sound `_pum[...]`, is now refused as Guided refuses it; only a ruby may still be translated.
 - **Assistant-led:** RPG Maker MV and MZ messages that open with a name window, such as `\n<Ellen>`, no longer get a stray space before a pause code that follows it.
 - **Assistant-led:** lines of Japanese punctuation alone, such as `「……」` or `！？`, now reach the game as `"……"` and `!?`, as Guided writes them, instead of shipping in Japanese form, and they are never part of a cost estimate.
 - **Messages:** RPG Maker MV and MZ messages no longer get a stray space between a colour or other formatting code and a pause code after it, which could start a line with a space.
