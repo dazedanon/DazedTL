@@ -2657,7 +2657,12 @@ try:
                 assert stop_task.run_stop is None, case
             elif stopped is True:
                 # The two rejections before the stop failed their own files.
-                assert "The model `gone` does not exist." in errors[0][1], case
+                # They read as the provider's own error, which the run's
+                # message names, not the SDK's and the engine's wrapping.
+                assert errors[0][1] == (
+                    "The provider rejected the request: HTTP 400 - The model "
+                    "`gone` does not exist."
+                ), case
                 assert errors[0][1] == errors[1][1], case
                 assert errors[2][1].startswith(
                     "The provider rejected 3 requests in a row with the same error"

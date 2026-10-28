@@ -838,6 +838,17 @@ class CompatibilityContracts(unittest.TestCase):
                 ["ok", "Rejected", "ok", "ok"],
             )
             self.assertFalse(record.exists())
+            # Its message is the provider's own, which the file's error and
+            # the run's message show, not the SDK's and engine's wrapping.
+            replies[:] = [provider_error(400), "ok"]
+            with self.assertRaises(Rejected) as caught:
+                first.translateText("s", "u")
+            self.assertEqual(
+                str(caught.exception),
+                "The provider rejected the request: HTTP 400 - The model `gone` "
+                "does not exist.",
+            )
+            self.assertEqual(first.translateText("s", "u"), "ok")
             # Prompts a safety system flagged share one error, but the next
             # need not be flagged: each fails its call alone.
             flagged = provider_error(
