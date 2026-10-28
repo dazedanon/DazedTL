@@ -1,6 +1,7 @@
 """A small project goes from source-bound plans to reusable accepted work."""
 
 import json
+import os
 import shutil
 import unittest
 from copy import deepcopy
@@ -46,7 +47,12 @@ from dazedtl.translation.requests import (
     provider_view,
 )
 from dazedtl.translation.results import EXPORT, Results, review_digest
-from dazedtl.translation.run_compiler import CENSUS_UNCOVERED, SCOPE_RULES
+from dazedtl.translation.run_compiler import (
+    CENSUS_UNCOVERED,
+    SCOPE_RULES,
+    coverage_path,
+    inventory_path,
+)
 from dazedtl.translation.service import IMAGE_UNITS, Translation
 from dazedtl.translation.skill_users import for_batch
 
@@ -984,6 +990,24 @@ class WorkflowTests(unittest.TestCase):
             (0, 1, "tool"),
         )
         self.assertEqual(self.service.state(self.identity)["coverage"]["extracted"], 3)
+        # Copying or restoring a profile can leave the census younger than
+        # the coverage counted against it: the census it names still stands.
+        coverage_file = coverage_path(self.profile, self.identity)
+
+        def touch(path, seconds):
+            stamp = coverage_file.stat().st_mtime_ns + seconds * 10**9
+            os.utime(path, ns=(stamp, stamp))
+
+        touch(census_path(self.profile, self.identity), 5)
+        self.assertFalse(self.service.state(self.identity)["coverage"]["stale"])
+        # Coverage an earlier DazedTL saved names no census: file times decide.
+        saved = read_json(coverage_file)
+        write_json(coverage_file, {k: v for k, v in saved.items() if k != "census_id"})
+        touch(census_path(self.profile, self.identity), 5)
+        self.assertTrue(self.service.state(self.identity)["coverage"]["stale"])
+        touch(census_path(self.profile, self.identity), -5)
+        self.assertFalse(self.service.state(self.identity)["coverage"]["stale"])
+        write_json(coverage_file, saved)
         # A patch needs every accepted unit exported, against the same census.
         with self.assertRaisesRegex(ValueError, "fewer than the 2") as refused:
             self.service.require_inventory(self.identity, 1)
@@ -992,6 +1016,29 @@ class WorkflowTests(unittest.TestCase):
             refused.exception.reason,
             "Your assistant saves every translated line first.",
         )
+        self.service.require_inventory(self.identity, 2)
+        # A census an earlier DazedTL took had no ID: the inventory it
+        # accepted names it by its digest.
+        taken = read_json(census_path(self.profile, self.identity))
+        accepted = read_json(inventory_path(self.profile, self.identity))
+        write_json(
+            census_path(self.profile, self.identity),
+            {k: v for k, v in taken.items() if k != "id"},
+        )
+        write_json(
+            inventory_path(self.profile, self.identity),
+            {
+                "census_sha256": digest(
+                    census_path(self.profile, self.identity).read_bytes()
+                ),
+                "units": 2,
+            },
+        )
+        self.service.require_inventory(self.identity, 2)
+        write_json(census_path(self.profile, self.identity), taken)
+        with self.assertRaisesRegex(ValueError, "after the latest census"):
+            self.service.require_inventory(self.identity, 2)
+        write_json(inventory_path(self.profile, self.identity), accepted)
         self.service.require_inventory(self.identity, 2)
         # A census an earlier DazedTL counted by other rules, before it
         # counted choice help, asks for a new census before organize or a
@@ -1021,7 +1068,10 @@ class WorkflowTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "no longer counts the game"):
             self.service.require_inventory(self.identity, 2)
         census()
-        # The new census is current, but the coverage counted the old one.
+        # The new census is current, but the coverage counted the old one,
+        # even once the census reads older than it.
+        self.assertTrue(self.service.state(self.identity)["coverage"]["stale"])
+        touch(census_path(self.profile, self.identity), -5)
         self.assertTrue(self.service.state(self.identity)["coverage"]["stale"])
         with self.assertRaisesRegex(ValueError, "after the latest census"):
             self.service.require_inventory(self.identity, 2)

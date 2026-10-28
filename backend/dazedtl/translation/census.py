@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import re
 import struct
+import uuid
 import zlib
 from collections import Counter
 from functools import cache, lru_cache
@@ -1620,6 +1621,9 @@ def scan(
         take(name, data, "assistant_dump")
     result = {
         "version": VERSION,
+        # Each count's own ID, which work counted against it saves to name
+        # it (operations.counted_census).
+        "id": uuid.uuid4().hex,
         "entries": found,
         "unsent": unsent,
         "unreadable": sorted(unreadable),

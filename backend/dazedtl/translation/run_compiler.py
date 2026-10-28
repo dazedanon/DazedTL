@@ -6,7 +6,6 @@ settings the run freezes, and starts this worker, so the interface and the
 project helper, which share its one dispatch, keep their answers meanwhile.
 """
 
-import hashlib
 import os
 from pathlib import Path
 
@@ -20,7 +19,15 @@ from . import census, name_codes, organize, progress_report, skill_users, unit_r
 from .compilation import batch_sources, compile_requests
 from .files import evidence, project_path, read_json, verify_evidence
 from .jobs import RunStore, now
-from .operations import census_path, census_stale, lifecycle, require_baseline
+from .operations import (
+    CENSUS_NAMES,
+    census_path,
+    census_stale,
+    counted_census,
+    lifecycle,
+    names_census,
+    require_baseline,
+)
 from .project import WORK, ProjectWorkspace, scope
 from .requests import plan_input, quote
 from .results import QUOTES, Results
@@ -39,11 +46,6 @@ def coverage_path(workspace, project_id):
 
 def inventory_path(workspace, project_id):
     return Path(workspace) / "translation/projects" / project_id / "inventory.json"
-
-
-def census_sha256(workspace, project_id):
-    path = census_path(workspace, project_id)
-    return hashlib.sha256(path.read_bytes()).hexdigest() if path.exists() else None
 
 
 def require_coverage(scope):
@@ -136,25 +138,41 @@ def scope_coverage(engine, workspace, project_id, root, units):
             "unreadable": value["unreadable"],
         },
     )
-    write_json(coverage_path(workspace, project_id), {**report, "checked_at": now()})
+    write_json(
+        coverage_path(workspace, project_id),
+        {
+            **report,
+            **(counted_census(workspace, project_id) or {}),
+            "checked_at": now(),
+        },
+    )
     return report, census.split_messages(value, sources)
 
 
 def saved_coverage(workspace, project_id, root, state=None):
     """The last coverage organize found, for Progress: stale once a later
     census replaced the one it was counted against, or the census no longer
-    counts the game's current version, as after a game update."""
+    counts the game's current version, as after a game update. Coverage an
+    earlier DazedTL saved names no census, so it reads as replaced once the
+    census file is newer than it."""
     path = coverage_path(workspace, project_id)
     try:
         value = read_json(path)
         counted = os.stat(path).st_mtime_ns
     except ValueError, OSError:
         return None
+    named = {key: value.pop(key) for key in CENSUS_NAMES if key in value}
     if not value.get("stale"):
-        try:
-            replaced = os.stat(census_path(workspace, project_id)).st_mtime_ns > counted
-        except FileNotFoundError:
-            replaced = True
+        same = names_census(workspace, project_id, named)
+        if same is not None:
+            replaced = not same
+        else:
+            try:
+                replaced = (
+                    os.stat(census_path(workspace, project_id)).st_mtime_ns > counted
+                )
+            except FileNotFoundError:
+                replaced = True
         value["stale"] = replaced or bool(
             census_stale(workspace, project_id, root, state)
         )
@@ -252,10 +270,7 @@ def _organize(engine, workspace, job, plan, progress):
         require_coverage(coverage)
         write_json(
             inventory_path(workspace, project_id),
-            {
-                "census_sha256": census_sha256(workspace, project_id),
-                "units": len(units),
-            },
+            {**(counted_census(workspace, project_id) or {}), "units": len(units)},
         )
     reused = None
     left = units
