@@ -541,6 +541,12 @@ class TextQaStatus(TypedDict):
             "Assistant-led only: squeezed labels the assistant shortens before apply.",
         ]
     ]
+    untranslated: NotRequired[
+        Annotated[
+            int,
+            "Assistant-led only: never-translated text players can reach in the census's scope, which the assistant translates before apply.",
+        ]
+    ]
     operation: NotRequired[TextQaOperation]
     report: NotRequired[Annotated[str, "The saved findings file."]]
 

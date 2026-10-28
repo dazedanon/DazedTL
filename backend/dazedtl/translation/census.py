@@ -1150,6 +1150,59 @@ def files(census):
     return result
 
 
+class Scope:
+    """The tool's built-in rules and the assistant's *rules* (rules_input) as
+    one list, and which of them sets a census entry's run aside; protected
+    text never is."""
+
+    def __init__(self, rules):
+        self.rules = [
+            *(
+                {"kind": k, "field": f, "reason": r, "by": "tool"}
+                for k, f, r in BUILT_IN
+            ),
+            *(
+                {**rule, "by": "assistant", "values": frozenset(rule["values"])}
+                if "values" in rule
+                else {**rule, "by": "assistant"}
+                for rule in rules
+            ),
+        ]
+        self.chosen = {}
+
+    def rule(self, entry, run):
+        """The index of the rule that sets *run* of *entry* aside, or None."""
+        key = (entry["kind"], entry["field"], entry["file"])
+        if key not in self.chosen:
+            self.chosen[key] = (
+                []
+                if protected(entry["kind"], entry["field"])
+                else [
+                    index
+                    for index, rule in enumerate(self.rules)
+                    if _kind(rule["kind"], entry["kind"])
+                    and matches(rule.get("file", entry["file"]), entry["file"])
+                    and matches(rule["field"], entry["field"])
+                ]
+            )
+        for index in self.chosen[key]:
+            if run in self.rules[index].get("values", (run,)):
+                return index
+        return None
+
+
+def in_scope(census, rules):
+    """The census's runs no rule sets aside, by each entry's kind and file:
+    the text the assistant translates."""
+    scope = Scope(rules)
+    result = {}
+    for entry in census["entries"]:
+        kept = {run for run in entry["runs"] if scope.rule(entry, run) is None}
+        if kept:
+            result.setdefault((entry["kind"], entry["file"]), set()).update(kept)
+    return result
+
+
 def coverage(census, sources, glossary, rules):
     """The census's runs as extracted (in a unit or the glossary), set aside
     by a built-in or assistant rule, or uncovered; protected text is never
@@ -1170,36 +1223,8 @@ def coverage(census, sources, glossary, rules):
             return True
         return False
 
-    every = [
-        *({"kind": k, "field": f, "reason": r, "by": "tool"} for k, f, r in BUILT_IN),
-        *(
-            {**rule, "by": "assistant", "values": frozenset(rule["values"])}
-            if "values" in rule
-            else {**rule, "by": "assistant"}
-            for rule in rules
-        ),
-    ]
-    chosen = {}
-
-    def rule_for(entry, run):
-        key = (entry["kind"], entry["field"], entry["file"])
-        if key not in chosen:
-            chosen[key] = (
-                []
-                if protected(entry["kind"], entry["field"])
-                else [
-                    index
-                    for index, rule in enumerate(every)
-                    if _kind(rule["kind"], entry["kind"])
-                    and matches(rule.get("file", entry["file"]), entry["file"])
-                    and matches(rule["field"], entry["field"])
-                ]
-            )
-        for index in chosen[key]:
-            if run in every[index].get("values", (run,)):
-                return index
-        return None
-
+    scope = Scope(rules)
+    every = scope.rules
     counts, aside, uncovered, traced = Counter(), Counter(), [], set()
     for entry in census["entries"]:
         traced.update(entry["runs"])
@@ -1207,7 +1232,7 @@ def coverage(census, sources, glossary, rules):
         # Rules first: an identifier a rule sets aside must not use up the
         # unit that covers the same words where the player reads them.
         for run in entry["runs"]:
-            if (index := rule_for(entry, run)) is not None:
+            if (index := scope.rule(entry, run)) is not None:
                 counts["set_aside"] += 1
                 aside[index] += 1
             elif extracted(run):
