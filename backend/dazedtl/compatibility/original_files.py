@@ -125,7 +125,8 @@ def _trailer(message, key):
 
 
 # A record never changes once made, so what was read of one is kept by its
-# commit, and a game's list of records by the tip of its ref.
+# commit, and a game's list of records by the tip of its ref; the Checkpoints
+# tab's restores keep what they read of a commit here too.
 _READ: dict[tuple[str, str, str], Any] = {}
 
 

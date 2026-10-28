@@ -501,6 +501,7 @@ Python touches files and starts processes through the [platform layer](../backen
 `held_open` makes a file look held by another process, as Windows refuses to replace, rename, delete or open one then, and a test drives each kind of writer and reader through it.
 [paths](../scripts/paths.mjs) rejects tracked names that differ only in case, which Windows finds as one file, and paths over the Windows length budget.
 Code on a poll path starts no process: Defender makes each start slow, and one user's jobs froze for 17 seconds while every snapshot ran 22 Git commands.
+Every save is a checkpoint, so checkpoints ask Git only what they can't know ([checkpoint_commits](../backend/dazedtl/compatibility/checkpoint_commits.py)), and [test_git_launches](../tests/test_git_launches.py) holds each checkpoint operation to its count of Git processes.
 A worker's parent on Windows is the virtual environment's launcher stub, so ownership checks use [launched_by](../backend/dazedtl/translation/ownership.py), never `os.getppid`.
 [Shortcuts](../scripts/shortcuts.mjs) are written through IShellLinkW, since WScript.Shell passes their text through the ANSI code page.
 
