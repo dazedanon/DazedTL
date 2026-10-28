@@ -135,9 +135,13 @@ def usage_cost(usage, configuration, provider, rows=None):
     Guided's receipts price it; None when the provider reports its own
     charge, as OpenRouter's Batch does, or the rates are unknown.
 
-    On a route priced by the time (provider_costs time_priced_route), a
-    Live run's ``rows``, each request's usage and the time it arrived, whose
-    sum is ``usage``, are priced one by one at that time's price."""
+    A Batch is priced at its Batch ``provider``'s cache prices, a Live run at
+    those of its route as Guided prices Live responses
+    (batch_providers.live_price_route). On a route priced by the time
+    (provider_costs time_priced_route), a Live run's ``rows``, each request's
+    usage and the time it arrived, whose sum is ``usage``, are priced one by
+    one at that time's price."""
+    from util.batch_providers import live_price_route
     from util.provider_costs import (
         batch_price_factor,
         time_price_factor,
@@ -154,7 +158,15 @@ def usage_cost(usage, configuration, provider, rows=None):
         and provider == "openrouter"
     ):
         return None
-    route = provider or configuration.get("provider", "")
+    route = (
+        provider or configuration.get("provider", "")
+        if batch
+        else live_price_route(
+            configuration["model"],
+            configuration.get("endpoint") or "",
+            configuration.get("protocol") or "",
+        )
+    )
 
     def price(counts, factor):
         return cost(

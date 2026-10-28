@@ -998,6 +998,122 @@ class CompatibilityContracts(unittest.TestCase):
                 assert spent is not None
                 self.assertAlmostEqual(spent, cost)
 
+    def test_assistant_led_live_spent_takes_guided_live_price_route(self):
+        # Assistant-led priced a Live run on its Batch provider or its
+        # connection's provider, so Claude on OpenRouter or a Custom host
+        # read its cache at 0.1x and wrote it at 1x, while Guided prices
+        # Claude's Live cache at Anthropic's prices on any host.
+        from dazedtl.compatibility.estimate_prices import usage_cost
+
+        usage = {
+            "input_tokens": 100_000,
+            "output_tokens": 10_000,
+            "cache_read_input_tokens": 900_000,
+            "cache_creation_input_tokens": 50_000,
+        }
+
+        def spent(model, provider, endpoint, protocol="openai", batch=None, **extra):
+            configuration = {
+                "mode": "live",
+                "model": model,
+                "provider": provider,
+                "endpoint": endpoint,
+                "protocol": protocol,
+                "rates": {"input": 3.0, "output": 15.0},
+                **extra,
+            }
+            return usage_cost(usage, configuration, batch)
+
+        uncached = 0.30 + 0.15
+        claude = uncached + 0.9 * 3 * 0.05 + 0.05 * 3 * 1.25
+        router = "https://openrouter.ai/api/v1"
+        for batch in (None, "openrouter"):
+            with self.subTest(batch=batch):
+                self.assertAlmostEqual(
+                    spent(
+                        "anthropic/claude-sonnet-5-5", "openrouter", router, batch=batch
+                    )
+                    or 0,
+                    claude,
+                )
+        self.assertAlmostEqual(
+            spent("claude-sonnet-5-5", "custom", "https://proxy.example/v1") or 0,
+            claude,
+        )
+        # Every other route keeps its price to the cent.
+        reads = uncached + 0.05 * 3
+        for model, provider, endpoint, protocol, batch, cost in (
+            (
+                "openai/gpt-5.4-mini",
+                "openrouter",
+                router,
+                "openai",
+                None,
+                reads + 0.9 * 3 * 0.10,
+            ),
+            (
+                "claude-sonnet-5-5",
+                "anthropic",
+                "https://api.anthropic.com/v1",
+                "anthropic",
+                "anthropic",
+                claude,
+            ),
+            (
+                "gpt-5.4",
+                "openai",
+                "https://api.openai.com/v1",
+                "openai",
+                "openai",
+                reads + 0.9 * 3 * 0.10,
+            ),
+            (
+                "gpt-5.6-terra",
+                "openai",
+                "https://api.openai.com/v1",
+                "openai",
+                "openai",
+                uncached + 0.9 * 3 * 0.10 + 0.05 * 3 * 1.25,
+            ),
+            (
+                "kimi-k2.6",
+                "kimi",
+                "https://api.moonshot.ai/v1",
+                "openai",
+                "kimi",
+                reads + 0.9 * 3 * 0.16 / 0.95,
+            ),
+            (
+                "kimi-k3",
+                "kimi",
+                "https://api.moonshot.ai/v1",
+                "openai",
+                None,
+                reads + 0.9 * 3 * 0.10,
+            ),
+            (
+                "gemini-3.6-flash",
+                "gemini",
+                "https://generativelanguage.googleapis.com/v1beta/openai/",
+                "gemini",
+                "gemini",
+                reads + 0.9 * 3 * 0.10,
+            ),
+            (
+                "mistral-medium-3-5",
+                "custom",
+                "https://api.mistral.ai/v1/",
+                "openai",
+                None,
+                reads + 0.9 * 3 * 0.10,
+            ),
+        ):
+            with self.subTest(model):
+                self.assertEqual(
+                    round(spent(model, provider, endpoint, protocol, batch) or 0, 2),
+                    round(cost, 2),
+                )
+
     def test_a_stopped_batch_records_its_cache_reads_as_a_completed_one_does(self):
         # A canceled Batch's paid rows once added their whole prompt to
         # uncached input, so its Spent priced cache reads at the full rate.
