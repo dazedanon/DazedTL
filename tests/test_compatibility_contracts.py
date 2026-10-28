@@ -920,6 +920,15 @@ class CompatibilityContracts(unittest.TestCase):
                 0.03 + 0.9 * 0.03 + 0.12,
             ),
             (
+                # OpenAI reads GPT-4.1's cache at a quarter of its input
+                # price, not the tenth GPT-5 models read at.
+                "openai",
+                "https://api.openai.com/v1",
+                "gpt-4.1",
+                hits(prompt_tokens_details={"cached_tokens": 900_000}),
+                0.03 + 0.9 * 0.30 * 0.25 + 0.12,
+            ),
+            (
                 "kimi",
                 "https://api.moonshot.ai/v1",
                 "kimi-k2.6",
@@ -928,7 +937,7 @@ class CompatibilityContracts(unittest.TestCase):
             ),
         ):
             with (
-                self.subTest(provider),
+                self.subTest(model),
                 patch.dict(os.environ, {"api": endpoint, "API_PROVIDER": "openai"}),
                 patch.object(
                     translation,
@@ -1113,6 +1122,37 @@ class CompatibilityContracts(unittest.TestCase):
                     round(spent(model, provider, endpoint, protocol, batch) or 0, 2),
                     round(cost, 2),
                 )
+
+    def test_an_openai_batch_estimate_prices_cache_reads_at_the_models_price(self):
+        # Every OpenAI Batch estimate priced cache reads at a tenth of input,
+        # though GPT-4o reads at half and GPT-4.1 at a quarter.
+        from dazedtl.compatibility.batch_pricing import sol_cached_cost
+        from util.translation import openai_cache_prices
+
+        # 1M input, 900k of it expected cache hits, and 100k output, at $2
+        # and $8 per 1M; these models bill no cache writes.
+        for model, read in (
+            ("gpt-4o", 0.5),
+            ("gpt-4.1", 0.25),
+            ("o4-mini", 0.25),
+            ("gpt-5.4", 0.1),
+        ):
+            with self.subTest(model):
+                _writes, _most_writes, cached, _most = openai_cache_prices(
+                    1_000_000, 100_000, 900_000, 1_000_000, model, 2e-6, 8e-6
+                )
+                self.assertAlmostEqual(cached, (0.2 + 1.8 * read + 0.8) / 2)
+        # GPT-6.1 Sol's own Batch layer and the engine now agree.
+        writes, _most_writes, cached, _most = openai_cache_prices(
+            1_000_000, 100_000, 800_000, 1_000_000, "gpt-6.1-sol", 2e-6, 8e-6
+        )
+        counts = {
+            "input_tokens": 1_000_000,
+            "output_tokens": 100_000,
+            "cache_read_tokens": 800_000,
+            "cache_write_tokens": writes,
+        }
+        self.assertAlmostEqual(cached, sol_cached_cost(counts, 2e-6, 8e-6) or 0)
 
     def test_a_stopped_batch_records_its_cache_reads_as_a_completed_one_does(self):
         # A canceled Batch's paid rows once added their whole prompt to

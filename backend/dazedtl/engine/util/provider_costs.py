@@ -100,19 +100,37 @@ def batch_write_weight(provider: str, model: str, writes: float,
     )
 
 
+# OpenAI's cached input as a multiple of standard input for the families
+# that don't read at 0.1 times, the default
+# (https://developers.openai.com/api/docs/pricing): GPT-4o, GPT-4o mini, o1
+# and o3-mini at half, GPT-4.1, o3 and o4-mini at a quarter, GPT-6.1 Sol and
+# Terra at a twentieth. Searched in order, so o3-mini is found before o3.
+_OPENAI_CACHE_READS = (
+    (re.compile(r"(?:^|/)(?:gpt-4o|o1|o3-mini)(?:-|$)"), 0.50),
+    (re.compile(r"(?:^|/)(?:gpt-4\.1|o3|o4-mini)(?:-|$)"), 0.25),
+    (re.compile(r"(?:^|/)gpt-6\.1-(?:sol|terra)(?:-|$)"), 0.05),
+)
+
+
 def cache_read_multiplier(provider: str, model: str) -> float:
     """Return cache-read price as a multiple of regular input pricing.
 
     Anthropic reads cost 0.05 times regular input on Claude Opus 5.5 and
-    Sonnet 5.5 and 0.025 times on Claude Fable 5.1 and Mythos 5.1. Kimi
+    Sonnet 5.5 and 0.025 times on Claude Fable 5.1 and Mythos 5.1. Several
+    OpenAI families read at their own multiple (_OPENAI_CACHE_READS). Kimi
     reads cost $0.16 of K2.6's $0.95 and $0.19 of K2.7 Code's $0.95
     (https://platform.kimi.ai/docs/pricing/chat). DeepSeek reads cost $0.006
     of Flash's $0.30 and $0.044 of V4 Pro's $1.32, off-peak too
     (https://api-docs.deepseek.com/quick_start/pricing). Every other route
-    here, Kimi K3 included, prices them at 0.1 times.
+    here, Kimi K3 and the other OpenAI models included, prices them at 0.1
+    times.
     """
     normalized_provider = str(provider or "").strip().lower()
     name = str(model or "").lower()
+    if normalized_provider == "openai":
+        for family, multiplier in _OPENAI_CACHE_READS:
+            if family.search(name):
+                return multiplier
     if normalized_provider == "anthropic":
         if re.search(r"claude-(?:fable|mythos)-5-1(?:\D|$)", name):
             return 0.025

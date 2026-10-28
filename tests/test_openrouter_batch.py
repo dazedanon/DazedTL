@@ -135,6 +135,12 @@ class OpenRouterQuoteTests(unittest.TestCase):
                 "gpt-5.4-mini",
                 (0.3 + 2.7 * 0.1 + 0.15 + 0.15) / 2,
             ),
+            # GPT-4.1 reads its cache at a quarter of its input price.
+            (
+                "https://api.openai.com/v1",
+                "gpt-4.1",
+                (0.3 + 2.7 * 0.25 + 0.15 + 0.15) / 2,
+            ),
         ):
             with (
                 self.subTest(model=model, endpoint=endpoint),
