@@ -26,7 +26,9 @@ ACCEPTED = WORK + "/work/accepted"
 # also its repair of small kana left in a line (util/target_text
 # stranded_kana). An export written by older rules is written again, and
 # only a line whose translation differs from its old one written by these
-# rules is new.
+# rules is new. Escaping a slash before a name (escaped_orphan_backslashes)
+# keeps version 3, so a line of a version 3 export it changes is new and is
+# written into the game again, which shows nothing of that name until then.
 EXPORT_VERSION = 3
 # The progress export: an index of parts, each the units of PART_REQUESTS
 # requests, then the units organize left out with an earlier translation, so
@@ -352,10 +354,13 @@ def exported_line(request, identity, text, quotes=True):
     """A line's saved translation as the game gets it: as Guided writes every
     line of a reply (util/target_text `translated_line`), corner brackets as
     quotes when *quotes*, the line's protected tokens kept as they are, then
+    with a slash its source holds before text no code names escaped, as
+    Guided restores it (util/runtime_text `escaped_orphan_backslashes`), then
     with the automatic lint fixes Guided gives a new translation
     (rpgmaker_qa_lint `normalize`). A line given back as its source stays
     as it is, as Guided keeps such a line."""
     from util.rpgmaker_qa_lint import normalize
+    from util.runtime_text import escaped_orphan_backslashes
     from util.target_text import translated_line
 
     source = request["sources"][identity]
@@ -363,7 +368,7 @@ def exported_line(request, identity, text, quotes=True):
         return text
     target = target_language(request["context"])
     line = translated_line(text, target, quotes, protected_tokens(request, identity))
-    return normalize(source, line, target)
+    return normalize(source, escaped_orphan_backslashes(source, line), target)
 
 
 def unsent_line(source, target, quotes=True):

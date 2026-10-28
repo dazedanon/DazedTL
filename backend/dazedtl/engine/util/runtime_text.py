@@ -341,6 +341,37 @@ def restore_script_codes(text, replacements, escape_orphan_backslashes=False):
         return text
 
 
+# A slash run the translation of an orphan slash's word starts with: before
+# a word, as a code without an argument such as ``\\Helen``, or before text
+# still untranslated, alone.
+_ORPHAN_WORD_RE = re.compile(r"([\\]+)(?:[A-Za-z_][A-Za-z0-9_]*)?")
+
+
+def escaped_orphan_backslashes(source, translated):
+    """*translated*, a line Assistant-led sent with its codes unmasked, with
+    each odd slash run its *source* holds before text no code names, such as
+    the slash of ``\\ヘレン``, made even as Guided restores it
+    (_escaped_orphan_backslash), so ``\\Helen`` is written ``\\\\Helen`` and the
+    game shows the name instead of reading an unknown code. A code the
+    source holds, spelled as it spells it, and any code with an argument,
+    such as a translated ruby, are left alone."""
+    codes = split_protected_codes(source)[1::2]
+    if not any(_ORPHAN_BACKSLASH_RE.fullmatch(code) for code in codes):
+        return translated
+    kept = Counter(code for code in codes if not _ORPHAN_BACKSLASH_RE.fullmatch(code))
+    parts = split_protected_codes(translated)
+    for index in range(1, len(parts), 2):
+        code = parts[index]
+        held = next((held for held in kept if kept[held] and code.startswith(held)), None)
+        if held is not None:
+            kept[held] -= 1
+            continue
+        word = _ORPHAN_WORD_RE.fullmatch(code)
+        if word:
+            parts[index] = _escaped_orphan_backslash(word.group(1)) + code[word.end(1):]
+    return "".join(parts)
+
+
 def _reprotect_cached_codes(text, replacements):
     """Reapply known placeholders before validating a restored cache value."""
     protected = str(text)

@@ -316,18 +316,22 @@ class TranslationTests(unittest.TestCase):
 
     def test_results_export_lines_as_guided_cleans_every_reply_line(self):
         # Assistant-led exported curly apostrophes, 「」, 。 and stray っ that
-        # Guided's reply cleanup writes as ', ", . and nothing.
+        # Guided's reply cleanup writes as ', ", . and nothing, and a slash
+        # before a name, which MV/MZ read as an unknown code once translated,
+        # where Guided writes it escaped.
         sources = {
             "apostrophe": "大丈夫だよ。",
             "quote": "「待って！」と彼女は言った。",
             "stop": "ここで休もう。",
             "sokuon": "あっ、【P0】を見て。",
+            "slash": "\\ヘレンが来た。",
         }
         accepted = {
             "apostrophe": "It’s fine.",
             "quote": "「Wait!」 she said.",
             "stop": "Let's rest here。",
             "sokuon": "Ahっ, look at 【P0】.",
+            "slash": "\\Helen has come.",
         }
         row = logical_request(
             {
@@ -350,6 +354,7 @@ class TranslationTests(unittest.TestCase):
             "quote": '"Wait!" she said.',
             "stop": "Let's rest here.",
             "sokuon": "Ah, look at 【P0】.",
+            "slash": "\\\\Helen has come.",
         }
 
         def exported(quotes=True):
