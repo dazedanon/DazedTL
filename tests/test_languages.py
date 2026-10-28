@@ -243,6 +243,12 @@ class LanguageTests(unittest.TestCase):
             blocks.written_rows(["\\n<Ellen>\\.Hi", "Hello\\."], "English"),
             ["\\n<Ellen>\\.Hi", "Hello \\."],
         )
+        # A pause after a code that shows nothing, such as a colour, takes no
+        # space, which left a row opening on one; after a name it does.
+        self.assertEqual(
+            blocks.written_rows(["\\C[2]\\.Hello", "Hi \\N[1]\\.\\C[0]\\!"], "English"),
+            ["\\C[2]\\.Hello", "Hi \\N[1] \\.\\C[0]\\!"],
+        )
 
     def test_small_kana_stranded_in_a_moan_are_written_as_latin_letters(self):
         # A moan's small kana failed the residue check, so Guided Live paid a

@@ -591,7 +591,24 @@ def message_lead(text: str) -> int:
 
 
 _SENTENCE_GAP = re.compile(r"([!?])([A-Z])")
-_PAUSE_RUN = re.compile(r"([^\s\\])((?:\\[.!|^])+)")
+# A run of pause codes (\. \! \| \^) and what comes right before it: a
+# code, such as \C[2] or \{, or a character that is neither a space nor a
+# backslash.
+_PAUSE_RUN = re.compile(
+    r"(\\(?:[A-Za-z]+(?:\[[^\]\n]*\]|<[^>\n]*>)?|[{}<>$])|[^\s\\])((?:\\[.!|^])+)"
+)
+# The codes that show a word or an icon: actor, variable and party member
+# names, icons and the currency unit.
+_SHOWN_CODE = re.compile(r"\\(?:[NnVvPpIi]\[|[Gg]$)")
+
+
+def _pause_spacing(found: re.Match) -> str:
+    """One space before a pause run after a word or a code that shows one,
+    none after a code that shows nothing, such as a colour."""
+    before, run = found.groups()
+    if before.startswith("\\") and not _SHOWN_CODE.match(before):
+        return found.group(0)
+    return f"{before} {run}"
 
 
 def written_message(text: str, language) -> str:
@@ -600,13 +617,14 @@ def written_message(text: str, language) -> str:
     (message_lead): 。 left out after "...", and for a Latin-script target
     a space after ! or ? before a capital, since Japanese sets none after
     ！ and ？ and a model leaves it out too, one space before a whole run of
-    pause codes (\\. \\! \\| \\^), so none comes inside the run, and "- " closed
-    up to "-". Writing it again changes nothing."""
+    pause codes (\\. \\! \\| \\^) after a word (_pause_spacing), so none comes
+    inside the run, and "- " closed up to "-". Writing it again changes
+    nothing."""
     text = target_text.full_stops(text, language, target_text.AFTER_ELLIPSIS)
     if target_text.full_width(language):
         return text
     text = _SENTENCE_GAP.sub(r"\1 \2", text)
-    text = _PAUSE_RUN.sub(r"\1 \2", text)
+    text = _PAUSE_RUN.sub(_pause_spacing, text)
     return text.replace("- ", "-")
 
 
