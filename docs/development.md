@@ -57,6 +57,13 @@ Ruff also rejects file and process calls that go around the [platform layer](../
 Launching builds a missing renderer without these checks.
 Format with `node scripts/format.mjs`; it applies Prettier and Ruff defaults and leaves the bundled engine, Markdown and JSON unchanged.
 
+### Thinking effort table
+
+[effort.py](../backend/dazedtl/settings/effort.py) holds the levels each provider's models take, read from each provider's docs, and each row keeps the date it was last confirmed against the real API.
+Confirm it with `.venv/bin/python scripts/effort_check.py [--provider NAME]` when you add a model or level, when a provider changes its effort parameters, and before a release that changes the table.
+It reads each provider's key from the environment ([its header](../scripts/effort_check.py) names them), prints the requests it plans and their cost cap, and sends nothing without `--confirm`; then it reports each row as accepted, refused with the reason or failed, and lists the rows whose date to set.
+It never runs in tests or CI.
+
 ## Live test
 
 `node scripts/e2e.mjs` installs the checkout the way a user's downloaded ZIP is installed and drives the running app through a translation.

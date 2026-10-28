@@ -67,6 +67,7 @@ from dazedtl.api.contracts.runs import (
 from dazedtl.api.contracts.settings import (
     ConnectionInput,
     ConnectionUsage,
+    EffortLevel,
     Forge,
     ModelDefaults,
     ModelOptions,
@@ -74,6 +75,7 @@ from dazedtl.api.contracts.settings import (
     PreferenceValues,
     Settings,
     SourceLanguage,
+    ThinkingEffort,
 )
 from dazedtl.api.contracts.translation import (
     AssistantReleaseForm,
@@ -515,6 +517,12 @@ class ConnectionRequest(TypedDict):
     connection_id: str
 
 
+class EffortCheckRequest(TypedDict):
+    connection_id: str
+    model: str
+    level: EffortLevel
+
+
 class ConnectionSaveRequest(ConnectionInput):
     revision: int
 
@@ -749,6 +757,10 @@ METHODS: dict[str, Method] = {
     "connection_save": Method(ConnectionSaveRequest, Settings, during_close=True),
     "connection_select": Method(ConnectionRequest, Settings),
     "connection_check": Method(ConnectionRequest, Settings),
+    # One short paid request, sent only on the user's click.
+    "connection_effort_check": Method(
+        EffortCheckRequest, ThinkingEffort, refresh=False
+    ),
     "connection_usage": Method(ConnectionUsageRequest, ConnectionUsage, refresh=False),
     "connection_remove": Method(ConnectionRemoveRequest, Settings),
     "settings_model_defaults": Method(

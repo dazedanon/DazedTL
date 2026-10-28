@@ -3,10 +3,15 @@ import { api } from "../../api/client";
 import { messageOf } from "../../api/errors";
 import type { ModelDefaults } from "../../api/contracts";
 
+/**
+ * The active connection's defaults for `model`, read again whenever `basis`,
+ * what they depend on beside the model (such as the connection's last check
+ * and address), changes.
+ */
 export function useModelDefaults(
   connectionId: string,
   model: string,
-  checkedAt?: string | null,
+  basis: string,
   host = "",
 ) {
   const [attempt, retry] = useState(0);
@@ -15,7 +20,7 @@ export function useModelDefaults(
     value?: ModelDefaults;
     error?: string;
   }>();
-  const key = JSON.stringify([connectionId, model, checkedAt, host, attempt]);
+  const key = JSON.stringify([connectionId, model, basis, host, attempt]);
   useEffect(() => {
     if (!model) return;
     let active = true;

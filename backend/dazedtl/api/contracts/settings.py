@@ -36,15 +36,46 @@ class EffortOption(TypedDict):
     label: str
 
 
+class EffortCheckLevel(TypedDict):
+    value: EffortLevel
+    label: str
+    # The fields the check adds to its request, as JSON text.
+    sends: str
+
+
+class EffortCheckResult(TypedDict):
+    value: EffortLevel
+    label: str
+    # Accepted, so runs may send it; otherwise the server refused it.
+    passed: bool
+    message: str
+    checkedAt: str
+
+
+class EffortCheck(TypedDict):
+    """A model whose efforts nothing describes, on a connection whose server
+    may take `reasoning_effort` (settings/effort checkable): a level is
+    offered once a check on this connection passed it."""
+
+    levels: list[EffortCheckLevel]
+    results: list[EffortCheckResult]
+    # The reply limit of the check's one short request.
+    replyTokens: int
+    # The server is on this computer or its network, so a check is free.
+    local: bool
+
+
 class ThinkingEffort(TypedDict):
     """The efforts Settings offers for a model (settings/effort describe):
     the provider default first, then each level the model takes."""
 
     options: list[EffortOption]
     # A sentence on where the levels come from, the provider's own model
-    # list as the connection's last check read it or DazedTL's notes, and
-    # how to refresh them; absent when neither names any.
+    # list as the connection's last check read it, checks on this
+    # connection or DazedTL's notes, and how to refresh them; absent when
+    # none names any.
     source: NotRequired[str]
+    check: NotRequired[EffortCheck]
 
 
 class ModelDefaults(TypedDict):

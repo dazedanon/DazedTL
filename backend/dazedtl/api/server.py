@@ -878,6 +878,9 @@ class Application:
         self.guided.idle()
         return self.settings.check_connection(revision, connection_id)
 
+    def connection_effort_check(self, connection_id, model, level):
+        return self.settings.check_effort(connection_id, model, level)
+
     def connection_usage(self, connection_id):
         return self.settings.connection_usage(connection_id)
 
@@ -921,6 +924,10 @@ def routes(app):
             )
         },
         "connection_usage": (app.connection_usage, lambda value, _params: value),
+        "connection_effort_check": (
+            app.connection_effort_check,
+            lambda value, _params: value,
+        ),
         "settings_draft": (app.settings_draft, lambda value, _params: value),
         "settings_game_update": (
             app.settings_game_update,
@@ -1165,8 +1172,14 @@ def dispatcher(app, check=False):
         # These provider lookups run without the engine context lock, so a slow
         # one cannot hold navigation behind a pending mutation. Price and host
         # lookups stay read-only; a connection check is the one that refreshes
-        # the shared observations.
-        if name in {"connection_check", "openrouter_hosts", "settings_model_defaults"}:
+        # the shared observations. An effort check may wait some seconds on
+        # a local server loading its model.
+        if name in {
+            "connection_check",
+            "connection_effort_check",
+            "openrouter_hosts",
+            "settings_model_defaults",
+        }:
             return present(handler(**params), params)
         # Previews only read image files and run on the preview workers, which
         # must not enter the engine context: it redirects stdout process-wide.

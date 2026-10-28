@@ -7,7 +7,7 @@
 //   { "refuse": ["text"], "decline": ["text"], "fail": ["text"],
 //     "failFirst": false, "stall": false, "answer": null, "hold": false,
 //     "batchSeconds": 0, "long": ["text"], "reply": { "text": "reply" },
-//     "target": null }
+//     "target": null, "effort": null }
 //
 // - refuse: lines holding the text come back as a refusal note until the
 //   app sends its clarification; decline: they always do.
@@ -24,6 +24,10 @@
 //   answer: N, the first N requests are still answered.
 // - hold: a Batch stays in progress until hold is turned off; otherwise it
 //   completes batchSeconds after it was created.
+// - effort: "refuse" answers a request carrying `reasoning_effort` with
+//   HTTP 400, and "accept" reports the reasoning tokens it spent; otherwise
+//   the field is ignored, as many servers do. Settings' effort check, which
+//   asks "Reply with OK.", is answered "OK".
 //
 // Every request is recorded in <folder>/requests.jsonl; uploaded files and
 // Batches are kept in <folder>/batches. It also stands in for ntfy.sh at
@@ -44,6 +48,8 @@ import path from "node:path";
 import crypto from "node:crypto";
 
 export const model = "stand-in";
+/** The one short request Settings sends to check a thinking effort. */
+const checkPrompt = "Reply with OK.";
 
 /**
  * Anthropic's GET /v1/models rows: Opus 5.5 never turns thinking off,
@@ -299,8 +305,58 @@ export async function startProvider({ folder, port = 0 }) {
     fs.writeFileSync(path.join(store, `${id}.jsonl`), content);
   };
 
+  /** A chat completion carrying `content`, as `params` asked for it. */
+  function completion(params, content, usage = {}) {
+    const body = JSON.stringify(params);
+    return {
+      status: 200,
+      value: {
+        id: `chatcmpl-${crypto.randomUUID()}`,
+        object: "chat.completion",
+        created: Math.floor(Date.now() / 1000),
+        model: params.model || model,
+        choices: [
+          {
+            index: 0,
+            message: { role: "assistant", content },
+            finish_reason: "stop",
+          },
+        ],
+        usage: {
+          prompt_tokens: body.length,
+          completion_tokens: content.length,
+          total_tokens: body.length + content.length,
+          ...usage,
+        },
+      },
+    };
+  }
+
   /** A chat completion for `params`, or an HTTP error. */
   function complete(params) {
+    const settings = mode();
+    // A server that refuses the effort field, or takes it and reports the
+    // reasoning tokens it spent; by default it ignores it.
+    const level = params.reasoning_effort;
+    if (level !== undefined && settings.effort === "refuse")
+      return {
+        status: 400,
+        value: {
+          error: {
+            message: "Unrecognized request argument supplied: reasoning_effort",
+          },
+        },
+      };
+    const usage =
+      level !== undefined && settings.effort === "accept"
+        ? {
+            completion_tokens_details: {
+              reasoning_tokens: level === "none" ? 0 : 12,
+            },
+          }
+        : {};
+    if (requestText(params) === checkPrompt)
+      return completion(params, "OK", usage);
     const keyed = keyedLines(params);
     const lines = keyed || sourceLines(params);
     if (!lines)
@@ -308,7 +364,6 @@ export async function startProvider({ folder, port = 0 }) {
         status: 400,
         value: { error: { message: "The request carried no LineN payload." } },
       };
-    const settings = mode();
     const text = requestText(params);
     if ((settings.fail || []).some((item) => text.includes(item)))
       return {
@@ -348,28 +403,7 @@ export async function startProvider({ folder, port = 0 }) {
           )
         : { translations },
     );
-    const body = JSON.stringify(params);
-    return {
-      status: 200,
-      value: {
-        id: `chatcmpl-${crypto.randomUUID()}`,
-        object: "chat.completion",
-        created: Math.floor(Date.now() / 1000),
-        model: params.model || model,
-        choices: [
-          {
-            index: 0,
-            message: { role: "assistant", content },
-            finish_reason: "stop",
-          },
-        ],
-        usage: {
-          prompt_tokens: body.length,
-          completion_tokens: content.length,
-          total_tokens: body.length + content.length,
-        },
-      },
-    };
+    return completion(params, content, usage);
   }
 
   /** A Batch as OpenAI shows it, finishing it once its time is up. */

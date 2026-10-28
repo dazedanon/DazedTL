@@ -1527,11 +1527,9 @@ def refresh_run_estimates(run_dir: str | Path) -> tuple[dict, dict]:
 
 def is_local_endpoint(endpoint: str) -> bool:
     """Whether *endpoint* is a server on this machine, which sends no bill."""
-    lowered = str(endpoint or "").lower()
-    return any(
-        marker in lowered
-        for marker in ("localhost", "127.0.0.1", "[::1]", "0.0.0.0")
-    )
+    from dazedtl.settings.providers import local
+
+    return local(endpoint)
 
 
 def _candidate_rates(candidate: dict) -> dict[str, float]:
