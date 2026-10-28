@@ -35,6 +35,7 @@ from util.provider_costs import (
     cache_read_multiplier,
     cache_write_multiplier,
     has_billed_cache_writes,
+    openai_batch_caches,
     received_at,
     time_price_factor,
     time_priced_route,
@@ -2465,18 +2466,25 @@ def unestimatedThinking(provider, model):
     return thinks(provider, model)
 
 
-def openai_cache_prices(inputs, outputs, reads, cacheable, model, in_rate, out_rate):
+def openai_cache_prices(
+    inputs, outputs, reads, cacheable, model, in_rate, out_rate, plain
+):
     """An OpenAI Batch's prices with its automatic prompt cache, from token
     counts and per-token rates. ``reads`` are the input tokens expected to hit
-    the cache and ``cacheable`` those in prompts long enough to cache.
+    the cache, ``cacheable`` those in prompts long enough to cache, and
+    ``plain`` the Batch's price without a cache, as the caller priced it.
 
     Cached inputs cost the model's cache-read price (cache_read_multiplier);
-    Batch then applies its own discount (batch_price_factor).
-    Returns the tokens written, then (for models that bill writes) the most
-    that can be written, the price with the expected hits, and the price with
-    none, which is None with the most written for models that don't bill
-    writes.
+    Batch then applies its own discount (batch_price_factor). A model whose
+    Batch doesn't cache (openai_batch_caches) expects no hits.
+    Returns the cache hits it expects, the tokens written, then (for models
+    that bill writes) the most that can be written, the price with the
+    expected hits, which is ``plain`` when nothing is read or written, and
+    the price with none, which is None with the most written for models that
+    don't bill writes.
     """
+    if not openai_batch_caches(model):
+        reads = 0
     multiplier = cache_write_multiplier("openai", model)
     factor = batch_price_factor("openai")
     writes, max_writes, most = 0, None, None
@@ -2495,7 +2503,10 @@ def openai_cache_prices(inputs, outputs, reads, cacheable, model, in_rate, out_r
         + reads * in_rate * cache_read_multiplier("openai", model)
         + outputs * out_rate
     ) * factor
-    return writes, max_writes, cached, most
+    if not reads and max_writes is None:
+        # The same price, without the rounding of another formula.
+        cached = plain
+    return reads, writes, max_writes, cached, most
 
 
 @extensions.point
@@ -2607,8 +2618,10 @@ def estimateBatchCost(model=None, *, queue_file=None, log_prefix="[BATCH]"):
         cache_read_tok, cacheable_tokens, _ = openai_cache_counts(
             prompt_token_sequences
         )
+        # The reads stay as counted, so the estimate is priced again for
+        # another model from them; the hits are what this model's Batch reads.
         cache_read_tok = min(raw_input_tok, cache_read_tok)
-        cache_write_tok, max_writes, batch_cached, most = openai_cache_prices(
+        hits, cache_write_tok, max_writes, batch_cached, most = openai_cache_prices(
             raw_input_tok,
             output_tokens,
             cache_read_tok,
@@ -2616,10 +2629,11 @@ def estimateBatchCost(model=None, *, queue_file=None, log_prefix="[BATCH]"):
             est_model,
             in_rate,
             out_rate,
+            batch_nocache,
         )
         if max_writes is not None:
             cache_max_write_tok, batch_max = max_writes, most
-        if cache_read_tok:
+        if hits:
             cache_kind = "automatic"
     else:
         # We do not create Gemini explicit cache resources for these jobs.

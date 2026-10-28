@@ -14,8 +14,9 @@ from datetime import UTC, datetime
 # A change to what is counted, such as the output allowance, changes the
 # counts themselves and raises the counting kind's own version instead.
 # 1: every figure saved before figures recorded it. 2: OpenAI's per-model
-# cache prices (2.48.0) and every rule before them.
-PRICE_RULES_VERSION = 2
+# cache prices (2.48.0) and every rule before them. 3: no cache reads in an
+# OpenAI Batch on the models whose Batch doesn't cache (openai_batch_caches).
+PRICE_RULES_VERSION = 3
 
 
 def received_at(created=None) -> str:
@@ -135,6 +136,25 @@ _OPENAI_CACHE_READS = (
     (re.compile(r"(?:^|/)(?:gpt-4\.1|o3|o4-mini)(?:[-:]|$)"), 0.25),
     (re.compile(r"(?:^|/)gpt-6\.1-(?:sol|terra)(?:[-:]|$)"), 0.05),
 )
+
+
+# The OpenAI models whose Batch reads nothing from the prompt cache: OpenAI's
+# pricing page (https://developers.openai.com/api/docs/pricing, read
+# 2026-10-28) lists no Batch cached-input price ("-") for every model before
+# GPT-5 (GPT-4.1, 4.1 mini and nano, GPT-4o, 4o mini and 2024-05-13, o1,
+# o1-pro, o3, o3-pro, o3-mini, o4-mini, GPT-4 Turbo, GPT-4 and GPT-3.5 Turbo)
+# and for the GPT-5 "-pro" models, which have no prompt cache at all. A probe
+# Batch of 200 gpt-4.1-mini requests sharing a 4,818-token prefix reported
+# no cached tokens on any. Every other model lists half its Live cached price.
+_OPENAI_BATCH_NO_CACHE = re.compile(
+    r"(?:^|/)(?:gpt-3\.5|gpt-4(?:o|\.\d+)?|o\d|gpt-\d+(?:\.\d+)?-pro)(?:[-:]|$)"
+)
+
+
+def openai_batch_caches(model: str) -> bool:
+    """Whether an OpenAI Batch on ``model`` reads its shared prompts from the
+    cache, as the same requests sent Live do; see _OPENAI_BATCH_NO_CACHE."""
+    return not _OPENAI_BATCH_NO_CACHE.search(str(model or "").lower())
 
 
 def cache_read_multiplier(provider: str, model: str) -> float:
