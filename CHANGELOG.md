@@ -3,6 +3,14 @@
 Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 [release.mjs](scripts/release.mjs) writes each entry from [release/notes.md](release/notes.md).
 
+## [2.46.0] - 2026-10-28
+
+### Changed
+
+- **Guided:** when a rerun resends lines between ones an earlier run translated, a request now always shows the model the lines just before them with their earlier translation, also when it holds a single stretch of the scene, so the voice and tense carry on from the reused English; runs started before this update send what they did.
+- **Assistant-led:** in a Live run, each later part of a scene too long for one request now also sees the English already translated for the lines before it, as Guided's Live requests do, so the narration's tense and how characters address each other carry across the split.
+- **Assistant-led:** on RPG Maker, a request now shows the model an actor's English name in place of `\N[n]`, and of a `\V[n]` the game sets to that name, as Guided does, when the actor's glossary row names its actor ID, so the English around it stays grammatical and fits the actor's gender; the game keeps its codes.
+
 ## [2.45.0] - 2026-10-28
 
 ### Changed
@@ -1276,6 +1284,7 @@ Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachan
 - The first release of DazedTL as a desktop app, installed from a ZIP with a START launcher and updated from inside the app.
 - **Guided steps** for RPG Maker MV, MZ and VX Ace games, and **Assistant-led** for any game.
 
+[2.46.0]: https://github.com/dazedanon/DazedTL/compare/v2.45.0...v2.46.0
 [2.45.0]: https://github.com/dazedanon/DazedTL/compare/v2.44.0...v2.45.0
 [2.44.0]: https://github.com/dazedanon/DazedTL/compare/v2.43.0...v2.44.0
 [2.43.0]: https://github.com/dazedanon/DazedTL/compare/v2.42.0...v2.43.0
