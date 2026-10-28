@@ -625,6 +625,60 @@ const assistantWrite = [
   },
 ];
 
+// The unsent-lines game variant's messages of punctuation alone, and the
+// English form DazedTL writes them in (results.unsent_line).
+const unsentLines = { "「……」": '"……"', "！？": "!?" };
+
+/** The punctuation-only lines the assistant extracted: no request of its run
+ * sends them, the progress export marks their rows converted, and the game
+ * holds them in English form. */
+const unsentWritten = [
+  "No request sends the lines of punctuation alone; the export marks them converted and the game holds them in English form",
+  async ({ page, state }) => {
+    const work = path.join(state.game, ".dazedtl/len-method/work");
+    const read = (file) => JSON.parse(fs.readFileSync(file, "utf8"));
+    const { run } = read(path.join(work, "scripted-assistant.json"));
+    for (let index = 0, total = 1; index < total; index++) {
+      const reply = await helper(
+        page,
+        state,
+        "request",
+        "--run",
+        run,
+        "--index",
+        `${index}`,
+      );
+      total = reply.total;
+      const sent = Object.values(reply.request.sources).filter(
+        (source) => source in unsentLines,
+      );
+      if (sent.length)
+        throw new Error(`Request ${index} sends ${sent.join(", ")}.`);
+    }
+    const rows = read(path.join(work, "translation-units.json")).parts.flatMap(
+      (part) => read(path.join(state.game, part)).units,
+    );
+    const data = path.join(contentFolder(state.variants, state.game), "data");
+    const lines = read(path.join(data, "Map001.json"))
+      .events.flatMap((event) => event?.pages ?? [])
+      .flatMap((page) => page.list)
+      .filter((command) => command.code === 401)
+      .map((command) => command.parameters[0]);
+    for (const [source, english] of Object.entries(unsentLines)) {
+      const row = rows.find((row) => row.source === source);
+      if (!row?.converted || row.translation !== english)
+        throw new Error(
+          `The export's row of ${source}: ${JSON.stringify(row)}`,
+        );
+      if (!lines.includes(english) || lines.includes(source))
+        throw new Error(`Map001.json doesn't hold ${source} as ${english}.`);
+    }
+    console.log(
+      `\n  Written without a request: ${Object.values(unsentLines).join(", ")}`,
+    );
+  },
+];
+
 /** The QA bar of Progress's assistant phases: its state and detail line. */
 const progressQa = (page) =>
   page.evaluate(`(() => {
@@ -1643,9 +1697,9 @@ export const scenarios = {
   },
   "assistant-written": {
     description:
-      "An Assistant-led project the assistant translated whole and wrote into the game, its choice labels and help markers kept in Japanese.",
-    game: "choice-help",
-    steps: () => [...assistantLed.slice(0, 2), assistantWrite],
+      "An Assistant-led project the assistant translated whole and wrote into the game, its choice labels and help markers kept in Japanese and its lines of punctuation alone written in English form without a request.",
+    game: "choice-help+unsent-lines",
+    steps: () => [...assistantLed.slice(0, 2), assistantWrite, unsentWritten],
   },
   "assistant-checked": {
     description:

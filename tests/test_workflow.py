@@ -39,7 +39,7 @@ from dazedtl.translation.requests import (
     plan_input,
     provider_view,
 )
-from dazedtl.translation.results import EXPORT, Results
+from dazedtl.translation.results import EXPORT, Results, review_digest
 from dazedtl.translation.run_compiler import CENSUS_UNCOVERED, SCOPE_RULES
 from dazedtl.translation.service import IMAGE_UNITS, Translation
 from dazedtl.translation.skill_users import for_batch
@@ -428,6 +428,62 @@ class WorkflowTests(unittest.TestCase):
             )
             self.assertEqual(results.export(plan), (EXPORT, False))
             self.assertEqual(read_json(self.game / EXPORT), index)
+
+    def test_lines_without_source_letters_are_written_without_a_request(self):
+        # Guided never sends 「……」 or ！？; it writes them in English form.
+        units = WORK + "/work/source-units.json"
+        write_json(
+            self.game / units,
+            {
+                "version": 1,
+                "units": [
+                    {"id": "a/1", "scene": "a", "source": "はい。"},
+                    {"id": "a/2", "scene": "a", "source": "「……」\n\\C[2]！？"},
+                    # Its token holds a mark the English form would change.
+                    {
+                        "id": "a/3",
+                        "scene": "a",
+                        "source": "【？】",
+                        "tokens": ["【？】"],
+                    },
+                ],
+            },
+        )
+        selected = self.project.read()
+        self.service.save(
+            self.identity,
+            selected["revision"],
+            {**selected["options"], "mode": "agent"},
+        )
+        organized = self.prepared(self.service.organize(self.identity, units))
+        self.assertEqual(organized["summary"]["converted"], 1)
+        run = organized["run"]["id"]
+        _job, plan = self.service.jobs.store.load(run)
+        self.assertEqual(
+            [list(request["sources"]) for request in plan["requests"]],
+            [["a/1", "a/3"]],
+        )
+        written = self.service.results(self.identity, run)
+        self.assertEqual(written["translated"], 1)
+        self.assertEqual(
+            read_json(self.game / written["path"])["translations"],
+            {"a/2": '"……"\n\\C[2]!?'},
+        )
+        Results(self.game).export(plan)
+        rows = [
+            row
+            for part in read_json(self.game / EXPORT)["parts"]
+            for row in read_json(self.game / part)["units"]
+        ]
+        self.assertEqual(
+            [(row["source_id"], row.get("converted")) for row in rows],
+            [("a/1", None), ("a/3", None), ("a/2", True)],
+        )
+        # It counts as translated and reviewed, as Guided reviews no such line.
+        self.assertEqual(
+            rows[2]["reviewed_sha256"],
+            review_digest(rows[2]["source"], rows[2]["translation"]),
+        )
 
     def test_organized_lines_are_translated_declined_finished_and_read_back_by_id(self):
         units = WORK + "/work/source-units.json"

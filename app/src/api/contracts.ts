@@ -1685,6 +1685,14 @@ export type UncoveredField = {
   runs: number;
 };
 
+/** The census's lines of Japanese punctuation without letters that no
+rule sets aside, in runs, and how many units hold, which DazedTL writes
+without a request; outside coverage. */
+export type UnsentCoverage = {
+  runs: number;
+  extracted: number;
+};
+
 /** How the tool's census of the game's Japanese text is covered, in
 Japanese runs: extracted, set aside by a rule, or not extracted. */
 export type Coverage = {
@@ -1700,6 +1708,7 @@ export type Coverage = {
   needs_dump: string[];
   unreadable: number;
   uncovered_fields: UncoveredField[];
+  unsent?: UnsentCoverage;
   checked_at?: string;
 };
 
