@@ -31,6 +31,23 @@ def _strip_ansi(text):
         return text
     return re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", text)
 
+def _names_cost(module, tokens_in, tokens_out, before):
+    """What a names step cost: what its responses were priced at as they
+    arrived, the run's priced cost since ``before``, or the price of its
+    token totals when it priced none, as an estimate. Its own per-request
+    lines may already have closed the cost window the module's calculateCost
+    reads, which this call closes in any case."""
+    cost = module.calculateCost(tokens_in, tokens_out, module.MODEL)
+    spent = _priced_cost() - before
+    return spent if spent > 0 else cost
+
+
+def _priced_cost():
+    from util.translation import priced_cost
+
+    return priced_cost()
+
+
 def _mismatch_summary(count):
     count = max(0, int(count or 0))
     noun = "mismatch" if count == 1 else "mismatches"
@@ -1216,6 +1233,7 @@ class TranslationTaskCore:
                 f"🔤 Translating {len(pending)} speakers in grouped list batches…"
             )
             before_in, before_out = int(mvmz.TOKENS[0]), int(mvmz.TOKENS[1])
+            before_cost = _priced_cost()
             started = time.monotonic()
             speakers_saved = mvmz.finalizeSpeakerParse()
             if speakers_saved is False:
@@ -1230,7 +1248,7 @@ class TranslationTaskCore:
                 self._record_names_receipt(
                     delta_in,
                     delta_out,
-                    mvmz.calculateCost(delta_in, delta_out, mvmz.MODEL),
+                    _names_cost(mvmz, delta_in, delta_out, before_cost),
                     time.monotonic() - started,
                 )
             self.emit_log("✅ Speaker translations saved to the game glossary.")
@@ -1346,6 +1364,7 @@ class TranslationTaskCore:
         self.emit_log(
             f"🔤 Translating {len(pending)} WOLF speakers in grouped list batches…"
         )
+        before_cost = _priced_cost()
         started = time.monotonic()
         tokens = wolfdawn.translateSpeakerNames(pending)
         if tokens is False:
@@ -1358,7 +1377,7 @@ class TranslationTaskCore:
             self._record_names_receipt(
                 tokens[0],
                 tokens[1],
-                wolfdawn.calculateCost(tokens[0], tokens[1], wolfdawn.MODEL),
+                _names_cost(wolfdawn, tokens[0], tokens[1], before_cost),
                 time.monotonic() - started,
             )
         self.emit_log("✅ Speaker translations saved to the game glossary.")

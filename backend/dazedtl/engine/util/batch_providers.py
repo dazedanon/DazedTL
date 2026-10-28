@@ -79,6 +79,28 @@ def detect_batch_provider(model: str = "", api_url: str | None = None,
     return None
 
 
+def live_price_route(model: str = "", api_url: str | None = None,
+                     api_provider: str | None = None) -> str:
+    """The provider whose cache prices a Guided Live response on this route
+    is priced at (provider_costs.usage_cost): Anthropic's for a Claude model
+    on any host, as Guided has always priced Claude; a Batch provider's on
+    its own API; Kimi's or DeepSeek's on theirs; otherwise none, the default
+    rates. The current route is the engine's settings."""
+    from dazedtl.settings.providers import own_api
+
+    if any(part in str(model or "").lower()
+           for part in ("claude", "sonnet", "haiku", "opus")):
+        return PROVIDER_ANTHROPIC
+    detected = detect_batch_provider(model, api_url, api_provider)
+    if detected:
+        return detected
+    address = os.getenv("api", "") if api_url is None else str(api_url or "")
+    for identity in ("kimi", "deepseek"):
+        if own_api(identity, address):
+            return identity
+    return ""
+
+
 @extensions.point
 def batch_provider_label(provider: str | None) -> str:
     return {
@@ -409,6 +431,61 @@ def _empty_usage() -> dict:
     }
 
 
+def openai_usage(usage: Mapping, provider: str = PROVIDER_OPENAI) -> dict:
+    """The billed counts in an OpenAI-shaped response's ``usage``: the prompt
+    total with its cache reads and writes, the completion, and Gemini's
+    thinking. The one reading of such usage, for Batch results and both
+    methods' Live responses (translation._record_live_cost)."""
+    prompt = int(
+        usage.get("prompt_tokens")
+        or usage.get("promptTokens")
+        or usage.get("promptTokenCount")
+        or 0
+    )
+    completion = int(
+        usage.get("completion_tokens")
+        or usage.get("completionTokens")
+        or usage.get("candidatesTokenCount")
+        or 0
+    )
+    total = int(
+        usage.get("total_tokens")
+        or usage.get("totalTokens")
+        or usage.get("totalTokenCount")
+        or 0
+    )
+    prompt_details = usage.get("prompt_tokens_details") or usage.get("promptTokensDetails") or {}
+    cached = int(
+        prompt_details.get("cached_tokens")
+        or prompt_details.get("cachedTokens")
+        or usage.get("cachedContentTokenCount")
+        # Kimi also reports its cache reads beside the prompt total, and
+        # DeepSeek as its cache hits.
+        or usage.get("cached_tokens")
+        or usage.get("prompt_cache_hit_tokens")
+        or 0
+    )
+    cache_write = int(
+        prompt_details.get("cache_write_tokens")
+        or prompt_details.get("cacheWriteTokens")
+        or 0
+    )
+    thinking = 0
+    if provider == PROVIDER_GEMINI:
+        thinking = int(usage.get("thoughtsTokenCount") or 0)
+        if not thinking and total:
+            # Gemini's OpenAI compatibility response may only expose the
+            # inclusive total. The remainder is billed thinking output.
+            thinking = max(0, total - prompt - completion)
+    return {
+        "prompt_tokens": prompt,
+        "completion_tokens": completion,
+        "cache_read_input_tokens": cached,
+        "cache_creation_input_tokens": cache_write,
+        "thinking_tokens": thinking,
+    }
+
+
 @extensions.point
 def _openai_result(
     row: dict, provider: str = PROVIDER_OPENAI
@@ -437,54 +514,7 @@ def _openai_result(
         or body.get("usage_metadata")
         or {}
     )
-    prompt = int(
-        usage.get("prompt_tokens")
-        or usage.get("promptTokens")
-        or usage.get("promptTokenCount")
-        or 0
-    )
-    completion = int(
-        usage.get("completion_tokens")
-        or usage.get("completionTokens")
-        or usage.get("candidatesTokenCount")
-        or 0
-    )
-    total = int(
-        usage.get("total_tokens")
-        or usage.get("totalTokens")
-        or usage.get("totalTokenCount")
-        or 0
-    )
-    prompt_details = usage.get("prompt_tokens_details") or usage.get("promptTokensDetails") or {}
-    cached = int(
-        prompt_details.get("cached_tokens")
-        or prompt_details.get("cachedTokens")
-        or usage.get("cachedContentTokenCount")
-        # Kimi also reports its cache reads beside the prompt total.
-        or usage.get("cached_tokens")
-        or 0
-    )
-    cache_write = int(
-        prompt_details.get("cache_write_tokens")
-        or prompt_details.get("cacheWriteTokens")
-        or 0
-    )
-    thinking = 0
-    if provider == PROVIDER_GEMINI:
-        thinking = int(usage.get("thoughtsTokenCount") or 0)
-        if not thinking and total:
-            # Gemini's OpenAI compatibility response may only expose the
-            # inclusive total. The remainder is billed thinking output.
-            thinking = max(0, total - prompt - completion)
-    result = {
-        "text": text,
-        "prompt_tokens": prompt,
-        "completion_tokens": completion,
-        "cache_read_input_tokens": cached,
-        "cache_creation_input_tokens": cache_write,
-        "thinking_tokens": thinking,
-    }
-    return result, None
+    return {"text": text, **openai_usage(usage, provider)}, None
 
 
 def _download_file_text(provider: str, file_id: str, *, client=None,
