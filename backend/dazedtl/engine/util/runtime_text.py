@@ -98,6 +98,11 @@ def without_control_codes(text):
     return _CONTROL_CODE_RE.sub("", str(text))
 
 
+# The codes validate_control_codes keeps: every control code and the asset
+# codes without a backslash, such as ``_pum[...]``.
+_CHECKED_CODE_RE = re.compile('|'.join([_GENERAL_CONTROL_PATTERN, *ASSET_PATTERNS]))
+
+
 def _mask_mapped_control_codes(text, replacements):
     """Mask restored placeholder codes regardless of their translated order."""
     masked = str(text)
@@ -113,7 +118,7 @@ def _mask_mapped_control_codes(text, replacements):
     for original in replacements.values():
         code = str(original)
         is_orphan_backslash = _ORPHAN_BACKSLASH_RE.fullmatch(code) is not None
-        if _CONTROL_CODE_RE.fullmatch(code) is None and not is_orphan_backslash:
+        if _CHECKED_CODE_RE.fullmatch(code) is None and not is_orphan_backslash:
             continue
         matched_code = (
             _escaped_orphan_backslash(code) if is_orphan_backslash else code
@@ -182,8 +187,8 @@ def validate_control_codes(original_items, translated_items, replacements_by_lin
         target_text, target_mapping_missing = _mask_mapped_control_codes(
             translated, replacements
         )
-        source_sequence = extract_control_codes(source_text)
-        target_sequence = extract_control_codes(target_text)
+        source_sequence = _CHECKED_CODE_RE.findall(source_text)
+        target_sequence = _CHECKED_CODE_RE.findall(target_text)
 
         if source_mapping_missing:
             errors.append(
@@ -224,54 +229,30 @@ def validate_control_codes(original_items, translated_items, replacements_by_lin
     return not errors, errors
 
 
-# An asset code in any case and slash count, as a plugin may spell it.
-_ASSET_RE = re.compile('|'.join(ASSET_PATTERNS), re.IGNORECASE)
-_CODE_NAME_RE = re.compile(r'[\\]+([A-Za-z_][A-Za-z0-9_]*)\[')
-
-
-def validate_unmasked_control_codes(source, translated, source_text):
+def validate_unmasked_control_codes(source, translated):
     """validate_control_codes for one line its request sent with its codes
     as the source holds them, unmasked, as Assistant-led sends them.
 
-    A code whose bracketed parameter holds source-language text (the
-    compiled pattern *source_text*), such as a ruby ``\\r[漢字,かんじ]`` or a
-    font name, may be translated with its line, so it is left out on both
-    sides: in the source, and each code of its name in the translation that
-    the source doesn't hold as written. An asset code, such as
-    ``\\SE[タイプライター]``, is checked as the source spells it, since the game
-    finds the file by it.
+    Every code comes back as the source spells it, in count and argument,
+    as Guided restores each from its placeholder: a font, face or picture
+    name such as ``\\fn[和風]`` and an asset code such as ``\\SE[タイプライター]``
+    or ``_pum[名前]`` alike. Only a ruby (util/source_text RUBY), which Guided
+    sends as its base, may be translated or left out.
     """
+    from util.source_text import RUBY
+
     source, translated = str(source), str(translated)
-    parts = split_protected_codes(source)
-    free_names, kept = set(), []
-    for index in range(1, len(parts), 2):
-        code = parts[index]
-        name = _CODE_NAME_RE.match(code)
-        if (
-            name
-            and not _ASSET_RE.fullmatch("\\" + code.lstrip("\\"))
-            and _CONTROL_CODE_RE.fullmatch(code)
-            and source_text.search(code[name.end():])
-        ):
-            free_names.add(name.group(1).casefold())
-            # A space, so the codes on either side stay apart.
-            parts[index] = " "
-        else:
-            kept.append(code)
-
-    def free(match):
-        code = match.group()
-        name = _CODE_NAME_RE.match(code)
-        if name and name.group(1).casefold() in free_names and code not in kept:
-            return " "
-        return code
-
-    if free_names:
-        translated = _CONTROL_CODE_RE.sub(free, translated)
+    rubies = len(RUBY.findall(source))
+    if rubies:
+        # A space, so the codes on either side stay apart; a ruby the
+        # translation adds is an extra code.
+        source = RUBY.sub(" ", source)
+        translated = RUBY.sub(" ", translated, count=rubies)
+    codes = split_protected_codes(source)[1::2]
     return validate_control_codes(
-        "".join(parts),
+        source,
         translated,
-        {0: {_PLACEHOLDER.format(index): code for index, code in enumerate(kept)}},
+        {0: {_PLACEHOLDER.format(index): code for index, code in enumerate(codes)}},
     )
 
 
@@ -358,6 +339,37 @@ def restore_script_codes(text, replacements, escape_orphan_backslashes=False):
         ]
     else:
         return text
+
+
+# A slash run the translation of an orphan slash's word starts with: before
+# a word, as a code without an argument such as ``\\Helen``, or before text
+# still untranslated, alone.
+_ORPHAN_WORD_RE = re.compile(r"([\\]+)(?:[A-Za-z_][A-Za-z0-9_]*)?")
+
+
+def escaped_orphan_backslashes(source, translated):
+    """*translated*, a line Assistant-led sent with its codes unmasked, with
+    each odd slash run its *source* holds before text no code names, such as
+    the slash of ``\\ヘレン``, made even as Guided restores it
+    (_escaped_orphan_backslash), so ``\\Helen`` is written ``\\\\Helen`` and the
+    game shows the name instead of reading an unknown code. A code the
+    source holds, spelled as it spells it, and any code with an argument,
+    such as a translated ruby, are left alone."""
+    codes = split_protected_codes(source)[1::2]
+    if not any(_ORPHAN_BACKSLASH_RE.fullmatch(code) for code in codes):
+        return translated
+    kept = Counter(code for code in codes if not _ORPHAN_BACKSLASH_RE.fullmatch(code))
+    parts = split_protected_codes(translated)
+    for index in range(1, len(parts), 2):
+        code = parts[index]
+        held = next((held for held in kept if kept[held] and code.startswith(held)), None)
+        if held is not None:
+            kept[held] -= 1
+            continue
+        word = _ORPHAN_WORD_RE.fullmatch(code)
+        if word:
+            parts[index] = _escaped_orphan_backslash(word.group(1)) + code[word.end(1):]
+    return "".join(parts)
 
 
 def _reprotect_cached_codes(text, replacements):
