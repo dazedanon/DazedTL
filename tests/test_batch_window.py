@@ -653,7 +653,8 @@ class BatchWindowTests(unittest.TestCase):
                 def __init__(self):
                     super().__init__()
                     self.done, self.missing = set(), set()
-                    self.rejected = None
+                    self.rejected = self.uncertain = None
+                    self.polled = []
 
                 def input_tokens(self, _params):
                     return 3
@@ -662,9 +663,12 @@ class BatchWindowTests(unittest.TestCase):
                     super().submit(items)
                     if self.calls == self.rejected:
                         raise Rejected
+                    if self.calls == self.uncertain:
+                        raise ConnectionError("reset")  # No status: uncertain.
                     return {"id": f"provider-{self.calls}"}
 
                 def status(self, identity):
+                    self.polled.append(identity)
                     ended = identity in self.done
                     return {
                         "ended": ended,
@@ -795,3 +799,69 @@ class BatchWindowTests(unittest.TestCase):
             )
             self.assertEqual(states(failed), ["complete", "rejected", "pending"])
             self.assertEqual(provider.calls, 2)
+
+            # An uncertain submission stops later sends too and is never sent
+            # again, while the chunk sent before it is still collected; the
+            # run then waits uncertain for the chunk to be attached.
+            from dazedtl.translation.service import Translation
+
+            reconcile = "The provider submission must be reconciled before retrying."
+            identity, provider = run("uncertain", 3, batch_chunks=CHUNK_POLICY)
+            provider.uncertain = 2
+            sent = step(identity, provider)
+            self.assertEqual(states(sent), ["submitted", "submitting", "pending"])
+            self.assertEqual(sent["status"], "waiting")
+            self.assertTrue(sent["message"].startswith(reconcile), sent["message"])
+            provider.done.add(sent["batches"][0]["id"])
+            unresolved = step(identity, provider)
+            self.assertEqual(provider.polled[-1:], [sent["batches"][0]["id"]])
+            self.assertEqual(
+                (unresolved["status"], unresolved["message"]), ("uncertain", reconcile)
+            )
+            self.assertEqual(states(unresolved), ["complete", "submitting", "pending"])
+            self.assertEqual(provider.calls, 2)
+            # Attaching its provider job resumes the run, which collects it
+            # and sends the rest, never chunk 1 again.
+            Translation.attach_batch(
+                SimpleNamespace(
+                    idle=lambda _project: None, jobs=SimpleNamespace(store=store)
+                ),
+                "project",
+                identity,
+                1,
+                "provider-2",
+            )
+            provider.done.add("provider-2")
+            resumed = step(identity, provider)
+            self.assertEqual(states(resumed), ["complete", "complete", "submitted"])
+            self.assertEqual(provider.calls, 3)
+            provider.done.add(resumed["batches"][2]["id"])
+            self.assertEqual(step(identity, provider)["status"], "complete")
+            self.assertEqual(provider.calls, 3)
+
+            # An unmatched job likewise lets the chunk sent beside it collect.
+            identity, provider = run("unmatched", 3, batch_chunks=CHUNK_POLICY)
+            sent = step(identity, provider)
+            self.assertEqual(states(sent), ["submitted"] * 3)
+            provider.done.add(sent["batches"][0]["id"])
+            provider.unrelated = True
+            unmatched = step(identity, provider)
+            self.assertEqual(states(unmatched), ["unmatched", "submitted", "submitted"])
+            self.assertEqual(unmatched["status"], "waiting")
+            provider.unrelated = False
+            provider.done.update(chunk["id"] for chunk in sent["batches"][1:])
+            unresolved = step(identity, provider)
+            self.assertEqual(states(unresolved), ["unmatched", "complete", "complete"])
+            self.assertEqual(unresolved["status"], "uncertain")
+            self.assertTrue(unresolved["message"].startswith("Returned request IDs"))
+
+            # A run frozen before the policy stops at once, polling nothing.
+            identity, provider = run("one", 6)
+            provider.uncertain = 1
+            stopped = step(identity, provider)
+            self.assertEqual(
+                (stopped["status"], stopped["message"]), ("uncertain", reconcile)
+            )
+            stopped = step(identity, provider)
+            self.assertEqual(stopped["status"], "uncertain")
+            self.assertEqual((provider.calls, provider.polled), (1, []))
