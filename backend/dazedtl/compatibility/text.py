@@ -945,9 +945,14 @@ def fit_output(document, name, layout, areas=None, *, newline=False, resized=Fal
     )
     if not changes:
         return None, 0
-    # The engine's own formatting, so only the fitted lines differ.
+    return engine_json(document, newline=newline), changes
+
+
+def engine_json(document, *, newline=False):
+    """*document*'s bytes in the engine's own formatting, so only the values
+    DazedTL changed differ from the file it saved."""
     text = json.dumps(document, ensure_ascii=False, indent=4)
-    return (text + "\n" if newline else text).encode("utf-8"), changes
+    return (text + "\n" if newline else text).encode("utf-8")
 
 
 def unfitted(document, name, layout):
@@ -991,6 +996,8 @@ def prepare_publication(plan):
     prefix = data.relative_to(root)
     candidates, outputs, restored, sources, written = {}, {}, None, {}, {}
     if action == "export_selected":
+        from util.rpgmaker_locale import write_locale
+
         saved = plan.get("run_output")
         output_folder = Path(saved["folder"]) if saved else folder
         layout = fitting_layout(plan)
@@ -1007,10 +1014,14 @@ def prepare_publication(plan):
             document = decode_json(output)
             outputs[name] = digest(output)
             # Translation fitted the output to the widths of its run, which
-            # may be narrower than the game's now.
-            fitted = (
-                fit_output(document, name, layout, resized=True)[0] if layout else None
-            )
+            # may be narrower than the game's now, and left System.json the
+            # game's locale, which Assistant-led's writer sets as this does.
+            fitted = None
+            if layout:
+                localized = write_locale(document, name, layout.target)
+                fitted = fit_output(document, name, layout, resized=True)[0]
+                if fitted is None and localized:
+                    fitted = engine_json(document)
             if fitted is not None:
                 candidates[(prefix / name).as_posix()] = fitted
                 written[name] = digest(fitted)

@@ -13,6 +13,7 @@ from pathlib import Path
 import re
 
 from util import rpgmaker_blocks as blocks
+from util.rpgmaker_locale import write_locale
 from util.rpgmaker_qa_manifest import SCALAR_PARAMETER
 
 _FIELDS = {
@@ -180,18 +181,22 @@ def _walk(before, after, *, system=False):
         raise ValueError("Unsupported translated string array; use an explicit source adapter.")
 
 
-def preserve_originals(source, translated, *, filename: str):
+def preserve_originals(source, translated, *, filename: str, language=None):
     """Return an annotated copy; neither input is mutated, even on refusal.
 
     Only use with MV/MZ data JSON whose array ordering has been retained. Numbers
     may change for layout, but IDs, command codes/indents and all shapes must match.
     Existing grouped-source boundaries remain authoritative during corrections.
+    A System.json gets the locale for *language*, the run's target when None
+    (util.rpgmaker_locale.write_locale), and keeps the game's own under
+    ``_original``.
     """
     _align(source, translated)
     result = copy.deepcopy(translated)
     _inherit(source, result)
-    if filename == "System.json" and isinstance(result, dict) and "locale" in result:
-        result["locale"] = "en_US"
+    if isinstance(source, dict):
+        own = (source.get("_original") or {}).get("locale") or source.get("locale")
+        write_locale(result, filename, language, own)
     _walk(source, result, system=filename == "System.json")
     return result
 
@@ -253,7 +258,8 @@ def write_rpgmaker_json(source: Path, translated: Path, output: Path, layout=Non
     """Validate staged text and atomically write one file with preserved sources.
 
     Messages and scrolling text get the full stops and spacing Guided writes
-    (write_messages), for the language *layout* names. With *layout*, the
+    (write_messages), and System.json the locale Guided's Apply writes
+    (preserve_originals), for the language *layout* names. With *layout*, the
     game's Line widths (util.rpgmaker_rewrap.Layout), the text is fitted to
     them as it is written (see fit_written). Plugin
     commands and note tags whose translation splits on spaces into more
@@ -278,8 +284,11 @@ def write_rpgmaker_json(source: Path, translated: Path, output: Path, layout=Non
         # Existing game metadata is authoritative, including when staging starts
         # from a clean Japanese baseline rather than the previous translated file.
         _inherit(previous, source_doc)
-    result = preserve_originals(source_doc, staged_doc, filename=output.name)
-    write_messages(source_doc, result, layout.target if layout is not None else None)
+    language = layout.target if layout is not None else None
+    result = preserve_originals(
+        source_doc, staged_doc, filename=output.name, language=language
+    )
+    write_messages(source_doc, result, language)
     fit = fit_written(result, output.name, layout) if layout is not None else {}
     split = [
         {"file": output.name, **row} for row in split_changes(source_doc, result)
