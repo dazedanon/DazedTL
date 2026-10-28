@@ -732,6 +732,29 @@ test("Database files and Maps & events rows read the file's lines and state", ()
   );
   assert.deepEqual(fresh.lines, { done: 0, total: 240 });
   assert.equal(fresh.label, "Not started");
+  // A failed run left a file whose requests the provider rejected untouched
+  // too, but says so, unlike a file it never sent.
+  const failed: Job = {
+    ...live,
+    status: "failed",
+    outputs: {},
+    availableOutputs: [],
+    process: {
+      errors: [],
+      files: { "Map001.json": requested(["failed"]) },
+    },
+  };
+  const untouched = state(
+    {
+      "Map001.json": { lines: 6, translated: 0 },
+      "Map002.json": { lines: 2, translated: 0 },
+    },
+    [failed],
+  );
+  const rejected = row(untouched);
+  assert.equal(rejected.label, "Not started");
+  assert.match(rejected.detail, /requests failed without returning any lines/);
+  assert.equal(row(untouched, "Map002.json").detail, "");
   const partial = row(
     state({ "Map001.json": { lines: 13, translated: 11, help: 2 } }),
   );
