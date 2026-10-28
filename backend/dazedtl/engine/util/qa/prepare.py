@@ -65,6 +65,7 @@ from util.qa.selection import (
     _forced_deep_reasons,
     _lint_game,
     _lint_items,
+    _pronoun_checks,
     _screen_items,
     context_digests,
     context_target,
@@ -416,7 +417,12 @@ def prepare_task(
                 )
                 and not settled(item["id"], forced_reasons)
             }
-            for cluster_id, failed in _database_checks(manifest, data).items():
+            # A pronoun against a character's glossary gender goes to a
+            # reviewer too, who corrects it or says whom it means.
+            for cluster_id, failed in [
+                *_database_checks(manifest, data).items(),
+                *_pronoun_checks(manifest, context).items(),
+            ]:
                 reasons = [entry["check"] for entry in failed]
                 if not settled(cluster_id, reasons):
                     _merge_candidate(forced_candidates, cluster_id, reasons)

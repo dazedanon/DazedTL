@@ -72,6 +72,13 @@ _ORDINAL_RE = re.compile(
     re.IGNORECASE,
 )
 _THOUSANDS_RE = re.compile(r"^-?\d{1,3}(?:,\d{3})+$")
+# A censor mask: 〇 or ● standing in for letters the author hid, as in ま〇こ
+# or ●●●, which a translation keeps (pu〇sy) and never adds. A 〇 among other
+# kanji numerals is a zero, as in 一〇〇.
+_MASK_RE = re.compile(r"●|[〇一二三四五六七八九十百千万]+")
+_KANJI_NUMERAL_RE = re.compile(r"[一二三四五六七八九十百千万]")
+# A lone ● starting a row is a bullet, as in ●攻撃力アップ, not a mask.
+_BULLET_RE = re.compile(r"^([ \t\u3000]*)●(?!●)", re.MULTILINE)
 
 
 def _number(text: str) -> str:
@@ -108,6 +115,14 @@ def _numbers_match(source_numbers: list[str], live: str) -> bool:
                 following[count + 1] = True
         matched = following
     return matched[-1]
+
+
+def _masked(text: str) -> bool:
+    """Whether *text* holds a censor mask."""
+    return any(
+        run == "●" or ("〇" in run and not _KANJI_NUMERAL_RE.search(run))
+        for run in _MASK_RE.findall(_BULLET_RE.sub(r"\1", text))
+    )
 
 
 def row_codes(text: str):
@@ -147,6 +162,9 @@ def evidence(source: str, live: str, code: int | None) -> dict[str, Any]:
     # Japanese game writes hanzi of its own.
     if source_left(live, source):
         flags.append("source-language-residue")
+    # Masks are kept by presence, not position, which English words move.
+    if _masked(source) != _masked(live):
+        flags.append("censor-mask-mismatch")
     if not _runtime_tokens_match(source, live):
         flags.append("runtime-token-mismatch")
     live_lines = [line for line in live.splitlines() if line.strip()]

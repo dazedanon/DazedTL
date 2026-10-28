@@ -238,6 +238,11 @@ class LanguageTests(unittest.TestCase):
         self.assertEqual(
             blocks.written_message("待って...。誰？", "Japanese"), "待って...。誰？"
         )
+        # Codes and a name window in front of it are written as they are.
+        self.assertEqual(
+            blocks.written_rows(["\\n<Ellen>\\.Hi", "Hello\\."], "English"),
+            ["\\n<Ellen>\\.Hi", "Hello \\."],
+        )
 
     def test_small_kana_stranded_in_a_moan_are_written_as_latin_letters(self):
         # A moan's small kana failed the residue check, so Guided Live paid a

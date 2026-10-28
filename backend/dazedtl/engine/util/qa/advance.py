@@ -42,6 +42,7 @@ from util.qa.selection import (
     _entry_numbers,
     _lint_game,
     _nearby_commands,
+    _pronoun_checks,
     _scene_position,
 )
 from util.qa.storage import (
@@ -98,6 +99,7 @@ def _deep_items(
     for cluster_id, found in [
         *_fit_checks(manifest, layout).items(),
         *_interface_checks(_capture_folder(root), manifest).items(),
+        *_pronoun_checks(manifest, context).items(),
     ]:
         failed_checks[cluster_id] = [*failed_checks.get(cluster_id, []), *found]
     document_cache: dict[str, Any] = {}

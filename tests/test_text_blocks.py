@@ -430,22 +430,25 @@ class TextBlockTests(unittest.TestCase):
 
     def test_assistant_led_writes_a_messages_spacing_as_guided_does(self):
         # Guided writes "! Who" and "Wait \|" into a message; Assistant-led's
-        # writer wrote the assistant's "!Who" and "Wait\|" as they came.
+        # writer wrote the assistant's "!Who" and "Wait\|" as they came, and
+        # "\n<Ellen> \.Hi" where Guided keeps the name window out.
         from util.len_originals import write_rpgmaker_json
 
-        def page(rows):
+        def page(rows, named):
             return {
                 "list": [
                     command(101, ["", 0, 0, 2, ""]),
                     *(command(401, [row]) for row in rows),
                     command(105, [2, False]),
                     command(405, [rows[0]]),
+                    command(101, ["", 0, 0, 2, ""]),
+                    command(401, [named]),
                     command(0, []),
                 ]
             }
 
-        source = page(["\\SE[1]\\.あっ！誰？", "待って\\|", "……"])
-        staged = page(["\\SE[1]\\.Ah!Who?", "Wait\\|", "……"])
+        source = page(["\\SE[1]\\.あっ！誰？", "待って\\|", "……"], "\\n<エレン>\\.やあ")
+        staged = page(["\\SE[1]\\.Ah!Who?", "Wait\\|", "……"], "\\n<Ellen>\\.Hi")
         with tempfile.TemporaryDirectory() as folder:
             files = {
                 name: Path(folder, name + ".json") for name in ("source", "staged")
@@ -466,6 +469,7 @@ class TextBlockTests(unittest.TestCase):
                 for text in spaced:
                     self.assertIn(text, shown, target)
                 self.assertEqual(blocks.text(listed[5]), spaced[0], target)
+                self.assertEqual(blocks.text(listed[7]), "\\n<Ellen>\\.Hi", target)
                 # Writing it again changes nothing.
                 write_rpgmaker_json(files["source"], files["staged"], game, layout)
                 self.assertEqual(game.read_bytes(), written)

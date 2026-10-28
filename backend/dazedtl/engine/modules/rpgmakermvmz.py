@@ -4357,8 +4357,7 @@ def _searchCodes(page, pbar, jobList, filename):
                     )
 
                     ### \\n<Speaker>
-                    regex = r"([\\]+[kKnN][wWcCrRrEe]?[\[<](?:[\\]*\w\[\d+\])?(.*?)(?:[\\]*\w\[\d+\])?[>])"
-                    match = re.search(regex, finalJAString)
+                    match = rpgmaker_blocks.NAMETAG.search(finalJAString)
 
                     # Set Name
                     if match:
