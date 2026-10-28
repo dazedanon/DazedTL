@@ -9,6 +9,7 @@ from dazedtl.languages import ENGLISH
 from dazedtl.storage import write_json
 
 from .files import digest, project_path, read_json
+from .playtest import layout_check
 
 REPORT = ".dazedtl/guided/context-findings.json"
 CORE = ("glossary", "quirks", "game")
@@ -405,17 +406,7 @@ Those values are schema examples, not measurements.{current} `messageRows` is th
 shows before the game starts a new window. Use only measured values with source evidence, confirmed
 on screen as the measurement steps describe, and say in `reason` what the captures showed or what
 could not be seen; otherwise save the report with `layout` null and report the unresolved geometry.
-For an RPG Maker MV/MZ game the app confirms them itself: write the candidate widths, such as
-{{"width": 55, "faceWidth": 50, "listWidth": 70, "messageRows": 4}}, to a JSON file and run
-`{capture} --layout FILE --wait 10`. It shows {target} exactly that wide in the game's message window
-with and without a face and in its help window, and `layout.probes` gives each one's widest line,
-the room the window gives it, its rows and its capture file; look at the captures. A probe `fits`
-only with `layout.headroom` characters spare after its widest line, as fonts and fallback glyphs
-draw differently on other computers; `spare` and `spareCharacters` give the margin and `suggested`
-the most characters that keep it. Save widths whose probes fit, checking a `suggested` width again.
-`layout.fallback` lists the characters of the game's text its font lacks, with how often each
-appears, how many characters the fitter counts it as (`counted`) and how wide the game drew it
-(`drawn`); keep more spare for one drawn wider than counted, and name them in `reason`. Note windows and
+{layout_check(capture, target, "`reason`")} Note windows and
 plugin windows still need your own check; measure `noteWidth` on the window that draws the note tags
 the layout analysis names, not on other note text.
 The app automatically saves verified widths as the project’s character limits; the user does not

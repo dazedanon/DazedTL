@@ -50,6 +50,25 @@ def game_fixes(playtest, kept):
     )
 
 
+def layout_check(playtest, target, record):
+    """How the assistant confirms Line widths for an RPG Maker MV/MZ game
+    with the layout check and reads its result, in both methods' prompts:
+    `playtest` is the helper's playtest command, `target` the language the
+    check shows and `record` where the assistant names the glyphs its font
+    lacks."""
+    return f"""For an RPG Maker MV/MZ game the app confirms them itself: write the candidate widths, such as
+{{"width": 55, "faceWidth": 50, "listWidth": 70, "messageRows": 4}}, to a JSON file and run
+`{playtest} --layout FILE --wait 10`. It shows {target} exactly that wide in the game's message window
+with and without a face and in its help window, and `layout.probes` gives each one's widest line,
+the room the window gives it, its rows and its capture file; look at the captures. A probe `fits`
+only with `layout.headroom` characters spare after its widest line, as fonts and fallback glyphs
+draw differently on other computers; `spare` and `spareCharacters` give the margin and `suggested`
+the most characters that keep it. Save widths whose probes fit, checking a `suggested` width again.
+`layout.fallback` lists the characters of the game's text its font lacks, with how often each
+appears, how many characters the fitter counts it as (`counted`) and how wide the game drew it
+(`drawn`); keep more spare for one drawn wider than counted, and name them in {record}."""
+
+
 def final_check(playtest, plugins, qa):
     """The playtest's part of the copied Text QA task for an RPG Maker MV/MZ
     game: the final check the assistant runs with QA, given the helper's
