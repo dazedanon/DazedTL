@@ -839,6 +839,8 @@ export type TextQaStatus = {
   progress: Record<string, unknown>;
   /** Assistant-led only: squeezed labels the assistant shortens before apply. */
   labels?: QaLabel[];
+  /** Assistant-led only: never-translated text players can reach in the census's scope, which the assistant translates before apply. */
+  untranslated?: number;
   operation?: TextQaOperation;
   /** The saved findings file. */
   report?: string;

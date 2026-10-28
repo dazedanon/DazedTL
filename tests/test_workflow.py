@@ -469,6 +469,10 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(
             (declined["counts"]["declined"], declined["declined_units"]), (1, 1)
         )
+        # Text QA leaves its lines to that model (text_qa.untranslated).
+        self.assertEqual(
+            self.service.jobs.store.declined_sources(self.identity), ["いいえ。"]
+        )
         with self.assertRaisesRegex(ValueError, "still translating"):
             self.service.finish(self.identity, run)
         receipt = WORK + "/work/receipt.json"
@@ -533,6 +537,7 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(
             (settled["status"], settled["declined_units"]), ("complete", 0)
         )
+        self.assertEqual(self.service.jobs.store.declined_sources(self.identity), [])
         self.assertEqual(self.service.results(self.identity, run)["missing"], {})
         # A result saved before "Declined." read as a refusal note is no
         # translation: the run waits on its request again, which the

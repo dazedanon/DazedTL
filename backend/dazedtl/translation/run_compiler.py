@@ -92,6 +92,18 @@ def require_whole_messages(messages):
         )
 
 
+def scope_rules(root, value):
+    """The assistant's scope rules the game holds, checked against its
+    census *value*."""
+    rules_file = project_path(root, SCOPE_RULES, exists=False)
+    return census.rules_input(
+        read_json(rules_file) if rules_file.exists() else None,
+        census.fields(value),
+        census.files(value),
+        census.counted_language(value),
+    )
+
+
 def scope_coverage(engine, workspace, project_id, root, units):
     """How the census is covered by these units, the glossary and the
     scope rules, saved for Progress, with the RPG Maker messages the
@@ -102,13 +114,7 @@ def scope_coverage(engine, workspace, project_id, root, units):
         system.unlink(coverage_path(workspace, project_id), missing_ok=True)
         return None, None
     value = read_json(path)
-    rules_file = project_path(root, SCOPE_RULES, exists=False)
-    rules = census.rules_input(
-        read_json(rules_file) if rules_file.exists() else None,
-        census.fields(value),
-        census.files(value),
-        census.counted_language(value),
-    )
+    rules = scope_rules(root, value)
     report, uncovered = census.coverage(
         value,
         [unit["source"] for unit in units],

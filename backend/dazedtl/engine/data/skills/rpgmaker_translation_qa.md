@@ -94,10 +94,9 @@ Never decline lines to narrow QA's scope.
    has an answer, so tell the user once and keep waiting. `qa --undo <finding>` puts back one
    applied correction, and `qa --apply-again <finding>` applies an undone one again. Report a
    failed safeguard instead of working around it.
-9. `not_translated` in `status` and `findings.json` counts Japanese that was never translated:
-   no reviewer read it and QA did not correct it. When you report QA, name it as not reviewed,
-   with what `findings.json` says about whether players can reach each file or plugin; never
-   present it as checked.
+9. `not_translated` in `status` and `findings.json` counts Japanese that was never translated: no reviewer read it and QA did not correct it.
+   When the project helper's `qa` counts some of it as `untranslated`, translate that before you apply, as its next step says.
+   When you report QA, name the rest as not reviewed, with what `findings.json` says about whether players can reach each file or plugin; never present it as checked.
 
 ## Worker
 

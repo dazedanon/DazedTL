@@ -6,7 +6,9 @@ tells an assistant to, and game text moves only through DazedTL's operations.
 
 STEP is setup (identify, record the original, prepare, set up Git), organize (list the
 game's Japanese as source units and organize them into a run, with
---complete saying they cover all of it, as an API run needs), translate
+--complete saying they cover all of it, as an API run needs, and --miss ID
+leaving out the unit with that ID, as an extractor that misses a line players
+read), translate
 [--requests N] (answer the run's requests in order, the first N only when
 given), write (write every saved translation into the game, checking that
 the choice labels and help markers the game finds by their Japanese stay),
@@ -16,7 +18,11 @@ Data/Picture.wolf into a folder, translate its text_ images through the
 Images steps on that folder, pack it again and checkpoint it),
 checkpoint, the operation assistants started before the app checkpointed
 their work ran, play (run the release playtest and wait for it, printing
-where it stands), qa-applied (report the qa phase complete once Text QA's
+where it stands), untranslated (translate the text Text QA counts as never
+translated through the extraction and injection steps, play the game and
+prepare QA again, as qa's next step says, printing those locations and QA's status then),
+qa-applied (report the
+qa phase complete once Text QA's
 apply saved its work, as qa's next step says), final-check (play the game
 again after QA's apply, require the playtest to settle and report its
 problems and coverage) or package (report QA done and package the patch).
@@ -384,6 +390,103 @@ class Assistant:
             )
         return status
 
+    def untranslated(self):
+        """Translates the never-translated text Text QA counts as
+        untranslated through the extraction and injection steps, as qa's
+        next step says: each listed location becomes a unit, which organize
+        and translate answer, is written into the game, the game is played
+        again and QA reads it again. Returns those locations and QA's status
+        then."""
+        status = self.helper("qa", "--status")
+        if not status.get("untranslated"):
+            raise SystemExit(f"Text QA counts no untranslated text: {status['next']}")
+        listed = json.loads(
+            (self.work / "qa-untranslated.json").read_text(encoding="utf-8")
+        )["texts"]
+        # The extractor: each location's text as the game holds it, since
+        # QA's list cuts a long one short.
+        found = {}
+        for row in listed:
+            document, node, key = self.located(row["file"], row["pointer"])
+            found[f"qa:{row['file']}#{row['pointer']}"] = node[key]
+        path = self.work / "source-units.json"
+        units = json.loads(path.read_text(encoding="utf-8"))["units"]
+        units += [
+            {
+                "id": identity,
+                "group": "Other",
+                "scene": "Other",
+                "source": text,
+                "kind": "ui",
+                "speaker": None,
+            }
+            for identity, text in found.items()
+        ]
+        path.write_text(
+            json.dumps({"version": 1, "units": units}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        organized = self.helper(
+            "organize", "--input", f"{WORK}/source-units.json", "--complete"
+        )
+        self.remember(run=organized.get("run", organized)["id"])
+        self.translate(phase=False)
+        saved = self.helper("results", "--run", self.remembered()["run"])
+        results = json.loads((self.game / saved["path"]).read_text(encoding="utf-8"))
+        translations = results.get("translations", results)
+        # The injector: data through write_rpgmaker, plugin settings into
+        # js/plugins.js, saved as a checkpoint with the runtime manifest.
+        for row in listed:
+            document, node, key = self.located(row["file"], row["pointer"])
+            node[key] = translations[f"qa:{row['file']}#{row['pointer']}"]
+            if row["file"].endswith("js/plugins.js"):
+                file = self.game / row["file"]
+                text = file.read_text(encoding="utf-8-sig")
+                file.write_text(
+                    text[: text.index("[")]
+                    + json.dumps(document, ensure_ascii=False)
+                    + text[text.rindex("]") + 1 :],
+                    encoding="utf-8",
+                )
+                self.checkpoint("translation: write plugin text QA counted")
+            else:
+                staged = self.work / "staged" / row["file"]
+                staged.parent.mkdir(parents=True, exist_ok=True)
+                staged.write_text(json.dumps(document, ensure_ascii=False), "utf-8")
+                self.operation(
+                    "write_rpgmaker",
+                    {
+                        "source": row["file"],
+                        "translated": staged.relative_to(self.game).as_posix(),
+                        "output": row["file"],
+                    },
+                )
+        # The assistant played the game before, so QA takes the new report.
+        self.play()
+        return {"translated": listed, "qa": self.helper("qa", "--prepare")}
+
+    def located(self, file, pointer):
+        """A game file's document, and the object and key holding the value
+        at `pointer`: in js/plugins.js, `/<plugin>/<setting>` names a plugin
+        by its name, as QA's list does."""
+        path = self.game / file
+        text = path.read_text(encoding="utf-8-sig")
+        parts = [
+            part.replace("~1", "/").replace("~0", "~")
+            for part in pointer.split("/")[1:]
+        ]
+        if file.endswith("js/plugins.js"):
+            document = json.loads(text[text.index("[") : text.rindex("]") + 1])
+            node = next(
+                plugin for plugin in document if plugin.get("name") == parts[0]
+            )["parameters"]
+            parts = parts[1:]
+        else:
+            document = node = json.loads(text)
+        for part in parts[:-1]:
+            node = node[int(part)] if isinstance(node, list) else node[part]
+        return document, node, int(parts[-1]) if isinstance(node, list) else parts[-1]
+
     def qa_applied(self):
         """Reports the qa phase complete once Text QA's apply saved its work,
         as qa's next step then says; for MV/MZ, DazedTL keeps the phase open
@@ -429,12 +532,15 @@ class Assistant:
             )
         )
 
-    def units(self):
+    def units(self, miss=None):
+        """The game data's units, without the one whose ID is `miss`."""
         rows = []
         markers = self.help_markers()
         for path in sorted((self.game / self.data).glob("*.json")):
             document = json.loads(path.read_text(encoding="utf-8-sig"))
             for pointer, text in walk(document, markers=markers, source=self.source):
+                if f"{path.stem}{pointer}" == miss:
+                    continue
                 rows.append(
                     {
                         "id": f"{path.stem}{pointer}",
@@ -450,11 +556,13 @@ class Assistant:
     def answer(self, identity, source):
         return reply(identity, source, self.target)
 
-    def organize(self, complete=False):
+    def organize(self, complete=False, miss=None):
+        """Organizes the game's units, leaving out the one whose ID is
+        `miss`, as an extractor that misses a line players read."""
         self.report("extraction")
         source = self.work / "source-units.json"
         source.write_text(
-            json.dumps({"version": 1, "units": self.units()}, ensure_ascii=False),
+            json.dumps({"version": 1, "units": self.units(miss)}, ensure_ascii=False),
             encoding="utf-8",
         )
         command = ["organize", "--input", f"{WORK}/source-units.json"]
@@ -469,12 +577,13 @@ class Assistant:
             try:
                 organized = self.helper(*command, "--complete")
             except SystemExit:
-                # The units leave out the title and plugin text; add what
-                # organize names, which this extractor never writes back.
+                # The units leave out the title and plugin text, and any line
+                # missed; add what organize names, which this extractor never
+                # writes back.
                 if not report.is_file():
                     raise
                 uncovered = json.loads(report.read_text(encoding="utf-8"))["uncovered"]
-                units = self.units() + [
+                units = self.units(miss) + [
                     {
                         "id": f"{entry['file']}#{entry['location']}#{index}",
                         "group": "Other",
@@ -493,8 +602,11 @@ class Assistant:
                 organized = self.helper(*command, "--complete")
         self.remember(run=organized.get("run", organized)["id"])
 
-    def translate(self, requests=None):
-        self.report("translation")
+    def translate(self, requests=None, phase=True):
+        """Answers the run's requests without a saved translation, reporting
+        the translation phase first unless `phase` is false."""
+        if phase:
+            self.report("translation")
         run = self.remembered()["run"]
         index, total = 0, 1
         while index < total and (requests is None or index < requests):
@@ -504,7 +616,8 @@ class Assistant:
             )
             reply = json.loads(out.read_text(encoding="utf-8"))
             total, request = reply["total"], reply["request"]
-            if request.get("accepted"):
+            # Organizing again keeps the translations of unchanged requests.
+            if request.get("accepted") or reply.get("result"):
                 index += 1
                 continue
             translations = {
@@ -679,6 +792,7 @@ def main() -> None:
             "archived-images",
             "checkpoint",
             "play",
+            "untranslated",
             "qa-applied",
             "final-check",
             "package",
@@ -688,13 +802,14 @@ def main() -> None:
     parser.add_argument("--game", type=Path, required=True)
     parser.add_argument("--requests", type=int)
     parser.add_argument("--complete", action="store_true")
+    parser.add_argument("--miss")
     args = parser.parse_args()
     assistant = Assistant(json.loads(args.helper_json), args.game)
     if args.step == "translate":
         print(json.dumps(assistant.translate(args.requests), ensure_ascii=False))
     elif args.step == "organize":
-        assistant.organize(args.complete)
-    elif args.step in {"play", "final-check"}:
+        assistant.organize(args.complete, args.miss)
+    elif args.step in {"play", "untranslated", "final-check"}:
         result = getattr(assistant, args.step.replace("-", "_"))()
         print(json.dumps(result, ensure_ascii=False))
     else:
