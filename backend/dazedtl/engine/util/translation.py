@@ -2022,12 +2022,46 @@ class BatchResultUnavailableError(RuntimeError):
         self.cause = cause
 
 
-class RunRefusedError(BatchResultUnavailableError):
+class RunStoppingError(RuntimeError):
+    """Nothing later in this run can succeed, such as when its provider
+    refuses every request alike: the run stops with this message instead of
+    sending the rest. A run frozen with the run-stop policy (RUN_STOPS) takes
+    no further file; an older one fails only the file, as when approved."""
+
+
+class RunRefusedError(RunStoppingError):
     """A provider refused a request for a reason every later request of the
     run shares, such as a thinking effort it does not take
-    (compatibility/request_parameters): the run stops with this message
-    instead of sending the rest. It is a BatchResultUnavailableError because
-    the modules let that class through their per-line error handling."""
+    (compatibility/request_parameters)."""
+
+
+class RequestRejectedError(Exception):
+    """In a run frozen with the run-stop policy, the provider rejected a
+    request with an error sending it again would get too
+    (compatibility/run_stops): the call fails at once instead of being
+    retried."""
+
+
+# The errors the modules' per-line and per-page handling lets through to the
+# file's result: a Batch phase's missing result and a run's stop.
+RUN_STOPPING = (BatchResultUnavailableError, RunStoppingError)
+
+# A run frozen with the run-stop policy (settings/preferences RUN_STOPS) ends
+# at a RunStoppingError: its worker reports the stop (run_stop) and the run
+# takes no further file. Runs frozen without it fail only the file.
+RUN_STOPS = False
+# The stops this worker raised, for a module that caught one.
+_run_stops = []
+
+
+def run_stop(error=None):
+    """The message a run frozen with the run-stop policy stops with when
+    *error* is a RunStoppingError or this worker raised one; else None."""
+    if not RUN_STOPS:
+        return None
+    if isinstance(error, RunStoppingError):
+        return str(error)
+    return _run_stops[0] if _run_stops else None
 
 
 # A consume miss is the file's failure reason beside its name in the run's
@@ -5222,7 +5256,8 @@ def translateText(system, user, history, penalty, formatType, model, numLines=No
             raise
         # Handle HTTP status errors (404, 500, etc.)
         if e.status_code == 404:
-            raise Exception(f"API endpoint not found (404) - check your API_PROVIDER and base URL settings. Error: {e}")
+            # OpenAI and Anthropic answer an unknown model with a 404 too.
+            raise Exception(f"API endpoint or model not found (404) - check the model ({model}) and your API_PROVIDER and base URL settings. Error: {e}")
         elif e.status_code >= 500:
             raise Exception(f"API server error ({e.status_code}) - retrying... Error: {e}")
         elif e.status_code == 400 and formatType == "json" and "json_schema" in str(responseFormat):
@@ -5696,14 +5731,14 @@ def last_translation_had_mismatch() -> bool:
 
 def _retry_live_translation(func):
     """Retry live provider work; batch phases only read or write local data.
-    A RunRefusedError stops the run at once instead: every retry would be
-    refused alike."""
+    A RunStoppingError stops the run at once instead, and a
+    RequestRejectedError fails the call: every retry would be refused alike."""
 
     def attempt(*args, **kwargs):
         try:
             return func(*args, **kwargs)
-        except RunRefusedError as error:
-            return _Refused(error)
+        except (RunStoppingError, RequestRejectedError) as error:
+            return _Final(error)
 
     retried = retry(exceptions=Exception, tries=5, delay=5)(attempt)
 
@@ -5712,16 +5747,18 @@ def _retry_live_translation(func):
         if get_batch_phase():
             return func(*args, **kwargs)
         result = retried(*args, **kwargs)
-        if isinstance(result, _Refused):
+        if isinstance(result, _Final):
+            if RUN_STOPS and isinstance(result.error, RunStoppingError):
+                _run_stops.append(str(result.error))
             raise result.error
         return result
 
     return wrapped
 
 
-class _Refused:
-    """A RunRefusedError carried past the retry decorator, which retries
-    every exception."""
+class _Final:
+    """An error carried past the retry decorator, which retries every
+    exception, because no retry can succeed."""
 
     def __init__(self, error):
         self.error = error

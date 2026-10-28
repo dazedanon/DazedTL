@@ -50,6 +50,26 @@ def monitor_progress():
         progress_event.wait(0.1)
 
 
+def _report_run_stop(filename, error=None, result=None):
+    """Reports the stop of a run frozen with the run-stop policy
+    (util/translation run_stop) as *filename*'s result, with the TOTAL its
+    handler returned when a module caught the stop, which tells the run to
+    take no further file; False when the run goes on."""
+    translation = sys.modules.get("util.translation")
+    stop = None if translation is None else translation.run_stop(error)
+    if stop is None:
+        return False
+    print(
+        "RUN_STOPPED:"
+        + json.dumps(
+            {"filename": filename, "error": stop, "result": result},
+            ensure_ascii=False,
+        ),
+        flush=True,
+    )
+    return True
+
+
 def run_handler(project_root, module_name, filename, estimate_only):
     """Run a translation module handler."""
     global progress_active
@@ -145,6 +165,11 @@ def run_handler(project_root, module_name, filename, estimate_only):
                             rpgmakermvmz.TIMETOTAL = 0
                             reset_accurate_cost()
                         handler_result = handler(current_filename, estimate_only)
+                        # A module that caught the run's stop still ends it.
+                        if _report_run_stop(
+                            current_filename, result=handler_result
+                        ):
+                            break
                         if multi_file:
                             mismatch_count = 0
                             if rpgmakermvmz is not None:
@@ -162,6 +187,8 @@ def run_handler(project_root, module_name, filename, estimate_only):
                                 flush=True,
                             )
                     except Exception as exc:
+                        if _report_run_stop(current_filename, exc):
+                            break
                         if not multi_file:
                             raise
                         print(

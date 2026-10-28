@@ -300,6 +300,9 @@ class TranslationTaskCore:
         self._batch_submit_approved = False
         self._batch_pending_estimate = None
         self.estimate_summary = None
+        # The message a run frozen with the run-stop policy stopped with
+        # (util/translation run_stop), which is the run's own.
+        self.run_stop = None
         self._speaker_confirm_event = threading.Event()
         self._speaker_translation_approved = False
         self._reported_unsupported_mvmz_files = set()
@@ -712,6 +715,7 @@ class TranslationTaskCore:
             # Read output in real-time to capture progress
             stdout_lines = []
             stderr_lines = []
+            run_stops = []
 
             def read_stdout():
                 """Read stdout line by line."""
@@ -766,6 +770,19 @@ class TranslationTaskCore:
                             stderr_lines.append(
                                 f"Invalid multi-file error marker: {exc}"
                             )
+                    elif line.startswith("RUN_STOPPED:"):
+                        try:
+                            payload = json.loads(line[len("RUN_STOPPED:"):])
+                            result = (
+                                "RUN_STOPPED",
+                                str(payload["error"]),
+                                payload.get("result"),
+                            )
+                            run_stops.append(result)
+                            if file_result_callback is not None:
+                                file_result_callback(payload["filename"], result)
+                        except Exception as exc:
+                            stderr_lines.append(f"Invalid run stop marker: {exc}")
                     else:
                         stdout_lines.append(line)
                         # Forward each line to the log as it is read, rather than
@@ -809,6 +826,8 @@ class TranslationTaskCore:
             # Check if process was terminated by stop signal
             if self.should_stop:
                 return "Stopped"
+            if run_stops and file_result_callback is None:
+                return run_stops[0]
 
             stdout_lines_clean = stdout.strip().split('\n')
             mismatch_count = sum(
@@ -963,7 +982,7 @@ class TranslationTaskCore:
                         self.item_progress_signal.emit(desc, int(current), int(total))
                     except ValueError:
                         pass
-                elif kind in {"FILE_RESULT", "FILE_ERROR"}:
+                elif kind in {"FILE_RESULT", "FILE_ERROR", "RUN_STOPPED"}:
                     try:
                         payload = json.loads(value)
                         filename = payload["filename"]
@@ -971,7 +990,13 @@ class TranslationTaskCore:
                         stderr_lines.append(f"Invalid multi-file result marker: {exc}")
                         continue
                     count, mismatches[0] = mismatches[0], 0
-                    if kind == "FILE_ERROR":
+                    if kind == "RUN_STOPPED":
+                        result = (
+                            "RUN_STOPPED",
+                            str(payload.get("error")),
+                            payload.get("result"),
+                        )
+                    elif kind == "FILE_ERROR":
                         result = (
                             "SUBPROCESS_ERROR",
                             payload.get("error") or "Unknown error",
@@ -1017,8 +1042,11 @@ class TranslationTaskCore:
                 current = None
                 if not self.should_stop:
                     report(filename, result)
-                if isinstance(result, tuple) and result[0] == "SUBPROCESS_ERROR":
-                    # The worker exits after a failed file.
+                if isinstance(result, tuple) and result[0] in {
+                    "SUBPROCESS_ERROR",
+                    "RUN_STOPPED",
+                }:
+                    # The worker exits after a failed file or the run's stop.
                     break
                 current = take()
         finally:
@@ -1475,6 +1503,15 @@ class TranslationTaskCore:
                 elif isinstance(result, tuple) and len(result) == 2 and result[0] == "SUBPROCESS_ERROR":
                     had_failure = True
                     self.file_error_signal.emit(filename, result[1])
+                elif isinstance(result, tuple) and len(result) == 3 and result[0] == "RUN_STOPPED":
+                    # Every worker that meets the stop reports it, with what
+                    # its file cost when a module caught it; the run takes no
+                    # further file and ends with the first's message, which
+                    # its worker already logged.
+                    had_failure = stopped = True
+                    if self.run_stop is None:
+                        self.run_stop = result[1]
+                    self.file_error_signal.emit(filename, result[1])
                 elif result and result not in ("Fail", "Stopped"):
                     total_cost = result
                 elif result == "Stopped":
@@ -1572,7 +1609,9 @@ class TranslationTaskCore:
             stopped = self._run_live_files(
                 matching_files, max(1, threads), _handle_file_result
             )
-            return "Stopped" if stopped else _completed_result()
+            if stopped and self.run_stop is None:
+                return "Stopped"
+            return _completed_result()
 
         # Estimate cache accounting now claims prompt-cache writes under a
         # cross-process lock, so estimation can safely use the configured file
@@ -1593,6 +1632,8 @@ class TranslationTaskCore:
                         remaining_future.cancel()
                 break
 
+            if future.cancelled():
+                continue
             filename = future_to_filename[future]
             # Resolve the future before emitting progress so cost lines from the
             # subprocess are queued ahead of the file-complete progress event.
@@ -1607,7 +1648,12 @@ class TranslationTaskCore:
                 self.emit_progress(completed_count, total_files, filename)
                 continue
             if _handle_file_result(filename, result):
-                break
+                if self.run_stop is None:
+                    break
+                # The run stopped: no further file starts, and the files
+                # already started meet the stop at their next request.
+                for waiting in future_to_filename:
+                    waiting.cancel()
 
         if self.executor:
             try:
@@ -1621,6 +1667,7 @@ class TranslationTaskCore:
     def run(self):
         """Run the translation process."""
         use_batch_estimate = False
+        self.run_stop = None
         try:
             load_dotenv(self.project_root / ".env")
             sys.path.insert(0, str(self.code_root))
@@ -2090,7 +2137,9 @@ class TranslationTaskCore:
             else:
                 if not self.should_stop:
                     self.emit_log("❌ Translation failed!")
-                    self.finished_signal.emit(False, "Translation failed")
+                    self.finished_signal.emit(
+                        False, self.run_stop or "Translation failed"
+                    )
                 else:
                     # Only log the final stop message here
                     self.emit_log("🛑 Translation stopped by user")

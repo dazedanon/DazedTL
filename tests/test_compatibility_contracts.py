@@ -715,6 +715,146 @@ class CompatibilityContracts(unittest.TestCase):
                 environment.prepare(root)
             self.assertEqual(native_prepare.call_count, before)
 
+    def test_a_provider_error_every_request_gets_stops_a_frozen_run(self):
+        # A Guided Live run whose every request got the same HTTP 400 sent
+        # each call five times and went on through every file. Under the
+        # run-stop policy the same deterministic error on 3 requests in a row,
+        # across workers, stops the run and nothing more is sent; one such
+        # error among successes fails only its call, without a retry; a run
+        # frozen before keeps each error as it was.
+        from dazedtl.compatibility import run_stops
+        from dazedtl.settings.preferences import RUN_STOPS
+
+        class Stopping(RuntimeError):
+            pass
+
+        class Rejected(Exception):
+            pass
+
+        class StatusError(Exception):
+            """An SDK's error, as the engine's wrapped one holds it."""
+
+            def __init__(self, status, message):
+                super().__init__(f"Error code: {status}")
+                self.status_code = status
+                self.body = {"message": message, "code": "model_not_found"}
+
+        def provider_error(status, message="The model `gone` does not exist."):
+            sdk = StatusError(status, message)
+            wrapped = Exception(f"API status error ({status}): {sdk}")
+            wrapped.__context__ = sdk
+            return wrapped
+
+        replies, sent = [], []
+
+        def provider(*_args, **_kwargs):
+            reply = replies.pop(0)
+            sent.append(reply)
+            if isinstance(reply, BaseException):
+                raise reply
+            return reply
+
+        def worker(policy, root, coordinator=False):
+            translation = SimpleNamespace(
+                translateText=point(provider),
+                RunStoppingError=Stopping,
+                RequestRejectedError=Rejected,
+            )
+            run_stops.configure(translation, policy, root, coordinator=coordinator)
+            return translation
+
+        def outcomes(*calls):
+            results = []
+            for translation in calls:
+                try:
+                    results.append(translation.translateText("s", "u"))
+                except Exception as error:
+                    results.append(type(error).__name__)
+            return results
+
+        frozen = {"runStops": RUN_STOPS}
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            record = root / "log/run_stop.json"
+            first, second = worker(frozen, root), worker(frozen, root)
+            self.assertTrue(first.RUN_STOPS)
+            # One rejection among successes fails its call alone, at once.
+            rejected = provider_error(400)
+            replies[:] = ["ok", rejected, "ok", "ok"]
+            self.assertEqual(
+                outcomes(first, second, first, second),
+                ["ok", "Rejected", "ok", "ok"],
+            )
+            self.assertFalse(record.exists())
+            # Prompts a safety system flagged share one error, but the next
+            # need not be flagged: each fails its call alone.
+            flagged = provider_error(
+                400,
+                "Invalid prompt: your prompt was flagged as potentially violating "
+                "our usage policy.",
+            )
+            replies[:] = [flagged] * 3 + ["ok"]
+            self.assertEqual(
+                outcomes(first, second, first, second), ["Rejected"] * 3 + ["ok"]
+            )
+            self.assertFalse(record.exists())
+            # Timeouts, rate limits and server errors pass as before and
+            # neither count nor end a streak; a different error starts anew.
+            unavailable = provider_error(503)
+            replies[:] = [
+                provider_error(400),
+                unavailable,
+                provider_error(404, "No such route."),
+                provider_error(400),
+                provider_error(400),
+                unavailable,
+                "ok",
+            ]
+            self.assertEqual(
+                outcomes(first, second, first, second, first, second, first),
+                ["Rejected", "Exception", "Rejected"]
+                + ["Rejected"] * 2
+                + ["Exception", "ok"],
+            )
+            self.assertFalse(record.exists())
+            # The same error on 3 requests in a row stops the run in every
+            # worker, which sends nothing more.
+            replies[:] = [provider_error(400)] * 3 + ["ok"]
+            del sent[:]
+            self.assertEqual(
+                outcomes(first, second, first, second, first),
+                ["Rejected", "Rejected", "Stopping", "Stopping", "Stopping"],
+            )
+            self.assertEqual(len(sent), 3)
+            with self.assertRaises(Stopping) as caught:
+                second.translateText("s", "u")
+            self.assertEqual(
+                str(caught.exception),
+                "The provider rejected 3 requests in a row with the same error, so "
+                "the run stopped without sending the rest: HTTP 400 - The model "
+                "`gone` does not exist. Check the model and the connection in "
+                "Settings, then start the run again. Rejected requests are not "
+                "billed.",
+            )
+            # The next attempt starts without the stop; a stop an inner layer
+            # raises, such as a refused effort, ends the run at the first.
+            worker(frozen, root, coordinator=True)
+            self.assertFalse(record.exists())
+            replies[:] = [Stopping("Refused effort."), "ok"]
+            del sent[:]
+            self.assertEqual(outcomes(first, second), ["Stopping", "Stopping"])
+            self.assertEqual(len(sent), 1)
+            # A run frozen before the policy sends every request and gets each
+            # error unchanged, for the engine to retry as before.
+            older = worker({"smallKana": "small-kana-v1"}, root)
+            self.assertFalse(older.RUN_STOPS)
+            replies[:] = [rejected] * 3 + ["ok"]
+            for _ in range(3):
+                with self.assertRaises(Exception) as caught:
+                    older.translateText("s", "u")
+                self.assertIs(caught.exception, rejected)
+            self.assertEqual(older.translateText("s", "u"), "ok")
+
     def test_claude_estimates_scale_from_claudes_own_count_of_a_spread_sample(self):
         # Claude's estimates once counted only the shared instructions with
         # Claude's tokenizer and the rest approximately, understating input.

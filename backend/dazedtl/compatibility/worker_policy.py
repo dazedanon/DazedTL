@@ -17,6 +17,7 @@ from dazedtl.settings.preferences import (
     MAP_NAME_IDENTITIES,
     PAGE_PACKING,
     REUSE_STRETCHES,
+    RUN_STOPS,
     SAME_LINE_SPEAKERS,
     SHORT_OUTPUTS,
     SMALL_KANA,
@@ -30,7 +31,7 @@ from dazedtl.settings.providers import infer_provider, openrouter_host
 from dazedtl.storage import write_json
 from dazedtl.translation.refusals import POLICY as REFUSAL_POLICY
 
-from . import state_requests
+from . import run_stops, state_requests
 from .request_parameters import configure_builders
 from .run_evidence import Evidence
 
@@ -168,6 +169,7 @@ def install(*, coordinator=False):
             translation.STRICT_STRUCTURED_OUTPUTS = False
             configure_short_outputs(translation, None)
             configure_small_kana(translation, None)
+            run_stops.configure(translation, None, root)
             configure_states(plan, grouping_root, None)
             checkpoint_reader()
             return result
@@ -189,6 +191,7 @@ def install(*, coordinator=False):
             or policy.get("sourceText") not in (None, *SOURCE_TEXT_LEVELS)
             or policy.get("shortOutputs") not in (None, SHORT_OUTPUTS)
             or policy.get("smallKana") not in (None, SMALL_KANA)
+            or policy.get("runStops") not in (None, RUN_STOPS)
             or policy.get("battleMessageUsers")
             not in (None, *BATTLE_MESSAGE_USERS_LEVELS)
             or policy.get("openrouterStructuredOutputs")
@@ -278,6 +281,7 @@ def install(*, coordinator=False):
             thinking_effort=thinking_effort,
             thinking_listed=thinking_listed,
         )
+        run_stops.configure(translation, policy, root, coordinator=coordinator)
         configure_states(plan, grouping_root, policy)
         checkpoint_reader()
         from .batch_refusals import install_worker

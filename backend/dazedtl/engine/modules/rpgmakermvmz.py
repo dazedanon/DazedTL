@@ -19,7 +19,7 @@ from dotenv import load_dotenv
 from retry import retry
 from tqdm import tqdm
 from util.translation import (
-    BatchResultUnavailableError,
+    RUN_STOPPING,
     TranslationConfig,
     batch_collect_file_stats,
     begin_file_cost_tracking,
@@ -5081,7 +5081,7 @@ def _searchCodes(page, pbar, jobList, filename):
                                         else:
                                             codeList[i]["parameters"][0] = codeList[i]["parameters"][0].replace(additionalText, translatedAdditionalText)
                                         _apply_original(codeList[i], jaString)
-                        except BatchResultUnavailableError:
+                        except RUN_STOPPING:
                             raise
                         except Exception as e:
                             # If there's any error loading actors, just extract what's in the brackets
@@ -6390,7 +6390,7 @@ def _searchCodes(page, pbar, jobList, filename):
         # Special Format (Scenario)
         else:
             page[:] = codeListFinal
-    except BatchResultUnavailableError:
+    except RUN_STOPPING:
         raise
     except IndexError as e:
         traceback.print_exc()

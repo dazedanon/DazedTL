@@ -151,11 +151,19 @@ FROZEN_POLICIES = {
 # without another request. A run frozen without it keeps them, as it did
 # when approved, so its lines are written by one rule from start to end.
 SMALL_KANA = "small-kana-v1"
+# A provider error every later request would get too stops a Guided run with
+# one message (compatibility/run_stops): the same HTTP 400, 401, 403, 404 or
+# 422 error on 3 requests in a row, across the run's workers, but for prompts
+# a safety system flagged, or one refusal of the run's thinking effort. Such
+# an error is not sent again, and the run takes no further file. A run frozen
+# without it retries every failed request and fails only the file, as it did
+# when approved.
+RUN_STOPS = "repeated-errors-v1"
 # The policies every new run freezes in its request policy alone, unlike
-# FROZEN_POLICIES: they shape only how a reply is read, never what a run
-# sends or costs, so its estimate, which its Guided settings identify, stays
-# current.
-REPLY_POLICIES = {"smallKana": SMALL_KANA}
+# FROZEN_POLICIES: they shape only how a reply or a provider's error is read,
+# never what a request holds or an estimate counts, so its estimate, which its
+# Guided settings identify, stays current.
+REPLY_POLICIES = {"smallKana": SMALL_KANA, "runStops": RUN_STOPS}
 
 DEFAULT_OPTIONS = {
     "entriesPerRequest": None,
