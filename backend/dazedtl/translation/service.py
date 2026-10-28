@@ -97,16 +97,18 @@ def priced_mode(finishes, run_mode, project_mode):
     return run_mode if finishes else project_mode
 
 
-def changed_since(current, frozen_sha256, frozen, quote, *, reprice=True):
+def changed_since(current, frozen_sha256, frozen, quote, provider, *, reprice=True):
     """What changed between the settings a run froze and those it would
     freeze now, or None; ``current`` is None when they can't form a run. The
     run's ``quote``, None for a run without one, priced under older price
-    rules changed too (repricing), and one counted by an older output rule
-    (estimate_prices.OUTPUT_RULES_VERSION) changed its version. With
-    ``reprice``, prices not looked up since DazedTL started read as unchanged
-    while everything else matches, so a restart alone never outdates a quote;
-    a run saved before its record kept its configuration can only be compared
-    once they are known."""
+    rules than its route's changed too (repricing.route_rules). Its route is
+    ``provider``, the Batch provider of ``current``: the rules decide only
+    while the settings are those it was priced at. One counted by an older
+    output rule (estimate_prices.OUTPUT_RULES_VERSION) changed its version.
+    With ``reprice``, prices not looked up since DazedTL started read as
+    unchanged while everything else matches, so a restart alone never
+    outdates a quote; a run saved before its record kept its configuration
+    can only be compared once they are known."""
     if current is None:
         return Change(settings=True, reshaped=True)
     priced = quote is not None
@@ -124,7 +126,7 @@ def changed_since(current, frozen_sha256, frozen, quote, *, reprice=True):
             {},
             digest(current),
             digest(repricing.unpriced(current)),
-            repricing.current_rules() if priced else None,
+            repricing.route_rules(provider) if priced else None,
         ),
         prices_unknown=reprice
         and frozen is not None
@@ -746,7 +748,7 @@ Additional project instructions:
                         current[priced] = None, None
                 settings, provider = current[priced]
                 change = changed_since(
-                    settings, frozen, job.get("configuration"), job["quote"]
+                    settings, frozen, job.get("configuration"), job["quote"], provider
                 )
                 reading = self.reading(job, change, settings, provider)
                 if reading.settings is not None:
@@ -832,6 +834,7 @@ Additional project instructions:
             job["configuration_sha256"],
             plan["configuration"],
             job["quote"],
+            provider,
             reprice=False,
         )
         if self.reading(job, change, current, provider).current:
@@ -1369,6 +1372,7 @@ Additional project instructions:
                 digest(plan["configuration"]),
                 plan["configuration"],
                 job["quote"],
+                provider,
                 reprice=False,
             )
             if approval_token == job["approval_token"]:

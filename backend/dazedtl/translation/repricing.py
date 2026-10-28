@@ -8,10 +8,12 @@ provider that counts tokens the same way for every model. Claude counts with
 each model's own tokenizer, so a Claude estimate is always estimated again.
 
 A pricing fix (provider_costs.PRICE_RULES_VERSION) keeps the counts too, so a
-figure priced under older rules is priced again under today's on its next
-view, or reads outdated when its counts can't be. ``read`` decides this for
-every saved figure a user approves or reads: an Assistant-led quote waiting
-for approval, a Guided Translate estimate and a whole-game estimate.
+figure priced under older rules than its route's (``route_rules``) is priced
+again under today's on its next view, or reads outdated when its counts
+can't be; a fix to another route's rules leaves it standing. ``read``
+decides this for every saved figure a user approves or reads: an
+Assistant-led quote waiting for approval, a Guided Translate estimate and a
+whole-game estimate.
 """
 
 from dataclasses import dataclass
@@ -95,6 +97,18 @@ def rules(figure):
     return (figure or {}).get("price_rules", 1)
 
 
+def route_rules(*routes):
+    """The price rules version a figure priced on ``routes`` needs to keep
+    its price, the newest at which any of their rules changed: a figure's
+    route is the Batch provider that priced it, None for none
+    (provider_costs.route_price_rules). A Guided estimate and each task of a
+    whole-game estimate record it as ``provider``; an Assistant-led quote's
+    is its settings' Batch provider."""
+    from util.provider_costs import route_price_rules
+
+    return max(route_price_rules(route) for route in routes or (None,))
+
+
 @dataclass(frozen=True)
 class Reading:
     """How a saved figure reads now: ``current`` while it stands as saved
@@ -112,7 +126,8 @@ def read(change, before, after, again):
     """How a figure priced with the settings ``before`` reads now.
 
     ``change`` is freshness.compare of its basis, with the price rules it was
-    priced under, against the current one; ``after`` the current settings;
+    priced under, against the current one, with the price rules its route
+    needs (``route_rules``); ``after`` the current settings;
     ``again(settings)`` its counts priced with ``settings`` under today's
     rules, None when they can't be. Unchanged, it stands as saved. When only
     what prices it changed and its requests keep their text, it is priced

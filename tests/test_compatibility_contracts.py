@@ -385,24 +385,24 @@ class CompatibilityContracts(unittest.TestCase):
         # again instead of counting its requests again.
         quote = {"price_rules": repricing.current_rules(), "output_rules": 1}
         current = {**frozen, "thinkingEffortListed": None}
-        change = changed_since(current, digest(frozen), frozen, quote)
+        change = changed_since(current, digest(frozen), frozen, quote, None)
         self.assertTrue(change.priced_only)
         self.assertFalse(corrected(change))
         # A quote counts its output by a versioned rule; one saved before
         # quotes named it stands, and raising it outdates the quote.
         old = {"price_rules": repricing.current_rules()}
-        self.assertIsNone(changed_since(frozen, digest(frozen), frozen, old))
+        self.assertIsNone(changed_since(frozen, digest(frozen), frozen, old, None))
         with patch.object(estimate_prices, "OUTPUT_RULES_VERSION", 2):
-            change = changed_since(frozen, digest(frozen), frozen, old)
+            change = changed_since(frozen, digest(frozen), frozen, old, None)
             self.assertFalse(change.priced_only)
             self.assertTrue(corrected(change))
             # The settings changing as well are still the settings' doing.
             moved = {**frozen, "endpoint": "https://elsewhere.test/v1"}
-            change = changed_since(moved, digest(frozen), frozen, old)
+            change = changed_since(moved, digest(frozen), frozen, old, None)
             self.assertTrue(change.version and change.reshaped)
             self.assertFalse(corrected(change))
             # A run without a quote has no counts to outdate.
-            self.assertIsNone(changed_since(frozen, digest(frozen), frozen, None))
+            self.assertIsNone(changed_since(frozen, digest(frozen), frozen, None, None))
 
     def test_engine_extension_layers_reach_aliases_and_reconfigure_in_place(self):
         # Host wrappers used to reassign module attributes: aliases bound at

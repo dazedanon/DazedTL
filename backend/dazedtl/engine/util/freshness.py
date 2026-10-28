@@ -13,7 +13,11 @@ packing receipt - records the Basis it was made from:
 - ``shape``: the same settings without the ones that only set a price, for
   kinds whose saved counts can be repriced after a model switch.
 - ``prices``: for a priced figure, such as a quote or an estimate, the price
-  rules version it was priced under (provider_costs.PRICE_RULES_VERSION).
+  rules version it was priced under (provider_costs.PRICE_RULES_VERSION);
+  in the current basis, the version its route's rules last changed at
+  (provider_costs.route_price_rules). A figure priced under that version or
+  a later one keeps its price, so a pricing fix outdates only the figures on
+  the routes it changed.
 
 ``compare(saved, current)`` is None while the work is current, otherwise the
 Change naming what differs. A Change that is ``priced_only`` leaves the work's
@@ -140,7 +144,7 @@ class Basis:
     inputs: Mapping[str, object] | None = None
     settings: object = None
     shape: object = None
-    prices: object = None
+    prices: int | None = None
 
     def record(self) -> dict:
         """The basis as saved JSON."""
@@ -176,7 +180,7 @@ class Change:
     settings: bool = False
     # The settings changed more than what prices the work.
     reshaped: bool = False
-    # It was priced under other price rules.
+    # It was priced under older price rules than its route's.
     prices: bool = False
     added: tuple = ()
     removed: tuple = ()
@@ -203,6 +207,15 @@ class Change:
         return self.priced_only and not self.settings
 
 
+def stale_prices(saved: int | None, current: int | None) -> bool:
+    """Whether a figure priced under the price rules version ``saved``
+    misses rules its route has had since ``current``; None, for work that
+    isn't priced, matches only None."""
+    if saved is None or current is None:
+        return saved is not current
+    return saved < current
+
+
 def compare(
     saved: Basis | None, current: Basis, *, prices_unknown: bool = False
 ) -> Change | None:
@@ -226,7 +239,7 @@ def compare(
     change = Change(
         settings=settings,
         reshaped=settings and not same_shape,
-        prices=saved.prices != current.prices,
+        prices=stale_prices(saved.prices, current.prices),
         added=tuple(sorted(set(new) - set(old))),
         removed=tuple(sorted(set(old) - set(new))),
         changed=tuple(sorted(name for name in old.keys() & new.keys() if old[name] != new[name])),
