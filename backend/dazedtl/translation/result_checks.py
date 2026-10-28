@@ -2,10 +2,10 @@
 the engines Text QA can't read (qa --check).
 
 Text QA reads RPG Maker MV/MZ and VX Ace data. Its mechanical flags
-(util/qa/mechanical `evidence`), its glossary hint and its reviewed lint
-families (util/rpgmaker_qa_lint) need only a line's source, its translation
-and the game's glossary, so they check a WOLF, Unity, TyranoScript or other
-game's text export too. Each hit is a line for the assistant to correct, or
+(util/qa/mechanical `evidence`), its glossary hint, its pronoun check
+(util/qa/pronouns) and its reviewed lint families (util/rpgmaker_qa_lint)
+need only a line's source, its translation and the game's glossary, so they
+check a WOLF, Unity, TyranoScript or other game's text export too. Each hit is a line for the assistant to correct, or
 to answer with why it is right, as Text QA's reviewers decline a reviewed
 family's proposal; an answer stays while the line and what the rule found
 in it stay the same.
@@ -22,9 +22,10 @@ from .results import exported_translations
 
 CHECK_FILE = WORK + "/work/qa-check.json"
 # The rules a report's hits are found by: 1, Text QA's mechanical flags, its
-# glossary hint and its reviewed lint families. Raise it when the same text
-# would give other hits; answers carry over to hits that stay the same.
-CHECK_VERSION = 1
+# glossary hint and its reviewed lint families; 2, with its censor-mask flag
+# and pronoun check. Raise it when the same text would give other hits;
+# answers carry over to hits that stay the same.
+CHECK_VERSION = 2
 # An answer is one line, as a declined line's reason is.
 ANSWER_LIMIT = 300
 # Text QA's hint for a line whose translation lacks a glossary term the
@@ -35,7 +36,8 @@ GLOSSARY_HINT = "glossary"
 CHECK_STEP = (
     "Run qa --check, which checks your exported translations with Text QA's "
     "text-only rules, such as glossary terms, numbers and codes kept, text "
-    f"left untranslated and suspicious length, and lists each hit in {CHECK_FILE} "
+    "left untranslated, censor masks, pronouns against the glossary's genders "
+    f"and suspicious length, and lists each hit in {CHECK_FILE} "
     "with its units. Correct a wrong line with a correction receipt that "
     "carries its request's current result_sha256 as replaces_sha256, accept "
     "it and inject it again; answer a line that is right with qa --check "
@@ -50,7 +52,7 @@ def hits(rows, glossary_text, target):
     order. Run within the game's `reading` of its language pair."""
     from util import rpgmaker_qa_glossary as glossary_rules
     from util import rpgmaker_qa_lint as lint
-    from util.qa import mechanical
+    from util.qa import mechanical, pronouns
 
     # What the families read from the whole game, as Text QA reads it from
     # an inventory: its distinct lines and every unit's.
@@ -79,6 +81,19 @@ def hits(rows, glossary_text, target):
                 "request_sha256": row["request_sha256"],
             }
         )
+    # A pronoun against a character's glossary gender, read as Text QA reads
+    # a scene: each export batch is one document.
+    characters = pronouns.cast(glossary_text, target)
+    batches = defaultdict(list)
+    for row in rows:
+        batches[row["batch"]].append(row)
+    slipped = defaultdict(list)
+    for batch in batches.values():
+        for slip in pronouns.slips((row["translation"] for row in batch), characters):
+            row = batch[slip.index]
+            named = slipped[(row["source"], row["translation"])]
+            if [slip.name, slip.gender, slip.pronoun] not in named:
+                named.append([slip.name, slip.gender, slip.pronoun])
     found = []
     for source, live in lines:
         # Each rule that finds something in the line, with what it found.
@@ -100,12 +115,20 @@ def hits(rows, glossary_text, target):
             if missing:
                 terms = [[term.source, term.english] for term, _s, _e in missing]
                 line_hits.append((GLOSSARY_HINT, {"terms": terms}))
+        if slipped[(source, live)]:
+            line_hits.append((pronouns.CHECK, {"pronouns": slipped[(source, live)]}))
         found += [
             {
                 # What the rule found is part of the hit, so an answer
-                # never covers a fix or a term it was not given for.
+                # never covers a fix, a term or a pronoun it was not given for.
                 "id": digest(
-                    [rule, source, live, details.get("proposed"), details.get("terms")]
+                    [
+                        rule,
+                        source,
+                        live,
+                        details.get("proposed"),
+                        details.get("terms") or details.get("pronouns"),
+                    ]
                 )[:16],
                 "rule": rule,
                 "source": source,

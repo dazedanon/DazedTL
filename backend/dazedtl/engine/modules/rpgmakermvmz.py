@@ -4357,8 +4357,7 @@ def _searchCodes(page, pbar, jobList, filename):
                     )
 
                     ### \\n<Speaker>
-                    regex = r"([\\]+[kKnN][wWcCrRrEe]?[\[<](?:[\\]*\w\[\d+\])?(.*?)(?:[\\]*\w\[\d+\])?[>])"
-                    match = re.search(regex, finalJAString)
+                    match = rpgmaker_blocks.NAMETAG.search(finalJAString)
 
                     # Set Name
                     if match:
@@ -5957,7 +5956,7 @@ def _searchCodes(page, pbar, jobList, filename):
                         codeList[i]["parameters"][0] = translatedText
 
                 # LL_GalgeChoiceWindowMV Choices
-                if "LL_GalgeChoiceWindowMV setChoices":
+                if "LL_GalgeChoiceWindowMV setChoices" in jaString:
                     match = re.search(r"LL_GalgeChoiceWindowMV setChoices (.+)", jaString)
                     if match:
                         jaString = match.group(1)

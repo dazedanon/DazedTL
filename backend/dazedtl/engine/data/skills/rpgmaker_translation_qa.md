@@ -1,12 +1,13 @@
 # RPG Maker text QA
 
-<!-- qa-contract:rpgmaker-qa-v20
+<!-- qa-contract:rpgmaker-qa-v21
 single-policy role-briefs parallel-workers worker-brief app-owned-inventory immutable-review-bundles database-checks
 battler-name-source-fix
 scene-affine-screen sampled-screen-checks lint-group-review glossary-lint declined-disposition
 helper-scoped-declines unit-declines coordinator-declines evidence-preserving-deep
 scene-correction family-sweep decision-log consistency-check editorial-stage regression-simulation
 app-publication-apply checkpoint-commit no-provider-api interface-captures text-fit
+gender-pronoun censor-mask
 bundle-glossary worker-guidance accept-next earlier-reviews since-scope
 -->
 
@@ -171,6 +172,12 @@ that `prior_review`, and your review replaces it.
   message keeps a leading space. A `show-text-header` check means the Show Text header of the line's box
   likely shows the wrong speaker: settle it from the scene with a `source_fix`, or a `clean`
   review that says why the header is right.
+- A `gender-pronoun` check means a he, him, his or himself follows a character the glossary gives as Female, or a she, her, hers or herself one it gives as Male, before any other name.
+  Read the scene: correct the pronoun when it means that character, or review it `clean` with `evidence` naming whom it means.
+  It names each character and pronoun once per scene, so report the same slip on the scene's other lines as observations.
+- A `censor-mask-mismatch` deep reason means the source masks a word with 〇 or ● and the English spells it out, or the English masks a word the source does not.
+  Masks are the author's choice: mask the same word, with the mask in its place where the word allows (レイ〇 is "r〇pe", ま〇こ is "pu〇sy", ●●● stays ●●●), and write out a word the source does not mask.
+  A 〇 among kanji numerals is a zero, and a lone ● starting a row is a bullet, not a mask.
 - An `interface-fit` check means the game drew this text with too little room on a screen
   DazedTL captured while running a copy of the game: squeezed narrower than it needs, or cut off
   at its window's edge. Open every capture the check names and look at the text there. When it is

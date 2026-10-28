@@ -946,7 +946,7 @@ Pre-pass, before the model sees the joined group:
 - **Derive the model input from the stored source, not from the current parameter.** That is what makes the pass *repair* a file already carrying a doubled `\F4[2]\AA[4]\M4[yes]\F4[2]...` prefix from an earlier buggy run instead of tripling it.
 - Remove `\CL`, `\#`, `\px[200]`. Treat `\>` as an instant-line flag and re-apply it as a `\>` prefix to **every** wrapped output line.
 
-Post-pass on the translation: `operation write_rpgmaker` (and `write-rpgmaker-json` outside DazedTL) writes it into every message and scrolling text it writes, by the rule Guided translation uses (`util.rpgmaker_blocks.written_message`), after the leading code run above.
+Post-pass on the translation: `operation write_rpgmaker` (and `write-rpgmaker-json` outside DazedTL) writes it into every message and scrolling text it writes, by the rule Guided translation uses (`util.rpgmaker_blocks.written_message`), after the leading code run above and any `\n<Name>` name window among it (`util.rpgmaker_blocks.message_lead`).
 Write the translation into the staged rows as the results give it; do not repeat the post-pass in the injector.
 
 ### Cosmetic cleanup

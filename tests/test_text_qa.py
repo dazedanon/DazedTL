@@ -419,7 +419,9 @@ class TextQATests(unittest.TestCase):
             (game / "tyrano").mkdir()
             glossary = game / ".dazedtl/glossary.txt"
             glossary.parent.mkdir()
-            glossary.write_text("エルフの森 (Elven Woods)\n", encoding="utf-8")
+            glossary.write_text(
+                "エルフの森 (Elven Woods)\nミナ (Mina) - Female\n", encoding="utf-8"
+            )
 
             def row(unit, source, translation=None):
                 value = {"batch": "scene-1", "source_id": unit, "source": source}
@@ -456,6 +458,10 @@ class TextQATests(unittest.TestCase):
                 label,
                 row("first/4", "はい。", "Yes."),
                 row("first/5", "いいえ。"),
+                # A pronoun against the glossary's gender, and a censor mask
+                # spelled out.
+                row("first/6", "ミナは剣を抜いた。", "Mina drew his sword."),
+                row("first/7", "ま〇こ", "pussy"),
             )
             guided, _calls = fake_guided(game, {}, method="len")
             guided.translation.settings = SimpleNamespace(
@@ -468,9 +474,11 @@ class TextQATests(unittest.TestCase):
             self.assertEqual(
                 (state["lines"], state["open"], state["rules"]),
                 (
-                    4,
-                    3,
+                    6,
+                    5,
                     {
+                        "censor-mask-mismatch": 1,
+                        "gender-pronoun": 1,
                         "glossary": 1,
                         "lint:level-tag-spacing": 1,
                         "visible-number-mismatch": 1,
@@ -488,13 +496,16 @@ class TextQATests(unittest.TestCase):
                 found["lint:level-tag-spacing"]["proposed"], "[Rumor Lv.] 3"
             )
             self.assertEqual(
+                found["gender-pronoun"]["pronouns"], [["Mina", "Female", "his"]]
+            )
+            self.assertEqual(
                 found["visible-number-mismatch"]["units"],
                 [{"unit": "first/2", "batch": "scene-1", "request_sha256": "a" * 64}],
             )
             # The assistant answers a line it finds right, and the answer
             # stays while the line does.
             answers = {found["lint:level-tag-spacing"]["id"]: "The game writes it so."}
-            self.assertEqual(service.check("project", answers)["open"], 2)
+            self.assertEqual(service.check("project", answers)["open"], 4)
             self.assertEqual(service.check("project")["answered"], 1)
             with self.assertRaisesRegex(ValueError, "No current hit"):
                 service.check("project", {"0" * 16: "Right."})
