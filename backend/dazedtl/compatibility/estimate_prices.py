@@ -3,8 +3,8 @@
 A Guided estimate's worker counts its requests once and prices them with the
 engine's estimateBatchCost and DazedTL's pricing layers. ``prices`` applies
 the same formulas to counts at the model and rates of a configuration: the
-engine's Claude and OpenAI cache prices, OpenRouter's own Batch rates and
-GPT-6.1 Sol's cache rates. Guided prices an estimate again with it after a
+engine's Claude and OpenAI cache prices and OpenRouter's own Batch rates.
+Guided prices an estimate again with it after a
 model switch that keeps the text of every request (translation/repricing),
 and every Assistant-led quote is priced with it (translation/requests), so
 both methods quote the same work alike. ``usage_cost`` prices what a run
@@ -12,7 +12,6 @@ recorded as Guided's receipts do, a Live run's requests at the price of the
 time each arrived. Estimates stay at the standard price.
 """
 
-from .batch_pricing import sol, sol_cached_cost, with_sol_cache
 from .openrouter_pricing import batch_cost
 
 
@@ -102,10 +101,6 @@ def prices(counts, configuration, provider, cache=None):
         )
         if most is not None:
             value["batch_max_cost"] = most
-        if sol(value):
-            cost = sol_cached_cost({**counts, **value}, in_rate, out_rate)
-            if cost is not None:
-                value = with_sol_cache(value, cost)
     value["batch_cost"] = (
         value["batch_cached_cost"]
         if value["uses_prompt_cache"]
@@ -135,9 +130,13 @@ def usage_cost(usage, configuration, provider, rows=None):
     Guided's receipts price it; None when the provider reports its own
     charge, as OpenRouter's Batch does, or the rates are unknown.
 
-    On a route priced by the time (provider_costs time_priced_route), a
-    Live run's ``rows``, each request's usage and the time it arrived, whose
-    sum is ``usage``, are priced one by one at that time's price."""
+    A Batch is priced at its Batch ``provider``'s cache prices, a Live run at
+    those of its route as Guided prices Live responses
+    (batch_providers.live_price_route). On a route priced by the time
+    (provider_costs time_priced_route), a Live run's ``rows``, each request's
+    usage and the time it arrived, whose sum is ``usage``, are priced one by
+    one at that time's price."""
+    from util.batch_providers import live_price_route
     from util.provider_costs import (
         batch_price_factor,
         time_price_factor,
@@ -154,7 +153,15 @@ def usage_cost(usage, configuration, provider, rows=None):
         and provider == "openrouter"
     ):
         return None
-    route = provider or configuration.get("provider", "")
+    route = (
+        provider or configuration.get("provider", "")
+        if batch
+        else live_price_route(
+            configuration["model"],
+            configuration.get("endpoint") or "",
+            configuration.get("protocol") or "",
+        )
+    )
 
     def price(counts, factor):
         return cost(

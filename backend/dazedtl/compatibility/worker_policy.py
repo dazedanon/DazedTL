@@ -29,10 +29,7 @@ from dazedtl.settings.providers import infer_provider, openrouter_host
 from dazedtl.storage import write_json
 from dazedtl.translation.refusals import POLICY as REFUSAL_POLICY
 
-from . import (
-    batch_pricing,
-    state_requests,
-)
+from . import state_requests
 from .request_parameters import configure_builders
 from .run_evidence import Evidence
 
@@ -166,7 +163,6 @@ def install(*, coordinator=False):
             openrouter_pricing.configure(translation, None)
             configure_batch_allowance(translation, None)
             configure_prices(translation, None)
-            batch_pricing.configure(translation, False)
             configure_builders(translation, None)
             translation.STRICT_STRUCTURED_OUTPUTS = False
             configure_short_outputs(translation, None)
@@ -240,7 +236,6 @@ def install(*, coordinator=False):
         openrouter_pricing.configure(translation, router_policy)
         configure_batch_allowance(translation, policy)
         configure_prices(translation, prices)
-        batch_pricing.configure(translation, True)
         translation.STRICT_STRUCTURED_OUTPUTS = bool(strict_router)
         configure_short_outputs(translation, policy)
         configure_small_kana(translation, policy)
