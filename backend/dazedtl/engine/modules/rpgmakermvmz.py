@@ -35,7 +35,12 @@ from util.translation import (
     split_vocab_source_aliases,
     translateAI as sharedtranslateAI,
 )
-from util.vocab import split_glossary_row, unverified_nameplate_row
+from util.vocab import (
+    character_priority,
+    fold_glossary_sections,
+    split_glossary_row,
+    unverified_nameplate_row,
+)
 from util.speakers import (
     NAMES_FILE,
     SPEAKER_BRACKET_INNER,
@@ -6960,24 +6965,6 @@ def _normalize_speaker_nameplate(translated: str) -> str:
     return out
 
 
-def _is_character_vocab_category(category) -> bool:
-    """True for glossary sections that define character/speaker names."""
-    name = str(category or "").lstrip("#").strip().casefold()
-    primary = re.split(r"\s*[·・|/]\s*", name, maxsplit=1)[0]
-    return primary in {"game characters", "speakers"}
-
-
-def _vocab_category_priority(category) -> int:
-    """Prefer curated character entries over generated speaker entries."""
-    name = str(category or "").lstrip("#").strip().casefold()
-    primary = re.split(r"\s*[·・|/]\s*", name, maxsplit=1)[0]
-    if primary == "game characters":
-        return 3
-    if primary == "speakers":
-        return 2
-    return 1
-
-
 def _speaker_translation_valid(source: str, translated: str) -> bool:
     """util/speakers `speaker_translated`, reading source text left as the
     run does."""
@@ -7001,7 +6988,8 @@ def _speaker_vocab_indexes():
             source, translated = (str(part).strip() for part in term)
             if not source or not _speaker_translation_valid(source, translated):
                 continue
-            priority = _vocab_category_priority(category)
+            # Curated character entries win over generated speaker entries.
+            priority = character_priority(category)
             aliases = split_vocab_source_aliases(source)
             # Multi-alias curated rows (ニーナ / ネーナ・エヴァンス) win over later
             # short generated duplicates at the same category priority.
@@ -7009,16 +6997,16 @@ def _speaker_vocab_indexes():
             for alias in aliases:
                 short_gloss = nameplate_gloss_for_alias(alias, aliases, translated)
                 for key in speaker_source_lookup_keys(alias):
-                    previous_priority = exact_priorities.get(key, 0)
+                    previous_priority = exact_priorities.get(key, -1)
                     if priority > previous_priority or (
-                        alias_group and priority == previous_priority and priority > 0
+                        alias_group and priority == previous_priority
                     ):
                         # Store the full curated gloss + alias group so lookup can
                         # re-apply short/title rules against the live source
                         # (e.g. ニーナ様 vs plain ニーナ).
                         exact[key] = (list(aliases), translated)
                         exact_priorities[key] = priority
-                    if _is_character_vocab_category(category):
+                    if priority:  # a Game Characters or Speakers row
                         previous = characters.get(key)
                         if previous is None or priority > previous[0] or (
                             alias_group and priority == previous[0]
@@ -7488,31 +7476,21 @@ def pendingSpeakerNames() -> list[str]:
     return pending
 
 
-def _glossary_section_pattern(title: str):
-    return re.compile(
-        rf"^[\t ]*#+\s*{re.escape(title)}\s*(?:\r?\n|\Z).*?"
-        rf"(?=^[\t ]*#|\Z)",
-        re.MULTILINE | re.DOTALL | re.IGNORECASE,
-    )
-
-
 def _merge_speaker_rows_into_game_characters(content: str, generated_pairs):
     """Append only truly new speaker rows into Game Characters.
 
     Curated slash-alias rows and NFKC/lookalike variants already cover many
     collected nameplates. Those must not be rewritten. Legacy ``# Speakers``
     rows still migrate here, but only when their source is not already covered.
+    Several Game Characters sections are folded into the first
+    (see util/vocab `fold_glossary_sections`).
     """
     newline = "\r\n" if "\r\n" in content else "\n"
-    speaker_pattern = _glossary_section_pattern("Speakers")
-    legacy_blocks = list(speaker_pattern.finditer(content))
-    content_without_speakers = speaker_pattern.sub("", content)
+    legacy = fold_glossary_sections(content, "Speakers")
+    content_without_speakers = legacy.before + legacy.after if legacy else content
 
-    game_pattern = _glossary_section_pattern("Game Characters")
-    game_match = game_pattern.search(content_without_speakers)
-    existing_lines = []
-    if game_match:
-        existing_lines = game_match.group(0).splitlines()[1:]
+    game = fold_glossary_sections(content_without_speakers, "Game Characters")
+    existing_lines = game.lines if game else []
 
     def _row_keys(source: str) -> set[str]:
         keys = set()
@@ -7552,9 +7530,7 @@ def _merge_speaker_rows_into_game_characters(content: str, generated_pairs):
     existing_lines = kept_existing
     removed_covered_shorts = len(existing_lines) != len(parsed_existing)
 
-    candidates = []
-    for block in legacy_blocks:
-        candidates.extend(block.group(0).splitlines()[1:])
+    candidates = list(legacy.lines) if legacy else []
     # A nameplate translated apart from its story stays marked until Project
     # Setup checks it against the game.
     candidates.extend(
@@ -7580,20 +7556,18 @@ def _merge_speaker_rows_into_game_characters(content: str, generated_pairs):
         seen_raw.add(line)
         appended_lines.append(line)
 
-    if not legacy_blocks and not appended_lines and not removed_covered_shorts:
+    if not legacy and not appended_lines and not removed_covered_shorts:
         return content
 
     merged_lines = [line.rstrip() for line in existing_lines if line.strip()]
     merged_lines.extend(appended_lines)
-    section = "# Game Characters" + newline
+    section = (game.header if game else "# Game Characters") + newline
     if merged_lines:
         section += newline.join(merged_lines) + newline
     section += newline
 
-    if game_match:
-        before = content_without_speakers[:game_match.start()]
-        after = content_without_speakers[game_match.end():].lstrip("\r\n")
-        return before + section + after
+    if game:
+        return game.before + section + game.after.lstrip("\r\n")
 
     return section + content_without_speakers.lstrip("\r\n")
 

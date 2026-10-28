@@ -20,6 +20,7 @@ import re
 import threading
 import unicodedata
 from pathlib import Path
+from typing import NamedTuple
 
 from util.paths import (
     GLOSSARY_BASE_SEPARATOR,
@@ -239,8 +240,13 @@ def unverified_nameplate_row(source: str, translation: str, origin: str) -> str:
 
 _SOURCE_ALIAS_SPLIT_RE = re.compile(r"\s*[\/／]\s*")
 _CATEGORY_NAME_SPLIT_RE = re.compile(r"\s*[·・|/]\s*")
+# The character sections by authority: a curated Game Characters row outranks
+# a generated Speakers row for the same name.
+_CHARACTER_PRIORITY = {"game characters": 2, "speakers": 1}
 # Sections whose ``A / B`` sources list variants of one name.
-ALIAS_CATEGORIES = frozenset({"game characters", "speakers"})
+ALIAS_CATEGORIES = frozenset(_CHARACTER_PRIORITY)
+# A section header: every line that starts with ``#``, as requests read them.
+_HEADER_LINE_RE = re.compile(r"^[^\S\n]*#.*$", re.MULTILINE)
 
 
 def split_vocab_source_aliases(source: str) -> list[str]:
@@ -263,9 +269,89 @@ def split_vocab_source_aliases(source: str) -> list[str]:
 
 def glossary_category(header) -> str:
     """A section header's category name, ``"game characters"`` for
-    ``# Game Characters · キャラクター``."""
-    name = str(header or "").lstrip("#").strip().casefold()
-    return _CATEGORY_NAME_SPLIT_RE.split(name, maxsplit=1)[0]
+    ``# Game Characters · キャラクター``.
+
+    This is what a section is: requests read rows by it, and every write,
+    merge and removal of a category means all the sections it names.
+    """
+    return _category_parts(header)[0]
+
+
+def _category_parts(header) -> tuple[str, str]:
+    """A header's category name and the qualifier after it, ``("item",
+    "アイテム")`` for ``# Item · アイテム``."""
+    name = str(header or "").strip().lstrip("#").strip().casefold()
+    parts = _CATEGORY_NAME_SPLIT_RE.split(name, maxsplit=1)
+    return parts[0], " ".join(parts[1].split()) if len(parts) > 1 else ""
+
+
+def _names_category(header, category) -> bool:
+    """Whether section ``header`` is ``category``'s: the same
+    :func:`glossary_category`, and the same qualifier when both name one, so
+    WOLF's ``Item · アイテム`` and ``Item · 道具`` stay two sections."""
+    name, qualifier = _category_parts(header)
+    wanted, wanted_qualifier = _category_parts(category)
+    return name == wanted and (
+        not qualifier or not wanted_qualifier or qualifier == wanted_qualifier
+    )
+
+
+def character_priority(header) -> int:
+    """How far a row in section ``header`` decides a character's name: 2 in
+    Game Characters, 1 in Speakers, 0 in any other section."""
+    return _CHARACTER_PRIORITY.get(glossary_category(header), 0)
+
+
+class FoldedSections(NamedTuple):
+    """A category's sections of a glossary text, read as one."""
+
+    # The first section's header line as written.
+    header: str
+    # Every section's lines in order, each without blank lines at its ends.
+    lines: list[str]
+    # The text before the first section, and after it without the others.
+    before: str
+    after: str
+
+
+def fold_glossary_sections(text: str, category) -> FoldedSections | None:
+    """``category``'s sections of ``text`` folded into the first, or None
+    when it has none.
+
+    A section runs from its header to the next one, and it is
+    ``category``'s when :func:`glossary_category` reads both alike, so
+    ``# game characters`` and ``# Game Characters · キャラクター`` are
+    ``Game Characters`` too, unless both name different qualifiers (see
+    :func:`_names_category`). A later section's row with the source and
+    translation of an earlier row is left out, as requests read it once.
+    """
+    headers = list(_HEADER_LINE_RE.finditer(text))
+    sections = [
+        (header, headers[index + 1].start() if index + 1 < len(headers) else len(text))
+        for index, header in enumerate(headers)
+        if _names_category(header.group(), category)
+    ]
+    if not sections:
+        return None
+    lines: list[str] = []
+    rows: set[tuple[str, str]] = set()
+    for number, (header, end) in enumerate(sections):
+        for line in text[header.end() : end].strip().splitlines():
+            row = split_glossary_row(line.strip())
+            if row and number and row[:2] in rows:
+                continue
+            if row:
+                rows.add(row[:2])
+            lines.append(line)
+    first, first_end = sections[0]
+    after, position = [], first_end
+    for header, end in sections[1:]:
+        after.append(text[position : header.start()])
+        position = end
+    after.append(text[position:])
+    return FoldedSections(
+        first.group().rstrip(), lines, text[: first.start()], "".join(after)
+    )
 
 
 def glossary_row_sources(source: str, header) -> list[str]:
@@ -336,25 +422,28 @@ def normalize_generated_glossary_pair(source: str, target: str) -> tuple[str, st
 
 def _merge_section_rows(
     category: str,
-    section_body: str,
+    lines: list[str],
     entries: dict[str, tuple[str, str]],
     *,
     overwrite: bool = False,
-) -> list[str]:
+) -> tuple[list[str], list[tuple[str, str, str]]]:
     """Return a section's rows with ``entries`` (source to translation and
-    notes) merged in.
+    notes) merged in, and the rows an overwrite kept.
 
     Existing rows stay exactly as written, including a note after the
     translation (``サンク (Sank) - Male``), and sources the section lacks are
-    appended after them. A source the section holds already, or covers with
-    the same translation through a slash variant of a character or speaker
-    row (``ニーナ / ネーナ (Nina)``), is not added again. With ``overwrite`` a
-    source already present takes its new translation, unless its row carries
-    a note: that row was written by hand.
+    appended after them. A source the section holds already, or covers
+    through a slash variant of a character or speaker row (``ニーナ / ネーナ
+    (Nina)``), is not added again, so the glossary never names one source
+    two ways. With ``overwrite`` a source already present takes its new
+    translation, unless its row carries a note. A row with a note, or one a
+    slash variant covers, was written by hand: it stays, and a translation
+    it overrules is kept as ``(row, source, translation)``.
     """
-    rows = section_body.rstrip().splitlines()
+    rows = list(lines)
     present = set()
-    covered: set[tuple[str, str]] = set()
+    covered: dict[str, tuple[str, str]] = {}
+    kept = []
     for index, row in enumerate(rows):
         text = row.strip()
         found = _SECTION_ROW_SOURCE_RE.match(text)
@@ -364,27 +453,21 @@ def _merge_section_rows(
         present.add(source)
         parsed = split_glossary_row(text)
         if parsed:
-            covered.update(
-                (alias, parsed[1])
-                for alias in glossary_row_sources(parsed[0], category)
-            )
-        if overwrite and source in entries and _SECTION_PLAIN_ROW_RE.match(text):
-            rows[index] = glossary_row(source, entries[source][0])
-    rows.extend(
-        glossary_row(source, target, notes)
-        for source, (target, notes) in entries.items()
-        if source not in present and (source, target) not in covered
-    )
-    return rows
-
-
-def _section_pattern(category: str) -> re.Pattern:
-    """A ``# {category}`` section of the game part, up to the next header.
-    Handles '#Cat', '# Cat', '## Cat', etc."""
-    return re.compile(
-        rf"^([\t ]*#+\s*{re.escape(category)}\s*$\r?\n)(.*?)(?=^[\t ]*#|\Z)",
-        re.MULTILINE | re.DOTALL,
-    )
+            for alias in glossary_row_sources(parsed[0], category):
+                covered.setdefault(alias, (text, parsed[1]))
+        if overwrite and source in entries:
+            if _SECTION_PLAIN_ROW_RE.match(text):
+                rows[index] = glossary_row(source, entries[source][0])
+            elif parsed and entries[source][0] != parsed[1]:
+                kept.append((text, source, entries[source][0]))
+    for source, (target, notes) in entries.items():
+        if source in present:
+            continue
+        if source not in covered:
+            rows.append(glossary_row(source, target, notes))
+        elif overwrite and covered[source][1] != target:
+            kept.append((covered[source][0], source, target))
+    return rows, kept
 
 
 def _merge_section(
@@ -394,24 +477,30 @@ def _merge_section(
     *,
     merge: bool,
     overwrite: bool = False,
-) -> str:
-    """The game part with ``entries`` merged into, or replacing, the first
-    ``# {category}`` section, which is added at the end when there is none."""
-    pattern = _section_pattern(category)
-    match = pattern.search(game_part)
-    if merge and match:
-        block_lines = _merge_section_rows(
-            category, match.group(2), entries, overwrite=overwrite
+) -> tuple[str, list[tuple[str, str, str]]]:
+    """The game part with ``entries`` merged into, or replacing, the
+    category's sections, and the rows an overwrite kept (see
+    :func:`_merge_section_rows`).
+
+    The sections are folded into the first, under its header as written (see
+    :func:`fold_glossary_sections`); a category without one gets a ``#
+    {category}`` section at the end.
+    """
+    found = fold_glossary_sections(game_part, category)
+    kept = []
+    if merge and found:
+        rows, kept = _merge_section_rows(
+            category, found.lines, entries, overwrite=overwrite
         )
     else:
-        block_lines = [glossary_row(src, *entry) for src, entry in entries.items()]
-    new_block = f"# {category}\n" + "\n".join(block_lines) + "\n\n"
-    if match:
-        return pattern.sub(lambda _m: new_block, game_part, count=1)
+        rows = [glossary_row(src, *entry) for src, entry in entries.items()]
+    if found:
+        block = found.header + "\n" + "\n".join(rows) + "\n\n"
+        return found.before + block + found.after, kept
     new_game = game_part.rstrip("\n")
     if new_game:
         new_game += "\n\n"
-    return new_game + new_block
+    return new_game + f"# {category}\n" + "\n".join(rows) + "\n\n", kept
 
 
 def _change_game_vocab(change, game_root=None) -> None:
@@ -443,10 +532,10 @@ def append_vocab_rows(sections, *, game_root=None) -> None:
     ``sections`` maps a category (``"Game Characters"``) to ``(source,
     translation, notes)`` rows, written ``source (translation) - notes`` after
     the section's own rows; a source the section has already is skipped (see
-    :func:`_merge_section_rows`). A category without a section gets one at the
-    end. ``sections`` may instead be a function that receives the game part
-    as it is read under the lock and returns them, or raises to leave the
-    file untouched.
+    :func:`_merge_section_rows`), and the category's sections are folded into
+    one. A category without a section gets one at the end. ``sections`` may
+    instead be a function that receives the game part as it is read under the
+    lock and returns them, or raises to leave the file untouched.
     """
 
     def change(game_part: str) -> str:
@@ -454,7 +543,9 @@ def append_vocab_rows(sections, *, game_root=None) -> None:
         for category, rows in wanted.items():
             entries = {source: (target, notes) for source, target, notes in rows}
             if entries:
-                game_part = _merge_section(game_part, category, entries, merge=True)
+                game_part, _kept = _merge_section(
+                    game_part, category, entries, merge=True
+                )
         return game_part
 
     _change_game_vocab(change, game_root)
@@ -467,7 +558,7 @@ def update_vocab_section(
     merge: bool = False,
     overwrite: bool = False,
     game_root=None,
-) -> None:
+) -> list[tuple[str, str, str]]:
     """Insert or replace a ``# {category}`` section in the game-specific vocab.
 
     Mirrors the RPGMaker auto-glossary behaviour (translated DB names feed
@@ -475,7 +566,8 @@ def update_vocab_section(
     the auto-appended base section (:data:`BASE_SEPARATOR`) so the base glossary is
     preserved and not stripped on the next :func:`read_game_vocab`.
 
-    - ``category``: section header text, e.g. ``"Weapon · 武器"``.
+    - ``category``: section header text, e.g. ``"Weapon · 武器"``. Every
+      section :func:`glossary_category` reads as it is folded into the first.
     - ``pairs``: iterable of ``(source, translated)``. Deduped by source (last
       wins); no-ops (empty translation or unchanged after normalisation) are
       dropped. Leading database-label decoration is removed from generated
@@ -489,8 +581,11 @@ def update_vocab_section(
       A pass that translated only some of a category's names uses both, so the
       rest of the section survives and the glossary matches the written files.
 
-    Collect skips writes (source text is still untranslated). Consume writes
-    immediately so sequential Pass 2 files can load harvested names.
+    Returns the hand-written rows an overwrite kept against this pass's
+    translation, as ``(row, source, translation)``, and prints each for the
+    run log. Collect skips writes (source text is still untranslated).
+    Consume writes immediately so sequential Pass 2 files can load harvested
+    names.
     """
     dedup: dict[str, tuple[str, str]] = {}
     for src, dst in pairs:
@@ -501,83 +596,44 @@ def update_vocab_section(
             continue
         dedup[str(src)] = (str(dst), "")
     if not dedup:
-        return
+        return []
 
     if batch_glossary_phase() == "collect":
         # Collect leaves source text untranslated; nothing useful to harvest.
-        return
+        return []
 
-    _change_game_vocab(
-        lambda game_part: _merge_section(
+    kept: list[tuple[str, str, str]] = []
+
+    def change(game_part: str) -> str:
+        game_part, rows = _merge_section(
             game_part, category, dedup, merge=merge, overwrite=overwrite
-        ),
-        game_root,
-    )
+        )
+        kept[:] = rows
+        return game_part
 
-
-def merge_reviewed_character_names(content: str, pairs) -> str:
-    """Apply explicitly reviewed actor names without discarding voice notes.
-
-    Exact source/alias matches may replace English spellings. Other rows,
-    descriptive suffixes and the stock glossary remain untouched.
-    """
-    incoming = {}
-    for source, target in pairs:
-        source, target = normalize_generated_glossary_pair(source, target)
-        if source and target and not any(char in source + target for char in "\r\n"):
-            incoming[unicodedata.normalize("NFKC", source).casefold()] = (source, target)
-    if not incoming:
-        return content
-    game, base = _split_base(content)
-    pattern = re.compile(r"(?im)^([\t ]*#+\s*Game Characters\s*\r?\n)(.*?)(?=^[\t ]*#|\Z)", re.DOTALL)
-    section = pattern.search(game)
-    lines = section.group(2).splitlines(keepends=True) if section else []
-    covered, result = set(), []
-    for line in lines:
-        prefix = re.match(r"^\s*(.+?)\s+\(", line)
-        if prefix is None:
-            result.append(line)
-            continue
-        aliases = {unicodedata.normalize("NFKC", value).casefold() for value in split_vocab_source_aliases(prefix.group(1))}
-        matches = aliases & incoming.keys()
-        if not matches:
-            result.append(line)
-            continue
-        names = {incoming[key][1] for key in matches}
-        if len(names) != 1:
-            raise ValueError("Reviewed actor aliases disagree on an English name; resolve the glossary entry first.")
-        opening = prefix.end() - 1
-        depth, closing = 0, None
-        for index in range(opening, len(line)):
-            depth += (line[index] == "(") - (line[index] == ")")
-            if depth == 0:
-                closing = index
-                break
-        if closing is None:
-            result.append(line)
-            continue
-        covered.update(matches)
-        result.append(line[:opening + 1] + next(iter(names)) + line[closing:])
-    missing = [value for key, value in incoming.items() if key not in covered]
-    body = "".join(result).rstrip("\r\n")
-    if missing:
-        body += ("\n" if body else "") + "\n".join(f"{source} ({target})" for source, target in missing)
-    replacement = (section.group(1) if section else "# Game Characters\n") + body + "\n\n"
-    game = game[:section.start()] + replacement + game[section.end():] if section else replacement + game
-    return game + base
+    _change_game_vocab(change, game_root)
+    for row, source, translation in kept:
+        print(
+            f"Glossary keeps {row} for {source}; this pass translated it "
+            f"{translation}.",
+            flush=True,
+        )
+    return kept
 
 
 def remove_vocab_section(category: str, *, game_root=None) -> None:
-    """Remove a ``# {category}`` section from the game-specific vocab, if present."""
+    """Remove a category's sections from the game-specific vocab, if present
+    (see :func:`fold_glossary_sections`)."""
     with _VOCAB_LOCK:
         glossary_path = _path(game_root)
         existing = glossary_path.read_text(encoding="utf-8")
 
         game_part, base_part = _split_base(existing)
 
-        new_game = _section_pattern(category).sub("", game_part, count=1)
-        if new_game == game_part:
+        found = fold_glossary_sections(game_part, category)
+        if found is None:
             return
+        new_game = found.before + found.after
         new_game = re.sub(r"\n{3,}", "\n\n", new_game).rstrip("\n")
         if base_part:
             combined = new_game + "\n\n" + base_part if new_game else base_part
