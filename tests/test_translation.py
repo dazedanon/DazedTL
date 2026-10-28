@@ -1050,6 +1050,28 @@ class TranslationTests(unittest.TestCase):
         jobs.reconcile()
         self.assertFalse(scratch(stopped["id"]).exists())
 
+    def test_a_failed_runs_frozen_settings_reach_settings_once_its_worker_exits(self):
+        # Settings marks a thinking effort refused when a run's server
+        # refused it (settings/store refused_in_run), which it learns here.
+        failed, interrupted = (self.run_record()[0] for _ in range(2))
+        failed.update(status="failed", message="Refused.")
+        interrupted.update(status="running")
+        for job in (failed, interrupted):
+            self.store.save(job)
+        jobs = Jobs(self.store.workspace, False)
+        runs = []
+        jobs.run_failed = runs.append
+
+        class Exited:
+            def poll(self):
+                return 0
+
+        jobs.processes = {failed["id"]: Exited(), interrupted["id"]: Exited()}
+        jobs.reconcile()
+        self.assertEqual(
+            runs, [{"mode": "live", "model": "fixture", "message": "Refused."}]
+        )
+
     def test_cancellation_retains_completed_rows_and_does_not_submit_later_chunks(self):
         job, plan = self.run_record("batch", [request("one"), request("two")])
         # One request per provider job makes the remaining-work safeguard

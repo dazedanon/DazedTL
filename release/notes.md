@@ -6,4 +6,5 @@
 
 ### Fixed
 
+- **Settings:** when a run stops because a Custom / local server refused a thinking effort that **Check an effort** had accepted, the check now reads refused and Settings stops offering that level until you check it again, instead of still reading "Accepted".
 - **Settings:** **Advanced model options** in **Translation defaults** now stays open when you switch to **API connections**, such as to check the connection again for its thinking effort levels, and come back.

@@ -2126,6 +2126,35 @@ class SettingsTests(unittest.TestCase):
                 ),
             )
 
+            # A run the server refused the effort in marks that check refused;
+            # any other failure, or a run on another connection, changes none.
+            refused = effort.rejection("qwen-local", "low")
+            for run in (
+                {**frozen, "message": "The server didn't answer in time."},
+                {**frozen, "connection_id": "other", "message": refused},
+                {**frozen, "endpoint": "http://127.0.0.1:9/v1", "message": refused},
+            ):
+                settings.refused_in_run(run)
+            self.assertEqual(configuration(settings, "live")["thinkingEffort"], "low")
+            settings.refused_in_run({**frozen, "message": refused})
+            offered = settings.model_defaults("local", "qwen-local")["thinkingEffort"]
+            self.assertEqual(
+                [option["value"] for option in offered["options"]], [None, "high"]
+            )
+            self.assertFalse(offered["check"]["results"][0]["passed"])
+            self.assertNotIn("thinkingEffort", configuration(settings, "live"))
+            # The frozen run keeps sending what it froze.
+            self.assertEqual(
+                request_payload(row, {**frozen, "lineKeys": LINE_KEYS})[
+                    "reasoning_effort"
+                ],
+                "low",
+            )
+            # Checked again, it passes again.
+            server["status"] = 200
+            offered = settings.check_effort("local", "qwen-local", "low")
+            self.assertTrue(offered["check"]["results"][0]["passed"])
+
             # Another address clears the checks; the frozen run is unchanged.
             view = settings.save_connection(
                 view["revision"],
