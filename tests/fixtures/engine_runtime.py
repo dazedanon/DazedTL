@@ -2635,6 +2635,8 @@ try:
             "def provider(_native, *_args, **_kwargs):\n"
             "    with open(folder / 'sent.txt', 'a') as sent:\n"
             "        sent.write('sent\\n')\n"
+            "    if os.environ.get('STAND_IN_PAYS') and len((folder / 'sent.txt').read_text().split()) == 1:\n"
+            "        return openai.types.chat.ChatCompletion.model_validate({'id': 'paid', 'object': 'chat.completion', 'created': 0, 'model': 'gpt-stand-in', 'choices': [{'index': 0, 'finish_reason': 'stop', 'message': {'role': 'assistant', 'content': '{}'}}], 'usage': {'prompt_tokens': 11, 'completion_tokens': 3, 'total_tokens': 14}})\n"
             "    message = {'effort': \"Unsupported value: 'reasoning_effort' does not support 'high'.\", 'model': 'The model `gone` does not exist.'}[refused]\n"
             "    request = httpx2.Request('POST', 'https://stand-in.test/v1/chat/completions')\n"
             "    try:\n"
@@ -2729,7 +2731,13 @@ try:
                 ),
                 encoding="utf-8",
             )
-        for policy, sends in (("1", 1), ("0", 2)):
+        # Under the policy the stand-in answers the first request, which the
+        # file pays for before the stop leaves its handler: its receipt keeps
+        # it, read from its log line by the run's records and from its result
+        # by the run's TOTAL.
+        from dazedtl.compatibility.process_view import file_receipt
+
+        for policy, sends in (("1", 2), ("0", 2)):
             Record(stop_root).reset()
             (stop_root / "sent.txt").unlink(missing_ok=True)
             for text_file in texts:
@@ -2737,15 +2745,17 @@ try:
             stop_task = TranslationTask(
                 stop_root, ("JSON", (".json",), None), runner_script=stop_runner
             )
-            errors, handed = [], []
+            errors, handed, logged = [], [], []
             stop_task.file_error_signal.connect(lambda *args: errors.append(args))
             stop_task.progress_signal.connect(lambda *args: handed.append(args[2]))
+            stop_task.log_signal.connect(logged.append)
             with patch.dict(
                 os.environ,
                 {
                     **stop_environment,
                     "STAND_IN_REFUSES": "effort",
                     "STAND_IN_POLICY": policy,
+                    "STAND_IN_PAYS": "1" if policy == "1" else "",
                 },
             ):
                 result = stop_task._run_files(texts, False)
@@ -2762,6 +2772,13 @@ try:
                 assert errors == [(name, refused_effort) for name in handed], case
                 assert stop_task.run_stop == refused_effort, case
                 assert written == [], (case, written)
+                paid = stop_task.receipts["Text1.json"]
+                assert (paid["input"], paid["output"]) == (11, 3), paid
+                assert [
+                    receipt
+                    for receipt in (file_receipt(line, texts) for line in logged)
+                    if receipt
+                ] == [("Text1.json", paid, True)], logged
             else:
                 assert result != "Fail", case
                 assert handed == texts and errors == [], case
