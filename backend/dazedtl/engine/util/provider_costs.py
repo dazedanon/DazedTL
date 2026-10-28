@@ -145,6 +145,26 @@ def has_billed_cache_writes(provider: str, model: str) -> bool:
     return cache_write_multiplier(provider, model) != 1.0
 
 
+def uncached_usage(counts: dict) -> dict:
+    """A response's counts, whose ``prompt_tokens`` includes its cache reads
+    and writes (batch_providers.openai_usage), as usage_cost reads them."""
+    def count(key: str) -> int:
+        value = counts.get(key, 0)
+        return value if type(value) is int and value >= 0 else 0
+
+    reads, writes = (
+        count("cache_read_input_tokens"),
+        count("cache_creation_input_tokens"),
+    )
+    return {
+        "input_tokens": max(0, count("prompt_tokens") - reads - writes),
+        "output_tokens": count("completion_tokens"),
+        "cache_read_input_tokens": reads,
+        "cache_creation_input_tokens": writes,
+        "thinking_tokens": count("thinking_tokens"),
+    }
+
+
 def usage_cost(usage: dict, provider: str, model: str, input_rate: float,
                output_rate: float, factor: float = 1.0) -> float:
     """Price billed usage at per-token rates with the route's cache

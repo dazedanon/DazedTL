@@ -262,6 +262,23 @@ _chunk_tokens = {}
 # chunk as soon as the one before it finished.
 RUN_POLICY = "enqueued-tokens-v1"
 
+# Assistant-led Batch runs frozen with this policy pack each chunk to at most
+# job_tokens of the allowance and send the next while the window has room,
+# so several are in flight; runs frozen before it pack a chunk up to the
+# whole allowance and send the next once the one before it ended.
+CHUNK_POLICY = "quarter-jobs-v1"
+
+
+def job_tokens(allowance):
+    """The most input tokens one provider job packs of the window's Batch
+    token `allowance`, Guided's and Assistant-led's alike: a quarter, so
+    several independently completing jobs share the window and one slow
+    request cannot hold all of it, and at most the engine's default
+    allowance. A request bigger than this still goes alone in a job."""
+    from util.translation import OPENAI_BATCH_SEQUENTIAL_ENQUEUED_TOKEN_LIMIT
+
+    return min(max(1, allowance // 4), OPENAI_BATCH_SEQUENTIAL_ENQUEUED_TOKEN_LIMIT)
+
 
 def chunk_tokens(job, chunk, requests, count, known=None):
     """The input tokens of an Assistant-led run's chunk: `known` when its
@@ -520,18 +537,12 @@ class BatchWindow:
                         workspace_of(self.root), scope(self.plan), self.count, limit
                     ),
                 )
-                # Keep several independently completing jobs in the window;
-                # one straggler should not retain the entire token allowance.
-                target = min(
-                    max(1, limit // 4),
-                    self.translation.OPENAI_BATCH_SEQUENTIAL_ENQUEUED_TOKEN_LIMIT,
-                )
                 pending = chunks(
                     requests,
                     submitted,
                     costs,
                     available,
-                    target,
+                    job_tokens(limit),
                     self.providers.batch_limits("openai"),
                 )
                 sent = 0

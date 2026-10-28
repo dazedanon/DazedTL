@@ -71,6 +71,7 @@ Every RPG Maker estimate parses all its files in one worker process, as Batch co
 
 Prompt caching is priced as providers bill it, never as promised savings: a Batch whose provider caches prompts is priced as a range from every shared prefix reused to none, because Batch cache hits are best effort, and an Assistant-led quote's cost is the higher end.
 Guided estimates and Assistant-led quotes price their counts by one rule ([estimate_prices](../backend/dazedtl/compatibility/estimate_prices.py)), and an Assistant-led run's recorded usage is priced as Guided's Batch receipts are, so a run's spend reads in dollars beside its estimate.
+Both methods price each Live response's usage, its cache reads and writes at the provider's cache prices, by one rule ([provider_costs](../backend/dazedtl/engine/util/provider_costs.py) `usage_cost`), reading OpenAI-shaped usage one way ([batch_providers](../backend/dazedtl/engine/util/batch_providers.py) `openai_usage`).
 Claude requests cache their instructions for five minutes: a Batch starts most requests together, so many write the cache instead of reading it (two of three real Claude Batches read it on about one request in ten), and a five-minute write costs 1.25 times input where a one-hour write costs twice.
 Claude estimates use [Claude's own token count](../backend/dazedtl/engine/util/claude_tokens.py), because Anthropic bills by a tokenizer that turns the same text into more tokens than the GPT-4 encoder other estimates use.
 GPT-6.1 Sol Batch quotes use its [published cache rates](https://developers.openai.com/api/docs/models/gpt-6.1-sol) ([batch_pricing](../backend/dazedtl/compatibility/batch_pricing.py)).
@@ -104,9 +105,10 @@ A Batch approval binds the full frozen queue and plan; only the owning worker ad
 Explicit stops, provider cancellations, newer approved overlapping runs, changed scope and uncertain submissions prevent automatic continuation.
 Requests read as never sent only with evidence the [submission journal](../backend/dazedtl/compatibility/batch_continuation.py) or the [transport observer](../backend/dazedtl/compatibility/transmission.py) records, since SDK retries can hide a processed try behind a later refused connection.
 Automatic local consumption requires a durable fetched marker and submission receipts covering every prepared request, so collecting one chunk cannot turn an unsent remainder into a full consume pass, and a failed consume offers Retry saving results instead of a restart loop.
-The [OpenAI Batch window](../backend/dazedtl/compatibility/batch_window.py) gives each provider job at most a quarter of the input-token allowance, so a slow request cannot hold the whole window.
+The [OpenAI Batch window](../backend/dazedtl/compatibility/batch_window.py) gives each provider job at most a quarter of the input-token allowance (`job_tokens`, for both workflows), so a slow request cannot hold the whole window.
 Guided and Assistant-led runs on one connection share that window: it counts both workflows' provider jobs in flight, and every Batch either sends, clarifications included, waits in it for room.
-An Assistant-led run sends its chunks one at a time, each up to the whole allowance, and a chunk without room stays `queued` in its run record; runs frozen before that policy (`batch_window` in the plan) send each chunk without waiting.
+An Assistant-led run sends its chunks in order while the window has room, several in flight, and a chunk without room stays `queued` in its run record; after a failed chunk it sends no further chunk, collects the ones already sent, then ends failed, and Resume sends the rest.
+Runs frozen before those policies (`batch_chunks` and `batch_window` in the plan) send one chunk at a time, each up to the whole allowance, and before `batch_window` without waiting for room.
 Provider reads and downloads run outside the API lock and feed the application observer through cached observations.
 
 ### Evidence and validation

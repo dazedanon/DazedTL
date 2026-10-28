@@ -5,7 +5,13 @@ import time
 from contextlib import nullcontext
 from functools import partial
 
-from dazedtl.compatibility.batch_window import RUN_POLICY, chunk_tokens, reserve_run
+from dazedtl.compatibility.batch_window import (
+    CHUNK_POLICY,
+    RUN_POLICY,
+    chunk_tokens,
+    job_tokens,
+    reserve_run,
+)
 from dazedtl.storage import write_json
 
 from .batch_refusals import advance, outline, started
@@ -37,6 +43,11 @@ SAVE_INTERVAL = 1.0
 # freezes the policy and each other request's first (askers), so earlier
 # runs send every request.
 SHARED_PAYLOADS = "shared-payloads-v1"
+# The run record's message of the failed chunk after which a Batch run with
+# several chunks in flight (CHUNK_POLICY) sends no further chunk; the run
+# ends with it once the chunks sent before it ended, and a Resume of that
+# failed run sends the rest, as it does for a run sending one at a time.
+STOPPED_SENDING = "stopped_sending"
 
 
 def askers(requests):
@@ -106,6 +117,16 @@ class Runner:
             self.plan["preceding"] if self.plan.get("delivered") == DELIVERED else {}
         )
         self.holders = None
+        # The plan's OpenAI Batch token allowance, and whether its chunks
+        # take a quarter of it each, several in flight, or, in runs frozen
+        # before CHUNK_POLICY, all of it, one at a time.
+        limits = self.plan.get("batch_limits") or []
+        self.token_limit = limits[2] if len(limits) > 2 else None
+        self.several = (
+            bool(self.token_limit) and self.plan.get("batch_chunks") == CHUNK_POLICY
+        )
+        # Whether this pass checked the game before sending a chunk (submit).
+        self.checked = False
         self.saved = time.monotonic()
         # Sums of request_usage, kept as rows change; see record_usage.
         self.request_totals = None
@@ -445,7 +466,13 @@ class Runner:
             same_schema = self.plan["configuration"].get(
                 "openrouterStructuredOutputs"
             ) and self.plan["configuration"]["model"].startswith("google/")
-            token_limit = limit[2] if len(limit) > 2 else None
+            token_limit = self.token_limit
+            # The most tokens a chunk packs (see several).
+            packed = (
+                (job_tokens(token_limit) if self.several else token_limit)
+                if token_limit
+                else 0
+            )
             for index, row in enumerate(pending):
                 item = {
                     "custom_id": "dtl-" + self.job["id"][:12] + "-" + str(index),
@@ -472,7 +499,7 @@ class Runner:
                     len(chunk) >= limit[0]
                     or size + length > limit[1]
                     or token_limit
-                    and tokens + request_tokens > token_limit
+                    and tokens + request_tokens > packed
                     or same_schema
                     and schema != row["params"].get("response_format")
                 ):
@@ -492,6 +519,9 @@ class Runner:
                     chunk_tokens(self.job, row, None, None, known)
             self.job["batches"] = chunks
             self.save()
+        # With several chunks in flight a pass goes on past one still
+        # processing, and ends waiting with the last such chunk's message.
+        waiting, held = None, False
         for chunk in self.job["batches"]:
             if chunk["state"] in {"complete", "canceled", "rejected"}:
                 continue
@@ -522,8 +552,20 @@ class Runner:
                     }
                 self.save()
                 continue
-            if not chunk["id"] and not self.submit(chunk):
-                return
+            if not chunk["id"]:
+                # Chunks are sent in order, so every later one is unsent too.
+                if self.several and STOPPED_SENDING in self.job:
+                    if chunk["state"] == "queued":
+                        chunk["state"] = "pending"
+                    break
+                if held:
+                    break
+                if not self.submit(chunk):
+                    if self.several and chunk["state"] in {"queued", "rejected"}:
+                        if chunk["state"] == "queued":
+                            waiting = self.job["message"]
+                        break
+                    return
             policy = self.plan["configuration"].get("refusalRetry") == REFUSAL_POLICY
             # A clarification journal starts only after this job ended, so a
             # cancellation then belongs to the clarification Batches.
@@ -547,7 +589,13 @@ class Runner:
                     # collects its canceled job also settles the later chunks.
                     if cancel and chunk["state"] == "complete":
                         continue
-                    return
+                    if not self.several or chunk["state"] == "unmatched":
+                        return
+                    # Still processing, or a provider failure that halted
+                    # further sends (halt).
+                    if chunk["state"] != "complete":
+                        waiting = self.job["message"]
+                    continue
                 responses, usage = collected
             # A canceled run starts no clarification but settles a started one.
             if journaled or policy and not cancel:
@@ -591,7 +639,7 @@ class Runner:
                         self.store.workspace,
                         self.plan["configuration"],
                         count=count,
-                        limit=limits[2] if len(limits) > 2 else None,
+                        limit=self.token_limit,
                     ),
                     sources={
                         item["request"]: self.sources(item["request"])
@@ -636,7 +684,12 @@ class Runner:
                         if retried.get("waiting_capacity")
                         else "Waiting for the Batch clarification of refused requests.",
                     )
-                    return
+                    if not self.several or retried.get("uncertain"):
+                        return
+                    waiting = self.job["message"]
+                    # Room frees for the clarification of sent work first.
+                    held = held or bool(retried.get("waiting_capacity"))
+                    continue
             # Only a started clarification leaves the provider job uncollected.
             assert responses is not None and usage is not None
             for item in chunk["items"]:
@@ -656,18 +709,43 @@ class Runner:
                 self.job["states"][item["request"]]["state"] == "failed"
                 for item in chunk["items"]
             ):
+                self.halt(
+                    "Some returned translations failed validation. Later batches have not been submitted."
+                )
+                if not self.several:
+                    return
+        if self.several:
+            halted = self.job.get(STOPPED_SENDING)
+            canceled = self.store.cancel_requested(self.job["id"])
+            if waiting:
                 self.save(
-                    "failed",
-                    "Some returned translations failed validation. Later batches have not been submitted.",
+                    "waiting",
+                    halted + " Collecting the batches already sent."
+                    if halted and not canceled
+                    else waiting,
                 )
                 return
+            if halted:
+                del self.job[STOPPED_SENDING]
+                if not canceled:
+                    self.save("failed", halted)
+                    return
         self.finish()
+
+    def halt(self, message):
+        """Sends no further chunk after a failed one: the run ends failed with
+        `message`, or, with several chunks in flight, first collects the
+        chunks sent before it (STOPPED_SENDING)."""
+        if self.several:
+            self.job.setdefault(STOPPED_SENDING, message)
+            self.save()
+        else:
+            self.save("failed", message)
 
     def room(self, chunk):
         """Whether the provider's Batch window has room for the chunk now,
         held while it is sent; runs frozen before RUN_POLICY never wait."""
-        limits = self.plan["batch_limits"]
-        limit = limits[2] if len(limits) > 2 else None
+        limit = self.token_limit
         if self.plan.get("batch_window") != RUN_POLICY or not limit:
             return nullcontext(True)
         count = self.provider.input_tokens
@@ -686,8 +764,11 @@ class Runner:
             pass
         if available:
             # Checking the game takes a while on a big one, so it runs
-            # outside the window's lock, which other runs wait on.
-            self.validate_current()
+            # outside the window's lock, which other runs wait on, and once
+            # for the chunks one pass sends.
+            if not self.checked:
+                self.validate_current()
+                self.checked = True
             with self.room(chunk) as available:
                 if available:
                     return self.send(chunk)
@@ -729,12 +810,12 @@ class Runner:
                 }
             if certain:
                 chunk["state"] = "rejected"
-            self.save(
-                "failed" if certain else "uncertain",
-                "Review the rejected submission."
-                if certain
-                else "The provider submission must be reconciled before retrying.",
-            )
+                self.halt("Review the rejected submission.")
+            else:
+                self.save(
+                    "uncertain",
+                    "The provider submission must be reconciled before retrying.",
+                )
             return False
         chunk.update(id=value["id"], state="submitted")
         self.save()
@@ -746,12 +827,16 @@ class Runner:
         status = self.provider.status(chunk["id"])
         chunk.update(api_status=status["api_status"], counts=status["counts"])
         if not status["ended"]:
-            self.save(
-                "waiting",
+            message = (
                 "Provider batch is still processing."
                 if not cancel
-                else "Cancellation requested. Waiting for the provider's final status and any completed results.",
+                else "Cancellation requested. Waiting for the provider's final status and any completed results."
             )
+            if self.several:
+                # A large record is saved once a pass, at its end (batch).
+                self.job["message"] = message
+            else:
+                self.save("waiting", message)
             return None
         if status["terminal_failure"]:
             mapping = {item["custom_id"]: item["request"] for item in chunk["items"]}
@@ -788,9 +873,8 @@ class Runner:
                     }
             chunk.update(state="complete", usage=usage)
             if not cancel:
-                self.save(
-                    "failed",
-                    "The provider batch failed. Review remaining work before paying for a retry.",
+                self.halt(
+                    "The provider batch failed. Review remaining work before paying for a retry."
                 )
             return None
         mapping = {item["custom_id"]: item["request"] for item in chunk["items"]}
