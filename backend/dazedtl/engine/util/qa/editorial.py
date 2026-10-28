@@ -42,6 +42,7 @@ from util.qa.storage import (
     _load_task,
     _read_json,
     _task_lock,
+    review_layout,
     task_json,
 )
 from util.qa.validation import _consistency_conflicts, _simulate_apply
@@ -81,6 +82,7 @@ def _editorial_items(
     """One editorial item per finding to confirm, with its nearby game text,
     or a scene correction's whole scene."""
     task = task_json(root)
+    layout = review_layout(task)
     manifest = _read_json(root / "inventory.json")
     records, _clusters = _record_maps(manifest)
     scenes = (
@@ -131,7 +133,7 @@ def _editorial_items(
                 "occurrences": len(finding["target_identities"]),
                 "targets": [{
                     "position": line["position"],
-                    **_editorial_target(records[identity], task["layout"]),
+                    **_editorial_target(records[identity], layout),
                 } for line in finding["lines"] for identity in line["identities"]],
                 "scene": [{
                     "command": (_scene_position(record) or ("", None))[1],
@@ -167,7 +169,7 @@ def _editorial_items(
             },
             "occurrences": len(targets),
             "targets": [
-                _editorial_target(record, task["layout"]) for record in targets
+                _editorial_target(record, layout) for record in targets
             ],
             "nearby_commands": nearby.get(finding["cluster_id"])
             or _nearby_commands(
@@ -562,7 +564,7 @@ def _complete_editorial(
     draft = _read_json(root / "draft-findings.json")
     manifest = _read_json(root / "inventory.json")
     records, clusters = _record_maps(manifest)
-    layout = task["layout"]
+    layout = review_layout(task)
     game = _lint_game(root, manifest)
     editorial = checkpoint.setdefault(
         "editorial", {"total_items": 0, "accepted_items": 0, "bundles": [], "round": 0}

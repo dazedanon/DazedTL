@@ -36,7 +36,7 @@ from util.qa.selection import (
     _scene_item,
     _scene_position,
 )
-from util.qa.storage import _read_json, task_json
+from util.qa.storage import _read_json, review_layout, task_json
 
 
 def _deep_basis(
@@ -449,7 +449,7 @@ def _open_follow_ups(
         item["id"]: item
         for item in _compact_items(manifest, _read_json(root / "context.json"))
     }
-    _lint, lint_fixes = _lint_items(manifest, task["layout"], _lint_game(root, manifest))
+    _lint, lint_fixes = _lint_items(manifest, review_layout(task), _lint_game(root, manifest))
     screen = checkpoint["screen"]
     # Ordinals continue past every target the task has offered.
     ordinal = int(screen["total_items"])

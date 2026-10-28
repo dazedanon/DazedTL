@@ -44,6 +44,7 @@ from util.qa.storage import (
     _task_lock,
     answers,
     read_task,
+    recorded_layout,
 )
 from util.rpgmaker_qa_manifest import build_manifest
 from util.rpgmaker_qa_verify import verify_manifest
@@ -182,7 +183,7 @@ def correction_map(
                 targets[target] = change["correction"]
                 # The replacement reads as it will once written, so undoing
                 # it finds it there.
-                replacement = _written(record, change["correction"], task["layout"])
+                replacement = _written(record, change["correction"], recorded_layout(task))
                 message = len(record["live_pointers"]) > 1 and _message_record(record)
                 operations.append({
                     "finding_id": finding["id"],

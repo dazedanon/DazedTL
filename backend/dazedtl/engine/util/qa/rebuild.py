@@ -36,6 +36,7 @@ from util.qa.storage import (
     game_tasks,
     located,
     read_task,
+    recorded_layout,
 )
 from util.qa.validation import _validate_screen_result
 
@@ -127,7 +128,7 @@ def rebuild_deep_from_screen(
                 "item_limit", DEFAULT_SCREEN_ITEM_LIMIT
             )
         ),
-        fit=source_task.get("layout"),
+        fit=recorded_layout(source_task),
         # The earlier reviews its source read, so its screen holds the same
         # lines.
         origins=(source_task.get("reviewed_before") or {}).get("from") or [],

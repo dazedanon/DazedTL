@@ -42,7 +42,7 @@ from util.qa.selection import (
     _scene_records,
     _scene_signature,
 )
-from util.qa.storage import _read_json
+from util.qa.storage import _read_json, review_layout
 from util.qa.validation import _scene_line, _simulate_apply
 
 # The flags each correcting source fix may introduce.
@@ -179,7 +179,7 @@ def _draft_document(
                 "evidence": review["evidence"],
                 "reviewer": str(row.get("assigned_to") or ""),
             })
-    layout = task["layout"]
+    layout = review_layout(task)
     sweep_dropped = _add_sweep_findings(findings, checkpoint, records, layout)
     game = _lint_game(root, manifest)
     _add_lint_findings(
