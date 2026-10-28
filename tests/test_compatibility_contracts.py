@@ -352,6 +352,58 @@ class CompatibilityContracts(unittest.TestCase):
                     ),
                 )
 
+    def test_a_quote_reads_the_runs_frozen_effort_record_and_counting_rule(self):
+        # Assistant-led quotes and repriced estimates judged the effort from
+        # DazedTL's notes alone, so a model only its provider's list knows
+        # named no default and lost the unestimated-thinking note.
+        from dazedtl.compatibility import estimate_prices
+        from dazedtl.translation import repricing
+        from dazedtl.translation.files import digest
+        from dazedtl.translation.service import changed_since, corrected
+
+        listed = {"levels": ["low", "high"], "default": "low", "off": None}
+        frozen = {
+            "mode": "live",
+            "provider": "openrouter",
+            "model": "z-ai/glm-6",
+            "rates": {"input": 1, "output": 2},
+            "thinkingEffortListed": listed,
+        }
+        counts = {"input_tokens": 1000, "output_tokens": 2500}
+        for level, named, thinks in (
+            (None, "Provider default (Low)", True),
+            ("high", "High", True),
+        ):
+            value = estimate_prices.prices(
+                counts, {**frozen, "thinkingEffort": level}, None
+            )
+            self.assertEqual(
+                (value["thinking_effort"], value["unestimated_thinking_tokens"]),
+                (named, thinks),
+            )
+        # A model switch that changes only that record prices a waiting quote
+        # again instead of counting its requests again.
+        quote = {"price_rules": repricing.current_rules(), "output_rules": 1}
+        current = {**frozen, "thinkingEffortListed": None}
+        change = changed_since(current, digest(frozen), frozen, quote)
+        self.assertTrue(change.priced_only)
+        self.assertFalse(corrected(change))
+        # A quote counts its output by a versioned rule; one saved before
+        # quotes named it stands, and raising it outdates the quote.
+        old = {"price_rules": repricing.current_rules()}
+        self.assertIsNone(changed_since(frozen, digest(frozen), frozen, old))
+        with patch.object(estimate_prices, "OUTPUT_RULES_VERSION", 2):
+            change = changed_since(frozen, digest(frozen), frozen, old)
+            self.assertFalse(change.priced_only)
+            self.assertTrue(corrected(change))
+            # The settings changing as well are still the settings' doing.
+            moved = {**frozen, "endpoint": "https://elsewhere.test/v1"}
+            change = changed_since(moved, digest(frozen), frozen, old)
+            self.assertTrue(change.version and change.reshaped)
+            self.assertFalse(corrected(change))
+            # A run without a quote has no counts to outdate.
+            self.assertIsNone(changed_since(frozen, digest(frozen), frozen, None))
+
     def test_engine_extension_layers_reach_aliases_and_reconfigure_in_place(self):
         # Host wrappers used to reassign module attributes: aliases bound at
         # import missed them, and repeated configuration stacked duplicates.

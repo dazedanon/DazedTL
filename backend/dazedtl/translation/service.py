@@ -6,10 +6,12 @@ import threading
 import time
 from collections.abc import Callable
 from contextvars import ContextVar
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
 from dazedtl.actions import history_label
+from dazedtl.compatibility import estimate_prices
 from dazedtl.compatibility.estimate_prices import usage_cost
 from dazedtl.freshness import Basis, Change, compare
 from dazedtl.languages import pair_note
@@ -99,15 +101,17 @@ def changed_since(current, frozen_sha256, frozen, quote, *, reprice=True):
     """What changed between the settings a run froze and those it would
     freeze now, or None; ``current`` is None when they can't form a run. The
     run's ``quote``, None for a run without one, priced under older price
-    rules changed too (repricing). With ``reprice``, prices not looked up
-    since DazedTL started read as unchanged while everything else matches,
-    so a restart alone never outdates a quote; a run saved before its record
-    kept its configuration can only be compared once they are known."""
+    rules changed too (repricing), and one counted by an older output rule
+    (estimate_prices.OUTPUT_RULES_VERSION) changed its version. With
+    ``reprice``, prices not looked up since DazedTL started read as unchanged
+    while everything else matches, so a restart alone never outdates a quote;
+    a run saved before its record kept its configuration can only be compared
+    once they are known."""
     if current is None:
         return Change(settings=True, reshaped=True)
     priced = quote is not None
     # A run's settings are its whole basis; its requests are checked apart.
-    return compare(
+    change = compare(
         Basis(
             None,
             {},
@@ -125,6 +129,21 @@ def changed_since(current, frozen_sha256, frozen, quote, *, reprice=True):
         prices_unknown=reprice
         and frozen is not None
         and repricing.unknown_prices(frozen, current),
+    )
+    # Compared apart from the settings, which still say whether the user
+    # changed them too.
+    if priced and estimate_prices.output_rules(quote) != (
+        estimate_prices.OUTPUT_RULES_VERSION
+    ):
+        return replace(change or Change(), version=True)
+    return change
+
+
+def corrected(change):
+    """Whether ``change`` (changed_since) is DazedTL's own correction of how
+    it prices or counts a quote, rather than a change to the settings."""
+    return bool(
+        change and (change.rules_only or change.version and not change.settings)
     )
 
 
@@ -738,10 +757,8 @@ Additional project instructions:
                             job["approval_token"], reading.settings
                         ),
                     )
-                # Outdated by a pricing fix alone, or by the settings.
-                view["pricing_changed"] = bool(
-                    not reading.current and change and change.rules_only
-                )
+                # Outdated by a pricing or counting fix, or by the settings.
+                view["pricing_changed"] = not reading.current and corrected(change)
                 view["settings_changed"] = (
                     not reading.current and not view["pricing_changed"]
                 )
@@ -1358,7 +1375,7 @@ Additional project instructions:
                 if change is not None:
                     raise ValueError(
                         "This estimate's price changed since it was shown. Review it again before approving."
-                        if change.rules_only
+                        if corrected(change)
                         else "API settings or the translation mode changed after this estimate. Compile and review a new plan."
                     )
             else:

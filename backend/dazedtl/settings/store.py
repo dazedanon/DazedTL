@@ -4,6 +4,7 @@ import json
 import time
 import uuid
 from copy import deepcopy
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, TypeGuard
 
@@ -148,6 +149,8 @@ class Settings:
                     openrouter.validate_catalog(connection["catalog"])
                 if "efforts" in connection:
                     effort.valid_list(connection["efforts"])
+                if "effort_checks" in connection:
+                    effort.valid_checks(connection["effort_checks"])
                 if "batch_endpoints" in connection:
                     openrouter.validate_endpoints(connection["batch_endpoints"])
                 host = providers.openrouter_host(connection.get("openrouter_host", ""))
@@ -606,13 +609,91 @@ class Settings:
             return cached(model) if cached is not None else {}
         return {
             **self.adapter.model_defaults.describe(model),
-            "thinkingEffort": effort.describe(
-                active["provider"] if active else None,
-                model,
-                effort.record(active, model),
-                effort.kept(active),
-            ),
+            "thinkingEffort": self._effort(active, model),
         }
+
+    @staticmethod
+    def _effort(connection, model) -> dict[str, Any]:
+        """The efforts Settings offers for *model* on *connection*
+        (settings/effort describe), with the checks it offers where a level
+        is offered only once a check passed it."""
+        provider = connection["provider"] if connection else None
+        value: dict[str, Any] = dict(
+            effort.describe(
+                provider,
+                model,
+                effort.record(connection, model),
+                effort.kept(connection),
+            )
+        )
+        if connection and effort.checkable(provider, model):
+            saved = connection.get("effort_checks", {}).get(effort.model_id(model), {})
+            value["check"] = {
+                "levels": [
+                    {
+                        "value": level,
+                        "label": effort.label(level),
+                        "sends": effort.sent(provider, model, level),
+                    }
+                    for level in effort.LEVELS
+                ],
+                "results": [
+                    {"value": level, "label": effort.label(level), **saved[level]}
+                    for level in effort.LEVELS
+                    if level in saved
+                ],
+                "replyTokens": providers.CHECK_TOKENS,
+                "local": providers.local(providers.address(connection)),
+            }
+        return value
+
+    def check_effort(self, connection_id, model, level):
+        """Sends, on the user's click, the one short request that checks
+        whether the active connection's server takes *level* for *model*, a
+        model whose efforts nothing else describes (settings/effort
+        checkable), and saves what it said: a level it accepted is offered
+        for runs, one it refused shows the reason. A request that could not
+        say either saves nothing and fails with its reason."""
+        if not self.adapter.allow_providers:
+            raise ValueError("Effort checks are unavailable in offline mode.")
+        state = self._read()
+        if connection_id != state["active"]:
+            raise ValueError("The active connection changed. Reopen Settings.")
+        connection = self._connection(state)
+        if not self._configured(connection):
+            raise ValueError("Choose the provider and save this connection first.")
+        model = preferences.text(model, "model ID", required=True)
+        if len(effort.model_id(model)) > 200:
+            # Saved checks keep model IDs of at most 200 characters.
+            raise ValueError("Model IDs over 200 characters can't be checked.")
+        if effort.checked(level) is None:
+            raise ValueError("Choose a thinking effort to check.")
+        if not effort.checkable(connection["provider"], model):
+            raise ValueError(
+                "DazedTL already knows which thinking efforts this model takes."
+            )
+        result = providers.check_effort(connection, model, level, effort.trial(level))
+        if result["status"] == "failed":
+            raise ValueError(result["message"])
+        current = self._read()
+        latest = self._connection(current, connection_id)
+        if not latest or any(
+            latest.get(key) != connection.get(key)
+            for key in ("provider", "protocol", "endpoint", "keyless", "organization")
+        ):
+            raise ValueError(
+                "The connection changed while checking it. Check the effort again."
+            )
+        latest["effort_checks"] = effort.keep_check(
+            latest.get("effort_checks", {}),
+            model,
+            level,
+            result["status"] == "accepted",
+            result["message"],
+            datetime.now(UTC).isoformat(),
+        )
+        self._write(current, bump=False)
+        return self._effort(latest, model)
 
     def batch_lookup(self, *, connection_id=None, model=None):
         """Select a targeted endpoint read; observations never call this."""
@@ -1032,6 +1113,16 @@ class Settings:
             **(
                 {"efforts": old["efforts"]}
                 if unchanged and old and "efforts" in old
+                else {}
+            ),
+            # A check speaks for the server it reached: another address or
+            # provider clears it, as the model options it unlocks.
+            **(
+                {"effort_checks": old["effort_checks"]}
+                if old
+                and same_route
+                and old["provider"] == provider
+                and "effort_checks" in old
                 else {}
             ),
         }

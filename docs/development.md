@@ -57,6 +57,13 @@ Ruff also rejects file and process calls that go around the [platform layer](../
 Launching builds a missing renderer without these checks.
 Format with `node scripts/format.mjs`; it applies Prettier and Ruff defaults and leaves the bundled engine, Markdown and JSON unchanged.
 
+### Thinking effort table
+
+[effort.py](../backend/dazedtl/settings/effort.py) holds the levels each provider's models take, read from each provider's docs, and each row keeps the date it was last confirmed against the real API.
+Confirm it with `.venv/bin/python scripts/effort_check.py [--provider NAME]` when you add a model or level, when a provider changes its effort parameters, and before a release that changes the table.
+It reads each provider's key from the environment ([its header](../scripts/effort_check.py) names them), prints the requests it plans and their cost cap, and sends nothing without `--confirm`; then it reports each row as accepted, refused with the reason or failed, and lists the rows whose date to set.
+It never runs in tests or CI.
+
 ## Live test
 
 `node scripts/e2e.mjs` installs the checkout the way a user's downloaded ZIP is installed and drives the running app through a translation.
@@ -166,6 +173,7 @@ The stand-in's replies are not real translations: it answers any other line with
 Without it, on Linux the scenario's private KWin and stand-in end with the command however it ends, a kill included, and its app with that KWin; with it they stay until `stop` or `clean`.
 `node scripts/scenario.mjs drive --work <dir>` with `text`, `click <accessible name>` (the whole name), `click-prefix <start of a name>` (for names ending in something that varies, such as a History row's date), `call <method> <params>`, `eval` or `shot <file>` drives it, and scripts import the same driver from [scripts/testkit/cdp.mjs](../scripts/testkit/cdp.mjs).
 `node scripts/scenario.mjs provider --work <dir> '<mode>'` changes how the stand-in answers: the keys it names replace those of its mode and the others stay, such as the game variant's own replies, so `'{"hold":false}'` releases a held Batch. Such as `{"stall":true}`, `{"refuse":["text"]}` or `{"long":["text"]}`, which makes lines holding the text come back as a long English message; [its header](../scripts/testkit/provider.mjs) lists the modes.
+Each request reaches `provider/requests.jsonl` with its JSON body, so a check can confirm what reached the server, such as a `reasoning_effort`; the header says what is recorded and what never is.
 `node scripts/scenario.mjs clean --work <dir>` stops every process the scenario started and removes its folder.
 `node scripts/scenario.mjs live [--work <dir>] [--upgrade-from <tag>]` runs the [live test](#live-test) in a private KWin of its own.
 Scenario connections reach only the stand-in: the custom connection names it, and the OpenAI preset points at it through `DAZEDTL_TEST_OPENAI_ENDPOINT`, which run workers follow too.

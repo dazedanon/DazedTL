@@ -16,6 +16,7 @@ import type {
   Documents,
   SettingsPayload,
   ConnectionInput,
+  EffortLevel,
   GameUpdateDefaults,
   TranslationOptions,
 } from "./contracts";
@@ -435,6 +436,8 @@ export const api = {
     request("connection_select", { revision, connection_id }),
   checkConnection: (revision: number, connection_id: string) =>
     request("connection_check", { revision, connection_id }),
+  checkEffort: (connection_id: string, model: string, level: EffortLevel) =>
+    request("connection_effort_check", { connection_id, model, level }),
   connectionUsage: (connection_id: string) =>
     request("connection_usage", { connection_id }),
   removeConnection: (

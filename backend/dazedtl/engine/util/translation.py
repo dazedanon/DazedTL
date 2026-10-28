@@ -4758,21 +4758,6 @@ def createLegacyTranslationSchema(numLines):
     return createTranslationSchema(numLines)
 
 
-def _is_official_openai_api(api_provider=None, api_url=None):
-    """Return whether a request targets OpenAI's own API."""
-    provider = (
-        api_provider or os.getenv("API_PROVIDER", "openai")
-    ).strip().lower()
-    endpoint = (
-        os.getenv("api", "") if api_url is None else str(api_url or "")
-    ).strip()
-    if provider != "openai" or not endpoint:
-        return provider == "openai" and not endpoint
-    from dazedtl.settings.providers import own_api
-
-    return own_api("openai", endpoint)
-
-
 @extensions.point
 def _translation_completion_limit(
     user,
@@ -5021,6 +5006,7 @@ def buildOpenAIRequest(system, user, history, penalty, formatType, model,
     _require_request_text(system, user)
 
     provider = (api_provider or os.getenv("API_PROVIDER", "openai")).lower()
+    from dazedtl.settings.providers import completion_field as uses_completion_field
     from dazedtl.settings.providers import own_api, response_format
 
     endpoint = os.getenv("api", "") if api_url is None else str(api_url or "")
@@ -5065,14 +5051,8 @@ def buildOpenAIRequest(system, user, history, penalty, formatType, model,
                 ).hexdigest()[:32]
             )
         params["extra_body"] = cache_fields
-    # Kimi documents max_completion_tokens and deprecates max_tokens. Batch
-    # requests name Kimi's Batch provider instead of the OpenAI protocol.
-    # https://platform.kimi.ai/docs/api/chat
-    completion_field = (
-        _is_official_openai_api(provider, api_url)
-        or provider == "kimi"
-        or (provider == "openai" and own_api("kimi", endpoint))
-    )
+    # Batch requests name Kimi's Batch provider instead of the OpenAI protocol.
+    completion_field = uses_completion_field(provider, endpoint)
     # DeepSeek's own API allows far longer replies than other DeepSeek hosts,
     # and its models think by default within max_tokens.
     # https://api-docs.deepseek.com/api/create-chat-completion

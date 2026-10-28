@@ -20,6 +20,51 @@
 .connection-host-actions {
   margin-top: var(--space-2);
 }
+/* An effort to check and its Check button share one line, as a field and
+   its button do. The select and button keep their own size, so the row's
+   small text measures the same width as the help under it. */
+.effort-check {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  max-width: var(--measure);
+  font-size: var(--font-small);
+}
+.effort-check > select {
+  flex-shrink: 0;
+  width: var(--short-control-width);
+}
+/* The button keeps its place beside the level; a failure wraps under the
+   button, inside the field's width. */
+.effort-check > .action-control {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.effort-check-results {
+  display: grid;
+  gap: var(--space-1);
+  margin: var(--space-2) 0 0;
+  padding: 0;
+  list-style: none;
+  max-width: var(--measure);
+  font-size: var(--font-small);
+  line-height: 1.5;
+  color: var(--color-muted);
+}
+.effort-check-results > li {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+/* Centered on the first line of an outcome that wraps. */
+.effort-check-results .status-icon {
+  flex-shrink: 0;
+  margin-top: var(--space-half);
+}
+.effort-check-results strong {
+  font-weight: var(--weight-medium);
+  color: var(--color-text);
+}
 .connection-keyless {
   display: flex;
   flex-direction: row;

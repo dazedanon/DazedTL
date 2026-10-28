@@ -1480,6 +1480,7 @@ export type TranslationQuote = {
   unestimated_thinking_tokens?: boolean;
   thinking_effort?: string;
   price_rules?: number;
+  output_rules?: number;
   model: string;
   provider: string;
   basis: string;
@@ -2010,11 +2011,36 @@ export type EffortOption = {
   label: string;
 };
 
+export type EffortCheckLevel = {
+  value: EffortLevel;
+  label: string;
+  sends: string;
+};
+
+export type EffortCheckResult = {
+  value: EffortLevel;
+  label: string;
+  passed: boolean;
+  message: string;
+  checkedAt: string;
+};
+
+/** A model whose efforts nothing describes, on a connection whose server
+may take `reasoning_effort` (settings/effort checkable): a level is
+offered once a check on this connection passed it. */
+export type EffortCheck = {
+  levels: EffortCheckLevel[];
+  results: EffortCheckResult[];
+  replyTokens: number;
+  local: boolean;
+};
+
 /** The efforts Settings offers for a model (settings/effort describe):
 the provider default first, then each level the model takes. */
 export type ThinkingEffort = {
   options: EffortOption[];
   source?: string;
+  check?: EffortCheck;
 };
 
 export type ModelDefaults = {
@@ -3235,6 +3261,12 @@ export type ConnectionRequest = {
   connection_id: string;
 };
 
+export type EffortCheckRequest = {
+  connection_id: string;
+  model: string;
+  level: EffortLevel;
+};
+
 export type ConnectionSaveRequest = ConnectionInput & {
   revision: number;
 };
@@ -3452,6 +3484,10 @@ export type RpcContract = {
   connection_save: { request: ConnectionSaveRequest; response: Settings };
   connection_select: { request: ConnectionRequest; response: Settings };
   connection_check: { request: ConnectionRequest; response: Settings };
+  connection_effort_check: {
+    request: EffortCheckRequest;
+    response: ThinkingEffort;
+  };
   connection_usage: {
     request: ConnectionUsageRequest;
     response: ConnectionUsage;

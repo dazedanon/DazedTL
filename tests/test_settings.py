@@ -1902,6 +1902,320 @@ class SettingsTests(unittest.TestCase):
             reloaded = Settings(temporary, adapter)._read()["connections"][0]
             self.assertEqual(reloaded["efforts"]["claude-opus-4-5"]["levels"], ["high"])
 
+    def test_a_server_effort_is_offered_only_once_a_check_passed_it(self):
+        # A custom or local server may take, refuse or ignore an effort, and
+        # a refused level fails a paid run, so a model nothing describes
+        # offers a level only once the user's check of it passed on that
+        # server; a changed address clears the checks, and a frozen run keeps
+        # sending what it froze.
+        from dazedtl.compatibility.translation import request_payload
+        from dazedtl.settings import effort
+
+        server = {"effort": "ignore", "status": 200}
+        sent = []
+
+        def respond(request):
+            body = json.loads(request.content)
+            sent.append((request, body))
+            if server["status"] == 400:
+                # Gemini wraps its error body in a list.
+                return httpx.Response(
+                    400, json=[{"error": {"message": "Model qwen-local not found"}}]
+                )
+            if server["status"] != 200:
+                return httpx.Response(server["status"], json={})
+            if "reasoning_effort" in body and server["effort"] == "refuse":
+                return httpx.Response(
+                    400,
+                    json={
+                        "error": {
+                            "message": "Unrecognized request argument supplied: reasoning_effort"
+                        }
+                    },
+                )
+            usage = {"completion_tokens": 3}
+            if server["effort"] == "accept":
+                usage["completion_tokens_details"] = {"reasoning_tokens": 12}
+            return httpx.Response(
+                200,
+                json={
+                    "choices": [{"message": {"role": "assistant", "content": "OK"}}],
+                    "usage": usage,
+                },
+            )
+
+        client = httpx.Client
+        options = {
+            "entriesPerRequest": None,
+            "pricing": "custom",
+            "inputRate": 0,
+            "outputRate": 0,
+        }
+        connection = {
+            "id": "local",
+            "runtime_name": "local-key",
+            "name": "Local",
+            "provider": "custom",
+            "protocol": "openai",
+            "endpoint": "http://127.0.0.1:8080/v1",
+            "secret": "",
+            "keyless": True,
+            "organization": "",
+            "model": "qwen-local",
+            "model_options": {"qwen-local": options},
+            "models": [],
+            "check": providers.unchecked(),
+        }
+        adapter = SimpleNamespace(
+            settings_metadata=lambda: {
+                "values": {
+                    "language": "English",
+                    "model": "qwen-local",
+                    "api": "",
+                    "API_PROVIDER": "openai",
+                }
+            },
+            allow_providers=True,
+            validate_route=lambda _: None,
+            provider_defaults=lambda _: {"batch_supported": False},
+            model_defaults=SimpleNamespace(
+                cached=lambda _model: {}, describe=lambda _model: {}
+            ),
+            manual=SimpleNamespace(request_policy=None),
+            install_settings=Mock(),
+        )
+        state = {
+            "version": 3,
+            "revision": 0,
+            "sourceLanguage": "Japanese",
+            "values": {"language": "English", "model": "qwen-local"},
+            "legacy": {"values": {}, "engines": {}, "draft": None},
+            "model_options": {},
+            "active": "local",
+            "draft": None,
+            "connections": [connection],
+        }
+        row = logical_request(
+            {"id": "scene", "sources": {"line": "はい。"}},
+            {
+                "user": "Lines:",
+                "system": "Translate.",
+                "glossary": "",
+                "sfx_reference": "",
+                "preceding_japanese_source_context": "",
+                "request_instructions": "",
+            },
+        )
+        with (
+            TemporaryDirectory() as temporary,
+            patch.object(
+                providers.httpx,
+                "Client",
+                side_effect=lambda **kwargs: client(
+                    transport=httpx.MockTransport(respond), **kwargs
+                ),
+            ),
+        ):
+            write_json(Path(temporary) / "settings/settings.json", state)
+            settings = Settings(temporary, adapter)
+            view = settings.describe()
+            offered = settings.model_defaults("local", "qwen-local")["thinkingEffort"]
+            self.assertEqual(
+                offered["options"], [{"value": None, "label": "Provider default"}]
+            )
+            self.assertTrue(offered["check"]["local"])
+            self.assertEqual(
+                offered["check"]["levels"][2],
+                {"value": "low", "label": "Low", "sends": '"reasoning_effort": "low"'},
+            )
+            # An unchecked level is never saved, so never sent.
+            with self.assertRaisesRegex(ValueError, "doesn't take thinking effort Low"):
+                settings.save(
+                    view["revision"],
+                    "local",
+                    view["values"],
+                    {"qwen-local": {**options, "thinkingEffort": "low"}},
+                )
+
+            # Refused: the server's reason, and the level stays unavailable.
+            server["effort"] = "refuse"
+            offered = settings.check_effort("local", "qwen-local", "low")
+            self.assertEqual(len(offered["options"]), 1)
+            self.assertEqual(
+                offered["check"]["results"][0]["message"],
+                "Refused: Unrecognized request argument supplied: reasoning_effort.",
+            )
+            request, body = sent[-1]
+            self.assertEqual(
+                str(request.url), "http://127.0.0.1:8080/v1/chat/completions"
+            )
+            self.assertNotIn("Authorization", request.headers)
+            self.assertEqual(
+                body,
+                {
+                    "model": "qwen-local",
+                    "messages": [{"role": "user", "content": "Reply with OK."}],
+                    "max_tokens": 16,
+                    "reasoning_effort": "low",
+                },
+            )
+            # Ignored: accepted, but the reply can't say whether it was used.
+            server["effort"] = "ignore"
+            offered = settings.check_effort("local", "qwen-local", "high")
+            self.assertIn("can't tell", offered["check"]["results"][1]["message"])
+            # Accepted: the model thought; a refused level checked again passes.
+            server["effort"] = "accept"
+            offered = settings.check_effort("local", "qwen-local", "low")
+            self.assertEqual(
+                offered["check"]["results"][0]["message"],
+                "Accepted, and the model thought (12 reasoning tokens).",
+            )
+            self.assertEqual(
+                [option["value"] for option in offered["options"]],
+                [None, "low", "high"],
+            )
+            self.assertEqual(
+                offered["source"], "These levels passed a check on this connection."
+            )
+            # A check that can't say either saves nothing.
+            server["status"] = 500
+            with self.assertRaisesRegex(ValueError, "HTTP 500"):
+                settings.check_effort("local", "qwen-local", "max")
+            # A refusal that doesn't name the effort says nothing of the level.
+            server["status"] = 400
+            with self.assertRaisesRegex(
+                ValueError, "another reason: Model qwen-local not found.$"
+            ):
+                settings.check_effort("local", "qwen-local", "high")
+            self.assertEqual(
+                len(
+                    settings.model_defaults("local", "qwen-local")["thinkingEffort"][
+                        "check"
+                    ]["results"]
+                ),
+                2,
+            )
+            # A model the table knows needs no check, and another model has none.
+            self.assertFalse(effort.checkable("openai", "gpt-6.1-sol"))
+            self.assertTrue(effort.checkable("openai", "gpt-4.1"))
+            self.assertEqual(
+                len(
+                    settings.model_defaults("local", "other-model")["thinkingEffort"][
+                        "options"
+                    ]
+                ),
+                1,
+            )
+
+            view = settings.save(
+                view["revision"],
+                "local",
+                view["values"],
+                {"qwen-local": {**options, "thinkingEffort": "low"}},
+            )
+            frozen = configuration(settings, "live")
+            self.assertEqual(frozen["thinkingEffort"], "low")
+            self.assertEqual(frozen["thinkingEffortListed"]["levels"], ["low", "high"])
+            payload = request_payload(row, {**frozen, "lineKeys": LINE_KEYS})
+            self.assertEqual(payload["reasoning_effort"], "low")
+            # Only checked levels reach a request.
+            self.assertNotIn(
+                "reasoning_effort",
+                effort.apply(
+                    {}, "custom", "qwen-local", "medium", frozen["thinkingEffortListed"]
+                ),
+            )
+
+            # Another address clears the checks; the frozen run is unchanged.
+            view = settings.save_connection(
+                view["revision"],
+                "custom",
+                "local",
+                "Local",
+                endpoint="http://127.0.0.1:8081/v1",
+                keyless=True,
+            )
+            reloaded = Settings(temporary, adapter)
+            self.assertNotIn("effort_checks", reloaded._read()["connections"][0])
+            self.assertEqual(
+                request_payload(row, {**frozen, "lineKeys": LINE_KEYS})[
+                    "reasoning_effort"
+                ],
+                "low",
+            )
+
+    def test_the_effort_table_check_plans_before_it_sends(self):
+        # The maintainer's check of the effort table spends money on real
+        # APIs, so it sends nothing without --confirm, reads keys only from
+        # the environment and never prints them, and reports each row.
+        import importlib.util
+        import io
+
+        from dazedtl.settings import effort
+
+        spec = importlib.util.spec_from_file_location(
+            "effort_check",
+            Path(__file__).resolve().parents[1] / "scripts/effort_check.py",
+        )
+        assert spec and spec.loader
+        script = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(script)
+        sent = []
+
+        def respond(request):
+            body = json.loads(request.content)
+            sent.append(body)
+            # A stand-in Kimi that refuses `thinking` and names its default.
+            if "thinking" in body:
+                return httpx.Response(
+                    400, json={"error": {"message": "thinking is not supported"}}
+                )
+            return httpx.Response(
+                200,
+                json={
+                    "choices": [{"message": {"content": "OK"}}],
+                    "reasoning_effort": "high"
+                    if body["model"] == "kimi-k3" and "reasoning_effort" not in body
+                    else None,
+                },
+            )
+
+        client = httpx.Client
+        environ = {"MOONSHOT_API_KEY": "fixture-kimi-key"}
+        with patch.object(
+            providers.httpx,
+            "Client",
+            side_effect=lambda **kwargs: client(
+                transport=httpx.MockTransport(respond), **kwargs
+            ),
+        ):
+            out = io.StringIO()
+            self.assertEqual(script.main(["--provider", "kimi"], environ, out), 0)
+            self.assertEqual(sent, [])
+            self.assertIn("Cost cap: 14 requests", out.getvalue())
+            self.assertIn("Nothing was sent", out.getvalue())
+            out = io.StringIO()
+            with patch.object(
+                effort,
+                "table",
+                return_value=[
+                    ("kimi", "kimi-k3", ["low", "high", "max"], "max", None),
+                    ("kimi", "kimi-k2.6", ["none"], None, None),
+                ],
+            ):
+                self.assertEqual(
+                    script.main(["--provider", "kimi", "--confirm"], environ, out), 1
+                )
+        report = out.getvalue()
+        self.assertEqual(len(sent), 6)
+        self.assertNotIn("fixture-kimi-key", report)
+        self.assertIn(
+            "kimi kimi-k2.6 none: Refused: thinking is not supported.", report
+        )
+        self.assertIn("kimi kimi-k3: the reply names high, the table max", report)
+        self.assertIn("Confirmed (1)", report)
+        self.assertIn("  kimi kimi-k3\n", report)
+
     def test_compiled_batch_limits_use_the_frozen_allowance_only_for_native_openai(
         self,
     ):

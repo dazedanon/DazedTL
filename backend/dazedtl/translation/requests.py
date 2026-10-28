@@ -5,7 +5,11 @@ import math
 import re
 from collections import Counter
 
-from dazedtl.compatibility.estimate_prices import output_tokens, prices
+from dazedtl.compatibility.estimate_prices import (
+    OUTPUT_RULES_VERSION,
+    output_tokens,
+    prices,
+)
 
 from .files import digest, unique_object
 
@@ -715,6 +719,7 @@ def quote(
             **{key: prompts[key] for key in CACHE_COUNTS if key in prompts},
             "input_tokens": inputs,
             "output_tokens": outputs,
+            "output_rules": OUTPUT_RULES_VERSION,
         },
         configuration,
         provider,
@@ -722,8 +727,9 @@ def quote(
     )
 
 
-# What a quote counted, which pricing it again under other settings keeps.
-COUNTS = ("requests", "units", "input_tokens", "output_tokens")
+# What a quote counted, which pricing it again under other settings keeps,
+# with the version of the rule its output was counted by.
+COUNTS = ("requests", "units", "input_tokens", "output_tokens", "output_rules")
 # What an OpenAI quote also counts for its automatic prompt cache.
 CACHE_COUNTS = ("cache_read_tokens", "cacheable_tokens")
 

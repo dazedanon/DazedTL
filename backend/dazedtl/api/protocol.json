@@ -1,5 +1,5 @@
 {
-  "version": "30dfb494aa75ae44",
+  "version": "ef1e04c728c956e1",
   "methods": {
     "workspace_snapshot": {
       "refresh": false,
@@ -79,6 +79,10 @@
     },
     "connection_check": {
       "refresh": true,
+      "duringClose": false
+    },
+    "connection_effort_check": {
+      "refresh": false,
       "duringClose": false
     },
     "connection_usage": {

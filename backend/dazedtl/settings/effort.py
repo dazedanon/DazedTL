@@ -4,11 +4,12 @@ none is sent, and how a choice is written into a request.
 Settings, runs of both methods and the legacy evaluation all read this one
 table. A request carries an effort only when its provider, its exact model ID
 and the level are a row here, or of the provider's own model list where the
-connection check keeps one (``LISTED``, ``profile``); every other request
-sends nothing, exactly as runs did before the choice existed, so no run sends
-a level its provider does not document; a run whose provider refuses its
-level anyway stops with
-one message (``rejection``). The table is checked where a choice is saved
+connection check keeps one (``LISTED``, ``profile``), or a level a check on
+the connection passed for a model neither describes (``CHECKED``); every
+other request sends nothing, exactly as runs did before the choice existed,
+so no run sends a level its provider does not document or accept; a run
+whose provider refuses its level anyway stops with one message
+(``rejection``). The table is checked where a choice is saved
 (settings/store), where a run freezes it (settings/execution and the Guided
 request policy) and where a request is built (``apply``).
 
@@ -25,7 +26,10 @@ Rows were read on 2026-10-28 from each provider's own reference:
 - Mistral: docs.mistral.ai/capabilities/reasoning.
 - OpenRouter: openrouter.ai/docs/use-cases/reasoning-tokens and its public
   model list (``reasoning.supported_efforts`` and ``default_effort``).
-Custom and local servers send nothing: DazedTL cannot know what they accept.
+Custom and local servers send a level only once a check passed it, since
+DazedTL cannot know what they accept. scripts/effort_check.py sends each row
+of the table to its provider, so the rows stay true as providers change; each
+row keeps the date it last confirmed them.
 
 The engine builders' own efforts (``buildOpenAIRequest`` in
 engine/util/translation.py: "low" for GPT-6 Astra, "none" for other GPT-6 and
@@ -34,6 +38,7 @@ policy (before 2026-10-03); they still send them, byte for byte, because
 ``request_parameters.provider_defaults`` leaves those runs alone.
 """
 
+import json
 import re
 from typing import NotRequired, TypedDict
 
@@ -57,7 +62,9 @@ _LMH = ("low", "medium", "high")
 _MLMH = ("minimal", *_LMH)
 
 # provider -> exact model ID -> (levels it takes, the level its provider
-# uses when none is sent, or None when its docs don't say).
+# uses when none is sent, or None when its docs don't say, and the date
+# scripts/effort_check.py last saw the provider accept every level, or None
+# until it has).
 _NATIVE = {
     # Opus 5.5, Fable and Mythos always think. Opus 5, Sonnet 5.5 and Haiku
     # 5.5 turn thinking off only at effort high or below, which their
@@ -65,71 +72,71 @@ _NATIVE = {
     # 4.8/4.7/4.6 and Sonnet 4.6 means no thinking. Haiku 4.5 and older
     # take a thinking budget, not an effort.
     "anthropic": {
-        "claude-opus-5-5": (_FULL, "medium"),
-        "claude-opus-5": (_OFF_FULL, "high"),
-        "claude-opus-4-8": (_OFF_FULL, "none"),
-        "claude-opus-4-7": (_OFF_FULL, "none"),
-        "claude-opus-4-6": (_OLD_CLAUDE, "none"),
-        "claude-sonnet-5-5": (_OFF_FULL, "high"),
-        "claude-sonnet-5": (_OFF_FULL, "high"),
-        "claude-sonnet-4-6": (_OLD_CLAUDE, "none"),
-        "claude-haiku-5-5": (_OFF_FULL, "medium"),
-        "claude-fable-5-1": (_FULL, "high"),
-        "claude-fable-5": (_FULL, "high"),
-        "claude-mythos-5-1": (_FULL, "high"),
-        "claude-mythos-5": (_FULL, "high"),
+        "claude-opus-5-5": (_FULL, "medium", None),
+        "claude-opus-5": (_OFF_FULL, "high", None),
+        "claude-opus-4-8": (_OFF_FULL, "none", None),
+        "claude-opus-4-7": (_OFF_FULL, "none", None),
+        "claude-opus-4-6": (_OLD_CLAUDE, "none", None),
+        "claude-sonnet-5-5": (_OFF_FULL, "high", None),
+        "claude-sonnet-5": (_OFF_FULL, "high", None),
+        "claude-sonnet-4-6": (_OLD_CLAUDE, "none", None),
+        "claude-haiku-5-5": (_OFF_FULL, "medium", None),
+        "claude-fable-5-1": (_FULL, "high", None),
+        "claude-fable-5": (_FULL, "high", None),
+        "claude-mythos-5-1": (_FULL, "high", None),
+        "claude-mythos-5": (_FULL, "high", None),
     },
     # GPT-4.x and other models without reasoning take none.
     "openai": {
-        "gpt-6.1-sol": (_FULL, "medium"),
-        "gpt-6.1-terra": (_OFF_FULL, "medium"),
-        "gpt-6-astra": (_FULL, None),
-        "gpt-6-sol": (_OFF_FULL, "medium"),
-        "gpt-6-luna": (_OFF_FULL, "medium"),
-        "gpt-5.6-sol": (_OFF_FULL, "medium"),
-        "gpt-5.6-terra": (_OFF_FULL, "medium"),
-        "gpt-5.6-luna": (_OFF_FULL, "medium"),
-        "gpt-5.5": (_GPT5, "medium"),
-        "gpt-5.4": (_GPT5, "none"),
-        "gpt-5.2": (_GPT5, "none"),
-        "gpt-5.1": (("none", *_LMH), "none"),
-        "gpt-5": (_MLMH, None),
+        "gpt-6.1-sol": (_FULL, "medium", None),
+        "gpt-6.1-terra": (_OFF_FULL, "medium", None),
+        "gpt-6-astra": (_FULL, None, None),
+        "gpt-6-sol": (_OFF_FULL, "medium", None),
+        "gpt-6-luna": (_OFF_FULL, "medium", None),
+        "gpt-5.6-sol": (_OFF_FULL, "medium", None),
+        "gpt-5.6-terra": (_OFF_FULL, "medium", None),
+        "gpt-5.6-luna": (_OFF_FULL, "medium", None),
+        "gpt-5.5": (_GPT5, "medium", None),
+        "gpt-5.4": (_GPT5, "none", None),
+        "gpt-5.2": (_GPT5, "none", None),
+        "gpt-5.1": (("none", *_LMH), "none", None),
+        "gpt-5": (_MLMH, None, None),
     },
     # Only levels each model's own thinking levels hold, since the
     # endpoint's mapping of the others is not documented. Thinking can be
     # turned off only on the 2.5 Flash models.
     "gemini": {
-        "gemini-4-argon": (_LMH, "medium"),
-        "gemini-3.8-flash": (_LMH, "medium"),
-        "gemini-3.6-flash": (_MLMH, "medium"),
-        "gemini-3.5-flash-lite": (_MLMH, "minimal"),
-        "gemini-3.1-pro-preview": (_LMH, "high"),
-        "gemini-3-pro-preview": (("low", "high"), "high"),
-        "gemini-3-flash-preview": (_MLMH, "high"),
-        "gemini-2.5-pro": (_LMH, None),
-        "gemini-2.5-flash": (("none", *_LMH), None),
-        "gemini-2.5-flash-lite": (("none", *_LMH), "none"),
+        "gemini-4-argon": (_LMH, "medium", None),
+        "gemini-3.8-flash": (_LMH, "medium", None),
+        "gemini-3.6-flash": (_MLMH, "medium", None),
+        "gemini-3.5-flash-lite": (_MLMH, "minimal", None),
+        "gemini-3.1-pro-preview": (_LMH, "high", None),
+        "gemini-3-pro-preview": (("low", "high"), "high", None),
+        "gemini-3-flash-preview": (_MLMH, "high", None),
+        "gemini-2.5-pro": (_LMH, None, None),
+        "gemini-2.5-flash": (("none", *_LMH), None, None),
+        "gemini-2.5-flash-lite": (("none", *_LMH), "none", None),
     },
     # Its other levels are mapped to these four, so only these are offered.
     "deepseek": {
-        "deepseek-flash": (("none", "low", "high", "max"), "high"),
-        "deepseek-v4-pro": (("none", "low", "high", "max"), "high"),
-        "deepseek-v4-flash": (("none", "low", "high", "max"), "high"),
+        "deepseek-flash": (("none", "low", "high", "max"), "high", None),
+        "deepseek-v4-pro": (("none", "low", "high", "max"), "high", None),
+        "deepseek-v4-flash": (("none", "low", "high", "max"), "high", None),
     },
     # The K3 series always thinks; K2.6 only turns thinking on or off, and
     # K2.7 Code only thinks.
     "kimi": {
-        "kimi-k3": (("low", "high", "max"), "max"),
-        "kimi-k3.1-pro": (("low", "high", "max"), "max"),
-        "kimi-k3.1-pro-highspeed": (("low", "high", "max"), "max"),
-        "kimi-k2.6": (("none",), None),
+        "kimi-k3": (("low", "high", "max"), "max", None),
+        "kimi-k3.1-pro": (("low", "high", "max"), "max", None),
+        "kimi-k3.1-pro-highspeed": (("low", "high", "max"), "max", None),
+        "kimi-k2.6": (("none",), None, None),
     },
     # The docs name only these levels for these models.
     "mistral": {
-        "mistral-small-latest": (("none", "high"), None),
-        "mistral-medium-3-5": (("none", "high"), None),
-        "mistral-large-4-0": (("none", "high"), None),
-        "zai-glm-5-3": (("low", "high", "max"), None),
+        "mistral-small-latest": (("none", "high"), None, None),
+        "mistral-medium-3-5": (("none", "high"), None, None),
+        "mistral-large-4-0": (("none", "high"), None, None),
+        "zai-glm-5-3": (("low", "high", "max"), None, None),
     },
 }
 
@@ -138,103 +145,156 @@ _NATIVE = {
 # provider's row and OpenRouter's model list hold. Each row is the routed
 # model's own (provider, model), then OpenRouter's supported_efforts and the
 # level OpenRouter applies when none is sent ("none" where its list says
-# reasoning is off by default), read from its public model list. The default
+# reasoning is off by default), read from its public model list, then the
+# date scripts/effort_check.py last confirmed the row. The default
 # shown is the one both sources agree on, or the only one stated. Every
 # OpenRouter endpoint of these models that takes structured outputs also
 # takes `reasoning`, so `provider.require_parameters` routes as before.
 _OPENROUTER = {
-    "anthropic/claude-opus-5.5": ("anthropic", "claude-opus-5-5", _FULL, "high"),
-    "anthropic/claude-opus-5": ("anthropic", "claude-opus-5", _OFF_FULL, "high"),
-    "anthropic/claude-opus-4.8": ("anthropic", "claude-opus-4-8", _OFF_FULL, "none"),
-    "anthropic/claude-opus-4.7": ("anthropic", "claude-opus-4-7", _OFF_FULL, "none"),
-    "anthropic/claude-opus-4.6": ("anthropic", "claude-opus-4-6", _OLD_CLAUDE, "none"),
-    "anthropic/claude-sonnet-5.5": ("anthropic", "claude-sonnet-5-5", _FULL, "high"),
-    "anthropic/claude-sonnet-5": ("anthropic", "claude-sonnet-5", _OFF_FULL, "high"),
+    "anthropic/claude-opus-5.5": ("anthropic", "claude-opus-5-5", _FULL, "high", None),
+    "anthropic/claude-opus-5": ("anthropic", "claude-opus-5", _OFF_FULL, "high", None),
+    "anthropic/claude-opus-4.8": (
+        "anthropic",
+        "claude-opus-4-8",
+        _OFF_FULL,
+        "none",
+        None,
+    ),
+    "anthropic/claude-opus-4.7": (
+        "anthropic",
+        "claude-opus-4-7",
+        _OFF_FULL,
+        "none",
+        None,
+    ),
+    "anthropic/claude-opus-4.6": (
+        "anthropic",
+        "claude-opus-4-6",
+        _OLD_CLAUDE,
+        "none",
+        None,
+    ),
+    "anthropic/claude-sonnet-5.5": (
+        "anthropic",
+        "claude-sonnet-5-5",
+        _FULL,
+        "high",
+        None,
+    ),
+    "anthropic/claude-sonnet-5": (
+        "anthropic",
+        "claude-sonnet-5",
+        _OFF_FULL,
+        "high",
+        None,
+    ),
     "anthropic/claude-sonnet-4.6": (
         "anthropic",
         "claude-sonnet-4-6",
         _OLD_CLAUDE,
         "medium",
+        None,
     ),
     "anthropic/claude-haiku-5.5": (
         "anthropic",
         "claude-haiku-5-5",
         _OFF_FULL,
         "medium",
+        None,
     ),
-    "anthropic/claude-fable-5.1": ("anthropic", "claude-fable-5-1", _FULL, "high"),
-    "anthropic/claude-fable-5": ("anthropic", "claude-fable-5", _FULL, "high"),
-    "openai/gpt-6.1-sol": ("openai", "gpt-6.1-sol", _FULL, "medium"),
-    "openai/gpt-6.1-terra": ("openai", "gpt-6.1-terra", _OFF_FULL, "medium"),
-    "openai/gpt-6-astra": ("openai", "gpt-6-astra", _FULL, "medium"),
-    "openai/gpt-6-sol": ("openai", "gpt-6-sol", _OFF_FULL, "medium"),
-    "openai/gpt-6-luna": ("openai", "gpt-6-luna", _OFF_FULL, "medium"),
-    "openai/gpt-5.6-sol": ("openai", "gpt-5.6-sol", _OFF_FULL, "medium"),
-    "openai/gpt-5.6-terra": ("openai", "gpt-5.6-terra", _OFF_FULL, "medium"),
-    "openai/gpt-5.6-luna": ("openai", "gpt-5.6-luna", _OFF_FULL, "medium"),
-    "openai/gpt-5.5": ("openai", "gpt-5.5", _GPT5, "medium"),
-    "openai/gpt-5.4": ("openai", "gpt-5.4", _GPT5, "none"),
-    "openai/gpt-5.2": ("openai", "gpt-5.2", _GPT5, "medium"),
-    "openai/gpt-5.1": ("openai", "gpt-5.1", ("none", *_LMH), "none"),
-    "openai/gpt-5": ("openai", "gpt-5", _MLMH, "medium"),
-    "google/gemini-4-argon": ("gemini", "gemini-4-argon", _LMH, "medium"),
-    "google/gemini-3.8-flash": ("gemini", "gemini-3.8-flash", _LMH, "medium"),
-    "google/gemini-3.6-flash": ("gemini", "gemini-3.6-flash", _MLMH, "medium"),
+    "anthropic/claude-fable-5.1": (
+        "anthropic",
+        "claude-fable-5-1",
+        _FULL,
+        "high",
+        None,
+    ),
+    "anthropic/claude-fable-5": ("anthropic", "claude-fable-5", _FULL, "high", None),
+    "openai/gpt-6.1-sol": ("openai", "gpt-6.1-sol", _FULL, "medium", None),
+    "openai/gpt-6.1-terra": ("openai", "gpt-6.1-terra", _OFF_FULL, "medium", None),
+    "openai/gpt-6-astra": ("openai", "gpt-6-astra", _FULL, "medium", None),
+    "openai/gpt-6-sol": ("openai", "gpt-6-sol", _OFF_FULL, "medium", None),
+    "openai/gpt-6-luna": ("openai", "gpt-6-luna", _OFF_FULL, "medium", None),
+    "openai/gpt-5.6-sol": ("openai", "gpt-5.6-sol", _OFF_FULL, "medium", None),
+    "openai/gpt-5.6-terra": ("openai", "gpt-5.6-terra", _OFF_FULL, "medium", None),
+    "openai/gpt-5.6-luna": ("openai", "gpt-5.6-luna", _OFF_FULL, "medium", None),
+    "openai/gpt-5.5": ("openai", "gpt-5.5", _GPT5, "medium", None),
+    "openai/gpt-5.4": ("openai", "gpt-5.4", _GPT5, "none", None),
+    "openai/gpt-5.2": ("openai", "gpt-5.2", _GPT5, "medium", None),
+    "openai/gpt-5.1": ("openai", "gpt-5.1", ("none", *_LMH), "none", None),
+    "openai/gpt-5": ("openai", "gpt-5", _MLMH, "medium", None),
+    "google/gemini-4-argon": ("gemini", "gemini-4-argon", _LMH, "medium", None),
+    "google/gemini-3.8-flash": ("gemini", "gemini-3.8-flash", _LMH, "medium", None),
+    "google/gemini-3.6-flash": ("gemini", "gemini-3.6-flash", _MLMH, "medium", None),
     "google/gemini-3.5-flash-lite": (
         "gemini",
         "gemini-3.5-flash-lite",
         _MLMH,
         "minimal",
+        None,
     ),
     "google/gemini-3.1-pro-preview": (
         "gemini",
         "gemini-3.1-pro-preview",
         _LMH,
         "medium",
+        None,
     ),
     "google/gemini-3-flash-preview": (
         "gemini",
         "gemini-3-flash-preview",
         ("none", *_MLMH),
         "medium",
+        None,
     ),
-    "moonshotai/kimi-k3": ("kimi", "kimi-k3", ("none", "low", "high", "max"), "max"),
+    "moonshotai/kimi-k3": (
+        "kimi",
+        "kimi-k3",
+        ("none", "low", "high", "max"),
+        "max",
+        None,
+    ),
     "moonshotai/kimi-k3.1-pro": (
         "kimi",
         "kimi-k3.1-pro",
         ("none", "low", "high", "max"),
         "max",
+        None,
     ),
     "deepseek/deepseek-v4-pro": (
         "deepseek",
         "deepseek-v4-pro",
         ("none", "high", "xhigh"),
         "high",
+        None,
     ),
     "deepseek/deepseek-v4-flash": (
         "deepseek",
         "deepseek-v4-flash",
         ("none", "high", "xhigh"),
         "high",
+        None,
     ),
     "mistralai/mistral-large-4-0": (
         "mistral",
         "mistral-large-4-0",
         ("none", "high"),
         "high",
+        None,
     ),
     "mistralai/mistral-medium-3-5": (
         "mistral",
         "mistral-medium-3-5",
         ("none", "high"),
         "high",
+        None,
     ),
 }
 
 
 def _routed(model):
-    own_provider, own_model, listed, listed_default = _OPENROUTER[model]
-    levels, own_default = _NATIVE[own_provider][own_model]
+    own_provider, own_model, listed, listed_default = _OPENROUTER[model][:4]
+    levels, own_default = _NATIVE[own_provider][own_model][:2]
     default = (
         own_default
         if listed_default in (own_default, None)
@@ -243,6 +303,19 @@ def _routed(model):
         else None
     )
     return tuple(level for level in levels if level in listed), default
+
+
+def table():
+    """Each row of the notes, for scripts/effort_check.py: (provider, model
+    ID, the levels it takes, its provider default, the date the script last
+    confirmed it or None)."""
+    for provider, models in _NATIVE.items():
+        for model, row in models.items():
+            notes = _notes(provider, model)
+            yield provider, model, notes["levels"], notes["default"], row[2]
+    for model, row in _OPENROUTER.items():
+        notes = _notes("openrouter", model)
+        yield "openrouter", model, notes["levels"], notes["default"], row[4]
 
 
 def model_id(model):
@@ -409,12 +482,95 @@ def kept(connection):
     )
 
 
+# Providers that take the OpenAI-compatible `reasoning_effort`, where a model
+# the notes don't hold, and every model of a custom or local server, may send
+# a level once a check on its connection passed it (settings/providers
+# check_effort, on the user's click in Settings). Anthropic's and
+# OpenRouter's own model lists say which efforts their models take, and
+# OpenRouter maps a level a model doesn't list to another without saying so,
+# so a check there would prove nothing.
+CHECKED = frozenset({"openai", "gemini", "mistral", "kimi", "deepseek", "custom"})
+# A connection keeps checks for at most this many models.
+MAX_CHECKED = 200
+
+
+def checkable(provider, model):
+    """Whether *model* on *provider* takes a level only once a check on its
+    connection passed it."""
+    return (
+        provider in CHECKED
+        and bool(model_id(model))
+        and not _notes(provider, model)["levels"]
+    )
+
+
+def trial(level):
+    """The record a check of *level* sends it with, as a run would once the
+    check passed."""
+    return _record([level])
+
+
+def valid_checks(value):
+    """A connection's saved checks: by model ID, each level's outcome."""
+    invalid = ValueError("This connection's saved effort checks are invalid.")
+    if not isinstance(value, dict) or len(value) > MAX_CHECKED:
+        raise invalid
+    for model, levels in value.items():
+        if (
+            not isinstance(model, str)
+            or not 0 < len(model) <= 200
+            or not isinstance(levels, dict)
+            or not levels
+        ):
+            raise invalid
+        for level, item in levels.items():
+            if (
+                level not in LEVELS
+                or not isinstance(item, dict)
+                or set(item) != {"passed", "message", "checkedAt"}
+                or type(item["passed"]) is not bool
+                or not isinstance(item["message"], str)
+                or len(item["message"]) > 1000
+                or not isinstance(item["checkedAt"], str)
+            ):
+                raise invalid
+    return value
+
+
+def keep_check(checks, model, level, passed, message, checked_at):
+    """*checks* with one check's outcome saved, dropping the model checked
+    longest ago once more than MAX_CHECKED are kept."""
+    checks = {key: dict(value) for key, value in checks.items()}
+    key = model_id(model)
+    checks[key] = {
+        **checks.pop(key, {}),
+        level: {"passed": passed, "message": message, "checkedAt": checked_at},
+    }
+    while len(checks) > MAX_CHECKED:
+        oldest = min(
+            checks,
+            key=lambda item: max(entry["checkedAt"] for entry in checks[item].values()),
+        )
+        del checks[oldest]
+    return checks
+
+
 def record(connection, model):
-    """*model*'s record from *connection*'s last check, or None where
-    ``kept`` is false or the list doesn't describe the model."""
-    if not kept(connection):
+    """*model*'s record from *connection*, or None: its provider's model list
+    as the last connection check read it (None for a connection checked
+    before records were kept, a provider whose list names no effort, or a
+    model its list doesn't describe), or the levels checks on this
+    connection passed for a model nothing else describes."""
+    if not connection:
         return None
-    return connection["efforts"].get(model_id(model))
+    provider = connection.get("provider")
+    if provider in LISTED:
+        return connection["efforts"].get(model_id(model)) if kept(connection) else None
+    if not checkable(provider, model):
+        return None
+    saved = connection.get("effort_checks", {}).get(model_id(model), {})
+    passed = [level for level, item in saved.items() if item["passed"]]
+    return _record(passed) if passed else None
 
 
 def _notes(provider, model):
@@ -422,7 +578,7 @@ def _notes(provider, model):
     if provider == "openrouter":
         levels, default = _routed(model) if model in _OPENROUTER else ((), None)
     else:
-        levels, default = _NATIVE.get(provider, {}).get(model, ((), None))
+        levels, default = _NATIVE.get(provider, {}).get(model, ((), None))[:2]
     claude = provider == "anthropic" and bool(levels)
     return _record(
         levels,
@@ -439,13 +595,14 @@ def _notes(provider, model):
 def profile(provider, model, listed=None):
     """How *model* on *provider*, a connection's identity (settings/providers
     PROVIDERS), takes an effort, as a record. *listed* is the model's record
-    from its provider's own model list (``record``), which decides the
+    from its provider's own model list, or from checks on its connection
+    for a model nothing else describes (``record``), which decides the
     levels; without one, DazedTL's notes above decide. Levels never mix the
     two sources; the default the notes name stands in where the list names
-    none, as Anthropic's never does. A model neither knows takes no level and
+    none, as Anthropic's never does. A model none knows takes no level and
     its default is unknown."""
     notes = _notes(provider, model)
-    if listed is None or provider not in LISTED:
+    if listed is None or not (provider in LISTED or checkable(provider, model)):
         return notes
     return {
         **listed,
@@ -535,6 +692,8 @@ def describe(provider, model, listed=None, read=False) -> Choices:
             "connection check. Check the connection again in API connections "
             "to refresh them."
         )
+    elif listed is not None and checkable(provider, model):
+        value["source"] = "These levels passed a check on this connection."
     elif resolved["levels"]:
         value["source"] = "These levels come from DazedTL's built-in list" + (
             ", which DazedTL updates keep current."
@@ -545,6 +704,21 @@ def describe(provider, model, listed=None, read=False) -> Choices:
             "model list instead."
         )
     return value
+
+
+def flat(params):
+    """The JSON body an OpenAI-compatible client sends for *params*: the
+    fields of its extra_body merged in at the top."""
+    return {
+        **{key: value for key, value in params.items() if key != "extra_body"},
+        **(params.get("extra_body") or {}),
+    }
+
+
+def sent(provider, model, level):
+    """The fields a check of *level* adds to its request, as runs add them
+    once it passed, as JSON text such as `"reasoning_effort": "low"`."""
+    return json.dumps(flat(apply({}, provider, model, level, trial(level))))[1:-1]
 
 
 def unsampled(params):
@@ -670,6 +844,6 @@ def rejection(model, level):
     effort; a refused request is not billed."""
     return (
         f"{model} refused thinking effort {label(level)}. Choose another "
-        "Thinking effort for this model in Settings, under Model options, "
+        "Thinking effort for this model in Settings, under Advanced model options, "
         "then start the run again. Refused requests are not billed."
     )

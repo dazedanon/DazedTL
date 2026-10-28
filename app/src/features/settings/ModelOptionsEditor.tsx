@@ -1,13 +1,19 @@
+import { useState } from "react";
+import { api } from "../../api/client";
 import type {
   Connection,
+  EffortCheck,
   EffortLevel,
   ModelOptions,
   Settings,
   ThinkingEffort,
 } from "../../api/contracts";
+import { useAction } from "../../state/useAction";
+import { ActionControl } from "../../ui/ActionControl";
 import { Section } from "../../ui/Section";
 import { FieldRow } from "../../ui/FieldRow";
 import { Button } from "../../ui/Button";
+import { StatusIcon } from "../../ui/StatusIcon";
 import { useModelDefaults } from "./useModelDefaults";
 
 const automatic: ModelOptions = {
@@ -23,9 +29,10 @@ const amount = (value: number) =>
 /**
  * The thinking effort new runs send for this model. Only the levels the
  * model takes are offered (settings/effort), from the provider's model list
- * where its last check read one, which a quiet line names with how to
- * refresh them; a saved level it no longer takes reads as the provider
- * default and stays listed until another is chosen.
+ * where its last check read one, or from checks on this connection, which a
+ * quiet line names with how to refresh them; a saved level it no longer
+ * takes reads as the provider default and stays listed until another is
+ * chosen.
  */
 function ThinkingEffortField({
   effort,
@@ -53,14 +60,18 @@ function ThinkingEffortField({
       label="Thinking effort"
       help={
         stale
-          ? "The saved effort isn't one this model takes, so new runs use the provider default."
+          ? effort?.check
+            ? "No check on this connection has passed the saved effort, so new runs use the provider default."
+            : "The saved effort isn't one this model takes, so new runs use the provider default."
           : !options
             ? undefined
             : known
               ? "Higher effort can help with hard lines but uses more output tokens, which cost more. Used by new runs."
-              : effort?.source
-                ? "The provider's model list shows no effort to choose for this model, so runs leave it to the provider."
-                : "DazedTL doesn't know which efforts this model takes, so runs leave it to the provider."
+              : effort?.check
+                ? "DazedTL doesn't know which efforts this server takes. Check one below; runs can send it once the server accepts it."
+                : effort?.source
+                  ? "The provider's model list shows no effort to choose for this model, so runs leave it to the provider."
+                  : "DazedTL doesn't know which efforts this model takes, so runs leave it to the provider."
       }
       note={known ? effort?.source : undefined}
     >
@@ -84,6 +95,99 @@ function ThinkingEffortField({
   );
 }
 
+/**
+ * Checks one effort on this connection's server for a model nothing else
+ * describes: one short paid request, sent only on the click, which the
+ * line under it describes first. A level the server accepts joins the
+ * Thinking effort choices; each saved outcome stays listed below.
+ */
+function EffortCheckField({
+  connectionId,
+  model,
+  check,
+  checksEnabled,
+  checked,
+}: {
+  connectionId: string;
+  model: string;
+  check: EffortCheck;
+  checksEnabled: boolean;
+  checked: (value: ThinkingEffort) => void;
+}) {
+  const action = useAction();
+  const [level, setLevel] = useState<EffortLevel>(
+    () =>
+      check.levels.find(
+        (item) => !check.results.some((result) => result.value === item.value),
+      )?.value ?? "low",
+  );
+  const selected = check.levels.find((item) => item.value === level);
+  return (
+    <FieldRow id="effort-check" label="Check an effort">
+      {(control) => (
+        <>
+          <div className="effort-check">
+            <select
+              {...control}
+              // The help sits above the outcomes, beside what it describes.
+              aria-describedby="effort-check-help"
+              value={level}
+              onChange={(event) => {
+                action.clear();
+                setLevel(event.target.value as EffortLevel);
+              }}
+            >
+              {check.levels.map((item) => (
+                <option key={item.value} value={item.value}>
+                  {item.label}
+                </option>
+              ))}
+            </select>
+            <ActionControl
+              inline
+              label="Check"
+              pendingText="Checking…"
+              disabled={!checksEnabled || action.busy}
+              disabledReason={
+                checksEnabled ? "" : "Unavailable in offline mode."
+              }
+              pending={action.busy}
+              error={action.error}
+              onClick={() =>
+                action.run(async () =>
+                  checked(await api.checkEffort(connectionId, model, level)),
+                )
+              }
+            />
+          </div>
+          <small id="effort-check-help">
+            Sends one short request with {selected?.sends}, its reply cut off at{" "}
+            {check.replyTokens} tokens.{" "}
+            {check.local
+              ? "Free on a local server."
+              : "A paid provider bills it as one short request, a fraction of a cent."}
+          </small>
+          {check.results.length > 0 && (
+            <ul className="effort-check-results" aria-label="Checked efforts">
+              {check.results.map((result) => (
+                <li key={result.value}>
+                  <StatusIcon
+                    size={14}
+                    status={result.passed ? "done" : "failed"}
+                  />
+                  <span>
+                    <strong>{result.label}</strong> {result.message}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
+      )}
+    </FieldRow>
+  );
+}
+
 export default function ModelOptionsEditor({
   config,
   connection,
@@ -94,13 +198,26 @@ export default function ModelOptionsEditor({
   edit: (model: string, value: ModelOptions) => void;
 }) {
   const model = config.values.model.trim();
+  // A changed address clears the connection's effort checks, as a new
+  // check changes its model list.
+  const basis = JSON.stringify([
+    connection?.check.checkedAt,
+    connection?.provider,
+    connection?.endpoint,
+  ]);
   const defaults = useModelDefaults(
     config.activeConnectionId,
     model,
-    connection?.check.checkedAt,
+    basis,
     connection?.openrouter_host,
   );
   const openrouter = connection?.provider === "openrouter";
+  // An effort check's answer replaces the defaults read before it.
+  const effortKey = JSON.stringify([config.activeConnectionId, model, basis]);
+  const [checkedEffort, setCheckedEffort] = useState<{
+    key: string;
+    value: ThinkingEffort;
+  }>();
   const value = {
     ...automatic,
     ...(Object.hasOwn(config.modelOptions, model)
@@ -116,6 +233,10 @@ export default function ModelOptionsEditor({
       </p>
     );
   const resolved = defaults.value;
+  const thinkingEffort =
+    checkedEffort?.key === effortKey
+      ? checkedEffort.value
+      : resolved?.thinkingEffort;
   const catalogDate = resolved?.updatedAt
     ? new Date(resolved.updatedAt).toLocaleDateString()
     : "";
@@ -223,10 +344,22 @@ export default function ModelOptionsEditor({
           )}
         </FieldRow>
         <ThinkingEffortField
-          effort={resolved?.thinkingEffort}
+          effort={thinkingEffort}
           value={value.thinkingEffort ?? null}
           change={(thinkingEffort) => change({ thinkingEffort })}
         />
+        {thinkingEffort?.check && (
+          <EffortCheckField
+            key={effortKey}
+            connectionId={config.activeConnectionId}
+            model={model}
+            check={thinkingEffort.check}
+            checksEnabled={config.checksEnabled}
+            checked={(next) =>
+              setCheckedEffort({ key: effortKey, value: next })
+            }
+          />
+        )}
         {connection?.provider === "openai" && (
           <FieldRow
             id="batch-input-tokens"

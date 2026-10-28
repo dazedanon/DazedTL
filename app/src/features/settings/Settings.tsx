@@ -52,6 +52,9 @@ export default function Settings({
   const { config } = draft;
   // Unsaved GameUpdate edits stay here, so switching tabs keeps them.
   const [gameUpdate, setGameUpdate] = useState<GameUpdateDefaults | null>(null);
+  // Advanced model options stays open across tabs, since the Thinking effort
+  // note sends the user to API connections to check again and back.
+  const [advanced, setAdvanced] = useState(false);
   const gameUpdateDirty =
     !!gameUpdate &&
     !!config &&
@@ -183,6 +186,8 @@ export default function Settings({
               running={running}
               error={action.error}
               notice={action.notice}
+              advanced={advanced}
+              setAdvanced={setAdvanced}
               edit={draft.edit}
               editModelOptions={draft.editModelOptions}
               save={() => action.run(draft.save, "Translation defaults saved.")}
