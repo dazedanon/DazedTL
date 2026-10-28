@@ -482,7 +482,20 @@ class CompatibilityContracts(unittest.TestCase):
         native_prepare = Mock(return_value="prepared")
         environment.prepare = point(native_prepare)
         modules = {module.__name__: module for module in (environment, translation)}
-        with TemporaryDirectory() as temporary, replaced_modules(modules):
+        from dazedtl.compatibility import openrouter_batch
+
+        with (
+            TemporaryDirectory() as temporary,
+            replaced_modules(modules),
+            # A worker's prepare configures OpenRouter Batch for its process;
+            # later tests in this one must not inherit that run.
+            patch.multiple(
+                openrouter_batch,
+                _worker_policy=None,
+                _worker_root=None,
+                _worker_configured=False,
+            ),
+        ):
             root = Path(temporary)
             policy = {
                 "version": 1,
