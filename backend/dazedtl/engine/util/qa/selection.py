@@ -26,7 +26,7 @@ from util.paths import (
     from_game,
     in_game,
 )
-from util.qa import mechanical
+from util.qa import mechanical, pronouns
 from util.qa.fitting import _record_problems
 from util.qa.records import _decode_pointer, _record_maps, _resolve_parts
 from util.qa.schema import (
@@ -46,6 +46,7 @@ FORCED_DEEP_MECHANICAL_FLAGS = frozenset({
     "empty-live",
     "unchanged-source",
     "source-language-residue",
+    "censor-mask-mismatch",
     "missing-center-alignment",
     "runtime-token-mismatch",
     "unsafe-bare-center-code",
@@ -906,6 +907,35 @@ def _database_checks(
 ) -> dict[str, list[dict[str, str]]]:
     """Database text that deterministic checks send to deep review, by cluster."""
     return checks.database_checks(manifest, checks.runtime(data_root))
+
+
+def _pronoun_checks(
+    manifest: dict[str, Any], context: dict[str, Any]
+) -> dict[str, list[dict[str, str]]]:
+    """Lines whose English gives a character a pronoun of the other gender
+    than the task's glossary gives (util/qa/pronouns), by cluster. Each scene
+    is one document, and every other line its own."""
+    characters = pronouns.cast(context["glossary"]["text"], context_target(context))
+    if characters.pattern is None:
+        return {}
+    clusters = _cluster_by_identity(manifest)
+    scenes = list(_scene_records(manifest).values())
+    in_scenes = {record["identity"] for records in scenes for record in records}
+    documents = [
+        *scenes,
+        *(
+            [record] for record in manifest["records"]
+            if record["identity"] not in in_scenes
+        ),
+    ]
+    found: dict[str, list[dict[str, str]]] = defaultdict(list)
+    for records in documents:
+        for slip in pronouns.slips((str(record["live"]) for record in records), characters):
+            check = {"check": pronouns.CHECK, "note": pronouns.note(slip)}
+            cluster_id = clusters[records[slip.index]["identity"]]
+            if check not in found[cluster_id]:
+                found[cluster_id].append(check)
+    return dict(found)
 
 
 def _number_values(value: Any) -> set[str]:

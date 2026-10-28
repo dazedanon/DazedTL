@@ -1261,6 +1261,36 @@ for name, value in {
     (checks_game / "data" / name).write_text(
         json.dumps(value, ensure_ascii=False), encoding="utf-8"
     )
+# A scene that gives Mina, Female in the glossary, a "his", and spells out a
+# word its source masks. Text QA's rules send both to deep review.
+SLIP, MASK = "ミナは剣を抜いた。", "ま〇こが疼く…"
+HEADER = {"code": 101, "indent": 0, "parameters": ["", 0, 0, 2, ""]}
+(checks_game / "data/Map002.json").write_text(
+    json.dumps(
+        {
+            "events": [
+                None,
+                {
+                    "id": 1,
+                    "pages": [
+                        page(
+                            HEADER,
+                            line(SLIP, "Mina drew his sword."),
+                            HEADER,
+                            line(MASK, "My pussy aches..."),
+                        )
+                    ],
+                },
+            ]
+        },
+        ensure_ascii=False,
+    ),
+    encoding="utf-8",
+)
+(checks_game / ".dazedtl").mkdir()
+(checks_game / ".dazedtl/glossary.txt").write_text(
+    "# Characters\nミナ (Mina) - Female\n", encoding="utf-8"
+)
 CHECK_WIDTHS = {"width": 60, "faceWidth": 50, "listWidth": 30, "noteWidth": 30}
 
 
@@ -1295,6 +1325,8 @@ assert reasons == {
     "薙ぎ払い": ["name-collision"],
     "の幻惑が解けた": ["battler-name"],
     FIRE: ["text-fit"],
+    SLIP: ["gender-pronoun"],
+    MASK: ["censor-mask-mismatch"],
 }, reasons
 for worker in ("screen-a", "screen-b"):
     row = qa.next_bundle(checked, worker)
@@ -1310,7 +1342,17 @@ assert set(items) == {
     NICKNAME,
     GREETING,
     RUMOR,
+    SLIP,
+    MASK,
 }, items
+assert items[SLIP]["checks"] == [
+    {
+        "check": "gender-pronoun",
+        "note": 'The glossary gives Mina as Female, and "his" follows the name '
+        "before any other name does.",
+    }
+], items
+assert items[MASK]["deep_reasons"] == ["censor-mask-mismatch"], items
 assert items[FIRE]["checks"] == [
     {
         "check": "text-fit",

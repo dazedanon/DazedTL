@@ -21,8 +21,10 @@ TASK_SCHEMA = "rpgmaker-qa-task-v3"
 # in the game's language pair, so a Chinese translation's hanzi are no residue.
 # Version 3 reads data, plugin settings and custom data that keep no source
 # against the game's original files, so the never-translated report leaves
-# out a Chinese translation of them.
-QA_RULES_VERSION = 3
+# out a Chinese translation of them. Version 4 sends a line whose censor masks
+# (〇, ●) its source does not share, and a pronoun against a character's
+# glossary gender, to deep review.
+QA_RULES_VERSION = 4
 CHECKPOINT_SCHEMA = "rpgmaker-qa-checkpoint-v3"
 BUNDLE_SCHEMA = "rpgmaker-qa-bundle-v3"
 SCREEN_RESULT_SCHEMA = "rpgmaker-qa-screen-result-v2"
