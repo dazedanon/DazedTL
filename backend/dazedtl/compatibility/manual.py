@@ -5,6 +5,7 @@ import importlib.util
 import json
 import sys
 import threading
+from collections.abc import Callable
 from contextlib import contextmanager
 from copy import deepcopy
 from pathlib import Path
@@ -235,6 +236,10 @@ def manual_jobs(source, workspace, lock, allow_providers):
         # Readies the selected working copies after a phase syncs saved
         # outputs into them and before it lists them for the run.
         prepare_inputs = None
+        # Called under the lock with what a failed API run froze and the
+        # message it ended with (settings/store refused_in_run); set before
+        # any run starts.
+        run_failed: Callable[[dict[str, Any]], None] | None = None
         controllers: dict[str, Any] | None = None
 
         def __init__(self, *args, **kwargs):
@@ -259,6 +264,7 @@ def manual_jobs(source, workspace, lock, allow_providers):
                     self.allow_providers,
                 )
                 item.jobs, item.worker, item.process = self.jobs, None, None
+                item.run_failed = self.run_failed
                 item.stopping, item.active = threading.Event(), ""
                 self.controllers[identity] = item
             return self.controllers[identity]
@@ -500,7 +506,9 @@ def manual_jobs(source, workspace, lock, allow_providers):
                 except OSError, ValueError:
                     pass
             try:
-                return super()._run(identity, resume)
+                result = super()._run(identity, resume)
+                self.failed_run(identity)
+                return result
             finally:
                 with warm_lock:
                     stop(warm_counts.pop(folder, None))
@@ -514,6 +522,39 @@ def manual_jobs(source, workspace, lock, allow_providers):
                     ):
                         discard(job, self.folder(identity))
                         self.jobs.pop(identity)
+
+        def failed_run(self, identity):
+            """Hands a failed API run's frozen connection, model and thinking
+            effort, with the message it ended with, to ``run_failed``."""
+            with self.lock:
+                job = self.jobs.get(identity)
+                if (
+                    not self.run_failed
+                    or not job
+                    or job.get("status") != "failed"
+                    or job.get("mode") not in {"translate", "batch"}
+                ):
+                    return
+                try:
+                    plan = json.loads(
+                        system.read_bytes(self.folder(identity) / "plan.json")
+                    )
+                except OSError, ValueError:
+                    return  # The run's own outcome stands.
+                frozen = plan["settings"]
+                self.run_failed(
+                    {
+                        "key_name": plan["key_name"],
+                        "protocol": frozen["API_PROVIDER"],
+                        "endpoint": frozen["api"],
+                        "organization": frozen.get("organization", ""),
+                        "model": frozen["model"],
+                        "thinkingEffort": (
+                            plan.get("dazedtl_request_policy") or {}
+                        ).get("thinkingEffort"),
+                        "message": job.get("message"),
+                    }
+                )
 
         @contextmanager
         def selected_workflow(self, identity, files):
