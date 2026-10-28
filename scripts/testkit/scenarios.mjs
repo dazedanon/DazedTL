@@ -22,6 +22,7 @@ import {
   translateTask,
   applyTask,
   buildPatch,
+  playtestPanel,
 } from "./journey.mjs";
 import { entries } from "../zip.mjs";
 
@@ -650,17 +651,6 @@ async function progressShowsQa(page, state, want, shot) {
   );
   await page.shot(path.join(state.work, "logs", shot));
 }
-
-/** The Playtest panel on screen: its state and description. */
-const playtestPanel = (page) =>
-  page.evaluate(`(() => {
-    const panel = [...document.querySelectorAll("section.status-panel")].find(
-      (item) => item.querySelector("h3")?.textContent === "Playtest" && item.getClientRects().length,
-    );
-    return panel
-      ? { state: panel.dataset.state, description: panel.querySelector(".status-panel-header > p")?.textContent || "" }
-      : null;
-  })()`);
 
 // What the scripted reviewer adds to the line it corrects (qa_reviewer.py);
 // fitting may break the line before it.

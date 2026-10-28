@@ -35,6 +35,7 @@ import {
   translateTask,
   applyTask,
   buildPatch,
+  playtestPanel,
 } from "./testkit/journey.mjs";
 
 const windows = process.platform === "win32";
@@ -636,9 +637,15 @@ async function liveJourney() {
       if (status.operation?.status !== "complete")
         throw new Error(`The playtest ended ${status.operation?.status}.`);
       // The fixture game has no engine scripts, so the playtest checks its
-      // files and reports that it could not play it.
-      await page.waitText(
-        "The playtest could not play the game. The game folder has no RPG Maker engine scripts to play.",
+      // files and reads Skipped with the reason it could not play it.
+      await until(
+        "the Playtest panel to read Skipped with its reason",
+        async () => {
+          const shown = await playtestPanel(page);
+          if (shown?.state === "skipped" && shown.description) return true;
+          // The timeout names what it read last.
+          throw new Error(`It reads ${JSON.stringify(shown)}.`);
+        },
         2 * 60_000,
       );
       // Its operation ends after the result shows, and the app refuses the
