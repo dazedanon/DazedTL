@@ -65,7 +65,7 @@ def verify_compilation(engine, workspace, project_id, plan, index=None):
     raw = plan_input(
         read_json(project_path(plan["source"], plan["input_path"])),
         allow_legacy=True,
-        allow_empty=bool(plan.get("reused")),
+        allow_empty=bool(plan.get("reused") or plan.get("converted")),
     )
     saved = plan["requests"]
     if index is not None:

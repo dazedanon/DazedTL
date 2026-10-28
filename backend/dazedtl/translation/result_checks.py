@@ -168,7 +168,9 @@ def check(root, source_language, target, answers=None):
 
     from dazedtl.languages import reading
 
-    rows = exported_translations(root)
+    # Lines DazedTL wrote itself (organize `unsent`) have no request to
+    # correct.
+    rows = [row for row in exported_translations(root) if not row.get("converted")]
     glossary = project_path(root, GAME_GLOSSARY_RELATIVE.as_posix(), exists=False)
     glossary_text = (
         glossary.read_text(encoding="utf-8-sig") if glossary.is_file() else ""

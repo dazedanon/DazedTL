@@ -94,6 +94,8 @@ It packs whole scenes of one group and field into requests: in the API modes of 
 In the API modes only scenes of at most 10 lines share a request; a longer scene gets its own, so another scene's speakers and subjects can't bleed into it.
 A request holding several scenes names which lines belong to each, so the model keeps their speakers and context apart.
 A larger scene splits into even parts, each carrying the scene's earlier lines as source context.
+A unit whose source holds no source letters, such as 「……」 or ！？, joins no request and is never priced: DazedTL writes it itself as Guided writes text it never sends, every mark in its English form ([results](../backend/dazedtl/translation/results.py) `unsent_line`), and marks its export row converted.
+A unit stays in a request when that form would change one of its protected tokens.
 Requests hold a number of units, each repeating the shared guidance, so organize refuses units that split most RPG Maker messages of three or more lines into a unit per line.
 Each request takes its first unit's ID, and the plan is saved under .dazedtl/len-method/work/plans by its content.
 DazedTL then compiles and prices the requests in an operation that Progress shows, and the helper waits for the run it saves.
@@ -119,6 +121,7 @@ Of MV/MZ plugins it counts only those the game loads, by the loader rule Plugin 
 Comma or tab separated text is read by column; a table translating its Japanese first column into another language names that column table:key, and a built-in rule sets aside a Chinese column, whose characters Japanese runs can't tell apart.
 The assistant can add rules in .dazedtl/len-method/work/scope-rules.json, as version 1 with rules of kind, field and reason (asset_name, identifier, comment, script_code, not_displayed or other_language), each optionally limited by file, a path pattern, or values, exact runs such as a script format's Japanese command words.
 Rules work on every kind, including decoded dumps, generic JSON and plain text, and never set aside dialogue, choices, names or other text the player reads in formats DazedTL reads itself.
+Lines holding Japanese punctuation but no letters, such as 「……」 or ！？, are listed apart as unsent, outside coverage: census-uncovered.json lists those no unit holds, so the assistant extracts them and DazedTL writes them in their English form.
 organize --complete is refused without a current census, while archives still need a decoded dump, or while anything is uncovered; .dazedtl/len-method/work/census-uncovered.json lists each uncovered location.
 Rules apply before extraction, so an identifier a rule sets aside never uses up the unit for the same words where the player reads them.
 Once a game update records a new prepared game, or DazedTL raises the census version because it counts other text, packaging is refused until census runs again, and Progress reads the coverage as stale until organize runs after that census ([run_compiler](../backend/dazedtl/translation/run_compiler.py)).

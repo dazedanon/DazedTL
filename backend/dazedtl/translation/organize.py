@@ -10,7 +10,8 @@ from pathlib import PurePosixPath
 
 from .files import digest
 from .project import WORK
-from .requests import scene_list
+from .requests import result_value, scene_list
+from .results import unsent_line
 
 VERSION = 1
 PLANS = WORK + "/work/plans/"
@@ -24,6 +25,11 @@ AGENT_LINES = 250
 AGENT_CHARACTERS = 12000
 # Earlier lines of a split scene that travel with each later part.
 CONTEXT_LINES = 8
+# Organize under this policy writes each unit whose source holds no source
+# letters itself (unsent), as Guided writes such text without a request; the
+# operation's compile record freezes it, so an organize started before sends
+# every unit.
+UNSENT = "unsent-lines-v1"
 KINDS = {"dialogue", "narration", "ui", "unknown"}
 FIELDS = {
     "id",
@@ -200,6 +206,36 @@ def units_input(value):
                 [scene],
             )
     return result
+
+
+def unsent(units, language, target, quotes):
+    """A run's record of the units no request sends, by unit ID in play
+    order: those whose source holds no letters of the source *language*,
+    such as 「……」 or ！？, which the export writes as Guided writes such text
+    (results.unsent_line), unless that would change a protected token."""
+    from util.source_text import holds_source
+
+    record = {}
+    for unit in units:
+        source = unit["source"]
+        if holds_source(source, language):
+            continue
+        try:
+            result_value(
+                {
+                    "sources": {unit["id"]: source},
+                    "constraints": {unit["id"]: unit["constraints"]},
+                },
+                {unit["id"]: unsent_line(source, target, quotes)},
+            )
+        except ValueError:
+            continue
+        record[unit["id"]] = {
+            "source": source,
+            "kind": unit["kind"],
+            "speaker": unit["speaker"],
+        }
+    return record
 
 
 def _context(units):

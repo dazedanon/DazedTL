@@ -49,6 +49,10 @@ from PIL import Image
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "backend/dazedtl/engine"))
 
 JAPANESE = re.compile(r"[぀-ヿ一-鿿]")
+# Japanese punctuation, such as 「」 or ！？: the starting prompt has an
+# extractor take a line of it without letters too, which the census counts
+# as unsent and DazedTL writes without a request.
+MARKS = re.compile(r"[\u3001-\u303f\uff01-\uff60]")
 LATIN = re.compile(r"[A-Za-z]")
 # A file name, a switch name or another identifier of an English game.
 IDENTIFIER = re.compile(r"(?=[\w./-]*[\d_./])[\w./-]+")
@@ -867,11 +871,12 @@ def kept_parameters(node, markers):
 
 
 def is_source(text, language):
-    """Whether `text` is text of the game's source language: Japanese kana and
-    kanji, or for English Latin letters in anything but an identifier."""
+    """Whether `text` is text of the game's source language: Japanese kana,
+    kanji or punctuation, or for English Latin letters in anything but an
+    identifier."""
     if language == "English":
         return bool(LATIN.search(text)) and not IDENTIFIER.fullmatch(text)
-    return bool(JAPANESE.search(text))
+    return bool(JAPANESE.search(text) or MARKS.search(text))
 
 
 def walk(node, pointer="", markers=frozenset(), source="Japanese"):

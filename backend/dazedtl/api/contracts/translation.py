@@ -276,6 +276,15 @@ class UncoveredField(TypedDict):
     runs: int
 
 
+class UnsentCoverage(TypedDict):
+    """The census's lines of Japanese punctuation without letters that no
+    rule sets aside, in runs, and how many units hold, which DazedTL writes
+    without a request; outside coverage."""
+
+    runs: int
+    extracted: int
+
+
 class Coverage(TypedDict):
     """How the tool's census of the game's Japanese text is covered, in
     Japanese runs: extracted, set aside by a rule, or not extracted."""
@@ -292,6 +301,8 @@ class Coverage(TypedDict):
     needs_dump: list[str]
     unreadable: int
     uncovered_fields: list[UncoveredField]
+    # Absent from coverage organize saved before it counted them.
+    unsent: NotRequired[UnsentCoverage]
     checked_at: NotRequired[str]
 
 

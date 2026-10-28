@@ -115,13 +115,13 @@ def scope_coverage(engine, workspace, project_id, root, units):
         return None, None
     value = read_json(path)
     rules = scope_rules(root, value)
+    sources = [unit["source"] for unit in units]
     report, uncovered = census.coverage(
-        value,
-        [unit["source"] for unit in units],
-        engine.glossary_terms(root),
-        rules,
+        value, sources, engine.glossary_terms(root), rules
     )
+    unsent, unsent_left = census.unsent(value, sources, rules)
     report.update(
+        unsent=unsent,
         stale=bool(census_stale(workspace, project_id, root)),
         source="assistant_dump" if value["decoded"] else "tool",
         needs_dump=[] if value["decoded"] else value["needs_dump"],
@@ -130,10 +130,14 @@ def scope_coverage(engine, workspace, project_id, root, units):
     )
     write_json(
         project_path(root, CENSUS_UNCOVERED, exists=False),
-        {"uncovered": uncovered, "unreadable": value["unreadable"]},
+        {
+            "uncovered": uncovered,
+            "unsent": unsent_left,
+            "unreadable": value["unreadable"],
+        },
     )
     write_json(coverage_path(workspace, project_id), {**report, "checked_at": now()})
-    return report, census.split_messages(value, [unit["source"] for unit in units])
+    return report, census.split_messages(value, sources)
 
 
 def saved_coverage(workspace, project_id, root, state=None):
@@ -204,7 +208,7 @@ def prepare(engine, workspace, job, plan, progress):
     if plan["action"] == "organize":
         return _organize(engine, workspace, job, plan, progress)
     input_path = plan["arguments"].get("input_path")
-    reused = None
+    reused = converted = None
     if plan.get("finishes"):
         # A run of declined requests compiles the plan the assistant's run
         # did, with the lines that run's organize left out.
@@ -213,9 +217,17 @@ def prepare(engine, workspace, job, plan, progress):
         )
         input_path = declined_plan["input_path"]
         reused = declined_plan.get("reused")
+        converted = declined_plan.get("converted")
     return {
         "run": compile_run(
-            engine, workspace, job, plan, input_path, progress, reused=reused
+            engine,
+            workspace,
+            job,
+            plan,
+            input_path,
+            progress,
+            reused=reused,
+            converted=converted,
         )
     }
 
@@ -260,6 +272,17 @@ def _organize(engine, workspace, job, plan, progress):
         left = [unit for unit in units if unit["id"] not in answered]
         if answered:
             reused = unit_results.record(units, answered, found)
+    converted = None
+    if frozen.get("unsent") == organize.UNSENT:
+        # Lines with no source letters are written without a request, as
+        # Guided writes them.
+        converted = organize.unsent(
+            left,
+            run_source(frozen["configuration"]),
+            frozen["configuration"]["language"],
+            frozen.get(QUOTES, True),
+        )
+        left = [unit for unit in left if unit["id"] not in converted]
     progress(f"Grouping {len(left):,} lines into requests")
     value = organize.plan(
         left,
@@ -276,23 +299,42 @@ def _organize(engine, workspace, job, plan, progress):
     summary = organize.summary(units, value)
     if reused:
         summary["translated"] = len(reused["units"])
+    if converted:
+        summary["converted"] = len(converted)
     if coverage is not None:
         summary["coverage"] = coverage
     run = compile_run(
-        engine, workspace, job, plan, relative, progress, read, reused=reused
+        engine,
+        workspace,
+        job,
+        plan,
+        relative,
+        progress,
+        read,
+        reused=reused,
+        converted=converted,
     )
     return {"run": run, "summary": summary}
 
 
 def compile_run(
-    engine, workspace, job, plan, input_path, progress, read=None, reused=None
+    engine,
+    workspace,
+    job,
+    plan,
+    input_path,
+    progress,
+    read=None,
+    reused=None,
+    converted=None,
 ):
     """Compiles the source plan into a new run and returns its ID. A run that
     finishes another run's declined requests quotes only what has no saved
     translation yet. ``read`` holds the hashes of input files read earlier,
-    which must not have changed since, and ``reused`` the units organize
+    which must not have changed since, ``reused`` the units organize
     left out of the plan with an earlier translation (unit_results.record),
-    which the run's results and export read back."""
+    which the run's results and export read back, and ``converted`` those
+    it writes itself (organize.unsent), which its export writes."""
     project_id, root, selected = (
         job["project_id"],
         Path(plan["source"]),
@@ -305,7 +347,7 @@ def compile_run(
     # Every line a plan of organize's holds may have a translation already.
     raw = plan_input(
         read_json(ProjectWorkspace(root).artifact(input_path)),
-        allow_empty=bool(reused),
+        allow_empty=bool(reused or converted),
     )
     if cfg["mode"] != "agent" and not raw["complete"] and not finishes:
         raise ValueError(
@@ -398,6 +440,8 @@ def compile_run(
         value.update(shared_payloads=SHARED_PAYLOADS, askers=shared)
     if reused:
         value["reused"] = reused
+    if converted:
+        value["converted"] = converted
     if finishes:
         value.update(label="Declined requests", finishes=finishes)
     run = store.create(project_id, value, estimate)
