@@ -21,6 +21,11 @@ from .requests import (
 )
 
 ACCEPTED = WORK + "/work/accepted"
+# The rules an export writes its lines by (exported_line): 1, recorded by
+# none, Guided's automatic lint fixes; 2, also Guided's reply cleanup. An
+# export written by older rules is written again, and only a line whose
+# translation differs from its old one written by these rules is new.
+EXPORT_VERSION = 2
 # The progress export: an index of parts, each the units of PART_REQUESTS
 # requests, then the units organize left out with an earlier translation, so
 # saving one request's result rewrites one part instead of every line of the
@@ -112,6 +117,34 @@ def _content(units):
         encode({key: item for key, item in row.items() if key != "reviewed_sha256"})
         for row in units
     ]
+
+
+def _requests(plan):
+    """The requests whose receipts a run's export reads, by fingerprint: its
+    own and those answering the units its organize left out."""
+    found = {request["fingerprint"]: request for request in plan["requests"]}
+    reused = plan.get("reused") or {"requests": {}}
+    for fingerprint, entry in reused.get("requests", {}).items():
+        found.setdefault(fingerprint, indexed(fingerprint, entry))
+    return found
+
+
+def _rewritten(requests, quotes, units):
+    """_content of export rows written by older rules (EXPORT_VERSION), each
+    translation written again by these rules (exported_line), so a row
+    changes only when its saved translation did."""
+    rows = []
+    for row in units:
+        request = requests.get(row.get("request_sha256"))
+        if "translation" in row and request and row["source_id"] in request["sources"]:
+            row = {
+                **row,
+                "translation": exported_line(
+                    request, row["source_id"], row["translation"], quotes
+                ),
+            }
+        rows.append(row)
+    return _content(rows)
 
 
 def _refusal(request, translations):
@@ -273,15 +306,40 @@ def review_digest(source, translation):
     return review_fingerprint(source.encode("utf-8"), translation.encode("utf-8"))
 
 
-def exported(request, value):
-    """A saved result's translations as the game gets them: each with the
-    automatic lint fixes Guided gives a new translation
-    (rpgmaker_qa_lint `normalize`). The receipt keeps what was accepted."""
-    from util.rpgmaker_qa_lint import normalize
+# Whether a run writes corner brackets as quotes, the convertQuotes setting
+# it froze as a Guided run freezes it in its engine settings; a run compiled
+# before it froze one writes them, as the setting does by default.
+QUOTES = "convertQuotes"
 
+
+def run_quotes(plan):
+    """Whether the run *plan* writes corner brackets as quotes (QUOTES)."""
+    return plan.get(QUOTES, True)
+
+
+def exported_line(request, identity, text, quotes=True):
+    """A line's saved translation as the game gets it: as Guided writes every
+    line of a reply (util/target_text `translated_line`), corner brackets as
+    quotes when *quotes*, the line's protected tokens kept as they are, then
+    with the automatic lint fixes Guided gives a new translation
+    (rpgmaker_qa_lint `normalize`). A line given back as its source stays
+    as it is, as Guided keeps such a line."""
+    from util.rpgmaker_qa_lint import normalize
+    from util.target_text import translated_line
+
+    source = request["sources"][identity]
+    if text == source:
+        return text
     target = target_language(request["context"])
+    line = translated_line(text, target, quotes, protected_tokens(request, identity))
+    return normalize(source, line, target)
+
+
+def exported(request, value, quotes=True):
+    """A saved result's translations as the game gets them (exported_line).
+    The receipt keeps what was accepted."""
     return {
-        identity: normalize(request["sources"][identity], text, target)
+        identity: exported_line(request, identity, text, quotes)
         for identity, text in value["translations"].items()
     }
 
@@ -463,10 +521,10 @@ class Results:
         write_project_json(self.source, self.relative(request), value)
         return value
 
-    def _saved(self, request, listing):
+    def _saved(self, request, listing, quotes):
         """The request's accepted result, read where listing found its file,
-        with its lines as the game gets them and those that are no
-        translation (`untranslated`)."""
+        with its lines as the game gets them, corner brackets as quotes when
+        *quotes*, and those that are no translation (`untranslated`)."""
         key = request["fingerprint"]
         value = None
         if key in listing:
@@ -474,14 +532,14 @@ class Results:
             value = self.get(request, path) if path else self.get(request)
         if not value:
             return None, {}, set()
-        return value, exported(request, value), left_lines(request, value)
+        return value, exported(request, value, quotes), left_lines(request, value)
 
-    def units(self, requests, listing):
+    def units(self, requests, listing, quotes=True):
         """The export rows of requests, each with its saved result; a line
         saved as no translation reads left."""
         units = []
         for request in requests:
-            value, output, left = self._saved(request, listing)
+            value, output, left = self._saved(request, listing, quotes)
             for identity, base, source_sha256 in _rows(request):
                 row = dict(base)
                 if value and identity not in left:
@@ -489,7 +547,7 @@ class Results:
                 units.append(row)
         return units
 
-    def reused_units(self, reused, identities, listing):
+    def reused_units(self, reused, identities, listing, quotes=True):
         """The export rows of a run's units its organize left out, which
         earlier requests' receipts answer (translation/unit_results), by
         unit ID; a unit whose receipt is gone reads left."""
@@ -499,7 +557,7 @@ class Results:
             key = unit["request"]
             if key not in read:
                 request = indexed(key, reused["requests"][key])
-                read[key] = (request, *self._saved(request, listing))
+                read[key] = (request, *self._saved(request, listing, quotes))
             request, value, output, left = read[key]
             source = request["sources"][identity]
             row = {
@@ -541,6 +599,15 @@ class Results:
             and isinstance(previous_index.get("units"), list)
             else None
         )
+        quotes = run_quotes(plan)
+        # Rows written by older rules, read as these rules write them, so a
+        # run already written into the game reads no new translation.
+        older = (
+            legacy is None
+            and isinstance(previous_index, dict)
+            and previous_index.get("version", 1) != EXPORT_VERSION
+        )
+        counted = partial(_rewritten, _requests(plan), quotes) if older else _content
         # Each part's inputs, which fix its rows, ending with the signature of
         # a result file they read, and how its rows are built.
         groups = [
@@ -549,7 +616,7 @@ class Results:
                     (row["fingerprint"], listing.get(row["fingerprint"], _NONE)[1])
                     for row in group
                 ),
-                partial(self.units, group, listing),
+                partial(self.units, group, listing, quotes),
             )
             for group in (
                 requests[start : start + PART_REQUESTS]
@@ -572,7 +639,9 @@ class Results:
                 )
                 for identity in group
             )
-            groups.append((inputs, partial(self.reused_units, reused, group, listing)))
+            groups.append(
+                (inputs, partial(self.reused_units, reused, group, listing, quotes))
+            )
         # The rows of each part written or removed, before and after: a run
         # holding the same rows in other parts, as one organize left every
         # line out of does, changes no translation.
@@ -582,13 +651,13 @@ class Results:
             relative = EXPORT_PARTS + "/" + name
             parts.append(relative)
             path = folder / name
-            if _PARTS.get(str(path)) == (inputs, _signature(path)):
+            if _PARTS.get(str(path)) == ((quotes, inputs), _signature(path)):
                 continue
             document = {"units": build()}
             previous = read_json(path) if path.exists() else None
             if previous != document:
                 if previous is not None:
-                    before.update(_content(previous["units"]))
+                    before.update(counted(previous["units"]))
                 after.update(_content(document["units"]))
                 write_project_json(self.source, relative, document)
             stamp = _signature(path)
@@ -597,8 +666,12 @@ class Results:
                 signature_settled(item)
                 for item in (stamp, *(item[-1] for item in inputs))
             ):
-                _PARTS[str(path)] = (inputs, stamp)
-        index = {"complete": plan["complete"], "parts": parts}
+                _PARTS[str(path)] = ((quotes, inputs), stamp)
+        index = {
+            "complete": plan["complete"],
+            "parts": parts,
+            "version": EXPORT_VERSION,
+        }
         names = {part.rsplit("/", 1)[1] for part in parts}
         with os.scandir(folder) as entries:
             gone = [
@@ -610,7 +683,7 @@ class Results:
             ]
         for path in gone:
             try:
-                before.update(_content(read_json(path)["units"]))
+                before.update(counted(read_json(path)["units"]))
             except OSError, ValueError, KeyError, TypeError:
                 changed = True
         if legacy is not None:

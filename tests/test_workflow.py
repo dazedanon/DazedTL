@@ -212,6 +212,7 @@ class WorkflowTests(unittest.TestCase):
             _read=lambda: deepcopy(settings_data),
             language=lambda: settings_data["values"]["language"],
             source_language=lambda: settings_data["sourceLanguage"],
+            convert_quotes=lambda: True,
             _connection=Settings._connection,
             _configured=Settings._configured,
             connection_summary=lambda: connection_summary(self.settings),

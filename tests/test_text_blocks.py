@@ -428,6 +428,49 @@ class TextBlockTests(unittest.TestCase):
             fit_document({"list": listed}, "Map001.json", wide, resized=True)
             self.assertEqual(listed, direct)
 
+    def test_assistant_led_writes_a_messages_spacing_as_guided_does(self):
+        # Guided writes "! Who" and "Wait \|" into a message; Assistant-led's
+        # writer wrote the assistant's "!Who" and "Wait\|" as they came.
+        from util.len_originals import write_rpgmaker_json
+
+        def page(rows):
+            return {
+                "list": [
+                    command(101, ["", 0, 0, 2, ""]),
+                    *(command(401, [row]) for row in rows),
+                    command(105, [2, False]),
+                    command(405, [rows[0]]),
+                    command(0, []),
+                ]
+            }
+
+        source = page(["\\SE[1]\\.あっ！誰？", "待って\\|", "……"])
+        staged = page(["\\SE[1]\\.Ah!Who?", "Wait\\|", "……"])
+        with tempfile.TemporaryDirectory() as folder:
+            files = {
+                name: Path(folder, name + ".json") for name in ("source", "staged")
+            }
+            files["source"].write_text(json.dumps(source, ensure_ascii=False), "utf-8")
+            files["staged"].write_text(json.dumps(staged, ensure_ascii=False), "utf-8")
+            game = Path(folder, "Map001.json")
+            # The codes in front of it keep no space after them.
+            for target, spaced in (
+                ("English", ("\\SE[1]\\.Ah! Who?", "Wait \\|")),
+                ("Japanese", ("\\SE[1]\\.Ah!Who?", "Wait\\|")),
+            ):
+                layout = Layout(60, 60, 74, 45, 4, target)
+                write_rpgmaker_json(files["source"], files["staged"], game, layout)
+                written = game.read_bytes()
+                listed = json.loads(written)["list"]
+                shown = "\n".join(blocks.text(listed[at]) for at in (1, 2, 3))
+                for text in spaced:
+                    self.assertIn(text, shown, target)
+                self.assertEqual(blocks.text(listed[5]), spaced[0], target)
+                # Writing it again changes nothing.
+                write_rpgmaker_json(files["source"], files["staged"], game, layout)
+                self.assertEqual(game.read_bytes(), written)
+                game.unlink()
+
     def test_list_items_of_the_japanese_keep_a_row_each_beside_a_face(self):
         help_text = wrap_help(
             "Effects: ・Attack power rises greatly for the rest of the battle "

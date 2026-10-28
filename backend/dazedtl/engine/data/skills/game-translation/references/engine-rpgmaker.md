@@ -946,20 +946,14 @@ Pre-pass, before the model sees the joined group:
 - **Derive the model input from the stored source, not from the current parameter.** That is what makes the pass *repair* a file already carrying a doubled `\F4[2]\AA[4]\M4[yes]\F4[2]...` prefix from an earlier buggy run instead of tripling it.
 - Remove `\CL`, `\#`, `\px[200]`. Treat `\>` as an instant-line flag and re-apply it as a `\>` prefix to **every** wrapped output line.
 
-Post-pass on the translation:
-
-```python
-r'\.\.\.(。)+'          -> '...'
-r'([!?])([A-Z])'        -> r'\1 \2'   # JP sets no space after ！/？ so the model omits it
-r'([^\s\\])((?:\\[.!|^])+)' -> r'\1 \2'   # one space before a whole RUN of pause codes
-'"- "'                  -> '"-"'
-```
-
-Match the pause codes as a **run** so no intra-run spaces appear.
+Post-pass on the translation: `operation write_rpgmaker` (and `write-rpgmaker-json` outside DazedTL) writes it into every message and scrolling text it writes, by the rule Guided translation uses (`util.rpgmaker_blocks.written_message`), after the leading code run above.
+Write the translation into the staged rows as the results give it; do not repeat the post-pass in the injector.
 
 ### Cosmetic cleanup
 
-Strip stranded sokuon (っ/ッ) left in English (`Nhagiッ!` -> `Nhagi!`), normalize `「」『』` to `"`, ignore full-width `　` indentation. **Guard every whole-file cleanup pass on "is this still Japanese"** - see the no-op inject test below.
+DazedTL's `results --run ID` gives each line already cleaned as Guided cleans every reply (`util.target_text.translated_line`): stranded sokuon (っ/ッ) left out, corner brackets as `"` under the convertQuotes setting, and Japanese punctuation and typographic apostrophes in the forms a Japanese font draws well; codes and protected tokens keep their spelling.
+Inject that text as it is and ignore full-width `　` indentation.
+**Guard every whole-file cleanup pass on "is this still Japanese"** - see the no-op inject test below.
 
 ---
 

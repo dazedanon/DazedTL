@@ -19,6 +19,7 @@ stays exactly as the game wrote it.
 """
 
 import re
+from functools import lru_cache
 
 from util.languages import LATIN, script, target_uses_cjk
 from util.runtime_text import PROTECTED_PATTERNS, split_protected_codes
@@ -203,26 +204,33 @@ _FENCES = ("```json", "```")
 _RUNAWAY = re.compile(r"(.)\s*\1(?:\s*\1){" + str(20 - 1) + r",}")
 
 
-def clean_reply(text, language):
-    """A reply cleaned for the target *language*: without its "Translation:"
-    label and code fences, and a character repeated more than 20 times cut
-    to 20. For a Latin-script target its marks also take Latin forms: the
-    small っ and ッ that mark a stop are left out, 。 is a period, an em dash
-    the horizontal bar Japanese fonts draw, 【】 square brackets and é plain
-    e; apostrophes and tildes are made font-safe and a long vowel mark run
-    after a kana repeats it. 「 and 」 stay, since quotes would break the JSON
-    before it is read; they become quotes per line once it is."""
-    latin = not full_width(language)
+def _without_label(text, language):
+    """*text* without a reply's "Translation:" label, which every target
+    leaves out."""
     for label in (f"{language} Translation: ", "Translation: "):
         text = text.replace(label, "")
-    if latin:
-        text = text.replace("っ", "").replace("ッ", "")
-        text = full_stops(text, language, PERIOD)
-        for mark, latin_form in (("—", "―"), ("】", "]"), ("【", "["), ("é", "e")):
-            text = text.replace(mark, latin_form)
-    for fence in _FENCES:
-        text = text.replace(fence, "")
+    return text
 
+
+# Marks a Latin-script translation writes in another form: an em dash as the
+# horizontal bar Japanese fonts draw, 【】 as square brackets and é as e.
+_LATIN_MARKS = (("—", "―"), ("】", "]"), ("【", "["), ("é", "e"))
+
+
+def _latin_marks(text, language):
+    """*text* with the small っ and ッ that mark a stop left out, 。 a period
+    and _LATIN_MARKS in their Latin forms."""
+    text = text.replace("っ", "").replace("ッ", "")
+    text = full_stops(text, language, PERIOD)
+    for mark, latin_form in _LATIN_MARKS:
+        text = text.replace(mark, latin_form)
+    return text
+
+
+def _settled(text, language, latin):
+    """*text* with font-safe apostrophes and tildes for a Latin target, a
+    character repeated more than 20 times cut to 20, and a long vowel mark
+    run after a kana repeating it for a Latin target."""
     if latin:
         # Japanese fonts may give smart apostrophes fullwidth advances and
         # raise ~. Normalize prose before engine-specific line wrapping
@@ -234,6 +242,65 @@ def clean_reply(text, language):
 
     # Elongate Long Dashes (Since GPT Ignores them...)
     return elongate_characters(text) if latin else text
+
+
+def clean_reply(text, language):
+    """A reply cleaned for the target *language*: without its "Translation:"
+    label and code fences, and a character repeated more than 20 times cut
+    to 20. For a Latin-script target its marks also take Latin forms: the
+    small っ and ッ that mark a stop are left out, 。 is a period, an em dash
+    the horizontal bar Japanese fonts draw, 【】 square brackets and é plain
+    e; apostrophes and tildes are made font-safe and a long vowel mark run
+    after a kana repeats it. 「 and 」 stay, since quotes would break the JSON
+    before it is read; they become quotes per line once it is."""
+    latin = not full_width(language)
+    text = _without_label(text, language)
+    if latin:
+        text = _latin_marks(text, language)
+    for fence in _FENCES:
+        text = text.replace(fence, "")
+    return _settled(text, language, latin)
+
+
+def _runs(text, protected):
+    """*text* split around its codes (util/runtime_text PROTECTED_PATTERNS)
+    and the literal *protected* tokens: the text between them at even
+    indexes, each code or token at the odd index after it."""
+    tokens = tuple(sorted({token for token in protected if token}, key=len, reverse=True))
+    if not tokens:
+        return split_protected_codes(text)
+    parts, start = [], 0
+    for match in _token_pattern(tokens).finditer(text):
+        parts += [text[start : match.start()], match.group()]
+        start = match.end()
+    return parts + [text[start:]]
+
+
+@lru_cache(maxsize=4096)
+def _token_pattern(tokens):
+    """The pattern _runs splits text with: the literal *tokens*, longest
+    first, then the codes."""
+    return re.compile("|".join([*map(re.escape, tokens), *PROTECTED_PATTERNS]))
+
+
+def translated_line(text, language, quotes=True, protected=()):
+    """One line of a translation into *language* as Guided writes every line
+    of a reply: cleaned as clean_reply cleans the reply, apart from the code
+    fences around a reply, then with typographic quotes as apostrophes (reply_quotes) and
+    corner brackets as quotes when *quotes* (corner_quotes, convertQuotes).
+    Codes and the literal *protected* tokens keep their spelling, as Guided
+    sends codes masked, so the reply never holds them."""
+    if not isinstance(text, str):
+        return text
+    latin = not full_width(language)
+    parts = _runs(text, protected)
+    for index in range(0, len(parts), 2):
+        run = _without_label(parts[index], language)
+        if latin:
+            run = _latin_marks(run, language)
+        run = reply_quotes(_settled(run, language, latin), language)
+        parts[index] = corner_quotes(run, language, quotes)
+    return "".join(parts)
 
 
 def elongate_characters(text):

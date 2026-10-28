@@ -4390,22 +4390,21 @@ def _searchCodes(page, pbar, jobList, filename):
                     finalJAString = furigana_base(finalJAString)
 
                     # Remove any RPGMaker Code at start
-                    ffMatch = re.search(
-                        r"^((?:[\\]+[^cCnNiIkKvV{}]+?\[[\d\w\W]+?\]?\])+)",
-                        finalJAString,
-                    )
+                    ffMatch = rpgmaker_blocks.LEAD_CODES.search(finalJAString)
                     if ffMatch != None:
                         finalJAString = finalJAString.replace(ffMatch.group(1), "")
                         nametag = ffMatch.group(1) + nametag
 
                     # Remove bare escape codes at start (e.g. \\mn\\tmn, \\tmn, \\mn, \\vc)
-                    bareMatch = re.match(r"^(\\mn\\tmn|\\tmn|\\mn|\\vc)", finalJAString)
+                    bareMatch = rpgmaker_blocks.LEAD_ESCAPES.match(finalJAString)
                     if bareMatch is not None:
                         finalJAString = finalJAString[len(bareMatch.group(0)):]
                         nametag = bareMatch.group(0) + nametag
 
                     # Remove _ABL Codes
-                    ffMatch = re.search(r"^(_ABL).*", finalJAString)
+                    ffMatch = re.match(
+                        "(" + re.escape(rpgmaker_blocks.LEAD_MARKER) + ")", finalJAString
+                    )
                     if ffMatch != None:
                         finalJAString = finalJAString.replace(ffMatch.group(1), "")
                         nametag += ffMatch.group(1)
@@ -4476,25 +4475,11 @@ def _searchCodes(page, pbar, jobList, filename):
                             # Remove speaker prefix if present
                             translatedText = strip_speaker_prefix(translatedText)
 
-                            # Remove 。 that appears after ... in AI output
-                            translatedText = target_text.full_stops(
-                                translatedText, LANGUAGE, target_text.AFTER_ELLIPSIS
+                            # Its full stops and spacing, as both methods
+                            # write a message (util/rpgmaker_blocks).
+                            translatedText = rpgmaker_blocks.written_message(
+                                translatedText, LANGUAGE
                             )
-
-                            # Spacing of a Latin-script target; Japanese and
-                            # Chinese put no spaces between sentences.
-                            if not target_text.full_width(LANGUAGE):
-                                # Ensure a space follows sentence-ending punctuation before a capital letter.
-                                # Japanese doesn't use spaces after ！/？, so the AI omits them too.
-                                translatedText = re.sub(r'([!?])([A-Z])', r'\1 \2', translatedText)
-
-                                # Ensure a single space before a run of RPGMaker pause/wait codes
-                                # (\. \! \| \^) when immediately preceded by a word/punctuation char.
-                                # Matches the whole code run at once so no intra-run spaces are added.
-                                translatedText = re.sub(r'([^\s\\])((?:\\[.!|^])+)', r'\1 \2', translatedText)
-
-                                # Fix '- '
-                                translatedText = translatedText.replace("- ", "-")
 
                             # Textwrap
                             if FIXTEXTWRAP is True:

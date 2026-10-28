@@ -480,6 +480,14 @@ class Settings:
         """The language new games start in."""
         return self._read()["sourceLanguage"]
 
+    def convert_quotes(self):
+        """Whether translations write corner brackets as quotes, the
+        convertQuotes setting Guided's engine reads (on by default)."""
+        value = self._values(self._read()).get("convertQuotes", True)
+        if isinstance(value, bool):
+            return value
+        return str(value).strip().lower() in {"true", "1", "yes"}
+
     def guided_configuration(
         self, mode, *, cached_only=False, unpriced=False, pair=None
     ):

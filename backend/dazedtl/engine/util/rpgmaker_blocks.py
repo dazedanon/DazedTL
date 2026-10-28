@@ -34,6 +34,7 @@ from collections import Counter
 from dataclasses import dataclass
 from typing import Any, Iterable, Iterator
 
+from util import target_text
 from util.source_text import holds_source
 
 # The number of rows a part's text owns, kept on its anchor beside
@@ -553,6 +554,64 @@ def message_entry(text: str, speaker: str, *, unwrap: bool = True) -> str | None
     if not text:
         return None
     return f"[{speaker}]: {text}" if speaker else text
+
+
+# The codes at the start of a message's text that Guided translation keeps
+# out of what it sends and writes back in front of the translation: a run of
+# presentation codes with an argument, such as \F[1] or \SE[...], but never
+# the colour, name, icon, key and variable codes (\C \N \I \K \V), which are
+# part of the text; then a bare escape; then an _ABL marker.
+LEAD_CODES = re.compile(r"^((?:[\\]+[^cCnNiIkKvV{}]+?\[[\d\w\W]+?\]?\])+)")
+LEAD_ESCAPES = re.compile(r"^(\\mn\\tmn|\\tmn|\\mn|\\vc)")
+LEAD_MARKER = "_ABL"
+
+
+def message_lead(text: str) -> int:
+    """How many characters at the start of a message's *text* are the codes
+    Guided translation keeps out of what it sends (LEAD_CODES, LEAD_ESCAPES,
+    LEAD_MARKER)."""
+    rest = text
+    for pattern in (LEAD_CODES, LEAD_ESCAPES):
+        found = pattern.search(rest)
+        if found:
+            rest = rest[found.end() :]
+    rest = rest.removeprefix(LEAD_MARKER)
+    return len(text) - len(rest)
+
+
+_SENTENCE_GAP = re.compile(r"([!?])([A-Z])")
+_PAUSE_RUN = re.compile(r"([^\s\\])((?:\\[.!|^])+)")
+
+
+def written_message(text: str, language) -> str:
+    """A message's or scrolling text's translation (401, 405) as both methods
+    write it into *language*, without the codes in front of it
+    (message_lead): 。 left out after "...", and for a Latin-script target
+    a space after ! or ? before a capital, since Japanese sets none after
+    ！ and ？ and a model leaves it out too, one space before a whole run of
+    pause codes (\\. \\! \\| \\^), so none comes inside the run, and "- " closed
+    up to "-". Writing it again changes nothing."""
+    text = target_text.full_stops(text, language, target_text.AFTER_ELLIPSIS)
+    if target_text.full_width(language):
+        return text
+    text = _SENTENCE_GAP.sub(r"\1 \2", text)
+    text = _PAUSE_RUN.sub(r"\1 \2", text)
+    return text.replace("- ", "-")
+
+
+# The text rows written_rows writes: a message's and scrolling text's.
+MESSAGE_ROWS = (HEAD_ROWS[101], HEAD_ROWS[105])
+
+
+def written_rows(rows: list[str], language) -> list[str]:
+    """A translated message's or scrolling text's rows as written_message
+    writes them, the codes in front of the first row kept as they are, as
+    Guided translation never sends them."""
+    written = []
+    for index, row in enumerate(rows):
+        lead = message_lead(row) if index == 0 else 0
+        written.append(row[:lead] + written_message(row[lead:], language))
+    return written
 
 
 def untranslated(reply: Any, sent: Any) -> bool:

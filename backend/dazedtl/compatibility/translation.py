@@ -890,8 +890,9 @@ class TranslationEngine:
         return result
 
     def write_rpgmaker(self, root, source, translated, output):
-        """Writes staged game JSON with its sources kept, fitted to the
-        game's Line widths."""
+        """Writes staged game JSON with its sources kept, its messages'
+        full stops and spacing as Guided writes them, fitted to the game's
+        Line widths."""
         from util.len_originals import write_rpgmaker_json
 
         from dazedtl.translation.files import read_json

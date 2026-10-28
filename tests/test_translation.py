@@ -15,6 +15,7 @@ from dazedtl.api.contracts.validation import _close_contracts
 from dazedtl.projects.store import SCHEMA_VERSION
 from dazedtl.storage import WorkspaceLock, write_json
 from dazedtl.translation import jobs, organize
+from dazedtl.translation import results as result_files
 from dazedtl.translation.files import digest, project_path
 from dazedtl.translation.jobs import Jobs, RunStore, scratch
 from dazedtl.translation.project import ProjectWorkspace, scope
@@ -241,6 +242,93 @@ class TranslationTests(unittest.TestCase):
             units["moan"]["reviewed_sha256"],
             review_digest(sources["moan"], "Mm♥ Ah..."),
         )
+
+    def test_results_export_lines_as_guided_cleans_every_reply_line(self):
+        # Assistant-led exported curly apostrophes, 「」, 。 and stray っ that
+        # Guided's reply cleanup writes as ', ", . and nothing.
+        sources = {
+            "apostrophe": "大丈夫だよ。",
+            "quote": "「待って！」と彼女は言った。",
+            "stop": "ここで休もう。",
+            "sokuon": "あっ、【P0】を見て。",
+        }
+        accepted = {
+            "apostrophe": "It’s fine.",
+            "quote": "「Wait!」 she said.",
+            "stop": "Let's rest here。",
+            "sokuon": "Ahっ, look at 【P0】.",
+        }
+        row = logical_request(
+            {
+                "id": "scene",
+                "sources": sources,
+                # A protected token keeps its spelling.
+                "constraints": {"sokuon": {"tokens": ["【P0】"]}},
+            },
+            {"user": ""},
+        )
+        results = Results(self.game)
+        saved = results.accept(row, accepted, {})
+        saved["reviewed"] = {
+            identity: review_digest(sources[identity], text)
+            for identity, text in accepted.items()
+        }
+        write_json(project_path(self.game, results.relative(row)), saved)
+        cleaned = {
+            "apostrophe": "It's fine.",
+            "quote": '"Wait!" she said.',
+            "stop": "Let's rest here.",
+            "sokuon": "Ah, look at 【P0】.",
+        }
+
+        def exported(quotes=True):
+            plan = {"requests": [row], "complete": True, "convertQuotes": quotes}
+            relative, changed = results.export(plan)
+            index = json.loads(project_path(self.game, relative).read_text("utf-8"))
+            part = project_path(self.game, index["parts"][0])
+            units = json.loads(part.read_text("utf-8"))["units"]
+            return {unit["source_id"]: unit for unit in units}, changed, part
+
+        units, changed, part = exported()
+        self.assertTrue(changed)
+        self.assertEqual(
+            {key: unit["translation"] for key, unit in units.items()}, cleaned
+        )
+        # The receipt keeps what was accepted, and a review of it covers the
+        # cleaned text.
+        self.assertEqual(results.get(row)["translations"], accepted)
+        self.assertEqual(
+            units["quote"]["reviewed_sha256"],
+            review_digest(sources["quote"], cleaned["quote"]),
+        )
+        # A run frozen with convertQuotes off keeps the corner brackets.
+        self.assertEqual(
+            exported(quotes=False)[0]["quote"]["translation"], "「Wait!」 she said."
+        )
+        # An export written by the older rules is written again, and a run
+        # already in the game reads no new translation.
+        older = json.loads(part.read_text("utf-8"))
+        for unit in older["units"]:
+            unit["translation"] = accepted[unit["source_id"]]
+        part.write_text(json.dumps(older), "utf-8")
+        index = part.parent.with_suffix(".json")
+        document = json.loads(index.read_text("utf-8"))
+        del document["version"]
+        index.write_text(json.dumps(document), "utf-8")
+        # As after a restart, which forgets the parts this process wrote.
+        result_files._PARTS.clear()
+        units, changed, _part = exported()
+        self.assertFalse(changed)
+        self.assertEqual(units["stop"]["translation"], cleaned["stop"])
+        # A translation corrected while the rules moved still counts.
+        older = json.loads(part.read_text("utf-8"))
+        older["units"][0]["translation"] = "It's all right."
+        part.write_text(json.dumps(older), "utf-8")
+        document = json.loads(index.read_text("utf-8"))
+        del document["version"]
+        index.write_text(json.dumps(document), "utf-8")
+        result_files._PARTS.clear()
+        self.assertTrue(exported()[1])
 
     def test_a_batch_keeps_the_passing_lines_of_a_reply_and_goes_on(self):
         # One failing line failed its packed Batch request, which stopped the

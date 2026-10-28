@@ -23,7 +23,7 @@ from .jobs import RunStore, now
 from .operations import census_path, census_stale, lifecycle, require_baseline
 from .project import WORK, ProjectWorkspace, scope
 from .requests import plan_input, quote
-from .results import Results
+from .results import QUOTES, Results
 from .runner import SHARED_PAYLOADS, askers
 
 # Operations the app starts with the settings a run freezes; the helper's
@@ -389,6 +389,7 @@ def compile_run(
         "compiler": compiler,
         "input_path": input_path,
         "batch_limits": limits,
+        QUOTES: frozen.get(QUOTES, True),
     }
     if limits:
         # Its chunks wait for room in the provider's Batch window.

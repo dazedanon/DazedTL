@@ -196,6 +196,38 @@ def preserve_originals(source, translated, *, filename: str):
     return result
 
 
+def write_messages(source, document, language) -> None:
+    """Writes the full stops and spacing of each message and scrolling text
+    *document* translates over *source* as Guided writes them for *language*,
+    or the run's target when None (rpgmaker_rewrap.Layout), by
+    rpgmaker_blocks.written_rows, in place. Rows left as the source has them
+    stay as they are."""
+    from util.languages import active_target
+
+    language = language or active_target()
+    for path, commands in blocks.command_lists(source):
+        written = document
+        for key in path:
+            written = written[key]
+        index = 0
+        while index < len(commands):
+            row_code = blocks.code(commands[index])
+            if row_code not in blocks.MESSAGE_ROWS:
+                index += 1
+                continue
+            rows = (index, *blocks.run(commands, index, row_code))
+            index = rows[-1] + 1
+            old = [blocks.text(commands[at]) for at in rows]
+            new = [blocks.text(written[at]) for at in rows]
+            if old == new:
+                continue
+            for at, before, after, text in zip(
+                rows, old, new, blocks.written_rows(new, language), strict=True
+            ):
+                if after != before:
+                    written[at]["parameters"][0] = text
+
+
 # The text a write lists that still does not fit its window.
 LISTED_MISFITS = 20
 
@@ -220,8 +252,10 @@ def fit_written(document, filename: str, layout) -> dict:
 def write_rpgmaker_json(source: Path, translated: Path, output: Path, layout=None) -> dict:
     """Validate staged text and atomically write one file with preserved sources.
 
-    With *layout*, the game's Line widths (util.rpgmaker_rewrap.Layout), the
-    text is fitted to them as it is written (see fit_written). Plugin
+    Messages and scrolling text get the full stops and spacing Guided writes
+    (write_messages), for the language *layout* names. With *layout*, the
+    game's Line widths (util.rpgmaker_rewrap.Layout), the text is fitted to
+    them as it is written (see fit_written). Plugin
     commands and note tags whose translation splits on spaces into more
     arguments than their source are listed beside the misfits
     (util.word_spacing.split_changes)."""
@@ -245,6 +279,7 @@ def write_rpgmaker_json(source: Path, translated: Path, output: Path, layout=Non
         # from a clean Japanese baseline rather than the previous translated file.
         _inherit(previous, source_doc)
     result = preserve_originals(source_doc, staged_doc, filename=output.name)
+    write_messages(source_doc, result, layout.target if layout is not None else None)
     fit = fit_written(result, output.name, layout) if layout is not None else {}
     split = [
         {"file": output.name, **row} for row in split_changes(source_doc, result)

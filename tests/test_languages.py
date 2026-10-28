@@ -11,6 +11,7 @@ from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 
 from util import dazedwrap, target_text
+from util import rpgmaker_blocks as blocks
 from util import rpgmaker_qa_glossary as glossary_rules
 from util import rpgmaker_qa_lint as lint
 from util import rpgmaker_rewrap as rewrap
@@ -178,6 +179,64 @@ class LanguageTests(unittest.TestCase):
         self.assertEqual(
             target_text.clean_reply("「頼んだぞっ。」【村長】", "English"),
             "「頼んだぞ.」[村長]",
+        )
+
+    def test_assistant_led_lines_get_the_cleanup_guided_gives_a_recorded_reply(self):
+        # Guided's reply cleanup moved into translated_line for Assistant-led
+        # results; Guided writes a recorded reply byte for byte as before.
+        lines = [
+            "It’s fine。 Don’t worry～",
+            "Ahっ… 「Wait!」—please",
+            "【Hint】 Visit the café",
+            "Translation: Hey~ “Captain”",
+            "Hあーーー" + "!" * 25,
+        ]
+        reply = (
+            "```json\n"
+            + json.dumps(
+                {f"Line{n}": line for n, line in enumerate(lines, 1)},
+                ensure_ascii=False,
+            )
+            + "\n```"
+        )
+        cleaned = target_text.clean_reply(reply, "English")
+        self.assertEqual(
+            cleaned,
+            '\n{"Line1": "It\'s fine. Don\'t worry～", "Line2": "Ah… 「Wait!」―please", '
+            '"Line3": "[Hint] Visit the cafe", "Line4": "Hey～ “Captain”", '
+            '"Line5": "Hあああ' + "!" * 20 + '"}\n',
+        )
+        guided = [
+            target_text.corner_quotes(line, "English")
+            for line in extractTranslation(cleaned, True, None, "English")
+        ]
+        self.assertEqual(
+            guided,
+            [
+                "It's fine. Don't worry～",
+                'Ah… "Wait!"―please',
+                "[Hint] Visit the cafe",
+                "Hey～ 'Captain'",
+                "Hあああ" + "!" * 20,
+            ],
+        )
+        self.assertEqual(
+            [target_text.translated_line(line, "English") for line in lines], guided
+        )
+        # Codes keep their arguments, as Guided sends them masked.
+        self.assertEqual(
+            target_text.translated_line("\\SE[あっ]Ohっ。", "English"), "\\SE[あっ]Oh."
+        )
+        self.assertEqual(
+            target_text.translated_line("「待って」っ。", "Japanese"), "「待って」っ。"
+        )
+        # A message's post-pass, which both methods' writers share.
+        self.assertEqual(
+            blocks.written_message("Wait...。Who?Me!Stop\\.\\|now - ok", "English"),
+            "Wait...Who? Me! Stop \\.\\|now -ok",
+        )
+        self.assertEqual(
+            blocks.written_message("待って...。誰？", "Japanese"), "待って...。誰？"
         )
 
     def test_the_plain_engines_translate_a_speaker_name_the_same_way(self):

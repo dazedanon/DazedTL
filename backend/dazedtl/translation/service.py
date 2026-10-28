@@ -53,7 +53,14 @@ from .operations import (
 from .playtest import game_fixes, layout_check
 from .project import ADDED, WORK, ProjectWorkspace, options, scope
 from .requests import LINE_KEYS, counted, price, repriceable, sent_text
-from .results import Results, exported, left_lines, review_digest
+from .results import (
+    QUOTES,
+    Results,
+    exported,
+    left_lines,
+    review_digest,
+    run_quotes,
+)
 
 # The lifecycle record's fields the renderer reads; a ZIP's file stamps stay
 # in the backend, which compares them.
@@ -919,7 +926,12 @@ Additional project instructions:
             raise ValueError(
                 "This route does not support Batch execution. Choose a supported connection or explicitly select Live."
             )
-        frozen = {"configuration": cfg, "batch": bool(batch_provider)}
+        frozen = {
+            "configuration": cfg,
+            "batch": bool(batch_provider),
+            # Its translations write corner brackets as Guided's would.
+            QUOTES: self.settings.convert_quotes(),
+        }
         if action == "organize":
             from util.request_packing import SHARED_LINES
 
@@ -1165,6 +1177,7 @@ Additional project instructions:
                 "The extracted lines changed since this run was organized. Organize them again; unchanged requests keep their translations."
             ) from None
         saved = Results(plan["source"])
+        quotes = run_quotes(plan)
         translations, missing, reopened = {}, {}, False
         for request in plan["requests"]:
             value = saved.get(request)
@@ -1174,7 +1187,7 @@ Additional project instructions:
                 left = left_lines(request, value)
                 translations.update(
                     (identity, text)
-                    for identity, text in exported(request, value).items()
+                    for identity, text in exported(request, value, quotes).items()
                     if identity not in left
                 )
                 missing.update(dict.fromkeys(left, "untranslated"))
@@ -1188,7 +1201,9 @@ Additional project instructions:
             missing.update(dict.fromkeys(request["sources"], row["state"]))
         # Lines an earlier request translated, which organize left out; one
         # whose translation is gone waits for the next organize.
-        for row in saved.reused_units(reused, list(reused["units"]), saved.listing()):
+        for row in saved.reused_units(
+            reused, list(reused["units"]), saved.listing(), quotes
+        ):
             if "translation" in row:
                 translations[row["source_id"]] = row["translation"]
             else:
