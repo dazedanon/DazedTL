@@ -3,6 +3,59 @@
 from __future__ import annotations
 
 import re
+from datetime import UTC, datetime
+
+
+def received_at(created=None) -> str:
+    """The UTC time a response arrived, as its usage records it: the
+    provider's ``created`` Unix time when it gives one, else now."""
+    if type(created) in (int, float) and created > 0:
+        try:
+            return datetime.fromtimestamp(created, UTC).isoformat()
+        except (OverflowError, OSError, ValueError):
+            pass
+    return datetime.now(UTC).isoformat()
+
+
+def time_priced_route(endpoint: str | None) -> str | None:
+    """The route at ``endpoint`` whose Live price depends on when each
+    response arrived, DeepSeek's own API, or None; see time_price_factor."""
+    from dazedtl.settings.providers import own_api
+
+    return "deepseek" if own_api("deepseek", endpoint) else None
+
+
+def time_price_factor(route: str | None, received: str | None) -> float:
+    """Usage's price at the time it arrived as a multiple of the list price,
+    on a ``route`` from time_priced_route.
+
+    DeepSeek's own API bills half outside its peak hours, 01:00-04:00 and
+    06:00-10:00 UTC Monday to Friday
+    (https://api-docs.deepseek.com/quick_start/pricing). Its Chinese public
+    holidays are off-peak too but count as peak here, which errs high, as
+    does usage recorded without a time, such as rows saved before times were.
+    Every other route bills the same at any hour.
+    """
+    if route != "deepseek" or not isinstance(received, str):
+        return 1.0
+    try:
+        when = datetime.fromisoformat(received)
+    except ValueError:
+        return 1.0
+    if when.tzinfo is None:
+        return 1.0
+    when = when.astimezone(UTC)
+    peak = when.weekday() < 5 and (1 <= when.hour < 4 or 6 <= when.hour < 10)
+    return 1.0 if peak else 0.5
+
+
+def joined_received_at(route: str | None, *times: str | None) -> str | None:
+    """The time usage adding up several responses, such as a refused request
+    and its clarification, is priced at: the last response's when they all
+    arrived at the same price, otherwise none, which reads as peak."""
+    if len({time_price_factor(route, when) for when in times}) != 1:
+        return None
+    return times[-1]
 
 
 def _openai_model_at_least(model: str, major: int, minor: int) -> bool:

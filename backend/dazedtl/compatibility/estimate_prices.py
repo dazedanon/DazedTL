@@ -8,7 +8,8 @@ GPT-6.1 Sol's cache rates. Guided prices an estimate again with it after a
 model switch that keeps the text of every request (translation/repricing),
 and every Assistant-led quote is priced with it (translation/requests), so
 both methods quote the same work alike. ``usage_cost`` prices what a run
-recorded as Guided's Batch receipts do.
+recorded as Guided's receipts do, a Live run's requests at the price of the
+time each arrived. Estimates stay at the standard price.
 """
 
 from .batch_pricing import sol, sol_cached_cost, with_sol_cache
@@ -129,11 +130,19 @@ def reprice(estimate, configuration):
     return {**estimate, **prices(estimate, configuration, provider)}
 
 
-def usage_cost(usage, configuration, provider):
+def usage_cost(usage, configuration, provider, rows=None):
     """What a run's recorded ``usage`` cost at the rates it froze, as
-    Guided's Batch receipts price it; None when the provider reports its own
-    charge, as OpenRouter's Batch does, or the rates are unknown."""
-    from util.provider_costs import batch_price_factor
+    Guided's receipts price it; None when the provider reports its own
+    charge, as OpenRouter's Batch does, or the rates are unknown.
+
+    On a route priced by the time (provider_costs time_priced_route), a
+    Live run's ``rows``, each request's usage and the time it arrived, whose
+    sum is ``usage``, are priced one by one at that time's price."""
+    from util.provider_costs import (
+        batch_price_factor,
+        time_price_factor,
+        time_priced_route,
+    )
     from util.provider_costs import usage_cost as cost
 
     rates = configuration.get("rates") or {}
@@ -145,13 +154,25 @@ def usage_cost(usage, configuration, provider):
         and provider == "openrouter"
     ):
         return None
-    return cost(
-        # Assistant-led requests cache their instructions for five minutes,
-        # which Live usage doesn't say beside its writes.
-        {"cache_creation_1h_input_tokens": 0, **usage},
-        provider or configuration.get("provider", ""),
-        configuration["model"],
-        rates["input"] / 1_000_000,
-        rates["output"] / 1_000_000,
-        batch_price_factor(provider) if batch else 1.0,
-    )
+    route = provider or configuration.get("provider", "")
+
+    def price(counts, factor):
+        return cost(
+            # Assistant-led requests cache their instructions for five
+            # minutes, which Live usage doesn't say beside its writes.
+            {"cache_creation_1h_input_tokens": 0, **counts},
+            route,
+            configuration["model"],
+            rates["input"] / 1_000_000,
+            rates["output"] / 1_000_000,
+            factor,
+        )
+
+    if batch:
+        return price(usage, batch_price_factor(provider))
+    timed = time_priced_route(configuration.get("endpoint"))
+    if timed and rows:
+        return sum(
+            price(row, time_price_factor(timed, row.get("received_at"))) for row in rows
+        )
+    return price(usage, 1.0)

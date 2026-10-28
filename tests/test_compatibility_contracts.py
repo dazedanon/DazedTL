@@ -753,6 +753,103 @@ class CompatibilityContracts(unittest.TestCase):
         requests[-1]["messages"][0]["content"] = "fail"
         self.assertIsNone(claude_tokens.input_tokens(client, requests, len))
 
+    def test_deepseek_usage_is_priced_at_the_price_of_the_hour_it_arrived(self):
+        # DeepSeek bills half outside its weekday peak hours, but both
+        # methods' recorded spend priced every request at peak.
+        import os
+        import threading
+        from datetime import UTC, datetime
+
+        from dazedtl.compatibility.translation import TranslationProvider
+        from util import translation
+        from util.provider_costs import (
+            joined_received_at,
+            received_at,
+            time_price_factor,
+            time_priced_route,
+        )
+
+        def at(day, hour, minute=0):
+            return datetime(2026, 10, day, hour, minute, tzinfo=UTC)
+
+        # Monday 26 October 2026 to Saturday the 31st; peak is 01:00-04:00
+        # and 06:00-10:00 UTC on weekdays.
+        for when, factor in (
+            (at(26, 0, 59), 0.5),
+            (at(26, 1), 1.0),
+            (at(26, 3, 59), 1.0),
+            (at(26, 4), 0.5),
+            (at(27, 6), 1.0),
+            (at(30, 9, 59), 1.0),
+            (at(30, 10), 0.5),
+            (at(31, 7), 0.5),
+        ):
+            self.assertEqual(
+                time_price_factor("deepseek", when.isoformat()), factor, when
+            )
+        # 09:30 in Tokyo is 00:30 UTC; a time without a zone, or none, as
+        # rows saved before times were, reads as peak.
+        for when, factor in (
+            ("2026-10-26T09:30:00+09:00", 0.5),
+            ("2026-10-31T07:00:00", 1.0),
+            ("not a time", 1.0),
+            (None, 1.0),
+        ):
+            self.assertEqual(time_price_factor("deepseek", when), factor, when)
+        # Only DeepSeek's own API bills by the hour, not a host serving its
+        # models at its own prices.
+        self.assertEqual(time_priced_route("https://api.deepseek.com"), "deepseek")
+        self.assertIsNone(time_priced_route("https://openrouter.ai/api/v1"))
+        self.assertEqual(time_price_factor(None, at(31, 7).isoformat()), 1.0)
+        ten = at(26, 10).timestamp()
+        self.assertEqual(received_at(ten), at(26, 10).isoformat())
+        # A refused request and its clarification are priced together.
+        self.assertEqual(
+            joined_received_at("deepseek", received_at(ten), received_at(ten + 60)),
+            received_at(ten + 60),
+        )
+        self.assertIsNone(
+            joined_received_at("deepseek", received_at(ten - 1), received_at(ten))
+        )
+        # Assistant-led keeps the time the provider says it answered.
+        body = {
+            "choices": [{"message": {"content": "{}"}}],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1},
+        }
+        answer = SimpleNamespace(created=int(ten), model_dump=lambda: body)
+        provider = TranslationProvider.__new__(TranslationProvider)
+        provider.provider = "openai"
+        provider.client = SimpleNamespace(
+            chat=SimpleNamespace(
+                completions=SimpleNamespace(create=lambda **_kwargs: answer)
+            )
+        )
+        sent = provider.live({"model": "deepseek-flash", "messages": []})
+        self.assertEqual(sent["created"], int(ten))
+        # Guided's receipts add up its Live responses one by one, the file's
+        # and the run's TOTAL alike.
+        usage = SimpleNamespace(prompt_tokens=1_000_000, completion_tokens=1_000_000)
+        with (
+            patch.dict(os.environ, {"api": "https://api.deepseek.com"}),
+            patch.object(
+                translation,
+                "getPricingConfig",
+                return_value={"inputAPICost": 0.30, "outputAPICost": 1.20},
+            ),
+            patch.object(translation, "_thread_local", threading.local()),
+            patch.object(translation, "_global_accurate_cost", 0.0),
+        ):
+            for created in (ten - 1, ten):
+                translation._log_live_response(
+                    "openai", {}, SimpleNamespace(created=created, usage=usage)
+                )
+                translation._record_timed_cost(usage, "deepseek-flash")
+            for _call in ("file", "TOTAL"):
+                self.assertAlmostEqual(
+                    translation.calculateCost(2_000_000, 2_000_000, "deepseek-flash"),
+                    1.50 + 0.75,
+                )
+
     def test_a_stopped_batch_records_its_cache_reads_as_a_completed_one_does(self):
         # A canceled Batch's paid rows once added their whole prompt to
         # uncached input, so its Spent priced cache reads at the full rate.

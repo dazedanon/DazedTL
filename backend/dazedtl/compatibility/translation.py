@@ -1554,6 +1554,11 @@ class TranslationProvider:
         result = execute_live_request(self.provider, params, client=client)
         if responses and refused(responses[-1]):
             result["refusal"] = refusal_reason(responses[-1]) or True
+        # When the provider says it answered, which prices DeepSeek's usage
+        # (runner.received).
+        created = getattr(responses[-1], "created", None) if responses else None
+        if type(created) is int:
+            result["created"] = created
         return result
 
     @provider_errors

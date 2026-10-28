@@ -35,6 +35,9 @@ from util.provider_costs import (
     cache_read_multiplier,
     cache_write_multiplier,
     has_billed_cache_writes,
+    received_at,
+    time_price_factor,
+    time_priced_route,
 )
 from util import claude_tokens, request_debug
 from util.batch_providers import KIMI_API_URL
@@ -269,6 +272,16 @@ def _write_request_debug_log(provider, request_payload, usage):
         legacy_enabled=DEBUG,
         max_bytes=DEBUG_LOG_MAX_BYTES,
         backups=DEBUG_LOG_BACKUP_COUNT,
+    )
+
+
+def _log_live_response(provider, request_payload, response):
+    """Log a Live response with the UTC time it arrived, the provider's
+    ``created`` when it gives one, which the run's evidence records and a
+    time-priced route's cost uses (_record_timed_cost)."""
+    _thread_local.received_at = received_at(getattr(response, "created", None))
+    _write_request_debug_log(
+        provider, request_payload, getattr(response, "usage", None)
     )
 
 def _normalize_openai_base_url(url: str) -> str:
@@ -5168,7 +5181,7 @@ def translateText(system, user, history, penalty, formatType, model, numLines=No
         _total_prompt = _inp + _cr + _cw
 
         compat_response = _AnthropicCompat(_ant_text, _total_prompt, _out, _cr, _cw)
-        _write_request_debug_log("anthropic", ant_kwargs, compat_response.usage)
+        _log_live_response("anthropic", ant_kwargs, compat_response)
         return compat_response
 
     # Mistral (la Plateforme): same OpenAI-compatible request, but routed
@@ -5178,7 +5191,7 @@ def translateText(system, user, history, penalty, formatType, model, numLines=No
         response = callMistral(params)
         if not response or not hasattr(response, 'choices') or not response.choices:
             raise Exception("API returned invalid or empty response - retrying...")
-        _write_request_debug_log("mistral", params, getattr(response, "usage", None))
+        _log_live_response("mistral", params, response)
         return response
 
     # Call API (reaches here only for non-Claude providers)
@@ -5249,7 +5262,7 @@ def translateText(system, user, history, penalty, formatType, model, numLines=No
     if not response or not hasattr(response, 'choices') or not response.choices:
         raise Exception("API returned invalid or empty response - retrying...")
 
-    _write_request_debug_log(api_provider, params, getattr(response, "usage", None))
+    _log_live_response(api_provider, params, response)
     return response
 
 
@@ -5360,7 +5373,45 @@ _FILE_COST_COUNTERS = (
     "file_batch_write_1h",
     "file_batch_regular",
     "file_batch_output",
+    # Live usage of a route priced by the time each response arrived, already
+    # priced (_record_timed_cost).
+    "file_timed_cost",
 )
+
+
+def _time_priced_route():
+    """The configured route when its Live price depends on when each
+    response arrived (provider_costs time_priced_route), or None."""
+    return time_priced_route(os.getenv("api", ""))
+
+
+def _accurate_cost(model):
+    """Whether a file's cost adds up its priced responses, as Claude's
+    cache-aware usage, a Batch's fetched results and a time-priced route's
+    Live usage are, instead of pricing its token totals."""
+    return bool(
+        isClaudeModel(model)
+        or get_batch_phase() == "consume"
+        or _time_priced_route()
+    )
+
+
+def _record_timed_cost(usage, model):
+    """Price one Live response of a time-priced route at the price of the
+    time it arrived and add it to the file's and the run's cost, which
+    calculateCost then reports in place of pricing the token totals."""
+    global _global_accurate_cost
+    pricing = getPricingConfig(model)
+    cost = (
+        (getattr(usage, "prompt_tokens", 0) or 0) * pricing["inputAPICost"]
+        + (getattr(usage, "completion_tokens", 0) or 0) * pricing["outputAPICost"]
+    ) / 1_000_000 * time_price_factor(
+        _time_priced_route(), getattr(_thread_local, "received_at", None)
+    )
+    _thread_local.file_timed_cost = getattr(_thread_local, "file_timed_cost", 0) + cost
+    with _global_accurate_cost_lock:
+        _global_accurate_cost += cost
+    _thread_local.file_cost_ready = True
 
 
 _BATCH_COLLECT_FILE_COUNTERS = (
@@ -5412,6 +5463,8 @@ def begin_file_cost_tracking(model=None):
     for name in _FILE_COST_COUNTERS:
         setattr(_thread_local, name, 0)
     reset_batch_collect_file_stats()
+    # A time-priced route opens it with its first priced response
+    # (_record_timed_cost), so its Live estimates keep pricing token totals.
     _thread_local.file_cost_window_active = bool(
         isClaudeModel(model) or get_batch_phase() == "consume"
     )
@@ -5446,10 +5499,13 @@ def calculateCost(inputTokens, outputTokens, model):
       TOTAL call:    the file window and ready flag are both closed, so return
                      the cross-thread _global_accurate_cost running sum.
 
-    Falls back to naive token × rate calculation for non-Claude live models.
+    A route priced by the time each response arrived, DeepSeek's own API,
+    adds up its Live responses the same way once translateAI has priced one
+    (_record_timed_cost).
+
+    Falls back to naive token × rate calculation for other non-Claude live models.
     """
-    _is_claude = model and any(x in model.lower() for x in ("claude", "sonnet", "haiku", "opus"))
-    _uses_accurate_file_cost = _is_claude or get_batch_phase() == "consume"
+    _uses_accurate_file_cost = _accurate_cost(model)
     if _uses_accurate_file_cost:
         if (
             getattr(_thread_local, 'file_cost_window_active', False)
@@ -5480,7 +5536,9 @@ def calculateCost(inputTokens, outputTokens, model):
                     + (bcr * br * cache_read_multiplier(batch_provider, model)
                        + batch_write_weight(batch_provider, model, bcw, bcw1h) * br
                        + breg * br + bout * orr)
-                    * batch_price_factor(batch_provider))
+                    * batch_price_factor(batch_provider)
+                    + getattr(_thread_local, 'file_timed_cost', 0))
+            _thread_local.file_timed_cost = 0
             _thread_local.file_cache_read  = 0
             _thread_local.file_cache_write = 0
             _thread_local.file_regular     = 0
@@ -5496,7 +5554,7 @@ def calculateCost(inputTokens, outputTokens, model):
     # TOTAL call: cache-aware Claude and all async providers accumulate here.
     with _global_accurate_cost_lock:
         accurate = _global_accurate_cost
-    if accurate > 0 and (_is_claude or get_batch_phase() == "consume"):
+    if accurate > 0 and _uses_accurate_file_cost:
         return accurate
 
     # Non-Claude, estimate mode, or no accurate data: naive calculation.
@@ -6154,6 +6212,8 @@ def translateAI(text, history, config, filename=None, pbar=None, lock=None,
                     batch_result.get("cache_creation_1h_input_tokens"),
                 )
                 from_batch = True
+                # A Batch's results arrive together, at its own price.
+                _thread_local.received_at = None
                 _write_request_debug_log(
                     f"{batch_provider or 'provider'}-batch",
                     {"payload": subbedT}, response.usage,
@@ -6171,6 +6231,8 @@ def translateAI(text, history, config, filename=None, pbar=None, lock=None,
                         "[BATCH] Collection attempted a Live request for text it "
                         "could not queue. Preparation stopped before sending it."
                     )
+                # Set again when the response arrives (_log_live_response).
+                _thread_local.received_at = None
                 try:
                     response = translateText(
                         static_system, current_user, request_history, 0.05,
@@ -6212,6 +6274,8 @@ def translateAI(text, history, config, filename=None, pbar=None, lock=None,
             # Update token count for this attempt
             totalTokens[0] += response.usage.prompt_tokens
             totalTokens[1] += response.usage.completion_tokens
+            if not from_batch and not config.estimateMode and _time_priced_route():
+                _record_timed_cost(response.usage, config.model)
 
             # --- Cache/batch cost tracking ---
             _is_claude_model = config.model and any(x in config.model.lower() for x in ("claude", "sonnet", "haiku", "opus"))

@@ -42,6 +42,7 @@ from dazedtl.translation.release import current
 from dazedtl.translation.requests import (
     LINE_KEYS,
     SKILL_USERS,
+    logical_request,
     plan_input,
     provider_view,
 )
@@ -1229,6 +1230,67 @@ class WorkflowTests(unittest.TestCase):
         connection["model"] = "gpt-5.6-terra"
         again = self.prepared(self.service.reestimate(self.identity, run["id"]))
         self.assertEqual(again["quote"]["model"], "gpt-5.6-terra")
+
+    def test_deepseek_spend_is_priced_by_when_each_request_arrived(self):
+        # DeepSeek bills half outside its weekday peak hours, but Progress
+        # Spent and Requests Recorded usage priced every request at peak.
+        from datetime import UTC, datetime
+
+        from dazedtl.translation.runner import Runner
+
+        rows = []
+        for identity in ("peak", "off-peak", "older"):
+            row = logical_request(
+                {"id": identity, "sources": {identity: "はい。"}},
+                {"speakers": {identity: None}},
+            )
+            row["params"] = {"model": "deepseek-flash", "messages": []}
+            rows.append(row)
+        store = self.service.jobs.store
+        job = store.create(
+            self.identity,
+            {
+                "version": 1,
+                "kind": "translation",
+                "source": str(self.game),
+                "complete": True,
+                "requests": rows,
+                "configuration": {
+                    "mode": "live",
+                    "model": "deepseek-flash",
+                    "provider": "deepseek",
+                    "endpoint": "https://api.deepseek.com",
+                    "rates": {"input": 0.30, "output": 1.20},
+                },
+                "batch_limits": [50, 100000],
+            },
+            {"cost": 1},
+        )
+        store.authorize(job)
+        # Monday 26 October 2026: peak hours end at 10:00 UTC.
+        ten = datetime(2026, 10, 26, 10, tzinfo=UTC).timestamp()
+        sent = iter(zip(("peak", "off-peak", "older"), (ten - 1, ten, ten)))
+
+        class Provider:
+            def live(self, _params):
+                line, created = next(sent)
+                return {
+                    "text": json.dumps({line: "Yes."}),
+                    "prompt_tokens": 1_000_000,
+                    "completion_tokens": 1_000_000,
+                    "created": created,
+                }
+
+        Runner(store, job["id"], Provider(), lambda: None).step()
+        current, _plan = store.load(job["id"])
+        self.assertEqual(current["status"], "complete")
+        # A row saved before rows held a time keeps the peak price.
+        del current["request_usage"]["older"]["received_at"]
+        store.save(current)
+        self.engine.batch_supported = lambda _configuration: None
+        record = store.record(job["id"])
+        view = self.service.job_views([record], "live", self.game)[0]
+        self.assertAlmostEqual(view["usage_cost"], 1.50 + 0.75 + 1.50)
 
     def test_reports_count_images_from_the_image_manager(self):
         # The assistant's reports must carry the Image Manager's records, or

@@ -416,6 +416,7 @@ Create a key on [DeepSeek's platform](https://platform.deepseek.com/), then choo
 DeepSeek has no Batch, so it translates Live.
 Its models think before they answer, which is billed as output and isn't in the estimate.
 Estimates use DeepSeek's standard price; outside its [peak hours](https://api-docs.deepseek.com/quick_start/pricing) it costs half.
+What a run spent follows the time: each request is charged at the price of the hour DeepSeek answered it, except on Chinese public holidays, which read at the standard price.
 
 ## Notifications
 

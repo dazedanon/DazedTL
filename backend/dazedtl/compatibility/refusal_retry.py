@@ -88,7 +88,7 @@ def send_once(translation, evidence, params):
             )
         else:
             response = client.chat.completions.create(**params)
-        translation._write_request_debug_log(provider, params, response.usage)
+        translation._log_live_response(provider, params, response)
         value = receipt(response)
         with evidence.connect() as connection:
             connection.execute(
@@ -223,12 +223,24 @@ class RefusalRetry:
             "Provider declined a translation; clarifying the fictional adult context once.",
             flush=True,
         )
-        response = send_once(self.translation, evidence, params)
+        translation = self.translation
+        local = getattr(translation, "_thread_local", None)
+        refused_at = getattr(local, "received_at", None)
+        response = send_once(translation, evidence, params)
         value = receipt(response)
         if refused(response, source or {}):
             self.reject(response)
             # Force native validation failure even for a refusal in valid JSON.
             value.update(content=None, refusal=MESSAGE)
         value["usage"] = {key: first_usage[key] + value["usage"][key] for key in USAGE}
+        # translateAI prices both calls' usage together at one time.
+        if translation is not None and local is not None:
+            from util.provider_costs import joined_received_at
+
+            local.received_at = joined_received_at(
+                translation._time_priced_route(),
+                refused_at,
+                getattr(local, "received_at", None),
+            )
         self.journal.answer(identity, json.dumps(value, ensure_ascii=False))
         return restored(value)

@@ -671,7 +671,8 @@ Additional project instructions:
         (see repricing), with an approval token for that price; otherwise it
         notes that the settings it priced have changed. An estimate for
         declined requests keeps its own mode, whatever the project's. A
-        run's recorded usage is priced at the rates it froze."""
+        run's recorded usage is priced at the rates it froze, a Live run's
+        requests each at the price of the time it arrived."""
         current = {}
         views = []
         newest = max(
@@ -691,7 +692,10 @@ Additional project instructions:
                     # A frozen OpenRouter policy this version refuses.
                     provider = None
                 view["usage_cost"] = usage_cost(
-                    job["usage"], job["configuration"], provider
+                    job["usage"],
+                    job["configuration"],
+                    provider,
+                    (job.get("request_usage") or {}).values(),
                 )
             frozen = job.get("configuration_sha256")
             if (

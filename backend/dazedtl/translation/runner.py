@@ -254,9 +254,24 @@ class Runner:
             except ValueError as exc:
                 self.job["states"][asker] = {"state": "failed", "message": str(exc)}
 
+    @staticmethod
+    def received(response):
+        """A Live response with the UTC time it arrived, which prices its
+        usage (provider_costs time_price_factor): the provider's ``created``
+        when it gives one, else now."""
+        from util.provider_costs import received_at
+
+        response = dict(response)
+        response["received_at"] = received_at(response.pop("created", None))
+        return response
+
     def record_usage(self, identity, response):
+        from util.provider_costs import joined_received_at, time_priced_route
+
+        times = [response.get("received_at")]
         if identity in self.job.get("refusal_retries", {}):
             original = read_json(self.response_path(identity, original=True))
+            times.insert(0, original.get("received_at"))
             response = {
                 key: (response.get(key, 0) if type(response.get(key, 0)) is int else 0)
                 + (original.get(key, 0) if type(original.get(key, 0)) is int else 0)
@@ -289,8 +304,13 @@ class Runner:
         previous = rows.get(identity, dict.fromkeys(row, 0))
         for key, value in row.items():
             self.request_totals[key] += value - previous[key]
-        rows[identity] = row
         self.job["usage"] = dict(self.request_totals)
+        # The time that prices the row (estimate_prices.usage_cost); a row
+        # without one, as rows saved before they held one, reads as peak.
+        when = joined_received_at(
+            time_priced_route(self.plan["configuration"].get("endpoint")), *times
+        )
+        rows[identity] = {**row, "received_at": when} if when else row
 
     def recover(self):
         # A waiting Batch recovers on every poll, so the saved responses and
@@ -363,7 +383,7 @@ class Runner:
             }
             self.save("running", "Translating " + identity)
             try:
-                response = self.provider.live(params)
+                response = self.received(self.provider.live(params))
             except Exception as exc:  # noqa: BLE001
                 status = getattr(exc, "status_code", None)
                 certain = type(status) is int and 400 <= status < 500
@@ -393,7 +413,7 @@ class Runner:
                 }
                 self.save("running", self.job["states"][identity]["message"])
                 try:
-                    response = self.provider.live(params)
+                    response = self.received(self.provider.live(params))
                 except Exception as exc:  # noqa: BLE001
                     status = getattr(exc, "status_code", None)
                     certain = type(status) is int and 400 <= status < 500

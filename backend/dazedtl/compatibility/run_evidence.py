@@ -178,6 +178,9 @@ class Evidence:
                 "response",
                 "raw_response",
                 "kept_lines",
+                # The UTC time a Live response arrived, the time the run's
+                # cost priced its usage at (engine translation._log_live_response).
+                "received_at",
             ):
                 if name not in columns(connection):
                     connection.execute(
@@ -330,16 +333,18 @@ class Evidence:
         )
         transmission.begin()
 
-    def update(self, state, usage=None, error=None):
+    def update(self, state, usage=None, error=None, received_at=None):
         current = getattr(self.local, "current", None)
         if current is not None:
             with self.connect() as connection:
                 connection.execute(
-                    "UPDATE requests SET state=?,usage=?,error=? WHERE id=?",
+                    "UPDATE requests SET state=?,usage=?,error=?,"
+                    "received_at=COALESCE(?,received_at) WHERE id=?",
                     (
                         state,
                         json.dumps(usage) if usage is not None else None,
                         error,
+                        received_at,
                         current,
                     ),
                 )
@@ -408,6 +413,7 @@ class Evidence:
                     key: getattr(usage, key, None)
                     for key in ("prompt_tokens", "completion_tokens", "total_tokens")
                 },
+                received_at=getattr(self.translation_local, "received_at", None),
             )
             return native(provider, params, usage)
 
