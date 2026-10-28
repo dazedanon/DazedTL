@@ -593,7 +593,10 @@ class Settings:
             return {
                 **value,
                 "thinkingEffort": effort.describe(
-                    "openrouter", model, effort.record(active, model)
+                    "openrouter",
+                    model,
+                    effort.record(active, model),
+                    effort.kept(active),
                 ),
             }
         if cached_only:
@@ -607,6 +610,7 @@ class Settings:
                 active["provider"] if active else None,
                 model,
                 effort.record(active, model),
+                effort.kept(active),
             ),
         }
 

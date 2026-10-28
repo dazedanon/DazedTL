@@ -23,9 +23,9 @@ const amount = (value: number) =>
 /**
  * The thinking effort new runs send for this model. Only the levels the
  * model takes are offered (settings/effort), from the provider's model list
- * where its last check read one, which a quiet line names; a saved level it
- * no longer takes reads as the provider default and stays listed until
- * another is chosen.
+ * where its last check read one, which a quiet line names with how to
+ * refresh them; a saved level it no longer takes reads as the provider
+ * default and stays listed until another is chosen.
  */
 function ThinkingEffortField({
   effort,
@@ -62,7 +62,7 @@ function ThinkingEffortField({
                 ? "The provider's model list shows no effort to choose for this model, so runs leave it to the provider."
                 : "DazedTL doesn't know which efforts this model takes, so runs leave it to the provider."
       }
-      note={known && effort?.source ? `${effort.source}.` : undefined}
+      note={known ? effort?.source : undefined}
     >
       {(control) => (
         <select

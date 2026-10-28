@@ -398,13 +398,23 @@ def valid_list(value):
     return value
 
 
+def kept(connection):
+    """Whether *connection*'s last check read its provider's model list
+    for efforts: never for a connection checked before records were kept,
+    or one whose provider's list names no effort."""
+    return (
+        bool(connection)
+        and connection.get("provider") in LISTED
+        and "efforts" in connection
+    )
+
+
 def record(connection, model):
-    """*model*'s record from *connection*'s last check, or None: a
-    connection checked before records were kept, a provider whose list
-    names no effort, or a model its list doesn't describe."""
-    if not connection or connection.get("provider") not in LISTED:
+    """*model*'s record from *connection*'s last check, or None where
+    ``kept`` is false or the list doesn't describe the model."""
+    if not kept(connection):
         return None
-    return connection.get("efforts", {}).get(model_id(model))
+    return connection["efforts"].get(model_id(model))
 
 
 def _notes(provider, model):
@@ -507,9 +517,10 @@ class Choices(TypedDict):
     source: NotRequired[str]
 
 
-def describe(provider, model, listed=None) -> Choices:
+def describe(provider, model, listed=None, read=False) -> Choices:
     """The choices Settings offers for a model: the provider default first,
-    then each level the model takes, and where those come from."""
+    then each level the model takes, and a line saying where those come
+    from and how to refresh them. *read* is ``kept`` for the connection."""
     resolved = profile(provider, model, listed)
     value: Choices = {
         "options": [
@@ -517,10 +528,22 @@ def describe(provider, model, listed=None) -> Choices:
             *({"value": level, "label": label(level)} for level in resolved["levels"]),
         ]
     }
-    if listed is not None and provider in LISTED:
-        value["source"] = f"From {LISTED[provider]}'s model list"
+    name = LISTED.get(provider)
+    if listed is not None and name:
+        value["source"] = (
+            f"These levels come from {name}'s model list as of your last "
+            "connection check. Check the connection again in API connections "
+            "to refresh them."
+        )
     elif resolved["levels"]:
-        value["source"] = "From DazedTL's model notes"
+        value["source"] = "These levels come from DazedTL's built-in list" + (
+            ", which DazedTL updates keep current."
+            if not name
+            else f", since {name}'s model list doesn't describe this model."
+            if read
+            else f". Check the connection in API connections to read {name}'s "
+            "model list instead."
+        )
     return value
 
 

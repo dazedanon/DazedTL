@@ -21,6 +21,11 @@ from dazedtl.translation.requests import LINE_KEYS, logical_request
 
 from tests.engine import replaced_modules
 
+LISTED_SOURCE = (
+    "These levels come from Anthropic's model list as of your last connection "
+    "check. Check the connection again in API connections to refresh them."
+)
+
 
 class SettingsTests(unittest.TestCase):
     def test_openrouter_connection_keeps_its_route_and_secret_through_save_check_and_reload(
@@ -1605,7 +1610,7 @@ class SettingsTests(unittest.TestCase):
                     {"value": "medium", "label": "Medium"},
                     {"value": "high", "label": "High"},
                 ],
-                "source": "From Anthropic's model list",
+                "source": LISTED_SOURCE,
             },
         )
         self.assertEqual(
@@ -1620,12 +1625,22 @@ class SettingsTests(unittest.TestCase):
             ),
             {
                 "options": [{"value": None, "label": "Provider default"}],
-                "source": "From Anthropic's model list",
+                "source": LISTED_SOURCE,
             },
         )
+        # The notes' line says how to read the list until a check has, and
+        # then that the list leaves this model to the notes.
         self.assertEqual(
             effort.describe("anthropic", "claude-opus-5").get("source"),
-            "From DazedTL's model notes",
+            "These levels come from DazedTL's built-in list. Check the connection in API connections to read Anthropic's model list instead.",
+        )
+        self.assertEqual(
+            effort.describe("anthropic", "claude-opus-5", read=True).get("source"),
+            "These levels come from DazedTL's built-in list, since Anthropic's model list doesn't describe this model.",
+        )
+        self.assertEqual(
+            effort.describe("openai", "gpt-6.1-sol", read=True).get("source"),
+            "These levels come from DazedTL's built-in list, which DazedTL updates keep current.",
         )
         self.assertNotIn("source", effort.describe("custom", "local-model"))
         # Only Anthropic's and OpenRouter's lists say anything about effort.
@@ -1806,6 +1821,10 @@ class SettingsTests(unittest.TestCase):
                 settings.model_defaults("first", "claude-opus-4-5")["thinkingEffort"],
                 {"options": [{"value": None, "label": "Provider default"}]},
             )
+            self.assertEqual(
+                settings.model_defaults("first", "claude-opus-5")["thinkingEffort"],
+                effort.describe("anthropic", "claude-opus-5"),
+            )
             with self.assertRaisesRegex(ValueError, "doesn't take thinking effort Low"):
                 settings.save(
                     view["revision"],
@@ -1828,7 +1847,12 @@ class SettingsTests(unittest.TestCase):
                 settings.model_defaults("first", "claude-opus-4-5")["thinkingEffort"][
                     "source"
                 ],
-                "From Anthropic's model list",
+                LISTED_SOURCE,
+            )
+            # The list read, a model it doesn't describe keeps the notes.
+            self.assertEqual(
+                settings.model_defaults("first", "claude-opus-5")["thinkingEffort"],
+                effort.describe("anthropic", "claude-opus-5", read=True),
             )
             view = settings.save(
                 view["revision"],

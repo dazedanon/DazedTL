@@ -41,9 +41,9 @@ class ThinkingEffort(TypedDict):
     the provider default first, then each level the model takes."""
 
     options: list[EffortOption]
-    # Where the levels come from: the provider's own model list, as the
-    # connection's last check read it, or DazedTL's notes; absent when
-    # neither names any.
+    # A sentence on where the levels come from, the provider's own model
+    # list as the connection's last check read it or DazedTL's notes, and
+    # how to refresh them; absent when neither names any.
     source: NotRequired[str]
 
 
