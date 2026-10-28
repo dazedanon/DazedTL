@@ -146,6 +146,9 @@ Run them outside a sandbox such as Claude Code's bwrap: KWin needs a writable `/
 - `images-archived`: an Assistant-led project on the `wolf` game, whose pictures sit in `Data/Picture.wolf`; the scripted assistant decodes them with the bundled WolfDawn into a folder the game doesn't read, runs the Images steps on that folder with `images --scan --root`, packs the archive again and checkpoints it, then checks that the patch's archive holds the translated title and that the patch's download and the clean game ZIP leave the decoded folder out; the apply is then undone in Checkpoints, which puts the decoded original back, and put back.
 - `batch-waiting`: the database submitted as a Batch that the stand-in holds.
 - `batch-queued`: `batch-waiting` with a small Batch token allowance, then a copy of the game Assistant-led whose API Batch on the same OpenAI connection must wait for capacity unsent until the held Batch is released, then be sent and complete.
+- `repriced`: a whole-game estimate and an Assistant-led API Batch estimate waiting on **Progress**, both on the OpenAI preset, saved again as a release before a pricing fix saves them, while the app is closed.
+  Saved with counts DazedTL can't price again, each must read outdated and **Progress** must offer **Estimate again** and no Approve; saved at three times today's price, each must show today's price, and Approve must freeze the price shown.
+  A Guided Translate estimate is left out, since closing the app discards it.
 - `upgraded`: translated by the previous release, then opened in this checkout.
 - `paged`: the `long-dialogue` game, translated and applied, then the Line widths narrowed to 24 characters and two rows; fails unless the game shows the long message laid out for them with every word.
   With `--game english-source`, the long message is Japanese, laid out between characters.

@@ -839,11 +839,11 @@ class GuidedActions:
         return {"inputs": value["inputs"], "collected": value["collected"]}
 
     def unchanged_estimate(self, project_id, native, phase, run_inputs):
-        """The phase's latest estimate when it finished with exactly these
-        inputs, or with inputs a model switch only prices differently
-        (GuidedRuns.repriced), which Translate reopens instead of estimating
-        again. Paid work started from it ends that, and so does a Claude count
-        it still needs."""
+        """The phase's latest estimate when it reads current for these inputs
+        (GuidedRuns.reading), as saved or priced again after a model switch
+        or a pricing fix, which Translate reopens instead of estimating again.
+        Paid work started from it ends that, and so does a Claude count it
+        still needs."""
         from dazedtl.compatibility.preparations import temporary
 
         manual = self.guided.backend.manual
@@ -861,14 +861,12 @@ class GuidedActions:
         )
         if identity is None:
             return None
-        job, record = manual.jobs[identity], records[identity]
+        job = manual.jobs[identity]
         if (
-            job["status"] != "complete"
-            or not job.get("estimate")
-            or not temporary(job)
-            or self.guided.runs.changed(record, run_inputs)
-            and not self.guided.runs.repriced(project_id, native, identity, run_inputs)
-            or identity in self.guided.inputs(native).record().get("retired_runs", [])
+            not temporary(job)
+            or not self.guided.runs.reading(
+                project_id, native, identity, run_inputs
+            ).current
             or any(
                 (row.get("estimate") or {}).get("jobId") == identity
                 and not temporary(manual.jobs.get(other, {}))

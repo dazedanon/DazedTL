@@ -109,6 +109,7 @@ export type RunEstimate = {
   thinking_effort?: string;
   approximate_input?: boolean;
   elapsed_seconds?: number;
+  price_rules?: number;
 };
 
 export type Job = {
@@ -1478,6 +1479,7 @@ export type TranslationQuote = {
   cacheable_tokens?: number;
   unestimated_thinking_tokens?: boolean;
   thinking_effort?: string;
+  price_rules?: number;
   model: string;
   provider: string;
   basis: string;
@@ -1529,6 +1531,7 @@ export type TranslationJob = {
   approved: boolean;
   app_approved_at: string | null;
   settings_changed?: boolean;
+  pricing_changed?: boolean;
   result: Record<string, unknown> | null;
   usage: Record<string, number>;
   usage_cost?: number | null;

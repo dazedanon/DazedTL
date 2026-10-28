@@ -104,7 +104,8 @@ Estimating is free and translates nothing; for Claude models it uses Anthropic's
 On a large game this can take several minutes: each task shows how far it has got and about how long is left, and a finished estimate says how long it took.
 The other tasks use your assistant's plan, not your API key.
 Choosing another model of the same connection usually shows its prices at once, since its requests stay the same; Claude models count tokens their own way, so they need a new estimate.
-If you change the guidance, the source choices or the game's files, choose a model whose requests differ, or update DazedTL, the estimate reads **Outdated**; click **Estimate again**.
+An update of DazedTL that corrects its prices shows the corrected prices the same way.
+If you change the guidance, the source choices or the game's files, choose a model whose requests differ, or update DazedTL to one that estimates differently or corrects Claude's prices, the estimate reads **Outdated**; click **Estimate again**.
 Until then **Estimate again** stays off, since it would give the same result.
 
 ### 3. Translate
@@ -263,7 +264,8 @@ GameUpdate can't update an encrypted game, so share a new patch for each update 
    A newer estimate replaces the one waiting.
    Lines already translated keep their translations when your assistant organizes the text again, such as after a glossary change, so a new estimate covers only the rest, and a line a run left in Japanese because its translation failed is sent again on its own.
    Choosing another model of the same connection, or switching between **API Batch** and **Live API**, shows the waiting estimate at the new prices at once when its requests stay the same; approving then sends them with your new choice.
-   Other changes, such as a Claude model or another connection, make it out of date; **Estimate again** prepares a new one without your assistant.
+   After an update of DazedTL that corrects its prices, the waiting estimate shows the corrected price, and approving approves that price; on a Claude model it reads out of date instead.
+   Other changes, such as a Claude model or another connection, make it out of date too; **Estimate again** prepares a new one without your assistant.
    After you approve, **Progress** reminds you to tell your assistant until it has checked in.
    The estimate is priced as Guided prices its own, and once the run has sent requests, **Progress** shows what they cost beside it.
    If it goes quiet, for example at a usage limit, paste the prompt into a new session; it picks up the saved work.

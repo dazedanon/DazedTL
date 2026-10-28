@@ -3,6 +3,7 @@
 import json
 import re
 from contextlib import closing
+from dataclasses import replace
 
 from dazedtl.freshness import Basis, Digests, compare
 from dazedtl.settings import language_pair
@@ -276,14 +277,20 @@ class GuidedRuns:
         return Basis(RUN_VERSION, {}, fingerprint, shape)
 
     @classmethod
-    def changed(cls, record, inputs, *, reprice=True):
-        """What changed since an estimate bound to ``record`` was made, or None
-        while it is current for ``inputs``. With ``reprice``, settings that
-        differ only in prices not known yet count as the same."""
+    def changed(cls, record, inputs, *, reprice=True, estimate=None):
+        """What changed since a run bound to ``record`` was made, or None
+        while it is current for ``inputs``; for an estimate run, its
+        ``estimate`` priced under older price rules changed too. With
+        ``reprice``, settings that differ only in prices not known yet count
+        as the same."""
         saved = cls.saved(record, inputs)
+        current = Basis(RUN_VERSION, {}, inputs["fingerprint"], inputs["shape"])
+        if estimate is not None:
+            saved = replace(saved, prices=repricing.rules(estimate))
+            current = replace(current, prices=repricing.current_rules())
         return compare(
             saved,
-            Basis(RUN_VERSION, {}, inputs["fingerprint"], inputs["shape"]),
+            current,
             prices_unknown=reprice
             and saved.settings != inputs["fingerprint"]
             and repricing.unknown_prices(
@@ -291,24 +298,23 @@ class GuidedRuns:
             ),
         )
 
-    def repriced(self, project_id, native, identity, inputs):
-        """A finished estimate's figures at the prices of ``inputs`` when
-        they only price its requests differently, else None."""
+    def reading(self, project_id, native, identity, inputs):
+        """How a phase's estimate run reads for ``inputs`` (repricing.read):
+        a finished estimate still in use stands as saved, is priced again
+        from its counts, or reads outdated."""
         from dazedtl.compatibility.estimate_prices import reprice
 
+        job = self.guided.backend.manual.jobs.get(identity, {})
+        if not self.usable(native, identity, job):
+            return repricing.OUTDATED
         record = self.records(project_id).get(identity, {})
-        estimate = self.guided.backend.manual.jobs.get(identity, {}).get("estimate")
-        if (
-            not estimate
-            or self.saved(record, inputs).shape != inputs["shape"]
-            or identity in self.guided.inputs(native).record().get("retired_runs", [])
-            or not repricing.priced(inputs["configuration"])
-            or not repricing.same_requests(
-                record["configuration"], inputs["configuration"]
-            )
-        ):
-            return None
-        return reprice(estimate, inputs["configuration"])
+        estimate = job["estimate"]
+        return repricing.read(
+            self.changed(record, inputs, estimate=estimate),
+            record.get("configuration"),
+            inputs["configuration"],
+            lambda settings: reprice(estimate, settings),
+        )
 
     def publish_names(self, project_id, native):
         """Adds paid names the game glossary lacks once no run can collect it.
@@ -720,20 +726,14 @@ class GuidedRuns:
         latest = self.latest_estimate(project_id, native, phase)
         if latest is None:
             return {"job": None, "current": False}, inputs
-        identity, job, record = latest
-        current = self.usable(native, identity, job) and not self.changed(
-            record, inputs
-        )
+        identity, _job, _record = latest
         view = (run_view or self.guided.run_view)(identity, compact=True)
-        # A model switch that keeps its requests prices it again.
-        repriced = (
-            None
-            if current or job["status"] != "complete"
-            else self.repriced(project_id, native, identity, inputs)
-        )
-        if repriced:
-            view, current = {**view, "estimate": repriced}, True
-        return {"job": view, "current": current}, inputs
+        # A model switch that keeps its requests, or a pricing fix, prices it
+        # again.
+        reading = self.reading(project_id, native, identity, inputs)
+        if reading.figure is not None:
+            view = {**view, "estimate": reading.figure}
+        return {"job": view, "current": reading.current}, inputs
 
     def usable(self, native, identity, job):
         """Whether an estimate run holds a finished estimate still in use,

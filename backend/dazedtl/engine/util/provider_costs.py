@@ -5,6 +5,18 @@ from __future__ import annotations
 import re
 from datetime import UTC, datetime
 
+# The version of the rules that price counted tokens: a Batch discount, a
+# cache read or write multiple, the Live formula. Raise it with any change
+# that prices the same counts differently. Every quote and estimate saved for
+# later display or approval records the version it was priced under, and one
+# priced under another version is priced again from its counts on its next
+# view, or reads outdated when its counts can't be (translation/repricing).
+# A change to what is counted, such as the output allowance, changes the
+# counts themselves and raises the counting kind's own version instead.
+# 1: every figure saved before figures recorded it. 2: OpenAI's per-model
+# cache prices (2.48.0) and every rule before them.
+PRICE_RULES_VERSION = 2
+
 
 def received_at(created=None) -> str:
     """The UTC time a response arrived, as its usage records it: the

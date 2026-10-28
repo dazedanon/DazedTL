@@ -30,6 +30,7 @@ from util.paths import (
     unlink_with_retry,
 )
 from util.provider_costs import (
+    PRICE_RULES_VERSION,
     batch_price_factor,
     cache_read_multiplier,
     cache_write_multiplier,
@@ -2449,6 +2450,8 @@ def estimateCostComparison(
         "batch_supported": provider is not None,
         "basis": "no_cache",
         "unestimated_thinking_tokens": unestimatedThinking(provider, est_model),
+        # The rules these prices follow (DazedTL's translation/repricing).
+        "price_rules": PRICE_RULES_VERSION,
     }
 
 
@@ -2689,6 +2692,7 @@ def estimateBatchCost(model=None, *, queue_file=None, log_prefix="[BATCH]"):
         "unestimated_thinking_tokens": unestimated_thinking,
         # Claude bills more tokens than the approximate count holds.
         "approximate_input": est_provider == "anthropic" and counted is None,
+        "price_rules": PRICE_RULES_VERSION,
     }
 
 

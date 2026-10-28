@@ -24,13 +24,23 @@ class FreshnessTests(unittest.TestCase):
         # A price-only switch keeps the work only while the prices are unknown.
         moved = Basis(1, saved.inputs, settings="t", shape="p")
         self.assertEqual(compare(saved, moved), Change(settings=True))
+        self.assertTrue(compare(saved, moved).priced_only)
         self.assertIsNone(compare(saved, moved, prices_unknown=True))
         reshaped = Basis(1, saved.inputs, settings="t", shape="q")
         self.assertEqual(
-            compare(saved, reshaped, prices_unknown=True), Change(settings=True)
+            compare(saved, reshaped, prices_unknown=True),
+            Change(settings=True, reshaped=True),
         )
+        self.assertFalse(compare(saved, reshaped).priced_only)
+        # A figure priced under other price rules keeps its counts.
+        priced = Basis(1, saved.inputs, "s", "p", prices=2)
+        self.assertEqual(compare(saved, priced), Change(prices=True))
+        self.assertTrue(compare(saved, priced).rules_only)
+        self.assertFalse(compare(saved, moved).rules_only)
+        self.assertEqual(Basis.read(priced.record()), priced)
         # A record whose inputs cannot be named reads as changed.
         self.assertEqual(compare(Basis(1), saved), Change(unnamed=True))
+        self.assertFalse(compare(Basis(1), saved).priced_only)
         self.assertEqual(Basis.read(saved.record()), saved)
 
     def test_a_file_is_read_again_until_it_has_settled(self):

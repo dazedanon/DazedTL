@@ -1,4 +1,4 @@
-"""Pricing a saved estimate again after a model or translation mode switch.
+"""How a saved quote or estimate reads: as saved, priced again, or outdated.
 
 An estimate counts its requests' tokens once. A switch that leaves the text
 of every request the same keeps those counts, so the estimate takes the new
@@ -6,7 +6,15 @@ model's prices at once instead of being estimated again: the same connection
 and request settings, a model whose requests carry the same text, and a
 provider that counts tokens the same way for every model. Claude counts with
 each model's own tokenizer, so a Claude estimate is always estimated again.
+
+A pricing fix (provider_costs.PRICE_RULES_VERSION) keeps the counts too, so a
+figure priced under older rules is priced again under today's on its next
+view, or reads outdated when its counts can't be. ``read`` decides this for
+every saved figure a user approves or reads: an Assistant-led quote waiting
+for approval, a Guided Translate estimate and a whole-game estimate.
 """
+
+from dataclasses import dataclass
 
 from dazedtl.compatibility.request_text import request_text
 from dazedtl.settings.execution import LOOKED_UP
@@ -72,7 +80,58 @@ def same_requests(before, after):
     )
 
 
+def current_rules():
+    """The price rules version figures are priced under today."""
+    from util.provider_costs import PRICE_RULES_VERSION
+
+    return PRICE_RULES_VERSION
+
+
+def rules(figure):
+    """The price rules version a saved quote or estimate was priced under;
+    one saved before figures recorded it reads as version 1."""
+    return (figure or {}).get("price_rules", 1)
+
+
+@dataclass(frozen=True)
+class Reading:
+    """How a saved figure reads now: ``current`` while it stands as saved
+    (``figure`` None) or priced again (``figure``, at ``settings``)."""
+
+    current: bool
+    settings: dict | None = None
+    figure: object = None
+
+
+OUTDATED = Reading(False)
+
+
+def read(change, before, after, again):
+    """How a figure priced with the settings ``before`` reads now.
+
+    ``change`` is freshness.compare of its basis, with the price rules it was
+    priced under, against the current one; ``after`` the current settings;
+    ``again(settings)`` its counts priced with ``settings`` under today's
+    rules, None when they can't be. Unchanged, it stands as saved. When only
+    what prices it changed and its requests keep their text, it is priced
+    again: at the current settings when they changed, else at the ones it was
+    priced with, whose prices a snapshot may not have looked up yet.
+    Otherwise it reads outdated and is estimated again."""
+    if change is None:
+        return Reading(True)
+    if not change.priced_only or not before:
+        return OUTDATED
+    settings = after if change.settings else before
+    if not settings or not priced(settings) or not same_requests(before, settings):
+        return OUTDATED
+    figure = again(settings)
+    return OUTDATED if figure is None else Reading(True, settings, figure)
+
+
 def approval_token(token, configuration):
-    """The approval of a quote priced with these settings: a quote priced
-    again takes a new token, so approving binds to the price shown."""
-    return digest({"token": token, "configuration": configuration})[:32]
+    """The approval of a quote priced again with these settings under
+    today's price rules: it takes a new token, so approving binds to the
+    price shown."""
+    return digest(
+        {"token": token, "configuration": configuration, "rules": current_rules()}
+    )[:32]

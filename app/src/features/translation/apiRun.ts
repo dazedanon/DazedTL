@@ -44,9 +44,18 @@ export const priceRange = (
     ? `${money(low)}–${money(high)}`
     : money(high);
 
-/** An estimate priced with settings or a mode that have changed since. */
+/**
+ * An estimate priced with settings or a mode that have changed since, or
+ * under price rules a pricing fix changed in a way its counts can't follow.
+ */
 export const estimateOutdated = (run: TranslationJob | undefined) =>
-  !!awaitingQuote(run) && !!run?.settings_changed;
+  !!awaitingQuote(run) && !!(run?.settings_changed || run?.pricing_changed);
+
+/** What changed after an outdated estimate, as a sentence's start. */
+export const outdatedBy = (run: TranslationJob) =>
+  run.settings_changed
+    ? "API settings or the translation mode changed"
+    : "DazedTL corrected its prices";
 
 /**
  * The preparation estimating an outdated run again with the current
