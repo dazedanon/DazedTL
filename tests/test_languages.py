@@ -181,6 +181,24 @@ class LanguageTests(unittest.TestCase):
             "「頼んだぞ.」[村長]",
         )
 
+    def test_only_an_english_target_writes_e_acute_as_e(self):
+        # Cleanup written for English turned every é into e for any
+        # Latin-script target, so French lost it in both methods.
+        line = "Café élégant, très bien—oui"
+        for target in ("French", "Spanish", "Portuguese (Brazil)"):
+            with self.subTest(target=target):
+                self.assertEqual(
+                    target_text.translated_line(line, target),
+                    "Café élégant, très bien―oui",
+                )
+                self.assertEqual(
+                    target_text.clean_reply(line, target),
+                    "Café élégant, très bien―oui",
+                )
+        self.assertEqual(
+            target_text.translated_line(line, "English"), "Cafe elegant, très bien―oui"
+        )
+
     def test_assistant_led_lines_get_the_cleanup_guided_gives_a_recorded_reply(self):
         # Guided's reply cleanup moved into translated_line for Assistant-led
         # results; Guided writes a recorded reply byte for byte as before.

@@ -22,7 +22,7 @@ stays exactly as the game wrote it.
 import re
 from functools import lru_cache
 
-from util.languages import JAPANESE_LETTERS, LATIN, script, target_uses_cjk
+from util.languages import JAPANESE_LETTERS, LATIN, english, script, target_uses_cjk
 from util.runtime_text import PROTECTED_PATTERNS, split_protected_codes
 
 
@@ -216,8 +216,11 @@ def _without_label(text, language):
 
 
 # Marks a Latin-script translation writes in another form: an em dash as the
-# horizontal bar Japanese fonts draw, 【】 as square brackets and é as e.
-_LATIN_MARKS = (("—", "―"), ("】", "]"), ("【", "["), ("é", "e"))
+# horizontal bar Japanese fonts draw and 【】 as square brackets.
+_LATIN_MARKS = (("—", "―"), ("】", "]"), ("【", "["))
+# And an English one also writes é as e, which other Latin-script languages,
+# such as French, spell with it.
+_ENGLISH_LATIN_MARKS = (*_LATIN_MARKS, ("é", "e"))
 
 
 def _without_stops(text):
@@ -227,10 +230,13 @@ def _without_stops(text):
 
 def _latin_marks(text, language):
     """*text* with the small っ and ッ that mark a stop left out, 。 a period
-    and _LATIN_MARKS in their Latin forms."""
+    and _LATIN_MARKS, or for English _ENGLISH_LATIN_MARKS, in their Latin
+    forms."""
     text = _without_stops(text)
     text = full_stops(text, language, PERIOD)
-    for mark, latin_form in _LATIN_MARKS:
+    for mark, latin_form in (
+        _ENGLISH_LATIN_MARKS if english(language) else _LATIN_MARKS
+    ):
         text = text.replace(mark, latin_form)
     return text
 
@@ -322,11 +328,11 @@ def clean_reply(text, language):
     label and code fences, and a character repeated more than 20 times cut
     to 20. For a Latin-script target its marks also take Latin forms: the
     small っ and ッ that mark a stop are left out, 。 is a period, an em dash
-    the horizontal bar Japanese fonts draw, 【】 square brackets and é plain
-    e; apostrophes and tildes are made font-safe and a long vowel mark run
-    after a kana repeats it. 「 and 」 stay, since quotes would break the JSON
-    before it is read; they become quotes per line once it is, and its
-    lines' stranded small kana are repaired once it is read
+    the horizontal bar Japanese fonts draw, 【】 square brackets and, for
+    English, é plain e; apostrophes and tildes are made font-safe and a long
+    vowel mark run after a kana repeats it. 「 and 」 stay, since quotes
+    would break the JSON before it is read; they become quotes per line once
+    it is, and its lines' stranded small kana are repaired once it is read
     (stranded_kana)."""
     latin = not full_width(language)
     text = _without_label(text, language)
