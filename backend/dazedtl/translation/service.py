@@ -1378,24 +1378,12 @@ Additional project instructions:
             (n for n, row in enumerate(plan["requests"]) if row["id"] == batch_id),
             None,
         )
-        if index is None:
+        # The earlier requests whose lines organize kept for this run.
+        reused = (plan.get("reused") or {"requests": {}})["requests"]
+        if index is None and all(entry["id"] != batch_id for entry in reused.values()):
             raise ValueError("Unknown request ID.")
-        # An assistant imports one receipt per request, so each checks only its own.
-        self.validate_current(project_id, plan, index=index)
-        request = plan["requests"][index]
-        if job["states"][batch_id]["state"] in {"sending", "queued", "uncertain"}:
-            raise ValueError(
-                "Reconcile in-flight work before importing a replacement result."
-            )
-        self.jobs.store.overlapping(
-            project_id, {request["fingerprint"]}, exclude=run_id
-        )
         receipt = read_json(project_path(plan["source"], input_path))
-        if (
-            not isinstance(receipt, dict)
-            or receipt.get("request_sha256") != request["fingerprint"]
-            or "translations" not in receipt
-        ):
+        if not isinstance(receipt, dict) or "translations" not in receipt:
             raise ValueError(
                 "The receipt must bind translations to this request_sha256."
             )
@@ -1406,6 +1394,32 @@ Additional project instructions:
             if plan["configuration"]["mode"] == "agent"
             else "reviewed_import",
         }
+        fingerprint = receipt.get("request_sha256")
+        if (
+            isinstance(fingerprint, str)
+            and reused.get(fingerprint, {}).get("id") == batch_id
+            and (index is None or plan["requests"][index]["fingerprint"] != fingerprint)
+        ):
+            self.correct_reused(project_id, job, plan, receipt, provenance)
+            return self.jobs.store.view(job)
+        if index is None:
+            raise ValueError(
+                "The receipt must bind translations to this request_sha256."
+            )
+        # An assistant imports one receipt per request, so each checks only its own.
+        self.validate_current(project_id, plan, index=index)
+        request = plan["requests"][index]
+        if job["states"][batch_id]["state"] in {"sending", "queued", "uncertain"}:
+            raise ValueError(
+                "Reconcile in-flight work before importing a replacement result."
+            )
+        self.jobs.store.overlapping(
+            project_id, {request["fingerprint"]}, exclude=run_id
+        )
+        if fingerprint != request["fingerprint"]:
+            raise ValueError(
+                "The receipt must bind translations to this request_sha256."
+            )
         if "replaces_sha256" in receipt:
             results.correct(
                 request,
@@ -1423,12 +1437,66 @@ Additional project instructions:
                 message="Translations saved. Injection and runtime QA remain separate.",
             )
         self.jobs.store.save(job)
+        self.receipt_saved(project_id, plan, finished)
+        return self.jobs.store.view(job)
+
+    def receipt_saved(self, project_id, plan, finished):
+        """Brings Progress up to a saved receipt, and checkpoints the game
+        once the run has every request's."""
         self.refresh_progress(project_id, plan)
         if finished:
             progress_report.checkpoint(
                 self.engine, self.workspace, project_id, plan["source"]
             )
-        return self.jobs.store.view(job)
+
+    def correct_reused(self, project_id, job, plan, receipt, provenance):
+        """Saves a correction to the receipt of an earlier request whose lines
+        organize kept for this run (unit_results), as a correction went
+        through the newest run while it translated every line again. It is
+        checked against that request as the run that sent it compiled it,
+        and only the lines this run reads from it may change, each within
+        the constraints organize kept it by; the earlier run's own record
+        and plan stay as they are, and the receipt is archived as any
+        correction archives it."""
+        reused = plan["reused"]
+        fingerprint = receipt["request_sha256"]
+        if "replaces_sha256" not in receipt:
+            raise ValueError(
+                "That request_sha256 names an earlier request whose lines this run kept. "
+                "To correct them, carry its current result_sha256 as replaces_sha256; "
+                "a translation of this run's own request binds its request_sha256."
+            )
+        # The run's lines are checked; its requests' guidance may have
+        # changed since the earlier request was sent, as organize allows.
+        self.validate_current(project_id, plan, compiled=False)
+        self.jobs.store.overlapping(project_id, {fingerprint}, exclude=job["id"])
+        held = unit_results.held(self.jobs.store, project_id, {fingerprint})
+        if fingerprint not in held:
+            raise ValueError(
+                "The run that sent that request can't be read, so a correction can't be checked against it. Recover that run first."
+            )
+        kept = {
+            identity
+            for identity, unit in reused["units"].items()
+            if unit["request"] == fingerprint
+        }
+        # The run's units file is current (validate_current), so its
+        # constraints are those organize kept the lines by.
+        units = organize.laid_out(plan["source"], plan["input_path"])
+        Results(plan["source"]).correct(
+            held[fingerprint],
+            receipt["translations"],
+            receipt["replaces_sha256"],
+            {**provenance, "correction": True},
+            lines={
+                unit["id"]: unit["constraints"] for unit in units if unit["id"] in kept
+            },
+        )
+        self.receipt_saved(
+            project_id,
+            plan,
+            all(row["state"] == "accepted" for row in job["states"].values()),
+        )
 
     def declined_record(self, project_id, run_id):
         """An Assistant only run's index, without reading its plan."""

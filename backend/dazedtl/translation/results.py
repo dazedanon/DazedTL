@@ -426,6 +426,37 @@ def exported_translations(source):
     return [row for row in rows if "translation" in row]
 
 
+def _within(request, previous, translations, lines):
+    """A correction's translations of a receipt other runs read too
+    (Results.correct with lines): each line outside lines as previous holds
+    it, each inside checked as translated() checks a result, under its
+    constraints in lines."""
+    value = result_value(request, translations)
+    outside = next(
+        (
+            identity
+            for identity, text in value.items()
+            if identity not in lines and text != previous["translations"].get(identity)
+        ),
+        None,
+    )
+    if outside is not None:
+        raise ValueError(
+            f"{outside} is not a line this run reads from that request. "
+            "Keep its current translation; correct it through the run that translates it."
+        )
+    inside = [identity for identity in value if identity in lines]
+    checked = translated(
+        {
+            **request,
+            "sources": {identity: request["sources"][identity] for identity in inside},
+            "constraints": {identity: lines[identity] for identity in inside},
+        },
+        {identity: value[identity] for identity in inside},
+    )
+    return {identity: checked.get(identity, text) for identity, text in value.items()}
+
+
 class Results:
     def __init__(self, source):
         self.source = Path(source)
@@ -545,19 +576,29 @@ class Results:
         write_json(path, value)
         return value
 
-    def correct(self, request, translations, replaces_sha256, provenance):
+    def correct(self, request, translations, replaces_sha256, provenance, lines=None):
+        """Saves translations in place of the request's receipt whose result
+        hash is replaces_sha256. With lines, the constraints of the lines a
+        run reads from this receipt by unit ID (unit_results), only those
+        may change, checked against these constraints, since other runs read
+        the rest as they are."""
         previous = self._receipt(request)
         if previous is None or replaces_sha256 != previous["result_sha256"]:
             raise ValueError(
                 "The accepted translation changed. Review its current result hash before applying a correction."
             )
-        output = translated(request, translations)
+        if lines is None:
+            output = translated(request, translations)
+        else:
+            output = _within(request, previous, translations, lines)
         if output == previous["translations"]:
             return previous
         return self._replace(request, previous, output, provenance)
 
     def _replace(self, request, previous, output, provenance):
-        """Saves output in place of the previous receipt, which it archives."""
+        """Saves output in place of the previous receipt, which it archives.
+        A line it leaves as it was keeps its review, which names the
+        translation it covers."""
         history = (
             WORK
             + "/work/accepted-history/"
@@ -583,6 +624,13 @@ class Results:
             "refusal_rules": RULES_VERSION,
             "provenance": provenance,
         }
+        reviewed = {
+            identity: review
+            for identity, review in previous.get("reviewed", {}).items()
+            if output.get(identity) == previous["translations"].get(identity)
+        }
+        if reviewed:
+            value["reviewed"] = reviewed
         write_project_json(self.source, self.relative(request), value)
         return value
 
