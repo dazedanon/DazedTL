@@ -89,6 +89,9 @@ _QUALIFIER = re.compile(r"\s*\([^()]*\)\s*$")
 _ALIASES = re.compile(r"\s*[,、/／]\s*")
 # What separates a glossary English's alternatives, as in "Lulu / Lulu-chan".
 _ALTERNATIVES = re.compile(r"\s*[/;]\s*")
+# The gender a character's line gives right after its names, as in
+# "ミナ (Mina) - Female - The hero's sister."
+_GENDER = re.compile(r"\s*-\s*(female|male)\b", re.IGNORECASE)
 # The qualifier, alternatives and name and title parts of a rendering written
 # without spaces, in full-width forms too, as in 爱丽丝（女仆） or 雪莉，盗贼首领.
 _UNSPACED_QUALIFIER = re.compile(r"\s*[(（][^()（）]*[)）]\s*$")
@@ -174,6 +177,33 @@ def glossary_lines(
             if pairs:
                 lines.append((tuple(pairs), whole, section, is_base))
     return lines
+
+
+def genders(text: str | None) -> dict[str, str]:
+    """The gender, Female or Male, the game's glossary gives each character
+    right after its names, by each English name its line lists, as
+    "ミナ (Mina / Mina-chan) - Female - …" gives both names. Base rows name
+    none of the game's characters, and a name lines give different genders
+    has none."""
+    found: dict[str, tuple[str, set[str]]] = {}
+    for pairs, line, _section, is_base in glossary_lines(text):
+        last = f"({pairs[-1][1]})"
+        end = line.rfind(last)
+        gender = None if is_base or end < 0 else _GENDER.match(line, end + len(last))
+        if gender is None:
+            continue
+        for _source, english in pairs:
+            for name in _ALTERNATIVES.split(_undecorated(english)):
+                name = _QUALIFIER.sub("", name).strip()
+                if len(name) >= TERM_MIN:
+                    found.setdefault(name.casefold(), (name, set()))[1].add(
+                        gender.group(1).capitalize()
+                    )
+    return {
+        name: next(iter(given))
+        for name, given in found.values()
+        if len(given) == 1
+    }
 
 
 def glossary_rows(text: str) -> list[tuple[str, str, str, bool]]:

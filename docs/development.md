@@ -204,9 +204,10 @@ Readings of continuity and of whom a line addresses were right only 4 and 6 time
 
 ### Comparing a change
 
-A change that shapes translated text, such as a prompt rule, a request setting or context, or a default model, lands only with two results from the comparison runner against the baseline, through the request builder of the method it changes: no regression on the held-out half of the regression set, and a gain beyond the noise floor on targeted items where the change fires, which the change brings itself.
-Every paid run needs the user's OK with a cap.
-This is the user's decision of 2026-10-27, "we want to make sure any improvements we make are measurable and verifiable otherwise we will be chasing shadows".
+No change waits on a paid comparison to land: a change that shapes translated text lands on its own checks, such as each request carrying what the change adds and replies parsing as before.
+The comparison is too small to see small changes: with about 140 held-out corrections and two baseline runs it detects only differences of roughly 10 points, so a change that fires on a few dozen items cannot show a gain.
+Run it only when the user chooses to measure a decision that touches every request, such as the default model, the effort level or a prompt file, and only with the user's OK and a cap for each paid run.
+This is the user's decision of 2026-10-28, which narrowed the measuring rule of 2026-10-27 after a review found it could not measure the changes it held.
 
 [quality_compare.py](../backend/dazedtl/engine/scripts/quality_compare.py) builds the set, estimates, translates and compares; keep its files outside this checkout, since they hold game text:
 

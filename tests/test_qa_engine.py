@@ -24,6 +24,7 @@ preflight = engine_module("util/rpgmaker_qa_preflight.py")
 lint = engine_module("util/rpgmaker_qa_lint.py")
 checks = engine_module("util/rpgmaker_qa_checks.py")
 headers = engine_module("util/rpgmaker_header_check.py")
+pronouns = engine_module("util/qa/pronouns.py")
 
 WORDS = (
     "りんご",
@@ -179,6 +180,67 @@ class QAEngineTests(unittest.TestCase):
         self.assertTrue(verified["valid"], verified["errors"])
         (record,) = built["records"]
         self.assertIn("changed-rule", record["mechanical"]["flags"])
+
+    def test_censor_masks_keep_their_presence(self):
+        # Len measured 7 of 11 masked lines of a finished game wrong: masks
+        # dropped, as レイ〇 spelled out, or added where the source had none.
+        for source, live, mismatch in (
+            ("ま〇こ", "pu〇sy", False),
+            ("ま〇こ", "pussy", True),
+            ("レイ〇されちゃう", "I'll get r〇ped!", False),
+            ("レイ〇されちゃう", "I'll get raped!", True),
+            ("まんこ", "pu〇sy", True),
+            ("●●●が来た", "●●● is here.", False),
+            ("●●●が来た", "Someone is here.", True),
+            # A zero among kanji numerals is no mask, nor is a bullet.
+            ("一〇〇ゴールド", "100 gold", False),
+            ("●攻撃力アップ", "ATK Up", False),
+        ):
+            flags = manifest.mechanical.evidence(source, live, None)["flags"]
+            self.assertEqual("censor-mask-mismatch" in flags, mismatch, (source, live))
+
+    def test_pronouns_follow_the_glossary_gender_until_the_next_name(self):
+        characters = pronouns.cast(
+            "# Characters\n"
+            "ミナ (Mina / Mina-chan) - Female - The hero's sister.\n"
+            "ケン (Ken) - Male\n"
+            "# Places\n"
+            "森 (Forest) - Where Mina lives\n",
+            "English",
+        )
+        self.assertEqual(
+            characters.genders, {"Mina": "Female", "Mina-chan": "Female", "Ken": "Male"}
+        )
+        found = pronouns.slips(
+            [
+                # Another name closes Mina's window, so "He" is Ken's.
+                "Mina looked at Ken. He nodded.",
+                "Mina drew his sword.",
+                # A speaker label names no one in its text.
+                "Ken: She's late again.\n\\n<Mina>He promised...",
+                # A paragraph closes the window, and so do 180 characters.
+                "Ken waved.\n\nShe smiled.",
+                "Ken " + "waited " * 30 + "for her.",
+                # Each character and pronoun once per document.
+                "Mina lost his way.",
+                "Mina-chan, he said.",
+            ],
+            characters,
+        )
+        self.assertEqual(
+            found,
+            [
+                pronouns.Slip(1, "Mina", "Female", "his"),
+                pronouns.Slip(6, "Mina-chan", "Female", "he"),
+            ],
+        )
+        self.assertEqual(
+            pronouns.note(found[0]),
+            'The glossary gives Mina as Female, and "his" follows the name '
+            "before any other name does.",
+        )
+        # Only English pronouns are read.
+        self.assertIsNone(pronouns.cast("ミナ (Mina) - Female", "French").pattern)
 
     def test_numbers_beside_stat_letters_count(self):
         # Skill descriptions from a release, where English moves the stat away
