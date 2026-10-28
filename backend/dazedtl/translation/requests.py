@@ -359,6 +359,19 @@ def provider_view(request, configuration):
     }
 
 
+def delivered_params(params, lines, context):
+    """A Live payload, *params*, of a later part of a split scene with the
+    translation already delivered for the earlier lines it quotes, *lines*
+    (organize DELIVERED), in Guided's block right after those lines and
+    before the request's own text, as Guided's Live chunks send it
+    (util/prompt_pair delivered_block)."""
+    from util.prompt_pair import delivered_block
+
+    *before, own = params["messages"]
+    block = delivered_block(lines, source_language(context), target_language(context))
+    return {**params, "messages": [*before, {"role": "user", "content": block}, own]}
+
+
 def from_provider(request, configuration, result):
     """A provider's reply with its line keys mapped back to unit IDs."""
     keys = provider_keys(request, configuration)

@@ -17,7 +17,13 @@ from dazedtl.projects.store import Projects
 from dazedtl.settings.execution import configuration, connection_summary, worker_secret
 from dazedtl.settings.store import Settings
 from dazedtl.storage import WorkspaceLock, write_json
-from dazedtl.translation import delivery, name_codes, progress_report, publication
+from dazedtl.translation import (
+    delivery,
+    name_codes,
+    organize,
+    progress_report,
+    publication,
+)
 from dazedtl.translation.compilation import compile_requests
 from dazedtl.translation.files import digest, evidence, read_json
 from dazedtl.translation.game_update import ABSENT
@@ -661,6 +667,7 @@ class WorkflowTests(unittest.TestCase):
                 del plan["compile"]["reuse"]
             if not neighbours:
                 del plan["compile"]["neighbours"]
+                del plan["compile"]["delivered"]
             with patch("dazedtl.translation.run_compiler.require_coverage"):
                 result = execute(self.engine, self.profile, job, plan, lambda: False)
             job.update(status="complete", result=result)
@@ -670,6 +677,11 @@ class WorkflowTests(unittest.TestCase):
 
         first, plan = organized()
         self.assertEqual(plan["askers"], {"c/1": "b/1"})
+        # The run names no split scene's earlier lines; an organize frozen
+        # before the policy names none either (organize.DELIVERED).
+        self.assertEqual(
+            (plan["delivered"], plan["preceding"]), (organize.DELIVERED, {})
+        )
         quoted = first["quote"]
         self.assertEqual((quoted["requests"], quoted["units"]), (2, 3))
         # The run keeps a/2 in its source text, as after a failed check.
@@ -685,6 +697,7 @@ class WorkflowTests(unittest.TestCase):
         # its own; now its request quotes the translated line before it.
         _older, plan = organized(neighbours=False)
         self.assertNotIn("stretches", plan["requests"][0]["context"])
+        self.assertNotIn("delivered", plan)
         second, plan = organized()
         self.assertEqual([list(row["sources"]) for row in plan["requests"]], [["a/2"]])
         self.assertEqual(

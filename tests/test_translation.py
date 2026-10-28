@@ -21,6 +21,7 @@ from dazedtl.translation.jobs import Jobs, RunStore, scratch
 from dazedtl.translation.project import ProjectWorkspace, scope
 from dazedtl.translation.requests import (
     LINE_KEYS,
+    delivered_params,
     logical_request,
     plan_input,
     provider_view,
@@ -844,6 +845,154 @@ class TranslationTests(unittest.TestCase):
                         [item["request"] for item in current["batches"][0]["items"]],
                         ["scene"],
                     )
+
+    def test_a_live_split_scenes_later_part_carries_the_english_delivered_before(
+        self,
+    ):
+        # A later part of a split Assistant-led scene saw only its earlier
+        # source lines, so its narration tense and forms of address broke at
+        # the split; Guided's Live chunks carry the previous chunk's English.
+        from util.prompt_pair import delivered_block
+        from util.translation import buildOpenAIRequest
+
+        sources = {
+            "u1": "今日は森へ行きましたね。",
+            "u2": "雨が降りそうでしたよ。",
+            "u3": "それでも歩き続けました。",
+            "u4": "やがて村が見えました。",
+            "v1": "店はもう閉まっています。",
+        }
+        english = {
+            "u1": "Today we went to the forest.",
+            "u2": "It looked like it would rain.",
+            "u3": "Even so, we kept walking.",
+            "u4": "Before long, the village came into view.",
+            "v1": "The shop is already closed.",
+        }
+        rows = [
+            logical_request(
+                {"id": ids[0], "sources": {key: sources[key] for key in ids}},
+                {"user": ""},
+            )
+            for ids in (("u1", "u2"), ("u3",), ("u4",), ("v1",))
+        ]
+        preceding = {"u3": ["u1", "u2"], "u4": ["u2", "u3"]}
+        for row in rows:
+            row["params"] = {
+                "model": "fixture",
+                "messages": [
+                    {"role": "user", "content": "source context"},
+                    {"role": "user", "content": json.dumps(row["sources"])},
+                ],
+            }
+
+        class Provider:
+            def __init__(self, bad=()):
+                self.sent, self.bad = {}, bad
+
+            def live(self, params):
+                asked = json.loads(params["messages"][-1]["content"])
+                self.sent[next(iter(asked))] = deepcopy(params)
+                return {
+                    "text": json.dumps(
+                        {key: "." if key in self.bad else english[key] for key in asked}
+                    )
+                }
+
+        def run(name, policy=organize.DELIVERED, bad=(), earlier=()):
+            game = self.game / name
+            game.mkdir()
+            register(self.root / "profile", name, game)
+            for row in rows:
+                if row["id"] in earlier:
+                    Results(game).accept(
+                        row, {key: english[key] for key in row["sources"]}, {}
+                    )
+            plan = {
+                "version": 1,
+                "kind": "translation",
+                "source": str(game),
+                "complete": True,
+                "requests": rows,
+                "configuration": {"mode": "live", "model": "fixture"},
+                "batch_limits": [50, 100000],
+            }
+            if policy:
+                plan.update(delivered=policy, preceding=preceding)
+            job = self.store.create(name, plan, {"cost": 1})
+            self.store.authorize(job)
+            provider = Provider(bad)
+            Runner(self.store, job["id"], provider, lambda: None).step()
+            return provider.sent, self.store.load(job["id"])[0]
+
+        def block(*keys):
+            return {
+                "role": "user",
+                "content": delivered_block([english[key] for key in keys]),
+            }
+
+        sent, job = run("delivered")
+        self.assertEqual(job["status"], "complete")
+        # Each later part is sent after the part before it, with Guided's
+        # block of that part's English for the lines it quotes, just before
+        # its own text; other requests are sent as compiled.
+        self.assertEqual(list(sent), ["u1", "u3", "u4", "v1"])
+        for row in rows:
+            identity = row["id"]
+            expected = row["params"]["messages"]
+            if identity in preceding:
+                expected = [expected[0], block(*preceding[identity]), expected[1]]
+            self.assertEqual(sent[identity]["messages"], expected)
+        self.assertEqual(
+            job["delivered"],
+            {
+                "u3": [english["u1"], english["u2"]],
+                "u4": [english["u2"], english["u3"]],
+            },
+        )
+        self.assertIn(
+            "Preceding English Translation (already delivered):",
+            block("u1")["content"],
+        )
+        # It is the block Guided's Live builder places after the source.
+        shared = {
+            "system": "Translate.",
+            "user": "u3",
+            "history": "u1\nu2",
+            "penalty": 0,
+            "formatType": "json",
+            "model": "fixture",
+            "request_instructions": "Reply in JSON.",
+        }
+        self.assertEqual(
+            delivered_params(
+                buildOpenAIRequest(**shared), [english["u1"], english["u2"]], {}
+            ),
+            buildOpenAIRequest(
+                **shared, delivered_context=[english["u1"], english["u2"]]
+            ),
+        )
+        # A run that stopped after the first part resumes with its saved
+        # English and never sends that part again.
+        sent, job = run("resumed", earlier=("u1",))
+        self.assertEqual(list(sent), ["u3", "u4", "v1"])
+        self.assertEqual(sent["u3"]["messages"][1], block("u1", "u2"))
+        # A quoted line without a translation, kept in its source text or
+        # in a part that failed, passes no English on, as in Guided.
+        sent, job = run("kept", bad=("u2",))
+        self.assertEqual(job["states"]["u1"]["state"], "accepted")
+        self.assertEqual(sent["u3"], rows[1]["params"])
+        self.assertEqual(sent["u4"], rows[2]["params"])
+        self.assertNotIn("delivered", job)
+        sent, job = run("failed", bad=("u3",))
+        self.assertEqual(job["states"]["u3"]["state"], "failed")
+        self.assertEqual(sent["u3"]["messages"][1], block("u1", "u2"))
+        self.assertEqual(sent["u4"], rows[2]["params"])
+        self.assertEqual(list(job["delivered"]), ["u3"])
+        # A run frozen without the policy sends its parts as compiled.
+        sent, job = run("older", policy=None)
+        for row in rows:
+            self.assertEqual(sent[row["id"]], row["params"])
 
     def test_worker_owner_loss_stops_before_another_paid_request(self):
         alive = [True]
@@ -1938,6 +2087,12 @@ class TranslationTests(unittest.TestCase):
         self.assertEqual(
             batches["c3"]["source_context"], "ゴウ: c0。\nゴウ: c1。\nゴウ: c2。"
         )
+        # Organize names those lines, whose English a Live run sends with
+        # the part (organize.DELIVERED).
+        self.assertEqual(
+            organize.layout(units, "work/source-units.json", False, 4),
+            (value, {"c3": ["c0", "c1", "c2"]}),
+        )
         self.assertEqual(batches["a1"]["kinds"]["a1"], "dialogue")
         self.assertEqual(batches["a1"]["kinds"]["b1"], "unknown")
         self.assertEqual(
@@ -2029,6 +2184,10 @@ class TranslationTests(unittest.TestCase):
         self.assertNotIn("stretches", batches["c7"])
         self.assertEqual(
             batches["c7"]["source_context"], "\n".join(f"c{n}。" for n in range(1, 7))
+        )
+        self.assertEqual(
+            organize.layout(units, "work/u.json", True, 6, translated=translated)[1],
+            {"c7": [f"c{n}" for n in range(1, 7)]},
         )
         # Nothing translated, the plan is the one organize made before.
         self.assertEqual(

@@ -129,6 +129,13 @@ def delivered_note(source=None, target=None) -> str:
     )
 
 
+def delivered_block(lines, source=None, target=None) -> str:
+    """The block a later Live request of a split scene sends after its
+    preceding source lines, holding the translation already delivered for
+    them, one line after another; both methods send it."""
+    return delivered_note(source, target) + "\n```\n" + "\n".join(lines) + "\n```"
+
+
 def request_headings() -> dict:
     """The headings the app reads a saved request's parts by: its matched
     glossary and SFX reference, its preceding source lines in any source

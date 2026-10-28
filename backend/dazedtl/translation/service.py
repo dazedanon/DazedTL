@@ -53,7 +53,14 @@ from .operations import (
 )
 from .playtest import game_fixes, layout_check
 from .project import ADDED, WORK, ProjectWorkspace, options, scope
-from .requests import LINE_KEYS, counted, price, repriceable, sent_text
+from .requests import (
+    LINE_KEYS,
+    counted,
+    delivered_params,
+    price,
+    repriceable,
+    sent_text,
+)
 from .result_checks import CHECK_STEP
 from .results import (
     QUOTES,
@@ -955,6 +962,10 @@ Additional project instructions:
                 # lines beside the others; an organize frozen without the
                 # policy packs the others as if they were the whole scene.
                 neighbours=organize.NEIGHBOURS,
+                # A Live run's later part of a split scene carries the
+                # translation delivered for the lines it quotes; an organize
+                # frozen without the policy sends the source lines alone.
+                delivered=organize.DELIVERED,
             )
         job = self.jobs.store.create(
             project_id,
@@ -1110,7 +1121,7 @@ Additional project instructions:
         )
 
     def request(self, project_id, run_id, index):
-        _job, plan = self.jobs.store.load(run_id, project_id)
+        job, plan = self.jobs.store.load(run_id, project_id)
         if (
             plan["kind"] != "translation"
             or type(index) is not int
@@ -1118,6 +1129,16 @@ Additional project instructions:
         ):
             raise ValueError("Choose a request in this run.")
         request = plan["requests"][index]
+        delivered = job.get("delivered", {}).get(request["id"])
+        if delivered:
+            # A later part of a split scene was sent with the translation
+            # delivered for the lines it quotes (runner.Runner.delivered).
+            request = {
+                **request,
+                "params": delivered_params(
+                    request["params"], delivered, request["context"]
+                ),
+            }
         result = Results(plan["source"]).get(request)
         return {
             "run_id": run_id,

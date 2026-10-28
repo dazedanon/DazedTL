@@ -94,6 +94,7 @@ It packs whole scenes of one group and field into requests: in the API modes of 
 In the API modes only scenes of at most 10 lines share a request; a longer scene gets its own, so another scene's speakers and subjects can't bleed into it.
 A request holding several scenes names which lines belong to each, so the model keeps their speakers and context apart.
 A larger scene splits into even parts, each carrying the scene's earlier lines as source context.
+A Live run sends each later part after the part before it, with the translation that part got for those earlier lines, as Guided's Live chunks carry the English delivered before them; a Batch builds every request before any result exists, so its parts carry the source lines alone.
 A unit whose source holds no source letters, such as 「……」 or ！？, joins no request and is never priced: DazedTL writes it itself as Guided writes text it never sends, every mark in its English form ([results](../backend/dazedtl/translation/results.py) `unsent_line`), and marks its export row converted.
 A unit stays in a request when that form would change one of its protected tokens.
 Requests hold a number of units, each repeating the shared guidance, so organize refuses units that split most RPG Maker messages of three or more lines into a unit per line.

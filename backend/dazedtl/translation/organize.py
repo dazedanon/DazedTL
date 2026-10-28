@@ -37,6 +37,14 @@ UNSENT = "unsent-lines-v1"
 # scene's translated lines too; an organize frozen without it packs the
 # untranslated lines as if they were the whole scene.
 NEIGHBOURS = "neighbours-v1"
+# A Live run compiled by an organize under this policy sends each later part
+# of a split scene after the part before it with the translation that part
+# got for the earlier lines the later one quotes (layout's preceding;
+# runner.Runner.delivered), as Guided's Live chunks carry the previous
+# chunk's English; a Batch builds every request before any result exists,
+# and a run frozen without the policy sends its parts with their source
+# lines alone.
+DELIVERED = "delivered-v1"
 KINDS = {"dialogue", "narration", "ui", "unknown"}
 FIELDS = {
     "id",
@@ -338,10 +346,26 @@ def plan(
     shared=None,
     translated=None,
 ):
-    """A version-2 source plan: whole scenes of one group and field share a
-    request of at most lines units and characters of source, if each has at
-    most shared lines; larger scenes split with their earlier lines as
-    context. A request holding several scenes names which lines belong to
+    """The source plan layout gives."""
+    return layout(units, input_path, complete, lines, characters, shared, translated)[0]
+
+
+def layout(
+    units,
+    input_path,
+    complete,
+    lines,
+    characters=MAX_CHARACTERS,
+    shared=None,
+    translated=None,
+):
+    """A version-2 source plan, with the unit IDs of the earlier lines each
+    later part of a split scene quotes as its context, in order, by the
+    part's batch ID (DELIVERED).
+
+    Whole scenes of one group and field share a request of at most lines
+    units and characters of source, if each has at most shared lines;
+    larger scenes split with their earlier lines as context. A request holding several scenes names which lines belong to
     each, so context stays apart. Each request takes its first line's ID.
 
     Under NEIGHBOURS, units are whole scenes in play order and translated
@@ -406,7 +430,7 @@ def plan(
         current = {"units": list(scene), "field": key[1], "context": []}
         current.update(key=key, size=size)
         requests.append(current)
-    batches = []
+    batches, preceding = [], {}
     for request in requests:
         members = request["units"]
         batch = {
@@ -417,6 +441,7 @@ def plan(
         }
         if request["context"]:
             batch["source_context"] = _context(request["context"])
+            preceding[batch["id"]] = [unit["id"] for unit in request["context"]]
         scenes = {}
         for unit in members:
             scenes.setdefault(unit["scene"], []).append(unit["id"])
@@ -438,7 +463,7 @@ def plan(
         "complete": complete,
         "inputs": [input_path],
         "batches": batches,
-    }
+    }, preceding
 
 
 def plan_path(value):

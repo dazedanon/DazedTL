@@ -1065,6 +1065,57 @@ const reorganized = [
     },
   ],
   [
+    "Inspect shows each later part of the long scene sent with the English the part before it got for the lines it quotes",
+    async ({ page, state }) => {
+      const { id } = await organizedRun(page, state);
+      let previous = null;
+      let parts = 0;
+      for (let index = 0, total = 1; index < total; index++) {
+        const reply = await helper(
+          page,
+          state,
+          "request",
+          "--run",
+          id,
+          "--index",
+          `${index}`,
+        );
+        total = reply.total;
+        const messages = reply.request.params.messages;
+        const block = messages.findIndex((message) =>
+          `${message.content}`.startsWith(
+            "Preceding English Translation (already delivered):",
+          ),
+        );
+        if (block >= 0) {
+          // Guided's block, just before the request's own text, holds the
+          // last lines the part before got.
+          const lines = messages[block].content
+            .split("\n```\n")[1]
+            .replace(/\n```$/, "")
+            .split("\n");
+          const before = Object.keys(previous.request.sources)
+            .slice(-lines.length)
+            .map((unit) => previous.result.translations[unit]);
+          if (
+            block !== messages.length - 2 ||
+            JSON.stringify(lines) !== JSON.stringify(before)
+          )
+            throw new Error(
+              `Request ${index} was sent with ${JSON.stringify(lines)}, not the English the part before got: ${JSON.stringify(before)}.`,
+            );
+          parts += 1;
+        }
+        previous = reply;
+      }
+      if (!parts)
+        throw new Error("No request was sent with the English before it.");
+      console.log(
+        `\n  ${parts} later part${parts === 1 ? "" : "s"} sent with the English before`,
+      );
+    },
+  ],
+  [
     "Add a glossary entry and organize again; the estimate quotes only the lines the run kept in Japanese",
     async ({ page, state }) => {
       // The game's own entries come before the base glossary's.
@@ -1879,8 +1930,8 @@ export const scenarios = {
   },
   "assistant-reorganized": {
     description:
-      "An Assistant-led Live API project on the collapsed-line game: all its text organized, approved and translated, then a glossary entry added and the text organized again, whose estimate quotes only the lines the run kept in Japanese.",
-    game: "collapsed-line",
+      "An Assistant-led Live API project on the collapsed-line game with a long scene: all its text organized, approved and translated, each later part of the split scene sent with the English the part before it got, then a glossary entry added and the text organized again, whose estimate quotes only the lines the run kept in Japanese.",
+    game: "collapsed-line+long-scene",
     steps: () => reorganized,
   },
   "batch-waiting": {

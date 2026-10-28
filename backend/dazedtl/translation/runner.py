@@ -10,6 +10,7 @@ from dazedtl.storage import write_json
 
 from .batch_refusals import advance, outline, started
 from .files import digest, read_json
+from .organize import DELIVERED
 from .refusals import (
     MESSAGE as REFUSAL_MESSAGE,
 )
@@ -20,8 +21,8 @@ from .refusals import (
     ClarifyOnce,
     refused,
 )
-from .requests import from_provider, provider_sources
-from .results import Results, kept
+from .requests import delivered_params, from_provider, provider_sources
+from .results import Results, kept, left_lines
 
 # A Batch collection accepts thousands of responses in one pass, and each save
 # rewrites the whole record, so it saves at most this often and once at the
@@ -99,6 +100,12 @@ class Runner:
         self.askers = {}
         for asker, sender in self.sender.items():
             self.askers.setdefault(sender, []).append(asker)
+        # The earlier lines each later part of a split scene quotes, whose
+        # delivered translation a Live run sends with it (delivered).
+        self.preceding = (
+            self.plan["preceding"] if self.plan.get("delivered") == DELIVERED else {}
+        )
+        self.holders = None
         self.saved = time.monotonic()
         # Sums of request_usage, kept as rows change; see record_usage.
         self.request_totals = None
@@ -132,6 +139,40 @@ class Runner:
     def sources(self, identity):
         """The request's source lines under the keys its provider saw."""
         return provider_sources(self.requests[identity], self.plan["configuration"])
+
+    def delivered(self, identity):
+        """The translation this run delivered for the earlier lines a later
+        part of a split scene quotes (organize.DELIVERED), in order, or None
+        unless each has one, as Guided passes a Live chunk's English on only
+        when every line of it was translated: each line is held by a request
+        accepted before it, as the part before is, since Live sends its
+        requests in plan order, and its receipt translates it."""
+        quoted = self.preceding.get(identity)
+        if not quoted:
+            return None
+        if self.holders is None:
+            self.holders = {
+                unit: row["id"]
+                for row in self.plan["requests"]
+                for unit in row["sources"]
+            }
+        receipts, lines = {}, []
+        for unit in quoted:
+            holder = self.holders.get(unit)
+            if holder is None or self.job["states"][holder]["state"] != "accepted":
+                return None
+            if holder not in receipts:
+                request = self.requests[holder]
+                value = self.results.get(request)
+                receipts[holder] = value and (
+                    value["translations"],
+                    left_lines(request, value),
+                )
+            saved = receipts[holder]
+            if not saved or unit in saved[1] or not saved[0][unit].strip():
+                return None
+            lines.append(saved[0][unit])
+        return lines
 
     def accept(self, identity, response):
         request = self.requests[identity]
@@ -308,13 +349,21 @@ class Runner:
                 self.save("stopped", "Stopped at a saved request boundary.")
                 return
             self.validate_current()
+            params = request["params"]
+            lines = self.delivered(identity)
+            # Journaled with the send, so Inspect shows what was sent.
+            if lines:
+                self.job.setdefault("delivered", {})[identity] = lines
+                params = delivered_params(params, lines, request["context"])
+            else:
+                self.job.get("delivered", {}).pop(identity, None)
             self.job["states"][identity] = {
                 "state": "sending",
                 "message": "Awaiting provider response.",
             }
             self.save("running", "Translating " + identity)
             try:
-                response = self.provider.live(request["params"])
+                response = self.provider.live(params)
             except Exception as exc:  # noqa: BLE001
                 status = getattr(exc, "status_code", None)
                 certain = type(status) is int and 400 <= status < 500
@@ -337,7 +386,7 @@ class Runner:
                     self.save("stopped", "Stopped before the clarification retry.")
                     return
                 self.validate_current()
-                params = clarify.begin(identity, request["params"])
+                params = clarify.begin(identity, params)
                 self.job["states"][identity] = {
                     "state": "sending",
                     "message": "Clarifying the translation context once.",

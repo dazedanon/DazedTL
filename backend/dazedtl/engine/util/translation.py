@@ -55,7 +55,7 @@ from util.languages import (
 from util.prompt_pair import (
     GLOSSARY_HEADING,
     INSTRUCTIONS_HEADING,
-    delivered_note,
+    delivered_block,
     render as render_prompt,
     run_language,
     source_context_note,
@@ -4846,7 +4846,7 @@ def _delivered_context_block(delivered_context):
     items = _context_items(delivered_context)
     if not items:
         return ""
-    return delivered_note() + "\n```\n" + "\n".join(items) + "\n```"
+    return delivered_block(items)
 
 
 def _request_context_blocks(history, context_kind, request_instructions=None,

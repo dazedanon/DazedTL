@@ -1,0 +1,815 @@
+{
+  "description": "The village chief tells a story of 45 messages, which with the map's other lines make Map001 too long for one API request, so it splits into parts.",
+  "chief": [
+    {
+      "code": 101,
+      "indent": 0,
+      "parameters": [
+        "",
+        0,
+        0,
+        2,
+        ""
+      ]
+    },
+    {
+      "code": 401,
+      "indent": 0,
+      "parameters": [
+        "村長は旅の話を続けた。その1。"
+      ]
+    },
+    {
+      "code": 101,
+      "indent": 0,
+      "parameters": [
+        "",
+        0,
+        0,
+        2,
+        ""
+      ]
+    },
+    {
+      "code": 401,
+      "indent": 0,
+      "parameters": [
+        "村長は旅の話を続けた。その2。"
+      ]
+    },
+    {
+      "code": 101,
+      "indent": 0,
+      "parameters": [
+        "",
+        0,
+        0,
+        2,
+        ""
+      ]
+    },
+    {
+      "code": 401,
+      "indent": 0,
+      "parameters": [
+        "村長は旅の話を続けた。その3。"
+      ]
+    },
+    {
+      "code": 101,
+      "indent": 0,
+      "parameters": [
+        "",
+        0,
+        0,
+        2,
+        ""
+      ]
+    },
+    {
+      "code": 401,
+      "indent": 0,
+      "parameters": [
+        "村長は旅の話を続けた。その4。"
+      ]
+    },
+    {
+      "code": 101,
+      "indent": 0,
+      "parameters": [
+        "",
+        0,
+        0,
+        2,
+        ""
+      ]
+    },
+    {
+      "code": 401,
+      "indent": 0,
+      "parameters": [
+        "村長は旅の話を続けた。その5。"
+      ]
+    },
+    {
+      "code": 101,
+      "indent": 0,
+      "parameters": [
+        "",
+        0,
+        0,
+        2,
+        ""
+      ]
+    },
+    {
+      "code": 401,
+      "indent": 0,
+      "parameters": [
+        "村長は旅の話を続けた。その6。"
+      ]
+    },
+    {
+      "code": 101,
+      "indent": 0,
+      "parameters": [
+        "",
+        0,
+        0,
+        2,
+        ""
+      ]
+    },
+    {
+      "code": 401,
+      "indent": 0,
+      "parameters": [
+        "村長は旅の話を続けた。その7。"
+      ]
+    },
+    {
+      "code": 101,
+      "indent": 0,
+      "parameters": [
+        "",
+        0,
+        0,
+        2,
+        ""
+      ]
+    },
+    {
+      "code": 401,
+      "indent": 0,
+      "parameters": [
+        "村長は旅の話を続けた。その8。"
+      ]
+    },
+    {
+      "code": 101,
+      "indent": 0,
+      "parameters": [
+        "",
+        0,
+        0,
+        2,
+        ""
+      ]
+    },
+    {
+      "code": 401,
+      "indent": 0,
+      "parameters": [
+        "村長は旅の話を続けた。その9。"
+      ]
+    },
+    {
+      "code": 101,
+      "indent": 0,
+      "parameters": [
+        "",
+        0,
+        0,
+        2,
+        ""
+      ]
+    },
+    {
+      "code": 401,
+      "indent": 0,
+      "parameters": [
+        "村長は旅の話を続けた。その10。"
+      ]
+    },
+    {
+      "code": 101,
+      "indent": 0,
+      "parameters": [
+        "",
+        0,
+        0,
+        2,
+        ""
+      ]
+    },
+    {
+      "code": 401,
+      "indent": 0,
+      "parameters": [
+        "村長は旅の話を続けた。その11。"
+      ]
+    },
+    {
+      "code": 101,
+      "indent": 0,
+      "parameters": [
+        "",
+        0,
+        0,
+        2,
+        ""
+      ]
+    },
+    {
+      "code": 401,
+      "indent": 0,
+      "parameters": [
+        "村長は旅の話を続けた。その12。"
+      ]
+    },
+    {
+      "code": 101,
+      "indent": 0,
+      "parameters": [
+        "",
+        0,
+        0,
+        2,
+        ""
+      ]
+    },
+    {
+      "code": 401,
+      "indent": 0,
+      "parameters": [
+        "村長は旅の話を続けた。その13。"
+      ]
+    },
+    {
+      "code": 101,
+      "indent": 0,
+      "parameters": [
+        "",
+        0,
+        0,
+        2,
+        ""
+      ]
+    },
+    {
+      "code": 401,
+      "indent": 0,
+      "parameters": [
+        "村長は旅の話を続けた。その14。"
+      ]
+    },
+    {
+      "code": 101,
+      "indent": 0,
+      "parameters": [
+        "",
+        0,
+        0,
+        2,
+        ""
+      ]
+    },
+    {
+      "code": 401,
+      "indent": 0,
+      "parameters": [
+        "村長は旅の話を続けた。その15。"
+      ]
+    },
+    {
+      "code": 101,
+      "indent": 0,
+      "parameters": [
+        "",
+        0,
+        0,
+        2,
+        ""
+      ]
+    },
+    {
+      "code": 401,
+      "indent": 0,
+      "parameters": [
+        "村長は旅の話を続けた。その16。"
+      ]
+    },
+    {
+      "code": 101,
+      "indent": 0,
+      "parameters": [
+        "",
+        0,
+        0,
+        2,
+        ""
+      ]
+    },
+    {
+      "code": 401,
+      "indent": 0,
+      "parameters": [
+        "村長は旅の話を続けた。その17。"
+      ]
+    },
+    {
+      "code": 101,
+      "indent": 0,
+      "parameters": [
+        "",
+        0,
+        0,
+        2,
+        ""
+      ]
+    },
+    {
+      "code": 401,
+      "indent": 0,
+      "parameters": [
+        "村長は旅の話を続けた。その18。"
+      ]
+    },
+    {
+      "code": 101,
+      "indent": 0,
+      "parameters": [
+        "",
+        0,
+        0,
+        2,
+        ""
+      ]
+    },
+    {
+      "code": 401,
+      "indent": 0,
+      "parameters": [
+        "村長は旅の話を続けた。その19。"
+      ]
+    },
+    {
+      "code": 101,
+      "indent": 0,
+      "parameters": [
+        "",
+        0,
+        0,
+        2,
+        ""
+      ]
+    },
+    {
+      "code": 401,
+      "indent": 0,
+      "parameters": [
+        "村長は旅の話を続けた。その20。"
+      ]
+    },
+    {
+      "code": 101,
+      "indent": 0,
+      "parameters": [
+        "",
+        0,
+        0,
+        2,
+        ""
+      ]
+    },
+    {
+      "code": 401,
+      "indent": 0,
+      "parameters": [
+        "村長は旅の話を続けた。その21。"
+      ]
+    },
+    {
+      "code": 101,
+      "indent": 0,
+      "parameters": [
+        "",
+        0,
+        0,
+        2,
+        ""
+      ]
+    },
+    {
+      "code": 401,
+      "indent": 0,
+      "parameters": [
+        "村長は旅の話を続けた。その22。"
+      ]
+    },
+    {
+      "code": 101,
+      "indent": 0,
+      "parameters": [
+        "",
+        0,
+        0,
+        2,
+        ""
+      ]
+    },
+    {
+      "code": 401,
+      "indent": 0,
+      "parameters": [
+        "村長は旅の話を続けた。その23。"
+      ]
+    },
+    {
+      "code": 101,
+      "indent": 0,
+      "parameters": [
+        "",
+        0,
+        0,
+        2,
+        ""
+      ]
+    },
+    {
+      "code": 401,
+      "indent": 0,
+      "parameters": [
+        "村長は旅の話を続けた。その24。"
+      ]
+    },
+    {
+      "code": 101,
+      "indent": 0,
+      "parameters": [
+        "",
+        0,
+        0,
+        2,
+        ""
+      ]
+    },
+    {
+      "code": 401,
+      "indent": 0,
+      "parameters": [
+        "村長は旅の話を続けた。その25。"
+      ]
+    },
+    {
+      "code": 101,
+      "indent": 0,
+      "parameters": [
+        "",
+        0,
+        0,
+        2,
+        ""
+      ]
+    },
+    {
+      "code": 401,
+      "indent": 0,
+      "parameters": [
+        "村長は旅の話を続けた。その26。"
+      ]
+    },
+    {
+      "code": 101,
+      "indent": 0,
+      "parameters": [
+        "",
+        0,
+        0,
+        2,
+        ""
+      ]
+    },
+    {
+      "code": 401,
+      "indent": 0,
+      "parameters": [
+        "村長は旅の話を続けた。その27。"
+      ]
+    },
+    {
+      "code": 101,
+      "indent": 0,
+      "parameters": [
+        "",
+        0,
+        0,
+        2,
+        ""
+      ]
+    },
+    {
+      "code": 401,
+      "indent": 0,
+      "parameters": [
+        "村長は旅の話を続けた。その28。"
+      ]
+    },
+    {
+      "code": 101,
+      "indent": 0,
+      "parameters": [
+        "",
+        0,
+        0,
+        2,
+        ""
+      ]
+    },
+    {
+      "code": 401,
+      "indent": 0,
+      "parameters": [
+        "村長は旅の話を続けた。その29。"
+      ]
+    },
+    {
+      "code": 101,
+      "indent": 0,
+      "parameters": [
+        "",
+        0,
+        0,
+        2,
+        ""
+      ]
+    },
+    {
+      "code": 401,
+      "indent": 0,
+      "parameters": [
+        "村長は旅の話を続けた。その30。"
+      ]
+    },
+    {
+      "code": 101,
+      "indent": 0,
+      "parameters": [
+        "",
+        0,
+        0,
+        2,
+        ""
+      ]
+    },
+    {
+      "code": 401,
+      "indent": 0,
+      "parameters": [
+        "村長は旅の話を続けた。その31。"
+      ]
+    },
+    {
+      "code": 101,
+      "indent": 0,
+      "parameters": [
+        "",
+        0,
+        0,
+        2,
+        ""
+      ]
+    },
+    {
+      "code": 401,
+      "indent": 0,
+      "parameters": [
+        "村長は旅の話を続けた。その32。"
+      ]
+    },
+    {
+      "code": 101,
+      "indent": 0,
+      "parameters": [
+        "",
+        0,
+        0,
+        2,
+        ""
+      ]
+    },
+    {
+      "code": 401,
+      "indent": 0,
+      "parameters": [
+        "村長は旅の話を続けた。その33。"
+      ]
+    },
+    {
+      "code": 101,
+      "indent": 0,
+      "parameters": [
+        "",
+        0,
+        0,
+        2,
+        ""
+      ]
+    },
+    {
+      "code": 401,
+      "indent": 0,
+      "parameters": [
+        "村長は旅の話を続けた。その34。"
+      ]
+    },
+    {
+      "code": 101,
+      "indent": 0,
+      "parameters": [
+        "",
+        0,
+        0,
+        2,
+        ""
+      ]
+    },
+    {
+      "code": 401,
+      "indent": 0,
+      "parameters": [
+        "村長は旅の話を続けた。その35。"
+      ]
+    },
+    {
+      "code": 101,
+      "indent": 0,
+      "parameters": [
+        "",
+        0,
+        0,
+        2,
+        ""
+      ]
+    },
+    {
+      "code": 401,
+      "indent": 0,
+      "parameters": [
+        "村長は旅の話を続けた。その36。"
+      ]
+    },
+    {
+      "code": 101,
+      "indent": 0,
+      "parameters": [
+        "",
+        0,
+        0,
+        2,
+        ""
+      ]
+    },
+    {
+      "code": 401,
+      "indent": 0,
+      "parameters": [
+        "村長は旅の話を続けた。その37。"
+      ]
+    },
+    {
+      "code": 101,
+      "indent": 0,
+      "parameters": [
+        "",
+        0,
+        0,
+        2,
+        ""
+      ]
+    },
+    {
+      "code": 401,
+      "indent": 0,
+      "parameters": [
+        "村長は旅の話を続けた。その38。"
+      ]
+    },
+    {
+      "code": 101,
+      "indent": 0,
+      "parameters": [
+        "",
+        0,
+        0,
+        2,
+        ""
+      ]
+    },
+    {
+      "code": 401,
+      "indent": 0,
+      "parameters": [
+        "村長は旅の話を続けた。その39。"
+      ]
+    },
+    {
+      "code": 101,
+      "indent": 0,
+      "parameters": [
+        "",
+        0,
+        0,
+        2,
+        ""
+      ]
+    },
+    {
+      "code": 401,
+      "indent": 0,
+      "parameters": [
+        "村長は旅の話を続けた。その40。"
+      ]
+    },
+    {
+      "code": 101,
+      "indent": 0,
+      "parameters": [
+        "",
+        0,
+        0,
+        2,
+        ""
+      ]
+    },
+    {
+      "code": 401,
+      "indent": 0,
+      "parameters": [
+        "村長は旅の話を続けた。その41。"
+      ]
+    },
+    {
+      "code": 101,
+      "indent": 0,
+      "parameters": [
+        "",
+        0,
+        0,
+        2,
+        ""
+      ]
+    },
+    {
+      "code": 401,
+      "indent": 0,
+      "parameters": [
+        "村長は旅の話を続けた。その42。"
+      ]
+    },
+    {
+      "code": 101,
+      "indent": 0,
+      "parameters": [
+        "",
+        0,
+        0,
+        2,
+        ""
+      ]
+    },
+    {
+      "code": 401,
+      "indent": 0,
+      "parameters": [
+        "村長は旅の話を続けた。その43。"
+      ]
+    },
+    {
+      "code": 101,
+      "indent": 0,
+      "parameters": [
+        "",
+        0,
+        0,
+        2,
+        ""
+      ]
+    },
+    {
+      "code": 401,
+      "indent": 0,
+      "parameters": [
+        "村長は旅の話を続けた。その44。"
+      ]
+    },
+    {
+      "code": 101,
+      "indent": 0,
+      "parameters": [
+        "",
+        0,
+        0,
+        2,
+        ""
+      ]
+    },
+    {
+      "code": 401,
+      "indent": 0,
+      "parameters": [
+        "村長は旅の話を続けた。その45。"
+      ]
+    }
+  ]
+}

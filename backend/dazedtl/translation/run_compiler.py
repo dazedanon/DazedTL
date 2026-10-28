@@ -302,7 +302,7 @@ def _organize(engine, workspace, job, plan, progress):
                 )
             )
     progress(f"Grouping {len(left):,} lines into requests")
-    value = organize.plan(
+    value, preceding = organize.layout(
         packed,
         input_path,
         complete,
@@ -332,6 +332,13 @@ def _organize(engine, workspace, job, plan, progress):
         read,
         reused=reused,
         converted=converted,
+        # A Live run's later parts of a split scene carry the translation
+        # delivered for the earlier lines they quote; an API run keeps them
+        # in any mode, since a waiting run may be priced again for Live.
+        preceding=preceding
+        if frozen.get("delivered") == organize.DELIVERED
+        and frozen["configuration"]["mode"] != "agent"
+        else None,
     )
     return {"run": run, "summary": summary}
 
@@ -346,6 +353,7 @@ def compile_run(
     read=None,
     reused=None,
     converted=None,
+    preceding=None,
 ):
     """Compiles the source plan into a new run and returns its ID. A run that
     finishes another run's declined requests quotes only what has no saved
@@ -353,7 +361,10 @@ def compile_run(
     which must not have changed since, ``reused`` the units organize
     left out of the plan with an earlier translation (unit_results.record),
     which the run's results and export read back, and ``converted`` those
-    it writes itself (organize.unsent), which its export writes."""
+    it writes itself (organize.unsent), which its export writes, and
+    ``preceding`` the earlier lines each later part of a split scene quotes
+    (organize.layout), whose delivered translation its Live run sends with
+    it (organize.DELIVERED)."""
     project_id, root, selected = (
         job["project_id"],
         Path(plan["source"]),
@@ -460,6 +471,8 @@ def compile_run(
         value["batch_window"] = BATCH_WINDOW
     if shared is not None:
         value.update(shared_payloads=SHARED_PAYLOADS, askers=shared)
+    if preceding is not None:
+        value.update(delivered=organize.DELIVERED, preceding=preceding)
     if reused:
         value["reused"] = reused
     if converted:
