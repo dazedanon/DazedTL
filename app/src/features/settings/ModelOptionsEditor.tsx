@@ -1,9 +1,9 @@
 import type {
   Connection,
   EffortLevel,
-  EffortOption,
   ModelOptions,
   Settings,
+  ThinkingEffort,
 } from "../../api/contracts";
 import { Section } from "../../ui/Section";
 import { FieldRow } from "../../ui/FieldRow";
@@ -22,18 +22,21 @@ const amount = (value: number) =>
 
 /**
  * The thinking effort new runs send for this model. Only the levels the
- * model takes are offered (settings/effort); a saved level it no longer takes
- * reads as the provider default and stays listed until another is chosen.
+ * model takes are offered (settings/effort), from the provider's model list
+ * where its last check read one, which a quiet line names; a saved level it
+ * no longer takes reads as the provider default and stays listed until
+ * another is chosen.
  */
 function ThinkingEffortField({
-  options,
+  effort,
   value,
   change,
 }: {
-  options?: EffortOption[];
+  effort?: ThinkingEffort;
   value: EffortLevel | null;
   change: (value: EffortLevel | null) => void;
 }) {
+  const options = effort?.options;
   const offered = options ?? [{ value: null, label: "Provider default" }];
   const known = offered.length > 1;
   const stale =
@@ -55,8 +58,11 @@ function ThinkingEffortField({
             ? undefined
             : known
               ? "Higher effort can help with hard lines but uses more output tokens, which cost more. Used by new runs."
-              : "DazedTL doesn't know which efforts this model takes, so runs leave it to the provider."
+              : effort?.source
+                ? "The provider's model list shows no effort to choose for this model, so runs leave it to the provider."
+                : "DazedTL doesn't know which efforts this model takes, so runs leave it to the provider."
       }
+      note={known && effort?.source ? `${effort.source}.` : undefined}
     >
       {(control) => (
         <select
@@ -217,7 +223,7 @@ export default function ModelOptionsEditor({
           )}
         </FieldRow>
         <ThinkingEffortField
-          options={resolved?.thinkingEffort?.options}
+          effort={resolved?.thinkingEffort}
           value={value.thinkingEffort ?? null}
           change={(thinkingEffort) => change({ thinkingEffort })}
         />

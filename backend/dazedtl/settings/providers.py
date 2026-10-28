@@ -9,6 +9,8 @@ from urllib.parse import quote, urlsplit
 
 import httpx
 
+from . import effort
+
 # A preset declares its transport protocol independently of its identity. Kimi,
 # DeepSeek and OpenRouter keep OpenAI's Live request formats under their own
 # identity, so Kimi's Batches carry its eligible models and price factor (engine
@@ -24,15 +26,18 @@ PROVIDERS = {
         "endpoint": os.environ.get("DAZEDTL_TEST_OPENAI_ENDPOINT")
         or "https://api.openai.com/v1",
     },
+    # Test scenarios check these presets against the stand-in's model lists.
     "openrouter": {
         "label": "OpenRouter",
         "protocol": "openai",
-        "endpoint": "https://openrouter.ai/api/v1",
+        "endpoint": os.environ.get("DAZEDTL_TEST_OPENROUTER_ENDPOINT")
+        or "https://openrouter.ai/api/v1",
     },
     "anthropic": {
         "label": "Anthropic",
         "protocol": "anthropic",
-        "endpoint": "https://api.anthropic.com",
+        "endpoint": os.environ.get("DAZEDTL_TEST_ANTHROPIC_ENDPOINT")
+        or "https://api.anthropic.com",
     },
     "gemini": {
         "label": "Google Gemini",
@@ -367,6 +372,10 @@ def check(connection):
             )
             if openrouter:
                 value["batch_endpoints"] = check_endpoints(connection, known)
+            # Which efforts each model takes, where the list says (EF2).
+            identity = infer_provider(protocol, base)
+            if identity in effort.LISTED:
+                value["efforts"] = effort.model_list(identity, rows)
             return value
         return result(
             "reachable",

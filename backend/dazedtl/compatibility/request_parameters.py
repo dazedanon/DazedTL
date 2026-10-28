@@ -26,8 +26,13 @@ def thinking(params, configuration, provider):
     """*params* with the thinking effort a run froze (settings/effort), which
     replaces the provider default the policy above leaves; a run frozen
     without one sends exactly what it sent before."""
+    listed = configuration.get("thinkingEffortListed")
     return effort.apply(
-        params, provider, configuration["model"], configuration.get("thinkingEffort")
+        params,
+        provider,
+        configuration["model"],
+        effort.checked(configuration.get("thinkingEffort")),
+        None if listed is None else effort.valid(listed),
     )
 
 
@@ -109,11 +114,14 @@ LAYER = "request-parameters"
 EFFORT_LAYER = "thinking-effort"
 
 
-def named_effort(provider, level, native, *args, **kwargs):
+def named_effort(provider, level, listed, native, *args, **kwargs):
     value = native(*args, **kwargs)
     if not isinstance(value, dict) or not value.get("model"):
         return value
-    return {**value, "thinking_effort": effort.summary(provider, value["model"], level)}
+    return {
+        **value,
+        "thinking_effort": effort.summary(provider, value["model"], level, listed),
+    }
 
 
 def configure_builders(
@@ -128,30 +136,39 @@ def configure_builders(
     openrouter_batch=None,
     provider=None,
     thinking_effort=None,
+    thinking_listed=None,
 ):
     """Layers the run's frozen request policy over the engine's builders.
     *provider* is the connection's identity (settings/providers), which
-    decides how *thinking_effort* is written."""
+    decides how *thinking_effort* is written, with the model list's record
+    the run froze, *thinking_listed* (settings/effort profile)."""
     output_tokens(max_output_tokens)
     effort.checked(thinking_effort)
+    if thinking_listed is not None:
+        effort.valid(thinking_listed)
     # Each estimate names the effort the run sends, for its review.
     for point in (translation.estimateCostComparison, translation.estimateBatchCost):
         if policy is None:
             point.remove(EFFORT_LAYER)
         else:
-            point.layer(EFFORT_LAYER, partial(named_effort, provider, thinking_effort))
+            point.layer(
+                EFFORT_LAYER,
+                partial(named_effort, provider, thinking_effort, thinking_listed),
+            )
     if thinking_effort is None:
-        translation.unestimatedThinking.remove(LAYER)
         translation.translateText.remove(LAYER)
     else:
         translation.translateText.layer(
             LAYER, partial(refusal, translation, thinking_effort)
         )
+    if thinking_effort is None and thinking_listed is None:
+        translation.unestimatedThinking.remove(LAYER)
+    else:
         # The estimate's note on unpredicted thinking follows the effort.
         translation.unestimatedThinking.layer(
             LAYER,
             lambda _native, _provider, model: effort.thinks(
-                provider, model, thinking_effort
+                provider, model, thinking_effort, thinking_listed
             ),
         )
     if max_output_tokens is None:
@@ -180,7 +197,11 @@ def configure_builders(
             params = completion_budget(params, max_output_tokens)
             if thinking_effort is not None:
                 params = effort.apply(
-                    params, provider, params["model"], thinking_effort
+                    params,
+                    provider,
+                    params["model"],
+                    thinking_effort,
+                    thinking_listed,
                 )
             if _name == "buildOpenAIRequest":
                 # A Batch run translates new speaker names Live before any

@@ -209,6 +209,7 @@ def install(*, coordinator=False):
         batch_input_tokens(policy.get("batchInputTokens"))
         output_allowance = output_tokens(policy.get("maxOutputTokens"))
         thinking_effort = effort.checked(policy.get("thinkingEffort"))
+        thinking_listed = policy.get("thinkingEffortListed")
         provider = infer_provider(
             plan["settings"].get("API_PROVIDER"), plan["settings"].get("api", "")
         )
@@ -275,6 +276,7 @@ def install(*, coordinator=False):
             openrouter_batch=router_policy,
             provider=provider,
             thinking_effort=thinking_effort,
+            thinking_listed=thinking_listed,
         )
         configure_states(plan, grouping_root, policy)
         checkpoint_reader()
