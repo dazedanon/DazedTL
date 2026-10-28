@@ -103,6 +103,66 @@ def _scene_spans(note, ids):
     return spans if position == len(ids) else None
 
 
+def _valid_stretches(value, sources):
+    """Whether a batch's stretches (organize NEIGHBOURS) are valid: each
+    names its first and last source ID, in request order and apart, and the
+    lines before it as [source, translation or null] pairs."""
+    positions = {identity: position for position, identity in enumerate(sources)}
+    if not isinstance(value, list) or not value:
+        return False
+    after = -1
+    for item in value:
+        if (
+            not isinstance(item, dict)
+            or set(item) != {"first", "last", "before"}
+            or not isinstance(item["first"], str)
+            or not isinstance(item["last"], str)
+            or item["first"] not in positions
+            or item["last"] not in positions
+            or not after < positions[item["first"]] <= positions[item["last"]]
+            or not isinstance(item["before"], list)
+            or not item["before"]
+            or any(
+                not isinstance(pair, list)
+                or len(pair) != 2
+                or not isinstance(pair[0], str)
+                or not pair[0].strip()
+                or (pair[1] is not None and not isinstance(pair[1], str))
+                for pair in item["before"]
+            )
+        ):
+            return False
+        after = positions[item["last"]]
+    return True
+
+
+def stretch_context(request, keys):
+    """The note on the stretches of partly translated scenes a request holds
+    (organize NEIGHBOURS), from one definition with Guided's
+    (util/request_packing), labelled by the keys its reader sees: line
+    positions under LINE_KEYS, else unit IDs; "" for a request without."""
+    from util.request_packing import lines_label, scene_stretches, stretch_note
+
+    context = request["context"]
+    if not context.get("stretches"):
+        return ""
+    positions = any(key != identity for identity, key in keys.items())
+
+    def label(item):
+        first, last = keys[item["first"]], keys[item["last"]]
+        if positions:
+            return lines_label(int(first), int(last))
+        return first if first == last else f"{first} to {last}"
+
+    return stretch_note(
+        [
+            (label(item), [tuple(pair) for pair in item["before"]])
+            for item in context["stretches"]
+        ],
+        scene_stretches(target_language(context)),
+    )
+
+
 def provider_keys(request, configuration):
     """Unit ID -> the key a provider sees for its line: its position under
     LINE_KEYS, else the ID itself. A request whose scene note names lines
@@ -150,6 +210,8 @@ def provider_view(request, configuration):
             "sources": request["sources"],
             "constraints": request["constraints"],
             "scene_context": context.get("scene_context", ""),
+            # The user message holds it by unit ID (logical_request).
+            "stretches": "",
             "reply": (
                 "Return only a JSON object mapping each supplied source ID to its translated string. "
                 "Do not add, remove, merge, or rename IDs. Speaker labels and surrounding source are context only."
@@ -207,6 +269,8 @@ def provider_view(request, configuration):
         + json.dumps(sources, ensure_ascii=False)
         + "\n```"
     )
+    from util.request_packing import lines_label
+
     spans = _scene_spans(context.get("scene_context", ""), list(request["sources"]))
     return {
         "keys": keys,
@@ -218,11 +282,11 @@ def provider_view(request, configuration):
         "scene_context": SCENES
         + "\n"
         + "\n".join(
-            f"- {scene}: {f'line {first}' if first == last else f'lines {first}-{last}'}"
-            for scene, first, last in spans
+            f"- {scene}: {lines_label(first, last)}" for scene, first, last in spans
         )
         if spans
         else "",
+        "stretches": stretch_context(request, keys),
         "reply": (
             "Return only a JSON object mapping each line key to its translated string. "
             "Do not add, remove, merge, or rename keys. Speaker labels and surrounding source are context only."
@@ -276,7 +340,7 @@ def plan_input(value, *, allow_legacy=False, allow_empty=False):
             "constraints",
         }
         if not legacy:
-            allowed |= {"kinds", "qa_notes"}
+            allowed |= {"kinds", "qa_notes", "stretches"}
         if not isinstance(batch, dict) or set(batch) - allowed:
             raise ValueError(
                 "Unknown batch fields. Keep injection metadata in the engine's source store."
@@ -361,6 +425,12 @@ def plan_input(value, *, allow_legacy=False, allow_empty=False):
             ):
                 raise ValueError(
                     "QA notes must describe a concrete source ambiguity, keyed by source ID, in 1–2000 characters."
+                )
+            if "stretches" in batch and not _valid_stretches(
+                batch["stretches"], sources
+            ):
+                raise ValueError(
+                    "Stretches name their first and last source ID in order and the earlier lines before them."
                 )
         for key in ("source_context", "scene_context", "instruction_key"):
             if key in batch and not isinstance(batch[key], str):
@@ -476,6 +546,14 @@ def logical_request(batch, context):
                 + SKILL_USERS
                 + "\n"
                 + json.dumps(context["skill_users"], ensure_ascii=False)
+            )
+        if batch.get("stretches"):
+            # Payloads label them by line key (provider_view); an assistant
+            # translating itself reads them here by unit ID.
+            context["stretches"] = batch["stretches"]
+            context["user"] += "\n" + stretch_context(
+                {"context": context},
+                {identity: identity for identity in batch["sources"]},
             )
         context.pop("request_sha256", None)
         context["request_sha256"] = digest(context)

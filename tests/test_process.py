@@ -1170,10 +1170,15 @@ class ProcessTests(unittest.TestCase):
             ((text, history),) = sent
             self.assertEqual(text, [values[0], values[2]])
             self.assertEqual(history["source_items"], [])
-            self.assertTrue(
-                history["instructions"][-1].endswith(
-                    "\n- line 1\n  前\n- line 2\n  失敗\n  既存 → Reused"
-                )
+            # Its note is the one Guided runs froze (util/request_packing).
+            self.assertEqual(
+                history["instructions"][-1],
+                "These lines are separate stretches of one scene; the lines between "
+                "them were translated earlier. Each stretch below lists the lines "
+                "just before it, with their earlier English after →; continue the "
+                "scene from them. Keep every line in the same format as its source "
+                "line, including any name at its start. The stretches:"
+                "\n- line 1\n  前\n- line 2\n  失敗\n  既存 → Reused",
             )
             # The native comment handler may consume aligned mixed results;
             # malformed lengths and name-preflight failures keep their guard.

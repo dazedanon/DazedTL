@@ -1813,6 +1813,127 @@ class TranslationTests(unittest.TestCase):
             (summary["units"], summary["requests"], summary["scenes"]), (9, 4, 4)
         )
 
+    def test_a_partly_translated_scenes_requests_quote_its_translated_neighbours(
+        self,
+    ):
+        # Organize packed only the lines left over, so a partly translated
+        # scene's leftovers read as one unbroken scene with none of its
+        # English, and a split part's context skipped the translated lines.
+        def unit(identity, scene, **values):
+            return {
+                "id": identity,
+                "scene": scene,
+                "group": "Map",
+                "source": identity + "。",
+                **values,
+            }
+
+        units = organize.units_input(
+            {
+                "version": 1,
+                "units": [
+                    unit("a1", "A", kind="dialogue", speaker="リリ"),
+                    *(unit(f"a{n}", "A") for n in range(2, 7)),
+                    unit("b1", "B"),
+                    *(unit(f"c{n}", "C") for n in range(1, 11)),
+                ],
+            }
+        )
+        translated = {"a1": "One.", "a4": None, "c1": "Uno.", "c2": "Dos."}
+        # Only the translations a request quotes are read.
+        self.assertEqual(
+            organize.neighbours(units, translated), ["a1", "a4", "c1", "c2"]
+        )
+        value = organize.plan(units, "work/u.json", True, 6, translated=translated)
+        self.assertEqual(plan_input(value), value)
+        batches = {batch["id"]: batch for batch in value["batches"]}
+        self.assertEqual(list(batches), ["a2", "c3", "c7"])
+        self.assertEqual(list(batches["a2"]["sources"]), ["a2", "a3", "a5", "a6", "b1"])
+        # Each stretch after a translated line lists the two lines before
+        # it; one sent itself or whose receipt is unreadable quotes no
+        # English, and a scene with nothing translated gets no entry.
+        self.assertEqual(
+            batches["a2"]["stretches"],
+            [
+                {"first": "a2", "last": "a3", "before": [["リリ: a1。", "One."]]},
+                {
+                    "first": "a5",
+                    "last": "a6",
+                    "before": [["a3。", None], ["a4。", None]],
+                },
+            ],
+        )
+        # A split stretch is labelled in the part it begins, and the later
+        # part's context counts the scene's translated lines too.
+        self.assertEqual(
+            batches["c3"]["stretches"],
+            [
+                {
+                    "first": "c3",
+                    "last": "c6",
+                    "before": [["c1。", "Uno."], ["c2。", "Dos."]],
+                }
+            ],
+        )
+        self.assertNotIn("source_context", batches["c3"])
+        self.assertNotIn("stretches", batches["c7"])
+        self.assertEqual(
+            batches["c7"]["source_context"], "\n".join(f"c{n}。" for n in range(1, 7))
+        )
+        # Nothing translated, the plan is the one organize made before.
+        self.assertEqual(
+            organize.plan(units, "work/u.json", True, 6, translated={}),
+            organize.plan(units, "work/u.json", True, 6),
+        )
+        for broken in (
+            [],
+            [{"first": "a3", "last": "a2", "before": [["a1。", "One."]]}],
+            [{"first": ["a2"], "last": "a2", "before": [["a1。", "One."]]}],
+            [{"first": "a2", "last": "a3", "before": []}],
+            [{"first": "a2", "last": "x", "before": [["a1。", None]]}],
+        ):
+            with self.subTest(stretches=broken), self.assertRaises(ValueError):
+                plan_input(
+                    {**value, "batches": [{**batches["a2"], "stretches": broken}]}
+                )
+        # The provider reads them by line key after the scene note; an
+        # assistant translating itself reads them by unit ID.
+        row = logical_request(
+            batches["a2"],
+            {
+                "user": "",
+                "scene_context": batches["a2"]["scene_context"],
+                "target_language": "French",
+            },
+        )
+        heading = (
+            "Some of these lines continue a scene whose other lines were "
+            "translated earlier. Each stretch of them below lists the lines just "
+            "before it, with their earlier French after →; continue the scene "
+            "from them. The stretches:"
+        )
+        self.assertTrue(
+            row["context"]["user"].endswith(
+                "\n"
+                + heading
+                + "\n- a2 to a3\n  リリ: a1。 → One.\n- a5 to a6\n  a3。\n  a4。"
+            )
+        )
+        configuration = {"mode": "live", "model": "fixture", "lineKeys": LINE_KEYS}
+        view = provider_view(row, configuration)
+        self.assertEqual(
+            view["stretches"],
+            heading + "\n- lines 1-2\n  リリ: a1。 → One.\n- lines 3-4\n  a3。\n  a4。",
+        )
+        self.assertNotIn(heading, view["user"])
+        self.assertEqual(provider_view(row, {})["stretches"], "")
+        plain = logical_request(
+            organize.plan(units, "work/u.json", True, 6)["batches"][0],
+            {"user": "", "target_language": "French"},
+        )
+        self.assertNotIn("stretches", plain["context"])
+        self.assertNotIn(heading, plain["context"]["user"])
+
     def test_organizing_rejects_units_by_id_without_repeating_game_text(self):
         valid = {"id": "one", "scene": "A", "source": "秘密の台詞"}
         for units, named in (

@@ -1380,6 +1380,8 @@ def request_payload(request, configuration):
             "Scene and runtime substitution context (not translatable source):\n"
             + view["scene_context"]
         )
+    if view["stretches"]:
+        instructions.append(view["stretches"])
     shared = {
         "system": context["system"],
         "user": view["user"],

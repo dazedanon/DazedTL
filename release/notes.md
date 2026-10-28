@@ -4,6 +4,10 @@
 
 - **Text QA:** a line that drops a censor mask (〇 or ●) its Japanese has, or adds one it lacks, and a he or she that contradicts a character's gender in the glossary now go to a reviewer, in both methods; saved Text QA reads outdated once.
 
+### Changed
+
+- **Assistant-led:** when lines of a scene are translated again while the rest of it keeps its earlier translation, such as after a glossary edit, each request now shows the lines just before them with their earlier translation, as Guided does, so the new lines carry on the scene's voice and tense instead of reading as a scene of their own.
+
 ### Fixed
 
 - **Assistant-led:** a name the Japanese writes after a lone backslash, such as `\ヘレン`, no longer vanishes in RPG Maker MV and MZ once translated: it is written `\\Helen`, as Guided writes it, instead of `\Helen`, which the game reads as an unknown code.

@@ -649,12 +649,14 @@ class WorkflowTests(unittest.TestCase):
         }
         results = Results(self.game)
 
-        def organized(policy=True):
+        def organized(policy=True, neighbours=True):
             operation = self.service.organize(self.identity, units, True)
             job, plan = self.service.jobs.store.load(operation["id"], self.identity)
             if not policy:
                 # As an organize prepared before the policy froze it.
                 del plan["compile"]["reuse"]
+            if not neighbours:
+                del plan["compile"]["neighbours"]
             with patch("dazedtl.translation.run_compiler.require_coverage"):
                 result = execute(self.engine, self.profile, job, plan, lambda: False)
             job.update(status="complete", result=result)
@@ -675,8 +677,17 @@ class WorkflowTests(unittest.TestCase):
         for request in plan["requests"]:
             results.accept(request, replies[request["id"]], {"run_id": first["id"]})
         self.engine.glossary_text = "Approved names\nリリ (Lili)"
+        # An organize frozen before neighbours sends the line as a scene of
+        # its own; now its request quotes the translated line before it.
+        _older, plan = organized(neighbours=False)
+        self.assertNotIn("stretches", plan["requests"][0]["context"])
         second, plan = organized()
         self.assertEqual([list(row["sources"]) for row in plan["requests"]], [["a/2"]])
+        self.assertEqual(
+            plan["requests"][0]["context"]["stretches"],
+            [{"first": "a/2", "last": "a/2", "before": [["はい。", "Yes."]]}],
+        )
+        self.service.validate_current(self.identity, plan)
         self.assertEqual(second["quote"]["units"], 1)
         # Compiling organize's plan by hand made a run without the kept lines.
         with self.assertRaisesRegex(ValueError, "Run organize --input"):

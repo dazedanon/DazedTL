@@ -259,6 +259,7 @@ def _organize(engine, workspace, job, plan, progress):
         )
     reused = None
     left = units
+    listing = {}
     if frozen.get("reuse") == unit_results.POLICY:
         # Lines an earlier request translated keep their translation, so only
         # the others are packed and quoted.
@@ -283,14 +284,32 @@ def _organize(engine, workspace, job, plan, progress):
             frozen.get(QUOTES, True),
         )
         left = [unit for unit in left if unit["id"] not in converted]
+    packed, translated = left, None
+    if frozen.get("neighbours") == organize.NEIGHBOURS:
+        # A partly translated scene's other lines are packed among its
+        # translated ones, and their requests quote those just before them,
+        # as the game gets them.
+        packed = [unit for unit in units if unit["id"] not in (converted or {})]
+        translated = dict.fromkeys(reused["units"] if reused else ())
+        if reused:
+            translated.update(
+                (row["source_id"], row.get("translation"))
+                for row in Results(root).reused_units(
+                    reused,
+                    organize.neighbours(packed, translated),
+                    listing,
+                    frozen.get(QUOTES, True),
+                )
+            )
     progress(f"Grouping {len(left):,} lines into requests")
     value = organize.plan(
-        left,
+        packed,
         input_path,
         complete,
         frozen["lines"],
         frozen["characters"],
         frozen.get("shared"),
+        translated,
     )
     relative = organize.plan_path(value)
     path = project_path(root, relative, exists=False)

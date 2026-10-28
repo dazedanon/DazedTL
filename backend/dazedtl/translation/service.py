@@ -950,6 +950,10 @@ Additional project instructions:
                 # Lines with no source letters are written without a
                 # request; an organize frozen without the policy sends them.
                 unsent=organize.UNSENT,
+                # A partly translated scene's requests quote its translated
+                # lines beside the others; an organize frozen without the
+                # policy packs the others as if they were the whole scene.
+                neighbours=organize.NEIGHBOURS,
             )
         job = self.jobs.store.create(
             project_id,

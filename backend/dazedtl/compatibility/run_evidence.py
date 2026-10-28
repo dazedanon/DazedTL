@@ -51,29 +51,6 @@ def keep_aligned_partial_results(module):
     module.translateAI.layer("partial-results", translate)
 
 
-# Earlier lines quoted before each stretch of a shared request.
-STRETCH_CONTEXT = 2
-STRETCHES = (
-    "These lines are separate stretches of one scene; the lines between them "
-    "were translated earlier. Each stretch below lists the lines just before "
-    "it, with their earlier English after →; continue the scene from them. "
-    "Keep every line in the same format as its source line, including any "
-    "name at its start. The stretches:"
-)
-
-
-def stretches(saved):
-    """(start, end) of each run of lines without a reusable translation."""
-    spans, start = [], None
-    for index, value in enumerate([*saved, ""]):
-        if value is None and start is None:
-            start = index
-        elif value is not None and start is not None:
-            spans.append((start, index))
-            start = None
-    return spans
-
-
 def shared_requests(spans, size):
     """Consecutive stretches grouped to fit one request each; a longer
     stretch keeps a group of its own."""
@@ -91,24 +68,20 @@ def shared_requests(spans, size):
 def stretch_notes(group, values, saved, source):
     """Each stretch's lines in the shared request and the lines before it:
     earlier translations with their source, or the call's own preceding
-    source before its first line, one per line as the source context shows
-    them."""
+    source before its first line (util/request_packing.stretch_note)."""
+    from util.request_packing import STRETCH_CONTEXT, lines_label, stretch_note
 
-    def line(text):
-        return " ".join(str(text).split())
-
-    notes, position = [], 0
+    labelled, position = [], 0
     for start, end in group:
         before = [
-            line(values[index])
-            + (f" → {line(saved[index])}" if saved[index] is not None else "")
+            (values[index], saved[index])
             for index in range(max(0, start - STRETCH_CONTEXT), start)
-        ] or [line(item) for item in source[-STRETCH_CONTEXT:] if isinstance(item, str)]
-        first, last = position + 1, position + end - start
-        span = f"line {first}" if first == last else f"lines {first}-{last}"
-        notes.append(f"- {span}" + "".join(f"\n  {item}" for item in before))
+        ] or [
+            (item, None) for item in source[-STRETCH_CONTEXT:] if isinstance(item, str)
+        ]
+        labelled.append((lines_label(position + 1, position + end - start), before))
         position += end - start
-    return STRETCHES + "\n" + "\n".join(notes)
+    return stretch_note(labelled)
 
 
 def kept(source, response):
@@ -588,6 +561,8 @@ class Evidence:
             stretch is sent with its preceding source. Each request's mismatch keeps its own
             lines' native fallback, and every attempt's usage counts.
             """
+            from util.request_packing import stretches
+
             values = bound.arguments["text"]
             config = bound.arguments.get("config")
             size = getattr(config, "batchSize", None)

@@ -1972,6 +1972,38 @@ class ManualJobs:
             self.assertIn('{"1": "行った。"}', payload["captured"]["user"])
             self.assertIn(json.dumps({"1": note}), payload["captured"]["user"])
             self.assertIn("- gate: line 1", payload["captured"]["request_instructions"])
+            # A partly translated scene's stretch follows the scene note.
+            stretched, _compiler = compile_requests(
+                engine,
+                "unused",
+                {},
+                {
+                    "batches": [
+                        {
+                            **organized["batches"][0],
+                            "stretches": [
+                                {
+                                    "first": "line",
+                                    "last": "line",
+                                    "before": [["来た。", "They came."]],
+                                }
+                            ],
+                        }
+                    ]
+                },
+                "English",
+            )
+            self.assertTrue(
+                engine.payload(stretched[0], keyed_settings)["captured"][
+                    "request_instructions"
+                ].endswith(
+                    "- gate: line 1\n\nSome of these lines continue a scene whose "
+                    "other lines were translated earlier. Each stretch of them below "
+                    "lists the lines just before it, with their earlier English after "
+                    "→; continue the scene from them. The stretches:\n- line 1\n"
+                    "  来た。 → They came."
+                )
+            )
             self.assertEqual(
                 payload["response_format"]["json_schema"]["schema"]["required"], ["1"]
             )

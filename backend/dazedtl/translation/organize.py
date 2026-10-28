@@ -30,6 +30,13 @@ CONTEXT_LINES = 8
 # operation's compile record freezes it, so an organize started before sends
 # every unit.
 UNSENT = "unsent-lines-v1"
+# Organize under this policy packs a scene's lines without a translation
+# among its translated ones (unit_results), so each request labels every
+# stretch of them with the lines just before it and their translation, as
+# Guided labels its reuse stretches, and a split part's context counts the
+# scene's translated lines too; an organize frozen without it packs the
+# untranslated lines as if they were the whole scene.
+NEIGHBOURS = "neighbours-v1"
 KINDS = {"dialogue", "narration", "ui", "unknown"}
 FIELDS = {
     "id",
@@ -238,11 +245,13 @@ def unsent(units, language, target, quotes):
     return record
 
 
+def _line(unit):
+    """A unit as context reads it, after its speaker."""
+    return (unit["speaker"] + ": " if unit["speaker"] else "") + unit["source"]
+
+
 def _context(units):
-    return "\n".join(
-        (unit["speaker"] + ": " if unit["speaker"] else "") + unit["source"]
-        for unit in units
-    )
+    return "\n".join(_line(unit) for unit in units)
 
 
 def _parts(scene, lines, characters):
@@ -265,17 +274,104 @@ def _parts(scene, lines, characters):
     return parts
 
 
-def plan(units, input_path, complete, lines, characters=MAX_CHARACTERS, shared=None):
-    """A version-2 source plan: whole scenes of one group and field share a
-    request of at most lines units and characters of source, if each has at
-    most shared lines; larger scenes split with their earlier lines as
-    context. A request holding several scenes names which lines belong to
-    each, so context stays apart. Each request takes its first line's ID."""
+def _scenes(units):
+    """Units in play order as their scenes' lists."""
     scenes = []
     for unit in units:
         if not scenes or scenes[-1][0]["scene"] != unit["scene"]:
             scenes.append([])
         scenes[-1].append(unit)
+    return scenes
+
+
+def _gaps(scene, answered):
+    """Each stretch of a scene's units without a translation that follows
+    one with, as its units and the units just before it
+    (util/request_packing)."""
+    from util.request_packing import STRETCH_CONTEXT, stretches
+
+    for start, end in stretches([unit["id"] in answered or None for unit in scene]):
+        if start:
+            yield scene[start:end], scene[max(0, start - STRETCH_CONTEXT) : start]
+
+
+def neighbours(units, answered):
+    """The IDs of the units of answered whose translation plan quotes under
+    NEIGHBOURS, before a stretch of their scene's other units, so only
+    their receipts are read."""
+    return list(
+        dict.fromkeys(
+            unit["id"]
+            for scene in _scenes(units)
+            for _stretch, before in _gaps(scene, answered)
+            for unit in before
+            if unit["id"] in answered
+        )
+    )
+
+
+def _labelled(members, found):
+    """The stretches a request's members begin, each with its first and last
+    unit ID in the request and the lines before it; a stretch an earlier
+    part of a split scene began is that part's."""
+    held = {unit["id"] for unit in members}
+    labelled = []
+    for unit in members:
+        if unit["id"] in found:
+            ids, before = found[unit["id"]]
+            labelled.append(
+                {
+                    "first": unit["id"],
+                    "last": [identity for identity in ids if identity in held][-1],
+                    "before": before,
+                }
+            )
+    return labelled
+
+
+def plan(
+    units,
+    input_path,
+    complete,
+    lines,
+    characters=MAX_CHARACTERS,
+    shared=None,
+    translated=None,
+):
+    """A version-2 source plan: whole scenes of one group and field share a
+    request of at most lines units and characters of source, if each has at
+    most shared lines; larger scenes split with their earlier lines as
+    context. A request holding several scenes names which lines belong to
+    each, so context stays apart. Each request takes its first line's ID.
+
+    Under NEIGHBOURS, units are whole scenes in play order and translated
+    holds those of their units an earlier request answered, by unit ID,
+    with the translation the game gets where a request quotes it (None
+    elsewhere): only the others are packed, a request lists each stretch of
+    them it begins with the lines just before it (stretches), and a later
+    part of a split scene takes the scene's real earlier lines as context."""
+    scenes = _scenes(units)
+    found, place = {}, {}
+    if translated is not None:
+        whole, scenes = scenes, []
+        for scene in whole:
+            for stretch, before in _gaps(scene, translated):
+                found[stretch[0]["id"]] = (
+                    [unit["id"] for unit in stretch],
+                    [[_line(unit), translated.get(unit["id"])] for unit in before],
+                )
+            for position, unit in enumerate(scene):
+                place[unit["id"]] = (scene, position)
+            left = [unit for unit in scene if unit["id"] not in translated]
+            if left:
+                scenes.append(left)
+
+    def earlier(part, start, scene):
+        if translated is None:
+            return scene[max(0, start - CONTEXT_LINES) : start]
+        whole, position = place[part[0]["id"]]
+        return whole[max(0, position - CONTEXT_LINES) : position]
+
     requests = []
     current = None
     for scene in scenes:
@@ -289,7 +385,7 @@ def plan(units, input_path, complete, lines, characters=MAX_CHARACTERS, shared=N
                     {
                         "units": part,
                         "field": key[1],
-                        "context": scene[max(0, start - CONTEXT_LINES) : start],
+                        "context": earlier(part, start, scene) if start else [],
                     }
                 )
                 start += len(part)
@@ -328,6 +424,9 @@ def plan(units, input_path, complete, lines, characters=MAX_CHARACTERS, shared=N
             batch["scene_context"] = scene_list(scenes.items())
         if request["field"]:
             batch["instruction_key"] = request["field"]
+        labelled = _labelled(members, found)
+        if labelled:
+            batch["stretches"] = labelled
         constraints = {
             unit["id"]: unit["constraints"] for unit in members if unit["constraints"]
         }
