@@ -589,6 +589,12 @@ class Application:
             project_id, step, findings, question, choice, since, everything
         )
 
+    def translation_qa_check(self, project_id, answers=None):
+        """Text QA's text-only rules over the exported translations of an
+        Assistant-led game on an engine Text QA can't read; writes only its
+        report in the game's work folder."""
+        return self.text_qa.check(project_id, answers)
+
     def translation_playtest(self, project_id, step, stops=None, widths=None):
         """The release playtest for the project's assistant, and its layout
         check; both play the game and write nothing into it. Its fix step
@@ -1083,6 +1089,10 @@ def routes(app):
         lambda value, _params: value,
     )
     methods["translation_qa"] = (app.translation_qa, lambda value, _params: value)
+    methods["translation_qa_check"] = (
+        app.translation_qa_check,
+        lambda value, _params: value,
+    )
     methods["guided_qa_report"] = (app.text_qa.report, lambda value, _params: value)
     methods["translation_playtest"] = (
         app.translation_playtest,

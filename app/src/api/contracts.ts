@@ -846,6 +846,24 @@ export type TextQaStatus = {
   report?: string;
 };
 
+/** Text QA's text-only rules over an Assistant-led game's exported
+translations, for an engine Text QA can't read. */
+export type TextQaCheck = {
+  /** The project-relative file listing each hit. */
+  report: string;
+  /** Exported units with a translation. */
+  lines: number;
+  /** Hits: one per rule and distinct line. */
+  hits: number;
+  /** Hits neither corrected nor answered. */
+  open: number;
+  answered: number;
+  /** Open hits by rule. */
+  rules: Record<string, number>;
+  /** The step to run next. */
+  next: string;
+};
+
 export type QaState = {
   current: boolean;
   applied: boolean;
@@ -2955,6 +2973,12 @@ export type TranslationQaRequest = {
   everything?: boolean;
 };
 
+export type TranslationQaCheckRequest = {
+  project_id: string;
+  /** Hit ID to a one-line reason the line is right, kept while the hit stays the same. */
+  answers?: Record<string, string>;
+};
+
 export type TranslationPlaytestRequest = {
   project_id: string;
   step: "status" | "report" | "run" | "fix" | "checkpoint" | "layout";
@@ -3598,6 +3622,10 @@ export type RpcContract = {
     response: ImageAssistantStepResult;
   };
   translation_qa: { request: TranslationQaRequest; response: TextQaStatus };
+  translation_qa_check: {
+    request: TranslationQaCheckRequest;
+    response: TextQaCheck;
+  };
   guided_qa_report: { request: ProjectRequest; response: QaReport };
   translation_playtest: {
     request: TranslationPlaytestRequest;

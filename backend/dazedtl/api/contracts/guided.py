@@ -551,6 +551,19 @@ class TextQaStatus(TypedDict):
     report: NotRequired[Annotated[str, "The saved findings file."]]
 
 
+class TextQaCheck(TypedDict):
+    """Text QA's text-only rules over an Assistant-led game's exported
+    translations, for an engine Text QA can't read."""
+
+    report: Annotated[str, "The project-relative file listing each hit."]
+    lines: Annotated[int, "Exported units with a translation."]
+    hits: Annotated[int, "Hits: one per rule and distinct line."]
+    open: Annotated[int, "Hits neither corrected nor answered."]
+    answered: int
+    rules: Annotated[dict[str, int], "Open hits by rule."]
+    next: Annotated[str, "The step to run next."]
+
+
 class QaState(TypedDict):
     current: bool
     # This task's findings were applied, that batch was not restored and

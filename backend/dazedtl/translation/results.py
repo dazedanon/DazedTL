@@ -394,6 +394,24 @@ def holds_refusal(request, value):
     return verdict
 
 
+def exported_translations(source):
+    """The rows of the game's progress export (EXPORT) that hold a
+    translation, as the game gets it; none before the first export."""
+    index_path = project_path(source, EXPORT, exists=False)
+    if not index_path.is_file():
+        return []
+    index = read_json(index_path)
+    # An export from before parts held every unit itself.
+    rows = index.get("units")
+    if not isinstance(rows, list):
+        rows = [
+            row
+            for part in index["parts"]
+            for row in read_json(project_path(source, part))["units"]
+        ]
+    return [row for row in rows if "translation" in row]
+
+
 class Results:
     def __init__(self, source):
         self.source = Path(source)

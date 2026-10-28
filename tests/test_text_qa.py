@@ -7,10 +7,12 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 
-from dazedtl.api.contracts.guided import TextQaStatus
+from dazedtl.api.contracts.guided import TextQaCheck, TextQaStatus
 from dazedtl.api.contracts.validation import _close_contracts
 from dazedtl.translation import census
 from dazedtl.translation.operations import census_path
+from dazedtl.translation.project import WORK
+from dazedtl.translation.result_checks import CHECK_FILE, CHECK_STEP, CHECK_VERSION
 from dazedtl.translation.run_compiler import SCOPE_RULES
 from dazedtl.translation.text_qa import UNTRANSLATED_FILE, UNTRANSLATED_STEP, TextQA
 from pydantic import TypeAdapter
@@ -407,3 +409,108 @@ class TextQATests(unittest.TestCase):
             prepare()
             guided.translation.project = lambda _id: ({"method": "guided"}, game)
             self.assertNotIn("untranslated", TextQA(guided).run("project", "status"))  # type: ignore[arg-type]
+
+    def test_check_lists_text_only_hits_on_engines_text_qa_cannot_read(self):
+        # Text QA refuses engines other than RPG Maker, so a WOLF or
+        # TyranoScript game's glossary misses and changed numbers reached
+        # its patch without any tool check.
+        with TemporaryDirectory() as folder:
+            game = Path(folder)
+            (game / "tyrano").mkdir()
+            glossary = game / ".dazedtl/glossary.txt"
+            glossary.parent.mkdir()
+            glossary.write_text("エルフの森 (Elven Woods)\n", encoding="utf-8")
+
+            def row(unit, source, translation=None):
+                value = {"batch": "scene-1", "source_id": unit, "source": source}
+                if translation is not None:
+                    value.update(
+                        translation=translation,
+                        translated_from_sha256=hashlib.sha256(
+                            source.encode("utf-8")
+                        ).hexdigest(),
+                        request_sha256="a" * 64,
+                    )
+                return value
+
+            def export(*rows):
+                part = WORK + "/work/translation-units/part-0001.json"
+                (game / part).parent.mkdir(parents=True, exist_ok=True)
+                (game / part).write_text(
+                    json.dumps({"units": list(rows)}, ensure_ascii=False),
+                    encoding="utf-8",
+                )
+                (game / WORK / "work/translation-units.json").write_text(
+                    json.dumps({"complete": True, "parts": [part], "version": 3}),
+                    encoding="utf-8",
+                )
+
+            welcome = row(
+                "first/1", "エルフの森へようこそ。", "Welcome to the Elf Forest."
+            )
+            price = row("first/2", "宿代は100ゴールドだよ。", "The inn costs 10 gold.")
+            label = row("first/3", "【噂Lv】3", "[Rumor Lv.]3")
+            export(
+                welcome,
+                price,
+                label,
+                row("first/4", "はい。", "Yes."),
+                row("first/5", "いいえ。"),
+            )
+            guided, _calls = fake_guided(game, {}, method="len")
+            guided.translation.settings = SimpleNamespace(
+                language=lambda: "English", source_language=lambda: "Japanese"
+            )
+            service = TextQA(guided)  # type: ignore[arg-type]
+            state = service.check("project")
+            _close_contracts()
+            TypeAdapter(TextQaCheck).validate_json(json.dumps(state), strict=True)
+            self.assertEqual(
+                (state["lines"], state["open"], state["rules"]),
+                (
+                    4,
+                    3,
+                    {
+                        "glossary": 1,
+                        "lint:level-tag-spacing": 1,
+                        "visible-number-mismatch": 1,
+                    },
+                ),
+            )
+            self.assertEqual(state["next"], CHECK_STEP)
+            report = json.loads((game / CHECK_FILE).read_text(encoding="utf-8"))
+            self.assertEqual(report["basis"]["version"], CHECK_VERSION)
+            found = {hit["rule"]: hit for hit in report["hits"]}
+            self.assertEqual(
+                found["glossary"]["terms"], [["エルフの森", "Elven Woods"]]
+            )
+            self.assertEqual(
+                found["lint:level-tag-spacing"]["proposed"], "[Rumor Lv.] 3"
+            )
+            self.assertEqual(
+                found["visible-number-mismatch"]["units"],
+                [{"unit": "first/2", "batch": "scene-1", "request_sha256": "a" * 64}],
+            )
+            # The assistant answers a line it finds right, and the answer
+            # stays while the line does.
+            answers = {found["lint:level-tag-spacing"]["id"]: "The game writes it so."}
+            self.assertEqual(service.check("project", answers)["open"], 2)
+            self.assertEqual(service.check("project")["answered"], 1)
+            with self.assertRaisesRegex(ValueError, "No current hit"):
+                service.check("project", {"0" * 16: "Right."})
+            # Its corrections leave no hit open.
+            export(
+                {**welcome, "translation": "Welcome to the Elven Woods."},
+                {**price, "translation": "The inn costs 100 gold."},
+                label,
+            )
+            state = service.check("project")
+            self.assertEqual((state["hits"], state["open"]), (1, 0))
+            # Text QA reads RPG Maker games itself.
+            (game / "tyrano").rmdir()
+            (game / "data").mkdir()
+            (game / "data/System.json").write_text("{}", encoding="utf-8")
+            (game / "js").mkdir()
+            (game / "js/plugins.js").write_text("var $plugins = [];", encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "qa --prepare"):
+                service.check("project")

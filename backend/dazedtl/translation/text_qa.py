@@ -146,6 +146,13 @@ def untranslated(
     return result
 
 
+def _reads(source) -> bool:
+    """Whether Text QA reads the game at *source*: RPG Maker MV/MZ or VX Ace."""
+    from util.project_preparation import rpgmaker_layout
+
+    return rpgmaker_layout(source) is not None
+
+
 def _unreadable_step(qa) -> str:
     """What the assistant does about a prepared task the app can't read."""
     problem = qa["unreadable"]
@@ -343,14 +350,32 @@ class TextQA:
         would use, which holds its QA tasks and text batches."""
         project = self.guided.projects.get(project_id)
         if not project.get("backend_id"):
-            engine = self.guided.backend.describe(project["source"])["engine"]
-            if engine not in {"MVMZ", "ACE"}:
+            if not _reads(project["source"]):
                 raise ValueError(
-                    "Text QA reads RPG Maker MV/MZ and VX Ace data; check this engine "
-                    "with Len's runtime QA instead."
+                    "Text QA reads RPG Maker MV/MZ and VX Ace data; run qa --check, "
+                    "which checks this game's exported translations with its "
+                    "text-only rules, and Len's runtime QA."
                 )
             self.guided.open(project_id)
         return self.guided.record(project_id)[1]
+
+    def check(self, project_id, answers=None):
+        """Text QA's text-only rules over an Assistant-led game's exported
+        translations, for an engine Text QA can't read (result_checks)."""
+        from dazedtl.settings import language_pair
+
+        from .result_checks import check
+
+        translation = self.guided.translation
+        record, project = translation.project(project_id)
+        if record.get("method") != "len":
+            raise ValueError("qa --check reads an Assistant-led game's translations.")
+        if _reads(project.root):
+            raise ValueError(
+                "Text QA reads this RPG Maker game; run qa --prepare instead."
+            )
+        languages = language_pair.pair(translation.settings, project.root)
+        return check(project.root, languages["source"], languages["target"], answers)
 
     def folder(self, native) -> Path:
         return Path(self.guided.backend.workflows.folder(native["id"]))

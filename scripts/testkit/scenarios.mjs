@@ -1647,6 +1647,40 @@ export const scenarios = {
     game: "choice-help",
     steps: () => [...assistantLed.slice(0, 2), assistantWrite],
   },
+  "assistant-checked": {
+    description:
+      "assistant-written on the TyranoScript game, which Text QA can't read: qa --check lists its two forest lines missing the glossary's name and its inn price's changed number; the assistant corrects two through correction receipts, answers the third and writes the game again, and no hit is open.",
+    game: "tyrano",
+    steps: () => [
+      ...assistantLed.slice(0, 2),
+      assistantWrite,
+      [
+        "The assistant checks its translations with qa --check, corrects or answers each hit and writes the game again",
+        async ({ page, state }) => {
+          const { first, second } = JSON.parse(
+            await assistant(page, state, "check"),
+          );
+          console.log(
+            `\n  qa --check: ${first.open} open (${Object.entries(first.rules)
+              .map(([rule, count]) => `${rule} ${count}`)
+              .join(
+                ", ",
+              )}), then ${second.open} open and ${second.answered} answered`,
+          );
+          const written = fs.readFileSync(
+            path.join(state.game, "data/scenario/first.ks"),
+            "utf8",
+          );
+          for (const line of [
+            "Welcome to the Elven Woods.[p]",
+            "The inn costs 100 gold.[p]",
+          ])
+            if (!written.includes(line))
+              throw new Error(`first.ks lacks the corrected line ${line}`);
+        },
+      ],
+    ],
+  },
   "assistant-updated": {
     description:
       "assistant-written, then version 1.1 brought in and applied under Checkpoints and its post-update task copied, which continues the starting prompt's steps from census in the project's mode and language pair.",

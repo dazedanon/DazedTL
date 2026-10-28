@@ -227,7 +227,8 @@ def main():
     qa = commands.add_parser(
         "qa",
         help="Text QA for RPG Maker games: where it stands, preparing its task, and "
-        "applying finished findings through DazedTL, each its own checkpoint",
+        "applying finished findings through DazedTL, each its own checkpoint; for "
+        "other engines, --check runs its text-only rules over your translations",
     )
     qa_step = qa.add_mutually_exclusive_group()
     for step, text in (
@@ -253,6 +254,13 @@ def main():
             "--" + step, dest="qa_step", action="store_const", const=step, help=text
         )
     qa_step.add_argument(
+        "--check",
+        action="store_true",
+        help="For engines other than RPG Maker MV/MZ and VX Ace: check the exported "
+        "translations with Text QA's text-only rules, list each hit in the work "
+        "folder and print the counts",
+    )
+    qa_step.add_argument(
         "--undo",
         nargs="+",
         metavar="FINDING",
@@ -276,6 +284,12 @@ def main():
         default=0,
         metavar="MINUTES",
         help="With --apply: wait up to MINUTES for the user's answers to open questions",
+    )
+    qa.add_argument(
+        "--answers",
+        type=Path,
+        metavar="FILE",
+        help="With --check: a JSON object of hit ID to a one-line reason the line is right",
     )
     qa.add_argument(
         "--since",
@@ -546,7 +560,19 @@ def main():
                     params["step"] = args.image_step
                 if args.root:
                     params["root"] = args.root
-            if args.command == "qa":
+            if args.command == "qa" and args.answers and not args.check:
+                parser.error("--answers goes with --check")
+            if args.command == "qa" and args.check:
+                method = "translation_qa_check"
+                if args.since or args.everything or args.wait:
+                    parser.error(
+                        "--since, --everything and --wait don't go with --check"
+                    )
+                if args.answers:
+                    params["answers"] = json.loads(
+                        args.answers.read_text(encoding="utf-8-sig")
+                    )
+            elif args.command == "qa":
                 params["step"] = (
                     "undo"
                     if args.undo
@@ -660,7 +686,7 @@ def main():
                 result = prepared(args.workspace, args.project, result)
             if args.command == "run" and args.wait > 0:
                 result = wait(args.workspace, params, result, args.wait)
-            if args.command == "qa":
+            if args.command == "qa" and not args.check:
                 result = settle_qa(args.workspace, params, result)
             if args.command == "playtest" and args.wait > 0:
                 result = wait_playtest(args.workspace, params, result, args.wait)

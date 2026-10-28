@@ -24,7 +24,24 @@ const bases = {
   mv: "The MZ fixture game laid out as a deployed RPG Maker MV game: its data, js and img in www, NW.js's package.json beside it.",
   ace: "The RPG Maker VX Ace fixture game (tests/fixtures/ace).",
   wolf: "A WOLF RPG Editor game whose pictures sit in Data/Picture.wolf, packed by the bundled WolfDawn: a title screen with lettering and two CGs.",
+  tyrano:
+    "A TyranoScript game, its runtime a stand-in: data/scenario/first.ks holds a few lines of dialogue, two naming its forest and one an inn's price.",
 };
+
+/** The TyranoScript game's scenario, which Text QA can't read. */
+const tyranoScenario = [
+  "*start",
+  "[cm]",
+  "#リリ",
+  "エルフの森へようこそ。[p]",
+  "#",
+  "宿代は100ゴールドだよ。[p]",
+  "#リリ",
+  "エルフの森はいつも静かなの。[p]",
+  "おやすみなさい。[p]",
+  "[s]",
+  "",
+].join("\n");
 
 /** The WolfDawn build bundled for this system. */
 export const wolfTool = path.join(
@@ -271,6 +288,24 @@ export async function makeGame(names, game, change) {
     );
     fs.rmSync(pictures, { recursive: true });
     fs.writeFileSync(path.join(game, "Game.exe"), "Game.exe stand-in");
+    return {};
+  }
+  if (base === "tyrano") {
+    if (rest.length)
+      throw new Error("No variant applies to the TyranoScript game.");
+    if (change)
+      throw new Error("The TyranoScript game has no database to edit.");
+    fs.mkdirSync(path.join(game, "data/scenario"), { recursive: true });
+    fs.writeFileSync(path.join(game, "data/scenario/first.ks"), tyranoScenario);
+    fs.mkdirSync(path.join(game, "tyrano"));
+    fs.writeFileSync(
+      path.join(game, "tyrano/tyrano.js"),
+      "// TyranoScript stand-in\n",
+    );
+    fs.writeFileSync(
+      path.join(game, "index.html"),
+      '<!doctype html><script src="tyrano/tyrano.js"></script>\n',
+    );
     return {};
   }
   if (base === "ace") {

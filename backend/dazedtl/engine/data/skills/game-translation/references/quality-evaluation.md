@@ -11,6 +11,9 @@ distilled from it, so go there for the parts this file compresses.
 
 To measure a change to translated text (a prompt rule, request context or model) against the baseline, use the regression set and runner that DazedTL's development guide describes under Quality measurement, "Comparing a change" (`docs/development.md`), built on `util/evaluation_quality.py`; this file does not repeat that rule or its commands.
 
+To check a DazedTL game's own translations on an engine Text QA does not read, such as WOLF, Unity or TyranoScript, run the project helper's `qa --check` instead of writing post-hoc flag scripts: it runs Text QA's text-only rules (the flags `llm-pipeline.md` lists, glossary terms and the reviewed lint families) over the exported translations, and its next step says how to correct or answer each hit.
+It is a mechanical gate in the sense of section 1, never a quality score.
+
 Related: `glossary-and-prompts.md` for the review-context export and what each
 model-blind snapshot may see, and `llm-pipeline.md` for the repair-oriented review
 passes that run inside the translation loop.

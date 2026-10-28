@@ -146,7 +146,7 @@ jobs:
         # Groups of about the same length, so the jobs end together; a
         # scenario's options follow its name.
         scenarios:
-          - playtested released images-archived
+          - playtested released images-archived assistant-checked
           - fresh opened set-up translated qa-done paged moved-relabeled
           - assistant-led assistant-written assistant-released assistant-updated batch-waiting upgraded
           - released-ace released-mv moved images assistant-reorganized

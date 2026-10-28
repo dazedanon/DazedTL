@@ -21,6 +21,9 @@ their work ran, play (run the release playtest and wait for it, printing
 where it stands), untranslated (translate the text Text QA counts as never
 translated through the extraction and injection steps, play the game and
 prepare QA again, as qa's next step says, printing those locations and QA's status then),
+check (for a TyranoScript game, run qa --check, correct two of its hits through
+correction receipts, answer the third, write the game again and check again,
+printing both checks and the hits),
 qa-applied (report the
 qa phase complete once Text QA's
 apply saved its work, as qa's next step says), final-check (play the game
@@ -74,6 +77,8 @@ class Assistant:
         self.ace = any(game.glob("Data/*.rvdata2"))
         # A WOLF RPG Editor game keeps its files in Data's archives.
         self.wolf = any(game.glob("Data/*.wolf"))
+        # A TyranoScript game's text is its scenario scripts.
+        self.tyrano = (game / "tyrano").is_dir()
         self.data = "ace_json" if self.ace else "data"
         # The game's language pair, which the game's own settings may name.
         settings = game / ".dazedtl/settings.json"
@@ -131,6 +136,8 @@ class Assistant:
         evidence.write_text(
             "WOLF RPG Editor: Game.exe and Data/*.wolf archives.\n"
             if self.wolf
+            else "TyranoScript: tyrano and data/scenario/*.ks.\n"
+            if self.tyrano
             else "RPG Maker VX Ace: Data/*.rvdata2 and Game.ini.\n"
             if self.ace
             else "RPG Maker MV/MZ: data/System.json and js/plugins.js.\n",
@@ -139,17 +146,25 @@ class Assistant:
         engine = (
             "WOLF RPG Editor"
             if self.wolf
+            else "TyranoScript"
+            if self.tyrano
             else "RPG Maker VX Ace"
             if self.ace
             else "RPG Maker MZ"
         )
         self.helper("identify", "--engine", engine, "--evidence", f"{WORK}/engine.md")
         self.operation("record_original")
-        if self.wolf:
-            # The archives the translation packs again are its patch.
+        if self.tyrano:
+            # The investigation's glossary names the game's forest.
+            self.glossary("エルフの森 (Elven Woods)")
+        if self.wolf or self.tyrano:
+            # The archives the translation packs again, or the scenarios it
+            # writes, are its patch.
             files = sorted(
                 path.relative_to(self.game).as_posix()
-                for path in self.game.glob("Data/*.wolf")
+                for path in self.game.glob(
+                    "Data/*.wolf" if self.wolf else "data/scenario/*.ks"
+                )
             )
             (self.game / MANIFEST).write_text(
                 json.dumps({"files": files}), encoding="utf-8"
@@ -351,6 +366,113 @@ class Assistant:
         )
         self.report("patch")
 
+    def glossary(self, entry):
+        """Adds `entry` to the game's own glossary entries, before the base
+        glossary's, as the setup investigation saves them."""
+        from util.paths import GLOSSARY_BASE_SEPARATOR
+
+        path = self.game / ".dazedtl/glossary.txt"
+        text = path.read_text(encoding="utf-8") if path.is_file() else ""
+        own, separator, base = text.partition(GLOSSARY_BASE_SEPARATOR)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            f"{own.rstrip()}\n{entry}\n\n{separator}{base}", encoding="utf-8"
+        )
+
+    def scenario_lines(self):
+        """A TyranoScript game's text lines by unit ID, with what each line
+        keeps around its text: its file, line number, trailing tags and the
+        speaker its #name line gives."""
+        found = {}
+        for path in sorted((self.game / "data/scenario").glob("*.ks")):
+            speaker = None
+            for number, line in enumerate(path.read_text(encoding="utf-8").split("\n")):
+                if line.startswith("#"):
+                    speaker = line[1:] or None
+                    continue
+                if not line or line[0] in "*[@;":
+                    continue
+                text = re.sub(r"(\[[a-z]+\])+$", "", line)
+                found[f"{path.stem}/{number}"] = (
+                    path,
+                    number,
+                    text,
+                    line[len(text) :],
+                    speaker,
+                )
+        return found
+
+    def check(self):
+        """Follows the QA step for an engine Text QA can't read: runs qa
+        --check, corrects the forest's first line and the inn's price
+        through correction receipts, answers the forest's second line,
+        injects the corrections and checks again; returns both checks'
+        counts and the hits."""
+        first = self.helper("qa", "--check")
+        report = json.loads((self.game / first["report"]).read_text(encoding="utf-8"))
+        by_unit = {unit["unit"]: hit for hit in report["hits"] for unit in hit["units"]}
+        expected = {
+            "first/3": "glossary",
+            "first/5": "visible-number-mismatch",
+            "first/7": "glossary",
+        }
+        if {unit: hit["rule"] for unit, hit in by_unit.items()} != expected:
+            raise SystemExit(
+                "qa --check found other hits: "
+                + json.dumps(report["hits"], ensure_ascii=False)[:2000]
+            )
+        corrected = {
+            "first/3": "Welcome to the Elven Woods.",
+            "first/5": "The inn costs 100 gold.",
+        }
+        run = self.remembered()["run"]
+        index, total, receipts = 0, 1, {}
+        while index < total:
+            out = self.work / f"request-{index}.json"
+            self.helper(
+                "request", "--run", run, "--index", str(index), "--output", str(out)
+            )
+            reply = json.loads(out.read_text(encoding="utf-8"))
+            total, request = reply["total"], reply["request"]
+            fixes = {
+                key: corrected[key] for key in request["sources"] if key in corrected
+            }
+            if fixes:
+                receipts[request["id"]] = {
+                    "request_sha256": request["fingerprint"],
+                    "replaces_sha256": reply["result"]["result_sha256"],
+                    "translations": {**reply["result"]["translations"], **fixes},
+                }
+            index += 1
+        for number, (batch, receipt) in enumerate(receipts.items()):
+            path = self.work / f"correction-{number}.json"
+            path.write_text(json.dumps(receipt, ensure_ascii=False), encoding="utf-8")
+            self.helper(
+                "accept",
+                "--run",
+                run,
+                "--batch",
+                batch,
+                "--input",
+                path.relative_to(self.game).as_posix(),
+            )
+        answers = self.work / "qa-answers.json"
+        answers.write_text(
+            json.dumps(
+                {
+                    by_unit["first/7"][
+                        "id"
+                    ]: "Lili calls the forest by its old name here."
+                }
+            ),
+            encoding="utf-8",
+        )
+        second = self.helper("qa", "--check", "--answers", str(answers))
+        if second["open"] or second["answered"] != 1:
+            raise SystemExit(f"qa --check after the corrections: {second}")
+        self.write()
+        return {"first": first, "second": second, "hits": report["hits"]}
+
     def checkpoint(self, message="translation: write English"):
         self.operation("checkpoint", {"manifest": MANIFEST, "message": message})
 
@@ -534,6 +656,21 @@ class Assistant:
 
     def units(self, miss=None):
         """The game data's units, without the one whose ID is `miss`."""
+        if self.tyrano:
+            return [
+                {
+                    "id": identity,
+                    "group": path.stem,
+                    "scene": path.stem,
+                    "source": text,
+                    "kind": "dialogue",
+                    "speaker": speaker,
+                }
+                for identity, (path, _number, text, _tags, speaker) in (
+                    self.scenario_lines().items()
+                )
+                if identity != miss
+            ]
         rows = []
         markers = self.help_markers()
         for path in sorted((self.game / self.data).glob("*.json")):
@@ -651,6 +788,27 @@ class Assistant:
         self.report("injection")
         saved = self.helper("results", "--run", self.remembered()["run"])
         results = json.loads((self.game / saved["path"]).read_text(encoding="utf-8"))
+        if self.tyrano:
+            # Len's injector writes each line's text back before its tags.
+            files: dict[Path, list[str]] = {}
+            translations = results.get("translations", results)
+            for identity, (
+                path,
+                number,
+                _text,
+                tags,
+                _speaker,
+            ) in self.scenario_lines().items():
+                lines = files.setdefault(
+                    path, path.read_text(encoding="utf-8").split("\n")
+                )
+                if identity in translations:
+                    lines[number] = translations[identity] + tags
+            for path, lines in files.items():
+                path.write_text("\n".join(lines), encoding="utf-8")
+            self.checkpoint()
+            self.report("qa")
+            return
         by_file: dict[str, dict[str, str]] = {}
         for identity, value in results.get("translations", results).items():
             # What organize --complete added from the census, such as the
@@ -797,6 +955,7 @@ def main() -> None:
             "checkpoint",
             "play",
             "untranslated",
+            "check",
             "qa-applied",
             "final-check",
             "package",
@@ -813,7 +972,7 @@ def main() -> None:
         print(json.dumps(assistant.translate(args.requests), ensure_ascii=False))
     elif args.step == "organize":
         assistant.organize(args.complete, args.miss)
-    elif args.step in {"play", "untranslated", "final-check"}:
+    elif args.step in {"play", "untranslated", "check", "final-check"}:
         result = getattr(assistant, args.step.replace("-", "_"))()
         print(json.dumps(result, ensure_ascii=False))
     else:

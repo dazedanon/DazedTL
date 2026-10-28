@@ -29,6 +29,7 @@ from dazedtl.api.contracts.guided import (
     ReleaseDestination,
     SkillText,
     SpeakerScan,
+    TextQaCheck,
     TextQaStatus,
 )
 from dazedtl.api.contracts.images import (
@@ -267,6 +268,16 @@ class TranslationQaRequest(TypedDict):
     choice: NotRequired[Literal["keep", "use"]]
     since: NotRequired[str]
     everything: NotRequired[bool]
+
+
+class TranslationQaCheckRequest(TypedDict):
+    project_id: str
+    answers: NotRequired[
+        Annotated[
+            dict[str, str],
+            "Hit ID to a one-line reason the line is right, kept while the hit stays the same.",
+        ]
+    ]
 
 
 class TranslationPlaytestRequest(TypedDict):
@@ -847,6 +858,9 @@ METHODS: dict[str, Method] = {
     "translation_identify": Method(TranslationIdentifyRequest, Saved),
     "translation_images": Method(TranslationImagesRequest, ImageAssistantStepResult),
     "translation_qa": Method(TranslationQaRequest, TextQaStatus),
+    "translation_qa_check": Method(
+        TranslationQaCheckRequest, TextQaCheck, refresh=False
+    ),
     "guided_qa_report": Method(ProjectRequest, QaReport, refresh=False),
     "translation_playtest": Method(TranslationPlaytestRequest, PlaytestStatus),
     "guided_playtest_capture": Method(
