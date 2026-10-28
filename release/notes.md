@@ -12,4 +12,5 @@
 - **Assistant-led:** lines of Japanese punctuation alone, such as `「……」` or `！？`, now reach the game as `"……"` and `!?`, as Guided writes them, instead of shipping in Japanese form, and they are never part of a cost estimate.
 - **Messages:** RPG Maker MV and MZ messages no longer get a stray space between a colour or other formatting code and a pause code after it, which could start a line with a space.
 - **Assistant-led:** images applied into a folder the assistant decoded from the game's archives no longer ship as loose files beside the archive they were packed into, in the patch ZIP, the clean game ZIP or GameUpdate's download; checkpoints still restore them.
+- **Assistant-led:** undoing “Apply translated images” in Checkpoints, or going back past it, now puts back the original of an image in a folder the assistant decoded from the game's archives instead of deleting it, so packing the archive again no longer loses that picture, for images prepared from this version on.
 - **Languages:** French, Spanish, Portuguese and other Latin-script translations keep their é instead of having it written as e, in both methods; English is written as before.

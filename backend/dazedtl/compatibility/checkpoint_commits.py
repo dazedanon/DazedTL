@@ -110,6 +110,14 @@ class Change:
 
 
 OUTSIDE = Change("Edits made outside DazedTL", None, OUTSIDE_EDITS)
+# The checkpoint taking onto the branch the originals of images an assistant
+# decoded from the game's archives, before Images changes them: no record of
+# the original game's files holds them, so going back to a checkpoint
+# without one puts back the original this checkpoint holds
+# ([checkpoint_history](checkpoint_history.py) `_Game.wanted`).
+DECODED_ORIGINALS = Change(
+    "Keep the decoded images' originals", "Translate", "decoded_originals"
+)
 # The action a worker runs, which names the checkpoints of its writes.
 _running: ContextVar[Change | None] = ContextVar("checkpoint_change", default=None)
 # The phase whose checkpoint the writes made in this context wait for.
