@@ -59,6 +59,9 @@ class TranslationQuote(TypedDict):
     # The price rules it was priced under (translation/repricing); quotes
     # before it name none.
     price_rules: NotRequired[int]
+    # The rule its output tokens were counted by
+    # (estimate_prices.OUTPUT_RULES_VERSION); quotes before it name none.
+    output_rules: NotRequired[int]
     model: str
     provider: str
     basis: str

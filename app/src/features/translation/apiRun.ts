@@ -46,7 +46,8 @@ export const priceRange = (
 
 /**
  * An estimate priced with settings or a mode that have changed since, or
- * under price rules a pricing fix changed in a way its counts can't follow.
+ * under price rules a pricing fix changed in a way its counts can't follow,
+ * or counted by an output rule a later release changed.
  */
 export const estimateOutdated = (run: TranslationJob | undefined) =>
   !!awaitingQuote(run) && !!(run?.settings_changed || run?.pricing_changed);

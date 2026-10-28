@@ -1480,6 +1480,7 @@ export type TranslationQuote = {
   unestimated_thinking_tokens?: boolean;
   thinking_effort?: string;
   price_rules?: number;
+  output_rules?: number;
   model: string;
   provider: string;
   basis: string;
