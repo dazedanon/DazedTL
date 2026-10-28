@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from dazedtl import system
+from dazedtl.settings import effort
 from dazedtl.settings.preferences import (
     BATTLE_MESSAGE_USERS_LEVELS,
     CHOICE_COLLECTION,
@@ -207,11 +208,13 @@ def install(*, coordinator=False):
             )
         batch_input_tokens(policy.get("batchInputTokens"))
         output_allowance = output_tokens(policy.get("maxOutputTokens"))
+        thinking_effort = effort.checked(policy.get("thinkingEffort"))
+        provider = infer_provider(
+            plan["settings"].get("API_PROVIDER"), plan["settings"].get("api", "")
+        )
         host = openrouter_host(policy.get("openrouterHost", ""))
         strict_router = policy.get("openrouterStructuredOutputs") == STRUCTURED_OUTPUTS
-        if (host or strict_router) and infer_provider(
-            plan["settings"].get("API_PROVIDER"), plan["settings"].get("api", "")
-        ) != "openrouter":
+        if (host or strict_router) and provider != "openrouter":
             raise ValueError(
                 "This run's selected host requires an OpenRouter connection."
             )
@@ -233,7 +236,9 @@ def install(*, coordinator=False):
         result = native_prepare(root)
         from util import translation
 
-        openrouter_pricing.configure(translation, router_policy)
+        openrouter_pricing.configure(
+            translation, router_policy, thinking_effort=thinking_effort
+        )
         configure_batch_allowance(translation, policy)
         configure_prices(translation, prices)
         translation.STRICT_STRUCTURED_OUTPUTS = bool(strict_router)
@@ -268,6 +273,8 @@ def install(*, coordinator=False):
             structured_outputs=strict_router,
             batch=plan.get("mode") == "batch" or bool(plan.get("batch_link")),
             openrouter_batch=router_policy,
+            provider=provider,
+            thinking_effort=thinking_effort,
         )
         configure_states(plan, grouping_root, policy)
         checkpoint_reader()

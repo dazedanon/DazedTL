@@ -2379,25 +2379,18 @@ def sync_run_history(run_dir: str | Path) -> int:
 
 
 def apply_reasoning(params: dict, provider: str, effort: str) -> dict:
-    """Sets a request's reasoning to *effort* (evaluation_settings), or
-    leaves it to the provider for ``provider_default``: Claude's thinking and
-    effort, or the OpenAI-compatible reasoning effort, which replaces sampling
-    settings except on Gemini."""
-    if provider == "anthropic":
-        if effort == "none":
-            params["thinking"] = {"type": "disabled"}
-        elif effort != "provider_default":
-            params["thinking"] = {"type": "adaptive"}
-            params.setdefault("output_config", {})["effort"] = effort
-    elif provider == "gemini":
-        if effort != "provider_default":
-            params["reasoning_effort"] = effort
-    elif effort != "provider_default":
-        params["reasoning_effort"] = effort
-        for field in ("temperature", "top_p", "frequency_penalty"):
-            params.pop(field, None)
-    else:
-        params.pop("reasoning_effort", None)
+    """Sets a request's reasoning to *effort* by the rule runs use
+    (dazedtl/settings/effort ``apply``), or leaves it to the provider for
+    ``provider_default``, taking out the engine builder's own OpenAI effort."""
+    from dazedtl.settings.effort import apply
+
+    if effort == "provider_default":
+        if provider not in ("anthropic", "gemini"):
+            params.pop("reasoning_effort", None)
+        return params
+    written = apply(params, provider, params.get("model"), effort)
+    params.clear()
+    params.update(written)
     return params
 
 

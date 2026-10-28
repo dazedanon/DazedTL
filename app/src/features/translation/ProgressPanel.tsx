@@ -556,6 +556,7 @@ function ApiRun({
                   batch_max_cost: quote.cost,
                 }),
                 unestimated_thinking_tokens: quote.unestimated_thinking_tokens,
+                thinking_effort: quote.thinking_effort,
               }}
               mode={mode}
             />

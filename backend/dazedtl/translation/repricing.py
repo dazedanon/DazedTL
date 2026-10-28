@@ -14,13 +14,15 @@ from dazedtl.settings.execution import LOOKED_UP
 from .files import digest
 
 # What a model or mode switch changes in the frozen settings without
-# changing the text of the requests built under them.
+# changing the text of the requests built under them. The thinking effort,
+# like the output allowance, changes what a reply may cost, not its text.
 PRICE_ONLY = frozenset(
     {
         "mode",
         "model",
         "rates",
         "maxOutputTokens",
+        "thinkingEffort",
         "openrouterBatch",
         "batchInputTokens",
     }

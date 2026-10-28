@@ -4,6 +4,8 @@ import math
 from copy import deepcopy
 from typing import cast
 
+from . import effort
+
 DEFAULT_ENTRIES_PER_REQUEST = 50
 DEFAULT_OUTPUT_TOKENS = 32_768
 # The default Batch input-token allowance for new OpenAI runs, which a
@@ -26,8 +28,11 @@ DEFAULT_BATCH_INPUT_TOKENS = 400_000
 # engine's modules/rpgmakermvmz.py, which holds each one's full rule.
 # The native engine's implicit temperature, frequency penalty and reasoning
 # effort are omitted (compatibility/request_parameters), since model
-# preferences expose no explicit override for them; the provider's defaults
-# apply, without guessing a model's capabilities.
+# preferences expose no override for the first two; the provider's defaults
+# apply, without guessing a model's capabilities. The thinking effort a user
+# chooses per model is frozen beside it as `thinkingEffort`, only while the
+# model takes that level (settings/effort), and written in after the omission;
+# a run frozen without it sends no effort.
 GENERATION_PARAMETERS = "provider-defaults-v1"
 # Built-in menu choices are requested only on the first event pass, keeping
 # their scene context, so the write pass cannot queue a duplicate during
@@ -231,6 +236,7 @@ def options(value, *, draft=False):
     optional = {
         "batchInputTokens",
         "maxOutputTokens",
+        "thinkingEffort",
         "batchPricing",
         "batchInputRate",
         "batchOutputRate",
@@ -243,6 +249,10 @@ def options(value, *, draft=False):
         raise ValueError("Invalid model options.")
     batch_input_tokens(value.get("batchInputTokens"))
     output_tokens(value.get("maxOutputTokens"))
+    # Which levels a model takes is checked where Settings saves the choice
+    # (settings/store), since a level the model stops taking reads as the
+    # provider default instead of failing the record.
+    effort.checked(value.get("thinkingEffort"))
     if value["pricing"] not in ("automatic", "custom"):
         raise ValueError("Choose automatic pricing or custom rates.")
     if value.get("batchPricing", "automatic") not in ("automatic", "custom"):

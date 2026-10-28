@@ -360,6 +360,7 @@ class TranslationTaskCore:
             countClaudeTokens,
             countTokens,
             createContextParts,
+            estimateCostComparison,
             getPricingConfig,
             isClaudeNative,
         )
@@ -428,6 +429,9 @@ class TranslationTaskCore:
             (regular_input + cache.reused) * input_rate + output_tokens * output_rate
         )
 
+        # The note on unpredicted thinking and the effort the run sends, as
+        # every other estimate of the run names them.
+        comparison = estimateCostComparison(0, 0, model_name)
         return {
             "model": model_name,
             "request_count": len(regular_tokens),
@@ -437,6 +441,11 @@ class TranslationTaskCore:
             "cold_cache": native_claude,
             # Claude bills more tokens than the approximate count holds.
             "approximate_input": bool(requests) and counted is None,
+            **{
+                key: comparison[key]
+                for key in ("unestimated_thinking_tokens", "thinking_effort")
+                if key in comparison
+            },
         }
 
     @extensions.point

@@ -2,67 +2,34 @@
 
 from __future__ import annotations
 
-import re
+from dazedtl.settings.effort import LABELS
+from dazedtl.settings.effort import levels as effort_levels
 
 
 DEFAULT_MAX_OUTPUT_TOKENS = 4096
 MAX_OUTPUT_TOKEN_LIMIT = 128_000
 SETTING_FIELDS = ("reasoning_effort", "effective_reasoning_effort", "max_output_tokens")
-EFFORT_LABELS = {
-    "none": "Off", "minimal": "Minimal", "low": "Low", "medium": "Medium",
-    "high": "High", "xhigh": "Extra high", "max": "Maximum",
-    "provider_default": "Provider default",
-}
+EFFORT_LABELS = {**LABELS, "provider_default": "Provider default"}
 
 
 def reasoning_profile(candidate: dict) -> tuple[tuple[str, ...], str]:
-    """Return supported efforts and the compatible low-cost default.
-
-    Unknown models keep provider defaults instead of inheriting another
-    model's API contract. Match aliases and dated snapshots, including routed IDs.
-    Sources: developers.openai.com/api/docs/models and
-    platform.claude.com/docs/en/build-with-claude/{effort,thinking-troubleshooting};
-    ai.google.dev/gemini-api/docs/openai#thinking.
-    """
-    model = str(candidate.get("model") or "").lower().rsplit("/", 1)[-1]
-    provider = candidate.get("provider")
-    standard = ("low", "medium", "high")
-    full = (*standard, "xhigh", "max")
-    if provider == "anthropic":
-        if re.match(r"claude-(?:opus-5-5(?:-|$)|fable-|mythos-)", model):
-            levels = (*standard, "max") if "mythos-preview" in model else full
-            return levels, "low"
-        if re.match(r"claude-(?:opus-(?:5(?:-|$)|4-[78](?:-|$))|sonnet-5(?:-|$))", model):
-            return ("none", *full), "none"
-        if re.match(r"claude-(?:opus|sonnet)-4-6(?:-|$)", model):
-            return ("none", *standard, "max"), "none"
-        if re.match(r"claude-(?:opus|sonnet|haiku)-4(?:-|$)", model):
-            # Legacy models require a manual thinking budget, not effort levels.
-            return ("none",), "none"
-    elif provider == "gemini":
-        if re.match(r"gemini-(?:3[.-]|2\.5-)", model):
-            levels = ("minimal", *standard)
-            if model.startswith("gemini-2.5-flash"):
-                levels = ("none", *levels)
-            return levels, "minimal"
-    elif provider == "openai":
-        if re.match(r"gpt-6-astra(?:-|$)", model):
-            return full, "low"
-        if re.match(r"gpt-(?:6-(?:sol|luna)|5\.6-(?:sol|terra|luna))(?:-|$)", model):
-            return ("none", *full), "none"
-        if re.match(r"gpt-5\.[245](?:-\d{4}-\d{2}-\d{2})?$", model):
-            return ("none", *standard, "xhigh"), "none"
-        if re.match(r"gpt-5\.1(?:-\d{4}-\d{2}-\d{2})?$", model):
-            return ("none", *standard), "none"
-        if re.match(r"gpt-5(?:-(?:mini|nano))?(?:-\d{4}-\d{2}-\d{2})?$", model):
-            return ("minimal", *standard), "minimal"
-    return (), "provider_default"
+    """Return the efforts a model takes (dazedtl/settings/effort, the one
+    table runs read too) and the cheapest, which an "auto" choice resolves
+    to. Unknown models keep provider defaults instead of inheriting another
+    model's API contract."""
+    levels = effort_levels(candidate.get("provider"), candidate.get("model"))
+    return (levels, levels[0]) if levels else ((), "provider_default")
 
 
 def generation_settings(candidate: dict) -> dict:
     """Validate settings and resolve an auto choice, retaining a saved resolution."""
     levels, default = reasoning_profile(candidate)
     choice = candidate.get("reasoning_effort", "auto")
+    saved = "effective_reasoning_effort" in candidate
+    # A saved candidate keeps the effort it ran with, which an earlier table
+    # may have offered; requests still carry only levels the table holds.
+    if saved:
+        levels = tuple(EFFORT_LABELS)
     if choice != "auto" and choice not in levels:
         raise ValueError(f"{candidate.get('model')}: unsupported reasoning effort {choice!r}")
     effective = candidate.get("effective_reasoning_effort", default if choice == "auto" else choice)

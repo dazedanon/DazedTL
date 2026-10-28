@@ -36,11 +36,9 @@ def prices(counts, configuration, provider, cache=None):
     estimate shows.
     """
     from util.provider_costs import batch_price_factor
-    from util.translation import (
-        claude_cache_prices,
-        openai_cache_prices,
-        unestimatedThinking,
-    )
+    from util.translation import claude_cache_prices, openai_cache_prices
+
+    from dazedtl.settings.effort import summary, thinks
 
     model = configuration["model"]
     inputs, outputs = counts["input_tokens"], counts["output_tokens"]
@@ -62,8 +60,20 @@ def prices(counts, configuration, provider, cache=None):
         "batch_cached_cost": nocache,
         "batch_max_cost": nocache,
         "uses_prompt_cache": False,
+        # Any model a Batch routes may think, unless the run froze an effort.
         "unestimated_thinking_tokens": bool(router)
-        or unestimatedThinking(provider, model),
+        and configuration.get("thinkingEffort") is None
+        or thinks(
+            configuration.get("provider") or provider,
+            model,
+            configuration.get("thinkingEffort"),
+        ),
+        # The effort the run sends, which a price after an effort change names.
+        "thinking_effort": summary(
+            configuration.get("provider") or provider,
+            model,
+            configuration.get("thinkingEffort"),
+        ),
     }
     if provider == "anthropic" and cache is not None and cache.writes:
         # Approximate input leaves out the reply schema the cache key holds.

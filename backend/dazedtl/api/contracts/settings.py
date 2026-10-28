@@ -13,16 +13,34 @@ class PreferenceValues(TypedDict):
     sourceLanguage: SourceLanguage
 
 
+type EffortLevel = Literal["none", "minimal", "low", "medium", "high", "xhigh", "max"]
+
+
 class ModelOptions(TypedDict):
     entriesPerRequest: Literal[""] | int | None
     batchInputTokens: NotRequired[int | None]
     maxOutputTokens: NotRequired[int | None]
+    # settings/effort LEVELS; None leaves the effort to the provider.
+    thinkingEffort: NotRequired[EffortLevel | None]
     pricing: Literal["automatic", "custom"]
     inputRate: Literal[""] | float | None
     outputRate: Literal[""] | float | None
     batchPricing: NotRequired[Literal["automatic", "custom"]]
     batchInputRate: NotRequired[Literal[""] | float | None]
     batchOutputRate: NotRequired[Literal[""] | float | None]
+
+
+class EffortOption(TypedDict):
+    # None leaves the effort to the provider.
+    value: EffortLevel | None
+    label: str
+
+
+class ThinkingEffort(TypedDict):
+    """The efforts Settings offers for a model (settings/effort describe):
+    the provider default first, then each level the model takes."""
+
+    options: list[EffortOption]
 
 
 class ModelDefaults(TypedDict):
@@ -37,6 +55,7 @@ class ModelDefaults(TypedDict):
     batchReason: NotRequired[str]
     batchInputRate: NotRequired[float | None]
     batchOutputRate: NotRequired[float | None]
+    thinkingEffort: NotRequired[ThinkingEffort]
 
 
 class SettingsProvider(TypedDict):

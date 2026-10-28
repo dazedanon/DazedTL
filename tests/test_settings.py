@@ -17,6 +17,7 @@ from dazedtl.settings import openrouter, preferences, providers
 from dazedtl.settings.execution import configuration, worker_secret
 from dazedtl.settings.store import Settings
 from dazedtl.storage import write_json
+from dazedtl.translation.requests import LINE_KEYS, logical_request
 
 from tests.engine import replaced_modules
 
@@ -1285,6 +1286,230 @@ class SettingsTests(unittest.TestCase):
         for invalid in (0, -1, True, 1.5, "8000000", 9_007_199_254_740_992):
             with self.subTest(invalid=invalid), self.assertRaises(ValueError):
                 preferences.options({**legacy_options, "batchInputTokens": invalid})
+
+    def test_a_thinking_effort_is_sent_only_where_its_model_takes_it(self):
+        # A level a provider rejects fails a paid run, so a choice reaches a
+        # request only when its provider, exact model and level are a row of
+        # the effort table; a saved level the model stops taking reads as the
+        # provider default, and a run without a choice keeps its settings.
+        from dazedtl.compatibility.translation import request_payload
+        from dazedtl.settings import effort
+
+        self.assertEqual(
+            effort.describe("anthropic", "claude-opus-5-5")["options"][:2],
+            [
+                {"value": None, "label": "Provider default (Medium)"},
+                {"value": "low", "label": "Low"},
+            ],
+        )
+        for provider, model in (
+            ("custom", "gpt-6.1-sol"),
+            ("openai", "gpt-6.1-sol-2026-09-01"),
+            ("openrouter", "anthropic/claude-haiku-4.5"),
+        ):
+            self.assertEqual(effort.levels(provider, model), ())
+        # Routed models offer only what both their own provider and
+        # OpenRouter list: Opus 5.5 never turns thinking off.
+        self.assertNotIn(
+            "none", effort.levels("openrouter", "anthropic/claude-opus-5.5")
+        )
+        self.assertNotIn("none", effort.levels("kimi", "kimi-k3"))
+        sent = {"model": "m", "temperature": 0, "frequency_penalty": 0.05}
+        for provider, model, level, written in (
+            (
+                "anthropic",
+                "claude-opus-5-5",
+                "low",
+                {"thinking": {"type": "adaptive"}, "output_config": {"effort": "low"}},
+            ),
+            (
+                "anthropic",
+                "claude-opus-4-8",
+                "none",
+                {"thinking": {"type": "disabled"}},
+            ),
+            # Sonnet 5.5 refuses "disabled".
+            (
+                "anthropic",
+                "claude-sonnet-5-5",
+                "none",
+                {"thinking": {"type": "between_tools"}},
+            ),
+            ("openai", "gpt-6.1-sol", "xhigh", {"reasoning_effort": "xhigh"}),
+            (
+                "gemini",
+                "models/gemini-3.1-pro-preview",
+                "low",
+                {"reasoning_effort": "low"},
+            ),
+            ("deepseek", "deepseek-flash", "max", {"reasoning_effort": "max"}),
+            (
+                "deepseek",
+                "deepseek-flash",
+                "none",
+                {"extra_body": {"thinking": {"type": "disabled"}}},
+            ),
+            (
+                "kimi",
+                "kimi-k2.6",
+                "none",
+                {"extra_body": {"thinking": {"type": "disabled"}}},
+            ),
+            (
+                "openrouter",
+                "openai/gpt-6.1-sol",
+                "high",
+                {"extra_body": {"reasoning": {"effort": "high"}}},
+            ),
+        ):
+            with self.subTest(provider=provider, model=model, level=level):
+                # Sampling settings stay with thinking off and on Gemini.
+                kept = sent if level == "none" or provider == "gemini" else {}
+                self.assertEqual(
+                    effort.apply(sent, provider, model, level),
+                    {"model": "m", **kept, **written},
+                )
+                self.assertEqual(effort.thinks(provider, model, level), level != "none")
+        for provider, model, level in (
+            ("openai", "gpt-6.1-sol", "none"),
+            ("openai", "gpt-4.1", "low"),
+            ("custom", "local-model", "high"),
+            ("anthropic", "claude-opus-5-5", None),
+        ):
+            self.assertIs(effort.apply(sent, provider, model, level), sent)
+        # A Gemini thinking budget beside an effort is refused.
+        self.assertEqual(
+            effort.apply(
+                {"extra_body": {"extra_body": {"google": {"thinking_config": {}}}}},
+                "gemini",
+                "gemini-2.5-flash",
+                "low",
+            ),
+            {"reasoning_effort": "low"},
+        )
+
+        options = {
+            "entriesPerRequest": None,
+            "pricing": "custom",
+            "inputRate": 1,
+            "outputRate": 2,
+        }
+        connection = {
+            "id": "first",
+            "runtime_name": "first-key",
+            "name": "First",
+            "provider": "openai",
+            "protocol": "openai",
+            "endpoint": "",
+            "secret": "fixture-secret",
+            "keyless": False,
+            "organization": "",
+            "model": "gpt-6.1-sol",
+            "model_options": {"gpt-6.1-sol": options},
+            "models": [],
+            "check": providers.unchecked(),
+        }
+        adapter = SimpleNamespace(
+            settings_metadata=lambda: {
+                "values": {
+                    "language": "English",
+                    "model": "gpt-6.1-sol",
+                    "api": "",
+                    "API_PROVIDER": "openai",
+                }
+            },
+            allow_providers=False,
+            validate_route=lambda _: None,
+            provider_defaults=lambda _: {"batch_supported": True},
+            model_defaults=SimpleNamespace(cached=lambda _model: {}),
+            manual=SimpleNamespace(request_policy=None),
+            install_settings=Mock(),
+        )
+        state = {
+            "version": 3,
+            "revision": 0,
+            "sourceLanguage": "Japanese",
+            "values": {"language": "English", "model": "gpt-6.1-sol"},
+            "legacy": {"values": {}, "engines": {}, "draft": None},
+            "model_options": {},
+            "active": "first",
+            "draft": None,
+            "connections": [connection],
+        }
+        with TemporaryDirectory() as temporary:
+            path = Path(temporary) / "settings/settings.json"
+            write_json(path, state)
+            settings = Settings(temporary, adapter)
+            view = settings.describe()
+            # Without a choice a run freezes exactly the settings it froze
+            # before, so waiting estimates stay current.
+            self.assertNotIn("thinkingEffort", configuration(settings, "live"))
+            with self.assertRaisesRegex(ValueError, "doesn't take thinking effort Off"):
+                settings.save(
+                    view["revision"],
+                    "first",
+                    view["values"],
+                    {"gpt-6.1-sol": {**options, "thinkingEffort": "none"}},
+                )
+            with self.assertRaises(ValueError):
+                preferences.options({**options, "thinkingEffort": "extreme"})
+            view = settings.save(
+                view["revision"],
+                "first",
+                view["values"],
+                {"gpt-6.1-sol": {**options, "thinkingEffort": "high"}},
+            )
+            frozen = configuration(settings, "live")
+            self.assertEqual(frozen["thinkingEffort"], "high")
+            settings.prepare_engine("translate")
+            self.assertEqual(adapter.manual.request_policy["thinkingEffort"], "high")
+            # The Assistant-led request carries it as Guided's does.
+            row = logical_request(
+                {"id": "scene", "sources": {"line": "はい。"}},
+                {
+                    "user": "Lines:",
+                    "system": "Translate.",
+                    "glossary": "",
+                    "sfx_reference": "",
+                    "preceding_japanese_source_context": "",
+                    "request_instructions": "",
+                },
+            )
+            payload = request_payload(row, {**frozen, "lineKeys": LINE_KEYS})
+            self.assertEqual(payload["reasoning_effort"], "high")
+            self.assertNotIn("temperature", payload)
+            self.assertNotIn(
+                "reasoning_effort",
+                request_payload(
+                    row,
+                    {
+                        key: value
+                        for key, value in frozen.items()
+                        if key != "thinkingEffort"
+                    }
+                    | {"lineKeys": LINE_KEYS},
+                ),
+            )
+            # A level the table stops holding stays saved, reads as the
+            # provider default and does not block saving other options.
+            with patch.dict(
+                effort._NATIVE["openai"], {"gpt-6.1-sol": (("low",), "medium")}
+            ):
+                self.assertNotIn("thinkingEffort", configuration(settings, "live"))
+                settings.prepare_engine("translate")
+                self.assertNotIn("thinkingEffort", adapter.manual.request_policy)
+                settings.save(
+                    view["revision"],
+                    "first",
+                    view["values"],
+                    {
+                        "gpt-6.1-sol": {
+                            **options,
+                            "thinkingEffort": "high",
+                            "maxOutputTokens": 4096,
+                        }
+                    },
+                )
 
     def test_compiled_batch_limits_use_the_frozen_allowance_only_for_native_openai(
         self,

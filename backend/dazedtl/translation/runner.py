@@ -415,9 +415,8 @@ class Runner:
                 certain = type(status) is int and 400 <= status < 500
                 self.job["states"][identity] = {
                     "state": "failed" if certain else "uncertain",
-                    "message": "Provider rejected the request (HTTP "
-                    + str(status)
-                    + ")."
+                    "message": self.refused_effort([exc.__cause__ or exc])
+                    or "Provider rejected the request (HTTP " + str(status) + ")."
                     if certain
                     else "The request outcome is uncertain. It will not be sent again automatically.",
                 }
@@ -776,6 +775,17 @@ class Runner:
             None,
         )
 
+    def refused_effort(self, errors):
+        """The run's one message when the provider refused its thinking
+        effort (settings/effort) in any of *errors*, else ""."""
+        from dazedtl.settings import effort
+
+        configuration = self.plan["configuration"]
+        level = configuration.get("thinkingEffort")
+        if any(effort.rejected(error, level) for error in errors):
+            return effort.rejection(configuration["model"], level)
+        return ""
+
     def halt(self, message):
         """Sends no further chunk after a failed one: the run ends failed with
         `message`, or, with several chunks in flight, first collects the
@@ -936,6 +946,25 @@ class Runner:
                     self.accept(identity, response)
             chunk["state"] = "unmatched"
             self.unresolved(chunk, UNMATCHED)
+            return None
+        # The provider's message for each errored request, by its ID.
+        refused = self.refused_effort(
+            errors.values() if isinstance(errors, dict) else ()
+        )
+        if refused:
+            # Every request of the run carries the same effort, so the run
+            # says so once and sends nothing more.
+            for identity, response in responses.items():
+                self.accept(identity, response)
+            for identity in known_errors:
+                if self.job["states"][identity]["state"] != "accepted":
+                    self.job["states"][identity] = {
+                        "state": "failed",
+                        "message": refused,
+                    }
+            chunk.update(state="complete", usage=usage)
+            if not cancel:
+                self.halt(refused)
             return None
         return responses, usage
 

@@ -1,4 +1,10 @@
-import type { Connection, ModelOptions, Settings } from "../../api/contracts";
+import type {
+  Connection,
+  EffortLevel,
+  EffortOption,
+  ModelOptions,
+  Settings,
+} from "../../api/contracts";
 import { Section } from "../../ui/Section";
 import { FieldRow } from "../../ui/FieldRow";
 import { Button } from "../../ui/Button";
@@ -13,6 +19,64 @@ const automatic: ModelOptions = {
 };
 const amount = (value: number) =>
   new Intl.NumberFormat("en-US", { maximumFractionDigits: 6 }).format(value);
+
+/**
+ * The thinking effort new runs send for this model. Only the levels the
+ * model takes are offered (settings/effort); a saved level it no longer takes
+ * reads as the provider default and stays listed until another is chosen.
+ */
+function ThinkingEffortField({
+  options,
+  value,
+  change,
+}: {
+  options?: EffortOption[];
+  value: EffortLevel | null;
+  change: (value: EffortLevel | null) => void;
+}) {
+  const offered = options ?? [{ value: null, label: "Provider default" }];
+  const known = offered.length > 1;
+  const stale =
+    !!options &&
+    value !== null &&
+    !offered.some((item) => item.value === value);
+  // Listed, so choosing another option clears it.
+  const choices = stale
+    ? [...offered, { value, label: "Saved effort, not offered" }]
+    : offered;
+  return (
+    <FieldRow
+      id="thinking-effort"
+      label="Thinking effort"
+      help={
+        stale
+          ? "The saved effort isn't one this model takes, so new runs use the provider default."
+          : !options
+            ? undefined
+            : known
+              ? "Higher effort can help with hard lines but uses more output tokens, which cost more. Used by new runs."
+              : "DazedTL doesn't know which efforts this model takes, so runs leave it to the provider."
+      }
+    >
+      {(control) => (
+        <select
+          {...control}
+          disabled={!options || (!known && !stale)}
+          value={value ?? ""}
+          onChange={(event) =>
+            change((event.target.value || null) as EffortLevel | null)
+          }
+        >
+          {choices.map((item) => (
+            <option key={item.value ?? ""} value={item.value ?? ""}>
+              {item.label}
+            </option>
+          ))}
+        </select>
+      )}
+    </FieldRow>
+  );
+}
 
 export default function ModelOptionsEditor({
   config,
@@ -152,6 +216,11 @@ export default function ModelOptionsEditor({
             />
           )}
         </FieldRow>
+        <ThinkingEffortField
+          options={resolved?.thinkingEffort?.options}
+          value={value.thinkingEffort ?? null}
+          change={(thinkingEffort) => change({ thinkingEffort })}
+        />
         {connection?.provider === "openai" && (
           <FieldRow
             id="batch-input-tokens"

@@ -3,7 +3,7 @@
 from dazedtl.translation.files import read_json
 from dazedtl.translation.refusals import POLICY as REFUSAL_POLICY
 
-from . import language_pair, openrouter, preferences, providers
+from . import effort, language_pair, openrouter, preferences, providers
 
 
 def connection_summary(settings):
@@ -107,6 +107,7 @@ def configuration(settings, mode, *, cached_only=False, unpriced=False, pair=Non
         "maxOutputTokens": preferences.output_allowance(
             selected.get("maxOutputTokens"), defaults.get("maxOutputTokens")
         ),
+        **effort.frozen(connection["provider"], connection["model"], selected),
         "refusalRetry": REFUSAL_POLICY,
         "entries_per_request": entries_per_request(settings),
         "rates": {

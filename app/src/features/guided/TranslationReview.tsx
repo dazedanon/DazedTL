@@ -89,6 +89,13 @@ export function TranslationCost({
           <dt>Est. output tokens</dt>
           <dd>{count(value.output_tokens)}</dd>
         </div>
+        {/* What the run sends, from its frozen settings (settings/effort). */}
+        {typeof value.thinking_effort === "string" && (
+          <div>
+            <dt>Thinking effort</dt>
+            <dd>{value.thinking_effort}</dd>
+          </div>
+        )}
       </dl>
       {prices.some(([, price]) => numeric(price)) && (
         <dl className="translation-cost-prices">

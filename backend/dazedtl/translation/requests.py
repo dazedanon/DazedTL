@@ -778,6 +778,7 @@ def price(counts, configuration, provider, cache=None):
         "provider": configuration["provider"],
         "rates": rates,
         "unestimated_thinking_tokens": value["unestimated_thinking_tokens"],
+        "thinking_effort": value["thinking_effort"],
         "basis": "Complete compiled requests; 2.5× source-token output allowance"
         + (
             "; the higher Batch price reuses no cached instructions, the lower reuses every one it can"

@@ -54,6 +54,8 @@ class TranslationQuote(TypedDict):
     cacheable_tokens: NotRequired[int]
     # The model thinks, billed as output the quote cannot predict.
     unestimated_thinking_tokens: NotRequired[bool]
+    # The thinking effort the run sends (settings/effort summary).
+    thinking_effort: NotRequired[str]
     model: str
     provider: str
     basis: str

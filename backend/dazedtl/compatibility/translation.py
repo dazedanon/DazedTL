@@ -1431,6 +1431,9 @@ def request_payload(request, configuration):
     params = request_parameters.provider_defaults(
         params, configuration.get("generationParameters")
     )
+    params = request_parameters.thinking(
+        params, configuration, configuration["provider"]
+    )
     return request_parameters.completion_budget(
         params, configuration.get("maxOutputTokens")
     )
@@ -1591,7 +1594,7 @@ class TranslationProvider:
             client=self.client,
             google_client=self.google,
         )
-        return results, [str(item[0]) for item in errors], usage
+        return results, {str(item[0]): str(item[1]) for item in errors}, usage
 
     @provider_errors
     def collect_terminal(self, identity, mapping):
@@ -1609,7 +1612,7 @@ class TranslationProvider:
             client=self.client,
             google_client=self.google,
         )
-        return results, [str(item[0]) for item in errors], usage
+        return results, {str(item[0]): str(item[1]) for item in errors}, usage
 
 
 def _wolf_documents(wolfdawn, root, workdir, names):

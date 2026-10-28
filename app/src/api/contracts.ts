@@ -106,6 +106,7 @@ export type RunEstimate = {
   batch_nocache_cost?: number;
   batch_max_cost?: number;
   unestimated_thinking_tokens?: boolean;
+  thinking_effort?: string;
   approximate_input?: boolean;
   elapsed_seconds?: number;
 };
@@ -1476,6 +1477,7 @@ export type TranslationQuote = {
   cache_read_tokens?: number;
   cacheable_tokens?: number;
   unestimated_thinking_tokens?: boolean;
+  thinking_effort?: string;
   model: string;
   provider: string;
   basis: string;
@@ -1984,16 +1986,31 @@ export type PreferenceValues = {
   sourceLanguage: SourceLanguage;
 };
 
+export type EffortLevel =
+  "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+
 export type ModelOptions = {
   entriesPerRequest: "" | number | null;
   batchInputTokens?: number | null;
   maxOutputTokens?: number | null;
+  thinkingEffort?: EffortLevel | null;
   pricing: "automatic" | "custom";
   inputRate: "" | number | null;
   outputRate: "" | number | null;
   batchPricing?: "automatic" | "custom";
   batchInputRate?: "" | number | null;
   batchOutputRate?: "" | number | null;
+};
+
+export type EffortOption = {
+  value: EffortLevel | null;
+  label: string;
+};
+
+/** The efforts Settings offers for a model (settings/effort describe):
+the provider default first, then each level the model takes. */
+export type ThinkingEffort = {
+  options: EffortOption[];
 };
 
 export type ModelDefaults = {
@@ -2008,6 +2025,7 @@ export type ModelDefaults = {
   batchReason?: string;
   batchInputRate?: number | null;
   batchOutputRate?: number | null;
+  thinkingEffort?: ThinkingEffort;
 };
 
 export type SettingsProvider = {

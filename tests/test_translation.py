@@ -1153,6 +1153,64 @@ class TranslationTests(unittest.TestCase):
                             "project", {plan["requests"][0]["fingerprint"]}
                         )
 
+    def test_a_refused_thinking_effort_ends_the_run_with_one_message(self):
+        # The user chose the effort, so a provider that refuses it stops the
+        # run, Live or Batch, saying so once; nothing is retried without it.
+        from dazedtl.settings.effort import rejection
+
+        message = rejection("gpt-6.1-sol", "low")
+        refused = ValueError("Error code: 400 - Unsupported value: 'reasoning_effort'")
+        refused.status_code = 400
+
+        class Refusing(BatchProvider):
+            def collect(self, _identity, mapping):
+                return (
+                    {},
+                    {
+                        key: "errored: invalid_request_error: reasoning_effort low"
+                        for key in mapping
+                    },
+                    {},
+                )
+
+        for mode, provider in (("live", LiveProvider(refused)), ("batch", Refusing())):
+            with self.subTest(mode=mode):
+                rows = [request(mode + "-one"), request(mode + "-two")]
+                for row in rows:
+                    row["params"] = {"model": "gpt-6.1-sol", "messages": []}
+                job = self.store.create(
+                    "project",
+                    {
+                        "version": 1,
+                        "kind": "translation",
+                        "source": str(self.game),
+                        "complete": True,
+                        "requests": rows,
+                        "configuration": {
+                            "mode": mode,
+                            "model": "gpt-6.1-sol",
+                            "provider": "openai",
+                            "thinkingEffort": "low",
+                        },
+                        "batch_limits": [50, 100000],
+                    },
+                    {"cost": 1},
+                )
+                self.store.authorize(job)
+                Runner(self.store, job["id"], provider, lambda: None).step()
+                if mode == "batch":
+                    provider.ended = True
+                    Runner(self.store, job["id"], provider, lambda: None).step()
+                current, _plan = self.store.load(job["id"])
+                self.assertEqual(
+                    (current["status"], current["message"]), ("failed", message)
+                )
+                self.assertEqual(provider.calls, 1)
+                self.assertEqual(
+                    {row["message"] for row in current["states"].values()} - {""},
+                    {message},
+                )
+
     def test_refusal_clarification_is_bounded_and_retains_both_paid_attempts(self):
         # A refusal in valid JSON used to pass output validation, and so did a
         # note in place of a line. A repeated refusal or lost retry response

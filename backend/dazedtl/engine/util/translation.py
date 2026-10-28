@@ -344,18 +344,6 @@ def isMistralAPI():
 # opus-4-7, opus-4-8, opus-4-10+ and fable, but NOT opus-4-6 or Sonnet/Haiku.
 _NO_SAMPLING_RE = re.compile(r"opus-4-(?:[7-9]\b|[1-9]\d)|fable", re.I)
 
-# Claude models that think when a request omits ``thinking``: Opus and Sonnet 5
-# and up, Fable and Mythos. Opus 5.5 and Fable cannot turn it off. Thinking
-# bills as output that an estimate cannot predict.
-_DEFAULT_THINKING_RE = re.compile(
-    r"claude-(?:(?:opus|sonnet)-(?:[5-9]|[1-9]\d)\b|fable|mythos)"
-    # Kimi K3 always thinks; K2.6 and K2.7 Code think unless told not to.
-    r"|kimi-k(?:3|2\.[67])"
-    # DeepSeek's Flash and V4 models think unless told not to; its reasoner
-    # always does.
-    r"|deepseek-(?:flash|v4|reasoner)", re.I
-)
-
 # Tracks which distinct batch sizes have already been cache-written during this estimate run.
 # Each unique numLines value maps to a distinct output_config schema → one write per size.
 # Persisted under a cross-process lock so concurrent GUI subprocesses share state.
@@ -2031,6 +2019,14 @@ class BatchResultUnavailableError(RuntimeError):
         self.cause = cause
 
 
+class RunRefusedError(BatchResultUnavailableError):
+    """A provider refused a request for a reason every later request of the
+    run shares, such as a thinking effort it does not take
+    (compatibility/request_parameters): the run stops with this message
+    instead of sending the rest. It is a BatchResultUnavailableError because
+    the modules let that class through their per-line error handling."""
+
+
 # A consume miss is the file's failure reason beside its name in the run's
 # banner, so it says what happened and what to do in plain words.
 MISSING_BATCH_RESULT = {
@@ -2455,13 +2451,14 @@ def estimateCostComparison(
     }
 
 
+@extensions.point
 def unestimatedThinking(provider, model):
-    """Whether the model thinks by default, billed as output an estimate
-    cannot predict."""
-    normalized_model = str(model or "").lower().removeprefix("models/")
-    return (
-        provider == "gemini" and normalized_model.startswith("gemini-3")
-    ) or bool(_DEFAULT_THINKING_RE.search(normalized_model))
+    """Whether the model thinks when no effort is sent, billed as output an
+    estimate cannot predict; a run's frozen effort replaces this
+    (compatibility/request_parameters). The rule is settings/effort.thinks."""
+    from dazedtl.settings.effort import thinks
+
+    return thinks(provider, model)
 
 
 def openai_cache_prices(inputs, outputs, reads, cacheable, model, in_rate, out_rate):
@@ -5680,16 +5677,36 @@ def last_translation_had_mismatch() -> bool:
 
 
 def _retry_live_translation(func):
-    """Retry live provider work; batch phases only read or write local data."""
-    retried = retry(exceptions=Exception, tries=5, delay=5)(func)
+    """Retry live provider work; batch phases only read or write local data.
+    A RunRefusedError stops the run at once instead: every retry would be
+    refused alike."""
+
+    def attempt(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except RunRefusedError as error:
+            return _Refused(error)
+
+    retried = retry(exceptions=Exception, tries=5, delay=5)(attempt)
 
     @wraps(func)
     def wrapped(*args, **kwargs):
         if get_batch_phase():
             return func(*args, **kwargs)
-        return retried(*args, **kwargs)
+        result = retried(*args, **kwargs)
+        if isinstance(result, _Refused):
+            raise result.error
+        return result
 
     return wrapped
+
+
+class _Refused:
+    """A RunRefusedError carried past the retry decorator, which retries
+    every exception."""
+
+    def __init__(self, error):
+        self.error = error
 
 
 @extensions.point

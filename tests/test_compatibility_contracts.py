@@ -452,8 +452,16 @@ class CompatibilityContracts(unittest.TestCase):
         )
         translation._openai_batch_token_limit = point(lambda: 600_000)
         translation._load_litellm_pricing = point(lambda: None)
-        for name in ("estimateCostComparison", "translateAI", "batch_usage_cost"):
+        for name in (
+            "estimateCostComparison",
+            "estimateBatchCost",
+            "translateAI",
+            "translateText",
+            "unestimatedThinking",
+            "batch_usage_cost",
+        ):
             setattr(translation, name, point(Mock()))
+        translation.RunRefusedError = type("RunRefusedError", (RuntimeError,), {})
 
         def pricing(model):
             rates = translation._load_litellm_pricing()[model]
@@ -597,6 +605,49 @@ class CompatibilityContracts(unittest.TestCase):
                         translation.buildOpenAIRequest("fixture")["extra_body"],
                         baseline["extra_body"],
                     )
+            # A chosen thinking effort reaches Live and Batch requests only for
+            # a model that takes it, names itself in estimates and stops the
+            # run once when the provider refuses it.
+            plan["settings"].update(api="https://api.openai.com/v1")
+            plan["dazedtl_request_policy"] = {**policy, "thinkingEffort": "high"}
+            write_json(root / "plan.json", plan)
+            environment.prepare(root)
+            live = translation.buildOpenAIRequest("gpt-6.1-sol")
+            self.assertEqual(
+                live, {**baseline, "model": "gpt-6.1-sol", "reasoning_effort": "high"}
+            )
+            self.assertEqual(json.loads(json.dumps({"body": live}))["body"], live)
+            self.assertEqual(
+                translation.buildOpenAIRequest("gpt-4.1"),
+                {**baseline, "model": "gpt-4.1"},
+            )
+            self.assertTrue(translation.unestimatedThinking("openai", "gpt-6.1-sol"))
+            translation.estimateCostComparison = point(
+                Mock(return_value={"model": "gpt-6.1-sol"})
+            )
+            environment.prepare(root)
+            self.assertEqual(
+                translation.estimateCostComparison()["thinking_effort"], "High"
+            )
+            refused = Exception(
+                "API status error (400): Unsupported value: 'reasoning_effort'"
+            )
+            translation.translateText = point(Mock(side_effect=refused))
+            environment.prepare(root)
+            with self.assertRaisesRegex(
+                translation.RunRefusedError, "gpt-6.1-sol refused thinking effort High"
+            ):
+                translation.translateText("s", "u", [], 0, "json", "gpt-6.1-sol")
+            plan["dazedtl_request_policy"] = policy
+            write_json(root / "plan.json", plan)
+            environment.prepare(root)
+            self.assertEqual(
+                translation.estimateCostComparison()["thinking_effort"],
+                "Provider default (Medium)",
+            )
+            with self.assertRaises(Exception) as caught:
+                translation.translateText("s", "u", [], 0, "json", "gpt-6.1-sol")
+            self.assertIs(caught.exception, refused)
             for legacy in (
                 {
                     key: value
@@ -617,6 +668,9 @@ class CompatibilityContracts(unittest.TestCase):
                 )
                 self.assertEqual(
                     translation._translation_completion_limit("short text"), 8192
+                )
+                self.assertNotIn(
+                    "thinking_effort", translation.estimateCostComparison()
                 )
             plan["dazedtl_request_policy"] = {
                 **policy,
@@ -1135,7 +1189,7 @@ class CompatibilityContracts(unittest.TestCase):
         provider.provider, provider.client = "openai", client("cancelled")
         provider.google = None
         results, errors, usage = provider.collect_terminal("b", {"a": "key"})
-        self.assertEqual((list(results), errors), (["key"], []))
+        self.assertEqual((list(results), errors), (["key"], {}))
         completed = download_results(
             "openai", "b", {"a": "key"}, client=client("completed")
         )[2]

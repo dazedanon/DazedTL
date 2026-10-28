@@ -1094,6 +1094,23 @@ def request_page(view, group=None, index=None):
     }
 
 
+def refused_effort(root, errors):
+    """*errors* with each refusal of the run's thinking effort read as the
+    one message that says so (settings/effort), so a Batch whose requests
+    all failed this way reports it once."""
+    from dazedtl.settings import effort
+
+    plan_path = Path(root) / "plan.json"
+    if not errors or not plan_path.is_file() or plan_path.is_symlink():
+        return errors
+    plan = _read_cached(str(plan_path), file_stamp(plan_path))
+    level = (plan.get("dazedtl_request_policy") or {}).get("thinkingEffort")
+    if level is None:
+        return errors
+    message = effort.rejection(plan.get("settings", {}).get("model", ""), level)
+    return [message if effort.rejected(error, level) else error for error in errors]
+
+
 def summary(root, job, view=None):
     if view is None:
         view = request_view(root, job)
@@ -1338,8 +1355,8 @@ def summary(root, job, view=None):
         "failed": failed,
         "batches": receipts,
         "noRequestFiles": no_request_files(root, job, items),
-        "errors": list(dict.fromkeys(errors)),
-        "runErrors": list(dict.fromkeys(run_errors)),
+        "errors": list(dict.fromkeys(refused_effort(root, errors))),
+        "runErrors": list(dict.fromkeys(refused_effort(root, run_errors))),
         "usage": usage,
         "fileMetrics": file_metrics(job),
         # Request rows stay out of observation; the inspector pages them.

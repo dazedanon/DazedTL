@@ -58,6 +58,9 @@ class RunEstimate(TypedDict):
     # The most a Batch costs: no cached prefix reused, so every one written.
     batch_max_cost: NotRequired[float]
     unestimated_thinking_tokens: NotRequired[bool]
+    # The thinking effort the run sends, as its review names it
+    # (settings/effort summary); estimates before it name none.
+    thinking_effort: NotRequired[str]
     # Claude's own token count could not run, so its input is approximate.
     approximate_input: NotRequired[bool]
     elapsed_seconds: NotRequired[float]

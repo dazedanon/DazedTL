@@ -14,9 +14,11 @@ def batch_cost(policy, regular, output, reads=0, writes=0):
     ) / 1_000_000
 
 
-def configure(translation, policy):
+def configure(translation, policy, *, thinking_effort=None):
     """Every Batch price of the run, its estimate, file lines and TOTAL,
-    comes from the policy's frozen rates."""
+    comes from the policy's frozen rates. Without a frozen *thinking_effort*
+    the estimate says thinking is left out, since any routed model may
+    think; with one, the effort's own rule (settings/effort) decides."""
     points = (translation.estimateCostComparison, translation.batch_usage_cost)
     if policy is None:
         for point in points:
@@ -34,7 +36,8 @@ def configure(translation, policy):
                 "batch_cost": batch_cost(
                     policy, value["input_tokens"], value["output_tokens"]
                 ),
-                "unestimated_thinking_tokens": True,
+                "unestimated_thinking_tokens": thinking_effort is None
+                or value["unestimated_thinking_tokens"],
             }
         return value
 

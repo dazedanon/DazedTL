@@ -10,7 +10,26 @@ from typing import Any, TypeGuard
 from dazedtl.storage import WorkspaceError, read_versioned_json, write_json
 from dazedtl.translation.refusals import POLICY as REFUSAL_POLICY
 
-from . import language_pair, openrouter, preferences, providers
+from . import effort, language_pair, openrouter, preferences, providers
+
+
+def efforts(connection, state, configured):
+    """Refuses a thinking effort Settings is saving for a model that does not
+    take it (settings/effort). A choice saved before, which a model has
+    stopped taking, stays saved and reads as the provider default."""
+    saved = connection["model_options"] if connection else state["model_options"]
+    provider = connection["provider"] if connection else None
+    for model, options in configured.items():
+        level = options.get("thinkingEffort")
+        if (
+            level is not None
+            and level != saved.get(model, {}).get("thinkingEffort")
+            and not effort.takes(provider, model, level)
+        ):
+            raise ValueError(
+                f"{model} doesn't take thinking effort {effort.label(level)}. "
+                "Choose one of the efforts Settings offers for it."
+            )
 
 
 class Settings:
@@ -567,13 +586,18 @@ class Settings:
                     {key: item for key, item in cached[1].items() if key != "host"},
                     stale=time.monotonic() - cached[0] > 600,
                 )
-            return value
+            return {**value, "thinkingEffort": effort.describe("openrouter", model)}
         if cached_only:
             cached = getattr(
                 getattr(self.adapter, "model_defaults", None), "cached", None
             )
             return cached(model) if cached is not None else {}
-        return self.adapter.model_defaults.describe(model)
+        return {
+            **self.adapter.model_defaults.describe(model),
+            "thinkingEffort": effort.describe(
+                active["provider"] if active else None, model
+            ),
+        }
 
     def batch_lookup(self, *, connection_id=None, model=None):
         """Select a targeted endpoint read; observations never call this."""
@@ -752,6 +776,7 @@ class Settings:
                 "Save the base OpenRouter model ID, then choose Batch as the translation method."
             )
         configured = preferences.model_options(model_options)
+        efforts(connection, state, configured)
         problem = language_pair.problem(source, normalized["language"])
         if problem:
             raise ValueError(problem)
@@ -1147,6 +1172,9 @@ class Settings:
                 "generationParameters": preferences.GENERATION_PARAMETERS,
                 "maxOutputTokens": preferences.output_allowance(
                     configured.get("maxOutputTokens"), defaults.get("maxOutputTokens")
+                ),
+                **effort.frozen(
+                    active["provider"] if active else None, values["model"], configured
                 ),
                 "refusalRetry": REFUSAL_POLICY,
                 "stateGrouping": "compatible-states-v1",
