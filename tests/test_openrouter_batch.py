@@ -89,6 +89,74 @@ class OpenRouterQuoteTests(unittest.TestCase):
         )
         self.assertEqual(quoted["cost"], QUOTED)
 
+    def test_batch_file_lines_and_total_price_results_alike(self):
+        # An OpenRouter Batch's file line and TOTAL price its fetched results
+        # at the policy's rates; every other Batch keeps the model's Live
+        # rates with its cache prices, then the Batch discount.
+        import os
+        import threading
+        from unittest.mock import patch
+
+        from util import batch_history, extensions, translation
+
+        claude = "anthropic/claude-sonnet-5-5"
+        policy = {**POLICY, "model": claude, "cache_write": 1.875}
+        # 100k uncached input, 900k cache reads, 50k five-minute writes and
+        # 10k output, at $3 and $15 per 1M Live.
+        counters = {
+            "file_batch_regular": 100_000,
+            "file_batch_output": 10_000,
+            "file_batch_read": 900_000,
+            "file_batch_write": 50_000,
+            "file_batch_write_1h": 0,
+        }
+        for endpoint, model, cost in (
+            (
+                batch.BASE_URL,
+                claude,
+                openrouter_pricing.batch_cost(policy, 100_000, 10_000, 900_000, 50_000),
+            ),
+            ("", "claude-sonnet-5-5", (0.3 + 2.7 * 0.05 + 0.15 * 1.25 + 0.15) / 2),
+            (
+                "https://api.openai.com/v1",
+                "gpt-5.4-mini",
+                (0.3 + 2.7 * 0.1 + 0.15 + 0.15) / 2,
+            ),
+        ):
+            with (
+                self.subTest(model=model, endpoint=endpoint),
+                patch.dict(os.environ, {"api": endpoint, "API_PROVIDER": "openai"}),
+                # Restores the host layers this test adds to the engine.
+                patch.dict(extensions._layers),
+                patch.object(
+                    translation,
+                    "getPricingConfig",
+                    return_value={"inputAPICost": 3, "outputAPICost": 15},
+                ),
+                patch.object(translation, "_thread_local", threading.local()),
+                patch.object(translation, "_global_accurate_cost", 0.0),
+            ):
+                batch.install()
+                openrouter_pricing.configure(translation, policy)
+                local = translation._thread_local
+                # Two calls fetch half the file's results each, which the
+                # TOTAL adds as they arrive.
+                for share in (2, 1):
+                    before = translation._batch_usage()
+                    for name, count in counters.items():
+                        setattr(local, name, count // share)
+                    translation._record_batch_cost(before, model)
+                local.file_cost_window_active = True
+                for _call in ("file", "TOTAL"):
+                    self.assertAlmostEqual(translation.calculateCost(1, 1, model), cost)
+                # The Batch history never presents OpenRouter's reported
+                # charges as the cost of inference.
+                self.assertIsNone(
+                    batch_history._price_usage(
+                        {"input_tokens": 1}, claude, "openrouter"
+                    )
+                )
+
 
 class OpenRouterBatchTests(unittest.TestCase):
     @classmethod
@@ -419,9 +487,9 @@ class OpenRouterBatchTests(unittest.TestCase):
         ):
             client.collect("paid", {"one": "key1"})
 
-    def test_native_file_costs_use_absolute_batch_rates_once(self):
-        # Input/output discounts can differ. Native per-file/global accounting
-        # may not halve already discounted rates again.
+    def test_native_batch_prices_use_absolute_batch_rates_once(self):
+        # Input/output discounts can differ. The engine's quotes and its price
+        # of fetched results may not halve already discounted rates again.
         native_value = {
             "model": MODEL,
             "provider": "openrouter",
@@ -431,28 +499,16 @@ class OpenRouterBatchTests(unittest.TestCase):
         }
         history = ModuleType("util.batch_history")
         history._price_usage = point(lambda *_: 999)
-        local = SimpleNamespace(
-            file_batch_regular=100,
-            file_batch_output=20,
-            file_batch_read=30,
-            file_batch_write=10,
-            file_cost_window_active=True,
-        )
-        import threading
-
         translation = SimpleNamespace(
             estimateCostComparison=point(lambda *_: native_value),
-            _thread_local=local,
-            getPricingConfig=lambda _: {"inputAPICost": 2, "outputAPICost": 8},
-            cache_write_multiplier=lambda *_: 1,
-            get_batch_phase=lambda: "consume",
-            _global_accurate_cost_lock=threading.Lock(),
-            _global_accurate_cost=0,
-            translateAI=point(lambda: None),
-            calculateCost=point(
-                lambda *_: ((100 + 30 * 0.1 + 10) * 2 + 20 * 8) * 0.5 / 1_000_000
-            ),
+            batch_usage_cost=point(lambda *_: 999),
         )
+        usage = {
+            "input_tokens": 100,
+            "output_tokens": 20,
+            "cache_read_input_tokens": 30,
+            "cache_creation_input_tokens": 10,
+        }
         with replaced_modules({"util.batch_history": history}):
             for _ in range(2):
                 openrouter_pricing.configure(translation, POLICY)
@@ -460,9 +516,10 @@ class OpenRouterBatchTests(unittest.TestCase):
                     translation.estimateCostComparison()["batch_cost"], QUOTED
                 )
                 self.assertAlmostEqual(
-                    translation.calculateCost(130, 20, MODEL),
+                    translation.batch_usage_cost(usage, MODEL, "openrouter"),
                     (110 * 0.8 + 30 * 0.2 + 20 * 3) / 1_000_000,
                 )
+            self.assertEqual(translation.batch_usage_cost(usage, MODEL, "openai"), 999)
             self.assertIsNone(
                 history._price_usage({"openrouter_cost": 1}, MODEL, "openrouter")
             )

@@ -455,7 +455,7 @@ class CompatibilityContracts(unittest.TestCase):
         )
         translation._openai_batch_token_limit = point(lambda: 600_000)
         translation._load_litellm_pricing = point(lambda: None)
-        for name in ("estimateCostComparison", "translateAI", "calculateCost"):
+        for name in ("estimateCostComparison", "translateAI", "batch_usage_cost"):
             setattr(translation, name, point(Mock()))
         quote = {
             "model": "gpt-6.1-sol",
