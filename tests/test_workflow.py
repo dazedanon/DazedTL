@@ -1425,6 +1425,65 @@ class WorkflowTests(unittest.TestCase):
         again = self.prepared(self.service.reestimate(self.identity, run["id"]))
         self.assertEqual(again["quote"]["model"], "gpt-5.6-terra")
 
+    def test_a_pricing_fix_prices_a_waiting_estimate_again_or_outdates_it(self):
+        # A pricing fix left a waiting quote at the price rules of the
+        # release that made it, which the user then approved.
+        run = self.prepared(self.service.compile(self.identity, self.plan_path))
+        store = self.service.jobs.store
+        self.assertEqual(run["quote"]["provider"], "custom")
+        self.assertIn("cacheable_tokens", run["quote"])
+
+        def view(identity):
+            jobs = self.service.state(self.identity)["jobs"]
+            return next(job for job in jobs if job["id"] == identity)
+
+        def older(identity, **prices):
+            # Saved before quotes named their price rules, at an older price.
+            job, _plan = store.load(identity)
+            job["quote"] = {
+                **{
+                    key: item
+                    for key, item in job["quote"].items()
+                    if key != "price_rules"
+                },
+                **prices,
+            }
+            store.save(job)
+
+        # Under today's rules it stands as saved.
+        self.assertEqual(view(run["id"])["quote"], run["quote"])
+        older(run["id"], cost=9.0, batch_cost=9.0, live_cost=18.0)
+        # Its OpenAI Batch counts are priced again under today's rules.
+        shown = view(run["id"])
+        self.assertFalse(shown["settings_changed"] or shown["pricing_changed"])
+        self.assertEqual(shown["quote"], run["quote"])
+        # The quote's own token approved the older price; only the shown
+        # price's token approves, and freezes the run at it.
+        with self.assertRaisesRegex(ValueError, "price changed"):
+            self.service.start(self.identity, run["id"], run["approval_token"])
+        with self.assertRaisesRegex(ValueError, "Provider execution is disabled"):
+            self.service.start(self.identity, run["id"], shown["approval_token"])
+        job, _plan = store.load(run["id"])
+        self.assertTrue(store.authorized(job))
+        self.assertEqual(job["quote"], shown["quote"])
+        # Claude counts with each model's own tokenizer and keeps no counts
+        # of its cached instructions, so its quote reads outdated instead.
+        self.settings_data["connections"][0]["protocol"] = "anthropic"
+        self.engine.batch_supported = lambda _configuration: "anthropic"
+        self.engine.claude_input_tokens = lambda *_args: None
+        self.engine.claude_cache = lambda *_args: None
+        claude = self.prepared(self.service.compile(self.identity, self.plan_path))
+        self.assertFalse(view(claude["id"])["pricing_changed"])
+        older(claude["id"], cost=9.0)
+        outdated = view(claude["id"])
+        self.assertTrue(outdated["pricing_changed"])
+        self.assertFalse(outdated["settings_changed"])
+        self.assertEqual(outdated["quote"]["cost"], 9.0)
+        for token in (claude["approval_token"], outdated["approval_token"]):
+            with self.assertRaisesRegex(ValueError, "price changed"):
+                self.service.start(self.identity, claude["id"], token)
+        self.assertFalse(store.authorized(store.load(claude["id"])[0]))
+
     def test_deepseek_spend_is_priced_by_when_each_request_arrived(self):
         # DeepSeek bills half outside its weekday peak hours, but Progress
         # Spent and Requests Recorded usage priced every request at peak.

@@ -12,9 +12,13 @@ packing receipt - records the Basis it was made from:
 - ``settings``: a digest of only the settings that change the work.
 - ``shape``: the same settings without the ones that only set a price, for
   kinds whose saved counts can be repriced after a model switch.
+- ``prices``: for a priced figure, such as a quote or an estimate, the price
+  rules version it was priced under (provider_costs.PRICE_RULES_VERSION).
 
 ``compare(saved, current)`` is None while the work is current, otherwise the
-Change naming what differs. Code changes alone never outdate saved work: never
+Change naming what differs. A Change that is ``priced_only`` leaves the work's
+counts current and only its price not, which translation/repricing prices
+again where it can. Code changes alone never outdate saved work: never
 digest DazedTL's or the engine's source files into a basis, raise the kind's
 version instead.
 
@@ -136,6 +140,7 @@ class Basis:
     inputs: Mapping[str, object] | None = None
     settings: object = None
     shape: object = None
+    prices: object = None
 
     def record(self) -> dict:
         """The basis as saved JSON."""
@@ -144,6 +149,8 @@ class Basis:
             value["settings"] = self.settings
         if self.shape is not None:
             value["shape"] = self.shape
+        if self.prices is not None:
+            value["prices"] = self.prices
         return value
 
     @classmethod
@@ -156,6 +163,7 @@ class Basis:
             inputs=value["inputs"],
             settings=value.get("settings"),
             shape=value.get("shape"),
+            prices=value.get("prices"),
         )
 
 
@@ -166,6 +174,10 @@ class Change:
     missing: bool = False
     version: bool = False
     settings: bool = False
+    # The settings changed more than what prices the work.
+    reshaped: bool = False
+    # It was priced under other price rules.
+    prices: bool = False
     added: tuple = ()
     removed: tuple = ()
     changed: tuple = ()
@@ -176,6 +188,19 @@ class Change:
     def inputs(self) -> tuple:
         """Every input name that was added, removed or changed."""
         return self.added + self.removed + self.changed
+
+    @property
+    def priced_only(self) -> bool:
+        """Whether only what prices the work changed, its price rules or
+        settings that keep its shape, so its counts still hold."""
+        return not (
+            self.missing or self.version or self.unnamed or self.reshaped or self.inputs
+        )
+
+    @property
+    def rules_only(self) -> bool:
+        """Whether only the price rules the work was priced under changed."""
+        return self.priced_only and not self.settings
 
 
 def compare(
@@ -195,11 +220,15 @@ def compare(
     if saved.inputs is None:
         return Change(unnamed=True)
     old, new = dict(saved.inputs), dict(current.inputs or {})
+    settings = saved.settings != current.settings and not (
+        same_shape and prices_unknown
+    )
     change = Change(
-        settings=saved.settings != current.settings
-        and not (same_shape and prices_unknown),
+        settings=settings,
+        reshaped=settings and not same_shape,
+        prices=saved.prices != current.prices,
         added=tuple(sorted(set(new) - set(old))),
         removed=tuple(sorted(set(old) - set(new))),
         changed=tuple(sorted(name for name in old.keys() & new.keys() if old[name] != new[name])),
     )
-    return change if change.settings or change.inputs else None
+    return change if change.settings or change.prices or change.inputs else None

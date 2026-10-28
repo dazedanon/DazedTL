@@ -361,12 +361,15 @@ class Application:
                         and not job["approved"]
                     ):
                         # A prepared run is not working; it waits for the user.
+                        outdated = job.get("settings_changed") or job.get(
+                            "pricing_changed"
+                        )
                         project.update(
                             status="Estimate is out of date"
-                            if job.get("settings_changed")
+                            if outdated
                             else "Estimate needs your approval",
                             detail="Ask your assistant for a new estimate."
-                            if job.get("settings_changed")
+                            if outdated
                             else "Approve it on Progress.",
                         )
                     else:

@@ -79,6 +79,7 @@ class Activity:
 
 def run(plan, log):
     from desktop.backend.workflow_actions import validate_plan
+    from util.provider_costs import PRICE_RULES_VERSION
 
     validate_plan(plan)
     folder = Path(plan["folder"])
@@ -122,8 +123,10 @@ def run(plan, log):
         "configuration": options["configuration"],
         "model": options["model"],
         "batchSupported": options["batchSupported"],
+        # The rules its prices follow (translation/repricing).
+        "price_rules": PRICE_RULES_VERSION,
         "tasks": [line for line, _counts in rows],
-        # What pricing the tasks again needs (FullEstimate.repriced).
+        # What pricing the tasks again needs (FullEstimate.priced).
         "measured": {
             line["phase"]: counts for line, counts in rows if counts is not None
         },

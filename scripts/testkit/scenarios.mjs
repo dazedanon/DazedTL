@@ -1001,6 +1001,195 @@ function unitsHolding(state, text) {
   return units.filter((unit) => unit.source.includes(text)).length;
 }
 
+/** Every job record saved in the scenario's profile that `match` picks. */
+function savedJobs(state, match) {
+  const found = [];
+  const walk = (folder) => {
+    for (const entry of fs.readdirSync(folder, { withFileTypes: true })) {
+      const file = path.join(folder, entry.name);
+      if (entry.isDirectory()) walk(file);
+      else if (entry.name === "job.json") {
+        const job = JSON.parse(fs.readFileSync(file, "utf8"));
+        if (match(job)) found.push({ file, job });
+      }
+    }
+  };
+  walk(state.profile);
+  return found;
+}
+
+// The waiting figures a restart keeps for repricing to read: the whole-game
+// estimate and an Assistant-led quote waiting for approval. A Guided
+// Translate estimate is a temporary preparation, which closing discards.
+const waitingFigures = {
+  whole: {
+    match: (job) => job.action === "full_estimate" && job.status === "complete",
+    figure: (job) => job.result,
+  },
+  assistant: {
+    match: (job) =>
+      job.kind === "translation" && job.status === "ready" && !!job.quote,
+    figure: (job) => job.quote,
+  },
+};
+
+/**
+ * Saves every waiting figure as a release saved it before figures named
+ * their price rules, then changed by `edit[kind](figure)`, while the app is
+ * closed.
+ */
+function savedBeforePricingFix(state, restart, edit) {
+  return restart(() => {
+    for (const [kind, { match, figure }] of Object.entries(waitingFigures)) {
+      const jobs = savedJobs(state, match);
+      if (!jobs.length) throw new Error(`No waiting ${kind} figure was saved.`);
+      for (const { file, job } of jobs) {
+        delete figure(job).price_rules;
+        edit[kind](figure(job));
+        fs.writeFileSync(file, JSON.stringify(job, null, 2));
+      }
+    }
+  });
+}
+
+/** The whole-game estimate, as Context shows it. */
+async function wholeEstimate(page) {
+  return (await page.call("workspace_snapshot")).guided.fullEstimate;
+}
+
+/** Estimates the whole game's cost again, as its Estimate again does. */
+async function estimateWholeGame(page) {
+  const project = (await page.call("workspace_snapshot")).application.project;
+  await page.call("guided_full_estimate", { project_id: project.id });
+  await page.idle();
+  const estimate = await wholeEstimate(page);
+  if (!estimate.current)
+    throw new Error(
+      `The whole-game estimate is not current: ${JSON.stringify(estimate)}`,
+    );
+  return estimate;
+}
+
+/** The Assistant-led quote's prices Progress shows. */
+const quotePrices = ["cost", "live_cost", "batch_cost", "batch_cost_reused"];
+
+const repriced = [
+  [
+    "Price the OpenAI preset's stand-in model so estimates cost something",
+    async ({ page }) => {
+      const saved = await page.call("settings_get");
+      await page.call("settings_save", {
+        revision: saved.revision,
+        connection_id: saved.activeConnectionId,
+        values: saved.values,
+        model_options: {
+          ...saved.modelOptions,
+          [model]: {
+            ...saved.modelOptions[model],
+            inputRate: 30,
+            outputRate: 120,
+          },
+        },
+      });
+    },
+  ],
+  [
+    "Estimate the whole game's cost",
+    async ({ page, state }) => {
+      state.whole = await estimateWholeGame(page);
+    },
+  ],
+  queuedBatch[1],
+  queuedBatch[2],
+  queuedBatch[3],
+  [
+    "Saved by a release before a pricing fix as Claude's estimate and an OpenAI quote from before cache counts, which can't be priced again: each asks to be estimated again, and Progress offers no Approve",
+    async ({ page, state, restart }) => {
+      page = await savedBeforePricingFix(state, restart, {
+        whole: (result) => {
+          for (const counts of Object.values(result.measured))
+            counts.provider = "anthropic";
+        },
+        assistant: (quote) => {
+          delete quote.cache_read_tokens;
+          delete quote.cacheable_tokens;
+        },
+      });
+      await openFolder(page, state, state.game);
+      await page.click("Translation");
+      await page.waitText(
+        "DazedTL corrected its prices after this estimate in a way that needs a new one.",
+      );
+      if (await page.locate("Approve and submit Batch"))
+        throw new Error("An estimate priced by older rules can be approved.");
+      await page.shot(path.join(state.work, "logs/assistant-outdated.png"));
+      const outdated = await batchRun(page);
+      await page.click("Estimate again");
+      const fresh = await until(
+        "a new Assistant-led estimate",
+        async () => {
+          const job = await batchRun(page);
+          return job.id !== outdated.id && job.status === "ready" && job;
+        },
+        2 * 60_000,
+      );
+      if (fresh.pricing_changed || fresh.settings_changed)
+        throw new Error(`The new estimate reads outdated: ${fresh.id}`);
+      await openFolder(page, state, state.guidedGame);
+      const whole = await wholeEstimate(page);
+      if (whole.current !== false)
+        throw new Error(
+          `A Claude estimate priced by older rules reads current: ${JSON.stringify(whole)}`,
+        );
+      state.whole = await estimateWholeGame(page);
+    },
+  ],
+  [
+    "Saved by a release before a pricing fix at three times today's price: each shows today's price, and Approve freezes the price shown",
+    async ({ page, state, restart }) => {
+      await openFolder(page, state, state.game);
+      const quote = (await batchRun(page)).quote;
+      page = await savedBeforePricingFix(state, restart, {
+        whole: (result) => {
+          for (const task of result.tasks)
+            for (const name of ["liveCost", "batchCost", "batchMaxCost"])
+              task[name] *= 3;
+        },
+        assistant: (saved) => {
+          for (const name of quotePrices)
+            if (typeof saved[name] === "number") saved[name] *= 3;
+        },
+      });
+      await openFolder(page, state, state.guidedGame);
+      const whole = await wholeEstimate(page);
+      const tasks = (value) => JSON.stringify(value.result.tasks);
+      if (!whole.current || tasks(whole) !== tasks(state.whole))
+        throw new Error(
+          `The whole-game estimate shows ${tasks(whole)}, not today's ${tasks(state.whole)}.`,
+        );
+      await openFolder(page, state, state.game);
+      await page.click("Translation");
+      const shown = await batchRun(page);
+      for (const name of quotePrices)
+        if (shown.quote[name] !== quote[name])
+          throw new Error(
+            `Progress shows ${name} ${shown.quote[name]}, not today's ${quote[name]}.`,
+          );
+      await page.shot(path.join(state.work, "logs/assistant-repriced.png"));
+      await page.click("Approve and submit Batch");
+      const approved = await until("the run's approval", async () => {
+        const job = await batchRun(page);
+        return job.approved && job;
+      });
+      const [frozen] = savedJobs(state, (job) => job.id === approved.id);
+      if (JSON.stringify(frozen.job.quote) !== JSON.stringify(shown.quote))
+        throw new Error(
+          `Approve froze ${JSON.stringify(frozen.job.quote)}, not the shown ${JSON.stringify(shown.quote)}.`,
+        );
+    },
+  ],
+];
+
 // The collapsed-line game's stand-in collapses every line holding it, so a
 // Live run keeps each such line in Japanese.
 const collapsed = "魔法の杖";
@@ -1943,6 +2132,11 @@ export const scenarios = {
     description:
       "batch-waiting, then a copy of the game Assistant-led whose API Batch on the same OpenAI connection, with a small Batch token allowance, waits for capacity unsent until the held Batch is released, then is sent and completes.",
     steps: () => [open, ...setup, batch[0], ...queuedBatch],
+  },
+  repriced: {
+    description:
+      "A whole-game estimate in a Guided game, then a copy Assistant-led whose API Batch estimate waits on Progress, both on the OpenAI preset, saved again as a release before a pricing fix saves them: first as counts DazedTL can't price again, which must ask to be estimated again and offer no Approve, then at three times today's price, which each must show at today's price, Approve freezing the price shown.",
+    steps: () => [open, ...setup, batch[0], ...repriced],
   },
   upgraded: {
     description:

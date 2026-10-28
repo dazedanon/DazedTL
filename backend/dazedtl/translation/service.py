@@ -11,7 +11,7 @@ from typing import Any
 
 from dazedtl.actions import history_label
 from dazedtl.compatibility.estimate_prices import usage_cost
-from dazedtl.freshness import Basis, compare
+from dazedtl.freshness import Basis, Change, compare
 from dazedtl.languages import pair_note
 from dazedtl.settings import language_pair
 from dazedtl.settings.execution import (
@@ -95,29 +95,36 @@ def priced_mode(finishes, run_mode, project_mode):
     return run_mode if finishes else project_mode
 
 
-def changed_since(current, frozen_sha256, frozen, *, reprice=True):
-    """Whether the settings a run would freeze now differ from those it froze;
-    ``current`` is None when they can't form a run. With ``reprice``, prices
-    not looked up since DazedTL started read as unchanged while everything
-    else matches, so a restart alone never outdates a quote; a run saved
-    before its record kept its configuration can only be compared once they
-    are known."""
+def changed_since(current, frozen_sha256, frozen, quote, *, reprice=True):
+    """What changed between the settings a run froze and those it would
+    freeze now, or None; ``current`` is None when they can't form a run. The
+    run's ``quote``, None for a run without one, priced under older price
+    rules changed too (repricing). With ``reprice``, prices not looked up
+    since DazedTL started read as unchanged while everything else matches,
+    so a restart alone never outdates a quote; a run saved before its record
+    kept its configuration can only be compared once they are known."""
     if current is None:
-        return True
+        return Change(settings=True, reshaped=True)
+    priced = quote is not None
     # A run's settings are its whole basis; its requests are checked apart.
-    return bool(
-        compare(
-            Basis(
-                None,
-                {},
-                frozen_sha256,
-                None if frozen is None else digest(repricing.unpriced(frozen)),
-            ),
-            Basis(None, {}, digest(current), digest(repricing.unpriced(current))),
-            prices_unknown=reprice
-            and frozen is not None
-            and repricing.unknown_prices(frozen, current),
-        )
+    return compare(
+        Basis(
+            None,
+            {},
+            frozen_sha256,
+            None if frozen is None else digest(repricing.unpriced(frozen)),
+            repricing.rules(quote) if priced else None,
+        ),
+        Basis(
+            None,
+            {},
+            digest(current),
+            digest(repricing.unpriced(current)),
+            repricing.current_rules() if priced else None,
+        ),
+        prices_unknown=reprice
+        and frozen is not None
+        and repricing.unknown_prices(frozen, current),
     )
 
 
@@ -668,12 +675,14 @@ Additional project instructions:
 
     def job_views(self, jobs, mode, root):
         """Saved runs as pages show them. An estimate waiting for approval
-        takes the current settings' prices when they change only its price
-        (see repricing), with an approval token for that price; otherwise it
-        notes that the settings it priced have changed. An estimate for
-        declined requests keeps its own mode, whatever the project's. A
-        run's recorded usage is priced at the rates it froze, a Live run's
-        requests each at the price of the time it arrived."""
+        reads as repricing decides: priced again when only its price changed,
+        by the current settings or a pricing fix, with an approval token for
+        that price; otherwise it notes that the settings it priced have
+        changed, or that a pricing fix changed its price in a way its counts
+        can't be priced again by. An estimate for declined requests keeps its
+        own mode, whatever the project's. A run's recorded usage is priced at
+        the rates it froze, a Live run's requests each at the price of the
+        time it arrived."""
         current = {}
         views = []
         newest = max(
@@ -717,41 +726,48 @@ Additional project instructions:
                     except ValueError:
                         current[priced] = None, None
                 settings, provider = current[priced]
-                view["settings_changed"] = changed_since(
-                    settings, frozen, job.get("configuration")
+                change = changed_since(
+                    settings, frozen, job.get("configuration"), job["quote"]
                 )
-                if view["settings_changed"] and self.repriceable(
-                    job.get("configuration"), settings, provider, job["quote"]
-                ):
+                reading = self.reading(job, change, settings, provider)
+                if reading.settings is not None:
                     view.update(
-                        mode=settings["mode"],
-                        quote=price(counted(job["quote"]), settings, provider),
+                        mode=reading.settings["mode"],
+                        quote=reading.figure,
                         approval_token=repricing.approval_token(
-                            job["approval_token"], settings
+                            job["approval_token"], reading.settings
                         ),
-                        settings_changed=False,
                     )
+                # Outdated by a pricing fix alone, or by the settings.
+                view["pricing_changed"] = bool(
+                    not reading.current and change and change.rules_only
+                )
+                view["settings_changed"] = (
+                    not reading.current and not view["pricing_changed"]
+                )
             views.append(view)
         return views
 
     @staticmethod
-    def repriceable(before, after, provider, quote):
-        """Whether a run frozen with ``before`` keeps its requests under
-        ``after``, which then only prices its ``quote`` again; a Batch also
-        needs a route that runs one."""
-        return bool(
-            before
-            and after
-            and repricing.priced(after)
-            and (after["mode"] != "batch" or provider)
-            and repricing.same_requests(before, after)
-            and repriceable(quote, provider)
-        )
+    def reading(job, change, settings, provider):
+        """How a run's quote waiting for approval reads (repricing.read)
+        under ``change``: priced again from its counts at ``settings`` when
+        they keep its requests; a Batch also needs a route that runs one."""
+        quote = job["quote"]
 
-    def reprice(self, job, plan, configuration, provider):
+        def again(configuration):
+            if (configuration["mode"] == "batch" and not provider) or not repriceable(
+                quote, provider
+            ):
+                return None
+            return price(counted(quote), configuration, provider)
+
+        return repricing.read(change, job.get("configuration"), settings, again)
+
+    def reprice(self, job, plan, configuration, provider, quote):
         """Freezes a waiting run again with settings that only price it
-        differently: each request's parameters for them, carrying the same
-        text, and its counts' quote at their rates."""
+        differently, at the ``quote`` they price it at: each request's
+        parameters for them, carrying the same text."""
         requests = []
         for row in plan["requests"]:
             params = self.engine.payload(row, configuration)
@@ -769,14 +785,14 @@ Additional project instructions:
             "requests": requests,
             "batch_limits": limits,
         }
-        quote = price(counted(job["quote"]), configuration, provider)
         return self.jobs.store.replan(job, plan, quote), plan
 
     def reestimate(self, project_id, run_id):
         """Estimates a run waiting for approval again with the current
-        settings, without the assistant. Looking up their prices is all a
-        switch that keeps its requests needs (see job_views); any other
-        change repeats the preparation that made the run."""
+        settings, without the assistant. Pricing its counts again is all a
+        switch that keeps its requests, or a pricing fix, needs (see
+        job_views); any other change repeats the preparation that made the
+        run."""
         job, plan = self.jobs.store.load(run_id, project_id)
         if (
             plan["kind"] != "translation"
@@ -794,9 +810,14 @@ Additional project instructions:
                 "Choose API Batch or Live API in Options to estimate this run again."
             )
         current, provider = self.api_configuration(mode, project.root)
-        if not changed_since(
-            current, job["configuration_sha256"], plan["configuration"], reprice=False
-        ) or self.repriceable(plan["configuration"], current, provider, job["quote"]):
+        change = changed_since(
+            current,
+            job["configuration_sha256"],
+            plan["configuration"],
+            job["quote"],
+            reprice=False,
+        )
+        if self.reading(job, change, current, provider).current:
             return self.jobs.store.view(job)
         preparation = next(
             (
@@ -1312,10 +1333,11 @@ Additional project instructions:
                 raise ValueError(
                     "This estimate was canceled or replaced by a newer one, so it can no longer be approved."
                 )
-            # The quote priced the settings the run froze; approving it after
-            # they change would approve a cost the user no longer sees. A
-            # quote priced again with the current settings (job_views) has
-            # its own token, and its approval freezes the run with them.
+            # The quote priced the settings the run froze under the price
+            # rules of its day; approving it after either changed would
+            # approve a cost the user no longer sees. A quote priced again
+            # (job_views) has its own token, and its approval freezes the run
+            # with the settings and price it was shown at.
             _record, project = self.project(project_id)
             current, provider = self.api_configuration(
                 priced_mode(
@@ -1325,25 +1347,34 @@ Additional project instructions:
                 ),
                 project.root,
             )
+            change = changed_since(
+                current,
+                digest(plan["configuration"]),
+                plan["configuration"],
+                job["quote"],
+                reprice=False,
+            )
             if approval_token == job["approval_token"]:
-                if changed_since(
-                    current,
-                    digest(plan["configuration"]),
-                    plan["configuration"],
-                    reprice=False,
+                if change is not None:
+                    raise ValueError(
+                        "This estimate's price changed since it was shown. Review it again before approving."
+                        if change.rules_only
+                        else "API settings or the translation mode changed after this estimate. Compile and review a new plan."
+                    )
+            else:
+                reading = (
+                    self.reading(job, change, current, provider)
+                    if job["quote"] is not None
+                    else repricing.OUTDATED
+                )
+                if reading.figure is None or approval_token != repricing.approval_token(
+                    job["approval_token"], reading.settings
                 ):
                     raise ValueError(
-                        "API settings or the translation mode changed after this estimate. Compile and review a new plan."
+                        "This estimate's price changed since it was shown. Review it again before approving."
                     )
-            elif approval_token == repricing.approval_token(
-                job["approval_token"], current
-            ) and self.repriceable(
-                plan["configuration"], current, provider, job["quote"]
-            ):
-                job, plan = self.reprice(job, plan, current, provider)
-            else:
-                raise ValueError(
-                    "This estimate's price changed since it was shown. Review it again before approving."
+                job, plan = self.reprice(
+                    job, plan, reading.settings, provider, reading.figure
                 )
             # The run's worker compiles the requests again and compares them
             # before it sends anything. Doing it here as well held every other

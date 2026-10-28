@@ -147,7 +147,7 @@ jobs:
         # scenario's options follow its name.
         scenarios:
           - playtested released images-archived assistant-checked
-          - fresh opened set-up translated qa-done paged moved-relabeled
+          - fresh opened set-up translated qa-done paged moved-relabeled repriced
           - assistant-led assistant-written assistant-released assistant-updated batch-waiting upgraded
           - released-ace released-mv moved images assistant-reorganized
           - update-stopped plugins-applied batch-queued qa-done --game ace

@@ -30,6 +30,7 @@ from dazedtl.translation.files import digest, evidence, read_json
 from dazedtl.translation.guided import Guided, retained_position
 from dazedtl.translation.guided_inputs import GuidedInputs
 from dazedtl.translation.release import packing_state
+from dazedtl.translation.repricing import current_rules
 
 from tests.engine import engine_module, replaced_modules
 from tests.fonts import truetype
@@ -622,6 +623,51 @@ class GuidedTests(unittest.TestCase):
         )
         self.assertEqual(self.started, [])
 
+    def test_a_pricing_fix_prices_a_translate_estimate_again_or_outdates_it(self):
+        # A pricing fix left a saved estimate at the price rules of the
+        # release that made it, which Translate's review showed and started.
+        identity = self.seed_estimate()
+        self.backend.manual.jobs[identity]["dazedtl_preapproval"] = True
+        estimate = self.backend.manual.jobs[identity]["estimate"]
+        # Saved before estimates named their price rules, at an older price.
+        del estimate["price_rules"]
+        estimate.update(live_cost=0.02, batch_cost=0.01)
+        inputs = self.guided.runs.inputs(
+            self.identity, self.native, "database", "batch"
+        )
+
+        def quote():
+            return self.guided.runs.quote(
+                self.identity, self.native, "database", "batch"
+            )[0]
+
+        def reopened():
+            return self.guided.actions.unchanged_estimate(
+                self.identity, self.native, "database", inputs
+            )
+
+        # Its counts are priced again under today's rules, as the review
+        # shows it, and Translate reopens it.
+        shown = quote()
+        self.assertTrue(shown["current"])
+        self.assertAlmostEqual(shown["job"]["estimate"]["live_cost"], 0.01)
+        self.assertAlmostEqual(shown["job"]["estimate"]["batch_cost"], 0.005)
+        self.assertEqual(shown["job"]["estimate"]["price_rules"], current_rules())
+        review = self.guided.preview(self.identity, "start", options={"mode": "batch"})
+        self.assertEqual(review["estimate"]["value"], shown["job"]["estimate"])
+        self.assertEqual(reopened(), identity)
+        # Claude counts with each model's own tokenizer, so its estimate reads
+        # outdated: the review refuses it and Translate estimates again.
+        estimate["provider"] = "anthropic"
+        self.assertFalse(quote()["current"])
+        with self.assertRaisesRegex(ValueError, "current estimate"):
+            self.guided.preview(self.identity, "start", options={"mode": "batch"})
+        self.assertIsNone(reopened())
+        # Under today's rules it stands as saved.
+        estimate["price_rules"] = current_rules()
+        self.assertEqual(quote()["job"]["estimate"], estimate)
+        self.assertEqual(reopened(), identity)
+
     def test_translate_reopens_an_unchanged_estimate_until_its_work_is_approved(self):
         # Each Translate click estimated the whole selection again, minutes on
         # a large game, though declining its review changed nothing. Reopening
@@ -714,6 +760,7 @@ class GuidedTests(unittest.TestCase):
                 "fingerprint": options["fingerprint"],
                 "shape": options["shape"],
                 "configuration": options["configuration"],
+                "price_rules": current_rules(),
                 "tasks": [{"phase": "dialogue", "inputTokens": 4000, "liveCost": 0.01}],
                 "measured": {
                     "dialogue": {
@@ -747,6 +794,25 @@ class GuidedTests(unittest.TestCase):
         self.assertAlmostEqual(repriced["result"]["tasks"][0]["liveCost"], 0.008)
         self.configuration.update(model="fixture-model")
         self.configuration["rates"].update(input=1)
+        # One saved before a pricing fix shows its counts priced under
+        # today's rules, without estimating again.
+        job = self.backend.operations.jobs["estimate"]
+        saved = job["result"]
+        del saved["price_rules"]
+        saved["tasks"][0]["liveCost"] = 0.02
+        fixed = status()
+        self.assertTrue(fixed["current"])
+        self.assertAlmostEqual(fixed["result"]["tasks"][0]["liveCost"], 0.01)
+        self.assertIs(self.guided.full_estimate.start(self.identity), job)
+        # Claude's counts can't be priced again: it reads outdated, and
+        # Estimate again estimates it.
+        saved["measured"]["dialogue"]["provider"] = "anthropic"
+        self.assertFalse(current())
+        self.guided.full_estimate.start(self.identity)
+        self.assertEqual(len(plans), 2)
+        saved["measured"]["dialogue"]["provider"] = "custom"
+        saved.update(price_rules=current_rules())
+        saved["tasks"][0]["liveCost"] = 0.01
         # An estimate a listed release saved reads as made under version 1,
         # current until the version is raised.
         from dazedtl.translation import full_estimate
@@ -1206,7 +1272,9 @@ class GuidedTests(unittest.TestCase):
 
         def estimate(value, found=()):
             identity = self.seed_estimate()
-            self.backend.manual.jobs[identity].update(estimate=value, created=checked)
+            self.backend.manual.jobs[identity].update(
+                estimate={**value, "price_rules": current_rules()}, created=checked
+            )
             evidence = Evidence(folder(identity), "estimate")
             for name in found:
                 evidence.found_text(name)
@@ -2450,6 +2518,7 @@ class GuidedTests(unittest.TestCase):
                 "output_tokens": 3000,
                 "live_cost": 0.01,
                 "batch_cost": 0.005,
+                "price_rules": current_rules(),
             },
             "outputs": {},
         }

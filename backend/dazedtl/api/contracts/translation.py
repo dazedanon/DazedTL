@@ -56,6 +56,9 @@ class TranslationQuote(TypedDict):
     unestimated_thinking_tokens: NotRequired[bool]
     # The thinking effort the run sends (settings/effort summary).
     thinking_effort: NotRequired[str]
+    # The price rules it was priced under (translation/repricing); quotes
+    # before it name none.
+    price_rules: NotRequired[int]
     model: str
     provider: str
     basis: str
@@ -111,8 +114,11 @@ class TranslationJob(TypedDict):
     approval_token: str
     approved: bool
     app_approved_at: str | None
-    # Only on an estimate waiting for approval in a project's state.
+    # Only on an estimate waiting for approval in a project's state: it is
+    # outdated by the settings it priced, or by a pricing fix its counts
+    # can't be priced again by (translation/repricing).
     settings_changed: NotRequired[bool]
+    pricing_changed: NotRequired[bool]
     result: dict[str, object] | None
     usage: dict[str, float]
     # The recorded usage priced at the run's rates in a project's state;

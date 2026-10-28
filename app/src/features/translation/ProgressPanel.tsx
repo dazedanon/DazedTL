@@ -36,6 +36,7 @@ import {
   estimateOutdated,
   finishingRun,
   latestApiRun,
+  outdatedBy,
   priceRange,
   redoneEstimate,
 } from "./apiRun";
@@ -500,9 +501,9 @@ function ApiRun({
       progress={modeLabels[mode]}
       description={
         outdated && run.finishes
-          ? "API settings or the translation mode changed after this estimate, so it can no longer be approved."
+          ? `${outdatedBy(run)} after this estimate, so it can no longer be approved.`
           : outdated
-            ? "API settings or the translation mode changed after this estimate in a way that needs a new one."
+            ? `${outdatedBy(run)} after this estimate in a way that needs a new one.`
             : quote
               ? "Nothing is sent until you approve this estimate."
               : run.message

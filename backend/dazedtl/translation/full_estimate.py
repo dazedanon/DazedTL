@@ -105,15 +105,22 @@ class FullEstimate:
         return digest({"version": ESTIMATE_VERSION, "tasks": rows})
 
     def basis(self, tasks, result=None):
-        """The basis of ``tasks`` or, with ``result``, of the saved estimate.
-        One a listed release saved for these tasks reads as made under
-        version 1. Versions up to 2.34.3 bound each task to the game folder
-        (GuidedRuns.saved); one they saved for these tasks reads as theirs."""
+        """The basis of ``tasks`` or, with ``result``, of the saved estimate,
+        with the price rules it was priced under. One a listed release saved
+        for these tasks reads as made under version 1. Versions up to 2.34.3
+        bound each task to the game folder (GuidedRuns.saved); one they saved
+        for these tasks reads as theirs."""
         current = {
             key: self.fingerprint(tasks, key) for key in ("fingerprint", "shape")
         }
         if result is None:
-            return Basis(ESTIMATE_VERSION, {}, current["fingerprint"], current["shape"])
+            return Basis(
+                ESTIMATE_VERSION,
+                {},
+                current["fingerprint"],
+                current["shape"],
+                repricing.current_rules(),
+            )
         located = [{**task, **(task.get("legacy") or {})} for task in tasks]
         saved, version = {}, ESTIMATE_VERSION
         for key, value in current.items():
@@ -126,7 +133,13 @@ class FullEstimate:
                 self.fingerprint(located, key, old) for old in RELEASES
             }:
                 saved[key], version = value, 1
-        return Basis(version, {}, saved["fingerprint"], saved["shape"])
+        return Basis(
+            version,
+            {},
+            saved["fingerprint"],
+            saved["shape"],
+            repricing.rules(result),
+        )
 
     def changed(self, result, tasks, *, reprice=True):
         """What changed since ``result`` was estimated, or None while it is
@@ -148,21 +161,22 @@ class FullEstimate:
         """The settings the tasks are priced with, the same for every task."""
         return next(task["configuration"] for task in tasks if task["fingerprint"])
 
-    def repriced(self, result, tasks):
-        """A saved estimate at the prices of ``tasks``' settings when they only
-        price its requests differently, else None."""
+    def reading(self, result, tasks, *, reprice=True):
+        """How a saved estimate reads for ``tasks`` (repricing.read): as
+        saved, priced again from each task's counts, or outdated."""
+        return repricing.read(
+            self.changed(result, tasks, reprice=reprice),
+            result.get("configuration"),
+            self.configuration(tasks),
+            lambda configuration: self.priced(result, configuration),
+        )
+
+    def priced(self, result, configuration):
+        """A saved estimate priced again from each task's counts at the
+        prices of ``configuration``, else None."""
         from dazedtl.compatibility.estimate_prices import reprice
         from dazedtl.compatibility.full_estimate import prices
 
-        configuration = self.configuration(tasks)
-        saved = self.basis(tasks, result)
-        if (
-            saved.version != ESTIMATE_VERSION
-            or saved.shape != self.fingerprint(tasks, "shape")
-            or not repricing.priced(configuration)
-            or not repricing.same_requests(result["configuration"], configuration)
-        ):
-            return None
         rows = []
         for task in result["tasks"]:
             counts = result["measured"].get(task["phase"])
@@ -178,6 +192,7 @@ class FullEstimate:
             **result,
             "model": configuration["model"],
             "batchSupported": defaults["batch_supported"],
+            "price_rules": repricing.current_rules(),
             "tasks": rows,
         }
 
@@ -214,12 +229,13 @@ class FullEstimate:
         if saved and not any(
             task.get("approximateInput") for task in saved["result"]["tasks"]
         ):
-            if not self.changed(saved["result"], tasks, reprice=False):
+            reading = self.reading(saved["result"], tasks, reprice=False)
+            if reading.current and reading.figure is None:
                 raise ValueError(
                     "Nothing changed since the last estimate, so it is still current."
                 )
-            # The prices just looked up were all it lacked.
-            if self.repriced(saved["result"], tasks):
+            # Pricing its counts again, as the panel shows it, is all it needs.
+            if reading.current:
                 return saved
         folder = self.guided.backend.workflows.folder(native["id"])
         sources = inputs.sources(names, inputs.record()["inputs"])
@@ -299,12 +315,12 @@ class FullEstimate:
                     guard=self.guided.runs.poll_guard(native),
                     cached_only=True,
                 )
-                current = not self.changed(result, tasks)
-                # A model switch that keeps every task's requests prices
-                # them again.
-                repriced = None if current else self.repriced(result, tasks)
-                if repriced:
-                    result, current = repriced, True
+                # A model switch that keeps every task's requests, or a
+                # pricing fix, prices them again.
+                reading = self.reading(result, tasks)
+                current = reading.current
+                if reading.figure is not None:
+                    result = reading.figure
             except OSError, ValueError, KeyError:
                 current = False
         return {

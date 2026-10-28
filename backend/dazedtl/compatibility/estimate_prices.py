@@ -35,7 +35,7 @@ def prices(counts, configuration, provider, cache=None):
     ``batch_max_cost`` with none; ``batch_cost`` is the price a Translate
     estimate shows.
     """
-    from util.provider_costs import batch_price_factor
+    from util.provider_costs import PRICE_RULES_VERSION, batch_price_factor
     from util.translation import claude_cache_prices, openai_cache_prices
 
     from dazedtl.settings.effort import summary, thinks
@@ -55,6 +55,8 @@ def prices(counts, configuration, provider, cache=None):
     value = {
         "model": model,
         "provider": provider,
+        # The rules these prices follow (translation/repricing).
+        "price_rules": PRICE_RULES_VERSION,
         "live_cost": live,
         "batch_nocache_cost": nocache,
         "batch_cached_cost": nocache,

@@ -64,6 +64,9 @@ class RunEstimate(TypedDict):
     # Claude's own token count could not run, so its input is approximate.
     approximate_input: NotRequired[bool]
     elapsed_seconds: NotRequired[float]
+    # The price rules it was priced under (translation/repricing); estimates
+    # before it name none.
+    price_rules: NotRequired[int]
 
 
 class Job(TypedDict):
