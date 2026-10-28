@@ -564,15 +564,26 @@ def message_entry(text: str, speaker: str, *, unwrap: bool = True) -> str | None
 LEAD_CODES = re.compile(r"^((?:[\\]+[^cCnNiIkKvV{}]+?\[[\d\w\W]+?\]?\])+)")
 LEAD_ESCAPES = re.compile(r"^(\\mn\\tmn|\\tmn|\\mn|\\vc)")
 LEAD_MARKER = "_ABL"
+# An MV name window's tag in a message's text, such as \n<Ellen>, which
+# Guided translation sends as the speaker and writes back in front of the
+# translation: group 1 the tag, group 2 the name.
+NAMETAG = re.compile(
+    r"([\\]+[kKnN][wWcCrRrEe]?[\[<](?:[\\]*\w\[\d+\])?(.*?)(?:[\\]*\w\[\d+\])?[>])"
+)
 
 
 def message_lead(text: str) -> int:
     """How many characters at the start of a message's *text* are the codes
-    Guided translation keeps out of what it sends (LEAD_CODES, LEAD_ESCAPES,
-    LEAD_MARKER)."""
+    Guided translation keeps out of what it sends: a NAMETAG wherever it
+    stands among LEAD_CODES, LEAD_ESCAPES and LEAD_MARKER, which follow in
+    that order."""
     rest = text
-    for pattern in (LEAD_CODES, LEAD_ESCAPES):
-        found = pattern.search(rest)
+    named = False
+    for pattern in (LEAD_CODES, LEAD_ESCAPES, None):
+        if not named and (tag := NAMETAG.match(rest)):
+            rest = rest[tag.end() :]
+            named = True
+        found = pattern.search(rest) if pattern else None
         if found:
             rest = rest[found.end() :]
     rest = rest.removeprefix(LEAD_MARKER)
