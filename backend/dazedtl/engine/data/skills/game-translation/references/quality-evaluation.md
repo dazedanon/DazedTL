@@ -9,6 +9,8 @@ Quality therefore needs its own pass, its own sampling method, and its own scori
 reviewer prompt in `data/skills/evaluation_csv_review.md`. Everything below is
 distilled from it, so go there for the parts this file compresses.
 
+To measure a change to translated text (a prompt rule, request context or model) against the baseline, use the regression set and runner that DazedTL's development guide describes under Quality measurement, "Comparing a change" (`docs/development.md`), built on `util/evaluation_quality.py`; this file does not repeat that rule or its commands.
+
 Related: `glossary-and-prompts.md` for the review-context export and what each
 model-blind snapshot may see, and `llm-pipeline.md` for the repair-oriented review
 passes that run inside the translation loop.

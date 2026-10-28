@@ -1428,28 +1428,43 @@ def estimate_candidate(manifest: dict, candidate: dict) -> dict:
         input_tokens += counted_input * repetition_count
         output_tokens += counted_output * repetition_count
 
+    automatic_attempts = (
+        LIVE_REQUEST_MAX_ATTEMPTS
+        if candidate.get("execution", "batch") == "live"
+        else 1
+    )
+    return {
+        **estimate_cost(
+            candidate, input_tokens, output_tokens,
+            len(manifest["executions"]) * output_limit, automatic_attempts,
+        ),
+        "output_token_cap_per_request": output_limit,
+        "reasoning_tokens_unestimated": settings["effective_reasoning_effort"] != "none",
+    }
+
+
+def estimate_cost(candidate: dict, input_tokens: int, output_tokens: int,
+                  output_ceiling: int, automatic_attempts: int = 1) -> dict:
+    """What requests counted at *input_tokens* and expected to answer in
+    *output_tokens* likely cost at *candidate*'s rates, with 25% contingency
+    and excluding unpredictable reasoning, and the most they can cost when
+    every request uses its whole output limit (*output_ceiling* tokens in
+    all) on each of *automatic_attempts*."""
     tokenizer_factor = 1.30 if candidate.get("provider") == "anthropic" else 1.10
     thinking_factor = 1.10 if candidate.get("provider") == "gemini" else 1.0
     estimated_input = round(input_tokens * tokenizer_factor)
     estimated_output = min(
         round(output_tokens * tokenizer_factor * thinking_factor),
-        len(manifest["executions"]) * output_limit,
+        output_ceiling,
     )
     rates = _candidate_rates(candidate)
     raw_cost = (
         estimated_input * rates["input"]
         + estimated_output * rates["output"]
     ) / 1_000_000
-    automatic_attempts = (
-        LIVE_REQUEST_MAX_ATTEMPTS
-        if candidate.get("execution", "batch") == "live"
-        else 1
-    )
     single_attempt_ceiling = (
         estimated_input * 1.25 * rates["input"]
-        + len(manifest["executions"])
-        * output_limit
-        * rates["output"]
+        + output_ceiling * rates["output"]
     ) / 1_000_000
     maximum_cost = single_attempt_ceiling * automatic_attempts
     likely_upper_cost = min(raw_cost * 1.25, single_attempt_ceiling)
@@ -1459,8 +1474,6 @@ def estimate_candidate(manifest: dict, candidate: dict) -> dict:
         "cost_usd": likely_upper_cost,
         "maximum_cost_usd": maximum_cost,
         "automatic_attempts": automatic_attempts,
-        "output_token_cap_per_request": output_limit,
-        "reasoning_tokens_unestimated": settings["effective_reasoning_effort"] != "none",
         "rates": rates,
         "method": (
             f"provider-neutral {candidate.get('execution', 'batch')} text "
@@ -1512,13 +1525,18 @@ def refresh_run_estimates(run_dir: str | Path) -> tuple[dict, dict]:
     return state, manifest
 
 
-def _candidate_rates(candidate: dict) -> dict[str, float]:
-    endpoint = str(candidate.get("endpoint") or "").lower()
-    is_local = any(
-        marker in endpoint
+def is_local_endpoint(endpoint: str) -> bool:
+    """Whether *endpoint* is a server on this machine, which sends no bill."""
+    lowered = str(endpoint or "").lower()
+    return any(
+        marker in lowered
         for marker in ("localhost", "127.0.0.1", "[::1]", "0.0.0.0")
     )
-    if candidate.get("keyless") or is_local:
+
+
+def _candidate_rates(candidate: dict) -> dict[str, float]:
+    endpoint = str(candidate.get("endpoint") or "").lower()
+    if candidate.get("keyless") or is_local_endpoint(endpoint):
         # Local inference has no provider token invoice. Electricity/hardware
         # costs are outside this API-budget guard.
         return {"input": 0.0, "cached_input": 0.0, "output": 0.0}
@@ -2360,6 +2378,29 @@ def sync_run_history(run_dir: str | Path) -> int:
     return synced
 
 
+def apply_reasoning(params: dict, provider: str, effort: str) -> dict:
+    """Sets a request's reasoning to *effort* (evaluation_settings), or
+    leaves it to the provider for ``provider_default``: Claude's thinking and
+    effort, or the OpenAI-compatible reasoning effort, which replaces sampling
+    settings except on Gemini."""
+    if provider == "anthropic":
+        if effort == "none":
+            params["thinking"] = {"type": "disabled"}
+        elif effort != "provider_default":
+            params["thinking"] = {"type": "adaptive"}
+            params.setdefault("output_config", {})["effort"] = effort
+    elif provider == "gemini":
+        if effort != "provider_default":
+            params["reasoning_effort"] = effort
+    elif effort != "provider_default":
+        params["reasoning_effort"] = effort
+        for field in ("temperature", "top_p", "frequency_penalty"):
+            params.pop(field, None)
+    else:
+        params.pop("reasoning_effort", None)
+    return params
+
+
 def _provider_params(candidate: dict, request: dict) -> dict:
     settings = generation_settings(candidate)
     effort = settings["effective_reasoning_effort"]
@@ -2379,11 +2420,7 @@ def _provider_params(candidate: dict, request: dict) -> dict:
             # batch request to pay the 2x one-hour cache-write rate.
             cache_ttl=None if is_batch else "5m",
         )
-        if effort == "none":
-            params["thinking"] = {"type": "disabled"}
-        elif effort != "provider_default":
-            params["thinking"] = {"type": "adaptive"}
-            params["output_config"]["effort"] = effort
+        apply_reasoning(params, provider, effort)
         params["max_tokens"] = output_limit
         return params
 
@@ -2407,16 +2444,10 @@ def _provider_params(candidate: dict, request: dict) -> dict:
         # file validator rejects that transport-internal shape.
         params.pop("temperature", None)
         params.pop("extra_body", None)
-        if effort != "provider_default":
-            params["reasoning_effort"] = effort
+        apply_reasoning(params, provider, effort)
         params["max_tokens"] = output_limit
     else:
-        if effort != "provider_default":
-            params["reasoning_effort"] = effort
-            for field in ("temperature", "top_p", "frequency_penalty"):
-                params.pop(field, None)
-        else:
-            params.pop("reasoning_effort", None)
+        apply_reasoning(params, provider, effort)
         params["max_completion_tokens"] = output_limit
         if (
             candidate.get("execution") == "live"
@@ -3069,6 +3100,32 @@ def _no_cache_cost(candidate: dict, usage: dict) -> float:
     ) / 1_000_000
 
 
+def translation_issues(source: str, protected_source: str,
+                       replacements: dict, translation: str) -> list[str]:
+    """What the mechanical gate finds wrong with one returned line: its
+    placeholders against the protected source, its control codes once
+    restored, and the hard content failures. None means the line is valid,
+    which says nothing of its quality."""
+    issues: list[str] = []
+    placeholders_ok, missing, extra = validate_placeholders(
+        protected_source, translation, replacements
+    )
+    if not placeholders_ok:
+        issues.append("Placeholder mismatch: " + ", ".join((*missing, *extra)))
+    restored = restore_script_codes(translation, replacements)
+    controls_ok, control_issues = validate_control_codes(
+        [source], [restored], {0: replacements}
+    )
+    if not controls_ok:
+        issues.extend(control_issues)
+    content_ok, _indices, content_issues = validate_translation_content(
+        [protected_source], [translation], LANGUAGE_REGEX
+    )
+    if not content_ok:
+        issues.extend(content_issues)
+    return issues
+
+
 def _process_results(manifest: dict, raw_results: dict,
                      provider_errors: list) -> tuple[dict, dict]:
     request_by_id = _request_lookup(manifest)
@@ -3103,27 +3160,12 @@ def _process_results(manifest: dict, raw_results: dict,
             protected_source = request["protected_sources"][index]
             replacements = request["replacements"][index]
             raw_translation = translations[index] if index < len(translations) else ""
-            line_issues: list[str] = list(issues)
-            placeholders_ok, missing, extra = validate_placeholders(
-                protected_source, raw_translation, replacements
-            )
-            if not placeholders_ok:
-                line_issues.append(
-                    "Placeholder mismatch: " + ", ".join((*missing, *extra))
-                )
-            restored_for_validation = restore_script_codes(
-                raw_translation, replacements
-            )
-            controls_ok, control_issues = validate_control_codes(
-                [source], [restored_for_validation], {0: replacements}
-            )
-            if not controls_ok:
-                line_issues.extend(control_issues)
-            content_ok, _indices, content_issues = validate_translation_content(
-                [protected_source], [raw_translation], LANGUAGE_REGEX
-            )
-            if not content_ok:
-                line_issues.extend(content_issues)
+            line_issues = [
+                *issues,
+                *translation_issues(
+                    source, protected_source, replacements, raw_translation
+                ),
+            ]
             if not line_issues:
                 valid_segments += 1
             else:

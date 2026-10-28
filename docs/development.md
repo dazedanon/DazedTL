@@ -201,6 +201,53 @@ A recurring group is three or more different lines of one game that took the sam
 The labels come from rules on the reviewer's category and reason, then the text; a hand check of 73 corrections drawn across 8 games found 68 right, and the rules now fix 4 of the 5 misses.
 Readings of continuity and of whom a line addresses were right only 4 and 6 times in 10, so those corrections take their category's kind instead.
 
+### Comparing a change
+
+A change that shapes translated text, such as a prompt rule, a request setting or context, or a default model, lands only with two results from the comparison runner against the baseline, through the request builder of the method it changes: no regression on the held-out half of the regression set, and a gain beyond the noise floor on targeted items where the change fires, which the change brings itself.
+Every paid run needs the user's OK with a cap.
+This is the user's decision of 2026-10-27, "we want to make sure any improvements we make are measurable and verifiable otherwise we will be chasing shadows".
+
+[quality_compare.py](../backend/dazedtl/engine/scripts/quality_compare.py) builds the set, estimates, translates and compares; keep its files outside this checkout, since they hold game text:
+
+```sh
+q=backend/dazedtl/engine/scripts/quality_compare.py
+.venv/bin/python $q build-set --export <export> --out <set>
+.venv/bin/python $q estimate --set <set> [--targeted <items>] --variant <variant.json> --judge <judge.json>
+printf %s "$KEY" | .venv/bin/python $q translate --set <set> [--targeted <items>] --variant <baseline.json> --runs <runs> --run-id base-1 --cap <dollars> --key-stdin --wait
+# again as base-2, then the change's variant as change-1
+printf %s "$KEY" | .venv/bin/python $q compare --set <set> [--targeted <items>] --runs <runs> --baseline base-1 base-2 --variant-run change-1 --judge <judge.json> --compare-id <name> --cap <dollars> --key-stdin --wait
+```
+
+The [regression set](../backend/dazedtl/engine/util/quality_set.py) holds about 300 lines QA corrected, drawn evenly across games and kinds with at most 3 of a recurring group, and 300 lines QA's screen read without a finding, from tasks whose screen read at least 99% of its items.
+Fit and format corrections are left out, since fitting and the layout lint make them after a request replies.
+Each item keeps the chunk of ten lines its scene sends with the ten lines before it, the speakers, line kinds and the game's guidance as QA saw them, so runs never read a game.
+A fixed split puts each item, and each recurring group whole, in a tune half for iterating or a held-out half for the result; raise its `VERSION` when the selection, chunking or split changes.
+
+A variant is a JSON file naming `name`, `method` (`guided` or `assistant-led`), `provider` (`anthropic`, `openai` or `gemini`), `model`, `endpoint`, `execution` (`batch`, the default, or `live`), `effort` (left out, a run sends none, as translation runs do), `prompt` (a prompt file in place of `data/skills/system.md`, which the user edits) and `context`, switches for `history`, `glossary`, `sfx` and `speakers` that are all on unless set false.
+A judge's file names its connection the same way, with `max_output_tokens` and `prompts` in place of the [defect](../backend/dazedtl/engine/data/skills/quality_judge_defect.md) and [pairwise](../backend/dazedtl/engine/data/skills/quality_judge_pairwise.md) prompts.
+Requests come from each method's own builders ([evaluation_quality](../backend/dazedtl/engine/util/evaluation_quality.py)); a run keeps every reply under its request's digest, so translating the same run ID again after a crash, a retry or a new targeted file sends only what has no reply, and no run reads or writes the translation cache.
+Requests go in slices whose most possible cost fits what the cap has left, so a run never spends past it.
+
+A comparison scores only the items' target lines, cheapest first: the validity rate of the mechanical gate, which says nothing of quality; a glossary correction by whether the line keeps its glossary rows' English exactly; another correction by a blind judge asked whether the line repeats the defect the reviewer described; and a control by a blind judge asked whether the line is worse in meaning or voice than the accepted one.
+Every comparison calibrates its judge on the corrections' first drafts, which it must flag, and the corrections, which it must pass, and withholds the judge's scores below the `CALIBRATION_MINIMUM` the code justifies.
+A gain or a regression counts only beyond the noise floor, the largest gap between the baseline's two runs that their interval admits, and with an interval that excludes no change; `--stand-in-judge` answers from the set's labels for dry runs and measures nothing.
+
+A targeted item file is a set file whose header has `"kind": "targeted"`, its own `name` and `version`, and no `split` on its items, which never join the held-out half.
+Its header and items have the set's fields, which `quality_set.validate` checks:
+
+| Field | Holds |
+| --- | --- |
+| `schema`, `format` | `dazedtl-quality-set` and the item form's `FORMAT` |
+| `language` | the `source` and `target` languages |
+| `contexts` | by ID, a game's `overlays` (the sections its system prompt adds) and `glossary` text |
+| item `id`, `type`, `kind` | a unique ID, `defect` or `control`, and the correction's kind |
+| item `context`, `lines`, `history`, `target` | its context ID, the chunk's lines in order, the lines before them, and the index of the line scored |
+| line `source`, `speaker`, `speaker_name`, `kind` | the source text, the speaker as Assistant-led names it and as Guided does, or null, and `dialogue`, `narration`, `ui` or `unknown` |
+| item `draft`, `accepted`, `reason`, `glossary` | the first translation, the accepted one, the reviewer's reason for a defect, and the glossary rows a glossary correction follows |
+
+A line without `speaker_name` cannot be sent the way Guided sends it, and one without `speaker` or `kind` the way Assistant-led does, so the item is left out of that method's runs.
+A change that needs context the form lacks adds the field, raises `FORMAT` and reads it in its method's request builder.
+
 ## GameUpdate
 
 [gameupdate](../backend/dazedtl/engine/gameupdate) is the player updater that Set up copies into each game's root folder; [project_preparation.py](../backend/dazedtl/engine/util/project_preparation.py) decides what is copied and which existing files are kept.
@@ -292,5 +339,5 @@ Never edit `CHANGELOG.md` by hand; [changelog.mjs](../scripts/changelog.mjs) rea
 - [Architecture](architecture.md) covers code ownership, boundaries and design decisions.
 - The [translation contract](translation-contract.md) is for engine adapter authors and assistant integrations.
 - The [text QA redesign](text-qa-redesign.md) plans the next version of text QA.
-- [Quality measurement](#quality-measurement) says how to count what Text QA corrects and export it as the dataset quality comparisons use.
+- [Quality measurement](#quality-measurement) says how to count what Text QA corrects, and how to measure a change to translated text against the baseline on the regression set built from it.
 - [AGENTS.md](../AGENTS.md) holds contribution rules.

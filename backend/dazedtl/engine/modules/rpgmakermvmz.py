@@ -1308,12 +1308,7 @@ def _code408_source(codeList, group) -> str | None:
 def _message_entry(text: str, speaker: str) -> str | None:
     """The line pass 1 sends for a message's text and speaker, or None for
     none; pass 2 reads a reply that is this line as untranslated."""
-    if FIXTEXTWRAP:
-        text = text.replace("\n", " ")
-    text = text.replace("\\px[200]", "")
-    if not text:
-        return None
-    return f"[{speaker}]: {text}" if speaker else text
+    return rpgmaker_blocks.message_entry(text, speaker, unwrap=FIXTEXTWRAP)
 
 
 def _group_raw_text(codeList, group_start: int, source_parts: list[str]) -> str:
