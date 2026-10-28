@@ -2470,12 +2470,14 @@ def openai_cache_prices(inputs, outputs, reads, cacheable, model, in_rate, out_r
     the cache and ``cacheable`` those in prompts long enough to cache.
 
     Cached inputs for the supported GPT models are currently 10% of standard
-    input price; Batch then applies its own 50% discount. Returns the tokens
-    written, then (for models that bill writes) the most that can be written,
-    the price with the expected hits, and the price with none, which is None
-    with the most written for models that don't bill writes.
+    input price; Batch then applies its own discount (batch_price_factor).
+    Returns the tokens written, then (for models that bill writes) the most
+    that can be written, the price with the expected hits, and the price with
+    none, which is None with the most written for models that don't bill
+    writes.
     """
     multiplier = cache_write_multiplier("openai", model)
+    factor = batch_price_factor("openai")
     writes, max_writes, most = 0, None, None
     if has_billed_cache_writes("openai", model):
         writes = max(0, min(inputs - reads, cacheable - reads))
@@ -2485,13 +2487,13 @@ def openai_cache_prices(inputs, outputs, reads, cacheable, model, in_rate, out_r
             (inputs - max_writes) * in_rate
             + max_writes * in_rate * multiplier
             + outputs * out_rate
-        ) * 0.50
+        ) * factor
     cached = (
         (inputs - reads - writes) * in_rate
         + writes * in_rate * multiplier
         + reads * in_rate * 0.10
         + outputs * out_rate
-    ) * 0.50
+    ) * factor
     return writes, max_writes, cached, most
 
 
