@@ -302,6 +302,12 @@ def tag(name) -> str | None:
     return found.tag if found else None
 
 
+def english(name) -> bool:
+    """Whether the language *name* names is English, in any spelling or
+    variant, such as en or English (US)."""
+    return tag(name) == "en"
+
+
 def target_uses_cjk(language) -> bool:
     """Whether a target language is Chinese or Japanese, which are written
     with full-width punctuation and without spaces between words."""

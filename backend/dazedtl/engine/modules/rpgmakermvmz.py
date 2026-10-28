@@ -4,7 +4,7 @@ import json
 import os
 import re
 import util.dazedwrap as dazedwrap
-from util.languages import ENGLISH, source_pattern, tag
+from util.languages import ENGLISH, english, source_pattern
 from util import original_values, rpgmaker_blocks, rpgmaker_rewrap, rpgmaker_scope
 from util import rpgmaker_script_strings as script_strings
 import threading
@@ -2139,7 +2139,7 @@ def _apply_system_terms_message_original(data, key: str, raw: str) -> None:
 def _normalize_system_message_translation(key: str, translated: str) -> str:
     """Repair narrowly known English RPG Maker system-message failures."""
     text = str(translated or "").strip()
-    is_english = tag(LANGUAGE) == "en"
+    is_english = english(LANGUAGE)
     if key == "escapeFailure" and is_english and re.fullmatch(
         r"but\s+couldn['’]t\s+escape!?", text, flags=re.IGNORECASE
     ):

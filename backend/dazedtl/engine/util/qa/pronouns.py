@@ -21,7 +21,7 @@ import re
 from collections.abc import Iterable
 from typing import NamedTuple
 
-from util.languages import tag
+from util.languages import english
 from util.rpgmaker_qa_glossary import genders
 
 # The check's name, in deep review and in qa --check.
@@ -68,7 +68,7 @@ class Slip(NamedTuple):
 def cast(glossary_text: str | None, target: str) -> Cast:
     """The characters of a game's glossary the rule reads, for a translation
     into *target*: none unless it is English, whose pronouns it knows."""
-    found = genders(glossary_text) if tag(target) == "en" else {}
+    found = genders(glossary_text) if english(target) else {}
     names = sorted(found, key=lambda name: (-len(name), name))
     pattern = re.compile(
         r"(?<!\w)(" + "|".join(map(re.escape, names)) + r")(?:['’]s)?(?!\w)"

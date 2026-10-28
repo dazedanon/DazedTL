@@ -134,10 +134,10 @@ class Game(NamedTuple):
 
 def applies(family: str, target: str) -> bool:
     """Whether a family checks a translation into *target*."""
-    from util.languages import LATIN, script, tag, target_uses_cjk
+    from util.languages import LATIN, english, script, target_uses_cjk
 
     reads = {
-        "english": lambda: tag(target) == "en",
+        "english": lambda: english(target),
         "latin": lambda: script(target) == LATIN,
         "unspaced": lambda: target_uses_cjk(target),
         "any": lambda: True,
