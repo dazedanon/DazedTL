@@ -1,6 +1,7 @@
 """Preparation and delivery compose preserved engine operations with the
 game's recorded original files."""
 
+import hashlib
 import os
 import tempfile
 from contextlib import ExitStack
@@ -100,9 +101,47 @@ def census_path(workspace, project_id):
     return Path(workspace) / "translation/projects" / project_id / "census.json"
 
 
-# The prepared record each census counted and the census version it counted
-# by, by the census file's signature.
+# The prepared record each census counted, the census version it counted by
+# and what names it (counted_census), by the census file's signature.
 _COUNTED = Digests(limit=64)
+CENSUS_NAMES = ("census_id", "census_sha256")
+
+
+def _counted(workspace, project_id):
+    path = census_path(workspace, project_id)
+    try:
+        info = os.stat(path)
+    except FileNotFoundError:
+        return None
+
+    def counted_by():
+        value = read_json(path)
+        named = (
+            {"census_id": value["id"]}
+            if value.get("id")
+            else {"census_sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
+        )
+        return value.get("snapshot") or "", value.get("version"), named
+
+    return _COUNTED.remember(str(path), info, counted_by)
+
+
+def counted_census(workspace, project_id):
+    """What work counted against the saved census saves to name it: the
+    census's own ID, or the digest of one an earlier DazedTL took without an
+    ID; None without a census. File times can't name it, since copying or
+    restoring a profile reorders them."""
+    counted = _counted(workspace, project_id)
+    return dict(counted[2]) if counted else None
+
+
+def names_census(workspace, project_id, saved):
+    """Whether *saved* work names the saved census (counted_census); None
+    when it names none, as coverage an earlier DazedTL saved."""
+    key = next((key for key in CENSUS_NAMES if saved.get(key)), None)
+    if key is None:
+        return None
+    return (counted_census(workspace, project_id) or {}).get(key) == saved[key]
 
 
 def census_stale(workspace, project_id, source, state=None):
@@ -113,17 +152,10 @@ def census_stale(workspace, project_id, source, state=None):
     both stay."""
     from .census import VERSION
 
-    path = census_path(workspace, project_id)
-    try:
-        info = os.stat(path)
-    except FileNotFoundError:
+    counted = _counted(workspace, project_id)
+    if counted is None:
         return None
-
-    def counted_by():
-        value = read_json(path)
-        return value.get("snapshot") or "", value.get("version")
-
-    counted, version = _COUNTED.remember(str(path), info, counted_by)
+    counted, version, _ = counted
     current = originals.prepared_id(workspace, project_id, source, state)
     return not current or counted != current or version != VERSION
 

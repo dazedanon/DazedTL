@@ -48,6 +48,7 @@ from .operations import (
     census_stale,
     checkout_issue,
     lifecycle,
+    names_census,
     require_baseline,
     runtime_manifest,
 )
@@ -1044,9 +1045,7 @@ Additional project instructions:
             )
         except ValueError, OSError:
             inventory = None
-        if not inventory or inventory["census_sha256"] != run_compiler.census_sha256(
-            self.workspace, project_id
-        ):
+        if not inventory or not names_census(self.workspace, project_id, inventory):
             raise PackageRefusal(
                 "Package needs the whole census extracted: run organize --complete with your units after the latest census.",
                 "Your assistant finishes extracting the game's text first.",

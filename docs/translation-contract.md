@@ -127,6 +127,7 @@ organize --complete is refused without a current census, while archives still ne
 Rules apply before extraction, so an identifier a rule sets aside never uses up the unit for the same words where the player reads them.
 Once a game update records a new prepared game, or DazedTL raises the census version because it counts other text, packaging is refused until census runs again, and Progress reads the coverage as stale until organize runs after that census ([run_compiler](../backend/dazedtl/translation/run_compiler.py)).
 Packaging requires organize --complete against the latest census, and a progress text export counting at least the units it accepted.
+Each census saves its own ID, and the coverage and accepted units organize saves name the census they counted by it, rather than by file times, which copying or restoring a profile reorders ([operations](../backend/dazedtl/translation/operations.py) `counted_census`).
 Content is never a reason to leave text out; the assistant declines a request it won't translate, which keeps its lines in scope.
 
 ## Source plan
