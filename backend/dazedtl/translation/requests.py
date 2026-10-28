@@ -179,9 +179,73 @@ def provider_keys(request, configuration):
     return {identity: str(position) for position, identity in enumerate(ids, 1)}
 
 
+def shown_sources(request):
+    """A request's lines as the model reads them: each name code its compile
+    showed as the actor's name (translation/name_codes) in that form."""
+    shown = request.get("context", {}).get("actor_names", {})
+    return {
+        identity: shown[identity]["text"] if identity in shown else text
+        for identity, text in request["sources"].items()
+    }
+
+
+def shown_constraints(request):
+    """A request's constraints as the model reads them. A line that shows
+    name codes as names keeps each name as a protected token in place of its
+    code, since the restored reply must hold every code, and its character
+    bound counts the names in place of the codes."""
+    shown = request.get("context", {}).get("actor_names", {})
+    if not shown:
+        return request["constraints"]
+    constraints = dict(request["constraints"])
+    for identity, record in shown.items():
+        rule = dict(request["constraints"].get(identity, {}))
+        text, codes = record["text"], record["codes"]
+        rule["tokens"] = list(
+            dict.fromkeys(
+                [token for token in rule.get("tokens", []) if token in text]
+                + list(codes)
+            )
+        )
+        if "max_characters" in rule:
+            source = request["sources"][identity]
+            rule["max_characters"] = max(
+                1, rule["max_characters"] - len(source) + len(text)
+            )
+        constraints[identity] = rule
+    return constraints
+
+
+def restored(request, result):
+    """A reply's lines with the name codes their shown lines showed as names
+    put back (util/actor_names restore), as many of each as the line lacks,
+    so the reply keeps the game's codes."""
+    from util.actor_names import restore
+
+    shown = request.get("context", {}).get("actor_names", {})
+    if not shown or not isinstance(result, dict):
+        return result
+    sources = request["sources"]
+    value = dict(result)
+    for identity, record in shown.items():
+        text = value.get(identity)
+        if not isinstance(text, str) or identity not in sources:
+            continue
+        codes = record["codes"]
+        value[identity] = restore(
+            text,
+            codes,
+            {
+                name: sources[identity].count(code) - text.count(code)
+                for name, code in codes.items()
+            },
+        )
+    return value
+
+
 def provider_sources(request, configuration):
     keys = provider_keys(request, configuration)
-    return {keys[identity]: text for identity, text in request["sources"].items()}
+    return {keys[identity]: text for identity, text in shown_sources(request).items()}
 
 
 def _ranges(positions):
@@ -208,7 +272,7 @@ def provider_view(request, configuration):
             "keys": keys,
             "user": context["user"],
             "sources": request["sources"],
-            "constraints": request["constraints"],
+            "constraints": shown_constraints(request),
             "scene_context": context.get("scene_context", ""),
             # The user message holds it by unit ID (logical_request).
             "stretches": "",
@@ -277,7 +341,8 @@ def provider_view(request, configuration):
         "user": "\n\n".join(parts),
         "sources": sources,
         "constraints": {
-            keys[identity]: rule for identity, rule in request["constraints"].items()
+            keys[identity]: rule
+            for identity, rule in shown_constraints(request).items()
         },
         "scene_context": SCENES
         + "\n"
@@ -497,7 +562,9 @@ def protected_tokens(request, identity):
 
 
 def result_value(request, result):
-    result = _parsed(result)
+    """A reply's translations by unit ID, its name codes restored, refusing
+    one that changed a protected token, a mask or a layout bound."""
+    result = restored(request, _parsed(result))
     sources = request["sources"]
     if not isinstance(result, dict) or set(result) != set(sources):
         raise ValueError("Response IDs do not match the requested source IDs.")

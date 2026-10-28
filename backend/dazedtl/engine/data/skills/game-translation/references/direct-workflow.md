@@ -39,6 +39,7 @@ Organize packs whole scenes of one group into requests sized for the mode (the m
 A line an earlier request translated keeps that translation while its unit ID and source text stay the same, so organizing again after a guidance edit or an extractor fix packs only the lines without one, and the reply counts the rest as `translated`; a line saved in its own source text is not translated and is packed again.
 A request holding such lines lists each stretch of them with the lines just before it and their earlier translation, so continue the scene from them.
 Record what runtime substitutions such as `\N[1]` or `\V[3]` stand for in game.md, which every request carries.
+On RPG Maker, give each actor's glossary row its ID, as in `ミカ (Mika) - Female, actor ID 1`: requests then show that actor's `\N[1]`, and a `\V[n]` a Control Variables script sets to that name, as the name, with the actor's glossary entry, so leave those codes in the units' source, and the tool puts each code back in a translation that writes the name.
 Every request carries the full system, glossary, SFX, field instructions, preceding source context, speaker-bearing `user` payload and advisory reference translations.
 In Assistant only, read each request with the helper, translate it, and save its receipt with `accept`; decline a request you won't translate rather than softening or leaving out lines.
 `results --run ID` writes the accepted translations by unit ID for the injector, those organize kept from earlier requests included, and lists each line still without one under `missing`.

@@ -17,7 +17,7 @@ from dazedtl.projects.store import Projects
 from dazedtl.settings.execution import configuration, connection_summary, worker_secret
 from dazedtl.settings.store import Settings
 from dazedtl.storage import WorkspaceLock, write_json
-from dazedtl.translation import delivery, progress_report, publication
+from dazedtl.translation import delivery, name_codes, progress_report, publication
 from dazedtl.translation.compilation import compile_requests
 from dazedtl.translation.files import digest, evidence, read_json
 from dazedtl.translation.game_update import ABSENT
@@ -67,7 +67,11 @@ class Engine:
             "asset_sync_pending": False,
         }
 
-    def compile(self, _root, _options, plan, language, skill_users=None):
+    def compile(
+        self, _root, _options, plan, language, skill_users=None, actor_variables=None
+    ):
+        self.actor_variables = actor_variables
+
         def users(batch):
             notes, _names = for_batch(skill_users or {}, batch["sources"])
             return {"skill_users": notes} if notes else {}
@@ -817,6 +821,65 @@ class WorkflowTests(unittest.TestCase):
         _job, older = self.service.jobs.store.load(older["id"])
         self.assertNotIn("skill_users", older["requests"][0]["context"])
         self.service.validate_current(self.identity, older)
+
+    def test_a_runs_name_codes_show_the_actor_a_script_names_in_the_original(self):
+        # Guided shows \\V[n] as the actor's name when a Control Variables
+        # script sets variable n to it; a new Assistant-led run reads those
+        # scripts from the original game, and only when a line shows one.
+        data = self.game / "data"
+        data.mkdir()
+        script = "$gameActors.actor(1).name()"
+        write_json(data / "System.json", {})
+        command = {"code": 122, "indent": 0, "parameters": [4, 5, 0, 4, script]}
+        write_json(
+            data / "Map001.json",
+            {"events": [None, {"pages": [{"list": [command]}]}]},
+        )
+        original_files.record(self.game, original_files.PREPARED)
+        # The working copy's scripts are not read.
+        write_json(data / "Map001.json", {"events": []})
+        selected = self.project.read()
+        self.service.save(
+            self.identity,
+            selected["revision"],
+            {**selected["options"], "mode": "agent"},
+        )
+        units = WORK + "/work/source-units.json"
+
+        def organized(*sources):
+            write_json(
+                self.game / units,
+                {
+                    "version": 1,
+                    "units": [
+                        {"id": f"u{index}", "scene": "s", "source": text}
+                        for index, text in enumerate(sources, 1)
+                    ],
+                },
+            )
+            run = self.prepared(self.service.organize(self.identity, units))["run"]
+            return self.service.jobs.store.load(run["id"])[1]
+
+        plan = organized("\\V[4]は来た。", "\\N[1]だ。")
+        self.assertEqual(plan["configuration"][name_codes.KEY], name_codes.POLICY)
+        self.assertEqual(self.engine.actor_variables, {4: 1, 5: 1})
+        self.service.validate_current(self.identity, plan)
+        self.assertEqual(self.engine.actor_variables, {4: 1, 5: 1})
+        # A run frozen before the policy compiles its requests with the codes.
+        older = {
+            **plan,
+            "configuration": {
+                key: value
+                for key, value in plan["configuration"].items()
+                if key != name_codes.KEY
+            },
+        }
+        self.service.validate_current(self.identity, older)
+        self.assertIsNone(self.engine.actor_variables)
+        # A run without a variable code shows its \\N[n] without reading them.
+        with patch.object(name_codes, "_scanned", side_effect=AssertionError):
+            organized("\\N[1]だ。")
+        self.assertEqual(self.engine.actor_variables, {})
 
     def test_complete_needs_the_tools_census_covered_not_the_assistants_word(self):
         def line(code, *parameters):

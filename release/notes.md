@@ -2,6 +2,7 @@
 
 ### Changed
 
+- **Assistant-led:** on RPG Maker, a request now shows the model an actor's English name in place of `\N[n]`, and of a `\V[n]` the game sets to that name, as Guided does, when the actor's glossary row names its actor ID, so the English around it stays grammatical and fits the actor's gender; the game keeps its codes.
 - **Assistant-led:** when lines of a scene are translated again while the rest of it keeps its earlier translation, such as after a glossary edit, each request now shows the lines just before them with their earlier translation, as Guided does, so the new lines carry on the scene's voice and tense instead of reading as a scene of their own.
 
 ### Fixed

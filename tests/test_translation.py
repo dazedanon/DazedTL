@@ -559,6 +559,156 @@ class TranslationTests(unittest.TestCase):
             },
         )
 
+    def test_name_codes_reach_the_model_as_actors_names_and_come_back_as_codes(self):
+        # Assistant-led sent \N[1] as it is, so the English around it lost its
+        # grammar and the model could not tell the actor's gender; Guided
+        # shows the actor's name and puts the code back.
+        from types import SimpleNamespace
+
+        from util import actor_names, len_translation
+
+        actors = {1: "Mika", 2: "Rio"}
+        # Adjacent codes stay apart, a variable a script set to an actor's
+        # name shows it, and an actor no glossary row names stays a code.
+        self.assertEqual(
+            actor_names.shown("\\N[1]と\\N[2]\\N[1]が来た。", actors, {}),
+            ("MikaとRio Mikaが来た。", {"Mika": "\\N[1]", "Rio": "\\N[2]"}),
+        )
+        self.assertEqual(
+            actor_names.shown("\\V[4]と\\N[3]だ。", actors, {4: 1}),
+            ("Mikaと\\N[3]だ。", {"Mika": "\\V[4]"}),
+        )
+        self.assertIsNone(actor_names.shown("\\N[3]だ。", actors, {}))
+        # One name for two spellings could not be told apart again.
+        self.assertIsNone(actor_names.shown("\\N[1]と\\V[4]", actors, {4: 1}))
+        # Guided's blank, player-named slot takes the first free given name.
+        assigned = {}
+        self.assertEqual(actor_names.fallback_name(5, {"Alex"}, assigned), "Blake")
+        self.assertEqual(actor_names.fallback_name(5, set(), assigned), "Blake")
+
+        sources = {"u1": "\\N[1]と\\N[2]\\N[1]が来た。", "u2": "\\N[3]は残った。"}
+        shared = {
+            "system": "Translate.",
+            "glossary": "# Game Characters\n"
+            "ミカ (Mika) - Female, actor ID 1\nリオ (Rio) - Male, actor ID 2\n",
+            "content_sha256": "guidance",
+        }
+        references = {"status": "none", "matches": {}}
+
+        def compiled(**options):
+            with (
+                patch.object(len_translation, "shared_context", lambda *_a: shared),
+                patch.object(
+                    len_translation, "reference_context", lambda *_a: references
+                ),
+            ):
+                (row,) = len_translation.request_contexts(
+                    SimpleNamespace(game_root=self.game),
+                    [{"id": "scene", "sources": sources}],
+                    "English",
+                    **options,
+                )
+            return row
+
+        # The model reads the names, and the actors' glossary entries join.
+        context = compiled(actor_variables={})["context"]
+        self.assertIn("ミカ (Mika) - Female", context["glossary"])
+        self.assertIn('"MikaとRio Mikaが来た。"', context["user"])
+        self.assertEqual(
+            context["actor_names"],
+            {
+                "u1": {
+                    "text": "MikaとRio Mikaが来た。",
+                    "codes": {"Mika": "\\N[1]", "Rio": "\\N[2]"},
+                }
+            },
+        )
+        # A run frozen without the policy compiles the request it did.
+        older = compiled()["context"]
+        self.assertNotIn("actor_names", older)
+        self.assertEqual(older["glossary"], "")
+
+        batch = {
+            "id": "scene",
+            "sources": sources,
+            "kinds": {"u1": "narration", "u2": "narration"},
+            "speakers": {"u1": None, "u2": None},
+            "constraints": {
+                "u1": {"tokens": ["\\N[1]", "\\N[2]"], "max_characters": 60},
+                "u2": {"tokens": ["\\N[3]"]},
+            },
+        }
+        row = logical_request(batch, {**context, "user": ""})
+        configuration = {"mode": "live", "model": "fixture", "lineKeys": LINE_KEYS}
+        view = provider_view(row, configuration)
+        self.assertEqual(
+            view["sources"], {"1": "MikaとRio Mikaが来た。", "2": "\\N[3]は残った。"}
+        )
+        # The model keeps each name in place of its code, which the restored
+        # reply must hold, and its bound counts the names.
+        self.assertEqual(
+            view["constraints"],
+            {
+                "1": {"tokens": ["Mika", "Rio"], "max_characters": 57},
+                "2": {"tokens": ["\\N[3]"]},
+            },
+        )
+        self.assertEqual(
+            result_files.translated(
+                row, {"u1": "Mika came with Rio and Mika.", "u2": "\\N[3] stayed."}
+            )["u1"],
+            "\\N[1] came with \\N[2] and \\N[1].",
+        )
+        # Only the codes a reply lacks are restored, so a name it adds stays
+        # a word.
+        self.assertEqual(
+            result_value(
+                row,
+                {"u1": "\\N[1] came, Mika said, with Rio Mika.", "u2": "\\N[3]."},
+            )["u1"],
+            "\\N[1] came, \\N[1] said, with \\N[2] Mika.",
+        )
+        # A name inside another word is restored only for a missing code.
+        self.assertEqual(
+            actor_names.restore("Ann met MaryAnn.", {"Ann": "\\N[1]"}, {"Ann": 1}),
+            "\\N[1] met MaryAnn.",
+        )
+        # A request compiled without the policy restores nothing.
+        plain = logical_request(batch, {**older, "user": ""})
+        self.assertEqual(
+            provider_view(plain, configuration)["sources"]["1"], sources["u1"]
+        )
+        with self.assertRaisesRegex(ValueError, "changed a protected token"):
+            result_value(plain, {"u1": "Mika came with Rio and Mika.", "u2": "\\N[3]."})
+
+        # An API run's receipt and export hold the game's codes.
+        row["params"] = {"model": "fixture", "messages": []}
+
+        class Named(LiveProvider):
+            def live(self, _params):
+                return {
+                    "text": '{"1": "Mika came with Rio and Mika.", '
+                    '"2": "\\\\N[3] stayed."}'
+                }
+
+        register(self.root / "profile", "names", self.game)
+        plan = {
+            "version": 1,
+            "kind": "translation",
+            "source": str(self.game),
+            "complete": True,
+            "requests": [row],
+            "configuration": configuration,
+            "batch_limits": [50, 100000],
+        }
+        job = self.store.create("names", plan, {"cost": 1})
+        self.store.authorize(job)
+        Runner(self.store, job["id"], Named(), lambda: None).step()
+        self.assertEqual(
+            Results(self.game).get(row)["translations"],
+            {"u1": "\\N[1] came with \\N[2] and \\N[1].", "u2": "\\N[3] stayed."},
+        )
+
     def test_reviewed_correction_retains_history_and_rejects_a_stale_result_hash(self):
         row = request()
         results = Results(self.game)

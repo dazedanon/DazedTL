@@ -679,6 +679,66 @@ const unsentWritten = [
   },
 ];
 
+// The name-codes game variant's messages, as the request shows each to the
+// model: actor 1 by the name the scripted glossary gives her.
+const nameCodeLines = {
+  "\\N[1]、こっちに来て。": "Mika、こっちに来て。",
+  "\\V[7]は笑った。": "Mikaは笑った。",
+};
+
+/** The messages naming actor 1 by a code: the request Inspect shows holds
+ * her name in their place, and the export and the game hold the codes the
+ * scripted assistant answered with the name. */
+const nameCodesWritten = [
+  "A request shows actor 1's name for her codes; the export and the game hold the codes",
+  async ({ page, state }) => {
+    const work = path.join(state.game, ".dazedtl/len-method/work");
+    const read = (file) => JSON.parse(fs.readFileSync(file, "utf8"));
+    const { run } = read(path.join(work, "scripted-assistant.json"));
+    const shown = new Set();
+    for (let index = 0, total = 1; index < total; index++) {
+      const reply = await helper(
+        page,
+        state,
+        "request",
+        "--run",
+        run,
+        "--index",
+        `${index}`,
+      );
+      total = reply.total;
+      for (const source of Object.values(reply.request.sources))
+        if (source in nameCodeLines) {
+          if (!reply.request.context.user.includes(nameCodeLines[source]))
+            throw new Error(`Request ${index} doesn't show ${source} named.`);
+          shown.add(source);
+        }
+    }
+    if (shown.size !== Object.keys(nameCodeLines).length)
+      throw new Error(`Only ${[...shown].join(", ")} reached a request.`);
+    const rows = read(path.join(work, "translation-units.json")).parts.flatMap(
+      (part) => read(path.join(state.game, part)).units,
+    );
+    const data = path.join(contentFolder(state.variants, state.game), "data");
+    const lines = read(path.join(data, "Map001.json"))
+      .events.flatMap((event) => event?.pages ?? [])
+      .flatMap((page) => page.list)
+      .filter((command) => command.code === 401)
+      .map((command) => command.parameters[0]);
+    for (const source of Object.keys(nameCodeLines)) {
+      const code = source.slice(0, 5);
+      const row = rows.find((row) => row.source === source);
+      if (!row?.translation.endsWith(code) || row.translation.includes("Mika"))
+        throw new Error(
+          `The export's row of ${source}: ${JSON.stringify(row)}`,
+        );
+      if (!lines.includes(row.translation))
+        throw new Error(`Map001.json doesn't hold ${row.translation}.`);
+    }
+    console.log(`\n  Shown named: ${Object.values(nameCodeLines).join(", ")}`);
+  },
+];
+
 /** The QA bar of Progress's assistant phases: its state and detail line. */
 const progressQa = (page) =>
   page.evaluate(`(() => {
@@ -1763,9 +1823,14 @@ export const scenarios = {
   },
   "assistant-written": {
     description:
-      "An Assistant-led project the assistant translated whole and wrote into the game, its choice labels and help markers kept in Japanese and its lines of punctuation alone written in English form without a request.",
-    game: "choice-help+unsent-lines",
-    steps: () => [...assistantLed.slice(0, 2), assistantWrite, unsentWritten],
+      "An Assistant-led project the assistant translated whole and wrote into the game, its choice labels and help markers kept in Japanese, its lines of punctuation alone written in English form without a request, and its actor's codes shown to it as her name and written back as codes.",
+    game: "choice-help+unsent-lines+name-codes",
+    steps: () => [
+      ...assistantLed.slice(0, 2),
+      assistantWrite,
+      unsentWritten,
+      nameCodesWritten,
+    ],
   },
   "assistant-checked": {
     description:

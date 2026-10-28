@@ -20,6 +20,7 @@ from util.languages import active_source
 from util.prompt_pair import render as render_prompt, run_language
 from util.skills import load_system_prompt
 from util.reference_games import load_registry, reference_context
+from util.actor_names import glossary_actors, shown
 from util.project_preparation import rpgmaker_layout
 
 
@@ -184,7 +185,8 @@ def request_context(project: LenProject, sources: list[str] | dict[str, str], *,
                     instruction_key: str | None = None, source_context: str = "",
                     speakers: list[str | None] | dict[str, str | None] | None = None,
                     glossary_names: list[str] | tuple[str, ...] = (),
-                    language: str | None = None, _shared=None, _reference_pack=None) -> dict:
+                    language: str | None = None, _shared=None, _reference_pack=None,
+                    _actor_names=None) -> dict:
     """Compile one batch with DazedTL's actual glossary/SFX matching and current instructions.
 
     ``glossary_names`` are names a request's notes mention, such as who uses a
@@ -232,6 +234,9 @@ def request_context(project: LenProject, sources: list[str] | dict[str, str], *,
     }
     if line_speakers is not None:
         result["speakers"] = line_speakers
+    if _actor_names:
+        # The lines shown with names, each with its own text and codes.
+        result["actor_names"] = _actor_names
     result["request_sha256"] = hashlib.sha256(
         json.dumps(result, ensure_ascii=False, sort_keys=True).encode("utf-8")
     ).hexdigest()
@@ -252,9 +257,31 @@ def _reference_subset(references, sources):
     return pack
 
 
-def request_contexts(project: LenProject, batches: list[dict], language: str | None = None) -> list[dict]:
+def _shown_names(sources, actors, variables) -> dict:
+    """Each line of an ID-to-source batch that shows a name code as the
+    actor's name, by ID: its shown text and its names' codes."""
+    if not actors or not isinstance(sources, dict):
+        return {}
+    names = {}
+    for identity, text in sources.items():
+        found = shown(text, actors, variables or {})
+        if found:
+            names[identity] = {"text": found[0], "codes": found[1]}
+    return names
+
+
+def request_contexts(project: LenProject, batches: list[dict], language: str | None = None, *,
+                     actor_variables: dict[int, int] | None = None) -> list[dict]:
     """Compile a scene-ordered set with one guidance load and one reference census,
     translating into *language*, the run's by default.
+
+    With *actor_variables* (variable ID -> actor ID, as code-122 scripts set
+    them), a line's name codes whose actor the glossary's "actor ID n" rows
+    name are compiled as the name (util/actor_names shown), as Guided shows
+    them, so the matched glossary carries the actor's entry; the context's
+    ``actor_names`` keeps each such line's shown text and codes for the
+    payload and restore, and reference translations still match the line's
+    own text. Without it every line compiles as it is.
 
     Returned requests are identical to independent request_context calls. A changed
     dependency aborts the whole operation; no persistent cache can bless stale work.
@@ -282,12 +309,17 @@ def request_contexts(project: LenProject, batches: list[dict], language: str | N
     with runtime_data_files_pinned():
         shared = shared_context(project, language)
         references = reference_context(project.game_root, sources)
+        actors = None if actor_variables is None else glossary_actors(shared["glossary"])
         result = []
         for batch in batches:
             values = batch["sources"]
             pack = _reference_subset(references, values)
-            request = request_context(project, **{key: value for key, value in batch.items() if key != "id"},
-                                      language=language, _shared=shared, _reference_pack=pack)
+            names = _shown_names(values, actors, actor_variables)
+            if names:
+                values = {key: names[key]["text"] if key in names else text for key, text in values.items()}
+            request = request_context(project, **{key: value for key, value in batch.items() if key not in {"id", "sources"}},
+                                      sources=values, language=language, _shared=shared, _reference_pack=pack,
+                                      _actor_names=names)
             result.append({"id": batch["id"], "sources": batch["sources"], "context": request})
     if shared_context(project, language)["content_sha256"] != shared["content_sha256"] or reference_context(project.game_root, sources) != references:
         raise ValueError("Guidance or references changed during compilation; retry the entire operation.")

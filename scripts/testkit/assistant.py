@@ -163,6 +163,10 @@ class Assistant:
         if self.tyrano:
             # The investigation's glossary names the game's forest.
             self.glossary("エルフの森 (Elven Woods)")
+        events = self.game / self.data / "Map001.json"
+        if events.is_file() and "\\\\N[1]" in events.read_text(encoding="utf-8-sig"):
+            # It names the actor the text shows by her code with her ID.
+            self.glossary("ミカ (Mika) - Female, actor ID 1")
         if self.wolf or self.tyrano:
             # The archives the translation packs again, or the scenarios it
             # writes, are its patch.
@@ -789,8 +793,11 @@ class Assistant:
             if request.get("accepted") or reply.get("result"):
                 index += 1
                 continue
+            # A line whose name codes the request shows as names is answered
+            # with the names, as a model reading them writes it.
+            shown = request["context"].get("actor_names", {})
             translations = {
-                key: self.answer(key, value)
+                key: named(self.answer(key, value), shown.get(key, {}).get("codes", {}))
                 for key, value in request["sources"].items()
             }
             receipt = self.work / f"receipt-{index}.json"
@@ -883,6 +890,13 @@ class Assistant:
                     + json.dumps({"before": before, "after": after}, ensure_ascii=False)
                 )
         self.report("qa")
+
+
+def named(text, codes):
+    """`text` with each code of `codes` (name to code) written as its name."""
+    for name, code in codes.items():
+        text = text.replace(code, name)
+    return text
 
 
 def kept_parameters(node, markers):

@@ -1805,7 +1805,7 @@ class ManualJobs:
 
         compiled = []
 
-        def contexts(_project, batches, _language):
+        def contexts(_project, batches, _language, **_options):
             compiled.append(batches)
             self.assertEqual(
                 set(batches[0]) - {"glossary_names"},

@@ -267,11 +267,15 @@ class TranslationEngine:
             else read_progress(project, check_hashes=verify)
         )
 
-    def compile(self, source, options, plan, language, skill_users=None):
+    def compile(
+        self, source, options, plan, language, skill_users=None, actor_variables=None
+    ):
         """The context of each batch's request. ``skill_users`` holds the
         note on who uses the skill of each unit holding a battle message, with
         the names whose glossary entries join its request
-        (translation/skill_users)."""
+        (translation/skill_users). ``actor_variables``, None unless the run
+        shows actors' names for name codes, maps each variable a code-122
+        script sets to an actor's name to that actor (translation/name_codes)."""
         from util.len_translation import request_contexts
         from util.skills import ctx
 
@@ -311,7 +315,10 @@ class TranslationEngine:
             stage="Translate",
         ):
             compiled = request_contexts(
-                self.project(source, options), batches, language
+                self.project(source, options),
+                batches,
+                language,
+                actor_variables=actor_variables,
             )
         for original, result, (users, _names) in zip(plan["batches"], compiled, noted):
             finish_context(result["context"], original, language, users)

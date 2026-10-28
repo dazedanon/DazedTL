@@ -2,7 +2,7 @@
 
 from dazedtl.freshness import Basis, compare
 
-from . import skill_users
+from . import name_codes, skill_users
 from .files import project_path, read_json
 from .requests import logical_request, plan_input
 
@@ -12,13 +12,19 @@ from .requests import logical_request, plan_input
 COMPILER_VERSION = 1
 
 
-def compile_requests(engine, source, options, raw, language, skill_users=None):
+def compile_requests(
+    engine, source, options, raw, language, skill_users=None, actor_variables=None
+):
     """The plan's requests. ``skill_users`` holds the notes on its units'
-    skill users that the run's policy gives them (translation/skill_users)."""
+    skill users that the run's policy gives them (translation/skill_users),
+    and ``actor_variables`` what its name-code policy gives its sources
+    (translation/name_codes variables)."""
     if not raw["batches"]:
         # Organize found every line translated; nothing reads the game.
         return [], COMPILER_VERSION
-    compiled = engine.compile(source, options, raw, language, skill_users or {})
+    compiled = engine.compile(
+        source, options, raw, language, skill_users or {}, actor_variables
+    )
     if len(compiled) != len(raw["batches"]):
         raise ValueError("The engine compiler did not return every source batch.")
     return [
@@ -80,6 +86,14 @@ def verify_compilation(engine, workspace, project_id, plan, index=None):
         raw,
         plan["configuration"]["language"],
         skill_users.notes(
+            workspace,
+            project_id,
+            plan["source"],
+            plan["configuration"],
+            batch_sources(raw),
+        ),
+        name_codes.variables(
+            engine,
             workspace,
             project_id,
             plan["source"],

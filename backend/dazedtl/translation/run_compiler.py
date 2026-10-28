@@ -16,7 +16,7 @@ from dazedtl.settings.execution import worker_secret
 from dazedtl.settings.language_pair import run_source
 from dazedtl.storage import write_json
 
-from . import census, organize, progress_report, skill_users, unit_results
+from . import census, name_codes, organize, progress_report, skill_users, unit_results
 from .compilation import batch_sources, compile_requests
 from .files import evidence, project_path, read_json, verify_evidence
 from .jobs import RunStore, now
@@ -404,6 +404,9 @@ def compile_run(
         raw,
         cfg["language"],
         skill_users.notes(workspace, project_id, root, cfg, batch_sources(raw)),
+        name_codes.variables(
+            engine, workspace, project_id, root, cfg, batch_sources(raw)
+        ),
     )
     verify_evidence(root, before)
     engine.verify_bindings(root, bindings)

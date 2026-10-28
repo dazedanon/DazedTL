@@ -28,6 +28,7 @@ from . import (
     backups,
     checkpoint_records,
     delivery,
+    name_codes,
     organize,
     originals,
     progress_report,
@@ -986,6 +987,9 @@ Additional project instructions:
         # A skill's battle messages name its users; earlier runs keep their
         # requests without (translation/skill_users).
         cfg[skill_users.BATTLE_USERS_KEY] = BATTLE_MESSAGE_USERS
+        # Name codes show their actors' names; earlier runs keep their
+        # requests with the codes (translation/name_codes).
+        cfg[name_codes.KEY] = name_codes.POLICY
         batch_provider = None
         if cfg["mode"] != "agent":
             # Earlier runs froze no policy and keep sending unit IDs.
