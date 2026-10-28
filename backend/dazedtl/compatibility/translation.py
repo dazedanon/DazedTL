@@ -268,8 +268,6 @@ class TranslationEngine:
         from util.len_translation import request_contexts
         from util.skills import ctx
 
-        from dazedtl.languages import JAPANESE, active_source
-
         from .game_write import write_game
 
         batches = [
@@ -308,117 +306,12 @@ class TranslationEngine:
             compiled = request_contexts(
                 self.project(source, options), batches, language
             )
-        reading = active_source()
         for original, result, (users, _names) in zip(plan["batches"], compiled, noted):
-            context = result["context"]
-            context["target_language"] = language
-            # A Japanese source, every request's before the source became a
-            # setting, keeps its requests' shape.
-            if reading != JAPANESE:
-                context["source_language"] = reading
-            context["scene_context"] = original.get("scene_context", "")
-            if users:
-                context["skill_users"] = users
-            if original.get("instruction_key"):
-                context["request_instructions"] = ctx(
-                    original["instruction_key"],
-                    language=language,
-                    context=original.get("source_context", ""),
-                )
-            context.pop("request_sha256", None)
-            context["request_sha256"] = digest(context)
+            finish_context(result["context"], original, language, users)
         return compiled
 
     def payload(self, request, configuration):
-        from util.translation import buildClaudeRequest, buildOpenAIRequest
-
-        from dazedtl.settings.openrouter import STRUCTURED_OUTPUTS
-        from dazedtl.settings.providers import response_format
-
-        strict_router = configuration.get("openrouterStructuredOutputs")
-        if strict_router is not None and (
-            strict_router != STRUCTURED_OUTPUTS
-            or configuration["provider"] != "openrouter"
-        ):
-            raise ValueError(
-                "This run's structured-output policy is invalid or unsupported."
-            )
-        context = request["context"]
-        # Lines go by short keys under the run's line-key policy; see
-        # requests.provider_view.
-        view = provider_view(request, configuration)
-        instructions = [context["request_instructions"], view["reply"]]
-        references = context.get("reference_translations", {})
-        if references.get("matches"):
-            instructions.append(
-                "Advisory reference translations; the current source and approved glossary take precedence:\n"
-                + json.dumps(references["matches"], ensure_ascii=False)
-            )
-        if view["constraints"]:
-            instructions.append(
-                "Per-unit constraints (protected tokens must retain their source occurrence counts):\n"
-                + json.dumps(view["constraints"], ensure_ascii=False)
-            )
-        if view["scene_context"]:
-            instructions.append(
-                "Scene and runtime substitution context (not translatable source):\n"
-                + view["scene_context"]
-            )
-        shared = {
-            "system": context["system"],
-            "user": view["user"],
-            "history": context["preceding_japanese_source_context"],
-            "formatType": "json",
-            "model": configuration["model"],
-            "numLines": None,
-            "vocab_text": context["glossary"] + "\n" + context["sfx_reference"],
-            "request_instructions": "\n\n".join(text for text in instructions if text),
-        }
-        if configuration["protocol"] == "anthropic":
-            # Batch requests use the five-minute cache too; see translateAI.
-            params: dict[str, Any] = buildClaudeRequest(**shared)
-            params.pop("temperature", None)
-            params["output_config"] = {
-                "format": {
-                    "type": "json_schema",
-                    "schema": output_schema(view["sources"]),
-                }
-            }
-        else:
-            params = buildOpenAIRequest(
-                **shared,
-                penalty=0,
-                api_provider=configuration["protocol"],
-                api_url=configuration["endpoint"],
-            )
-            params["response_format"] = response_format(
-                configuration["protocol"],
-                configuration["endpoint"],
-                configuration["model"],
-                output_schema(view["sources"]),
-                "translation",
-            )
-        if configuration["provider"] == "openrouter":
-            if strict_router:
-                params = request_parameters.structured_output(
-                    params,
-                    output_schema(view["sources"]),
-                    name="translation",
-                    live=configuration["mode"] != "batch",
-                )
-            params = request_parameters.host_routing(
-                params, configuration.get("openrouterHost", "")
-            )
-            if strict_router and configuration["mode"] == "batch":
-                params = request_parameters.batch_routing(
-                    params, configuration.get("openrouterBatch")
-                )
-        params = request_parameters.provider_defaults(
-            params, configuration.get("generationParameters")
-        )
-        return request_parameters.completion_budget(
-            params, configuration.get("maxOutputTokens")
-        )
+        return request_payload(request, configuration)
 
     def token_count(self, text):
         import tiktoken
@@ -1398,6 +1291,127 @@ class TranslationEngine:
                 "Finish the official update on the registered translated branch before copying this task."
             )
         return latest.version
+
+
+def finish_context(context, batch, language, users=None):
+    """Completes a batch's compiled request context (util/len_translation's
+    request_context) with what its plan batch adds: the language pair, its
+    scene note, who uses a battle message's skill and its field template."""
+    from util.skills import ctx
+
+    from dazedtl.languages import JAPANESE, active_source
+
+    reading = active_source()
+    context["target_language"] = language
+    # A Japanese source, every request's before the source became a
+    # setting, keeps its requests' shape.
+    if reading != JAPANESE:
+        context["source_language"] = reading
+    context["scene_context"] = batch.get("scene_context", "")
+    if users:
+        context["skill_users"] = users
+    if batch.get("instruction_key"):
+        context["request_instructions"] = ctx(
+            batch["instruction_key"],
+            language=language,
+            context=batch.get("source_context", ""),
+        )
+    context.pop("request_sha256", None)
+    context["request_sha256"] = digest(context)
+    return context
+
+
+def request_payload(request, configuration):
+    """The provider request an Assistant-led run sends for a logical request
+    (translation/requests.logical_request) under a run's configuration."""
+    from util.translation import buildClaudeRequest, buildOpenAIRequest
+
+    from dazedtl.settings.openrouter import STRUCTURED_OUTPUTS
+    from dazedtl.settings.providers import response_format
+
+    strict_router = configuration.get("openrouterStructuredOutputs")
+    if strict_router is not None and (
+        strict_router != STRUCTURED_OUTPUTS or configuration["provider"] != "openrouter"
+    ):
+        raise ValueError(
+            "This run's structured-output policy is invalid or unsupported."
+        )
+    context = request["context"]
+    # Lines go by short keys under the run's line-key policy; see
+    # requests.provider_view.
+    view = provider_view(request, configuration)
+    instructions = [context["request_instructions"], view["reply"]]
+    references = context.get("reference_translations", {})
+    if references.get("matches"):
+        instructions.append(
+            "Advisory reference translations; the current source and approved glossary take precedence:\n"
+            + json.dumps(references["matches"], ensure_ascii=False)
+        )
+    if view["constraints"]:
+        instructions.append(
+            "Per-unit constraints (protected tokens must retain their source occurrence counts):\n"
+            + json.dumps(view["constraints"], ensure_ascii=False)
+        )
+    if view["scene_context"]:
+        instructions.append(
+            "Scene and runtime substitution context (not translatable source):\n"
+            + view["scene_context"]
+        )
+    shared = {
+        "system": context["system"],
+        "user": view["user"],
+        "history": context["preceding_japanese_source_context"],
+        "formatType": "json",
+        "model": configuration["model"],
+        "numLines": None,
+        "vocab_text": context["glossary"] + "\n" + context["sfx_reference"],
+        "request_instructions": "\n\n".join(text for text in instructions if text),
+    }
+    if configuration["protocol"] == "anthropic":
+        # Batch requests use the five-minute cache too; see translateAI.
+        params: dict[str, Any] = buildClaudeRequest(**shared)
+        params.pop("temperature", None)
+        params["output_config"] = {
+            "format": {
+                "type": "json_schema",
+                "schema": output_schema(view["sources"]),
+            }
+        }
+    else:
+        params = buildOpenAIRequest(
+            **shared,
+            penalty=0,
+            api_provider=configuration["protocol"],
+            api_url=configuration["endpoint"],
+        )
+        params["response_format"] = response_format(
+            configuration["protocol"],
+            configuration["endpoint"],
+            configuration["model"],
+            output_schema(view["sources"]),
+            "translation",
+        )
+    if configuration["provider"] == "openrouter":
+        if strict_router:
+            params = request_parameters.structured_output(
+                params,
+                output_schema(view["sources"]),
+                name="translation",
+                live=configuration["mode"] != "batch",
+            )
+        params = request_parameters.host_routing(
+            params, configuration.get("openrouterHost", "")
+        )
+        if strict_router and configuration["mode"] == "batch":
+            params = request_parameters.batch_routing(
+                params, configuration.get("openrouterBatch")
+            )
+    params = request_parameters.provider_defaults(
+        params, configuration.get("generationParameters")
+    )
+    return request_parameters.completion_budget(
+        params, configuration.get("maxOutputTokens")
+    )
 
 
 def google_batch_client(secret):

@@ -121,19 +121,26 @@ def _validate_skill(root: Path) -> None:
         raise ValueError("Incomplete game-translation skill: missing references/")
 
 
+def request_glossary(game_glossary: str, include_base: bool = True) -> str:
+    """The glossary an Assistant-led request matches: the custom section of
+    the game's glossary file, then the shipped base terms when the project
+    includes them."""
+    custom = game_glossary.split(GLOSSARY_BASE_SEPARATOR, 1)[0].rstrip()
+    # The shared editor owns the custom section; refreshed shipped defaults are derived.
+    base = glossary_base_text() if include_base else ""
+    glossary = custom + "\n"
+    if base:
+        glossary += "\n" + GLOSSARY_BASE_SEPARATOR + base
+    return glossary
+
+
 def shared_context(project: LenProject, language: str | None = None) -> dict:
     """Read the same portable guidance used by Workflow, without changing process settings,
     for translating the active source language into *language*, the run's by default."""
     language = run_language(language)
     _validate_project(project)
     prepare_game_translation_context(project.game_root)
-    glossary = read_game_glossary(project.game_root)
-    custom = glossary.split(GLOSSARY_BASE_SEPARATOR, 1)[0].rstrip()
-    # The shared editor owns the custom section; refreshed shipped defaults are derived.
-    base = glossary_base_text() if project.include_glossary_base else ""
-    glossary = custom + "\n"
-    if base:
-        glossary += "\n" + GLOSSARY_BASE_SEPARATOR + base
+    glossary = request_glossary(read_game_glossary(project.game_root), project.include_glossary_base)
     context = {
         "schema": 1,
         "game_root": str(project.game_root),

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import re
+from collections.abc import Iterable
 from pathlib import Path
 
 from util import system
@@ -332,8 +333,51 @@ def _prompt_inputs(prompt_path: Path, root: str) -> tuple | None:
     return signature
 
 
-def load_system_prompt(game_root: str | Path | None = None) -> str:
-    """Load ``data/skills/system.md`` plus optional per-game overlays.
+def base_system_prompt(prompt_path: str | Path | None = None) -> str:
+    """The translation method every request starts from: ``data/skills/system.md``,
+    or the prompt file *prompt_path* names, which must exist."""
+    if prompt_path is not None:
+        return Path(prompt_path).read_text(encoding="utf-8")
+    path = runtime_data_file(PROMPT_PATH)
+    return path.read_text(encoding="utf-8") if path.is_file() else ""
+
+
+def prompt_overlays(
+    skill: str = "", quirks: str = "", custom: Iterable[tuple[str, str]] = ()
+) -> list[str]:
+    """A game's guidance as the sections its system prompt adds: its game
+    skill, its quirks and its custom skills as ``(file stem, body)``."""
+    parts = []
+    skill = migrate_game_skill_text(skill or "").strip()
+    if skill:
+        parts.append("## Game Translation Frame\n\n" + skill)
+    quirks = (quirks or "").strip()
+    if quirks:
+        parts.append("## Game-Specific Translation Quirks\n\n" + quirks)
+    for stem, body in custom:
+        body = body.strip()
+        if not body:
+            continue
+        title = stem.replace("_", " ").replace("-", " ").strip() or stem
+        parts.append(f"## Custom Game Skill: {title}\n\n{body}")
+    return parts
+
+
+def compose_system_prompt(base: str, overlays: Iterable[str]) -> str:
+    """A system prompt: the method *base* followed by a game's *overlays*
+    (prompt_overlays)."""
+    parts = [base.rstrip()] if base.strip() else []
+    parts.extend(overlays)
+    if not parts:
+        return base
+    return "\n\n".join(parts) + "\n"
+
+
+def load_system_prompt(
+    game_root: str | Path | None = None, *, prompt_path: str | Path | None = None
+) -> str:
+    """Load ``data/skills/system.md``, or the prompt file *prompt_path*
+    names, plus optional per-game overlays.
 
     Overlay order (when ``DAZED_GAME_ROOT`` / *game_root* is set):
       1. ``.dazedtl/skills/game.md`` - Translation Frame / game skill (API)
@@ -344,23 +388,21 @@ def load_system_prompt(game_root: str | Path | None = None) -> str:
       1. Explicit *game_root* argument
       2. ``DAZED_GAME_ROOT`` environment variable
     """
-    prompt_path = runtime_data_file(PROMPT_PATH)
+    path = runtime_data_file(PROMPT_PATH) if prompt_path is None else Path(prompt_path)
     root = game_root or os.getenv("DAZED_GAME_ROOT") or ""
     root = str(root).strip()
-    key = (str(prompt_path), root)
-    inputs = _prompt_inputs(prompt_path, root) if root else None
+    key = (str(path), root)
+    inputs = _prompt_inputs(path, root) if root else None
     cached = _PROMPTS.get(key)
     if inputs is not None and cached and cached[0] == inputs:
         return cached[1]
-    base = ""
-    if prompt_path.is_file():
-        base = prompt_path.read_text(encoding="utf-8")
+    base = base_system_prompt(prompt_path)
     if not root:
         return base
     prompt = _game_system_prompt(base, root)
     # The build's own migrations change what it reads, so the next call
     # compares against the stats it left behind.
-    after = _prompt_inputs(prompt_path, root)
+    after = _prompt_inputs(path, root)
     if after is not None:
         _PROMPTS[key] = (after, prompt)
     return prompt
@@ -371,27 +413,20 @@ def _game_system_prompt(base: str, root: str) -> str:
     # and GUI translation all see the same complete portable context.
     prepare_game_translation_context(root)
 
-    parts = [base.rstrip()] if base.strip() else []
-
     skill_file = game_skill_path_for_game(root)
-    if skill_file and skill_file.is_file():
-        skill = migrate_game_skill_text(skill_file.read_text(encoding="utf-8")).strip()
-        if skill:
-            parts.append("## Game Translation Frame\n\n" + skill)
-
+    skill = (
+        skill_file.read_text(encoding="utf-8")
+        if skill_file and skill_file.is_file()
+        else ""
+    )
     quirks_file = quirks_path_for_game(root)
-    if quirks_file and quirks_file.is_file():
-        quirks = quirks_file.read_text(encoding="utf-8").strip()
-        if quirks:
-            parts.append("## Game-Specific Translation Quirks\n\n" + quirks)
-
-    for path in list_custom_skill_paths(root):
-        body = path.read_text(encoding="utf-8").strip()
-        if not body:
-            continue
-        title = path.stem.replace("_", " ").replace("-", " ").strip() or path.stem
-        parts.append(f"## Custom Game Skill: {title}\n\n{body}")
-
-    if not parts:
-        return base
-    return "\n\n".join(parts) + "\n"
+    quirks = (
+        quirks_file.read_text(encoding="utf-8")
+        if quirks_file and quirks_file.is_file()
+        else ""
+    )
+    custom = [
+        (path.stem, path.read_text(encoding="utf-8"))
+        for path in list_custom_skill_paths(root)
+    ]
+    return compose_system_prompt(base, prompt_overlays(skill, quirks, custom))

@@ -543,6 +543,18 @@ def spread(value: str, count: int) -> list[str]:
     return rows[: count - 1] + ["\n".join(rows[count - 1 :])]
 
 
+def message_entry(text: str, speaker: str, *, unwrap: bool = True) -> str | None:
+    """The line Guided translation sends for a message's *text* and its
+    *speaker*'s name, or None for none: unwrapped onto one line unless
+    *unwrap* is false, and headed by the speaker as ``[Name]: ``."""
+    if unwrap:
+        text = text.replace("\n", " ")
+    text = text.replace("\\px[200]", "")
+    if not text:
+        return None
+    return f"[{speaker}]: {text}" if speaker else text
+
+
 def untranslated(reply: Any, sent: Any) -> bool:
     """Whether a reply leaves its text untranslated: text the translation
     left untranslated or refused comes back as it was sent."""
