@@ -583,7 +583,10 @@ class RequestResult(TypedDict):
 
 class RequestPreview(TypedDict):
     run_id: str
-    index: int
+    # The request's position in the run; an earlier request whose lines
+    # organize kept for it has none, but the IDs of those lines in kept.
+    index: NotRequired[int]
+    kept: NotRequired[list[str]]
     total: int
     request: PreparedRequest
     result: RequestResult | None

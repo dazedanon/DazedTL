@@ -501,7 +501,12 @@ def main():
                 help="Request provider cancellation and retain completed results",
             )
         if name == "request":
-            child.add_argument("--index", type=int, required=True)
+            chosen = child.add_mutually_exclusive_group(required=True)
+            chosen.add_argument("--index", type=int)
+            chosen.add_argument(
+                "--request-sha256",
+                help="A request of this run, or an earlier one whose lines organize kept for it, as its progress export row names it",
+            )
             child.add_argument("--output", type=Path)
         if name in {"accept", "decline", "review", "resolve-uncertain"}:
             child.add_argument("--batch", required=True)
@@ -648,7 +653,10 @@ def main():
             if args.command == "resolve-uncertain":
                 params["retry_reviewed"] = args.retry_reviewed
             if args.command == "request":
-                params["index"] = args.index
+                if args.index is None:
+                    params["request_sha256"] = args.request_sha256
+                else:
+                    params["index"] = args.index
             if args.command == "stop":
                 params["cancel_provider"] = args.cancel_provider
             if args.command == "attach-batch":

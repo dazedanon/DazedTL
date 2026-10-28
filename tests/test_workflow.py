@@ -839,6 +839,23 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(value["provenance"]["run_id"], second["id"])
         # The line it did not change keeps its review.
         self.assertEqual(set(value["reviewed"]), {"a/1"})
+        # The run reads that request back by the request_sha256 its export
+        # row names, with the lines it keeps from it, and reviews those.
+        preview = self.service.request(
+            self.identity, second["id"], request_sha256=earlier["fingerprint"]
+        )
+        check_response("translation_request", preview)
+        self.assertEqual(preview["result"]["result_sha256"], value["result_sha256"])
+        self.assertEqual(preview["result"]["translations"], corrected)
+        self.assertEqual(preview["kept"], ["a/2"])
+        self.service.review(
+            self.identity, second["id"], earlier["id"], earlier["fingerprint"]
+        )
+        self.assertEqual(set(results.get(earlier)["reviewed"]), {"a/1", "a/2"})
+        with self.assertRaisesRegex(ValueError, "exact saved request"):
+            self.service.review(
+                self.identity, second["id"], "z/1", earlier["fingerprint"]
+            )
         # Progress and results read the correction, and the next organize
         # reuses it.
         index = read_json(self.game / EXPORT)

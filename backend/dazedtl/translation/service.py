@@ -1123,16 +1123,37 @@ Additional project instructions:
             job, self.jobs.store.newest_estimate(project_id) if waiting else ""
         )
 
-    def request(self, project_id, run_id, index):
+    def request(self, project_id, run_id, index=None, request_sha256=None):
+        """One request of the run by its index, or by its request_sha256,
+        which also reaches an earlier request whose lines organize kept for
+        this run (reused_request), read with the lines it keeps from it."""
         job, plan = self.jobs.store.load(run_id, project_id)
         if (
             plan["kind"] != "translation"
-            or type(index) is not int
-            or not 0 <= index < len(plan["requests"])
+            or (index is None) == (request_sha256 is None)
+            or not isinstance(request_sha256, str | None)
         ):
             raise ValueError("Choose a request in this run.")
-        request = plan["requests"][index]
-        delivered = job.get("delivered", {}).get(request["id"])
+        kept = None
+        if request_sha256 is not None:
+            index = next(
+                (
+                    n
+                    for n, row in enumerate(plan["requests"])
+                    if row["fingerprint"] == request_sha256
+                ),
+                None,
+            )
+            if index is None:
+                found = self.reused_request(project_id, plan, request_sha256)
+                if found is None:
+                    raise ValueError("Choose a request in this run.")
+                request, kept = found
+        elif type(index) is not int or not 0 <= index < len(plan["requests"]):
+            raise ValueError("Choose a request in this run.")
+        if kept is None:
+            request = plan["requests"][index]
+        delivered = kept is None and job.get("delivered", {}).get(request["id"])
         if delivered:
             # A later part of a split scene was sent with the translation
             # delivered for the lines it quotes (runner.Runner.delivered).
@@ -1145,7 +1166,7 @@ Additional project instructions:
         result = Results(plan["source"]).get(request)
         return {
             "run_id": run_id,
-            "index": index,
+            **({"index": index} if kept is None else {"kept": kept}),
             "total": len(plan["requests"]),
             # An OpenAI Batch run also keeps each request's input tokens for
             # the provider's queue limit; a reader needs what was sent.
@@ -1458,7 +1479,6 @@ Additional project instructions:
         the constraints organize kept it by; the earlier run's own record
         and plan stay as they are, and the receipt is archived as any
         correction archives it."""
-        reused = plan["reused"]
         fingerprint = receipt["request_sha256"]
         if "replaces_sha256" not in receipt:
             raise ValueError(
@@ -1470,21 +1490,15 @@ Additional project instructions:
         # changed since the earlier request was sent, as organize allows.
         self.validate_current(project_id, plan, compiled=False)
         self.jobs.store.overlapping(project_id, {fingerprint}, exclude=job["id"])
-        held = unit_results.held(self.jobs.store, project_id, {fingerprint})
-        if fingerprint not in held:
-            raise ValueError(
-                "The run that sent that request can't be read, so a correction can't be checked against it. Recover that run first."
-            )
-        kept = {
-            identity
-            for identity, unit in reused["units"].items()
-            if unit["request"] == fingerprint
-        }
+        found = self.reused_request(project_id, plan, fingerprint)
+        if found is None:
+            raise ValueError("Unknown request ID.")
+        request, kept = found[0], set(found[1])
         # The run's units file is current (validate_current), so its
         # constraints are those organize kept the lines by.
         units = organize.laid_out(plan["source"], plan["input_path"])
         Results(plan["source"]).correct(
-            held[fingerprint],
+            request,
             receipt["translations"],
             receipt["replaces_sha256"],
             {**provenance, "correction": True},
@@ -1497,6 +1511,27 @@ Additional project instructions:
             plan,
             all(row["state"] == "accepted" for row in job["states"].values()),
         )
+
+    def reused_request(self, project_id, plan, fingerprint, batch_id=None):
+        """The earlier request of fingerprint whose lines organize kept for
+        this run, as the run that sent it compiled it, and the IDs of those
+        lines in play order; None when the run's reused record names no such
+        request, or none of batch_id. Accept, review and request reach it
+        through this run, as its own run refuses once its guidance changed."""
+        reused = plan.get("reused") or {"units": {}, "requests": {}}
+        entry = reused["requests"].get(fingerprint)
+        if entry is None or batch_id not in {None, entry["id"]}:
+            return None
+        held = unit_results.held(self.jobs.store, project_id, {fingerprint})
+        if fingerprint not in held:
+            raise ValueError(
+                "The run that sent that request can't be read. Recover that run first."
+            )
+        return held[fingerprint], [
+            identity
+            for identity, unit in reused["units"].items()
+            if unit["request"] == fingerprint
+        ]
 
     def declined_record(self, project_id, run_id):
         """An Assistant only run's index, without reading its plan."""
@@ -1604,19 +1639,35 @@ If you won't translate a request, skip it and go on; it stays declined. Use the 
             ),
             None,
         )
+        kept = None
         if index is None:
-            raise ValueError("Review must refer to the exact saved request.")
-        self.validate_current(project_id, plan, index=index)
-        request = plan["requests"][index]
+            found = self.reused_request(project_id, plan, request_sha256, batch_id)
+            if found is None:
+                raise ValueError("Review must refer to the exact saved request.")
+            request, kept = found
+            # The run's lines are checked; its requests' guidance may have
+            # changed since the earlier request was sent, as organize allows.
+            self.validate_current(project_id, plan, compiled=False)
+            # Another run may still be translating the receipt this writes.
+            self.jobs.store.overlapping(project_id, {request_sha256}, exclude=run_id)
+        else:
+            self.validate_current(project_id, plan, index=index)
+            request = plan["requests"][index]
         results = Results(plan["source"])
         value = results.get(request)
         if not value:
             raise ValueError(
                 "Save accepted translations before recording their source-checked review."
             )
+        # Through a run that kept lines of an earlier request, only those are
+        # reviewed; the rest keep the review their own run recorded.
         value["reviewed"] = {
-            identity: review_digest(source, value["translations"][identity])
-            for identity, source in request["sources"].items()
+            **(value.get("reviewed", {}) if kept is not None else {}),
+            **{
+                identity: review_digest(source, value["translations"][identity])
+                for identity, source in request["sources"].items()
+                if kept is None or identity in kept
+            },
         }
         write_json(project_path(plan["source"], results.relative(request)), value)
         self.refresh_progress(project_id, plan)

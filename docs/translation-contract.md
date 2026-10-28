@@ -178,7 +178,7 @@ Known provider jobs can still be reconciled against their frozen request set.
 
 ## Results and corrections
 
-Inspect a request with request --run ID --index N.
+Inspect a request with request --run ID --index N, or with --request-sha256 in place of --index.
 The response includes its fingerprint and any accepted result.
 An Agent or reviewed-import receipt contains request_sha256 and translations, where translations is an object with exactly the requested IDs and string values.
 Save it in the game workspace and use accept with its relative path.
@@ -191,7 +191,8 @@ An API run keeps such a line in its source text and accepts the rest of its requ
 
 For an intentional correction, also supply replaces_sha256 equal to the current result_sha256.
 The previous result is archived, the replacement is validated, and affected review/injection/QA is made pending; a line the correction leaves as it was keeps its review.
-A line organize kept from an earlier request is corrected through the run that kept it, such as the newest: accept on it takes a correction receipt for a request its reused record names, though that request's own run refuses one once its guidance changed ([service](../backend/dazedtl/translation/service.py) `correct_reused`).
+A line organize kept from an earlier request is reviewed and corrected through the run that kept it, such as the newest: request --request-sha256, review and accept on it reach a request its reused record names, though that request's own run refuses once its guidance changed ([service](../backend/dazedtl/translation/service.py) `reused_request`).
+request reads it as its run compiled it, with its accepted result and, under `kept`, the lines this run reads from it, and review records the review of those lines only.
 The receipt is checked against that request as its run compiled it, may change only the lines this run reads from it, and each of those within the constraints of this run's units.
 The earlier run's record and plan stay as they are, and the receipt it shares by fingerprint is archived and replaced as for any correction, so every run reading it gets the corrected line.
 An ordinary retry cannot overwrite an accepted translation.
