@@ -3,6 +3,19 @@
 Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 [release.mjs](scripts/release.mjs) writes each entry from [release/notes.md](release/notes.md).
 
+## [2.41.0] - 2026-10-27
+
+### Changed
+
+- **Assistant-led:** Japanese that Text QA finds still untranslated where players can see it now goes back to your assistant, which translates it before QA's corrections are applied, instead of only naming it in its report.
+- **Checkpoints:** each change DazedTL saves to a game starts half as many Git processes once DazedTL has saved one, and the Checkpoints tab, undo and go back start far fewer, so they finish sooner on Windows, where each process can take a tenth of a second.
+- **Set up:** the glossary Set up writes, in both methods, follows three more naming rules: no Lord or Lady for characters whose gender the game leaves open, the right direction for gauges where high is bad, such as "Lowers Lewdness by 5", and lowercase creature words such as "slimes" in dialogue.
+
+### Fixed
+
+- **Text QA:** Apply and Undo of a correction now work on a finished QA task prepared before Text QA recorded Line widths, instead of failing.
+- **Playtest:** a game the playtest can't play, such as one without its engine's scripts, now reads Skipped with the reason once the final check ends without a play, instead of Blocked while Text QA and Progress read done.
+
 ## [2.40.2] - 2026-10-27
 
 ### Fixed
@@ -1214,6 +1227,7 @@ Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachan
 - The first release of DazedTL as a desktop app, installed from a ZIP with a START launcher and updated from inside the app.
 - **Guided steps** for RPG Maker MV, MZ and VX Ace games, and **Assistant-led** for any game.
 
+[2.41.0]: https://github.com/dazedanon/DazedTL/compare/v2.40.2...v2.41.0
 [2.40.2]: https://github.com/dazedanon/DazedTL/compare/v2.40.1...v2.40.2
 [2.40.1]: https://github.com/dazedanon/DazedTL/compare/v2.40.0...v2.40.1
 [2.40.0]: https://github.com/dazedanon/DazedTL/compare/v2.39.0...v2.40.0
