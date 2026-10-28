@@ -1976,6 +1976,7 @@ class SettingsTests(unittest.TestCase):
                 }
             },
             allow_providers=True,
+            lock=threading.RLock(),
             validate_route=lambda _: None,
             provider_defaults=lambda _: {"batch_supported": False},
             model_defaults=SimpleNamespace(
