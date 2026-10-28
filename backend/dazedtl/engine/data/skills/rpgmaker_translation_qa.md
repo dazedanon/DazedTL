@@ -177,7 +177,7 @@ that `prior_review`, and your review replaces it.
   It names each character and pronoun once per scene, so report the same slip on the scene's other lines as observations.
 - A `censor-mask-mismatch` deep reason means the source masks a word with 〇 or ● and the English spells it out, or the English masks a word the source does not.
   Masks are the author's choice: mask the same word, with the mask in its place where the word allows (レイ〇 is "r〇pe", ま〇こ is "pu〇sy", ●●● stays ●●●), and write out a word the source does not mask.
-  A 〇 among kanji numerals is a zero, not a mask.
+  A 〇 among kanji numerals is a zero, and a lone ● starting a row is a bullet, not a mask.
 - An `interface-fit` check means the game drew this text with too little room on a screen
   DazedTL captured while running a copy of the game: squeezed narrower than it needs, or cut off
   at its window's edge. Open every capture the check names and look at the text there. When it is

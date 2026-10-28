@@ -77,6 +77,8 @@ _THOUSANDS_RE = re.compile(r"^-?\d{1,3}(?:,\d{3})+$")
 # kanji numerals is a zero, as in 一〇〇.
 _MASK_RE = re.compile(r"●|[〇一二三四五六七八九十百千万]+")
 _KANJI_NUMERAL_RE = re.compile(r"[一二三四五六七八九十百千万]")
+# A lone ● starting a row is a bullet, as in ●攻撃力アップ, not a mask.
+_BULLET_RE = re.compile(r"^([ \t\u3000]*)●(?!●)", re.MULTILINE)
 
 
 def _number(text: str) -> str:
@@ -119,7 +121,7 @@ def _masked(text: str) -> bool:
     """Whether *text* holds a censor mask."""
     return any(
         run == "●" or ("〇" in run and not _KANJI_NUMERAL_RE.search(run))
-        for run in _MASK_RE.findall(text)
+        for run in _MASK_RE.findall(_BULLET_RE.sub(r"\1", text))
     )
 
 

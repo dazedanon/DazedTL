@@ -192,8 +192,9 @@ class QAEngineTests(unittest.TestCase):
             ("まんこ", "pu〇sy", True),
             ("●●●が来た", "●●● is here.", False),
             ("●●●が来た", "Someone is here.", True),
-            # A zero among kanji numerals is no mask.
+            # A zero among kanji numerals is no mask, nor is a bullet.
             ("一〇〇ゴールド", "100 gold", False),
+            ("●攻撃力アップ", "ATK Up", False),
         ):
             flags = manifest.mechanical.evidence(source, live, None)["flags"]
             self.assertEqual("censor-mask-mismatch" in flags, mismatch, (source, live))
