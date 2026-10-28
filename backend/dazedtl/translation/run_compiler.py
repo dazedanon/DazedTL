@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 
 from dazedtl import system
+from dazedtl.compatibility.batch_window import CHUNK_POLICY as BATCH_CHUNKS
 from dazedtl.compatibility.batch_window import RUN_POLICY as BATCH_WINDOW
 from dazedtl.settings.execution import worker_secret
 from dazedtl.settings.language_pair import run_source
@@ -482,8 +483,9 @@ def compile_run(
         QUOTES: frozen.get(QUOTES, True),
     }
     if limits:
-        # Its chunks wait for room in the provider's Batch window.
-        value["batch_window"] = BATCH_WINDOW
+        # Its chunks wait for room in the provider's Batch window, each a
+        # quarter of the allowance, several in flight.
+        value.update(batch_window=BATCH_WINDOW, batch_chunks=BATCH_CHUNKS)
     if shared is not None:
         value.update(shared_payloads=SHARED_PAYLOADS, askers=shared)
     if preceding is not None:

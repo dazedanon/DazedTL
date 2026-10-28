@@ -26,7 +26,7 @@ from tests.engine import point
 
 
 class BatchWindowTests(unittest.TestCase):
-    def fixture(self, base, name, costs, *, model="fixture", limit=10, target=5):
+    def fixture(self, base, name, costs, *, model="fixture", limit=10):
         root = base / "engine/manual/jobs" / name
         plan = {
             "settings": {"api": "https://api.openai.com/v1", "model": model},
@@ -56,7 +56,6 @@ class BatchWindowTests(unittest.TestCase):
             _batch_entry_context_is_current=lambda _: True,
             _read_batch_file=lambda path, **_: read_json(path),
             _openai_batch_token_limit=lambda: limit,
-            OPENAI_BATCH_SEQUENTIAL_ENQUEUED_TOKEN_LIMIT=target,
         )
         providers = SimpleNamespace(
             batch_limits=lambda _: (50_000, 200_000_000),
@@ -137,7 +136,6 @@ class BatchWindowTests(unittest.TestCase):
                 [1] * 8,
                 model="bounded-model",
                 limit=8,
-                target=100,
             )
             self.assertEqual(bounded.fill(task2), 8)
             self.assertEqual(bounded.providers.submit_batch.call_count, 4)
@@ -257,9 +255,7 @@ class BatchWindowTests(unittest.TestCase):
         self,
     ):
         with TemporaryDirectory() as directory:
-            window, task = self.fixture(
-                Path(directory), "first", [4, 4, 4], limit=8, target=4
-            )
+            window, task = self.fixture(Path(directory), "first", [4, 4, 4], limit=8)
             original_create = window.providers.submit_batch.side_effect
 
             def submit(*args, **kwargs):
@@ -616,4 +612,186 @@ class BatchWindowTests(unittest.TestCase):
             # Its own ended chunk frees the room the next one takes.
             provider.ended = True
             step(identity, provider)
+            self.assertEqual(provider.calls, 2)
+
+    def test_assistant_led_chunks_take_a_quarter_several_in_flight(self):
+        # An Assistant-led OpenAI Batch run frozen with CHUNK_POLICY packs
+        # each chunk to a quarter of the Batch token allowance, as Guided
+        # packs its provider jobs, and sends the next while the window it
+        # shares with Guided has room. After a failed chunk it sends no
+        # further chunk but still collects the ones in flight, and a Resume
+        # of the failed run sends the rest. A run frozen before it packs one
+        # chunk up to the whole allowance.
+        from dazedtl.compatibility.batch_window import CHUNK_POLICY, RUN_POLICY
+        from dazedtl.translation.jobs import RunStore
+        from dazedtl.translation.runner import Runner
+
+        from tests.test_translation import BatchProvider, register, request
+
+        with TemporaryDirectory() as directory:
+            base = Path(directory)
+            game = base / "game"
+            game.mkdir()
+            register(base, "project", game)
+            write_json(
+                base / "settings/settings.json",
+                {
+                    "version": 3,
+                    "connections": [
+                        {"id": "connection", "runtime_name": "same-connection"}
+                    ],
+                },
+            )
+            guided, task = self.fixture(base, "guided", [8], limit=12)
+            guided.fill(task)
+            store = RunStore(base)
+
+            class Rejected(Exception):
+                status_code = 400
+
+            class Provider(BatchProvider):
+                def __init__(self):
+                    super().__init__()
+                    self.done, self.missing = set(), set()
+                    self.rejected = None
+
+                def input_tokens(self, _params):
+                    return 3
+
+                def submit(self, items):
+                    super().submit(items)
+                    if self.calls == self.rejected:
+                        raise Rejected
+                    return {"id": f"provider-{self.calls}"}
+
+                def status(self, identity):
+                    ended = identity in self.done
+                    return {
+                        "ended": ended,
+                        "terminal_failure": False,
+                        "api_status": "completed" if ended else "in_progress",
+                        "counts": {},
+                    }
+
+                def collect(self, identity, mapping):
+                    # A request in `missing` comes back as a provider error.
+                    responses, _errors, usage = super().collect(identity, mapping)
+                    errors = [
+                        key for key, row in mapping.items() if row in self.missing
+                    ]
+                    kept = {
+                        key: value
+                        for key, value in responses.items()
+                        if key not in self.missing
+                    }
+                    return kept, errors, usage
+
+            def run(prefix, count, **policy):
+                job = store.create(
+                    "project",
+                    {
+                        "version": 1,
+                        "kind": "translation",
+                        "source": str(game),
+                        "complete": True,
+                        "requests": [
+                            {
+                                **request(f"{prefix}-{index}"),
+                                "params": {"model": "fixture", "messages": []},
+                                "input_tokens": 3,
+                            }
+                            for index in range(count)
+                        ],
+                        "configuration": {
+                            "mode": "batch",
+                            "model": "fixture",
+                            "connection_id": "connection",
+                            "endpoint": "https://api.openai.com/v1",
+                        },
+                        "batch_limits": [50, 100000, 12],
+                        "batch_window": RUN_POLICY,
+                        **policy,
+                    },
+                    {"cost": 1},
+                )
+                store.authorize(job)
+                return job["id"], Provider()
+
+            def step(identity, provider):
+                Runner(store, identity, provider, lambda: None).step()
+                return store.load(identity)[0]
+
+            def states(job):
+                return [chunk["state"] for chunk in job["batches"]]
+
+            def sizes(job):
+                return [len(chunk["items"]) for chunk in job["batches"]]
+
+            failure = "Some returned translations failed validation. Later batches have not been submitted."
+            # Guided holds 8 of the 12 tokens.
+            earlier, provider = run("earlier", 4)
+            self.assertEqual(sizes(step(earlier, provider)), [4])
+            self.assertEqual(provider.calls, 0)
+
+            identity, provider = run("quarter", 6, batch_chunks=CHUNK_POLICY)
+            queued = step(identity, provider)
+            self.assertEqual(sizes(queued), [1] * 6)
+            self.assertEqual(states(queued), ["submitted", "queued", *["pending"] * 4])
+            self.assertEqual(queued["status"], "waiting")
+            self.assertEqual(
+                queued["message"], "Waiting for available Batch token capacity."
+            )
+            self.finish(guided, 0)
+            several = step(identity, provider)
+            self.assertEqual(states(several), [*["submitted"] * 4, "queued", "pending"])
+            self.assertEqual(provider.calls, 4)
+            self.assertEqual(
+                active_tokens(base, scope(guided.plan), guided.count, 12), 12
+            )
+
+            # The first chunk fails while the next three are in flight, and
+            # the room it frees takes no further chunk.
+            first = several["batches"][0]
+            provider.done.add(first["id"])
+            provider.missing.add(first["items"][0]["request"])
+            halted = step(identity, provider)
+            self.assertEqual(provider.calls, 4)
+            self.assertEqual(halted["status"], "waiting")
+            self.assertTrue(halted["message"].startswith(failure), halted["message"])
+            self.assertEqual(
+                states(halted), ["complete", *["submitted"] * 3, "pending", "pending"]
+            )
+            provider.done.update(chunk["id"] for chunk in halted["batches"][1:4])
+            failed = step(identity, provider)
+            self.assertEqual(provider.calls, 4)
+            self.assertEqual((failed["status"], failed["message"]), ("failed", failure))
+            self.assertEqual(states(failed), [*["complete"] * 4, "pending", "pending"])
+            self.assertEqual(
+                [row["state"] for row in failed["states"].values()],
+                ["failed", *["accepted"] * 3, "pending", "pending"],
+            )
+
+            # Resuming the failed run sends the chunks it held back.
+            resumed = step(identity, provider)
+            self.assertEqual(provider.calls, 6)
+            self.assertEqual(
+                states(resumed), [*["complete"] * 4, "submitted", "submitted"]
+            )
+            provider.done.update(chunk["id"] for chunk in resumed["batches"])
+            self.assertEqual(states(step(identity, provider)), ["complete"] * 6)
+
+            # A rejected submission stops later sends too, while the chunk
+            # sent before it is collected.
+            identity, provider = run("rejected", 3, batch_chunks=CHUNK_POLICY)
+            provider.rejected = 2
+            rejected = step(identity, provider)
+            self.assertEqual(states(rejected), ["submitted", "rejected", "pending"])
+            self.assertEqual(rejected["status"], "waiting")
+            provider.done.add(rejected["batches"][0]["id"])
+            failed = step(identity, provider)
+            self.assertEqual(
+                (failed["status"], failed["message"]),
+                ("failed", "Review the rejected submission."),
+            )
+            self.assertEqual(states(failed), ["complete", "rejected", "pending"])
             self.assertEqual(provider.calls, 2)

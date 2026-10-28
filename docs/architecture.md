@@ -104,9 +104,10 @@ A Batch approval binds the full frozen queue and plan; only the owning worker ad
 Explicit stops, provider cancellations, newer approved overlapping runs, changed scope and uncertain submissions prevent automatic continuation.
 Requests read as never sent only with evidence the [submission journal](../backend/dazedtl/compatibility/batch_continuation.py) or the [transport observer](../backend/dazedtl/compatibility/transmission.py) records, since SDK retries can hide a processed try behind a later refused connection.
 Automatic local consumption requires a durable fetched marker and submission receipts covering every prepared request, so collecting one chunk cannot turn an unsent remainder into a full consume pass, and a failed consume offers Retry saving results instead of a restart loop.
-The [OpenAI Batch window](../backend/dazedtl/compatibility/batch_window.py) gives each provider job at most a quarter of the input-token allowance, so a slow request cannot hold the whole window.
+The [OpenAI Batch window](../backend/dazedtl/compatibility/batch_window.py) gives each provider job at most a quarter of the input-token allowance (`job_tokens`, for both workflows), so a slow request cannot hold the whole window.
 Guided and Assistant-led runs on one connection share that window: it counts both workflows' provider jobs in flight, and every Batch either sends, clarifications included, waits in it for room.
-An Assistant-led run sends its chunks one at a time, each up to the whole allowance, and a chunk without room stays `queued` in its run record; runs frozen before that policy (`batch_window` in the plan) send each chunk without waiting.
+An Assistant-led run sends its chunks in order while the window has room, several in flight, and a chunk without room stays `queued` in its run record; after a failed chunk it sends no further chunk, collects the ones already sent, then ends failed, and Resume sends the rest.
+Runs frozen before those policies (`batch_chunks` and `batch_window` in the plan) send one chunk at a time, each up to the whole allowance, and before `batch_window` without waiting for room.
 Provider reads and downloads run outside the API lock and feed the application observer through cached observations.
 
 ### Evidence and validation
