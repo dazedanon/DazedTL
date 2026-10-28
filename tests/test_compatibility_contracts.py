@@ -244,7 +244,6 @@ class CompatibilityContracts(unittest.TestCase):
         # Assistant-led quotes the same requests by the same rule: its own
         # formula once left out OpenAI's cache, quoting a GPT-5.6 Batch below
         # the most it can cost.
-        from dazedtl.compatibility import batch_pricing
         from dazedtl.compatibility.estimate_prices import reprice
         from dazedtl.translation.requests import CACHE_COUNTS, price
         from util import translation
@@ -300,8 +299,6 @@ class CompatibilityContracts(unittest.TestCase):
             ),
             redirect_stdout(StringIO()),
         ):
-            batch_pricing.configure(translation, True)
-            self.addCleanup(batch_pricing.configure, translation, False)
             # Separately billed cache writes on both sides, from none, to none.
             for before, after in (
                 ("gpt-5.6-sol", "gpt-5.6-terra"),
@@ -457,19 +454,6 @@ class CompatibilityContracts(unittest.TestCase):
         translation._load_litellm_pricing = point(lambda: None)
         for name in ("estimateCostComparison", "translateAI", "batch_usage_cost"):
             setattr(translation, name, point(Mock()))
-        quote = {
-            "model": "gpt-6.1-sol",
-            "provider": "openai",
-            "input_tokens": 98_016,
-            "output_tokens": 4_617,
-            "cache_read_tokens": 86_528,
-            "cache_write_tokens": 11_360,
-            "uses_prompt_cache": True,
-            "batch_nocache_cost": 0.121101,
-            "batch_cached_cost": 0.0460658,
-        }
-        native_estimate = Mock(return_value=quote)
-        translation.estimateBatchCost = point(native_estimate)
 
         def pricing(model):
             rates = translation._load_litellm_pricing()[model]
@@ -519,33 +503,6 @@ class CompatibilityContracts(unittest.TestCase):
             }
             install()
             self.assertEqual(environment.prepare(root), "prepared")
-            # New quotes must use Sol 6.1's 5% cache-read price, preserve the
-            # cache-write charge, and never repeatedly discount a saved value.
-            self.assertAlmostEqual(
-                translation.estimateBatchCost()["batch_cached_cost"], 0.0417394
-            )
-            self.assertEqual(quote["batch_cached_cost"], 0.0460658)
-            environment.prepare(root)
-            self.assertAlmostEqual(
-                translation.estimateBatchCost()["batch_cached_cost"], 0.0417394
-            )
-            self.assertEqual(native_estimate.call_count, 2)
-            with patch.object(
-                translation,
-                "getPricingConfig",
-                return_value={"inputAPICost": 4, "outputAPICost": 20},
-            ):
-                self.assertAlmostEqual(
-                    translation.estimateBatchCost()["batch_cached_cost"], 0.0834788
-                )
-            for other in (
-                {**quote, "provider": "anthropic"},
-                {**quote, "model": "gpt-6-sol"},
-                {**quote, "cache_read_tokens": None},
-            ):
-                native_estimate.return_value = other
-                self.assertIs(translation.estimateBatchCost(), other)
-            native_estimate.return_value = quote
             for model in (
                 "gpt-6.1-sol",
                 "gpt-6-sol",
@@ -661,8 +618,6 @@ class CompatibilityContracts(unittest.TestCase):
                 self.assertEqual(
                     translation._translation_completion_limit("short text"), 8192
                 )
-                if legacy is None:
-                    self.assertIs(translation.estimateBatchCost(), quote)
             plan["dazedtl_request_policy"] = {
                 **policy,
                 "generationParameters": "unsupported-future-policy",
@@ -1118,15 +1073,13 @@ class CompatibilityContracts(unittest.TestCase):
             ),
         ):
             with self.subTest(model):
-                self.assertEqual(
-                    round(spent(model, provider, endpoint, protocol, batch) or 0, 2),
-                    round(cost, 2),
+                self.assertAlmostEqual(
+                    spent(model, provider, endpoint, protocol, batch) or 0, cost
                 )
 
     def test_an_openai_batch_estimate_prices_cache_reads_at_the_models_price(self):
         # Every OpenAI Batch estimate priced cache reads at a tenth of input,
         # though GPT-4o reads at half and GPT-4.1 at a quarter.
-        from dazedtl.compatibility.batch_pricing import sol_cached_cost
         from util.translation import openai_cache_prices
 
         # 1M input, 900k of it expected cache hits, and 100k output, at $2
@@ -1142,17 +1095,13 @@ class CompatibilityContracts(unittest.TestCase):
                     1_000_000, 100_000, 900_000, 1_000_000, model, 2e-6, 8e-6
                 )
                 self.assertAlmostEqual(cached, (0.2 + 1.8 * read + 0.8) / 2)
-        # GPT-6.1 Sol's own Batch layer and the engine now agree.
+        # GPT-6.1 Sol reads at a twentieth and writes the rest of its
+        # cacheable input at 1.25 times.
         writes, _most_writes, cached, _most = openai_cache_prices(
             1_000_000, 100_000, 800_000, 1_000_000, "gpt-6.1-sol", 2e-6, 8e-6
         )
-        counts = {
-            "input_tokens": 1_000_000,
-            "output_tokens": 100_000,
-            "cache_read_tokens": 800_000,
-            "cache_write_tokens": writes,
-        }
-        self.assertAlmostEqual(cached, sol_cached_cost(counts, 2e-6, 8e-6) or 0)
+        self.assertEqual(writes, 200_000)
+        self.assertAlmostEqual(cached, (0.5 + 1.6 * 0.05 + 0.8) / 2)
 
     def test_a_stopped_batch_records_its_cache_reads_as_a_completed_one_does(self):
         # A canceled Batch's paid rows once added their whole prompt to
