@@ -14,6 +14,13 @@ time each arrived. Estimates stay at the standard price.
 
 from .openrouter_pricing import batch_cost
 
+# The version of the rule ``output_tokens`` counts by, which every
+# Assistant-led quote records beside its counts. Raise it when that rule (the
+# engine's output_allowance) changes, so a quote waiting across the change
+# reads outdated and is estimated again instead of priced from stale counts.
+# Guided's estimates follow their RUN_VERSION and ESTIMATE_VERSION instead.
+OUTPUT_RULES_VERSION = 1
+
 
 def output_tokens(source_tokens):
     """The output an estimate allows a request whose source text counts
@@ -21,6 +28,12 @@ def output_tokens(source_tokens):
     from util.translation import output_allowance
 
     return output_allowance(source_tokens)
+
+
+def output_rules(quote):
+    """The ``output_tokens`` rule version a saved quote counted by; one saved
+    before quotes recorded it reads as version 1."""
+    return (quote or {}).get("output_rules", 1)
 
 
 def prices(counts, configuration, provider, cache=None):
@@ -41,6 +54,9 @@ def prices(counts, configuration, provider, cache=None):
     from dazedtl.settings.effort import summary, thinks
 
     model = configuration["model"]
+    # The run's frozen record of the model's effort levels, when its
+    # provider's model list decided them (settings/effort.profile).
+    listed = configuration.get("thinkingEffortListed")
     inputs, outputs = counts["input_tokens"], counts["output_tokens"]
     rates = configuration["rates"]
     in_rate, out_rate = rates["input"] / 1_000_000, rates["output"] / 1_000_000
@@ -71,12 +87,14 @@ def prices(counts, configuration, provider, cache=None):
             configuration.get("provider") or provider,
             model,
             configuration.get("thinkingEffort"),
+            listed,
         ),
         # The effort the run sends, which a price after an effort change names.
         "thinking_effort": summary(
             configuration.get("provider") or provider,
             model,
             configuration.get("thinkingEffort"),
+            listed,
         ),
     }
     if provider == "anthropic" and cache is not None and cache.writes:

@@ -13,7 +13,7 @@ from unittest.mock import Mock, patch
 
 from dazedtl.api.contracts.validation import check_response
 from dazedtl.api.server import assistant_dispatch
-from dazedtl.compatibility import original_files
+from dazedtl.compatibility import estimate_prices, original_files
 from dazedtl.projects.store import Projects
 from dazedtl.settings.execution import configuration, connection_summary, worker_secret
 from dazedtl.settings.store import Settings
@@ -1452,6 +1452,15 @@ class WorkflowTests(unittest.TestCase):
 
         # Under today's rules it stands as saved.
         self.assertEqual(view(run["id"])["quote"], run["quote"])
+        # A change to how a quote counts its output outdates it instead, as
+        # its counts can't follow; the quote's own token no longer approves.
+        self.assertEqual(run["quote"]["output_rules"], 1)
+        with patch.object(estimate_prices, "OUTPUT_RULES_VERSION", 2):
+            recounted = view(run["id"])
+            self.assertTrue(recounted["pricing_changed"])
+            self.assertFalse(recounted["settings_changed"])
+            with self.assertRaisesRegex(ValueError, "price changed"):
+                self.service.start(self.identity, run["id"], run["approval_token"])
         older(run["id"], cost=9.0, batch_cost=9.0, live_cost=18.0)
         # Its OpenAI Batch counts are priced again under today's rules.
         shown = view(run["id"])
