@@ -78,12 +78,15 @@ Below, PLAYTEST stands for `{playtest}`, PLUGINS for `{plugins}` and QA for `{qa
 PLAYS = ("release_playtest", "playtest_fix")
 
 
-def stopping(problems):
-    """The report's crashes, which the assistant fixes, so a game the
-    playtest could not play is not done with until they are."""
+def stopping(state):
+    """Crashes that stop the game before the playtest can play it, which the
+    assistant fixes, so the check is not done with until they are; a report
+    that played the game lists its crashes with its other problems."""
+    if state.get("played"):
+        return []
     return [
         problem
-        for problem in problems
+        for problem in state["problems"]
         if problem["kind"] == "crash" and problem["fix"] == "game"
     ]
 
@@ -101,7 +104,7 @@ def settled(state, running):
     game now, the latest report is of the game as it is, and no problem in
     translated text waits for QA's next round. QA's apply changes the game's
     data, so a current report played it with QA's corrections. A report that
-    could not play the game settles it too once it names no crash for the
+    could not play the game settles it too once no crash stops it for the
     assistant to fix, as for a game without its engine's scripts."""
     return (
         not running
@@ -109,17 +112,18 @@ def settled(state, running):
         and state["current"]
         and not state.get("unreadable")
         and not waiting(state)
-        and (bool(state.get("played")) or not stopping(state["problems"]))
+        and not stopping(state)
     )
 
 
 def described(state, running):
-    """The playtest's state with what both methods' QA tasks and the helper
-    read from it: whether it settled, and its crash and waiting counts."""
+    """The playtest's state with what both methods' QA tasks and Playtest
+    panels and the helper read from it: whether it settled, and its crash and
+    waiting counts."""
     return {
         **state,
         "settled": settled(state, running),
-        "stopping": len(stopping(state["problems"])),
+        "stopping": len(stopping(state)),
         "waiting": waiting(state),
     }
 
@@ -386,7 +390,7 @@ class Playtest:
                 + ": run qa --prepare, review it and run qa --apply, then run "
                 "playtest --run again."
             )
-        elif not state.get("played") and state["stopping"]:
+        elif state["stopping"]:
             following = (
                 "The game stops before the playtest can play it: fix that crash in "
                 "the fixes file and run playtest --fix."

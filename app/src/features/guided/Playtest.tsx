@@ -70,12 +70,14 @@ export function PlaytestWork({
   const phase = playtestPhase(playtest, running);
   // A report the game outgrew, or one stopped by a crash the assistant
   // fixes, waits for its next play.
-  const stopped =
-    phase === "blocked" && !playtest.unreadable && playtest.stopping > 0;
   const state: DisplayState =
-    waiting && (phase === "outdated" || stopped)
+    waiting && (phase === "outdated" || phase === "stopped")
       ? "waiting"
       : playtestDisplay[phase];
+  // Text problems its file checks found may still wait for QA's next round,
+  // which ends the final check (backend playtest.settled).
+  const unplayed =
+    `The playtest could not play the game${playtest.settled ? ", so the final check ends without a play" : ""}. ${playtest.gaps[0] || ""}`.trim();
   const [capture, setCapture] = useState<PlaytestProblem | null>(null);
   const [strings, setStrings] = useState<PlaytestProblem | null>(null);
   const [coverage, setCoverage] = useState(false);
@@ -107,14 +109,19 @@ export function PlaytestWork({
             ? idle
             : phase === "running"
               ? "DazedTL is playing the game; this takes a few minutes."
-              : stopped && waiting
-                ? "The game stops before the playtest can play it; your assistant fixes that and plays it again."
-                : phase === "blocked"
-                  ? playtest.unreadable ||
-                    `The playtest could not play the game. ${playtest.gaps[0] || ""}`.trim()
-                  : phase === "outdated"
-                    ? `The game changed after this playtest. ${rerun}`
-                    : playtestSummary(playtest)
+              : phase === "unreadable"
+                ? playtest.unreadable
+                : // The crash leads the problems, and the first gap may
+                  // be about something else.
+                  phase === "stopped"
+                  ? waiting
+                    ? "The game stops before the playtest can play it; your assistant fixes that and plays it again."
+                    : "The game stops before the playtest can play it."
+                  : phase === "unplayed"
+                    ? unplayed
+                    : phase === "outdated"
+                      ? `The game changed after this playtest. ${rerun}`
+                      : playtestSummary(playtest)
         }
         help="It checks the game's files, then plays the title, New Game, every menu screen, a save and a load, a shop, a battle and the screens plugins add, with every item and skill on hand. Problems the tour saw come with a capture; the rest were found in the files. Problems in translated text go to Text QA's review."
       >
@@ -125,7 +132,7 @@ export function PlaytestWork({
             its problems found in the files still open. */}
         {phase !== "not_started" &&
           phase !== "running" &&
-          !playtest.unreadable &&
+          phase !== "unreadable" &&
           (reached || (compact && groups.length > 0)) && (
             <p className="playtest-coverage">
               {reached && (
