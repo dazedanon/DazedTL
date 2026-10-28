@@ -190,7 +190,10 @@ Saved records are not checked again.
 An API run keeps such a line in its source text and accepts the rest of its request, as Guided's Batch keeps it, with the lines it kept named in the request's state ([results.kept](../backend/dazedtl/translation/results.py)); a request with no line that passes is set to failed, as for any rejected result, and nothing is sent again by itself.
 
 For an intentional correction, also supply replaces_sha256 equal to the current result_sha256.
-The previous result is archived, the replacement is validated, and affected review/injection/QA is made pending.
+The previous result is archived, the replacement is validated, and affected review/injection/QA is made pending; a line the correction leaves as it was keeps its review.
+A line organize kept from an earlier request is corrected through the run that kept it, such as the newest: accept on it takes a correction receipt for a request its reused record names, though that request's own run refuses one once its guidance changed ([service](../backend/dazedtl/translation/service.py) `correct_reused`).
+The receipt is checked against that request as its run compiled it, may change only the lines this run reads from it, and each of those within the constraints of this run's units.
+The earlier run's record and plan stay as they are, and the receipt it shares by fingerprint is archived and replaced as for any correction, so every run reading it gets the corrected line.
 An ordinary retry cannot overwrite an accepted translation.
 Record source-checked review with review only after performing that review.
 Do not regenerate source/review hashes to make stale work count as current.

@@ -70,7 +70,21 @@ def entries(store, project_id, source, listing):
     saved = _saved(source)
     receipts = {key for key, (path, _stamp) in listing.items() if path}
     found = {key: value for key, value in saved.items() if key in receipts}
-    missing = receipts - set(found)
+    for fingerprint, request in held(store, project_id, receipts - set(found)).items():
+        found[fingerprint] = entry(request)
+    if found != saved:
+        write_json(
+            project_path(source, INDEX, exists=False),
+            {"version": VERSION, "requests": found},
+        )
+    return found
+
+
+def held(store, project_id, fingerprints):
+    """The compiled requests of fingerprints, by fingerprint, each read from
+    a run plan of the project that holds it; plans are read only for the
+    requests they hold, and one that can't be read is passed over."""
+    missing, found = set(fingerprints), {}
     for job in store.list(project_id) if missing else ():
         if job["kind"] != "translation" or missing.isdisjoint(
             job["fingerprints"].values()
@@ -82,15 +96,10 @@ def entries(store, project_id, source, listing):
             continue
         for request in plan["requests"]:
             if request["fingerprint"] in missing:
-                found[request["fingerprint"]] = entry(request)
+                found[request["fingerprint"]] = request
                 missing.discard(request["fingerprint"])
         if not missing:
             break
-    if found != saved:
-        write_json(
-            project_path(source, INDEX, exists=False),
-            {"version": VERSION, "requests": found},
-        )
     return found
 
 

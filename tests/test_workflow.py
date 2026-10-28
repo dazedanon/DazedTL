@@ -760,6 +760,133 @@ class WorkflowTests(unittest.TestCase):
         self.assertNotIn("reused", plan)
         self.assertEqual(sum(len(row["sources"]) for row in plan["requests"]), 4)
 
+    def test_the_newest_run_corrects_a_line_it_reused_from_an_earlier_run(self):
+        # Once organize kept a line from an earlier run, nothing could
+        # correct it after a guidance edit: the newest run held no request
+        # for it, and the run that did refused as its guidance changed.
+        selected = self.project.read()
+        self.service.save(
+            self.identity,
+            selected["revision"],
+            {**selected["options"], "mode": "agent"},
+        )
+        units = WORK + "/work/source-units.json"
+
+        def organized(lines, bound=12):
+            write_json(
+                self.game / units,
+                {
+                    "version": 1,
+                    "units": [
+                        {
+                            "id": identity,
+                            "scene": identity[0],
+                            "source": source,
+                            "max_characters": bound,
+                        }
+                        for identity, source in lines.items()
+                    ],
+                },
+            )
+            run = self.prepared(self.service.organize(self.identity, units))["run"]
+            return run, self.service.jobs.store.load(run["id"])[1]
+
+        receipt = WORK + "/work/receipt.json"
+
+        def accept(run, request, translations, replaces=None):
+            write_json(
+                self.game / receipt,
+                {
+                    "request_sha256": request["fingerprint"],
+                    "translations": translations,
+                    **({"replaces_sha256": replaces} if replaces else {}),
+                },
+            )
+            return self.service.accept(self.identity, run["id"], request["id"], receipt)
+
+        results = Results(self.game)
+        first, older = organized(
+            {"a/1": "はい。", "a/2": "いいえ。", "b/1": "ありがとう。"}
+        )
+        earlier, other = older["requests"]
+        accept(first, earlier, {"a/1": "Yes.", "a/2": "No."})
+        accept(first, other, {"b/1": "Thanks."})
+        self.service.review(
+            self.identity, first["id"], earlier["id"], earlier["fingerprint"]
+        )
+        saved = results.get(earlier)
+
+        def run_files(run):
+            folder = self.service.jobs.store.folder(run["id"])
+            return {path: path.read_bytes() for path in folder.rglob("*.json")}
+
+        older_files = run_files(first)
+        self.assertTrue(older_files)
+        self.engine.glossary_text = "Approved names\nリリ (Lili)"
+        # a/1 changed in the game, so the new run translates it itself, in
+        # a request of the same ID; the extractor now bounds every line closer.
+        lines = {"a/1": "はい！", "a/2": "いいえ。", "b/1": "ありがとう。"}
+        second, plan = organized(lines, 8)
+        self.assertEqual(set(plan["reused"]["units"]), {"a/2", "b/1"})
+        self.assertEqual([row["id"] for row in plan["requests"]], [earlier["id"]])
+        corrected = {"a/1": "Yes.", "a/2": "Nope."}
+        # The run that translated the line refuses its guidance changed.
+        with self.assertRaisesRegex(ValueError, "Compile and review"):
+            accept(first, earlier, corrected, saved["result_sha256"])
+        accept(second, earlier, corrected, saved["result_sha256"])
+        value = results.get(earlier)
+        self.assertEqual(value["translations"], corrected)
+        self.assertEqual(value["provenance"]["run_id"], second["id"])
+        # The line it did not change keeps its review.
+        self.assertEqual(set(value["reviewed"]), {"a/1"})
+        # Progress and results read the correction, and the next organize
+        # reuses it.
+        index = read_json(self.game / EXPORT)
+        self.assertIn(
+            "Nope.",
+            [
+                row.get("translation")
+                for part in index["parts"]
+                for row in read_json(self.game / part)["units"]
+            ],
+        )
+        written = self.service.results(self.identity, second["id"])
+        self.assertEqual(
+            read_json(self.game / written["path"])["translations"]["a/2"], "Nope."
+        )
+        _third, newer = organized(lines, 8)
+        self.assertEqual(
+            newer["reused"]["units"]["a/2"]["request"], earlier["fingerprint"]
+        )
+        # A line the run did not reuse, or a request it holds no line of, is
+        # still refused; so is one over the bound organize kept it by, or a
+        # receipt that replaces an older result.
+        with self.assertRaisesRegex(ValueError, "a/1 is not a line this run reads"):
+            accept(
+                second,
+                earlier,
+                {"a/1": "Yeah.", "a/2": "Nope."},
+                value["result_sha256"],
+            )
+        with self.assertRaisesRegex(ValueError, "character bound"):
+            accept(
+                second,
+                earlier,
+                {"a/1": "Yes.", "a/2": "Nope, no."},
+                value["result_sha256"],
+            )
+        with self.assertRaisesRegex(ValueError, "current result hash"):
+            accept(second, earlier, saved["translations"], saved["result_sha256"])
+        with self.assertRaisesRegex(ValueError, "replaces_sha256"):
+            accept(second, earlier, saved["translations"])
+        stranger = {**earlier, "fingerprint": "f" * 64}
+        with self.assertRaisesRegex(ValueError, "bind translations"):
+            accept(second, stranger, corrected, value["result_sha256"])
+        with self.assertRaisesRegex(ValueError, "Unknown request ID"):
+            accept(second, {**stranger, "id": "z/1"}, corrected, value["result_sha256"])
+        # The earlier run's own files never change.
+        self.assertEqual(run_files(first), older_files)
+
     def test_a_units_skill_message_names_the_skills_users_as_guided_does(self):
         # Guided notes each skill message with who uses the skill, so "%1"
         # gets the right pronouns (engine util/battle_users). A unit holding
