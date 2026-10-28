@@ -1,13 +1,6 @@
 // Builds a ready-made test scenario in a scratch folder, so reproducing a bug
 // starts from a known state in minutes: a scratch profile, workspace and game
 // copy, never the user's. See "Test scenarios" in docs/development.md.
-//
-//   node scripts/scenario.mjs <scenario> [--game <variants>] [--from <ref>] [--app] [--work <dir>]
-//   node scripts/scenario.mjs list
-//   node scripts/scenario.mjs app|stop|clean --work <dir>
-//   node scripts/scenario.mjs provider --work <dir> '<mode JSON>'
-//   node scripts/scenario.mjs drive --work <dir> text|click|click-prefix|call|eval|shot ...
-//   node scripts/scenario.mjs live [e2e.mjs options]
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -26,19 +19,41 @@ import {
 import { gameName, makeGame, variants } from "./testkit/games.mjs";
 import { scenarios } from "./testkit/scenarios.mjs";
 import { checkout, previousRelease } from "./testkit/checkout.mjs";
+import { e2eOptions, readOptions } from "./testkit/options.mjs";
 
-const args = process.argv.slice(2);
-const option = (name) => {
-  const index = args.indexOf(name);
-  return index >= 0 ? args[index + 1] : undefined;
+const usage = `Usage:
+  node scripts/scenario.mjs <scenario> [--game <variants>] [--from <ref>] [--app] [--work <dir>]
+  node scripts/scenario.mjs list
+  node scripts/scenario.mjs app|stop|clean --work <dir>
+  node scripts/scenario.mjs provider --work <dir> '<mode JSON>'
+  node scripts/scenario.mjs drive --work <dir> text|click|click-prefix|call|eval|shot ...
+  node scripts/scenario.mjs live [--work <empty folder>] [--upgrade-from <tag> | previous]`;
+// The options building a scenario takes, and those each other command takes.
+const buildOptions = {
+  "--work": "value",
+  "--game": "value",
+  "--from": "value",
+  "--app": "flag",
 };
-const flag = (name) => args.includes(name);
-const positional = args.filter(
-  (value, index) =>
-    !value.startsWith("--") &&
-    !["--work", "--game", "--from"].includes(args[index - 1]),
+/** @type {Record<string, Record<string, "value" | "flag">>} */
+const commandOptions = {
+  list: {},
+  app: { "--work": "value" },
+  stop: { "--work": "value" },
+  clean: { "--work": "value" },
+  provider: { "--work": "value" },
+  drive: { "--work": "value" },
+  live: e2eOptions,
+};
+const { option, flag, given, positional, refuse } = readOptions(
+  usage,
+  Object.assign({}, buildOptions, ...Object.values(commandOptions)),
+  { positionals: true },
 );
 const command = positional[0];
+const allowed = commandOptions[command || "list"] ?? buildOptions;
+for (const name of given)
+  if (!(name in allowed)) refuse(`${command || "list"} takes no ${name}.`);
 // An app left running keeps its display and stand-in until stop or clean;
 // otherwise they end with this command, however it ends.
 const keepsApp = command === "app" || flag("--app");
@@ -384,7 +399,10 @@ try {
     try {
       const result = spawnSync(
         process.execPath,
-        [path.join(root, "scripts/e2e.mjs"), ...args.slice(1)],
+        [
+          path.join(root, "scripts/e2e.mjs"),
+          ...given.flatMap((name) => [name, String(option(name))]),
+        ],
         { stdio: "inherit", env: { ...process.env, ...display?.env } },
       );
       process.exitCode = result.status ?? 1;

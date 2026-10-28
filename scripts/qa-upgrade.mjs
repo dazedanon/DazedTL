@@ -3,8 +3,6 @@
 // checkout's code. It fails when a change breaks saved QA work without
 // bumping QA_RULES_VERSION. See "Previous-release QA check" in
 // docs/development.md.
-//
-//   node scripts/qa-upgrade.mjs [--tag <release tag>] [--work <folder>]
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -12,12 +10,13 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { bundledGit, python, requireNode, root } from "./dependencies.mjs";
 import { extract } from "./tar.mjs";
 import { previousRelease } from "./testkit/checkout.mjs";
+import { readOptions } from "./testkit/options.mjs";
 
 requireNode();
-const option = (name) => {
-  const index = process.argv.indexOf(name);
-  return index >= 0 ? process.argv[index + 1] : undefined;
-};
+const { option } = readOptions(
+  "Usage: node scripts/qa-upgrade.mjs [--tag <release tag>] [--work <folder>]",
+  { "--tag": "value", "--work": "value" },
+);
 if (!fs.existsSync(python))
   throw new Error("Run node scripts/setup.mjs first; it creates .venv.");
 const gitBin = bundledGit()?.bin;
