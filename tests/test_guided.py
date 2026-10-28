@@ -32,6 +32,7 @@ from dazedtl.translation.guided_inputs import GuidedInputs
 from dazedtl.translation.release import packing_state
 
 from tests.engine import engine_module, replaced_modules
+from tests.fonts import truetype
 from tests.game_writes import game_write
 
 custom_patterns = engine_module("util/custom_patterns.py")
@@ -3845,6 +3846,34 @@ class GuidedTests(unittest.TestCase):
         self.native["engine_options"]["ENABLED_PLUGINS_357"] = ["not-installed"]
         with self.assertRaises(ValueError):
             self.guided.event_text.require(self.identity, self.native)
+
+    def test_event_text_request_says_whether_the_games_font_draws_nbsp(self):
+        # nbsp spacing suits only a font that draws U+00A0. The fact is read
+        # again for each request and stays out of its fingerprint, so
+        # findings are not investigated again for it.
+        request, _report = self.event_report()
+        self.assertEqual(
+            request["nbsp"], {"drawn": None, "unread": "The game names no font file."}
+        )
+        fonts = self.root / "fonts"
+        fonts.mkdir()
+        (fonts / "gamefont.css").write_text('src: url("mplus.ttf");', encoding="utf-8")
+        (fonts / "mplus.ttf").write_bytes(truetype((0x20, 0x7E)))
+        again = self.guided.event_text.request(self.identity, self.native)
+        self.assertEqual(
+            (again["request_id"], again["fingerprint"]),
+            (request["request_id"], request["fingerprint"]),
+        )
+        lacking = {"font": "fonts/mplus.ttf", "drawn": False}
+        self.assertEqual(again["nbsp"], lacking)
+        # The project helper's event-text shows the investigation the same.
+        self.assertEqual(
+            self.guided.event_text_request(self.identity)["request"]["nbsp"], lacking
+        )
+        self.assertEqual(
+            self.guided.event_text.status(self.identity, self.native)["status"],
+            "ready",
+        )
 
     def test_event_findings_keep_only_commands_found_in_the_selected_events(self):
         # A mistyped command to keep would silently leave an internal value,

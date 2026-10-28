@@ -43,7 +43,7 @@ from util.speakers import (
     speaker_translated,
     strip_speaker_prefix,
 )
-from util import battle_users, custom_patterns, extensions, rpgmaker_qa_lint
+from util import battle_users, custom_patterns, extensions, rpgmaker_qa_lint, word_spacing
 from util.request_packing import SHARED_LINES
 from util.skills import ctx, load_system_prompt
 from util.paths import (
@@ -324,6 +324,7 @@ CODE108 = False
 # in SPACES_* keep plain spaces, and those in NBSP_* join words with U+00A0,
 # which MV's command356 split(" ") keeps whole and draws as a space. Exact
 # commands or comments in KEEP_* are internal values and stay untranslated.
+# The rule and the joining are util/word_spacing.py's.
 SPACES_356: list = []
 NBSP_356: list = []
 KEEP_356: list = []
@@ -1462,14 +1463,6 @@ def _code108_custom(text: str):
     if text in KEEP_108:
         return None
     return custom_patterns.capture(CUSTOM_108, text, "", _has_japanese_text)
-
-
-def _join_words(text: str, handler: str, spaces, nbsp) -> str:
-    """Keeps a translated plugin argument's words together the way its
-    handler's plugin reads them; see SPACES_356."""
-    if handler in spaces:
-        return text
-    return text.replace(" ", "\u00a0" if handler in nbsp else "_")
 
 
 def _code108_progress_units(codeList) -> int:
@@ -5703,7 +5696,7 @@ def _searchCodes(page, pbar, jobList, filename):
                     if setData:
                         list108.append(jaString[start:end])
                     elif list108:
-                        translatedText = custom_patterns.join_words(
+                        translatedText = word_spacing.join_words(
                             list108.pop(0).replace("\n", " "), entry["spacing"]
                         )
                         codeList[i]["parameters"][0] = (
@@ -5747,8 +5740,9 @@ def _searchCodes(page, pbar, jobList, filename):
                         for char in charList:
                             translatedText = translatedText.replace(char, "")
                         translatedText = translatedText.replace('"', '"')
-                        translatedText = _join_words(
-                            translatedText, marker, SPACES_108, NBSP_108
+                        translatedText = word_spacing.join_words(
+                            translatedText,
+                            word_spacing.chosen(marker, SPACES_108, NBSP_108),
                         )
                         translatedText = jaString.replace(match.group(1), translatedText)
 
@@ -5780,7 +5774,7 @@ def _searchCodes(page, pbar, jobList, filename):
                     if setData:
                         list356.append(jaString[start:end])
                     elif list356:
-                        translatedText = custom_patterns.join_words(
+                        translatedText = word_spacing.join_words(
                             list356.pop(0).replace("\n", " "), entry["spacing"]
                         )
                         codeList[i]["parameters"][0] = (
@@ -5870,8 +5864,9 @@ def _searchCodes(page, pbar, jobList, filename):
                                 for char in charList:
                                     translatedText = translatedText.replace(char, "")
 
-                            translatedText = _join_words(
-                                translatedText, handler, SPACES_356, NBSP_356
+                            translatedText = word_spacing.join_words(
+                                translatedText,
+                                word_spacing.chosen(handler, SPACES_356, NBSP_356),
                             )
                             if "D_TEXT " not in jaString:
                                 translatedText = translatedText.replace("__", "_")
@@ -5901,7 +5896,10 @@ def _searchCodes(page, pbar, jobList, filename):
                         # Set Data
                         updated = jaString.replace(
                             text,
-                            _join_words(translatedText, "namePop", SPACES_356, NBSP_356),
+                            word_spacing.join_words(
+                                translatedText,
+                                word_spacing.chosen("namePop", SPACES_356, NBSP_356),
+                            ),
                         )
                         codeList[i]["parameters"][0] = updated
 
@@ -5921,11 +5919,9 @@ def _searchCodes(page, pbar, jobList, filename):
                                 translatedText = list356[0]
                                 list356.pop(0)
 
-                                translatedText = _join_words(
+                                translatedText = word_spacing.join_words(
                                     translatedText,
-                                    "LL_InfoPopupWIndowMV",
-                                    SPACES_356,
-                                    NBSP_356,
+                                    word_spacing.chosen("LL_InfoPopupWIndowMV", SPACES_356, NBSP_356),
                                 )
 
                                 # Put Args Back
@@ -5945,11 +5941,9 @@ def _searchCodes(page, pbar, jobList, filename):
                         totalTokens[1] += response[1][1]
 
                         # Set Data
-                        translatedText = _join_words(
+                        translatedText = word_spacing.join_words(
                             translatedText,
-                            "OriginMenuStatus SetParam",
-                            SPACES_356,
-                            NBSP_356,
+                            word_spacing.chosen("OriginMenuStatus SetParam", SPACES_356, NBSP_356),
                         )
                         translatedText = jaString.replace(text, translatedText)
                         codeList[i]["parameters"][0] = translatedText
@@ -5973,11 +5967,9 @@ def _searchCodes(page, pbar, jobList, filename):
                         translatedText = rpgmaker_rewrap.wrap_message(
                             translatedText, WIDTH, source=match.group(1), rows=MESSAGEROWS
                         )
-                        translatedText = _join_words(
+                        translatedText = word_spacing.join_words(
                             translatedText,
-                            "LL_GalgeChoiceWindowMV setMessageText",
-                            SPACES_356,
-                            NBSP_356,
+                            word_spacing.chosen("LL_GalgeChoiceWindowMV setMessageText", SPACES_356, NBSP_356),
                         )
 
                         # Replace and Set
@@ -6007,11 +5999,9 @@ def _searchCodes(page, pbar, jobList, filename):
 
                         # Replace Strings
                         for j in range(len(choiceListTL)):
-                            choiceListTL[j] = _join_words(
+                            choiceListTL[j] = word_spacing.join_words(
                                 choiceListTL[j],
-                                "LL_GalgeChoiceWindowMV setChoices",
-                                SPACES_356,
-                                NBSP_356,
+                                word_spacing.chosen("LL_GalgeChoiceWindowMV setChoices", SPACES_356, NBSP_356),
                             )
                             translatedText = translatedText.replace(choiceList[j], choiceListTL[j])
 

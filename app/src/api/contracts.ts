@@ -1889,6 +1889,20 @@ export type BackupCatalog = {
   warnings: string[];
 };
 
+/** Whether the game's main font draws U+00A0, and its file; when that is
+unknown, why the font was not read. See engine/util/word_spacing.py. */
+export type NbspCoverage = {
+  drawn: boolean | null;
+  font?: string;
+  fallbackFonts?: string;
+  unread?: string;
+};
+
+export type WordSpacing = {
+  rule: string;
+  nbsp: NbspCoverage;
+};
+
 /** Compiled request context; Len's method requests may carry further keys. */
 export type RequestContext = {
   line_kinds?: Record<string, "dialogue" | "narration" | "ui" | "unknown">;
@@ -3503,6 +3517,7 @@ export type RpcContract = {
   translation_requests: { request: RunRequest; response: RunRequestState[] };
   translation_results: { request: RunRequest; response: TranslationResults };
   translation_backups: { request: ProjectRequest; response: BackupCatalog };
+  translation_word_spacing: { request: ProjectRequest; response: WordSpacing };
   translation_update_task: { request: ProjectRequest; response: UpdateTask };
   translation_release: {
     request: TranslationReleaseRequest;

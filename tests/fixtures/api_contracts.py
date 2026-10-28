@@ -148,6 +148,7 @@ try:
         "translation_state",
         "translation_documents",
         "translation_backups",
+        "translation_word_spacing",
         "project_checkpoints",
         "images_state",
         "images_list",

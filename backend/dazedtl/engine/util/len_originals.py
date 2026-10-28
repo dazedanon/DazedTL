@@ -221,8 +221,12 @@ def write_rpgmaker_json(source: Path, translated: Path, output: Path, layout=Non
     """Validate staged text and atomically write one file with preserved sources.
 
     With *layout*, the game's Line widths (util.rpgmaker_rewrap.Layout), the
-    text is fitted to them as it is written (see fit_written)."""
+    text is fitted to them as it is written (see fit_written). Plugin
+    commands and note tags whose translation splits on spaces into more
+    arguments than their source are listed beside the misfits
+    (util.word_spacing.split_changes)."""
     from util.len_translation import _write_atomic
+    from util.word_spacing import LISTED, split_changes
 
     if output.suffix.lower() != ".json":
         raise ValueError("This writer supports MV/MZ data JSON only; native/binary formats need source sidecars.")
@@ -242,12 +246,20 @@ def write_rpgmaker_json(source: Path, translated: Path, output: Path, layout=Non
         _inherit(previous, source_doc)
     result = preserve_originals(source_doc, staged_doc, filename=output.name)
     fit = fit_written(result, output.name, layout) if layout is not None else {}
+    split = [
+        {"file": output.name, **row} for row in split_changes(source_doc, result)
+    ]
     rendered = _rendered_like(result, staged_bytes)
     if (output.read_bytes() if output.exists() else None) != previous_bytes:
         raise ValueError("Output changed while preparing the write; rerun against the current game file.")
     output.parent.mkdir(parents=True, exist_ok=True)
     _write_atomic(output, rendered)
-    return {"path": output, **fit}
+    return {
+        "path": output,
+        **fit,
+        "split_commands": split[:LISTED],
+        "split_count": len(split),
+    }
 
 
 def _rendered_like(document, like: bytes) -> str:

@@ -530,6 +530,21 @@ class BackupCatalog(TypedDict):
     warnings: list[str]
 
 
+class NbspCoverage(TypedDict):
+    """Whether the game's main font draws U+00A0, and its file; when that is
+    unknown, why the font was not read. See engine/util/word_spacing.py."""
+
+    drawn: bool | None
+    font: NotRequired[str]
+    fallbackFonts: NotRequired[str]
+    unread: NotRequired[str]
+
+
+class WordSpacing(TypedDict):
+    rule: str
+    nbsp: NbspCoverage
+
+
 class RequestContext(typing_extensions.TypedDict, extra_items=object):
     """Compiled request context; Len's method requests may carry further keys."""
 

@@ -34,6 +34,8 @@ from util.rpgmaker_fonts import fallback_glyphs
 from util.rpgmaker_screens import label_fits
 from util.source_text import holds_source
 
+from tests.fonts import segments
+
 game = temporary / "game"
 data = game / "data"
 plugins = game / "js" / "plugins"
@@ -709,17 +711,6 @@ assert not layout_fit(
 
 # The characters the game's text draws that its font lacks: a font whose map
 # holds ASCII (format 4) and ♥ (format 12), shipped as WOFF.
-def segments(*ranges):
-    ends = [end for _start, end in ranges] + [0xFFFF]
-    starts = [start for start, _end in ranges] + [0xFFFF]
-    deltas = [(1 - start) & 0xFFFF for start, _end in ranges] + [1]
-    count = len(ends)
-    body = struct.pack(
-        f">{count}HH{count}H{count}H{count}H", *ends, 0, *starts, *deltas, *[0] * count
-    )
-    return struct.pack(">HHHHHHH", 4, 14 + len(body), 0, 2 * count, 0, 0, 0) + body
-
-
 def groups(*ranges):
     rows = b"".join(struct.pack(">III", start, end, 200) for start, end in ranges)
     return struct.pack(">HHIII", 12, 0, 16 + len(rows), 0, len(ranges)) + rows

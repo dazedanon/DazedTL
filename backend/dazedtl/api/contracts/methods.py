@@ -92,6 +92,7 @@ from dazedtl.api.contracts.translation import (
     TranslationResults,
     TranslationState,
     UpdateTask,
+    WordSpacing,
 )
 from dazedtl.api.contracts.workspace import (
     AppState,
@@ -803,6 +804,8 @@ METHODS: dict[str, Method] = {
     "translation_requests": Method(RunRequest, list[RunRequestState], refresh=False),
     "translation_results": Method(RunRequest, TranslationResults, refresh=False),
     "translation_backups": Method(ProjectRequest, BackupCatalog, refresh=False),
+    # How an assistant's injector joins words in plugin commands and note tags.
+    "translation_word_spacing": Method(ProjectRequest, WordSpacing, refresh=False),
     # The assistant's task for the text an applied update brought in.
     "translation_update_task": Method(ProjectRequest, UpdateTask, refresh=False),
     # How a new official release's folder lines up with the game, before staging.

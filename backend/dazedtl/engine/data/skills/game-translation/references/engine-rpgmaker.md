@@ -373,7 +373,7 @@ original game has.
 | **108 / 408** | `parameters[0]` | Comment and comment continuation. Marker whitelist only - see below. |
 | **320 / 324 / 325** | `parameters[1]` | Change Actor Name / Nickname / Profile. Player-visible when used. Check they are not being used to stash an internal id. 320 is persisted into save data, so strip `.` `"` `'` and literal `\n` from the translation or a quote breaks script evaluation on load. |
 | **355 / 655** | `parameters[0]` | Script. 355 opens the block, 655 continues it, so a block spans both. See the pattern table below. |
-| **356** | `parameters[0]` | MV plugin command, a single **space-delimited string** like `D_TEXT テキスト 24`. Parse by leading keyword. Known text-bearing keywords: `D_TEXT`, `ShowInfo`, `PushGab`, `addLog`, `DW_*`, `CommonPopup`, `AddCustomChoice`. Arguments are whitespace-delimited - see the space-to-underscore rule. |
+| **356** | `parameters[0]` | MV plugin command, a single **space-delimited string** like `D_TEXT テキスト 24`. Parse by leading keyword. Known text-bearing keywords: `D_TEXT`, `ShowInfo`, `PushGab`, `addLog`, `DW_*`, `CommonPopup`, `AddCustomChoice`. Arguments are space-delimited - see the word spacing rule. |
 | **357** | `parameters[3]` | MZ plugin command. Per-plugin argument whitelist - see below. |
 | **657** | `parameters[0]` | **Context dependent, rule per game.** |
 | **122** | literals inside `parameters[4]` | Control Variables. Operand type `parameters[3] == 4` is evaluated JavaScript, which may contain display strings or only arithmetic. See below. |
@@ -476,19 +476,12 @@ Comments are invisible to the player by default, but plugins parse comment block
 
 **Do not infer runtime visibility from the presence of Japanese text.** Audit by inventorying every 408 value grouped with its preceding 108, then grepping the *enabled* plugin sources for the discovered tags and parsing APIs. Enumerate every suspected player-facing marker that is NOT whitelisted with its plugin consumer and block counts, and print `No unsupported player-facing code-408 markers found` rather than omitting the section.
 
-**Space-to-underscore.** Plugin arguments and note tags are whitespace-delimited. Strip every `"` and replace every space with `_` before splicing a capture back in: `階層移動` -> `<namePop:Floor_Movement>`. An English translation with spaces turns one argument into several, and the plugin either errors or renders only the first word, on one screen only, so casual QA never sees it. Same rule on `356` arguments, where you additionally collapse `__` to `_` for every command except `D_TEXT ` (whose parser wants the doubles) and exempt `addLog` from the `.`/`"` strip because dots are safe in log text. `LL_InfoPopupWIndowMV showWindow` runs the round trip inverted - underscores to spaces before translation, back after.
-
-**Better than an underscore, when the font allows it: U+00A0.** The delimiter is
-an *ASCII* space - `Game_Interpreter.command356` is literally
-`this._params[0].split(" ")` - so a NO-BREAK SPACE passes straight through the
-split and renders as an ordinary word gap, where an underscore renders as an
-underscore. Check the game's own font first (`fontTools`: is U+00A0 in the cmap,
-and at what advance?) - M+ 1m ships it at half width, so `Lewdness +\V[2]`
-draws exactly as intended. Verify by splitting the finished command and counting
-the args: the plugin's declared arity is the assertion.
-
-Read the delimiter out of the shipped `rpg_objects.js` rather than assuming it,
-and re-read it after any engine update.
+**Word spacing.** A space in a translated plugin command (`356`) or note tag (`108`) can split one argument into several, and the plugin then errors or renders only the first word, on one screen only, so casual QA never sees it.
+Run the project helper's `word-spacing` before writing an injector for them: it prints the rule both methods follow for joining a translation's words (underscore by default, U+00A0 or a plain space where the plugin allows it) and whether this game's main font draws U+00A0.
+`operation write_rpgmaker` lists under `split_commands` each command whose translation splits on spaces into more arguments than its source; join its words by that rule unless its plugin reads the rest of the text, and write the file again.
+Strip every `"` before splicing a capture back in: `階層移動` -> `<namePop:Floor_Movement>`.
+On `356` arguments, also collapse `__` to `_` for every command except `D_TEXT ` (whose parser wants the doubles), and exempt `addLog` from the `.`/`"` strip because dots are safe in log text.
+`LL_InfoPopupWIndowMV showWindow` runs the round trip inverted - underscores to spaces before translation, back after.
 
 On write-back a merged 408 group replaces `parameters` wholesale, while an unmerged 408 does a targeted `param0.replace(source, translation)` with a newline-flattened fallback before finally overwriting.
 **If a returned batch is shorter than the submitted list, or was flagged mismatched, discard the entire batch and apply nothing.** A partial apply shifts every later translation onto the wrong command, invisible until playtest.
@@ -1342,6 +1335,7 @@ Adapt them to write into a staging directory, then finalize each changed file wi
 With `backup_id`, a commit of `refs/dazedtl/originals` or a backup, `source` names the saved original file instead.
 `translated` must be a separate staged file.
 The operation also fits the text to the game's saved Line widths, laying each message out over its own commands, and lists under misfits what a window of fixed height cuts off; shorten those and write the file again.
+It also lists under `split_commands` the plugin commands and note tags whose translation a space split into more arguments; join their words as Word spacing (Codes 108 / 408) describes.
 Outside DazedTL, the engine script's `write-rpgmaker-json --source --translated --output` writes the same way without fitting; in a game DazedTL manages it refuses.
 Existing destination originals survive clean-baseline reinjection.
 Do not manufacture source from live English, or run an unadapted injector against the game before taking the snapshot.
