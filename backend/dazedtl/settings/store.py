@@ -675,25 +675,98 @@ class Settings:
         result = providers.check_effort(connection, model, level, effort.trial(level))
         if result["status"] == "failed":
             raise ValueError(result["message"])
-        current = self._read()
-        latest = self._connection(current, connection_id)
-        if not latest or any(
-            latest.get(key) != connection.get(key)
-            for key in ("provider", "protocol", "endpoint", "keyless", "organization")
-        ):
-            raise ValueError(
-                "The connection changed while checking it. Check the effort again."
+        # Sent outside the app lock, so it saves under it: a run's worker
+        # thread may mark a check refused meanwhile (refused_in_run).
+        with self.adapter.lock:
+            current = self._read()
+            latest = self._connection(current, connection_id)
+            if not latest or any(
+                latest.get(key) != connection.get(key)
+                for key in (
+                    "provider",
+                    "protocol",
+                    "endpoint",
+                    "keyless",
+                    "organization",
+                )
+            ):
+                raise ValueError(
+                    "The connection changed while checking it. Check the effort again."
+                )
+            self._keep_check(
+                current,
+                latest,
+                model,
+                level,
+                result["status"] == "accepted",
+                result["message"],
             )
-        latest["effort_checks"] = effort.keep_check(
-            latest.get("effort_checks", {}),
+        return self._effort(latest, model)
+
+    def _keep_check(self, state, connection, model, level, passed, message):
+        """Saves one check's outcome for *connection* in *state*."""
+        connection["effort_checks"] = effort.keep_check(
+            connection.get("effort_checks", {}),
             model,
             level,
-            result["status"] == "accepted",
-            result["message"],
+            passed,
+            message,
             datetime.now(UTC).isoformat(),
         )
-        self._write(current, bump=False)
-        return self._effort(latest, model)
+        self._write(state, bump=False)
+
+    def refused_in_run(self, run):
+        """Saves a failed run's refusal of its thinking effort as a refused
+        check, so Settings stops offering a level a check passed once the
+        server refuses it in a run. *run* is what the run froze: its
+        connection (``connection_id``, or Guided's ``key_name``),
+        ``protocol``, ``endpoint``, ``organization``, ``model`` and
+        ``thinkingEffort``, with the ``message`` it ended with. Only a run
+        that ended with the effort's own refusal (settings/effort rejection)
+        counts, and only on the connection, address and organization it ran
+        on while a check there still holds that level passed; the frozen
+        run itself never changes."""
+        model, level = run.get("model"), run.get("thinkingEffort")
+        if (
+            level not in effort.LEVELS
+            or not isinstance(model, str)
+            or run.get("message") != effort.rejection(model, level)
+        ):
+            return
+        try:
+            state = self._read()
+        except OSError, ValueError:
+            return  # The run's own outcome stands; Settings reports its file.
+        connection = next(
+            (
+                item
+                for item in state["connections"]
+                if item["id"] == run.get("connection_id")
+                or item["runtime_name"] == run.get("key_name")
+            ),
+            None,
+        )
+        if (
+            not connection
+            or connection["organization"] != run.get("organization", "")
+            or providers.route(connection["protocol"], providers.address(connection))
+            != providers.route(run.get("protocol"), run.get("endpoint") or "")
+        ):
+            return
+        saved = connection.get("effort_checks", {}).get(effort.model_id(model), {})
+        if not saved.get(level, {}).get("passed"):
+            return
+        try:
+            self._keep_check(
+                state,
+                connection,
+                model,
+                level,
+                False,
+                "Refused during a translation run. Check it again once the server takes it.",
+            )
+        except OSError, ValueError:
+            pass  # The run's own outcome stands; the check stays as it was.
 
     def batch_lookup(self, *, connection_id=None, model=None):
         """Select a targeted endpoint read; observations never call this."""

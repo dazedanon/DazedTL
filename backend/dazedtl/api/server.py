@@ -87,6 +87,10 @@ class Application:
             self.settings,
             TranslationEngine(self.workspace / "engine"),
         )
+        # A run its server refused a checked thinking effort in marks that
+        # check refused, so Settings stops offering the level.
+        self.backend.manual.run_failed = self.settings.refused_in_run
+        self.translation.jobs.run_failed = self.settings.refused_in_run
         self.guided = Guided(
             self.backend, self.projects, self.settings, self.translation
         )

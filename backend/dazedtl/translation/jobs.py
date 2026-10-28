@@ -12,8 +12,10 @@ import sys
 import tempfile
 import time
 import uuid
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 from dazedtl import system
 from dazedtl.diagnostics import FOLDER
@@ -548,6 +550,9 @@ class Jobs:
         self.store = RunStore(workspace)
         self.allow_providers = allow_providers
         self.processes = {}
+        # Called with what a failed translation run froze and the message it
+        # ended with once its worker exits (settings/store refused_in_run).
+        self.run_failed: Callable[[dict[str, Any]], None] | None = None
         self.owner_token = uuid.uuid4().hex
         self.owner_path = Path(workspace) / "translation/owner.json"
         write_json(self.owner_path, {"pid": os.getpid(), "token": self.owner_token})
@@ -608,6 +613,13 @@ class Jobs:
                     else "The worker exited before completion. Run it again to continue.",
                 )
                 self.store.save(job)
+            elif (
+                self.run_failed
+                and job["status"] == "failed"
+                and job["kind"] == "translation"
+                and isinstance(job.get("configuration"), dict)
+            ):
+                self.run_failed({**job["configuration"], "message": job["message"]})
 
     def start(self, identity, project_id):
         self.reconcile()

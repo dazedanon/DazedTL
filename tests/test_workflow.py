@@ -1492,6 +1492,16 @@ class WorkflowTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "price changed"):
                 self.service.start(self.identity, claude["id"], token)
         self.assertFalse(store.authorized(store.load(claude["id"])[0]))
+        # A fix to another route's rules leaves it standing: versions 3 and 4
+        # changed OpenAI's Batch prices, Claude's last changed at 2.
+        for rules in (2, 3):
+            older(claude["id"], cost=9.0, price_rules=rules)
+            kept = view(claude["id"])
+            self.assertFalse(kept["settings_changed"] or kept["pricing_changed"])
+            self.assertEqual(kept["quote"]["cost"], 9.0)
+            self.assertEqual(kept["approval_token"], claude["approval_token"])
+        with self.assertRaisesRegex(ValueError, "Provider execution is disabled"):
+            self.service.start(self.identity, claude["id"], claude["approval_token"])
 
     def test_a_waiting_gpt_4_1_batch_quote_drops_cache_reads_its_batch_never_gets(
         self,
@@ -1512,21 +1522,23 @@ class WorkflowTests(unittest.TestCase):
         store = self.service.jobs.store
         self.assertNotIn("batch_cost_reused", run["quote"])
         self.assertEqual(run["quote"]["cost"], run["quote"]["batch_cost"])
-        # As the release before the fix priced it, under version 2's rules.
-        job, _plan = store.load(run["id"])
-        job["quote"] = {
-            **job["quote"],
-            "price_rules": 2,
-            "batch_cost_reused": job["quote"]["cost"] / 4,
-        }
-        store.save(job)
-        shown = next(
-            job
-            for job in self.service.state(self.identity)["jobs"]
-            if job["id"] == run["id"]
-        )
-        self.assertFalse(shown["settings_changed"] or shown["pricing_changed"])
-        self.assertEqual(shown["quote"], run["quote"])
+        # As a release before the fix priced it, under version 2's rules, or
+        # under version 3's, which version 4 changed on OpenAI's route again.
+        for rules in (2, 3):
+            job, _plan = store.load(run["id"])
+            job["quote"] = {
+                **run["quote"],
+                "price_rules": rules,
+                "batch_cost_reused": run["quote"]["cost"] / 4,
+            }
+            store.save(job)
+            shown = next(
+                job
+                for job in self.service.state(self.identity)["jobs"]
+                if job["id"] == run["id"]
+            )
+            self.assertFalse(shown["settings_changed"] or shown["pricing_changed"])
+            self.assertEqual(shown["quote"], run["quote"])
 
     def test_deepseek_spend_is_priced_by_when_each_request_arrived(self):
         # DeepSeek bills half outside its weekday peak hours, but Progress
