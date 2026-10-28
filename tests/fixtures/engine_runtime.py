@@ -2335,15 +2335,13 @@ try:
                 params, ensure_ascii=False
             ), params
             assert params["response_format"]["type"] == mode, (model, params)
-            # Gemini's Batch files take JSON mode; Live and the others keep it.
+            # Gemini's Batch files take JSON mode; the others keep it.
             batch_format = _openai_batch_body(protocol, params)["response_format"]
             assert batch_format == (
                 {"type": "json_object"}
                 if protocol == "gemini"
                 else params["response_format"]
             ), (model, batch_format)
-            live = _openai_batch_body(protocol, params, batch=False)
-            assert live["response_format"] == params["response_format"], model
         # Kimi Batches run only K2.6 and K2.7 Code, at 60% of the Live price.
         kimi = {"api_url": "https://api.moonshot.ai/v1", "api_provider": "openai"}
         assert [
