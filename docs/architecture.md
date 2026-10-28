@@ -344,6 +344,7 @@ Text QA and the release playtest are optional and never prerequisites for naviga
 One [QA policy](../backend/dazedtl/engine/data/skills/rpgmaker_translation_qa.md) makes the task README, every reviewer brief and the copied handoff, so they cannot disagree about applying; the [design](text-qa-redesign.md) holds the goals, decisions and evidence.
 The [QA engine](../backend/dazedtl/engine/util/qa/__init__.py) owns stages, bundles, workers, declines, observations, findings and the review ledger; content is never classified or excluded in advance, and declined lines are set aside only once a second helper declines them or none other will.
 Its [preflight](../backend/dazedtl/engine/util/rpgmaker_qa_preflight.py) reports Japanese that was never translated, with its [reach](../backend/dazedtl/engine/util/rpgmaker_qa_reach.py), so the gap is shown rather than silent, but QA neither reviews it nor blocks on it, and it leaves out what Plugin files keeps in Japanese on purpose.
+Guided's user translates that text through Event text or Plugin files; in Assistant-led, the helper's `qa` status sends what players may see, the census counts and the assistant did not decline back to the assistant's extraction and injection before apply ([text_qa](../backend/dazedtl/translation/text_qa.py) `untranslated`), and the rest stays reported only, so that step always ends.
 Corrections pass the engine's correction and regression checks on disposable copies before publication, and each is fitted by the one fitter, so findings store what the game gets.
 A correction that reads as a refusal fails those checks by translation's own [refusal rule](../backend/dazedtl/translation/refusals.py).
 Each [lint](../backend/dazedtl/engine/util/rpgmaker_qa_lint.py) family names the targets it checks, English alone, Latin script or any, and Text QA reads the target the game records, English otherwise.
@@ -501,6 +502,7 @@ Python touches files and starts processes through the [platform layer](../backen
 `held_open` makes a file look held by another process, as Windows refuses to replace, rename, delete or open one then, and a test drives each kind of writer and reader through it.
 [paths](../scripts/paths.mjs) rejects tracked names that differ only in case, which Windows finds as one file, and paths over the Windows length budget.
 Code on a poll path starts no process: Defender makes each start slow, and one user's jobs froze for 17 seconds while every snapshot ran 22 Git commands.
+Every save is a checkpoint, so checkpoints ask Git only what they can't know ([checkpoint_commits](../backend/dazedtl/compatibility/checkpoint_commits.py)), and [test_git_launches](../tests/test_git_launches.py) holds each checkpoint operation to its count of Git processes.
 A worker's parent on Windows is the virtual environment's launcher stub, so ownership checks use [launched_by](../backend/dazedtl/translation/ownership.py), never `os.getppid`.
 [Shortcuts](../scripts/shortcuts.mjs) are written through IShellLinkW, since WScript.Shell passes their text through the ANSI code page.
 

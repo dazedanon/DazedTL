@@ -11,12 +11,15 @@ No step writes game files itself, and pushing or publishing stays the user's.
 
 from __future__ import annotations
 
-from pathlib import Path
+from collections.abc import Callable
+from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Any
 
+from dazedtl import system
 from dazedtl.storage import write_json
 
 from .files import read_json
+from .project import WORK
 
 if TYPE_CHECKING:
     from .guided import Guided
@@ -45,6 +48,102 @@ LABELS_STEP = (
     "captures the screens again. Keep a label only when no shorter English keeps "
     "its meaning or no plugin file holds it, and note why in status.md."
 )
+# Where an Assistant-led assistant finds the never-translated text it
+# translates (untranslated), and what it does about it. Guided's user
+# translates what Text QA's report lists through Event text or Plugin files.
+UNTRANSLATED_FILE = WORK + "/work/qa-untranslated.json"
+UNTRANSLATED_STEP = (
+    "untranslated counts text players can reach that the census counts and "
+    "the game still holds untranslated, so QA could not review it; "
+    f"{UNTRANSLATED_FILE} lists each by file and JSON pointer, which in "
+    "js/plugins.js starts with the plugin's name and reads its settings as "
+    "the JSON they hold. Before qa "
+    "--apply or reporting the qa phase, translate it through your extraction "
+    "and injection steps: extract it as units, organize, translate, and write "
+    "it into the game with each file in the runtime manifest. If you played "
+    "the game, run playtest --run --wait 20 again, so QA takes the new "
+    "report's findings; then run qa --prepare, which reads the game again. "
+    "Text the census sets aside and lines you declined are not counted."
+)
+
+
+def untranslated(
+    sources: list[dict[str, Any]],
+    counted: dict[tuple[str, str], set[str]],
+    declined: Callable[[], list[str]],
+    data: str,
+    language: str,
+) -> list[dict[str, str]]:
+    """The never-translated texts of a QA task's preflight *sources*
+    (rpgmaker_qa_preflight.read_sources) an Assistant-led assistant
+    translates: those players may see that hold a run the census counts in
+    their file and are no part of a line the assistant declined, by their
+    path in the game, whose data folder is *data*.
+
+    *counted* is the census's runs no rule sets aside (census.in_scope), and
+    *declined* gives the source text of the lines the assistant declined,
+    read only once a text counts. A census file
+    is the source's own: the plugin list for a plugin's settings, and the
+    data file of the same name for the rest, whatever its format, as a VX
+    Ace game's census reads Data's rvdata2 files that QA reads as JSON.
+    Everything else stays reported only, so translating these always ends
+    the step."""
+    from util.rpgmaker_qa_preflight import TEXT_LIMIT, may_show
+
+    from .census import runs
+
+    plugins: set[str] = set()
+    files: dict[str, set[str]] = {}
+    for (kind, file), found in counted.items():
+        path = PurePosixPath(file)
+        if kind.endswith(":plugins"):
+            plugins |= found
+        elif path.parent.name.casefold() == "data":
+            files.setdefault(path.stem.casefold(), set()).update(found)
+    folder = PurePosixPath(data)
+    result = []
+    lines = None
+    for source in sources:
+        if not may_show(source):
+            continue
+        plugin = source["kind"] == "plugin"
+        scope = (
+            plugins
+            if plugin
+            else files.get(PurePosixPath(source["file"]).stem.casefold(), set())
+        )
+        if not scope:
+            continue
+        for text in source["texts"]:
+            value = text["text"]
+            found = runs(value, language)
+            # Preflight cuts a long text short, and its last run with it.
+            cut = len(value) > TEXT_LIMIT and value.endswith("…")
+            if not any(
+                run in scope
+                or cut
+                and index == len(found) - 1
+                and any(whole.startswith(run) for whole in scope)
+                for index, run in enumerate(found)
+            ):
+                continue
+            if lines is None:
+                lines = declined()
+            part = value.removesuffix("…") if cut else value
+            if not any(part in line for line in lines):
+                result.append(
+                    {
+                        "file": (
+                            folder.parent / "js/plugins.js"
+                            if plugin
+                            else folder / source["file"]
+                        ).as_posix(),
+                        "pointer": text["pointer"],
+                        "kind": text["kind"],
+                        "text": value,
+                    }
+                )
+    return result
 
 
 def _unreadable_step(qa) -> str:
@@ -65,6 +164,75 @@ class TextQA:
         self.pointed: dict[str, tuple[Any, Path]] = {}
         # Each task's latest capture labels, by the capture they come from.
         self.outside: dict[Path, tuple[Any, tuple[int, list[dict[str, Any]]]]] = {}
+        # The last Assistant-led project's never-translated sources and
+        # census scope, by the files they are read from.
+        self.reported: tuple[Any, Any] | None = None
+
+    def untranslated_texts(self, project_id, native, task) -> list[dict[str, str]]:
+        """The never-translated text of an Assistant-led project's current QA
+        *task* that its assistant translates (untranslated), saved where
+        UNTRANSLATED_STEP names it, and none without a current task. The
+        task's report and the census are read again only when they or the
+        scope rules change."""
+        from util.rpgmaker_qa_preflight import read_sources
+
+        from .census import counted_language, in_scope
+        from .operations import census_path
+        from .run_compiler import SCOPE_RULES, scope_rules
+
+        translation = self.guided.translation
+        root = translation.project(project_id)[1].root
+        listed = root / UNTRANSLATED_FILE
+        if not task:
+            # Its pointers may name other lines once the game changed.
+            system.unlink(listed, missing_ok=True)
+            return []
+        inputs = (
+            Path(task) / "preflight.json",
+            census_path(translation.workspace, project_id),
+            root / SCOPE_RULES,
+        )
+        key = (project_id,) + tuple(
+            (stat.st_mtime_ns, stat.st_size)
+            if path.is_file() and (stat := path.stat())
+            else None
+            for path in inputs
+        )
+        saved = self.reported
+        if not saved or saved[0] != key:
+            read = None
+            # Without a census, nothing says what the assistant translates.
+            if key[1] and key[2]:
+                census = read_json(inputs[1])
+                try:
+                    rules = scope_rules(root, census)
+                except ValueError:
+                    # Organize refuses these rules, so none set text aside.
+                    rules = []
+                read = (
+                    read_sources(read_json(inputs[0])),
+                    in_scope(census, rules),
+                    counted_language(census),
+                )
+            saved = self.reported = (key, read)
+        found = []
+        data = Path(native["data"]).resolve()
+        if saved[1] and data.is_relative_to(root):
+            sources, counted, language = saved[1]
+            found = untranslated(
+                sources,
+                counted,
+                lambda: translation.jobs.store.declined_sources(project_id),
+                data.relative_to(root).as_posix(),
+                language,
+            )
+        value = {"task": Path(task).name, "texts": found}
+        if not found:
+            system.unlink(listed, missing_ok=True)
+        elif not listed.is_file() or read_json(listed) != value:
+            listed.parent.mkdir(parents=True, exist_ok=True)
+            write_json(listed, value)
+        return found
 
     def plugin_labels(self, project_id):
         """Labels the latest QA task of a Guided game, whatever its focus,
@@ -410,18 +578,23 @@ class TextQA:
             following = (
                 "Review with the task README's commands until status reports complete."
             )
+        assistant = (
+            self.guided.translation.project(project_id)[0].get("method") == "len"
+        )
+        task = qa.get("task") if qa["current"] else ""
         # Guided's Plugin files shortens these; an Assistant-led assistant
         # writes the game's plugin files itself.
         labels = (
-            self.labels(Path(qa["task"]))[1]
-            if qa.get("task")
-            and qa["current"]
-            and not qa["applied"]
-            and self.guided.translation.project(project_id)[0].get("method") == "len"
+            self.labels(Path(task))[1]
+            if assistant and task and not qa["applied"]
             else []
         )
         if labels:
             following = LABELS_STEP + " " + following
+        # Guided's user translates these through Event text or Plugin files.
+        missed = self.untranslated_texts(project_id, native, task) if assistant else []
+        if missed:
+            following = UNTRANSLATED_STEP + " " + following
         state = {
             "focus": self.focus(project_id),
             "task": qa.get("task", ""),
@@ -434,6 +607,7 @@ class TextQA:
             "next": following,
             "progress": qa["status"],
             **({"labels": labels} if labels else {}),
+            **({"untranslated": len(missed)} if missed else {}),
             **({"operation": operation} if operation else {}),
         }
         if report and qa.get("task"):

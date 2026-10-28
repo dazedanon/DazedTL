@@ -255,9 +255,8 @@ class Checkout:
     # DazedTL's repository-local settings (`_settings`), None when Git could
     # not read them.
     settings: Mapping[str, str | None] | None
-    # The config file as the settings were read, which tells whether they
-    # still hold.
-    config_stat: tuple[int, int, int] | None = None
+    # The tree of `translation_commit`, read with it.
+    translation_tree: str | None = None
 
     @property
     def configured(self) -> bool:
@@ -271,20 +270,6 @@ class Checkout:
     def preserve_game_files(self) -> bool:
         return _preserve_policy(self.repo, self.settings)
 
-    def settings_hold(self) -> bool:
-        """Whether the config file is as it was when the settings were read."""
-        return self.config_stat is not None and self.config_stat == _stat(
-            self.git_paths["config"]
-        )
-
-
-def _stat(path: Path) -> tuple[int, int, int] | None:
-    try:
-        value = path.stat()
-    except OSError:
-        return None
-    return value.st_mtime_ns, value.st_size, value.st_ino
-
 
 # The repository read the Git calls of an operation reuse (`carrying`).
 _carried: ContextVar[Checkout | None] = ContextVar("carried_checkout", default=None)
@@ -293,8 +278,9 @@ _carried: ContextVar[Checkout | None] = ContextVar("carried_checkout", default=N
 @contextmanager
 def carrying(checkout: Checkout | None) -> Iterator[None]:
     """Runs an operation whose Git calls reuse `checkout`, a read of its
-    repository: its settings, such as whether it keeps game files as they
-    are, while its config file is unchanged, and its index's path."""
+    repository: whether it keeps game files as they are, while the settings
+    are as that read found them, its index's path and its translation
+    branch's tree."""
     token = _carried.set(checkout)
     try:
         yield
@@ -560,10 +546,24 @@ def _configure_exact_tree_repo(repo: Path) -> None:
     _run_git(repo, "config", "core.eol", "lf")
 
 
-def _settings(repo: Path) -> dict[str, str | None] | None:
+# The settings last read from each repository's config file, with the bytes
+# that file held then: Git reads the same bytes the same way, as `--local`
+# follows no includes, so a read of an unchanged file needs no Git.
+_settings_read: dict[Path, tuple[bytes, dict[str, str | None]]] = {}
+
+
+def _settings(repo: Path, config: Path | None = None) -> dict[str, str | None] | None:
     """DazedTL's repository-local settings by their lowercase names, from one
-    Git call: each one's last value, None for one set without a value; None
-    when Git can't read them."""
+    Git call while `config`, the repository's config file, has changed since
+    it was last read: each one's last value, None for one set without a
+    value; None when Git can't read them. Without `config`, it is the game
+    folder's own .git folder's, or else Git is asked each time."""
+    if config is None and (repo / ".git").is_dir():
+        config = repo / ".git" / "config"
+    raw = _config_bytes(config)
+    known = _settings_read.get(config) if config is not None else None
+    if raw is not None and known is not None and known[0] == raw:
+        return dict(known[1])
     result = _run_git(
         repo, "config", "--local", "-z", "--get-regexp", r"^dazedtl\.", check=False
     )
@@ -574,7 +574,19 @@ def _settings(repo: Path) -> dict[str, str | None] | None:
         if entry:
             name, separator, value = entry.partition("\n")
             settings[name] = value if separator else None
+    # Only while the file held the same bytes before and after Git read it.
+    if config is not None and raw is not None and _config_bytes(config) == raw:
+        if len(_settings_read) >= 64:
+            _settings_read.clear()
+        _settings_read[config] = (raw, dict(settings))
     return settings
+
+
+def _config_bytes(config: Path | None) -> bytes | None:
+    try:
+        return config.read_bytes() if config is not None else None
+    except OSError:
+        return None
 
 
 def _config_bool(value: str | None) -> bool | None:
@@ -593,13 +605,13 @@ def _config_bool(value: str | None) -> bool | None:
 def _preserve_game_files(repo: Path) -> bool:
     """Len projects keep native encodings/layout and their reviewed ignore policy."""
     carried = _carried.get()
-    if (
-        carried is not None
-        and repo in (carried.repo, carried.selected_root)
-        and carried.settings_hold()
-    ):
+    if carried is None or repo not in (carried.repo, carried.selected_root):
+        return _preserve_policy(repo, _settings(repo))
+    # The carried read found the config file, wherever the repository keeps it.
+    settings = _settings(carried.repo, carried.git_paths.get("config"))
+    if carried.settings == settings:
         return carried.preserve_game_files
-    return _preserve_policy(repo, _settings(repo))
+    return _preserve_policy(repo, settings)
 
 
 def _preserve_policy(repo: Path, settings: Mapping[str, str | None] | None) -> bool:
@@ -621,22 +633,58 @@ def _preserve_policy(repo: Path, settings: Mapping[str, str | None] | None) -> b
     return adopted.returncode == 0 and _PRESERVE_GAME_FILES_TRAILER in adopted.stdout.splitlines()
 
 
-def _ref_commits(repo: Path, *refs: str) -> dict[str, str]:
-    """The commit of each branch in `refs` that has one, from one Git call."""
+def read_objects(repo: Path, names: Iterable[str]) -> dict[str, tuple[str, str, bytes]]:
+    """Each Git object one of `names` names, such as a branch or a file at a
+    commit, by that name: its ID, type and content, from one Git call; a
+    name that names none is left out. For small objects, since all of them
+    are read into memory at once."""
+    names = list(names)
     result = _run_git(
         repo,
         "cat-file",
-        "--batch-check=%(objectname)",
-        input_text="".join(f"refs/heads/{ref}^{{commit}}\n" for ref in refs),
+        "--batch",
+        input_text="".join(name + "\n" for name in names),
         check=False,
+        errors="surrogateescape",
     )
     if result.returncode != 0:
         return {}
-    lines = result.stdout.splitlines()
-    if len(lines) != len(refs):
-        raise GitWorkflowError("Git did not resolve every branch")
-    # A name that resolves to no commit comes back as "<name> missing".
-    return {ref: line for ref, line in zip(refs, lines) if " " not in line}
+    output = result.stdout.encode("utf-8", "surrogateescape")
+    found, offset = {}, 0
+    try:
+        for name in names:
+            end = output.index(b"\n", offset)
+            # A name that names no object comes back as "<name> missing".
+            header = output[offset:end].split()
+            offset = end + 1
+            if len(header) != 3:
+                continue
+            size = int(header[2])
+            content = output[offset : offset + size]
+            offset += size + 1
+            found[name] = (header[0].decode(), header[1].decode(), content)
+    except ValueError as exc:
+        raise GitWorkflowError("Git did not read every object") from exc
+    return found
+
+
+def _branch_tips(repo: Path, *refs: str) -> dict[str, tuple[str, str]]:
+    """The commit and tree of each branch in `refs` that has a commit, from
+    one Git call; the tree is read from the commit itself, so the two always
+    belong together."""
+    found = read_objects(repo, (f"refs/heads/{ref}^{{commit}}" for ref in refs))
+    tips = {}
+    for ref in refs:
+        identity, kind, content = found.get(f"refs/heads/{ref}^{{commit}}", ("", "", b""))
+        first = content.split(b"\n", 1)[0]
+        if kind == "commit" and first.startswith(b"tree "):
+            tips[ref] = (identity, first.removeprefix(b"tree ").decode())
+    return tips
+
+
+def _ref_commits(repo: Path, *refs: str) -> dict[str, str]:
+    """The commit of each branch in `refs` that has one, from one Git call."""
+    return {ref: tip[0] for ref, tip in _branch_tips(repo, *refs).items()}
 
 
 def _ref_commit(repo: Path, ref: str) -> str | None:
@@ -801,6 +849,8 @@ class _Repository(NamedTuple):
     paths: dict[str, Path]
     # The branch HEAD is on, None when it is detached or not asked for.
     branch: str | None = None
+    # The repository's common directory, when asked for.
+    common: Path | None = None
 
 
 def game_prefix(repo: Path, selected: Path) -> str:
@@ -812,11 +862,16 @@ def game_prefix(repo: Path, selected: Path) -> str:
     return "" if relative == Path(".") else relative.as_posix()
 
 
-def _repository_for(selected: Path, *names: str, head: bool = False) -> _Repository | None:
+def _repository_for(
+    selected: Path, *names: str, head: bool = False, common: bool = False
+) -> _Repository | None:
     """The repository holding `selected` and the repository-internal paths
-    `names`, with `head` the branch HEAD is on, from the same Git call; a
-    branch with no commit yet takes a second."""
+    `names`, with `head` the branch HEAD is on and `common` the common
+    directory, from the same Git call; a branch with no commit yet takes a
+    second."""
     arguments = [argument for name in names for argument in ("--git-path", name)]
+    if common:
+        arguments.append("--git-common-dir")
     if head:
         # --verify -q fails a HEAD with no commit only once the rest is printed.
         arguments += ["--symbolic-full-name", "--verify", "-q", "HEAD"]
@@ -824,18 +879,21 @@ def _repository_for(selected: Path, *names: str, head: bool = False) -> _Reposit
         selected, "rev-parse", "--show-toplevel", "--path-format=absolute", *arguments, check=False
     )
     top, *lines = result.stdout.splitlines() or [""]
-    unborn = head and result.returncode == 1 and len(lines) == len(names)
+    printed = len(names) + common
+    unborn = head and result.returncode == 1 and len(lines) == printed
     if result.returncode != 0 and not unborn:
         return None
     symbolic = lines.pop() if head and not unborn else ""
-    if len(lines) != len(names):
+    if len(lines) != printed:
         raise GitWorkflowError("Git did not resolve every repository path")
+    # Git names a relative path from where it ran.
+    shared = (selected / lines.pop()).resolve() if common else None
     repo = Path(top.strip()).resolve()
     prefix = game_prefix(repo, selected)
     if unborn:
         symbolic = _run_git(repo, "symbolic-ref", "-q", "HEAD", check=False).stdout.strip()
     branch = symbolic.removeprefix("refs/heads/") if symbolic.startswith("refs/heads/") else None
-    return _Repository(repo, prefix, dict(zip(names, map(Path, lines))), branch)
+    return _Repository(repo, prefix, dict(zip(names, map(Path, lines))), branch, shared)
 
 
 def _git_paths(repo: Path, *names: str) -> dict[str, Path]:
@@ -866,20 +924,24 @@ def read_checkout(game_root: str | Path) -> Checkout | None:
     more."""
     selected = Path(game_root).expanduser().resolve()
     found = (
-        _repository_for(selected, *PENDING_OPERATIONS, "index", "config", head=True)
+        _repository_for(
+            selected, *PENDING_OPERATIONS, "index", "config", head=True, common=True
+        )
         if selected.is_dir()
         else None
     )
     if found is None:
         return None
-    repo, prefix, paths, current_branch = found
-    config_stat = _stat(paths["config"])
-    settings = _settings(repo)
+    repo, prefix, paths, current_branch, common = found
+    if common is not None:
+        _knew_common_dir(repo, common)
+    settings = _settings(repo, paths["config"])
     registered = _registered_translation_branch(repo, settings or {}, current_branch)
-    commits = _ref_commits(
+    tips = _branch_tips(
         repo, ORIGINAL_BRANCH, registered or _LEGACY_TRANSLATION_BRANCH
     )
-    translation_branch = _translation_branch(registered, commits)
+    translation_branch = _translation_branch(registered, tips)
+    translation = tips.get(translation_branch) if translation_branch else None
     return Checkout(
         selected_root=selected,
         repo=repo,
@@ -887,14 +949,14 @@ def read_checkout(game_root: str | Path) -> Checkout | None:
         git_paths=paths,
         current_branch=current_branch,
         translation_branch=translation_branch,
-        original_commit=commits.get(ORIGINAL_BRANCH),
-        translation_commit=commits.get(translation_branch) if translation_branch else None,
+        original_commit=tips[ORIGINAL_BRANCH][0] if ORIGINAL_BRANCH in tips else None,
+        translation_commit=translation[0] if translation else None,
         pending_operations=tuple(
             name for name in PENDING_OPERATIONS if paths[name].exists()
         ),
         asset_sync_pending=_asset_state_path(repo, prefix, "pending-assets").exists(),
         settings=settings,
-        config_stat=config_stat,
+        translation_tree=translation[1] if translation else None,
     )
 
 
@@ -1142,14 +1204,27 @@ def _asset_entries(files: Iterable[_SourceFile]) -> dict[str, _AssetManifestEntr
         }
 
 
-@functools.lru_cache(maxsize=64)
+# Each repository root's common directory, as Git or `read_checkout` found it.
+_common_dirs: dict[Path, Path] = {}
+
+
 def _git_common_dir(repo: Path) -> Path:
     """The common directory is a fixed property of a repository root; status checks ask for it repeatedly."""
-    common_text = _run_git(repo, "rev-parse", "--git-common-dir").stdout.strip()
-    common = Path(common_text)
-    if not common.is_absolute():
-        common = repo / common
-    return common.resolve()
+    known = _common_dirs.get(repo)
+    if known is None:
+        common_text = _run_git(repo, "rev-parse", "--git-common-dir").stdout.strip()
+        common = Path(common_text)
+        if not common.is_absolute():
+            common = repo / common
+        known = _knew_common_dir(repo, common.resolve())
+    return known
+
+
+def _knew_common_dir(repo: Path, common: Path) -> Path:
+    if len(_common_dirs) >= 64:
+        _common_dirs.clear()
+    _common_dirs[repo] = common
+    return common
 
 
 def _asset_state_path(repo: Path, game_prefix: str, name: str) -> Path:

@@ -39,17 +39,30 @@ commits do.
 Commits to one repository take turns through a lock in its Git folder, and
 each write in progress registers the files it said it would change: another
 checkpoint, or the outside-edits step, leaves those to it, and takes only its
-own files while a write that said nothing runs. The commit is built in a
-temporary index, so the user's staged changes stay as they are, and Git
-commands that take the index lock wait for a leftover one as `_run_git` does.
-A write refuses before it writes while the index lock is held, and the
-game's index lock is taken before the branch moves (`_move`), so one a
+own files while a write that said nothing runs. While the game's index
+matches HEAD, as every checkpoint leaves it, the commit is built on a copy
+of the index, which becomes the index under its lock while the index is
+still as the status found it (`_on_index`); once the user staged changes,
+it is built in a temporary index from HEAD's tree, so they stay as they are
+(`_on_head`). Git commands that take the index lock wait for a leftover one
+as `_run_git` does. A write refuses before it writes while the index lock is
+held, and the game's index lock is taken before the branch moves, so one a
 crashed Git left fails the write with nothing written or committed.
+
+Each Git process is slow to start on Windows, so a checkpoint asks Git only
+what it can't know: the write's read of the repository is carried through
+it (`carrying`) and kept while the checkpoints leave what it read as it is
+([game_write](game_write.py) `checkout`), and the tree and tracked files of
+the commit it made last are kept for the next. A write's checkpoint then
+costs a `git status` before the write, for the edits made outside DazedTL,
+one after it and four Git calls that make the commit;
+tests/test_git_launches.py holds each operation to its count.
 """
 
 from __future__ import annotations
 
 import json
+import os
 import uuid
 from collections.abc import Iterable
 from collections.abc import Set as AbstractSet
@@ -57,7 +70,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
 
 from dazedtl import system
 from dazedtl.storage import exclusive, hold
@@ -309,10 +322,10 @@ def at(root):
 
     if not game_git_set_up(root):
         return None, frozenset()
-    paths, head, new = _status(root)
-    if not head or head == "(initial)":
+    status = _status(root)
+    if not status.head or status.head == "(initial)":
         return None, frozenset()
-    return head, frozenset(paths - new)
+    return status.head, frozenset(status.paths - status.new)
 
 
 # The files changed since a commit, which Git's metadata alone decides, for
@@ -363,12 +376,26 @@ def _git(root, *args, **options):
 def _pending(root):
     """The files Git sees changed in the patch: tracked files changed or
     deleted, and new files the ignore rules let in."""
-    return _status(root)[0]
+    return _status(root).paths
+
+
+class _Status(NamedTuple):
+    """What one `git status` says of the game."""
+
+    # `_pending`, and the new files among them.
+    paths: set[str]
+    new: set[str]
+    # The commit HEAD is at, "(initial)" on a branch with no commit yet.
+    head: str | None
+    # The game's index as Git left it (`_mark`) once it found the index
+    # matching HEAD, so a commit can be built on it (`_on_index`); None
+    # while the index holds staged changes or can't be read.
+    index: tuple | None
 
 
 def _status(root):
     """`_pending`, the commit HEAD is at and the new files among `_pending`,
-    from one `git status`."""
+    from one `git status`, and the index while it matches HEAD."""
     listing = _git(
         root,
         "status",
@@ -380,7 +407,10 @@ def _status(root):
         "--untracked-files=all",
         "--ignore-submodules=all",
     ).stdout
-    paths, head, new = set(), None, set()
+    # As soon as Git is done, so nothing can stage a change in between.
+    index = _known_index(root)
+    mark = None if index is None else _mark(index)
+    paths, head, new, staged = set(), None, set(), False
     for entry in listing.split("\0"):
         # Each kind of entry has its own number of fields before the path.
         kind, _, rest = entry.partition(" ")
@@ -391,7 +421,12 @@ def _status(root):
             paths.add(path)
             if kind == "?":
                 new.add(path)
-    return paths, head, new
+            # A changed entry's first status letter compares the index with
+            # HEAD; an unmerged one is staged too.
+            staged = staged or kind == "u" or (kind == "1" and rest[:1] != ".")
+    # The status leaves out submodules, staged changes to them included.
+    staged = staged or (Path(root) / ".gitmodules").exists()
+    return _Status(paths, new, head, None if staged else mark)
 
 
 # The fields before the path in each kind of `git status --porcelain=v2`
@@ -404,9 +439,16 @@ _trees: dict[str, str] = {}
 
 
 def _tree(root, commit, tree=None):
-    """The tree of `commit`, which is `tree` when given."""
+    """The tree of `commit`, which is `tree` when given, or the carried read
+    of the repository's when it read that commit."""
     known = _trees.get(commit)
     if known is None:
+        if tree is None:
+            from util.version_update.git_workflow import _carried
+
+            carried = _carried.get()
+            if carried is not None and carried.translation_commit == commit:
+                tree = carried.translation_tree
         known = tree or _git(root, "rev-parse", f"{commit}^{{tree}}").stdout.strip()
         if len(_trees) >= 64:
             _trees.clear()
@@ -414,85 +456,214 @@ def _tree(root, commit, tree=None):
     return known
 
 
-def _commit(root, paths, change, head):
-    """Commits `paths` as they are in the game on top of `head`, the commit
-    HEAD is at, or None when that changes nothing."""
-    from util.version_update.git_workflow import _commit_tree, _temporary_index
+# The files the game's index tracked at a commit while it matched HEAD
+# there, which the next checkpoint at that commit reuses: a checkpoint built
+# on the index knows what it changed (`_commit`).
+_tracked_at: dict[str, tuple[str, frozenset[str]]] = {}
 
+
+def _tracked(root, status):
+    """The files the game's index tracks, by `status`, the game's
+    `_status`."""
+    known = _tracked_at.get(str(root))
+    if status.index is not None and known is not None and known[0] == status.head:
+        return known[1]
+    files = frozenset(_git(root, "ls-files", "-z").stdout.split("\0")) - {""}
+    if status.index is not None and status.head:
+        _track(root, status.head, files)
+    return files
+
+
+def _track(root, commit, files):
+    if len(_tracked_at) >= 16:
+        _tracked_at.clear()
+    _tracked_at[str(root)] = (commit, files)
+
+
+def _mark(index):
+    """The game's index file as it is, to tell whether it changed: its stat
+    and its last bytes, which hold Git's checksum of the rest; None while it
+    can't be read."""
+    read = _read_index(index, whole=False)
+    return None if read is None else read[0]
+
+
+def _read_index(index, whole=True):
+    """`_mark` of the game's index file and its bytes, all of them when
+    `whole`, read through one handle so the two always belong together."""
+    try:
+        with open(index, "rb") as handle:
+            info = os.fstat(handle.fileno())
+            if not whole:
+                handle.seek(max(0, info.st_size - 64))
+            raw = handle.read()
+    except OSError:
+        return None
+    return (info.st_mtime_ns, info.st_size, info.st_ino, raw[-64:]), raw
+
+
+class _Moved(Exception):
+    """The game's index changed since its status found it matching HEAD."""
+
+
+def _commit(root, paths, change, status):
+    """Commits `paths` as they are in the game on top of the commit HEAD is
+    at by `status`, the game's `_status`, or None when that changes nothing.
+    While the index matches HEAD, as every checkpoint leaves it unless the
+    user staged changes, the commit is built on a copy of the index, which
+    then becomes the game's (`_on_index`); otherwise it is built on HEAD's
+    tree, so the user's staged changes stay as they are (`_on_head`)."""
+    head = status.head
     if head is None or head == "(initial)":
         # Git fails a branch with no commit here, as it did before.
         head = _git(root, "rev-parse", "--verify", "HEAD").stdout.strip()
     game_index, before = _index(root), _tree(root, head)
     listed = "".join(path + "\0" for path in sorted(paths))
+    text = message(change)
+    try:
+        if status.index is None:
+            raise _Moved
+        made = _on_index(root, game_index, status.index, head, before, listed, text)
+    except _Moved:
+        _tracked_at.pop(str(root), None)
+        made = _on_head(root, game_index, head, before, listed, text)
+    else:
+        known = _tracked_at.get(str(root))
+        if made is not None and known is not None and known[0] == head:
+            present = {path for path in paths if os.path.lexists(Path(root) / path)}
+            _track(root, made[1], (known[1] - set(paths)) | present)
+    if made is None:
+        return None
+    tree, commit = made
+    _tree(root, commit, tree)
+    return commit
+
+
+def _on_head(root, game_index, head, before, listed, text):
+    """Builds the commit of the `listed` files on `head`'s tree in a
+    temporary index, then moves the branch (`_move`); returns its tree and
+    commit, or None when it changes nothing."""
+    from util.version_update.git_workflow import _commit_tree, _temporary_index
+
     index, environment = _temporary_index()
     try:
         _git(root, "read-tree", head, env=environment)
-        _git(
-            root,
-            "update-index",
-            "--add",
-            "--remove",
-            "-z",
-            "--stdin",
-            env=environment,
-            input_text=listed,
-        )
+        _stage(root, environment, listed)
         tree = _git(root, "write-tree", env=environment).stdout.strip()
     finally:
         system.unlink(index, ignore_errors=True)
     if tree == before:
         return None
-    text = message(change)
     commit = _commit_tree(Path(root), tree, text, (head,))
     _move(root, game_index, head, commit, text.splitlines()[0], listed)
-    _tree(root, commit, tree)
-    return commit
+    return tree, commit
+
+
+def _stage(root, environment, listed):
+    _git(
+        root,
+        "update-index",
+        "--add",
+        "--remove",
+        "-z",
+        "--stdin",
+        env=environment,
+        input_text=listed,
+    )
+
+
+def _on_index(root, game_index, mark, head, before, listed, text):
+    """Builds the commit of the `listed` files on a copy of the game's index,
+    which matched HEAD as `mark` found it, then makes the copy the game's
+    index as the branch moves (`_install`), as `git commit` leaves it.
+    Returns the commit's tree and commit, or None when it changes nothing;
+    raises `_Moved` when the index changed since `mark`, before the copy or
+    by the time the index lock is taken, for `_on_head` to build it instead,
+    so nothing staged since the status joins the commit."""
+    from util.version_update.git_workflow import (
+        _commit_tree,
+        _temporary_index,
+        wait_for_index_lock,
+    )
+
+    # A lock a crashed Git left fails it before it builds anything.
+    wait_for_index_lock(game_index.with_name(game_index.name + ".lock"))
+    read = _read_index(game_index)
+    if read is None or read[0] != mark:
+        raise _Moved
+    built, environment = _temporary_index()
+    try:
+        system.write_bytes(built, read[1])
+        _stage(root, environment, listed)
+        tree = _git(root, "write-tree", env=environment).stdout.strip()
+        if tree == before:
+            return None
+        commit = _commit_tree(Path(root), tree, text, (head,))
+
+        def index():
+            if _mark(game_index) != mark:
+                raise _Moved
+            return Path(built).read_bytes()
+
+        _install(root, game_index, head, commit, text.splitlines()[0], index)
+    finally:
+        system.unlink(built, ignore_errors=True)
+    return tree, commit
 
 
 def _move(root, game_index, head, commit, subject, listed):
     """Moves the branch from `head` to `commit`, and the game's index takes
-    the `listed` files as committed, as `git commit` leaves it. The new index
-    is made under the index lock, taken first and waited for as `_run_git`
-    waits: a lock a crashed Git left fails the write with nothing committed,
-    and once the branch moved nothing fails it."""
-    from util.version_update.git_workflow import _open_index_lock, _temporary_index
+    the `listed` files as committed, as `git commit` leaves it (`_install`)."""
+    from util.version_update.git_workflow import _temporary_index
 
-    lock = game_index.with_name(game_index.name + ".lock")
     staged, environment = _temporary_index()
-    try:
-        handle = _open_index_lock(lock)
-        try:
-            with handle:
-                if game_index.is_file():
-                    system.write_bytes(staged, game_index.read_bytes())
-                    _git(
-                        root,
-                        "reset",
-                        "-q",
-                        commit,
-                        "--pathspec-from-file=-",
-                        "--pathspec-file-nul",
-                        env={**environment, "GIT_LITERAL_PATHSPECS": "1"},
-                        input_text=listed,
-                    )
-                else:
-                    _git(root, "read-tree", commit, env=environment)
-                handle.write(Path(staged).read_bytes())
-            # Moves the branch only if nothing else moved it since.
+
+    def index():
+        if game_index.is_file():
+            system.write_bytes(staged, game_index.read_bytes())
             _git(
-                root, "update-ref", "-m", "checkpoint: " + subject, "HEAD", commit, head
+                root,
+                "reset",
+                "-q",
+                commit,
+                "--pathspec-from-file=-",
+                "--pathspec-file-nul",
+                env={**environment, "GIT_LITERAL_PATHSPECS": "1"},
+                input_text=listed,
             )
-        except BaseException:
-            system.unlink(lock, missing_ok=True, ignore_errors=True)
-            raise
-        try:
-            system.replace(lock, game_index)
-        except OSError:
-            # The checkpoint stands; Git shows its files as staged until the
-            # next checkpoint that takes them.
-            system.unlink(lock, missing_ok=True, ignore_errors=True)
+        else:
+            _git(root, "read-tree", commit, env=environment)
+        return Path(staged).read_bytes()
+
+    try:
+        _install(root, game_index, head, commit, subject, index)
     finally:
         system.unlink(staged, ignore_errors=True)
+
+
+def _install(root, game_index, head, commit, subject, index):
+    """Moves the branch from `head` to `commit` and makes `index()` the
+    game's index. `index` runs under the index lock, taken first and waited
+    for as `_run_git` waits: a lock a crashed Git left fails the write with
+    nothing committed, and once the branch moved nothing fails it."""
+    from util.version_update.git_workflow import _open_index_lock
+
+    lock = game_index.with_name(game_index.name + ".lock")
+    handle = _open_index_lock(lock)
+    try:
+        with handle:
+            handle.write(index())
+        # Moves the branch only if nothing else moved it since.
+        _git(root, "update-ref", "-m", "checkpoint: " + subject, "HEAD", commit, head)
+    except BaseException:
+        system.unlink(lock, missing_ok=True, ignore_errors=True)
+        raise
+    try:
+        system.replace(lock, game_index)
+    except OSError:
+        # The checkpoint stands; Git shows its files as staged until the
+        # next checkpoint that takes them.
+        system.unlink(lock, missing_ok=True, ignore_errors=True)
 
 
 def _waiting(folder):
@@ -544,10 +715,15 @@ def _save(root, change, named, claimed):
     """Commits the pending changes `claimed`, another write's, leaves out,
     or only the `named` ones while `claimed` is None, with the named files
     and DazedTL's own runtime files the patch lacks let into it."""
+    return _saving(root, change, named, claimed)[0]
+
+
+def _saving(root, change, named, claimed):
+    """`_save`'s commit, and the commit HEAD is at once it is done."""
     from util.len_patch_scope import dazedtl_files, grow_scope
 
     named = set(_relative(named))
-    pending, head, new = _status(root)
+    status = _status(root)
     # DazedTL's own files are never edits made outside it.
     own = (
         set()
@@ -558,8 +734,8 @@ def _save(root, change, named, claimed):
     # A new file that another rule lets in, as the Image Manager's .gitignore
     # section lets in an image it applied, still joins the patch's own rules,
     # which drop it from the inventory of the original's files Git leaves out.
-    if outside := (named | own) - (pending - new):
-        tracked = set(_git(root, "ls-files", "-z").stdout.split("\0")) - {""}
+    if outside := (named | own) - (status.paths - status.new):
+        tracked = _tracked(root, status)
         added, rules = grow_scope(
             Path(root),
             tracked,
@@ -569,9 +745,11 @@ def _save(root, change, named, claimed):
         if rules:
             # New rules can let in files they hid, such as the portable
             # settings an old rule order kept out.
-            pending, head, _new = _status(root)
+            status = _status(root)
+    pending = status.paths
     chosen = joined | (pending & named if claimed is None else pending - claimed)
-    return _commit(root, chosen, change, head) if chosen else None
+    commit = _commit(root, chosen, change, status) if chosen else None
+    return commit, commit or (status.head if status.head != "(initial)" else None)
 
 
 def save(root, change, named=()):
@@ -609,18 +787,25 @@ def outside_edits(root):
     return None
 
 
-def _index(root):
+def _index(root) -> Path:
     """The game's index file."""
+    if (known := _known_index(root)) is not None:
+        return known
+    found = _git(root, "rev-parse", "--path-format=absolute", "--git-path", "index")
+    return Path(found.stdout.strip())
+
+
+def _known_index(root) -> Path | None:
+    """The game's index file when Git need not say where it is: as the
+    carried read of the repository found it, or in the game's own .git
+    folder."""
     from util.version_update.git_workflow import _carried
 
     carried = _carried.get()
     if carried is not None and carried.selected_root == Path(root).resolve():
         return carried.index
     git = Path(root) / ".git"
-    if git.is_dir():
-        return git / "index"
-    found = _git(root, "rev-parse", "--path-format=absolute", "--git-path", "index")
-    return Path(found.stdout.strip())
+    return git / "index" if git.is_dir() else None
 
 
 def recovered_text(root, relative):
@@ -686,9 +871,12 @@ class Checkpoint:
         self.folder = _folder(root)
         self.paths = list(_relative(paths or ()))
         self.phase = _phase.get()
-        # The read of the repository the write checked, whose settings and
-        # index path its Git calls reuse.
+        # The read of the repository the write checked, whose settings,
+        # index path and branch tree its Git calls reuse.
         self.checkout = checkout
+        # The commit HEAD was at once the edits made outside DazedTL were
+        # saved, when that step ran.
+        self.start: str | None = None
         with carrying(checkout):
             self._open(change)
 
@@ -706,7 +894,7 @@ class Checkpoint:
             try:
                 _settle(self.root, self.folder)
                 if claimed is not None:
-                    _save(self.root, OUTSIDE, (), claimed)
+                    self.start = _saving(self.root, OUTSIDE, (), claimed)[1]
             except BaseException:
                 self.write.close()
                 raise

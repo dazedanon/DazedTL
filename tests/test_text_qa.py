@@ -9,9 +9,13 @@ from types import SimpleNamespace
 
 from dazedtl.api.contracts.guided import TextQaStatus
 from dazedtl.api.contracts.validation import _close_contracts
-from dazedtl.translation.text_qa import TextQA
+from dazedtl.translation import census
+from dazedtl.translation.operations import census_path
+from dazedtl.translation.run_compiler import SCOPE_RULES
+from dazedtl.translation.text_qa import UNTRANSLATED_FILE, UNTRANSLATED_STEP, TextQA
 from pydantic import TypeAdapter
 from util import rpgmaker_qa
+from util.rpgmaker_qa_preflight import preflight
 
 
 def fake_guided(folder, qa, method="guided"):
@@ -41,8 +45,15 @@ def fake_guided(folder, qa, method="guided"):
         execute=execute,
         path=lambda _id, name: Path(folder) / f"{name}.json",
         translation=SimpleNamespace(
-            project=lambda _id: ({"method": method}, None),
+            project=lambda _id: (
+                {"method": method},
+                SimpleNamespace(root=Path(folder)),
+            ),
             run=lambda _id, job: {"status": jobs[job]["status"], "message": ""},
+            workspace=Path(folder) / "workspace",
+            jobs=SimpleNamespace(
+                store=SimpleNamespace(declined_sources=lambda _id: [])
+            ),
         ),
     )
     return guided, calls
@@ -245,3 +256,154 @@ class TextQATests(unittest.TestCase):
             state = TextQA(guided).run("project", "status")  # type: ignore[arg-type]
             self.assertNotIn("labels", state)
             self.assertNotIn("Before qa --apply", state["next"])
+
+    def test_assistant_led_status_sends_never_translated_text_to_extraction(self):
+        # QA's report of Japanese no line covered only asked the assistant to
+        # name it, so text its own extractor or injector missed shipped while
+        # coverage read complete.
+        with TemporaryDirectory() as folder:
+            game = Path(folder) / "game"
+            (game / "data").mkdir(parents=True)
+            (game / "js").mkdir()
+
+            def message(*lines):
+                return [{"code": 401, "parameters": [line]} for line in lines]
+
+            def write_game(hello, welcome):
+                (game / "data/Map001.json").write_text(
+                    json.dumps(
+                        {
+                            "displayName": "",
+                            "events": [
+                                None,
+                                {
+                                    "name": "EV001",
+                                    "pages": [
+                                        {
+                                            "list": [
+                                                *message(hello),
+                                                *message("さようなら"),
+                                                {"code": 0, "parameters": []},
+                                            ]
+                                        }
+                                    ],
+                                },
+                            ],
+                        },
+                        ensure_ascii=False,
+                    ),
+                    encoding="utf-8",
+                )
+                plugins = [
+                    {"name": "TitleMessage", "parameters": {"text": welcome}},
+                    # A face file, which the census sets aside itself.
+                    {"name": "Faces", "parameters": {"faceName": "主人公"}},
+                    # A note the assistant's scope rule sets aside.
+                    {"name": "Debug", "parameters": {"memo": "テスト用"}},
+                ]
+                (game / "js/plugins.js").write_text(
+                    "var $plugins =\n"
+                    + json.dumps(
+                        [{**plugin, "status": True} for plugin in plugins],
+                        ensure_ascii=False,
+                    )
+                    + ";\n",
+                    encoding="utf-8",
+                )
+
+            write_game("こんにちは", "ようこそ")
+            files = {
+                name: (game / name).read_bytes()
+                for name in ("data/Map001.json", "js/plugins.js")
+            }
+            workspace = Path(folder) / "workspace"
+            counted = census_path(workspace, "project")
+            counted.parent.mkdir(parents=True)
+            counted.write_text(
+                json.dumps(
+                    census.scan(sorted(files), files.__getitem__, None),
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            rules = game / SCOPE_RULES
+            rules.parent.mkdir(parents=True)
+            rules.write_text(
+                json.dumps(
+                    {
+                        "version": 1,
+                        "rules": [
+                            {
+                                "kind": "rpgmaker:plugins",
+                                "field": "Debug/*",
+                                "reason": "not_displayed",
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            task = Path(folder) / "task"
+            task.mkdir()
+            (task / "task.json").write_text(
+                json.dumps({"schema": rpgmaker_qa.TASK_SCHEMA}), encoding="utf-8"
+            )
+
+            def prepare():
+                (task / "preflight.json").write_text(
+                    json.dumps(preflight(game / "data", {"records": []})),
+                    encoding="utf-8",
+                )
+
+            prepare()
+            qa = {
+                "task": str(task),
+                "current": True,
+                "applied": False,
+                "message": "",
+                "findings": [],
+                "questions": [],
+                "status": {"stage": "screen"},
+            }
+            guided, _calls = fake_guided(game, qa, method="len")
+            guided.translation.workspace = workspace
+            # The assistant declined the line it would not translate.
+            guided.translation.jobs.store.declined_sources = lambda _id: ["さようなら"]
+            service = TextQA(guided)  # type: ignore[arg-type]
+            state = service.run("project", "status")
+            _close_contracts()
+            TypeAdapter(TextQaStatus).validate_json(json.dumps(state), strict=True)
+            self.assertEqual(state["untranslated"], 2)
+            self.assertTrue(state["next"].startswith(UNTRANSLATED_STEP))
+            listed = json.loads((game / UNTRANSLATED_FILE).read_text(encoding="utf-8"))
+            self.assertEqual(
+                [(row["file"], row["pointer"]) for row in listed["texts"]],
+                [
+                    ("data/Map001.json", "/events/1/pages/0/list/0/parameters/0"),
+                    ("js/plugins.js", "/TitleMessage/text"),
+                ],
+            )
+            # Once both are translated and QA reads the game again, the step
+            # ends: what the census sets aside and the declined line stay
+            # reported only.
+            write_game("Hello", "Welcome")
+            prepare()
+            state = service.run("project", "status")
+            self.assertNotIn("untranslated", state)
+            self.assertNotIn(UNTRANSLATED_STEP, state["next"])
+            self.assertFalse((game / UNTRANSLATED_FILE).exists())
+            self.assertEqual(
+                sum(
+                    source["count"]
+                    for source in json.loads(
+                        (task / "preflight.json").read_text(encoding="utf-8")
+                    )["sources"]
+                ),
+                3,
+            )
+            # Guided's user translates the report's text through Event text
+            # or Plugin files.
+            write_game("こんにちは", "ようこそ")
+            prepare()
+            guided.translation.project = lambda _id: ({"method": "guided"}, game)
+            self.assertNotIn("untranslated", TextQA(guided).run("project", "status"))  # type: ignore[arg-type]

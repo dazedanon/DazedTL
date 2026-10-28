@@ -654,6 +654,9 @@ async function progressShowsQa(page, state, want, shot) {
 // What the scripted reviewer adds to the line it corrects (qa_reviewer.py);
 // fitting may break the line before it.
 const qaCorrection = "(checked)";
+// The village chief's last line, which the extractor of assistant-released
+// misses, by its pointer in data/Map001.json.
+const missedLine = "/events/1/pages/0/list/8/parameters/0";
 
 /** The starting prompt's QA step for MV/MZ (TranslationService.prepare),
  * after the assistant wrote the game: play it, review and apply Text QA,
@@ -665,6 +668,25 @@ const assistantQa = [
     async ({ page, state }) => {
       const played = JSON.parse(await assistant(page, state, "play"));
       console.log(`\n  Playtest: ${played.next}`);
+      // QA counts the line the extractor missed as never translated, and its
+      // next step sends it back; the TitleMessage text no player sees stays
+      // reported only.
+      const prepared = await helper(page, state, "qa", "--prepare");
+      if (!prepared.untranslated || !prepared.next.startsWith("untranslated "))
+        throw new Error(
+          `Text QA sent no never-translated text back: ${prepared.next}`,
+        );
+      const { translated, qa: after } = JSON.parse(
+        await assistant(page, state, "untranslated"),
+      );
+      const locations = translated.map((row) => `${row.file}#${row.pointer}`);
+      console.log(`  Translated what QA counted: ${locations.join(", ")}`);
+      if (locations.join() !== `data/Map001.json#${missedLine}`)
+        throw new Error(`Text QA counted ${locations.join(", ")}.`);
+      if (after.untranslated)
+        throw new Error(
+          `Text QA still counts untranslated text: ${after.next}`,
+        );
       const { corrected } = await reviewQa({ page, state });
       const data = path.join(contentFolder(state.variants, state.game), "data");
       if (
@@ -1454,7 +1476,7 @@ export const scenarios = {
   },
   "assistant-released": {
     description:
-      "An Assistant-led project the assistant translated whole and wrote, then played, reviewed with Text QA through the project helper, one correction applied, and played again before packaging; Progress holds QA at Final check until that playtest settles, its Patch phase shows the patch ZIP, and Release builds a clean game ZIP and saves the patch ZIP, with QA's correction, where it suggests.",
+      "An Assistant-led project the assistant translated and wrote, but for one line its extractor missed, then played, that line translated through its extraction and injection once Text QA counted it never translated, reviewed with Text QA through the project helper, one correction applied, and played again before packaging; Progress holds QA at Final check until that playtest settles, its Patch phase shows the patch ZIP, and Release builds a clean game ZIP and saves the patch ZIP, with QA's correction and that line, where it suggests.",
     steps: () => [
       [
         "Open the game Assistant-led, the assistant translating, without image text",
@@ -1473,9 +1495,16 @@ export const scenarios = {
       ],
       assistantLed[1],
       [
-        "The assistant translates all the text and writes it",
+        "The assistant translates all the text and writes it, but for one line its extractor misses",
         async ({ page, state }) => {
-          await assistant(page, state, "organize", "--complete");
+          await assistant(
+            page,
+            state,
+            "organize",
+            "--complete",
+            "--miss",
+            `Map001${missedLine}`,
+          );
           const run = JSON.parse(await assistant(page, state, "translate"));
           if (run.status !== "complete")
             throw new Error(
@@ -1560,6 +1589,25 @@ export const scenarios = {
             )
           )
             throw new Error("The patch ZIP lacks Text QA's correction.");
+          // The line QA sent back to extraction, as the game holds it.
+          const map = patch.get("data/Map001.json");
+          const shown = JSON.parse(map || "{}")
+            .events?.[1]?.pages[0].list.filter(
+              (command) => command.code === 401,
+            )
+            .map((command) => command.parameters[0]);
+          if (
+            !map?.equals(
+              fs.readFileSync(
+                path.join(contentFolder([], state.game), "data/Map001.json"),
+              ),
+            ) ||
+            !shown.length ||
+            shown.some((line) => /[぀-ヿ一-鿿]/.test(line))
+          )
+            throw new Error(
+              "The patch ZIP lacks the line Text QA counted never translated.",
+            );
           console.log(
             `\n  Clean game ZIP: ${game.size} entries; patch ZIP: ${patch.size}`,
           );

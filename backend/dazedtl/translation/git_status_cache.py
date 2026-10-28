@@ -54,14 +54,53 @@ def repository_signature(root):
         except OSError:
             parts.append((name, None, None))
     for tree in TREES:
-        for folder, _directories, files in os.walk(git / tree):
-            for name in files:
-                try:
-                    value = os.stat(os.path.join(folder, name))
-                    parts.append((folder, name, value.st_mtime_ns, value.st_size))
-                except OSError:
-                    parts.append((folder, name, None, None))
+        parts.extend(_files(git / tree))
     return tuple(parts)
+
+
+def checkout_signature(root):
+    """What a read of a game's checkout depends on (engine `read_checkout`),
+    from a few file reads: the branch HEAD is on, the repository's settings,
+    which branches there are, the operations under way and game updates'
+    records. A checkpoint moves its branch and rewrites the index, neither
+    of which the read depends on but for the branch being there, so a game's
+    writes reuse one read; a branch switch rewrites HEAD. None without a
+    .git folder of the game's own, whose metadata Git keeps elsewhere."""
+    from util.version_update.git_workflow import PENDING_OPERATIONS
+
+    git = Path(root) / ".git"
+    if not git.is_dir():
+        return None
+
+    def content(name):
+        try:
+            return (git / name).read_bytes()
+        except OSError:
+            return None
+
+    branches = sorted(entry[:2] for entry in _files(git / "refs/heads"))
+    updates = sorted(_files(git / "dazedtl/version-update"), key=lambda e: e[:2])
+    return (
+        content("HEAD"),
+        content("config"),
+        file_signature(git / "packed-refs"),
+        tuple(branches),
+        tuple((git / name).exists() for name in PENDING_OPERATIONS),
+        tuple(updates),
+    )
+
+
+def _files(tree):
+    """Each file under `tree` with its stat signature, as a walk finds them."""
+    found = []
+    for folder, _directories, files in os.walk(tree):
+        for name in files:
+            try:
+                value = os.stat(os.path.join(folder, name))
+                found.append((folder, name, value.st_mtime_ns, value.st_size))
+            except OSError:
+                found.append((folder, name, None, None))
+    return found
 
 
 class RepositoryStatusCache:
@@ -72,17 +111,27 @@ class RepositoryStatusCache:
     Git's metadata alone decides, is reused for as long as the signature
     holds, unless the root has no .git of its own to sign. Failures are reused
     for the window only: each attempt costs the same process launches.
+    `signer` signs what the status reads of the repository, by default all
+    of Git's metadata; it returns None when it can't sign the root.
     """
 
-    def __init__(self, ttl=5.0, clock=time.monotonic, *, stable=False):
+    def __init__(
+        self,
+        ttl=5.0,
+        clock=time.monotonic,
+        *,
+        stable=False,
+        signer: Callable[[Path], object] = repository_signature,
+    ):
         self.ttl = ttl
         self.clock = clock
         self.stable = stable
+        self.signer = signer
         self.entries = {}
 
     def get[T](self, key, root, compute: Callable[[], T], extra=()) -> T:
         """`extra` adds what else the status reads, such as files Git ignores."""
-        signature = (repository_signature(root), extra)
+        signature = (self.signer(Path(root)), extra)
         now = self.clock()
         entry = self.entries.get(key)
         lasting = (

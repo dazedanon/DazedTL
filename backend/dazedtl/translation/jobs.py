@@ -388,6 +388,31 @@ class RunStore:
             value["message"] = declined_message(value)
         return value
 
+    def declined_sources(self, project_id):
+        """The source text of each line the project's Assistant only runs
+        still hold declined (settled), for another model to translate; a run
+        whose plan can't be read declines nothing here."""
+        sources = []
+        for job in self.list(project_id):
+            if job["kind"] != "translation" or job["mode"] != "agent":
+                continue
+            try:
+                declined = {
+                    identity
+                    for identity, row in self.settled(job)["states"].items()
+                    if row["state"] == "declined"
+                }
+                if declined:
+                    sources += [
+                        text
+                        for row in self.plan(self.folder(job["id"]), job)["requests"]
+                        if row["id"] in declined
+                        for text in row["sources"].values()
+                    ]
+            except ValueError, OSError, KeyError, TypeError:
+                continue
+        return sources
+
     def newest_estimate(self, project_id):
         """When the project's newest API run was compiled. An estimate from
         before it can no longer be approved, so each approval sends one
