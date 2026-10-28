@@ -23,10 +23,12 @@ from .requests import (
 
 ACCEPTED = WORK + "/work/accepted"
 # The rules an export writes its lines by (exported_line): 1, recorded by
-# none, Guided's automatic lint fixes; 2, also Guided's reply cleanup. An
-# export written by older rules is written again, and only a line whose
-# translation differs from its old one written by these rules is new.
-EXPORT_VERSION = 2
+# none, Guided's automatic lint fixes; 2, also Guided's reply cleanup; 3,
+# also its repair of small kana left in a line (util/target_text
+# stranded_kana). An export written by older rules is written again, and
+# only a line whose translation differs from its old one written by these
+# rules is new.
+EXPORT_VERSION = 3
 # The progress export: an index of parts, each the units of PART_REQUESTS
 # requests, then the units organize left out with an earlier translation, so
 # saving one request's result rewrites one part instead of every line of the
@@ -165,8 +167,13 @@ def _content_failures(request, translations):
     (util/runtime_text `validate_unmasked_control_codes`), such as one that
     drops a colour code or breaks its scope, whether or not its constraints
     name the code, with why. A line given back as its source is left alone,
-    as Guided keeps a line it could not translate in its original text."""
+    as Guided keeps a line it could not translate in its original text. The
+    content check reads each line with the kana Guided's reply cleanup
+    writes otherwise (util/target_text `kana_written`), as Guided checks a
+    reply once it is cleaned, so a small kana that cleanup repairs or leaves
+    out fails no line."""
     from util.runtime_text import validate_unmasked_control_codes
+    from util.target_text import kana_written
     from util.translation import validate_translation_content
 
     from dazedtl.languages import reading, source_pattern
@@ -184,7 +191,14 @@ def _content_failures(request, translations):
     with reading(language, target):
         _valid, invalid, reasons = validate_translation_content(
             [request["sources"][identity] for identity in identities],
-            [translations[identity] for identity in identities],
+            [
+                kana_written(
+                    translations[identity],
+                    target,
+                    protected_tokens(request, identity),
+                )
+                for identity in identities
+            ],
             pattern,
             target,
             protected=[protected_tokens(request, identity) for identity in identities],

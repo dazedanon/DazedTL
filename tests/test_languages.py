@@ -239,6 +239,39 @@ class LanguageTests(unittest.TestCase):
             blocks.written_message("待って...。誰？", "Japanese"), "待って...。誰？"
         )
 
+    def test_small_kana_stranded_in_a_moan_are_written_as_latin_letters(self):
+        # A moan's small kana failed the residue check, so Guided Live paid a
+        # retry and Batch and Assistant-led kept the line in Japanese.
+        sources = ["おちんぽミルクぅぅぅっ♡", "あぁ　はぁっ…♡", "これは何だ？"]
+        replies = ["Cock milk゛ぅぅぅっ♡", "Ahぁ　haぁっ…♡", "What is ぁこれ?"]
+        # A reply's lines are repaired once read, so one escaping its kana
+        # is repaired as well.
+        reply = json.dumps({f"Line{n}": line for n, line in enumerate(replies, 1)})
+        read = extractTranslation(
+            target_text.clean_reply(reply, "English"), True, None, "English"
+        )
+        lines = [target_text.stranded_kana(line, "English") for line in read]
+        # The ideographic space stays, a pause between gasps; a line holding
+        # a full-size kana or kanji is a real miss, left for the model.
+        expected = ["Cock milk゛uuu♡", "Aha　haa…♡", "What is ぁこれ?"]
+        self.assertEqual(lines, expected)
+        _valid, invalid, _reasons = validate_translation_content(
+            sources, lines, "[぀-ヿ一-鿿]", "English"
+        )
+        self.assertEqual(invalid, [2])
+        # Assistant-led's lines are written the same, by their text around
+        # codes.
+        self.assertEqual(
+            [target_text.translated_line(line, "English") for line in replies],
+            expected,
+        )
+        self.assertEqual(
+            target_text.translated_line("\\n[ゆう]ぅぅ♡", "English"), "\\n[ゆう]uu♡"
+        )
+        # A target in another script keeps the kana.
+        self.assertEqual(target_text.stranded_kana("ぁ♡", "Korean"), "ぁ♡")
+        self.assertEqual(target_text.translated_line("ぁ♡", "Japanese"), "ぁ♡")
+
     def test_the_plain_engines_translate_a_speaker_name_the_same_way(self):
         asked = []
 

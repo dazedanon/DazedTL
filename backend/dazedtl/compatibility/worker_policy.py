@@ -18,6 +18,7 @@ from dazedtl.settings.preferences import (
     REUSE_STRETCHES,
     SAME_LINE_SPEAKERS,
     SHORT_OUTPUTS,
+    SMALL_KANA,
     SOURCE_TEXT_LEVELS,
     SPEAKER_CONTEXT,
     batch_input_tokens,
@@ -59,6 +60,12 @@ def configure_short_outputs(translation, policy):
     translation.CONTENT_TEXT = bool(
         policy and policy.get("shortOutputs") == SHORT_OUTPUTS
     )
+
+
+def configure_small_kana(translation, policy):
+    """Runs frozen before the small-kana policy keep the small kana a reply
+    leaves, as they did when approved."""
+    translation.SMALL_KANA = bool(policy and policy.get("smallKana") == SMALL_KANA)
 
 
 def configure_states(plan, root, policy):
@@ -162,6 +169,7 @@ def install(*, coordinator=False):
             configure_builders(translation, None)
             translation.STRICT_STRUCTURED_OUTPUTS = False
             configure_short_outputs(translation, None)
+            configure_small_kana(translation, None)
             configure_states(plan, grouping_root, None)
             checkpoint_reader()
             return result
@@ -181,6 +189,7 @@ def install(*, coordinator=False):
             or policy.get("mapNameIdentities") not in (None, MAP_NAME_IDENTITIES)
             or policy.get("sourceText") not in (None, *SOURCE_TEXT_LEVELS)
             or policy.get("shortOutputs") not in (None, SHORT_OUTPUTS)
+            or policy.get("smallKana") not in (None, SMALL_KANA)
             or policy.get("battleMessageUsers")
             not in (None, *BATTLE_MESSAGE_USERS_LEVELS)
             or policy.get("openrouterStructuredOutputs")
@@ -232,6 +241,7 @@ def install(*, coordinator=False):
         batch_pricing.configure(translation, True)
         translation.STRICT_STRUCTURED_OUTPUTS = bool(strict_router)
         configure_short_outputs(translation, policy)
+        configure_small_kana(translation, policy)
         record = None
         if policy.get("generationParameters") and plan.get("mode") in {
             "estimate",

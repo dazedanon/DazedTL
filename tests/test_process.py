@@ -1260,6 +1260,24 @@ class ProcessTests(unittest.TestCase):
             self.assertEqual(sends("estimate", current), [[source]])
             self.assertEqual(sends("translate", current), [[source]])
 
+    def test_a_run_approved_before_the_small_kana_repair_keeps_its_replies_as_they_were(
+        self,
+    ):
+        # The reply cleanup began writing stranded small kana as Latin
+        # letters; a run approved before keeps writing its lines one way.
+        from dazedtl.compatibility.worker_policy import configure_small_kana
+        from dazedtl.settings.preferences import SMALL_KANA
+        from util import translation
+
+        with patch.object(translation, "SMALL_KANA", True):
+            for policy, repaired in (
+                (None, False),
+                ({"version": 1}, False),
+                ({"version": 1, "smallKana": SMALL_KANA}, True),
+            ):
+                configure_small_kana(translation, policy)
+                self.assertIs(translation.SMALL_KANA, repaired)
+
     def test_finished_batch_receipts_are_settled_only_with_verified_unmodified_output(
         self,
     ):

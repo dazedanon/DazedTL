@@ -1151,6 +1151,7 @@ class Settings:
                 "refusalRetry": REFUSAL_POLICY,
                 "stateGrouping": "compatible-states-v1",
                 **preferences.FROZEN_POLICIES,
+                **preferences.REPLY_POLICIES,
                 "entriesPerRequest": entries,
                 "inputRate": input_rate,
                 "outputRate": output_rate,

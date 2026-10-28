@@ -128,6 +128,17 @@ FROZEN_POLICIES = {
     "sourceText": SOURCE_TEXT,
     "shortOutputs": SHORT_OUTPUTS,
 }
+# A reply's lines have the small kana a model leaves in a line holding no
+# other Japanese written as Latin letters (engine util/target_text
+# stranded_kana), so a moan such as milk゛ぅぅぅ♡ is accepted as milk゛uuu♡
+# without another request. A run frozen without it keeps them, as it did
+# when approved, so its lines are written by one rule from start to end.
+SMALL_KANA = "small-kana-v1"
+# The policies every new run freezes in its request policy alone, unlike
+# FROZEN_POLICIES: they shape only how a reply is read, never what a run
+# sends or costs, so its estimate, which its Guided settings identify, stays
+# current.
+REPLY_POLICIES = {"smallKana": SMALL_KANA}
 
 DEFAULT_OPTIONS = {
     "entriesPerRequest": None,

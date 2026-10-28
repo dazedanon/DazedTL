@@ -242,6 +242,14 @@ class TranslationTests(unittest.TestCase):
             units["moan"]["reviewed_sha256"],
             review_digest(sources["moan"], "Mm♥ Ah..."),
         )
+        # A moan's stranded small kana pass the check once repaired, as
+        # Guided reads a reply, and reach the game repaired.
+        moan = logical_request({"id": "moan", "sources": sources}, {"user": ""})
+        results.accept(moan, {"line": "Lovely weather.", "moan": "Mm゛ぅぅっ♥"}, {})
+        units = {
+            unit["source_id"]: unit for unit in results.units([moan], results.listing())
+        }
+        self.assertEqual(units["moan"]["translation"], "Mm゛uu♥")
 
     def test_results_keep_their_sources_control_codes_as_guided_does(self):
         # Assistant-led checked only the tokens an extractor listed, so a

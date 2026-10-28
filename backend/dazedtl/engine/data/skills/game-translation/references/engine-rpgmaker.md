@@ -951,7 +951,7 @@ Write the translation into the staged rows as the results give it; do not repeat
 
 ### Cosmetic cleanup
 
-DazedTL's `results --run ID` gives each line already cleaned as Guided cleans every reply (`util.target_text.translated_line`): stranded sokuon (っ/ッ) left out, corner brackets as `"` under the convertQuotes setting, and Japanese punctuation and typographic apostrophes in the forms a Japanese font draws well; codes and protected tokens keep their spelling.
+DazedTL's `results --run ID` gives each line already cleaned as Guided cleans every reply (`util.target_text.translated_line`): stranded sokuon (っ/ッ) left out, other small kana as Latin letters (ぅ as u) in a line holding no full-size kana or kanji, corner brackets as `"` under the convertQuotes setting, and Japanese punctuation and typographic apostrophes in the forms a Japanese font draws well; codes and protected tokens keep their spelling.
 Inject that text as it is and ignore full-width `　` indentation.
 **Guard every whole-file cleanup pass on "is this still Japanese"** - see the no-op inject test below.
 

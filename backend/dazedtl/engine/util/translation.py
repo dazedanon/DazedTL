@@ -69,6 +69,7 @@ from util.target_text import (
     corner_quotes,
     normalize_dialogue_typography,
     reply_quotes,
+    stranded_kana,
     unsent_text,
 )
 
@@ -225,6 +226,11 @@ STRICT_STRUCTURED_OUTPUTS = False
 # (settings/preferences SHORT_OUTPUTS) measure the whole line, so a run
 # approved before reuses every saved line its estimate counted.
 CONTENT_TEXT = True
+# Whether a reply's lines have the small kana a model leaves in a line
+# holding no other Japanese written as Latin letters (util/target_text
+# stranded_kana). Workers of runs frozen before the small-kana policy
+# (settings/preferences SMALL_KANA) keep them, as they did when approved.
+SMALL_KANA = True
 
 # Thread-local per-file token breakdown; read by calculateCost() for Claude.
 _thread_local = threading.local()
@@ -6271,6 +6277,10 @@ def translateAI(text, history, config, filename=None, pbar=None, lock=None,
                     extracted = extractTranslation(
                         cleaned_text, True, pbar, config.language
                     )
+                    if extracted is not None and SMALL_KANA:
+                        extracted = [
+                            stranded_kana(line, config.language) for line in extracted
+                        ]
 
                     # Check 1: Mismatch in length -> still a hard failure
                     if extracted is None or len(clean_tItem) != len(extracted):
@@ -6391,6 +6401,8 @@ def translateAI(text, history, config, filename=None, pbar=None, lock=None,
                     extracted = extractTranslation(
                         cleaned_text, False, pbar, config.language
                     )
+                    if SMALL_KANA:
+                        extracted = stranded_kana(extracted, config.language)
                     if extracted is None:
                         is_valid = False
                         if pbar:

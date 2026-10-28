@@ -6,10 +6,11 @@ once and reads the target's script (util/languages).
 A target written with Latin letters, such as English, is written as it always
 was: Japanese punctuation a model or a game leaves takes a Latin form (。 a
 period, 【】 square brackets, corner brackets ASCII quotes when convertQuotes
-is on), the small っ and ッ that mark a stop are left out, typographic
-apostrophes and dialogue tildes take the forms Japanese fonts draw well, a
-long vowel mark run after a kana letter repeats the letter, and names are
-title-cased.
+is on), the small っ and ッ that mark a stop are left out, other small kana
+in a line holding no full-size kana or kanji are written as the Latin letters
+they sound, typographic apostrophes and dialogue tildes take the forms
+Japanese fonts draw well, a long vowel mark run after a kana letter repeats
+the letter, and names are title-cased.
 
 Chinese and Japanese are written with full-width punctuation, so a
 translation into them keeps 。、「」【】, the small っ, quotes and tildes as
@@ -21,7 +22,7 @@ stays exactly as the game wrote it.
 import re
 from functools import lru_cache
 
-from util.languages import LATIN, script, target_uses_cjk
+from util.languages import JAPANESE_LETTERS, LATIN, script, target_uses_cjk
 from util.runtime_text import PROTECTED_PATTERNS, split_protected_codes
 
 
@@ -217,14 +218,84 @@ def _without_label(text, language):
 _LATIN_MARKS = (("—", "―"), ("】", "]"), ("【", "["), ("é", "e"))
 
 
+def _without_stops(text):
+    """*text* with the small っ and ッ that mark a stop left out."""
+    return text.replace("っ", "").replace("ッ", "")
+
+
 def _latin_marks(text, language):
     """*text* with the small っ and ッ that mark a stop left out, 。 a period
     and _LATIN_MARKS in their Latin forms."""
-    text = text.replace("っ", "").replace("ッ", "")
+    text = _without_stops(text)
     text = full_stops(text, language, PERIOD)
     for mark, latin_form in _LATIN_MARKS:
         text = text.replace(mark, latin_form)
     return text
+
+
+# Small kana a model leaves in a moan as a dragged-out vowel, such as
+# milk゛ぅぅぅ♡, as the Latin letters they sound (Len's game-translation
+# skill, sfx-onomatopoeia.md), and the small ｯ, っ and ッ that mark a stop
+# left out, as the cleanup always leaves out っ and ッ (_latin_marks), where
+# Len's skill writes a hyphen after a letter.
+_SMALL_KANA = str.maketrans(
+    {
+        **dict(zip("ぁぃぅぇぉ", "aiueo")),
+        **dict(zip("ァィゥェォ", "aiueo")),
+        **dict(zip("ｧｨｩｪｫ", "aiueo")),
+        **dict(zip("ゃゅょ", ("ya", "yu", "yo"))),
+        **dict(zip("ャュョ", ("ya", "yu", "yo"))),
+        **dict(zip("ｬｭｮ", ("ya", "yu", "yo"))),
+        "ゎ": "wa",
+        "ヮ": "wa",
+        "ｯ": "",
+        "っ": "",
+        "ッ": "",
+    }
+)
+_SMALL_KANA_LETTERS = "".join(map(chr, _SMALL_KANA))
+_SMALL_KANA_LETTER = re.compile(f"[{_SMALL_KANA_LETTERS}]")
+# A Japanese letter other than a small kana: a full-size kana or a kanji.
+_FULL_SIZE = re.compile(f"(?![{_SMALL_KANA_LETTERS}])[{JAPANESE_LETTERS}]")
+
+
+def _line_stranded_kana(parts, language):
+    """The runs of one translated line split around its codes (_runs), with
+    their small kana as Latin letters (_SMALL_KANA) for a Latin-script
+    *language*, unless the line's text holds a full-size kana or kanji: that
+    is a real miss, which goes back to the model rather than be papered
+    over. The ideographic space stays, a pause between gasps."""
+    text = "".join(parts[0::2])
+    if (
+        script(language) == LATIN
+        and _SMALL_KANA_LETTER.search(text)
+        and not _FULL_SIZE.search(text)
+    ):
+        parts[0::2] = [part.translate(_SMALL_KANA) for part in parts[0::2]]
+    return parts
+
+
+def stranded_kana(line, language):
+    """One translated *line* of a reply with its stranded small kana as
+    Latin letters (_line_stranded_kana); Guided sends codes masked, so the
+    line is all text."""
+    if not isinstance(line, str):
+        return line
+    return _line_stranded_kana([line], language)[0]
+
+
+def kana_written(text, language, protected=()):
+    """One line of a translation into *language* with only the kana the
+    reply cleanup writes otherwise changed, as translated_line writes them:
+    for a target written without full-width punctuation the small っ and ッ
+    left out, and for a Latin-script one its stranded small kana as Latin
+    letters. Codes and the literal *protected* tokens keep their spelling.
+    The content check reads a line that never went through clean_reply so."""
+    if not isinstance(text, str) or full_width(language):
+        return text
+    parts = _runs(text, protected)
+    parts[0::2] = map(_without_stops, parts[0::2])
+    return "".join(_line_stranded_kana(parts, language))
 
 
 def _settled(text, language, latin):
@@ -252,7 +323,9 @@ def clean_reply(text, language):
     the horizontal bar Japanese fonts draw, 【】 square brackets and é plain
     e; apostrophes and tildes are made font-safe and a long vowel mark run
     after a kana repeats it. 「 and 」 stay, since quotes would break the JSON
-    before it is read; they become quotes per line once it is."""
+    before it is read; they become quotes per line once it is, and its
+    lines' stranded small kana are repaired once it is read
+    (stranded_kana)."""
     latin = not full_width(language)
     text = _without_label(text, language)
     if latin:
@@ -289,7 +362,8 @@ def translated_line(text, language, quotes=True, protected=()):
     fences around a reply, then with typographic quotes as apostrophes (reply_quotes) and
     corner brackets as quotes when *quotes* (corner_quotes, convertQuotes).
     Codes and the literal *protected* tokens keep their spelling, as Guided
-    sends codes masked, so the reply never holds them."""
+    sends codes masked, so the reply never holds them, and the line's small
+    kana are repaired by its text around them (_line_stranded_kana)."""
     if not isinstance(text, str):
         return text
     latin = not full_width(language)
@@ -298,7 +372,10 @@ def translated_line(text, language, quotes=True, protected=()):
         run = _without_label(parts[index], language)
         if latin:
             run = _latin_marks(run, language)
-        run = reply_quotes(_settled(run, language, latin), language)
+        parts[index] = _settled(run, language, latin)
+    _line_stranded_kana(parts, language)
+    for index in range(0, len(parts), 2):
+        run = reply_quotes(parts[index], language)
         parts[index] = corner_quotes(run, language, quotes)
     return "".join(parts)
 

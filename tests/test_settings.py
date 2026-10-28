@@ -1226,6 +1226,10 @@ class SettingsTests(unittest.TestCase):
             view = settings.save(view["revision"], "first", view["values"], options)
             settings.prepare_engine("batch")
             frozen = deepcopy(adapter.manual.request_policy)
+            # A run freezes how its replies are read, which its estimate's
+            # identity leaves out, so the estimate stays current.
+            self.assertEqual(frozen["smallKana"], preferences.SMALL_KANA)
+            self.assertNotIn("smallKana", settings.guided_configuration("batch"))
             self.assertEqual(frozen["batchInputTokens"], 8_000_000)
             self.assertEqual(frozen["maxOutputTokens"], 65536)
             self.assertEqual(
