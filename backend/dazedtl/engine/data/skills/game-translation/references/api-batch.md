@@ -24,7 +24,7 @@ Every engine follows the same route: `organize` compiles requests from the extra
    A cost approval is a decision within the run, not a request for a new translation prompt.
    Unsupported Batch routes must not silently fall back to full-price Live translation.
 
-The quote is priced by the same rule as the application's Guided estimates, with a 2.5× source-token output allowance.
+The quote is priced by the same rule as the application's Guided estimates, with the source-token output allowance its basis names.
 For a Batch whose provider caches prompts, such as Claude or OpenAI, it is a range: the lower price has requests reuse their cached instructions, the higher reuses none; the quote's cost is the higher.
 When the run notes that the model's thinking is not estimated, its reasoning is billed as output on top.
 It is a planning estimate, not a guaranteed bill or a spending cap.

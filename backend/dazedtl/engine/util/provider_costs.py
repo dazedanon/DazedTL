@@ -16,7 +16,9 @@ from datetime import UTC, datetime
 # 1: every figure saved before figures recorded it. 2: OpenAI's per-model
 # cache prices (2.48.0) and every rule before them. 3: no cache reads in an
 # OpenAI Batch on the models whose Batch doesn't cache (openai_batch_caches).
-PRICE_RULES_VERSION = 3
+# 4: an OpenAI Batch that writes the cache but expects no reads shows its
+# price with those writes (translation.openai_cache_prices).
+PRICE_RULES_VERSION = 4
 
 
 def received_at(created=None) -> str:
@@ -201,6 +203,17 @@ def batch_price_factor(provider: str | None) -> float:
     every other Batch provider here halves the price.
     """
     return 0.60 if str(provider or "").strip().lower() == "kimi" else 0.50
+
+
+def shown_batch_price(estimate: dict) -> str:
+    """Which of a Batch estimate's prices it shows as its Batch cost: the
+    cached price when it expects the prompt cache (``uses_prompt_cache``),
+    else the price without one."""
+    return (
+        "batch_cached_cost"
+        if estimate.get("uses_prompt_cache")
+        else "batch_nocache_cost"
+    )
 
 
 def has_billed_cache_writes(provider: str, model: str) -> bool:

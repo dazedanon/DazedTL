@@ -7,6 +7,7 @@ from collections import Counter
 
 from dazedtl.compatibility.estimate_prices import (
     OUTPUT_RULES_VERSION,
+    output_multiple,
     output_tokens,
     prices,
 )
@@ -786,7 +787,8 @@ def price(counts, configuration, provider, cache=None):
         "unestimated_thinking_tokens": value["unestimated_thinking_tokens"],
         "thinking_effort": value["thinking_effort"],
         "price_rules": value["price_rules"],
-        "basis": "Complete compiled requests; 2.5× source-token output allowance"
+        "basis": "Complete compiled requests; "
+        f"{output_multiple():g}× source-token output allowance"
         + (
             "; the higher Batch price reuses no cached instructions, the lower reuses every one it can"
             if reused is not None

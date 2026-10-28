@@ -229,7 +229,7 @@ Each compile or organize replaces the estimate still waiting, so only the newest
 When the user switches to another model of the same connection, or between Batch and Live, a waiting quote takes the new prices if every request keeps its text, and Progress shows them; approving it freezes the run again with those settings under the same run ID.
 Any other change to API settings or the mode outdates the quote: the user can estimate it again on Progress, which repeats the organize or compile that made it, or you compile and review a new plan.
 A quote is an estimate, not a guaranteed bill or an unlimited retry allowance.
-It counts input tokens as Guided's estimate does, from the text each request sends, and output as 2.5 times the source payload the model echoes.
+It counts input tokens as Guided's estimate does, from the text each request sends, and output as a multiple of the source payload the model echoes ([`OUTPUT_ALLOWANCE`](../backend/dazedtl/engine/util/translation.py)).
 New runs include one context-clarification retry for a confirmed provider refusal, with any additional usage billed in the originally selected mode.
 Only refused requests are retried; a second refusal stays unresolved.
 A note left in place of a line, such as "[Not translated]" or "Translation declined.", is a refusal, never game text.
