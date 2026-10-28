@@ -302,7 +302,11 @@ class Runner:
         return response
 
     def record_usage(self, identity, response):
-        from util.provider_costs import joined_received_at, time_priced_route
+        from util.provider_costs import (
+            joined_received_at,
+            time_priced_route,
+            uncached_usage,
+        )
 
         times = [response.get("received_at")]
         if identity in self.job.get("refusal_retries", {}):
@@ -315,21 +319,7 @@ class Runner:
                 if key.endswith("tokens")
             }
 
-        def count(key):
-            value = response.get(key, 0)
-            return value if type(value) is int and value >= 0 else 0
-
-        cached, created = (
-            count("cache_read_input_tokens"),
-            count("cache_creation_input_tokens"),
-        )
-        row = {
-            "input_tokens": max(0, count("prompt_tokens") - cached - created),
-            "output_tokens": count("completion_tokens"),
-            "cache_read_input_tokens": cached,
-            "cache_creation_input_tokens": created,
-            "thinking_tokens": count("thinking_tokens"),
-        }
+        row = uncached_usage(response)
         rows = self.job.setdefault("request_usage", {})
         # Recovery records every saved response again, so summing all rows
         # each time would cost the square of a large run's requests.
