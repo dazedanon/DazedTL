@@ -29,6 +29,10 @@ class QuoteRates(TypedDict):
     input: float
     output: float
     source: str
+    # An OpenRouter route's Batch rates, as its openrouterBatch policy
+    # prices them; the renderer shows none of them.
+    batch_input: NotRequired[float]
+    batch_output: NotRequired[float]
     # Only in quotes of older runs, which froze the Batch discount;
     # compatibility/estimate_prices decides it now.
     batch_factor: NotRequired[float | None]

@@ -1459,6 +1459,8 @@ export type QuoteRates = {
   input: number;
   output: number;
   source: string;
+  batch_input?: number;
+  batch_output?: number;
   batch_factor?: number | null;
 };
 

@@ -8,11 +8,14 @@ from tempfile import TemporaryDirectory
 from types import ModuleType, SimpleNamespace
 
 import httpx
+from dazedtl.api.contracts.translation import TranslationQuote
+from dazedtl.api.contracts.validation import _close_contracts
 from dazedtl.compatibility import openrouter_batch as batch
 from dazedtl.compatibility import openrouter_pricing
 from dazedtl.settings import openrouter
 from dazedtl.translation.files import digest, read_json
 from dazedtl.translation.requests import quote
+from pydantic import TypeAdapter
 
 from tests.engine import engine_module, point, replaced_modules
 
@@ -78,7 +81,14 @@ class OpenRouterQuoteTests(unittest.TestCase):
             "model": MODEL,
             "provider": "openrouter",
             "openrouterBatch": POLICY,
-            "rates": {"input": 2, "output": 8},
+            # As settings/execution freezes them, with the policy's Batch rates.
+            "rates": {
+                "input": 2,
+                "output": 8,
+                "source": "openrouter",
+                "batch_input": 0.8,
+                "batch_output": 3,
+            },
         }
         # Each request also counts 8 tokens of message framing.
         quoted = quote(
@@ -88,6 +98,9 @@ class OpenRouterQuoteTests(unittest.TestCase):
             lambda _: 100,
         )
         self.assertEqual(quoted["cost"], QUOTED)
+        # The renderer receives the quote as its contract declares it.
+        _close_contracts()
+        TypeAdapter(TranslationQuote).validate_json(json.dumps(quoted), strict=True)
 
     def test_batch_file_lines_and_total_price_results_alike(self):
         # An OpenRouter Batch's file line and TOTAL price its fetched results
