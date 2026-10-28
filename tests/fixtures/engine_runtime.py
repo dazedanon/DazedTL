@@ -2733,7 +2733,13 @@ try:
                 ),
                 encoding="utf-8",
             )
-        for policy, sends in (("1", 1), ("0", 2)):
+        # Under the policy the stand-in answers the first request, which the
+        # file pays for before the stop leaves its handler: its receipt keeps
+        # it, read from its log line by the run's records and from its result
+        # by the run's TOTAL.
+        from dazedtl.compatibility.process_view import file_receipt
+
+        for policy, sends in (("1", 2), ("0", 2)):
             Record(stop_root).reset()
             (stop_root / "sent.txt").unlink(missing_ok=True)
             for text_file in texts:
@@ -2741,15 +2747,17 @@ try:
             stop_task = TranslationTask(
                 stop_root, ("JSON", (".json",), None), runner_script=stop_runner
             )
-            errors, handed = [], []
+            errors, handed, logged = [], [], []
             stop_task.file_error_signal.connect(lambda *args: errors.append(args))
             stop_task.progress_signal.connect(lambda *args: handed.append(args[2]))
+            stop_task.log_signal.connect(logged.append)
             with patch.dict(
                 os.environ,
                 {
                     **stop_environment,
                     "STAND_IN_REFUSES": "effort",
                     "STAND_IN_POLICY": policy,
+                    "STAND_IN_PAYS": "1" if policy == "1" else "",
                 },
             ):
                 result = stop_task._run_files(texts, False)
@@ -2766,42 +2774,18 @@ try:
                 assert errors == [(name, refused_effort) for name in handed], case
                 assert stop_task.run_stop == refused_effort, case
                 assert written == [], (case, written)
+                paid = stop_task.receipts["Text1.json"]
+                assert (paid["input"], paid["output"]) == (11, 3), paid
+                assert [
+                    receipt
+                    for receipt in (file_receipt(line, texts) for line in logged)
+                    if receipt
+                ] == [("Text1.json", paid, True)], logged
             else:
                 assert result != "Fail", case
                 assert handed == texts and errors == [], case
                 assert stop_task.run_stop is None, case
                 assert written == texts, (case, written)
-        # A file that paid for a response before the stop left its handler
-        # keeps it on its receipt: the run's records read its log line, and
-        # the run's TOTAL its result.
-        from dazedtl.compatibility.process_view import file_receipt
-
-        Record(stop_root).reset()
-        (stop_root / "sent.txt").unlink(missing_ok=True)
-        stop_task = TranslationTask(
-            stop_root, ("JSON", (".json",), None), runner_script=stop_runner
-        )
-        logged = []
-        stop_task.log_signal.connect(logged.append)
-        with patch.dict(
-            os.environ,
-            {
-                **stop_environment,
-                "STAND_IN_REFUSES": "effort",
-                "STAND_IN_POLICY": "1",
-                "STAND_IN_PAYS": "1",
-            },
-        ):
-            assert stop_task._run_files(texts, False) == "Fail"
-        assert stop_task.run_stop == refused_effort
-        assert len((stop_root / "sent.txt").read_text().split()) == 2
-        paid = stop_task.receipts["Text1.json"]
-        assert (paid["input"], paid["output"]) == (11, 3), paid
-        assert [
-            receipt
-            for receipt in (file_receipt(line, texts) for line in logged)
-            if receipt
-        ] == [("Text1.json", paid, True)], logged
         # That worker saves a Batch's files one after another; a file missing
         # a result must not keep the files after it from saving theirs. Each
         # file reports only its own exact cost, which the run's TOTAL adds up.
