@@ -13,7 +13,11 @@ from dazedtl import system
 from dazedtl.projects.store import UNRECOGNIZED
 from dazedtl.storage import write_bytes, write_json
 from dazedtl.translation.files import digest
-from dazedtl.translation.git_status_cache import RepositoryStatusCache, file_signature
+from dazedtl.translation.git_status_cache import (
+    RepositoryStatusCache,
+    file_signature,
+    metadata_signature,
+)
 from dazedtl.translation.requests import output_schema, provider_view
 from dazedtl.translation.skill_users import for_batch
 
@@ -113,8 +117,11 @@ class TranslationEngine:
         self.source = activate()
         self.profile = Path(profile).resolve()
         # Git's metadata decides everything in a status but whether the
-        # working tree is clean, so only that is asked again every few seconds.
-        self.repository_status = RepositoryStatusCache(stable=True)
+        # working tree is clean, so only that is asked again every few seconds;
+        # it follows the index, which the rest of the status doesn't read.
+        self.repository_status = RepositoryStatusCache(
+            stable=True, signer=metadata_signature
+        )
         self.worktrees = RepositoryStatusCache()
         self.original_trees = RepositoryStatusCache(stable=True)
         # Its signature covers everything the GameUpdate status reads.
@@ -438,14 +445,23 @@ class TranslationEngine:
         # 40 ms each). Between metadata changes a poll asks only `git status`.
         project = self.project(source, options)
         key = (str(project.game_root), digest(options))
-        status = self.repository_status.get(
-            key, project.game_root, lambda: git_status(project)
-        )
+        read = []
+
+        def inspect():
+            read.append(git_status(project))
+            return read[0]
+
+        status = self.repository_status.get(key, project.game_root, inspect)
         if status.get("repo_root"):
+            # A status read just now holds the working tree's answer too.
             clean = self.worktrees.get(
                 key,
                 project.game_root,
-                lambda: worktree_clean(Path(status["repo_root"])),
+                lambda: (
+                    read[0]["worktree_clean"]
+                    if read
+                    else worktree_clean(Path(status["repo_root"]))
+                ),
             )
             status = {**status, "worktree_clean": clean}
         return status

@@ -23,6 +23,7 @@ from dazedtl.compatibility import (
 )
 from dazedtl.compatibility.checkpoint_commits import for_action, running
 from dazedtl.compatibility.game_write import write_game
+from dazedtl.compatibility.translation import TranslationEngine
 from util.len_git import git_status, setup_git
 from util.len_translation import LenProject
 from util.version_update import git_workflow
@@ -40,6 +41,8 @@ BUDGETS = {
     "an undo in a new process": 16,
     "a go back in a new process": 17,
     "the version update status": 5,
+    "a status poll after a write": 5,
+    "the next status poll": 1,
 }
 
 
@@ -141,6 +144,25 @@ class GitLaunchTests(unittest.TestCase):
             True,
         )
         count("the version update status", lambda: git_status(self.project))
+        # The UI polls status twice a second; `git status` rewrites the index
+        # for about a second after a write, which a poll's kept read outlasts.
+        engine = TranslationEngine(game.parent / "profile")
+        options = {
+            "mode": "agent",
+            "include_images": False,
+            "instructions": "",
+            "include_glossary_base": False,
+            "install_forge": False,
+        }
+        engine.git_status(str(game), options)
+        write(b'{"a": 4}')
+        poll = lambda: engine.git_status(str(game), options)
+        count("a status poll after a write", poll)
+        count("the next status poll", poll)
+        # The kept status follows the index for what the user stages.
+        (game / "data/Items.json").write_bytes(b'["staged"]')
+        git(game, "add", "data/Items.json")
+        self.assertFalse(poll()["worktree_clean"])
         self.assertEqual(
             {name: max(self.counts[name], budget) for name, budget in BUDGETS.items()},
             BUDGETS,
