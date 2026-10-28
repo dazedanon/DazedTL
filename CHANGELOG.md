@@ -3,6 +3,16 @@
 Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 [release.mjs](scripts/release.mjs) writes each entry from [release/notes.md](release/notes.md).
 
+## [2.45.0] - 2026-10-28
+
+### Changed
+
+- **Assistant-led:** when lines of a scene are translated again while the rest of it keeps its earlier translation, such as after a glossary edit, each request now shows the lines just before them with their earlier translation, as Guided does, so the new lines carry on the scene's voice and tense instead of reading as a scene of their own.
+
+### Fixed
+
+- **Assistant-led:** undoing “Apply translated images” in Checkpoints, or going back past it, now puts back the original of an image in a folder the assistant decoded from the game's archives instead of deleting it, so packing the archive again no longer loses that picture, for images prepared from this version on.
+
 ## [2.44.0] - 2026-10-28
 
 ### Added
@@ -1266,6 +1276,7 @@ Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachan
 - The first release of DazedTL as a desktop app, installed from a ZIP with a START launcher and updated from inside the app.
 - **Guided steps** for RPG Maker MV, MZ and VX Ace games, and **Assistant-led** for any game.
 
+[2.45.0]: https://github.com/dazedanon/DazedTL/compare/v2.44.0...v2.45.0
 [2.44.0]: https://github.com/dazedanon/DazedTL/compare/v2.43.0...v2.44.0
 [2.43.0]: https://github.com/dazedanon/DazedTL/compare/v2.42.0...v2.43.0
 [2.42.0]: https://github.com/dazedanon/DazedTL/compare/v2.41.0...v2.42.0
