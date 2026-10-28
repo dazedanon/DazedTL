@@ -31,7 +31,6 @@ from util.paths import (
 )
 from util.provider_costs import (
     batch_price_factor,
-    batch_write_weight,
     cache_read_multiplier,
     cache_write_multiplier,
     has_billed_cache_writes,
@@ -5428,6 +5427,67 @@ def _record_live_cost(usage, model):
     _thread_local.file_cost_ready = True
 
 
+# The per-file counters fetched Batch results add to, by the usage keys
+# provider_costs.usage_cost reads.
+_BATCH_USAGE_COUNTERS = {
+    "file_batch_read": "cache_read_input_tokens",
+    "file_batch_write": "cache_creation_input_tokens",
+    "file_batch_write_1h": "cache_creation_1h_input_tokens",
+    "file_batch_regular": "input_tokens",
+    "file_batch_output": "output_tokens",
+}
+
+
+def _batch_usage(since=None):
+    """The current file's fetched Batch results' usage, or what was added to
+    it after ``since``, an earlier reading."""
+    usage = {
+        key: getattr(_thread_local, name, 0)
+        for name, key in _BATCH_USAGE_COUNTERS.items()
+    }
+    if since is not None:
+        usage = {key: count - since[key] for key, count in usage.items()}
+    return usage
+
+
+@extensions.point
+def batch_usage_cost(usage, model, provider):
+    """What fetched Batch results with ``usage`` cost on ``provider``'s Batch:
+    the model's Live rates with the route's cache prices
+    (provider_costs.usage_cost), then the Batch discount. Guided's file
+    lines, its TOTAL and the Batch history all price results by it; a frozen
+    OpenRouter policy layers its own rates on it
+    (compatibility/openrouter_pricing)."""
+    pricing = getPricingConfig(model)
+    return usage_cost(
+        usage,
+        provider,
+        model,
+        pricing["inputAPICost"] / 1_000_000,
+        pricing["outputAPICost"] / 1_000_000,
+        batch_price_factor(provider),
+    )
+
+
+def _batch_results_cost(usage, model):
+    """What fetched Batch results with ``usage`` cost on the run's Batch,
+    for a file line and the run's TOTAL alike."""
+    return batch_usage_cost(usage, model, getBatchProvider(model) or "anthropic")
+
+
+def _record_batch_cost(since, model):
+    """Add the Batch results this file fetched after ``since``, an earlier
+    _batch_usage, to the run's TOTAL; the file's line prices them all once
+    the file is done (calculateCost)."""
+    global _global_accurate_cost
+    added = _batch_usage(since)
+    if not any(added.values()):
+        return
+    cost = _batch_results_cost(added, model)
+    with _global_accurate_cost_lock:
+        _global_accurate_cost += cost
+
+
 _BATCH_COLLECT_FILE_COUNTERS = (
     "source_items",
     "queued_items",
@@ -5502,7 +5562,6 @@ def reset_accurate_cost():
         _global_accurate_cost = 0.0
 
 
-@extensions.point
 def calculateCost(inputTokens, outputTokens, model):
     """
     Calculate the cost of translation based on token usage and model pricing.
@@ -5529,22 +5588,8 @@ def calculateCost(inputTokens, outputTokens, model):
     ):
         # Per-file call: compute from accumulators (may be 0 for disk-cached files),
         # reset everything, return the file cost.
-        bcr  = getattr(_thread_local, 'file_batch_read',    0)
-        bcw  = getattr(_thread_local, 'file_batch_write',   0)
-        bcw1h = getattr(_thread_local, 'file_batch_write_1h', 0)
-        breg = getattr(_thread_local, 'file_batch_regular', 0)
-        bout = getattr(_thread_local, 'file_batch_output',  0)
-        pricing  = getPricingConfig(model)
-        br  = pricing["inputAPICost"]  / 1_000_000
-        orr = pricing["outputAPICost"] / 1_000_000
-        batch_provider = getBatchProvider(model) or "anthropic"
-        cost = (
-            # Batch API tokens: Live rates, then the Batch discount.
-            (bcr * br * cache_read_multiplier(batch_provider, model)
-             + batch_write_weight(batch_provider, model, bcw, bcw1h) * br
-             + breg * br + bout * orr)
-            * batch_price_factor(batch_provider)
-            + getattr(_thread_local, 'file_live_cost', 0)
+        cost = _batch_results_cost(_batch_usage(), model) + getattr(
+            _thread_local, 'file_live_cost', 0
         )
         for name in _FILE_COST_COUNTERS:
             setattr(_thread_local, name, 0)
@@ -5702,11 +5747,7 @@ def translateAI(text, history, config, filename=None, pbar=None, lock=None,
         _thread_local.file_batch_regular = 0
         _thread_local.file_batch_output  = 0
     # Snapshot accumulators so end-of-call delta only counts tokens from this call.
-    _prev_bcr  = _thread_local.file_batch_read
-    _prev_bcw  = _thread_local.file_batch_write
-    _prev_bcw1h = getattr(_thread_local, 'file_batch_write_1h', 0)
-    _prev_breg = _thread_local.file_batch_regular
-    _prev_bout = _thread_local.file_batch_output
+    _batch_before = _batch_usage()
     _thread_local.file_cost_ready = False  # will be set True at end of translateAI
 
     # Provider batch phase; Estimate uses the collect request builder with a
@@ -6699,34 +6740,8 @@ def translateAI(text, history, config, filename=None, pbar=None, lock=None,
     # discount; file_* accumulators hold full per-file totals, which
     # calculateCost() reads. Live responses were priced as they arrived.
     _is_claude_final = isClaudeModel(config.model)
-    _has_batch_delta = (
-        getattr(_thread_local, 'file_batch_regular', 0) > _prev_breg
-        or getattr(_thread_local, 'file_batch_output', 0) > _prev_bout
-    )
-    if _has_batch_delta and not config.estimateMode:
-        _pricing = getPricingConfig(config.model)
-        _br = _pricing["inputAPICost"] / 1_000_000
-        _or = _pricing["outputAPICost"] / 1_000_000
-        # Delta = tokens added in this call only (not earlier calls for same file).
-        _delta_bcr  = getattr(_thread_local, 'file_batch_read',    0) - _prev_bcr
-        _delta_bcw  = getattr(_thread_local, 'file_batch_write',   0) - _prev_bcw
-        _delta_bcw1h = getattr(_thread_local, 'file_batch_write_1h', 0) - _prev_bcw1h
-        _delta_breg = getattr(_thread_local, 'file_batch_regular', 0) - _prev_breg
-        _delta_bout = getattr(_thread_local, 'file_batch_output',  0) - _prev_bout
-        _call_cost = (
-            _delta_bcr  * _br * cache_read_multiplier(
-                batch_provider or "anthropic", config.model
-            ) +
-            batch_write_weight(
-                batch_provider or "anthropic", config.model,
-                _delta_bcw, _delta_bcw1h,
-            ) * _br +
-            _delta_breg * _br +
-            _delta_bout * _or
-        ) * batch_price_factor(batch_provider)
-        global _global_accurate_cost
-        with _global_accurate_cost_lock:
-            _global_accurate_cost += _call_cost
+    if not config.estimateMode:
+        _record_batch_cost(_batch_before, config.model)
     # A Live call's file cost is what its responses were priced at, none when
     # the cache answered every line, so calculateCost reads the accumulators.
     if not config.estimateMode and (

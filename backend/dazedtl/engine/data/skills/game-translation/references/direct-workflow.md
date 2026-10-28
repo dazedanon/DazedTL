@@ -43,6 +43,7 @@ On RPG Maker, give each actor's glossary row its ID, as in `ミカ (Mika) - Fema
 Every request carries the full system, glossary, SFX, field instructions, preceding source context, speaker-bearing `user` payload and advisory reference translations.
 In Assistant only, read each request with the helper, translate it, and save its receipt with `accept`; decline a request you won't translate rather than softening or leaving out lines.
 `results --run ID` writes the accepted translations by unit ID for the injector, those organize kept from earlier requests included, and lists each line still without one under `missing`.
+To correct a line organize kept, accept the correction on the newest run: the line's progress export row names the earlier request as `batch` and `request_sha256`, and that request's saved record, `.dazedtl/len-method/work/accepted/<request_sha256>.json`, holds its current translations and `result_sha256`; change only the lines the run kept from it.
 
 ## Save small results; validate at the right scale
 

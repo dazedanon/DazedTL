@@ -2862,13 +2862,14 @@ try:
                 ["薬"], [], config, filename="Items.json"
             )
             assert translated[0] == ["Potion"], translated
-            assert (
-                abs(
-                    parser.calculateCost(10, 4, config.model)
-                    - (8 * 0.8 + 2 * 0.2 + 4 * 3) / 1_000_000
+            # The file's line and the run's TOTAL take the policy's rates alike.
+            for priced in (
+                parser.calculateCost(10, 4, config.model),
+                translation.priced_cost(),
+            ):
+                assert abs(priced - (8 * 0.8 + 2 * 0.2 + 4 * 3) / 1_000_000) < 1e-12, (
+                    priced
                 )
-                < 1e-12
-            )
             # Schema-shaped responses can fail native content validation without
             # being refusals; here every line comes back empty. Retain the failed body and generic outcome before
             # the file finishes, even when human-readable logs are unavailable.

@@ -8,7 +8,7 @@ per-line facts the extractor recorded, so it works the same for every engine.
 from math import ceil
 from pathlib import PurePosixPath
 
-from .files import digest
+from .files import digest, project_path, read_json
 from .project import WORK
 from .requests import result_value, scene_list
 from .results import unsent_line
@@ -480,6 +480,13 @@ def owns(relative):
     return (
         str(PurePosixPath(relative).parent).casefold() == PLANS.rstrip("/").casefold()
     )
+
+
+def laid_out(root, relative):
+    """The units the organize plan at *relative* was laid out from, read
+    from the units file it names, as organize read them (units_input)."""
+    value = read_json(project_path(root, relative))
+    return units_input(read_json(project_path(root, value["inputs"][0])))
 
 
 def summary(units, value):
