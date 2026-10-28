@@ -1184,28 +1184,67 @@ class CompatibilityContracts(unittest.TestCase):
 
     def test_an_openai_batch_estimate_prices_cache_reads_at_the_models_price(self):
         # Every OpenAI Batch estimate priced cache reads at a tenth of input,
-        # though GPT-4o reads at half and GPT-4.1 at a quarter.
+        # though GPT-6.1 Sol reads at a twentieth. The models OpenAI's Batch
+        # doesn't cache, GPT-4.1 and the rest before GPT-5 and the -pro
+        # models, once expected reads too, so the low end of their Batch
+        # estimates and quotes read below anything they cost.
+        from dazedtl.translation.requests import price
+        from util.provider_costs import cache_read_multiplier
         from util.translation import openai_cache_prices
+
+        # Live keeps each model's own read price.
+        for model, read in (("gpt-4o", 0.5), ("o3-mini", 0.5), ("o4-mini", 0.25)):
+            self.assertEqual(cache_read_multiplier("openai", model), read)
 
         # 1M input, 900k of it expected cache hits, and 100k output, at $2
         # and $8 per 1M; these models bill no cache writes.
         for model, read in (
-            ("gpt-4o", 0.5),
-            ("gpt-4.1", 0.25),
-            ("o4-mini", 0.25),
             ("gpt-5.4", 0.1),
+            ("gpt-5.5", 0.1),
+            ("gpt-4o", None),
+            ("gpt-4.1", None),
+            ("o4-mini", None),
+            ("o1-pro", None),
+            ("gpt-4o-2024-05-13", None),
+            ("gpt-5.5-pro", None),
+            ("openai/gpt-4.1-mini", None),
         ):
             with self.subTest(model):
-                _writes, _most_writes, cached, _most = openai_cache_prices(
-                    1_000_000, 100_000, 900_000, 1_000_000, model, 2e-6, 8e-6
+                hits, _writes, _most_writes, cached, _most = openai_cache_prices(
+                    1_000_000, 100_000, 900_000, 1_000_000, model, 2e-6, 8e-6, 1.4
                 )
-                self.assertAlmostEqual(cached, (0.2 + 1.8 * read + 0.8) / 2)
+                self.assertEqual(hits, 0 if read is None else 900_000)
+                self.assertAlmostEqual(cached, (0.2 + 1.8 * (read or 1) + 0.8) / 2)
+                # Assistant-led's quote offers a reused figure only when the
+                # Batch reads, and approves the same most either way.
+                quoted = price(
+                    {
+                        "requests": 10,
+                        "units": 10,
+                        "input_tokens": 1_000_000,
+                        "output_tokens": 100_000,
+                        "cache_read_tokens": 900_000,
+                        "cacheable_tokens": 1_000_000,
+                    },
+                    {
+                        "mode": "batch",
+                        "model": model,
+                        "provider": "openai",
+                        "rates": {"input": 2, "output": 8},
+                    },
+                    "openai",
+                )
+                self.assertAlmostEqual(quoted["cost"], 1.4)
+                if read is None:
+                    self.assertNotIn("batch_cost_reused", quoted)
+                else:
+                    self.assertAlmostEqual(quoted["batch_cost_reused"], cached)
         # GPT-6.1 Sol reads at a twentieth and writes the rest of its
         # cacheable input at 1.25 times.
-        writes, _most_writes, cached, _most = openai_cache_prices(
-            1_000_000, 100_000, 800_000, 1_000_000, "gpt-6.1-sol", 2e-6, 8e-6
+        hits, writes, _most_writes, cached, _most = openai_cache_prices(
+            1_000_000, 100_000, 800_000, 1_000_000, "gpt-6.1-sol", 2e-6, 8e-6, 1.4
         )
-        self.assertEqual(writes, 200_000)
+        self.assertEqual((hits, writes), (800_000, 200_000))
         self.assertAlmostEqual(cached, (0.5 + 1.6 * 0.05 + 0.8) / 2)
 
     def test_a_stopped_batch_records_its_cache_reads_as_a_completed_one_does(self):

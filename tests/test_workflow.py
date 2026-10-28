@@ -1484,6 +1484,41 @@ class WorkflowTests(unittest.TestCase):
                 self.service.start(self.identity, claude["id"], token)
         self.assertFalse(store.authorized(store.load(claude["id"])[0]))
 
+    def test_a_waiting_gpt_4_1_batch_quote_drops_cache_reads_its_batch_never_gets(
+        self,
+    ):
+        # A GPT-4.1 Batch quote offered a lower price reusing cached
+        # instructions, though OpenAI's Batch caches nothing on GPT-4.1; one
+        # saved before the fix showed that price until estimated again.
+        connection = self.settings_data["connections"][0]
+        options = connection["model_options"]
+        options["gpt-4.1"] = {**options["fixture-model"], "inputRate": 2}
+        options["gpt-4.1"]["outputRate"] = 8
+        connection["model"] = "gpt-4.1"
+        self.engine.openai_cache = lambda _requests: {
+            "cache_read_tokens": 10**9,
+            "cacheable_tokens": 10**9,
+        }
+        run = self.prepared(self.service.compile(self.identity, self.plan_path))
+        store = self.service.jobs.store
+        self.assertNotIn("batch_cost_reused", run["quote"])
+        self.assertEqual(run["quote"]["cost"], run["quote"]["batch_cost"])
+        # As the release before the fix priced it, under version 2's rules.
+        job, _plan = store.load(run["id"])
+        job["quote"] = {
+            **job["quote"],
+            "price_rules": 2,
+            "batch_cost_reused": job["quote"]["cost"] / 4,
+        }
+        store.save(job)
+        shown = next(
+            job
+            for job in self.service.state(self.identity)["jobs"]
+            if job["id"] == run["id"]
+        )
+        self.assertFalse(shown["settings_changed"] or shown["pricing_changed"])
+        self.assertEqual(shown["quote"], run["quote"])
+
     def test_deepseek_spend_is_priced_by_when_each_request_arrived(self):
         # DeepSeek bills half outside its weekday peak hours, but Progress
         # Spent and Requests Recorded usage priced every request at peak.

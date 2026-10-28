@@ -62,6 +62,8 @@ def prices(counts, configuration, provider, cache=None):
         "batch_cached_cost": nocache,
         "batch_max_cost": nocache,
         "uses_prompt_cache": False,
+        # Which cache the cached price expects, as estimateBatchCost names it.
+        "cache_kind": None,
         # Any model a Batch routes may think, unless the run froze an effort.
         "unestimated_thinking_tokens": bool(router)
         and configuration.get("thinkingEffort") is None
@@ -88,10 +90,13 @@ def prices(counts, configuration, provider, cache=None):
             batch_cached_cost=cached,
             batch_max_cost=most,
             uses_prompt_cache=True,
+            cache_kind="explicit",
         )
     elif provider == "openai":
+        # The reads stay as counted, so the estimate is priced again for
+        # another model from them; the hits are what this model's Batch reads.
         reads = min(inputs, counts["cache_read_tokens"])
-        writes, max_writes, cached, most = openai_cache_prices(
+        hits, writes, max_writes, cached, most = openai_cache_prices(
             inputs,
             outputs,
             reads,
@@ -99,6 +104,7 @@ def prices(counts, configuration, provider, cache=None):
             model,
             in_rate,
             out_rate,
+            nocache,
         )
         value.update(
             cache_read_tokens=reads,
@@ -109,7 +115,8 @@ def prices(counts, configuration, provider, cache=None):
             cache_max_write_tokens=inputs - counts.get("dynamic_tokens", inputs)
             if max_writes is None
             else max_writes,
-            uses_prompt_cache=bool(reads),
+            uses_prompt_cache=bool(hits),
+            cache_kind="automatic" if hits else None,
         )
         if most is not None:
             value["batch_max_cost"] = most
