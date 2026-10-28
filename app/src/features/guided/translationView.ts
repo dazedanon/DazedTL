@@ -581,6 +581,11 @@ const changedFile = (run: Job, name: string) =>
   run.changedOutputs !== undefined
     ? run.changedOutputs.includes(name)
     : !madeNoRequest(run, name) && !!run.process?.fileMetrics?.[name];
+/** The files whose translation from this run is in the game. An output the
+ * same as the file it read, such as one with nothing to translate, is in the
+ * game without an Apply, so it counts as no applied translation. */
+export const appliedFiles = (run: Job) =>
+  (run.appliedOutputs || []).filter((name) => changedFile(run, name));
 /**
  * The runs a file in a translation task reads, from the observer's
  * newest-first runs: `owner`, the newest current run that includes the file,

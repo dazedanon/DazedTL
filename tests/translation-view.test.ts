@@ -33,6 +33,7 @@ import {
   needsSubmissionReview,
   unconfirmedSubmission,
   canResumeRun,
+  appliedFiles,
   requestContext,
   translatedLines,
   translationStopLabel,
@@ -2522,4 +2523,19 @@ test("text locations name the editor's event, page and command, counting from on
   );
   assert.equal(textLocation("/3/description"), "Entry 3 · description");
   assert.equal(textLocation("/terms/messages/x"), "terms › messages › x");
+});
+
+// A failed Database run's record said "2 applied" for Armors and Enemies,
+// whose outputs, with nothing to translate, matched the game unapplied.
+test("a run's applied files leave out outputs that changed nothing", () => {
+  const run = {
+    id: "run",
+    mode: "translate",
+    status: "failed",
+    files: ["Actors.json", "Armors.json", "Enemies.json"],
+    appliedOutputs: ["Actors.json", "Armors.json", "Enemies.json"],
+    changedOutputs: ["Actors.json"],
+  } as unknown as Job;
+  assert.deepEqual(appliedFiles(run), ["Actors.json"]);
+  assert.deepEqual(appliedFiles({ ...run, changedOutputs: [] }), []);
 });

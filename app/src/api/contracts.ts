@@ -276,7 +276,6 @@ export type RunProcess = {
   received?: number | null;
   validated?: number | null;
   validatedFiles?: number;
-  appliedFiles?: number;
   failed?: number;
   retryBlocked?: boolean;
   nextAction?: string;
