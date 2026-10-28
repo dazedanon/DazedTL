@@ -456,14 +456,31 @@ def changes(root, commit):
     }
 
 
+_OBJECT = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
+
+
+def _kept(root, kind, commit, read):
+    """What Git holds at a commit never changes, so what a go back, undo or
+    copy reads of one, a tree's files or the original branch's history as of
+    its tip, is kept by it for the next, as the original files' records
+    are."""
+    from . import original_files
+
+    return original_files._kept((str(root), kind, commit), read)
+
+
 class _Game:
     """The files of a game as of one of its checkpoints, against the game
     as it is now."""
 
     def __init__(self, root, target, original=None):
+        from util.paths import LEN_PATCH_GITIGNORE_BEGIN
+        from util.version_update.git_workflow import read_objects
+
         self.root = root
-        tip = _git(root, "rev-parse", "--verify", "-q", ORIGINAL, check=False)
-        self.original_tip = tip.stdout.strip() if tip.returncode == 0 else ""
+        # The original branch's tip and the rules it holds, from one read.
+        found = read_objects(Path(root), (ORIGINAL, ORIGINAL + ":.gitignore"))
+        self.original_tip = found[ORIGINAL][0] if ORIGINAL in found else ""
         self.oldest = None
         # The `original` commit of the target's version, "" without one.
         self.original_commit = ""
@@ -471,15 +488,8 @@ class _Game:
         self.recorded = self._recorded(target.version)
         # The original branch made from the patch alone, as every baseline
         # is, can't say what a file outside it was; the record can.
-        from util.paths import LEN_PATCH_GITIGNORE_BEGIN
-
-        rules = (
-            _git(
-                root, "cat-file", "-p", self.original_tip + ":.gitignore", check=False
-            ).stdout
-            if self.original_tip
-            else ""
-        )
+        held = found.get(ORIGINAL + ":.gitignore")
+        rules = held[2].decode("utf-8", "replace") if self.original_tip and held else ""
         # A game set up before its original files were kept in Git has the
         # backup it saved then, of its current version.
         self.saved = original if self.recorded is None else None
@@ -518,9 +528,16 @@ class _Game:
         if not self.original_tip:
             return {}
         commit = self.original_tip
-        log = _git(
-            self.root, "log", "--first-parent", "--format=%H%x1f%B%x1e", ORIGINAL
-        ).stdout
+        log = _kept(
+            self.root,
+            "history",
+            commit,
+            lambda: (
+                _git(
+                    self.root, "log", "--first-parent", "--format=%H%x1f%B%x1e", commit
+                ).stdout
+            ),
+        )
         newest, chosen = None, None
         for record in log.split("\x1e"):
             if "\x1f" not in record:
@@ -558,9 +575,14 @@ class _Game:
     def tree(self, commit):
         from util.version_update.git_workflow import _tree_files
 
-        # Named as `_git` names paths, so a file name that isn't UTF-8 is
-        # restored as the file it was.
-        return _tree_files(self.root, commit, "", errors="surrogateescape")
+        def read():
+            # Named as `_git` names paths, so a file name that isn't UTF-8 is
+            # restored as the file it was.
+            return _tree_files(self.root, commit, "", errors="surrogateescape")
+
+        if not _OBJECT.fullmatch(commit):
+            return read()
+        return dict(_kept(self.root, "tree", commit, read))
 
 
 def _diff(root, older, newer):
@@ -680,13 +702,22 @@ def go_back(
     change = Change(f"Went back to {_quoted(target.title)}", None, BACK, target.commit)
     with running(change), write_game(root, folder, log=log, restores=True) as game:
         # The gateway recorded the edits made outside DazedTL first.
-        entries = _log(root)
+        entries = _since(root, game, entries)
         index = _restorable(entries, commit)
         state = _Game(root, entries[index], original)
         plan = _plan(state, _diff(root, commit, "HEAD"), state.tree(commit))
         written = _apply(game, root, plan, stopped, state)
     undone = [entry.commit for entry in entries[:index]]
-    return {"files": written, "commit": _head(root), "undone": undone}
+    return {"files": written, "commit": _head(root, game), "undone": undone}
+
+
+def _since(root, game, entries):
+    """The checkpoints as of the start of `game`, a write to the game, which
+    first records the edits made outside DazedTL: `entries`, read before it,
+    while that recorded none."""
+    if entries and game.parent == entries[0].commit:
+        return entries
+    return _log(root)
 
 
 def put_back(
@@ -718,7 +749,7 @@ def put_back(
         state = _Game(root, entries[_restorable(entries, commit)], original)
         plan = _plan(state, paths, state.tree(commit))
         written = _apply(game, root, plan, stopped, state)
-    return {"files": written, "commit": _head(root)}
+    return {"files": written, "commit": _head(root, game)}
 
 
 def tracked(root):
@@ -782,7 +813,7 @@ def undo(
         )
     change = Change(" ".join(_undoing(target)), None, UNDO)
     with running(change), write_game(root, folder, log=log, restores=True) as game:
-        entries = _log(root)
+        entries = _since(root, game, entries)
         index = _restorable(entries, commit)
         target = entries[index]
         found = _blockers(entries[: index + 1])[commit]
@@ -797,7 +828,7 @@ def undo(
         parent = entries[index + 1].commit if index + 1 < len(entries) else None
         plan = _plan(state, target.changes, state.tree(parent) if parent else {})
         written = _apply(game, root, plan, stopped, state)
-    return {"files": written, "commit": _head(root), "undone": [commit]}
+    return {"files": written, "commit": _head(root, game), "undone": [commit]}
 
 
 def _names(files):
@@ -808,8 +839,10 @@ def _names(files):
     return " and ".join(shown) if len(shown) == 2 else ", ".join(shown)
 
 
-def _head(root):
-    return _git(root, "rev-parse", "HEAD").stdout.strip()
+def _head(root, game):
+    """The commit HEAD is at after `game`, a write to the game: its
+    checkpoint, which it commits last."""
+    return game.checkpoint or _git(root, "rev-parse", "HEAD").stdout.strip()
 
 
 def copy_folder(root, parent, version, entry_time):
