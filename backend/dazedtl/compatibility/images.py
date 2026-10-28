@@ -24,7 +24,10 @@ class ImageCompatibility:
             else nullcontext()
         )
 
-    def profile(self, root, engine, image_root=""):
+    def profile(self, root, engine, image_root="", decoded=False):
+        """The image profile Images reads the game by. `decoded` marks a
+        folder an assistant decoded from the game's archives, whose applied
+        images ship only inside the archive it packs again."""
         from util.image_manager import (
             detect_image_engine,
             get_image_profile,
@@ -58,6 +61,7 @@ class ImageCompatibility:
             "id": identity,
             "label": value.label,
             "imageRoot": image_root,
+            "decoded": bool(decoded and image_root not in {"", "."} and not reason),
             "context": value.translation_skill_context,
             "supported": not reason,
             "reason": reason,
@@ -232,7 +236,11 @@ class ImageCompatibility:
         self._manifest(root)
         auxiliary = [
             project_path(root, relative, exists=False)
-            for relative in (".gitignore", ".dazedtl/image_manager/manifest.json")
+            for relative in (
+                ".gitignore",
+                ".gitattributes",
+                ".dazedtl/image_manager/manifest.json",
+            )
         ]
         previous = {
             path: path.read_bytes() if path.exists() else None for path in auxiliary
@@ -275,10 +283,27 @@ class ImageCompatibility:
                     )
             if result.errors:
                 self._restore_auxiliary(previous, result.errors)
+            elif profile.get("decoded"):
+                self._withhold(root, profile["imageRoot"])
             return self._result(root, result)
         except Exception:
             self._restore_auxiliary(previous, [])
             raise
+
+    @staticmethod
+    def _withhold(root, folder):
+        """Keeps the decoded `folder` out of the downloads of the game's
+        patch, which carry its images inside the archive packed again."""
+        from util.paths import decoded_images_gitattributes_text
+
+        path = project_path(root, ".gitattributes", exists=False)
+        existing = (
+            path.read_text(encoding="utf-8", errors="surrogateescape")
+            if path.is_file()
+            else ""
+        )
+        if (updated := decoded_images_gitattributes_text(existing, folder)) != existing:
+            write_bytes(path, updated.encode("utf-8", errors="surrogateescape"))
 
     @staticmethod
     def _restore_auxiliary(previous, errors):

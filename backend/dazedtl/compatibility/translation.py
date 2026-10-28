@@ -1092,20 +1092,23 @@ class TranslationEngine:
             save(source, change, named)
 
     def _patch_scope(self, source, stamped=True):
-        """The files the translation branch tracks, DazedTL's own among them,
-        GameUpdate's config when the patch leaves it out and the public
+        """The files the translation branch tracks, those no ZIP holds among
+        them, GameUpdate's config when the patch leaves it out and the public
         version it stamps otherwise (release.public_version); without
         `stamped`, the translation's files whatever the patch would stamp."""
         from util.gameupdate_config import CONFIG
-        from util.paths import is_game_tool_file
+        from util.paths import decoded_image_files, is_game_tool_file
 
         from dazedtl.translation.release import public_version
 
         tracked = _tracked(source)
         # DazedTL's own files, such as the game's glossary and a VX Ace
         # game's ace_json, are committed but never reach players, whatever
-        # an older .gitattributes says.
-        own = set(filter(is_game_tool_file, tracked))
+        # an older .gitattributes says; images decoded from the game's
+        # archives reach them only inside the archive packed again.
+        own = set(filter(is_game_tool_file, tracked)) | decoded_image_files(
+            source, tracked
+        )
         if not stamped:
             return tracked, own, set(), None
         stamp = public_version(source) if CONFIG in tracked else None
@@ -1115,9 +1118,10 @@ class TranslationEngine:
     def patch_files(self, source, manifest, *, stamped=True):
         """What a patch ZIP built now holds, for its review: the files the
         translation branch tracks and those the runtime manifest adds at the
-        build's checkpoint, without DazedTL's own, and whether it stamps the
-        public version; without `stamped`, every file of the translation,
-        GameUpdate's config too, which a clean game ZIP decides on itself."""
+        build's checkpoint, without DazedTL's own and the images decoded
+        from the game's archives, and whether it stamps the public version;
+        without `stamped`, every file of the translation, GameUpdate's
+        config too, which a clean game ZIP decides on itself."""
         tracked, own, omitted, stamp = self._patch_scope(Path(source), stamped)
         named = set(self.runtime_paths(manifest))
         return {

@@ -162,6 +162,8 @@ class ImageProfile(TypedDict):
     id: str
     label: str
     imageRoot: NotRequired[str]
+    # A folder an assistant decoded from the game's archives.
+    decoded: NotRequired[bool]
     supported: bool
     reason: NotRequired[str]
     context: str

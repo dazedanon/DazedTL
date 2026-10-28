@@ -420,8 +420,12 @@ class ImageService:
     def _profile(self, project_id, value=None):
         project, root = self.record(project_id)
         value = value or self._load(project_id)
+        saved = value.get("profile") or {}
         return self.adapter.profile(
-            root, project["engine"], (value.get("profile") or {}).get("imageRoot", "")
+            root,
+            project["engine"],
+            saved.get("imageRoot", ""),
+            saved.get("decoded", False),
         )
 
     def state(self, project_id):
@@ -637,20 +641,29 @@ class ImageService:
                 self._index(project_id).selected(value["selection"])
             return self.state(project_id)
 
-    def _image_root(self, project_id, value, root):
+    def _image_root(self, project_id, value, root, decoded=False):
         """Points a game without RPG Maker MV/MZ's img folder at the folder of
-        loose images to index, the user's choice or the folder an assistant
-        decoded the game's image archives into; the next scan reads it."""
+        loose images to index, the user's choice or, `decoded`, the folder an
+        assistant decoded the game's image archives into, whose applied
+        images then ship only inside the archive it packs again; the next
+        scan reads it."""
         root = text(root, "Loose image folder", 2000)
         profile = self._profile(project_id, {**value, "profile": {"imageRoot": root}})
         if not profile["supported"]:
             raise ValueError(profile["reason"])
-        # Naming the folder it reads already changes nothing, even mid-scan.
+        chosen = {"imageRoot": profile["imageRoot"]}
+        # Naming the folder it reads already changes nothing, even mid-scan,
+        # but for the mark of a folder an assistant decoded.
         if self._profile(project_id, value)["imageRoot"] == profile["imageRoot"]:
+            if decoded:
+                value["profile"] = {**(value.get("profile") or {}), **chosen}
+                value["profile"]["decoded"] = True
             return
         if self.jobs.get(project_id, {}).get("status") == "running":
             raise ValueError("Stop the current image scan before changing its folder.")
-        self._read_from(project_id, value, {"imageRoot": profile["imageRoot"]})
+        self._read_from(
+            project_id, value, {**chosen, **({"decoded": True} if decoded else {})}
+        )
 
     def _read_from(self, project_id, value, profile):
         """Saves the profile whose folder Images reads. The list, its view
@@ -1369,7 +1382,7 @@ class ImageService:
                 )
             with self.lock:
                 value = self._load(project_id)
-                self._image_root(project_id, value, root)
+                self._image_root(project_id, value, root, decoded=True)
                 self._save(project_id, value)
         profile = self.state(project_id)["profile"]
         if not profile["supported"]:
