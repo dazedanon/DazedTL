@@ -3,6 +3,17 @@
 Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 [release.mjs](scripts/release.mjs) writes each entry from [release/notes.md](release/notes.md).
 
+## [2.50.0] - 2026-10-28
+
+### Changed
+
+- **Estimates:** the whole-game **Cost estimate** and an Assistant-led estimate waiting on **Progress** made before an update that corrects DazedTL's prices now show the corrected price the next time you see them, and approving approves that price, instead of keeping the old price until a setting changed. Claude estimates, which can't be priced again that way, ask you to **Estimate again** once. Runs you already approved keep the price you approved.
+- **Settings:** for Anthropic and OpenRouter connections, **Thinking effort** now offers the levels the provider's own model list gives each model when you check the connection, and names OpenRouter's default level, so a model DazedTL's built-in list doesn't know can take an effort too; other providers keep DazedTL's built-in list, and a line under the choice says where its levels come from and how to refresh them. Check a connection again to read them.
+
+### Fixed
+
+- **Estimates:** OpenAI Batch estimates on GPT-4.1, GPT-4o, o1, o3, o4-mini, the -pro models and OpenAI's other models before GPT-5 no longer show a lower price for reused instructions, since OpenAI's Batch doesn't cache them on those models. A waiting estimate shows the corrected price the next time you see it; the price you approve was already the higher one and doesn't change.
+
 ## [2.49.0] - 2026-10-28
 
 ### Added
@@ -1316,6 +1327,7 @@ Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachan
 - The first release of DazedTL as a desktop app, installed from a ZIP with a START launcher and updated from inside the app.
 - **Guided steps** for RPG Maker MV, MZ and VX Ace games, and **Assistant-led** for any game.
 
+[2.50.0]: https://github.com/dazedanon/DazedTL/compare/v2.49.0...v2.50.0
 [2.49.0]: https://github.com/dazedanon/DazedTL/compare/v2.48.0...v2.49.0
 [2.48.0]: https://github.com/dazedanon/DazedTL/compare/v2.47.0...v2.48.0
 [2.47.0]: https://github.com/dazedanon/DazedTL/compare/v2.46.0...v2.47.0
