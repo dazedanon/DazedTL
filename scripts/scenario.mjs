@@ -12,12 +12,13 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
-import { spawn, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { root, python } from "./dependencies.mjs";
 import { Page, until, message } from "./testkit/cdp.mjs";
 import { freePort, startApp, stopApp, running } from "./testkit/app.mjs";
 import {
   displayName,
+  spawnGroup,
   startDisplay,
   stopGroup,
   virtualDisplay,
@@ -38,6 +39,9 @@ const positional = args.filter(
     !["--work", "--game", "--from"].includes(args[index - 1]),
 );
 const command = positional[0];
+// An app left running keeps its display and stand-in until stop or clean;
+// otherwise they end with this command, however it ends.
+const keepsApp = command === "app" || flag("--app");
 
 /** The state a built scenario keeps in its folder, for later commands. */
 const stateFile = (work) => path.join(work, "scenario.json");
@@ -63,7 +67,7 @@ const alive = (pid) => {
 async function startProvider(state) {
   if (state.provider.pid && alive(state.provider.pid)) return;
   const log = fs.openSync(path.join(state.work, "logs/provider.log"), "a");
-  const child = spawn(
+  const child = spawnGroup(
     process.execPath,
     [
       path.join(root, "scripts/testkit/provider.mjs"),
@@ -72,7 +76,7 @@ async function startProvider(state) {
       "--port",
       String(state.provider.port),
     ],
-    { detached: true, stdio: ["ignore", log, log] },
+    { stdio: ["ignore", log, log], outlive: keepsApp },
   );
   fs.closeSync(log);
   child.unref();
@@ -97,6 +101,7 @@ async function startScreen(state) {
     state.display = await startDisplay({
       name: displayName(state.work),
       log: path.join(state.work, "logs/display.log"),
+      outlive: keepsApp,
     });
   } catch (error) {
     state.display = virtualDisplay();
