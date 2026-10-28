@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import fs from "node:fs";
 import { once } from "node:events";
+import readline from "node:readline";
 import test from "node:test";
 import { appEnvironment, stopApp } from "../scripts/testkit/app.mjs";
+import { until } from "../scripts/testkit/cdp.mjs";
 import { ciScenarios } from "../scripts/testkit/ci.mjs";
 import { displayName } from "../scripts/testkit/display.mjs";
 import { testsWithRetry, withRetry } from "../scripts/testkit/retry.mjs";
@@ -108,6 +111,63 @@ test(
     assert.throws(() => process.kill(-group, 0), { code: "ESRCH" });
     await ended;
     assert.equal(output, "closed\n");
+  },
+);
+
+test(
+  "a display's process group ends with the process that started it, even at SIGKILL, unless it is to outlive it",
+  { skip: process.platform !== "linux" },
+  async () => {
+    // Each group's first process exits at SIGTERM and leaves its child, as
+    // dbus-run-session does with KWin.
+    const owner = spawn(
+      process.execPath,
+      [
+        "--input-type=module",
+        "-e",
+        `const { spawnGroup } = await import(${JSON.stringify(new URL("../scripts/testkit/display.mjs", import.meta.url).href)});
+        const group = (outlive) =>
+          spawnGroup("sh", ["-c", "sleep 30 & wait"], { stdio: "ignore", outlive }).pid;
+        console.log(JSON.stringify([group(false), group(true)]));
+        setInterval(() => {}, 1000);`,
+      ],
+      { stdio: ["ignore", "pipe", "inherit"] },
+    );
+    let groups: number[] = [];
+    // A live member of `group`; an exited one waits as a zombie to be reaped.
+    const members = (group: number) =>
+      fs.readdirSync("/proc").filter((pid) => {
+        try {
+          const [state, , , pgrp] = fs
+            .readFileSync(`/proc/${pid}/stat`, "utf8")
+            .split(") ")[1]
+            .split(" ");
+          return state !== "Z" && Number(pgrp) === group;
+        } catch {
+          return false; // Not a process, or exited.
+        }
+      }).length;
+    try {
+      const [line] = await once(readline.createInterface(owner.stdout), "line");
+      groups = JSON.parse(line);
+      const [bound, kept] = groups;
+      await until(
+        "both groups' children",
+        () => groups.every((group) => members(group) >= 2),
+        5_000,
+      );
+      owner.kill("SIGKILL");
+      await until("the bound group to end", () => !members(bound), 5_000);
+      assert.equal(members(kept), 2);
+    } finally {
+      owner.kill("SIGKILL");
+      for (const group of groups)
+        try {
+          process.kill(-group, "SIGKILL");
+        } catch {
+          // Already gone.
+        }
+    }
   },
 );
 
