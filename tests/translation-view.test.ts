@@ -756,6 +756,24 @@ test("Database files and Maps & events rows read the file's lines and state", ()
   assert.equal(rejected.label, "Not started");
   assert.match(rejected.detail, /requests failed without returning any lines/);
   assert.equal(row(untouched, "Map002.json").detail, "");
+  // A request that may still be at the provider reads Needs review, as
+  // Other event text reads it: sending it again may pay twice.
+  const stopped: Job = {
+    ...failed,
+    status: "stopped",
+    process: { errors: [], files: { "Map001.json": requested(["submitted"]) } },
+  };
+  const unsure = row(
+    state({ "Map001.json": { lines: 6, translated: 0 } }, [stopped]),
+  );
+  assert.deepEqual(
+    [unsure.label, unsure.detail],
+    [
+      fileStatus("Map001.json", stopped).label,
+      fileStatus("Map001.json", stopped).detail,
+    ],
+  );
+  assert.equal(unsure.label, "Needs review");
   const partial = row(
     state({ "Map001.json": { lines: 13, translated: 11, help: 2 } }),
   );
