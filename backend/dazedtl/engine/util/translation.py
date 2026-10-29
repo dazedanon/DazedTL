@@ -35,6 +35,8 @@ from util.provider_costs import (
     cache_read_multiplier,
     cache_write_multiplier,
     has_billed_cache_writes,
+    is_claude_model,
+    is_claude_native,
     openai_batch_caches,
     received_at,
     shown_batch_price,
@@ -319,19 +321,15 @@ def _normalize_openai_base_url(url: str) -> str:
 
 def isClaudeModel(model):
     """True when the model name looks like an Anthropic Claude model."""
-    return bool(model) and any(x in model.lower() for x in ("claude", "sonnet", "haiku", "opus"))
+    return is_claude_model(model)
 
 
 def isClaudeNative(model, api_url=None):
-    """True when this model routes to the native Anthropic SDK.
-
-    Mirrors the routing check in translateText: the model must look like Claude
-    AND the configured API URL must be unset or point at anthropic.com.  Any
-    other custom URL (e.g. DeepSeek, OpenAI proxy) uses the OpenAI-compatible
-    path even for Claude-named models.
-    """
-    live_api = os.getenv("api", "").strip() if api_url is None else str(api_url).strip()
-    return isClaudeModel(model) and (not live_api or "anthropic" in live_api.lower())
+    """True when this model routes to the native Anthropic SDK
+    (provider_costs.is_claude_native); *api_url* defaults to the engine's
+    configured API URL."""
+    live_api = os.getenv("api", "") if api_url is None else api_url
+    return is_claude_native(model, live_api)
 
 
 def getBatchProvider(model=None, api_url=None, api_provider=None):
@@ -5208,16 +5206,7 @@ def translateText(system, user, history, penalty, formatType, model, numLines=No
     # The builders check this too; an extension may replace them.
     _require_request_text(system, user)
 
-    _live_api_check = os.getenv("api", "").strip()
-    # Only route to the native Anthropic SDK when the model looks like Claude AND
-    # the configured API URL is either unset (implying default Anthropic usage) or
-    # explicitly points at anthropic.com.  Any other custom URL (e.g. DeepSeek,
-    # OpenAI proxy) should use the OpenAI-compatible path even for Claude-named models.
-    _is_claude = (
-        model
-        and any(x in model.lower() for x in ("claude", "sonnet", "haiku", "opus"))
-        and (not _live_api_check or "anthropic" in _live_api_check.lower())
-    )
+    _is_claude = isClaudeNative(model)
     _is_mistral = not _is_claude and isMistralAPI()
 
     # --- API Call Logic ---
@@ -5729,8 +5718,7 @@ def calculateCost(inputTokens, outputTokens, model):
     # that is cache-written at the live 5-minute TTL rate = 1.25x input rate).
     # Remaining tokens are billed at the regular input rate.
     pricing = getPricingConfig(model)
-    _is_claude_naive = model and any(x in model.lower() for x in ("claude", "sonnet", "haiku", "opus"))
-    if _is_claude_naive:
+    if isClaudeModel(model):
         static_tok  = getattr(_thread_local, 'estimate_static_tokens', 0)
         regular_tok = getattr(_thread_local, 'estimate_regular_tokens', 0)
         batch_count = max(1, getattr(_thread_local, 'estimate_batch_count', 1))
@@ -6293,13 +6281,7 @@ def translateAI(text, history, config, filename=None, pbar=None, lock=None,
 
             # Track exact cache write size (static_system, constant across batches)
             # and accumulate non-cached (vocab + user + history) tokens per batch.
-            _est_api = os.getenv("api", "").strip()
-            _is_claude_est = (
-                config.model
-                and any(x in config.model.lower() for x in ("claude", "sonnet", "haiku", "opus"))
-                and (not _est_api or "anthropic" in _est_api.lower())
-            )
-            if _is_claude_est:
+            if isClaudeNative(config.model):
                 # Count the shared static prefix once across every concurrent
                 # file worker. The keyed result persists across estimate runs
                 # until the model or prompt changes.

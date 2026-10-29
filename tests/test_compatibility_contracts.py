@@ -1528,6 +1528,75 @@ class CompatibilityContracts(unittest.TestCase):
                     spent(model, provider, endpoint, protocol, batch) or 0, cost
                 )
 
+    def test_each_claude_route_rule_routes_a_model_and_address_alike(self):
+        # The Claude name test and the native-Anthropic route test were copied
+        # into the Live send, the estimate, Batch detection, Live pricing and
+        # Settings' route check; each copy must keep answering the same.
+        import os
+
+        from dazedtl.compatibility.dazedmtl import ExistingBackend
+        from util import translation
+        from util.batch_providers import detect_batch_provider, live_price_route
+
+        addresses = (
+            "",
+            "https://api.anthropic.com",
+            # A proxy path: sent Live natively, but Batches need Anthropic's
+            # own API.
+            "http://localhost:8080/anthropic",
+            "https://openrouter.ai/api/v1",
+            "https://proxy.example/v1",
+            "https://api.openai.com/v1",
+        )
+        # Per address: native Live send, Batch provider, Live price route,
+        # Settings' engine route.
+        claude = (
+            (True, "anthropic", "anthropic", "anthropic"),
+            (True, "anthropic", "anthropic", "anthropic"),
+            (True, None, "anthropic", "anthropic"),
+            (False, None, "anthropic", "openai"),
+            (False, None, "anthropic", "openai"),
+            (False, "openai", "anthropic", "openai"),
+        )
+        other = (
+            (False, "openai", "openai", "openai"),
+            (False, None, "", "openai"),
+            (False, None, "", "openai"),
+            (False, None, "", "openai"),
+            (False, None, "", "openai"),
+            (False, "openai", "openai", "openai"),
+        )
+        gpt = tuple((False, batch, "openai", "openai") for _n, batch, *_r in other)
+        for model, routes in (
+            ("claude-sonnet-5-5", claude),
+            ("anthropic/claude-haiku-4-5", claude),
+            ("Claude-Opus-5", claude),
+            # Any name holding a Claude family word counts as Claude.
+            ("sonnet-like", claude),
+            ("gpt-5.4", gpt),
+            ("deepseek-v4-flash", other),
+            ("", other),
+        ):
+            for address, expected in zip(addresses, routes, strict=True):
+                with (
+                    self.subTest(model=model, address=address),
+                    patch.dict(os.environ, {"api": address}),
+                ):
+                    os.environ.pop("DAZEDTL_TEST_OPENAI_ENDPOINT", None)
+                    self.assertEqual(
+                        (
+                            translation.isClaudeNative(model, address),
+                            detect_batch_provider(model, address, "openai"),
+                            live_price_route(model, address, "openai"),
+                            ExistingBackend.engine_route(model, "openai", address)[0],
+                        ),
+                        expected,
+                    )
+                    # The Live send and the estimate read the address from
+                    # the engine's settings.
+                    self.assertEqual(translation.isClaudeNative(model), expected[0])
+                    self.assertEqual(translation.isClaudeModel(model), routes is claude)
+
     def test_an_openai_batch_estimate_prices_cache_reads_at_the_models_price(self):
         # Every OpenAI Batch estimate priced cache reads at a tenth of input,
         # though GPT-6.1 Sol reads at a twentieth. The models OpenAI's Batch

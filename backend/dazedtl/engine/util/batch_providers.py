@@ -18,7 +18,7 @@ from typing import Any, Iterable, Mapping
 
 from util import system
 from util import extensions
-from util.provider_costs import is_openai_model
+from util.provider_costs import is_claude_model, is_openai_model
 
 
 PROVIDER_ANTHROPIC = "anthropic"
@@ -69,8 +69,11 @@ def detect_batch_provider(model: str = "", api_url: str | None = None,
     provider = (os.getenv("API_PROVIDER", "openai") if api_provider is None
                 else str(api_provider or "openai")).strip().lower()
 
-    is_claude = any(part in model_l for part in ("claude", "sonnet", "haiku", "opus"))
-    if is_claude and (not url or "anthropic.com" in url):
+    # Stricter than a Live send's native route (provider_costs.is_claude_native),
+    # which also takes a proxy path holding "anthropic": Message Batches need
+    # Anthropic's own API.
+    on_anthropic_api = not url or "anthropic.com" in url
+    if is_claude_model(model) and on_anthropic_api:
         return PROVIDER_ANTHROPIC
     if provider == "gemini" or "generativelanguage.googleapis.com" in url:
         return PROVIDER_GEMINI
@@ -91,8 +94,7 @@ def live_price_route(model: str = "", api_url: str | None = None,
     route is the engine's settings."""
     from dazedtl.settings.providers import own_api
 
-    if any(part in str(model or "").lower()
-           for part in ("claude", "sonnet", "haiku", "opus")):
+    if is_claude_model(model):
         return PROVIDER_ANTHROPIC
     if is_openai_model(model):
         return PROVIDER_OPENAI
