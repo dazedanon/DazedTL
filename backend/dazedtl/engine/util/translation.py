@@ -2064,6 +2064,13 @@ class RequestRejectedError(Exception):
     retried."""
 
 
+class RequestUnprocessedError(Exception):
+    """In a run frozen with the resend policy (RESENDS), a Live request the
+    provider provably did not process and another try may pass, such as one
+    that never connected or met a rate limit (compatibility/resends): the
+    one error translateAI's retry sends again."""
+
+
 # The errors the modules' per-line and per-page handling lets through to the
 # file's result: a Batch phase's missing result and a run's stop.
 RUN_STOPPING = (BatchResultUnavailableError, RunStoppingError)
@@ -2074,6 +2081,23 @@ RUN_STOPPING = (BatchResultUnavailableError, RunStoppingError)
 RUN_STOPS = False
 # The stops this worker raised, for a module that caught one.
 _run_stops = []
+# A run frozen with the resend policy (settings/preferences RESENDS) sends a
+# failed Live request again only as _send_live says, and its SDK clients send
+# nothing again themselves (sdk_retries).
+RESENDS = False
+# How many times in all translateAI sends a failing Live call, or under the
+# resend policy its failing request, and the seconds between.
+LIVE_TRIES = 5
+RETRY_DELAY = 5
+# The longest a provider's Retry-After is waited for, as the SDKs wait.
+RETRY_AFTER_LIMIT = 60
+
+
+def sdk_retries(sdk):
+    """How often an SDK client (the openai or anthropic module) sends one
+    Live request again itself: never in a run frozen with the resend policy,
+    where translateAI's retry alone decides; the SDK's default otherwise."""
+    return 0 if RESENDS else sdk.DEFAULT_MAX_RETRIES
 
 
 def run_stop(error=None):
@@ -3716,8 +3740,12 @@ def callMistral(params, retries=6):
     the live x-ratelimit headers after each response, honours Retry-After on
     429, backs off with jitter on 5xx/network errors, and downgrades
     json_schema -> json_object for models without structured-output support
-    except in strict structured runs (STRICT_STRUCTURED_OUTPUTS).
+    except in strict structured runs (STRICT_STRUCTURED_OUTPUTS). In a run
+    frozen with the resend policy (RESENDS) it sends each request once, its
+    JSON-mode request aside, and translateAI's retry alone decides.
     """
+    if RESENDS:
+        retries = 0
     limiter = _get_mistral_limiter()
     est = sum(_estimate_mistral_tokens(m.get("content", "")) for m in params.get("messages", []))
     est += params.get("max_tokens", 0) // 2
@@ -3734,9 +3762,11 @@ def callMistral(params, retries=6):
             last_error = e
             resp = getattr(e, "response", None)
             limiter.update(getattr(resp, "headers", None))
-            # The last attempt raises at once, as the other errors do.
+            # The last attempt raises at once, as the other errors do; under
+            # the resend policy as the provider's own error, whose wait
+            # translateAI's retry follows.
             if attempt >= retries:
-                if _keeps_provider_error(params):
+                if RESENDS or _keeps_provider_error(params):
                     raise
                 break
             retry_after = None
@@ -5379,7 +5409,9 @@ def translateText(system, user, history, penalty, formatType, model, numLines=No
 
         from util.batch_providers import create_anthropic_message
 
-        ant_client = anthropic.Anthropic(api_key=openai.api_key)
+        ant_client = anthropic.Anthropic(
+            api_key=openai.api_key, max_retries=sdk_retries(anthropic)
+        )
         try:
             ant_resp = create_anthropic_message(ant_client, ant_kwargs)
         except Exception as e:
@@ -5398,6 +5430,9 @@ def translateText(system, user, history, penalty, formatType, model, numLines=No
         compat_response = _AnthropicCompat(_ant_text, _total_prompt, _out, _cr, _cw)
         _log_live_response("anthropic", ant_kwargs, compat_response)
         return compat_response
+
+    # The routes below send through the SDK's module client.
+    openai.max_retries = sdk_retries(openai)
 
     # Mistral (la Plateforme): same OpenAI-compatible request, but routed
     # through the adaptive rate limiter so the per-minute request/token
@@ -5953,7 +5988,11 @@ def found_mismatch(mismatches, filename):
 def _retry_live_translation(func):
     """Retry live provider work; batch phases only read or write local data.
     A RunStoppingError stops the run at once instead, and a
-    RequestRejectedError fails the call: every retry would be refused alike."""
+    RequestRejectedError fails the call: every retry would be refused alike.
+    A run frozen with the resend policy (RESENDS) sends the call once: its
+    failed request alone is sent again, and only if unprocessed (_send_live),
+    since sending the whole call again would also send its other requests,
+    whose answers it may have paid for and not kept."""
 
     def attempt(*args, **kwargs):
         try:
@@ -5961,13 +6000,15 @@ def _retry_live_translation(func):
         except (RunStoppingError, RequestRejectedError) as error:
             return _Final(error)
 
-    retried = retry(exceptions=Exception, tries=5, delay=5)(attempt)
+    retried = retry(exceptions=Exception, tries=LIVE_TRIES, delay=RETRY_DELAY)(
+        attempt
+    )
 
     @wraps(func)
     def wrapped(*args, **kwargs):
         if get_batch_phase():
             return func(*args, **kwargs)
-        result = retried(*args, **kwargs)
+        result = (attempt if RESENDS else retried)(*args, **kwargs)
         if isinstance(result, _Final):
             if RUN_STOPS and isinstance(result.error, RunStoppingError):
                 _run_stops.append(str(result.error))
@@ -5983,6 +6024,55 @@ class _Final:
 
     def __init__(self, error):
         self.error = error
+
+
+def _send_live(config, send):
+    """The response of the Live request *send* sends, each failure logged
+    for the run. In a run frozen with the resend policy (RESENDS) it is sent
+    again, up to LIVE_TRIES in all, only while the provider provably did not
+    process it (RequestUnprocessedError); any other error fails it at once,
+    since a request that may have been billed must not be paid twice. Runs
+    frozen without it send it once here, and translateAI's retry sends the
+    whole call again."""
+    for left in reversed(range(LIVE_TRIES if RESENDS else 1)):
+        try:
+            return send()
+        except Exception as error:
+            message = f"[API_ERROR] {error}"
+            # Print to stdout so the GUI captures it immediately, and only
+            # there: the progress bar's write goes to stdout too, which
+            # printed each failed attempt twice in the Run log.
+            print(message, flush=True)
+            # Also write to the translation log file for persistence
+            try:
+                Path(config.logFilePath).parent.mkdir(parents=True, exist_ok=True)
+                with open(config.logFilePath, "a", encoding="utf-8") as log:
+                    log.write(f"{message}\n")
+                    log.flush()
+            except Exception:
+                pass
+            if not left or not isinstance(error, RequestUnprocessedError):
+                raise
+            time.sleep(_retry_delay(error))
+
+
+def _retry_delay(error):
+    """Seconds before a request that failed with *error* is sent again:
+    RETRY_DELAY, or the longer wait its provider's answer asks for
+    (Retry-After, as with a rate limit), at most RETRY_AFTER_LIMIT."""
+    seen = set()
+    while error is not None and id(error) not in seen:
+        seen.add(id(error))
+        headers = getattr(getattr(error, "response", None), "headers", None)
+        for name, unit in (("retry-after-ms", 0.001), ("retry-after", 1)):
+            try:
+                wait = float(headers.get(name)) * unit
+            except (AttributeError, TypeError, ValueError):
+                continue
+            if wait > 0:
+                return min(max(RETRY_DELAY, wait), RETRY_AFTER_LIMIT)
+        error = error.__cause__ or error.__context__
+    return RETRY_DELAY
 
 
 @extensions.point
@@ -6555,30 +6645,17 @@ def translateAI(text, history, config, filename=None, pbar=None, lock=None,
                     )
                 # Set again when the response arrives (_log_live_response).
                 _thread_local.received_at = None
-                try:
-                    response = translateText(
+                response = _send_live(
+                    config,
+                    lambda: translateText(
                         static_system, current_user, request_history, 0.05,
                         formatType, config.model, numLines,
                         vocab_text=vocab_text,
                         context_kind=CONTEXT_SOURCE,
                         request_instructions=persistent_instructions,
                         delivered_context=delivered_context,
-                    )
-                except Exception as api_err:
-                    err_msg = f"[API_ERROR] {api_err}"
-                    # Print to stdout so the GUI captures it immediately, and
-                    # only there: the progress bar's write goes to stdout too,
-                    # which printed each failed attempt twice in the Run log.
-                    print(err_msg, flush=True)
-                    # Also write to the translation log file for persistence
-                    try:
-                        Path(config.logFilePath).parent.mkdir(parents=True, exist_ok=True)
-                        with open(config.logFilePath, "a", encoding="utf-8") as _lf:
-                            _lf.write(f"{err_msg}\n")
-                            _lf.flush()
-                    except Exception:
-                        pass
-                    raise  # Let retry decorator handle it
+                    ),
+                )
             choice = response.choices[0]
             message = getattr(choice, "message", None)
             translatedText = getattr(message, "content", None)

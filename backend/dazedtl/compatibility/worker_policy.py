@@ -16,6 +16,7 @@ from dazedtl.settings.preferences import (
     GENERATION_PARAMETERS,
     MAP_NAME_IDENTITIES,
     PAGE_PACKING,
+    RESENDS,
     REUSE_STRETCHES,
     RUN_STOPS,
     SAME_LINE_SPEAKERS,
@@ -31,7 +32,7 @@ from dazedtl.settings.providers import infer_provider, openrouter_host
 from dazedtl.storage import write_json
 from dazedtl.translation.refusals import POLICY as REFUSAL_POLICY
 
-from . import run_stops, state_requests
+from . import resends, run_stops, state_requests
 from .request_parameters import configure_builders
 from .run_evidence import Evidence
 
@@ -170,6 +171,7 @@ def install(*, coordinator=False):
             configure_short_outputs(translation, None)
             configure_small_kana(translation, None)
             run_stops.configure(translation, None, root)
+            resends.configure(translation, None)
             configure_states(plan, grouping_root, None)
             checkpoint_reader()
             return result
@@ -192,6 +194,7 @@ def install(*, coordinator=False):
             or policy.get("shortOutputs") not in (None, SHORT_OUTPUTS)
             or policy.get("smallKana") not in (None, SMALL_KANA)
             or policy.get("runStops") not in (None, RUN_STOPS)
+            or policy.get("resends") not in (None, RESENDS)
             or policy.get("thinkingEffortRefusals") not in (None, effort.REFUSALS)
             or policy.get("battleMessageUsers")
             not in (None, *BATTLE_MESSAGE_USERS_LEVELS)
@@ -293,6 +296,7 @@ def install(*, coordinator=False):
             thinking_refusals=policy.get("thinkingEffortRefusals"),
         )
         run_stops.configure(translation, policy, root, coordinator=coordinator)
+        resends.configure(translation, policy)
         configure_states(plan, grouping_root, policy)
         checkpoint_reader()
         from .batch_refusals import install_worker

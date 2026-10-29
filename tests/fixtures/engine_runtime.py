@@ -941,9 +941,16 @@ try:
         # before it, and failed a csel before any dialogue. The plugin module
         # took a QuestName's line break from the txtSubject before it, so it
         # failed a QuestName with no txtSubject, or one without a line break,
-        # before it. CSV read its target column as the speaker by default, and
+        # before it. NScripter left a file's choices in Japanese when it had no
+        # dialogue, and wrote a choice that is part of a later one, or an
+        # empty one, over the whole csel line. The plugin module read an actor
+        # code \n[1] as a line break, and sent a quest client's line break
+        # as text. CSV read its target column as the speaker by default, and
         # as the name it wrote there made the row look translated, wrote each
-        # row's translation to the next row.
+        # row's translation to the next row. CSV, Kirikiri, Regex, Lune, Tyrano
+        # and WOLF2 sent each speaker name again in the pass that writes the
+        # translations, as it then held its translation, and WOLF2 its
+        # choices too; Lune refused the .l files it is offered.
         shapes = temporary / "engine-shapes"
         for folder in ("files", "translated", "log"):
             (shapes / folder).mkdir(parents=True)
@@ -960,6 +967,30 @@ try:
                     (
                         "*start\ncsel \"EN 'はい'\",*yes,\"EN 'いいえ'\",*no\n"
                         "　EN '「やあ」'\\\n"
+                    ),
+                ),
+                (
+                    "modules.nscript",
+                    "handleOnscripter",
+                    "0.txt",
+                    '*start\ncsel "はい",*a,"はいはい",*b,"",*c\nend\n',
+                    {},
+                    [["はい", "はいはい"]],
+                    ('*start\ncsel "EN \'はい\'",*a,"EN \'はいはい\'",*b,"",*c\nend\n'),
+                ),
+                (
+                    "modules.rpgmakerplugin",
+                    "handlePlugin",
+                    "plugins.js",
+                    (
+                        r"var q = [\"{\\\"QuestClientName\\\":\\\"村の\\\\n村長\\\"}\"];"
+                        '\nvar txtSubject = "\\\\n[1]の\\\\nクエスト";\n'
+                    ),
+                    {},
+                    [["村の 村長"], ["\\\\n[1]の クエスト"]],
+                    (
+                        r"var q = [\"{\\\"QuestClientName\\\":\\\"EN \'村の 村長\'\\\"}\"];"
+                        '\nvar txtSubject = "EN ՚\\\\n[1]の クエスト՚";\n'
                     ),
                 ),
                 (
@@ -998,15 +1029,75 @@ try:
                         'またね,"EN ""またね"""\r\n'
                     ),
                 ),
+                (
+                    "modules.csv",
+                    "handleCSV",
+                    "Scene.csv",
+                    'Source,Target\n":name[アリス]\nやあ",\n',
+                    {"PARSE_NAME_TAGS": True},
+                    ["アリス", ["[Alice]: やあ"]],
+                    'Source,Target\r\n":name[Alice]\nやあ","EN ""[Alice]: やあ"""\r\n',
+                ),
+                (
+                    "modules.kirikiri",
+                    "handleKirikiri",
+                    "scene.ks",
+                    "【アリス】[CR]\n[text]やあ[KeyWait]\n",
+                    {},
+                    ["アリス", ["[Alice]: やあ"]],
+                    "【Alice】[CR]\n[text]EN '[Alice]: やあ'[KeyWait]\n",
+                ),
+                (
+                    "modules.regex",
+                    "handleRegex",
+                    "script.txt",
+                    '{\n    "name": "アリス",\n    "text": "やあ",\n},\n',
+                    {},
+                    ["アリス", ["[Alice]: やあ"]],
+                    '﻿{\n    "name": "Alice",\n    "text": "EN \\"[Alice]: やあ\\"",\n},\n',
+                ),
+                (
+                    "modules.lune",
+                    "handleLune",
+                    "scene.l",
+                    '[{"name": "アリス", "message": "やあ"}]',
+                    {},
+                    ["アリス", ["やあ"]],
+                    '[\n    {\n        "name": "Alice",\n        "message": "EN \\"やあ\\""\n    }\n]',
+                ),
+                (
+                    "modules.tyrano",
+                    "handleTyrano",
+                    "scene.ks",
+                    "#アリス\nやあ[p]\n",
+                    {},
+                    ["アリス", ["[Alice]: やあ"]],
+                    '#Alice\nEN "(Alice): やあ"[p]\n',
+                ),
+                (
+                    "modules.wolf2",
+                    "handleWOLF2",
+                    "Map001.txt",
+                    "アリス：\nやあ\n\n//選択肢\n//はい\n//いいえ\n//はいの場合\n",
+                    {},
+                    ["アリス", ["はい", "いいえ"], ["[Alice]: やあ "]],
+                    'Alice：\nEN "[Alice]: やあ "\n\n//選択肢\n//EN "はい"\n//EN "いいえ"\n//はいの場合\n',
+                ),
             ):
                 module = import_module(module_name)
-                encoding = "cp932" if scene == "0.txt" else "utf-8"
+                encoding = "utf-8"
+                if module_name in (
+                    "modules.nscript",
+                    "modules.kirikiri",
+                    "modules.wolf2",
+                ):
+                    encoding = "cp932"
                 (shapes / "files" / scene).write_bytes(source.encode(encoding))
                 sent = []
 
                 def shape_reply(text, *_args, **_kwargs):
                     if text:
-                        sent.append(text)
+                        sent.append(list(text) if isinstance(text, list) else text)
                     if isinstance(text, list):
                         return [[f'EN "{line}"' for line in text], [1, 1]]
                     return ["Alice", [1, 1]]
@@ -1014,9 +1105,7 @@ try:
                 its = {"translateAI": shape_reply, "NAMESLIST": [], **options}
                 with patch.multiple(module, **its), redirect_stdout(StringIO()):
                     getattr(module, handler)(scene, False)
-                # Only the requests this case is about: CSV's second pass asks
-                # for a speaker column's name again, which is not.
-                assert sent[: len(requests)] == requests, (module_name, sent)
+                assert sent == requests, (module_name, sent)
                 written = (shapes / "translated" / scene).read_bytes()
                 assert written.decode(encoding) == output, (module_name, written)
         finally:
@@ -2625,7 +2714,11 @@ try:
         import httpx
         from dazedtl.compatibility.request_parameters import configure_builders
         from dazedtl.settings.preferences import GENERATION_PARAMETERS
-        from openai import BadRequestError, UnprocessableEntityError
+        from openai import (
+            BadRequestError,
+            InternalServerError,
+            UnprocessableEntityError,
+        )
         from util import translation
         from util.batch_providers import (
             PROVIDER_OPENAI,
@@ -2788,9 +2881,23 @@ try:
                     1,
                 ),
             ):
-                send = Mock(side_effect=[status_error(status, body), good])
+                answers = [status_error(status, body), good]
+                retries = []
+
+                def create(**_params):
+                    retries.append(translation.openai.max_retries)
+                    reply = answers.pop(0)
+                    if isinstance(reply, Exception):
+                        raise reply
+                    return reply
+
+                send = Mock(side_effect=create)
+                # A run frozen now, under the resend policy too, sends nothing
+                # again in the SDK: each try of a gateway's timeout was sent
+                # three times. A run frozen before keeps the SDK's retries.
                 with (
                     patch.object(translation, "RUN_STOPS", run_stops),
+                    patch.object(translation, "RESENDS", run_stops),
                     patch.object(
                         translation.openai,
                         "chat",
@@ -2815,6 +2922,43 @@ try:
                 assert send.call_args.kwargs["response_format"]["type"] == (
                     "json_object" if sent == 2 else "json_schema"
                 )
+                assert set(retries) == {0 if run_stops else 2}, (run_stops, retries)
+            # Mistral's own loop sent a gateway's timeout seven times; under
+            # the resend policy it sends a request once, and the engine's
+            # retry decides.
+            gateway = InternalServerError(
+                "Error code: 502",
+                response=httpx.Response(
+                    502,
+                    request=httpx.Request(
+                        "POST", "https://api.mistral.ai/v1/chat/completions"
+                    ),
+                ),
+                body=None,
+            )
+            unpaced = SimpleNamespace(
+                acquire=lambda _tokens: None, update=lambda _headers: None
+            )
+            for resends, sent in ((True, 1), (False, 7)):
+                send = Mock(side_effect=gateway)
+                raw = SimpleNamespace(with_raw_response=SimpleNamespace(create=send))
+                with (
+                    patch.object(translation, "RESENDS", resends),
+                    patch.object(translation, "_get_mistral_limiter", lambda: unpaced),
+                    patch.object(
+                        translation.openai, "chat", SimpleNamespace(completions=raw)
+                    ),
+                    patch("time.sleep"),
+                ):
+                    try:
+                        translation.callMistral(
+                            {"model": "mistral-fixture", "messages": []}
+                        )
+                    except Exception as error:
+                        assert "(502)" in str(error), error
+                    else:
+                        raise AssertionError("A gateway's timeout was answered.")
+                assert send.call_count == sent, (resends, send.call_count)
             # DeepSeek's own models think within max_tokens by default, so a
             # long request gets the full ceiling there and the cap elsewhere.
             for model, endpoint, ceiling in (
@@ -3635,7 +3779,7 @@ try:
                         transport=httpx2.MockTransport(claude_names)
                     ),
                 ),
-            ),
+            ) as claude_clients,
             patch.object(
                 claude_tokens,
                 "http_client",
@@ -3654,8 +3798,13 @@ try:
             )
             counts = list(claude_bodies)
             claude_bodies.clear()
-            output = translation.translateAI(names, "Name each speaker.", names_config)
+            with patch.object(translation, "RESENDS", True):
+                output = translation.translateAI(
+                    names, "Name each speaker.", names_config
+                )
         assert output[0] == ["Elder", "Elder"], output
+        # Under the resend policy Claude's client sends nothing again itself.
+        assert claude_clients.call_args.kwargs["max_retries"] == 0
         assert not estimate["approximate_input"], estimate
         [sent] = claude_bodies
         sent = {
@@ -4404,6 +4553,88 @@ try:
         assert "Lines kept in Japanese: Map002.json" in (
             live_root / "log/mismatchHistory.txt"
         ).read_text(encoding="utf-8")
+        # A request a gateway timed out was sent again with the whole call,
+        # five times, though it may have been billed. Under the resend policy
+        # a request is sent again, alone, only while it fails unprocessed
+        # (compatibility/resends raises RequestUnprocessedError), so a call's
+        # other requests, such as one whose answer kept its source and was
+        # not saved, are not sent again; any other failure fails the call at
+        # once. A run frozen before sends the whole call again.
+        answers, asked = [], []
+
+        def answered(_native, _system, user, *_args, **_kwargs):
+            asked.append("鎧" if "鎧" in user else "other")
+            reply = answers.pop(0)
+            if isinstance(reply, Exception):
+                raise reply
+            return SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        finish_reason="stop",
+                        message=SimpleNamespace(content=reply, refusal=None),
+                    )
+                ],
+                usage=SimpleNamespace(
+                    prompt_tokens=5, completion_tokens=2, total_tokens=7
+                ),
+            )
+
+        # A rate limit's wait is followed, up to a minute, as the SDK's own
+        # retries followed it.
+        from openai import RateLimitError
+
+        unprocessed = translation.RequestUnprocessedError("HTTP 429")
+        unprocessed.__cause__ = RateLimitError(
+            "Error code: 429",
+            response=httpx.Response(
+                429,
+                headers={"retry-after": "90"},
+                request=httpx.Request("POST", "https://provider.invalid/v1"),
+            ),
+            body=None,
+        )
+        gateway = Exception("API server error (504)")
+        kept = '{"translations":["鎧"]}'
+        helm = '{"translations":["Helm"]}'
+        config.batchSize, config.validationRetries = 1, 0
+        translation.translateText.layer("resend-check", answered)
+        try:
+            # Each case asks for a new second line, which the first saved.
+            for resends, script, sent, other, output, waits in (
+                (
+                    True,
+                    [kept, unprocessed, unprocessed, helm],
+                    4,
+                    "兜",
+                    "Helm",
+                    [60] * 2,
+                ),
+                (True, [kept, gateway], 2, "籠手", None, []),
+                (False, [kept, gateway, kept, helm], 4, "靴", "Helm", [5]),
+            ):
+                answers[:], asked[:] = script, []
+                with (
+                    patch.dict(
+                        os.environ, {"BATCH_PHASE": "", "API_PROVIDER": "openai"}
+                    ),
+                    patch.object(translation, "RESENDS", resends),
+                    patch("time.sleep") as slept,
+                ):
+                    try:
+                        result = translation.translateAI(
+                            ["鎧", other], [], config, filename="Map004.json"
+                        )[0]
+                    except Exception as error:
+                        assert error is gateway, error
+                        result = None
+                case = (resends, script)
+                assert result == (output and ["鎧", output]), (case, result)
+                assert len(asked) == sent, (case, asked)
+                # Only the failed request is sent again under the policy.
+                assert asked.count("鎧") == (1 if resends else 2), (case, asked)
+                assert [wait.args[0] for wait in slept.call_args_list] == waits, case
+        finally:
+            translation.translateText.remove("resend-check")
     # Structured refusals survive the real native normalizers, including empty
     # bodies; otherwise they are indistinguishable from generic parse failures.
     from dazedtl.compatibility.provider_responses import install as retain_refusals
