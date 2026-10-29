@@ -16,7 +16,7 @@ from tqdm import tqdm
 from util.languages import source_pattern
 from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost, getPricingConfig, calculateCost, found_mismatch, run_stop_errors
 from util.translation_task import fail_on_parser_error, module_receipt, write_output
-from util.speakers import strip_speaker_prefix
+from util.speakers import strip_speaker_prefix, to_prefixed
 
 # Globals
 MODEL = os.getenv("model")
@@ -188,10 +188,7 @@ def translateRenpy(data, filename, translatedList):
                 jaString = jaString.replace("\\n", " ")
 
                 # Add String
-                if speaker:
-                    stringList.append(f"[{speaker}]: {jaString.strip()}")
-                else:
-                    stringList.append(jaString.strip())
+                stringList.append(to_prefixed(speaker, jaString.strip()))
 
             # Pass 2
             else:
@@ -206,7 +203,7 @@ def translateRenpy(data, filename, translatedList):
                         translatedList = None
 
                     # Remove speaker
-                    translatedText = strip_speaker_prefix(translatedText)
+                    translatedText = strip_speaker_prefix(translatedText, speaker)
 
                     # Escape Quotes
                     translatedText = re.sub(r'[\\]*(")', '\\"', translatedText)

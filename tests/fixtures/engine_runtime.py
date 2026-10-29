@@ -624,6 +624,7 @@ try:
                     CODE122=True,
                     CODE300=True,
                     MISMATCH=[],
+                    NAMESLIST=[],
                     translateAI=wolf_odd,
                 ),
                 redirect_stdout(printed),
@@ -645,17 +646,23 @@ try:
         dialogue = {"code": 101, "stringArgs": ["こんにちは"]}
         script = {"code": 122, "stringArgs": ["薬草"]}
         battle = {"code": 300, "stringArgs": ["BTLメッセージ", "攻撃"]}
+        # A speaker's name is written to its nameplate alone: written over the
+        # whole message, it also renamed the speaker in a line left in its
+        # source text.
+        speaking = {"code": 101, "stringArgs": ["@1\n村人：\n村人だよ"]}
         for commands, written, marked in (
             ([choices], [choices], 1),
             ([window], [window], 1),
             ([asking], [asking], 1),
+            ([speaking], [{**speaking, "stringArgs": ["@1\nEn 村人：\n村人だよ"]}], 1),
             (
                 [dialogue, script, battle],
                 [dialogue, {**script, "stringArgs": ["EN 薬草"]}, battle],
                 2,
             ),
         ):
-            assert wolf_misfit(*commands) == (written, ["M.json"], marked), commands
+            got = wolf_misfit(*commands)
+            assert got == (written, ["M.json"], marked), (commands, got)
         # A chunk translateAI kept in its source text after failed validation
         # came back the right length, so its lines were written back with
         # their line breaks turned into spaces ("勇者の 記録"); a page's list
@@ -946,25 +953,42 @@ try:
         # empty one, over the whole csel line. The plugin module read an actor
         # code \n[1] as a line break, and sent a quest client's line break
         # as text, and wrote a txtSubject's or QuestContent's color code \c[2]
-        # with one backslash. CSV read its target column as the speaker by
-        # default, and as the name it wrote there made the row look
-        # translated, wrote each row's translation to the next row. CSV,
-        # Kirikiri, Regex, Lune, Tyrano and WOLF2 sent each speaker name again
-        # in the pass that writes the translations, as it then held its
-        # translation, and WOLF2 its choices too; Lune refused the .l files it
-        # is offered. Lune moved on once per text field, so it skipped the
-        # entry after one with two, and after a mismatch wrote the next batch
-        # one entry early. WOLF2 and CSV found the lines to write by parsing
-        # the file again, so a name translated with the parser's own mark
-        # ("/", "]") moved or dropped a translation; CSV and Kirikiri also
-        # wrote the name over the rest of its line or cell. WOLF2's
+        # with one backslash. It sent other codes, such as \I[5], and a help
+        # text's line break as nested as their field and wrote back the
+        # reply's, and wrapped a QuestContent nested deeper than one game's
+        # with that game's line break, which ended its string. CSV read its
+        # target column as the speaker by default, and as the name it wrote
+        # there made the row look translated, wrote each row's translation to
+        # the next row. CSV, Kirikiri, Regex, Lune, Tyrano and WOLF2 sent each
+        # speaker name again in the pass that writes the translations, as it
+        # then held its translation, and WOLF2 its choices too; Lune refused
+        # the .l files it is offered. Lune moved on once per text field, so it
+        # skipped the entry after one with two, and after a mismatch wrote the
+        # next batch one entry early. WOLF2 and CSV found the lines to write
+        # by parsing the file again, so a name translated with the parser's
+        # own mark ("/", "]") moved or dropped a translation; CSV and Kirikiri
+        # also wrote the name over the rest of its line or cell. WOLF2's
         # last-resort reader, for a file no encoding reads whole, kept "\r\n"
-        # line ends, which joined the whole file into one line.
+        # line ends, which joined the whole file into one line. Text and
+        # JSON's list format still sent each speaker again; Regex wrote a
+        # name over its whole line, renaming a voice file on it; a name
+        # holding "]" kept the "[Speaker]: " the request added in the game
+        # text, and Lune cut any reply starting with a word and a colon.
+        # WOLF2 read a line holding "：" as a speaker, skipped a choice right
+        # after a line of text, and failed a file ending on a speaker or a
+        # choice. CSV kept a target's :name[] tag in Japanese, and wrote the
+        # reply to a tag with no line after it between every letter of a
+        # filled target.
         shapes = temporary / "engine-shapes"
         for folder in ("files", "translated", "log"):
             (shapes / folder).mkdir(parents=True)
         os.chdir(shapes)
-        platform_line_ends = {"modules.nscript", "modules.regex", "modules.wolf2"}
+        platform_line_ends = {
+            "modules.nscript",
+            "modules.regex",
+            "modules.renpy",
+            "modules.wolf2",
+        }
         try:
             for module_name, handler, scene, source, options, requests, output in (
                 (
@@ -997,7 +1021,7 @@ try:
                         '\nvar txtSubject = "\\\\n[1]の\\\\nクエスト";\n'
                     ),
                     {},
-                    [["村の 村長"], ["\\\\n[1]の クエスト"]],
+                    [["村の 村長"], ["\\n[1]の クエスト"]],
                     (
                         r"var q = [\"{\\\"QuestClientName\\\":\\\"EN \'村の 村長\'\\\"}\"];"
                         '\nvar txtSubject = "EN ՚\\\\n[1]の クエスト՚";\n'
@@ -1024,6 +1048,88 @@ try:
                         + "\\" * 16
                         + r"c[0]で\'\\\"\\\"}\"];"
                         '\nvar txtSubject = "EN ՚\\\\C[2]クエスト\\\\C[0]՚";\n'
+                    ),
+                ),
+                (
+                    "modules.rpgmakerplugin",
+                    "handlePlugin",
+                    "plugins.js",
+                    (
+                        r"var q = [\"{\\\"QuestName\\\":\\\""
+                        + "\\" * 8
+                        + r"I[5]村長\\\",\\\"PlaceInformation\\\":\\\""
+                        + "\\" * 8
+                        + r"V[1]番地\\\",\\\"ObjectiveContent\\\":\\\""
+                        + "\\" * 7
+                        + '"'
+                        + "\\" * 16
+                        + "C[2]薬草"
+                        + "\\" * 16
+                        + "C[0]"
+                        + "\\" * 7
+                        + r'"\\\"}\"];'
+                        "\n"
+                        r"var p = {\"HelpText\":\"最初から\\n\\\\I[3]始めます\\n<注意>\"};"
+                        "\n"
+                    ),
+                    {},
+                    [
+                        ["\\I[5]村長"],
+                        ["\\V[1]番地"],
+                        ["\\C[2]薬草\\C[0]"],
+                        ["最初から\\n\\I[3]始めます\\n<注意>"],
+                    ],
+                    (
+                        r"var q = [\"{\\\"QuestName\\\":\\\"EN \'"
+                        + "\\" * 8
+                        + r"I[5]村長\'\\\",\\\"PlaceInformation\\\":\\\"EN \'"
+                        + "\\" * 8
+                        + r"V[1]番地\'\\\",\\\"ObjectiveContent\\\":\\\""
+                        + "\\" * 7
+                        + r'"EN \''
+                        + "\\" * 16
+                        + "C[2]薬草"
+                        + "\\" * 16
+                        + r"C[0]\'"
+                        + "\\" * 7
+                        + r'"\\\"}\"];'
+                        "\n"
+                        r"var p = {\"HelpText\":\"EN \'最初から\\n\\\\I[3]始めます\\n<注意>\'\"};"
+                        "\n"
+                    ),
+                ),
+                (
+                    "modules.rpgmakerplugin",
+                    "handlePlugin",
+                    "plugins.js",
+                    (
+                        r"var q = [\\\"{\\\\\\\"QuestContent\\\\\\\":\\\\\\\""
+                        + "\\" * 15
+                        + '"森で 薬草を 集めて 村長の 家まで 届けて ほしい。 '
+                        + "報酬は 百ゴールドだ。 急いで くれ。 森には 魔物が 出る。"
+                        + "\\" * 15
+                        + r'"\\\\\\\"}\\\"];'
+                        "\n"
+                    ),
+                    {},
+                    [
+                        [
+                            (
+                                "森で 薬草を 集めて 村長の 家まで 届けて ほしい。 "
+                                "報酬は 百ゴールドだ。 急いで くれ。 森には 魔物が 出る。"
+                            )
+                        ]
+                    ],
+                    (
+                        r"var q = [\\\"{\\\\\\\"QuestContent\\\\\\\":\\\\\\\""
+                        + "\\" * 15
+                        + "\"EN \\'森で 薬草を 集めて 村長の 家まで 届けて ほしい。 "
+                        + "報酬は 百ゴールドだ。 急いで くれ。 森には 魔物が"
+                        + "\\" * 16
+                        + "n出る。\\'"
+                        + "\\" * 15
+                        + r'"\\\\\\\"}\\\"];'
+                        "\n"
                     ),
                 ),
                 (
@@ -1069,13 +1175,19 @@ try:
                     (
                         'Source,Target\n":name[アリス]\nアリスだよ",'
                         '":name[アリス]\nアリスだよ"\n":name[アリス]\nやあ",\n'
+                        '":name[アリス]\n",":name[アリス]\n"\n'
                     ),
-                    {"PARSE_NAME_TAGS": True, "name": "Al]Ice"},
+                    {
+                        "PARSE_NAME_TAGS": True,
+                        "name": "Al]Ice",
+                        "replies": {"[Al]Ice]: やあ": "[Al]Ice]: Hi"},
+                    },
                     ["アリス", ["[Al]Ice]: アリスだよ", "[Al]Ice]: やあ"]],
                     (
                         'Source,Target\r\n":name[Al]Ice]\nアリスだよ",'
-                        '":name[アリス]\nEN ""[Al]Ice]: アリスだよ"""\r\n'
-                        '":name[Al]Ice]\nやあ","EN ""[Al]Ice]: やあ"""\r\n'
+                        '":name[Al]Ice]\nEN ""[Al]Ice]: アリスだよ"""\r\n'
+                        '":name[Al]Ice]\nやあ",Hi\r\n'
+                        '":name[Al]Ice]\n",":name[Al]Ice]\n"\r\n'
                     ),
                 ),
                 (
@@ -1162,6 +1274,107 @@ try:
                     [["やあ ", " またね "]],
                     'EN "やあ "\n\nEN " またね "\n',
                 ),
+                (
+                    "modules.text",
+                    "handleText",
+                    "dialogue.txt",
+                    "[アリス]: やあ\n",
+                    {"name": "Al]Ice", "replies": {"[Al]Ice]: やあ": "[Al]Ice]: Hi"}},
+                    ["アリス", ["[Al]Ice]: やあ"]],
+                    "Hi\n",
+                ),
+                (
+                    "modules.regex",
+                    "handleRegex",
+                    "script.txt",
+                    '{\n    "name": "アリス", "voice": "アリス01"\n    "text": "やあ",\n},\n',
+                    {"name": "Al]Ice", "replies": {"[Al]Ice]: やあ": "[Al]Ice]: Hi"}},
+                    ["アリス", ["[Al]Ice]: やあ"]],
+                    '﻿{\n    "name": "Al]Ice", "voice": "アリス01"\n    "text": "Hi",\n},\n',
+                ),
+                (
+                    "modules.tyrano",
+                    "handleTyrano",
+                    "scene.ks",
+                    "#アリス\nやあ[p]\n",
+                    {"name": "Al]Ice", "replies": {"[Al]Ice]: やあ": "[Al]Ice]: Hi"}},
+                    ["アリス", ["[Al]Ice]: やあ"]],
+                    "#Al]Ice\nHi[p]\n",
+                ),
+                (
+                    "modules.kirikiri",
+                    "handleKirikiri",
+                    "scene.ks",
+                    "【アリス】[CR]\n[text]やあ[KeyWait]\n【アリス】[CR]\n",
+                    {"name": "Al]Ice", "replies": {"[Al]Ice]: やあ": "[Al]Ice]: Hi"}},
+                    ["アリス", ["[Al]Ice]: やあ"]],
+                    "【Al]Ice】[CR]\n[text]Hi[KeyWait]\n【Al]Ice】[CR]\n",
+                ),
+                (
+                    "modules.renpy",
+                    "handleRenpy",
+                    "script.rpy",
+                    '    アリス "やあ"\n',
+                    {"name": "Al]Ice", "replies": {"[Al]Ice]: やあ": "[Al]Ice]: Hi"}},
+                    ["アリス", ["[Al]Ice]: やあ"]],
+                    '    アリス "Hi"\n',
+                ),
+                (
+                    "modules.lune",
+                    "handleLune",
+                    "scene.l",
+                    json.dumps([{"name": "アリス", "message": "注意：扉"}]),
+                    {"replies": {"注意：扉": "Note: the door"}},
+                    ["アリス", ["注意：扉"]],
+                    json.dumps(
+                        [{"name": "Alice", "message": "Note: the door"}],
+                        ensure_ascii=False,
+                        indent=4,
+                    ),
+                ),
+                (
+                    "modules.json",
+                    "handleJSON",
+                    "Talk.json",
+                    json.dumps([{"character_nameText": "アリス", "m_text": "やあ"}]),
+                    {"replies": {"[Alice]: やあ": "[Alice]: Hi"}},
+                    ["アリス", ["[Alice]: やあ"]],
+                    json.dumps(
+                        [{"character_nameText": "Alice", "m_text": "Hi"}],
+                        ensure_ascii=False,
+                        indent=4,
+                    ),
+                ),
+                (
+                    "modules.wolf2",
+                    "handleWOLF2",
+                    "Map001.txt",
+                    "やあ\n//選択肢\n//はい\n//いいえ\n//はいの場合\n\n「待って：ね」\n\n：さて\n",
+                    {},
+                    [["はい", "いいえ"], ["やあ ", "「待って：ね」 ", "：さて "]],
+                    (
+                        'EN "やあ "\n//選択肢\n//EN "はい"\n//EN "いいえ"\n//はいの場合\n'
+                        '\nEN "「待って：ね」 "\n\nEN "：さて "\n'
+                    ),
+                ),
+                (
+                    "modules.wolf2",
+                    "handleWOLF2",
+                    "Map001.txt",
+                    "アリス：\nやあ\n\nアリス：\n",
+                    {"name": "Al]Ice", "replies": {"[Al]Ice]: やあ ": "[Al]Ice]: Hi"}},
+                    ["アリス", ["[Al]Ice]: やあ "]],
+                    "Al]Ice：\nHi\n\nAl]Ice：\n",
+                ),
+                (
+                    "modules.wolf2",
+                    "handleWOLF2",
+                    "Map001.txt",
+                    "やあ\n\n//選択肢\n//はい\n//いいえ\n",
+                    {},
+                    [["はい", "いいえ"], ["やあ "]],
+                    'EN "やあ "\n\n//選択肢\n//EN "はい"\n//EN "いいえ"\n',
+                ),
             ):
                 module = import_module(module_name)
                 encoding = "utf-8"
@@ -1175,9 +1388,12 @@ try:
                     source = source.encode(encoding)
                 (shapes / "files" / scene).write_bytes(source)
                 sent = []
-                # The reply to a name, and which list reply leaves out its
-                # last line (a mismatch), counting from 1
+                # The reply to a name, which list reply leaves out its last
+                # line (a mismatch), counting from 1, and replies to some
+                # lines in place of EN "line"
                 reply, short = options.pop("name", "Alice"), options.pop("short", 0)
+                line_replies = options.pop("replies", {})
+                assert isinstance(line_replies, dict)
                 assert isinstance(reply, str) and isinstance(short, int)
                 listed = []
 
@@ -1186,13 +1402,18 @@ try:
                         sent.append(list(text) if isinstance(text, list) else text)
                     if isinstance(text, list):
                         listed.append(text)
-                        lines = [f'EN "{line}"' for line in text]
+                        lines = [
+                            line_replies.get(line, f'EN "{line}"') for line in text
+                        ]
                         if len(listed) == short:
                             lines.pop()
                         return [lines, [1, 1]]
                     return [reply, [1, 1]]
 
-                its = {"translateAI": shape_reply, "NAMESLIST": [], **options}
+                # Each run starts with an empty speaker name cache
+                its = {"translateAI": shape_reply, **options}
+                if hasattr(module, "NAMESLIST"):
+                    its["NAMESLIST"] = []
                 with patch.multiple(module, **its), redirect_stdout(StringIO()):
                     getattr(module, handler)(scene, False)
                 assert sent == requests, (module_name, sent)
@@ -4193,6 +4414,17 @@ try:
                 assert abs(priced - (8 * 0.8 + 2 * 0.2 + 4 * 3) / 1_000_000) < 1e-12, (
                     priced
                 )
+            # Settings that no longer offer the Batch, as a Custom
+            # Gemini-compatible proxy's no longer do, still apply its saved
+            # results, priced on the Batch they came from; a consume pass
+            # never sends.
+            with patch.object(openrouter_batch, "_worker_policy", None):
+                assert translation.getBatchProvider(config.model) is None
+                assert translation.appliedBatchProvider(config.model) == "openrouter"
+                translated = translation.translateAI(
+                    ["薬"], [], config, filename="Items.json"
+                )
+                assert translated[0] == ["Potion"], translated
             # Schema-shaped responses can fail native content validation without
             # being refusals; here every line comes back empty. Retain the failed body and generic outcome before
             # the file finishes, even when human-readable logs are unavailable.

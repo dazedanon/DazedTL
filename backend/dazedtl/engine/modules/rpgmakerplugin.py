@@ -149,39 +149,83 @@ def parsePlugin(readFile, filename):
     return [data, totalTokens, None]
 
 
-# An escaped line break: a backslash run and n, one more level of escaping per
-# level of nesting. Before [ and a number or code it is the actor name code
-# \n[1] or \n[\v[1]], and before < a name box \n<Alice>, which stay.
-ESCAPED_NEWLINE = re.compile(r"\\+n(?!\[[\d\\]|<)")
+# A plugin string's escapes. Each level of nesting, the JS string and then
+# each JSON.stringify of a parameter, struct, list or note, doubles the
+# backslashes before them: a string whose quotes have q backslashes before
+# them has q + 1 before each of its own escapes, such as a note's line break
+# \n, and twice that, its depth, before a backslash of its text, such as a
+# control code's.
+#
+# An escape is a backslash run and one of:
+# - an escaped line break, n except before [ and a number or backslash, or <;
+# - an actor name or name box code, \n[1], \n[\v[1]] or \n<Alice>, where a
+#   note's line break before [1 or < reads the same, one level shallower;
+# - any other control code: letters before [ or <, such as \C[2], \I[5] or
+#   \V[1], a capital letter, such as \G, or one of { } . ! | ^ > < # $ @ , -.
+#   A lowercase letter alone can be the string's own escape, such as \r.
+# A request sends each code with one backslash, and the translation writes
+# each back at its source's depth. A line break is read as its source writes
+# it: at its codes' depth in a txtSubject, one level shallower in a note.
+ESCAPE = re.compile(
+    r"(\\+)(?:(n)(?!\[[\d\\]|<)|(?=(n)[\[<])|(?=[A-Za-z]+[\[<]|[A-Z]|[{}.!|^><#$@,\-]))"
+)
+
+
+def stringDepth(quote):
+    """The depth of a plugin string whose quotes have the backslashes *quote*
+    before them: twice their count and one."""
+    return "\\" * (2 * len(quote) + 2)
 
 
 def escapedNewline(text):
     """The escaped line break a plugin string uses, as its backslashes and n,
     or None."""
-    found = ESCAPED_NEWLINE.search(text)
-    return found.group(0) if found else None
+    for found in ESCAPE.finditer(text):
+        if found.group(2):
+            return found.group(0)
+    return None
 
 
-def unwrapped(text):
-    """The text with each escaped line break read as a space."""
-    return ESCAPED_NEWLINE.sub(" ", text)
+def sent(text, keepLineBreaks=False):
+    """A plugin string's text as a request sends it: each code with one
+    backslash, and each escaped line break as a space, or as \\n with one
+    backslash in a field that keeps its line breaks."""
+    lineBreak = "\\n" if keepLineBreaks else " "
+    return ESCAPE.sub(lambda found: lineBreak if found.group(2) else "\\", text)
 
 
-# A color code \c[2] or \C[2]: a backslash run before c or C and [, with the
-# same depth of escaping as an escaped line break. It is sent with one
-# backslash and written back at the depth its source uses.
-ESCAPED_COLOR = re.compile(r"\\+(?=[cC]\[)")
+def written(translation, source, depth=None, width=None):
+    """A translation as the plugin string *source* it replaces writes it.
 
+    Each code in the translation, at whatever depth the reply writes it,
+    takes the depth of the source's codes, or where the source has none,
+    *depth*, the string's own (None keeps the reply's); an actor name or
+    name box code takes the depth of the source's own. With *width* the
+    translation is wrapped to it. Each line break, a raw or an escaped one,
+    is written as the source writes one; where it writes none, a wrapped
+    string writes a line break escaped as its own, half its depth, and any
+    other a space, as a raw line break would end the JS string.
+    """
+    newline, codes = None, {}
+    for found in ESCAPE.finditer(source):
+        if found.group(2):
+            newline = newline or found.group(0)
+        else:
+            codes.setdefault(bool(found.group(3)), found.group(1))
+    depth = codes.get(False, depth)
+    names = codes.get(True, depth)
 
-def colorDepth(text):
-    """The backslashes a plugin string's color codes use, or None."""
-    found = ESCAPED_COLOR.search(text)
-    return found.group(0) if found else None
+    def atDepth(found):
+        if found.group(2):
+            return "\n"
+        return (names if found.group(3) else depth) or found.group(1)
 
-
-def atColorDepth(text, backslashes):
-    """The text with each color code's backslashes set to backslashes."""
-    return ESCAPED_COLOR.sub(lambda _found: backslashes, text)
+    text = ESCAPE.sub(atDepth, translation)
+    if width:
+        text = dazedwrap.wrapText(text, width=width)
+        if newline is None and depth:
+            newline = depth[: len(depth) // 2] + "n"
+    return text.replace("\n", newline or " ")
 
 
 def translatePlugin(data, pbar, filename, translatedList):
@@ -247,8 +291,8 @@ def translatePlugin(data, pbar, filename, translatedList):
                     jaString = match
                     originalString = jaString
 
-                    # Replace \n for translation
-                    jaStringClean = unwrapped(jaString)
+                    # Codes at depth one, line breaks as spaces
+                    jaStringClean = sent(jaString)
 
                     if jaStringClean.strip():
                         # Pass 1
@@ -266,12 +310,14 @@ def translatePlugin(data, pbar, filename, translatedList):
                                 if len(custom) <= 0:
                                     custom = []
 
-                                # Restore original newlines but keep translated text
-                                newline = escapedNewline(jaString)
-                                if newline:
-                                    # Textwrap the translation
-                                    translatedText = dazedwrap.wrapText(translatedText, 50)
-                                    translatedText = translatedText.replace("\n", newline)
+                                # Codes and line breaks as the source writes
+                                # them, wrapped where it has line breaks
+                                translatedText = written(
+                                    translatedText,
+                                    jaString,
+                                    stringDepth(""),
+                                    50 if escapedNewline(jaString) else None,
+                                )
 
                                 # Escape quotes in translation
                                 translatedText = translatedText.replace('"', '\\"')
@@ -301,13 +347,8 @@ def translatePlugin(data, pbar, filename, translatedList):
                 if re.search(r"^[\\]+$", jaString):
                     continue
 
-                # Replace \n and \c
-                newline = escapedNewline(jaString)
-                colors = colorDepth(jaString)
-                jaString = atColorDepth(jaString, "\\")
-
-                # Remove any textwrap
-                jaString = unwrapped(jaString)
+                # Codes at depth one, line breaks as spaces
+                jaString = sent(jaString)
 
                 if jaString.replace("\u3000", "") and jaString:
                     # Pass 1
@@ -325,16 +366,8 @@ def translatePlugin(data, pbar, filename, translatedList):
                             translatedText = re.sub(r"([^\\'])'", r"\1՚", translatedText)
                             translatedText = re.sub(r"([^\\'])\"", r"\1՚", translatedText)
 
-                            # Replace \n and \c
-                            if newline:
-                                # Textwrap
-                                # translatedText = dazedwrap.wrapText(translatedText, WIDTH)
-                                translatedText = re.sub(r"\n", re.escape(newline), translatedText)
-                            else:
-                                # A raw line break would end the JS string
-                                translatedText = translatedText.replace("\n", " ")
-                            if colors:
-                                translatedText = atColorDepth(translatedText, colors)
+                            # Codes and line breaks as the source writes them
+                            translatedText = written(translatedText, originalString, stringDepth(""))
 
                             # Set Data
                             with open("log/translations.txt", "a+", encoding="utf-8") as tlFile:
@@ -342,16 +375,16 @@ def translatePlugin(data, pbar, filename, translatedList):
                             data[i] = data[i].replace(originalString, translatedText)
 
         # Quest Name
-        regex = r'[\\]+"QuestName[\\]+":[\\]+"(.*?)[\\]+"'
+        regex = r'[\\]+"QuestName[\\]+":([\\]+)"(.*?)[\\]+"'
         matchList = re.findall(regex, data[i])
         if len(matchList) > 0:
-            for match in matchList:
+            for quote, match in matchList:
                 if match:
                     # Save Original String
                     originalString = match
 
-                    # Remove any textwrap
-                    match = unwrapped(match)
+                    # Codes at depth one, line breaks as spaces
+                    match = sent(match)
 
                     # Pass 1
                     if setData == False:
@@ -366,6 +399,9 @@ def translatePlugin(data, pbar, filename, translatedList):
                             translatedText = questList[0][0]
                             questList[0].pop(0)
 
+                            # Codes and line breaks as the source writes them
+                            translatedText = written(translatedText, originalString, stringDepth(quote))
+
                             # Replace Single Quotes
                             translatedText = translatedText.replace('"', "'")
                             translatedText = re.sub(r"([^\\'])'", r"\1\\'", translatedText)
@@ -374,16 +410,16 @@ def translatePlugin(data, pbar, filename, translatedList):
                             data[i] = data[i].replace(originalString, translatedText)
 
         # Quest Client
-        regex = r'QuestClientName[\\]+":[\\]+"(.*?)[\\]+"'
+        regex = r'QuestClientName[\\]+":([\\]+)"(.*?)[\\]+"'
         matchList = re.findall(regex, data[i])
         if len(matchList) > 0:
-            for match in matchList:
+            for quote, match in matchList:
                 if match:
                     # Save Original String
                     originalString = match
 
-                    # Remove any textwrap
-                    match = unwrapped(match)
+                    # Codes at depth one, line breaks as spaces
+                    match = sent(match)
 
                     # Pass 1
                     if setData == False:
@@ -398,6 +434,9 @@ def translatePlugin(data, pbar, filename, translatedList):
                             translatedText = questList[1][0]
                             questList[1].pop(0)
 
+                            # Codes and line breaks as the source writes them
+                            translatedText = written(translatedText, originalString, stringDepth(quote))
+
                             # Replace Single Quotes
                             translatedText = translatedText.replace('"', "'")
                             translatedText = re.sub(r"([^\\'])'", r"\1\\'", translatedText)
@@ -406,16 +445,16 @@ def translatePlugin(data, pbar, filename, translatedList):
                             data[i] = data[i].replace(originalString, translatedText)
 
         # Quest Location
-        regex = r'QuestLocation[\\]+":[\\]+"(.*?)[\\]+"'
+        regex = r'QuestLocation[\\]+":([\\]+)"(.*?)[\\]+"'
         matchList = re.findall(regex, data[i])
         if len(matchList) > 0:
-            for match in matchList:
+            for quote, match in matchList:
                 if match:
                     # Save Original String
                     originalString = match
 
-                    # Remove any textwrap
-                    match = unwrapped(match)
+                    # Codes at depth one, line breaks as spaces
+                    match = sent(match)
 
                     # Pass 1
                     if setData == False:
@@ -430,6 +469,9 @@ def translatePlugin(data, pbar, filename, translatedList):
                             translatedText = questList[2][0]
                             questList[2].pop(0)
 
+                            # Codes and line breaks as the source writes them
+                            translatedText = written(translatedText, originalString, stringDepth(quote))
+
                             # Replace Single Quotes
                             translatedText = translatedText.replace('"', "'")
                             translatedText = re.sub(r"([^\\'])'", r"\1\\'", translatedText)
@@ -438,16 +480,16 @@ def translatePlugin(data, pbar, filename, translatedList):
                             data[i] = data[i].replace(originalString, translatedText)
 
         # Quest Target
-        regex = r'PlaceInformation[\\]+":[\\]+"(.*?)[\\]+"'
+        regex = r'PlaceInformation[\\]+":([\\]+)"(.*?)[\\]+"'
         matchList = re.findall(regex, data[i])
         if len(matchList) > 0:
-            for match in matchList:
+            for quote, match in matchList:
                 if match:
                     # Save Original String
                     originalString = match
 
-                    # Remove any textwrap
-                    match = unwrapped(match)
+                    # Codes at depth one, line breaks as spaces
+                    match = sent(match)
 
                     # Pass 1
                     if setData == False:
@@ -462,6 +504,9 @@ def translatePlugin(data, pbar, filename, translatedList):
                             translatedText = questList[3][0]
                             questList[3].pop(0)
 
+                            # Codes and line breaks as the source writes them
+                            translatedText = written(translatedText, originalString, stringDepth(quote))
+
                             # Replace Single Quotes
                             translatedText = translatedText.replace('"', "'")
                             translatedText = re.sub(r"([^\\'])'", r"\1\\'", translatedText)
@@ -470,16 +515,16 @@ def translatePlugin(data, pbar, filename, translatedList):
                             data[i] = data[i].replace(originalString, translatedText)
 
         # Quest Summary
-        regex = r'[\\]+"QuestContent[\\]+":[\\]+"[\\]+"(.*?)[\\]+"[\\]+"'
+        regex = r'[\\]+"QuestContent[\\]+":[\\]+"([\\]+)"(.*?)[\\]+"[\\]+"'
         matchList = re.findall(regex, data[i])
         if len(matchList) > 0:
-            for match in matchList:
+            for quote, match in matchList:
                 if match:
                     # Save Original String
                     originalString = match
 
-                    # Remove any textwrap
-                    match = atColorDepth(unwrapped(match), "\\")
+                    # Codes at depth one, line breaks as spaces
+                    match = sent(match)
 
                     # Pass 1
                     if setData == False:
@@ -494,13 +539,10 @@ def translatePlugin(data, pbar, filename, translatedList):
                             translatedText = questList[4][0]
                             questList[4].pop(0)
 
-                            # Textwrap
-                            translatedText = dazedwrap.wrapText(translatedText, width=WIDTH)
-                            newline = escapedNewline(originalString) or r"\\\\\\\\n"
-                            translatedText = translatedText.replace("\n", newline)
-                            colors = colorDepth(originalString)
-                            if colors:
-                                translatedText = atColorDepth(translatedText, colors)
+                            # Textwrap, codes and line breaks as the source writes them
+                            translatedText = written(
+                                translatedText, originalString, stringDepth(quote), WIDTH
+                            )
 
                             # Replace Single Quotes
                             translatedText = translatedText.replace('"', "'")
@@ -510,16 +552,16 @@ def translatePlugin(data, pbar, filename, translatedList):
                             data[i] = data[i].replace(originalString, translatedText)
 
         # Quest Goal 1
-        regex = r'ObjectiveContent[\\]+":[\\]+"[\\]+"(.*?)[\\]+"'
+        regex = r'ObjectiveContent[\\]+":[\\]+"([\\]+)"(.*?)[\\]+"'
         matchList = re.findall(regex, data[i])
         if len(matchList) > 0:
-            for match in matchList:
+            for quote, match in matchList:
                 if match:
                     # Save Original String
                     originalString = match
 
-                    # Remove any textwrap
-                    match = unwrapped(match)
+                    # Codes at depth one, line breaks as spaces
+                    match = sent(match)
 
                     # Pass 1
                     if setData == False:
@@ -534,12 +576,10 @@ def translatePlugin(data, pbar, filename, translatedList):
                             translatedText = questList[5][0]
                             questList[5].pop(0)
 
-                            # Textwrap
-                            translatedText = dazedwrap.wrapText(translatedText, width=WIDTH)
-                            newline = escapedNewline(originalString) or (
-                                r"\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\n"
+                            # Textwrap, codes and line breaks as the source writes them
+                            translatedText = written(
+                                translatedText, originalString, stringDepth(quote), WIDTH
                             )
-                            translatedText = translatedText.replace("\n", newline)
 
                             # Replace Single Quotes
                             translatedText = translatedText.replace('"', "'")
@@ -549,10 +589,10 @@ def translatePlugin(data, pbar, filename, translatedList):
                             data[i] = data[i].replace(originalString, translatedText)
 
         # SceneCustomMenu - Text (Command Labels)
-        regex = r'[\\]+"Text[\\]+":[\\]+"(.+?)[\\]+"'
+        regex = r'[\\]+"Text[\\]+":([\\]+)"(.+?)[\\]+"'
         matchList = re.findall(regex, data[i])
         if len(matchList) > 0:
-            for match in matchList:
+            for quote, match in matchList:
                 if match:
                     jaString = match
                     originalString = jaString
@@ -568,7 +608,8 @@ def translatePlugin(data, pbar, filename, translatedList):
                     if jaString.replace("\u3000", "").strip():
                         # Pass 1
                         if setData == False:
-                            sceneMenuText.append(jaString.strip())
+                            # Codes and line breaks at depth one
+                            sceneMenuText.append(sent(jaString, True).strip())
 
                         # Pass 2
                         else:
@@ -576,6 +617,9 @@ def translatePlugin(data, pbar, filename, translatedList):
                                 # Grab and Pop
                                 translatedText = sceneMenuText[0]
                                 sceneMenuText.pop(0)
+
+                                # Codes and line breaks as the source writes them
+                                translatedText = written(translatedText, originalString, stringDepth(quote))
 
                                 # Replace quotes
                                 translatedText = translatedText.replace('"', "'")
@@ -585,10 +629,10 @@ def translatePlugin(data, pbar, filename, translatedList):
                                 data[i] = data[i].replace(originalString, translatedText)
 
         # SceneCustomMenu - CommonHelpText
-        regex = r'[\\]+"CommonHelpText[\\]+":[\\]+"(.+?)[\\]+"'
+        regex = r'[\\]+"CommonHelpText[\\]+":([\\]+)"(.+?)[\\]+"'
         matchList = re.findall(regex, data[i])
         if len(matchList) > 0:
-            for match in matchList:
+            for quote, match in matchList:
                 if match:
                     jaString = match
                     originalString = jaString
@@ -604,7 +648,8 @@ def translatePlugin(data, pbar, filename, translatedList):
                     if jaString.replace("\u3000", "").strip():
                         # Pass 1
                         if setData == False:
-                            sceneMenuCommonHelpText.append(jaString.strip())
+                            # Codes and line breaks at depth one
+                            sceneMenuCommonHelpText.append(sent(jaString, True).strip())
 
                         # Pass 2
                         else:
@@ -612,6 +657,9 @@ def translatePlugin(data, pbar, filename, translatedList):
                                 # Grab and Pop
                                 translatedText = sceneMenuCommonHelpText[0]
                                 sceneMenuCommonHelpText.pop(0)
+
+                                # Codes and line breaks as the source writes them
+                                translatedText = written(translatedText, originalString, stringDepth(quote))
 
                                 # Replace quotes
                                 translatedText = translatedText.replace('"', "'")
@@ -621,10 +669,10 @@ def translatePlugin(data, pbar, filename, translatedList):
                                 data[i] = data[i].replace(originalString, translatedText)
 
         # SceneCustomMenu - HelpText (Command Help)
-        regex = r'[\\]+"HelpText[\\]+":[\\]+"(.+?)[\\]+"'
+        regex = r'[\\]+"HelpText[\\]+":([\\]+)"(.+?)[\\]+"'
         matchList = re.findall(regex, data[i])
         if len(matchList) > 0:
-            for match in matchList:
+            for quote, match in matchList:
                 if match:
                     jaString = match
                     originalString = jaString
@@ -640,7 +688,8 @@ def translatePlugin(data, pbar, filename, translatedList):
                     if jaString.replace("\u3000", "").strip():
                         # Pass 1
                         if setData == False:
-                            sceneMenuHelpText.append(jaString.strip())
+                            # Codes and line breaks at depth one
+                            sceneMenuHelpText.append(sent(jaString, True).strip())
 
                         # Pass 2
                         else:
@@ -648,6 +697,9 @@ def translatePlugin(data, pbar, filename, translatedList):
                                 # Grab and Pop
                                 translatedText = sceneMenuHelpText[0]
                                 sceneMenuHelpText.pop(0)
+
+                                # Codes and line breaks as the source writes them
+                                translatedText = written(translatedText, originalString, stringDepth(quote))
 
                                 # Replace quotes
                                 translatedText = translatedText.replace('"', "'")
@@ -657,10 +709,10 @@ def translatePlugin(data, pbar, filename, translatedList):
                                 data[i] = data[i].replace(originalString, translatedText)
 
         # NUUN_SaveScreen - ParamName (save screen labels like 現在地, プレイ時間, 所持金)
-        regex = r'[\\]+"ParamName[\\]+":[\\]+"(.+?)[\\]+"'
+        regex = r'[\\]+"ParamName[\\]+":([\\]+)"(.+?)[\\]+"'
         matchList = re.findall(regex, data[i])
         if len(matchList) > 0:
-            for match in matchList:
+            for quote, match in matchList:
                 if match:
                     jaString = match
                     originalString = jaString
@@ -676,7 +728,8 @@ def translatePlugin(data, pbar, filename, translatedList):
                     if jaString.replace("\u3000", "").strip():
                         # Pass 1
                         if setData == False:
-                            saveParamName.append(jaString.strip())
+                            # Codes and line breaks at depth one
+                            saveParamName.append(sent(jaString, True).strip())
 
                         # Pass 2
                         else:
@@ -684,6 +737,9 @@ def translatePlugin(data, pbar, filename, translatedList):
                                 # Grab and Pop
                                 translatedText = saveParamName[0]
                                 saveParamName.pop(0)
+
+                                # Codes and line breaks as the source writes them
+                                translatedText = written(translatedText, originalString, stringDepth(quote))
 
                                 # Replace quotes
                                 translatedText = translatedText.replace('"', "'")
@@ -695,10 +751,10 @@ def translatePlugin(data, pbar, filename, translatedList):
         # DrawTextEx - Brace-delimited labels (e.g., \}【口づけ】\{, \}回数：\{)
         # Only process lines containing drawTextEx calls
         if 'drawTextEx' in data[i]:
-            regex = r'[\\]+\}(.+?)[\\]+\{'
+            regex = r'([\\]+)\}(.+?)[\\]+\{'
             matchList = re.findall(regex, data[i])
             if len(matchList) > 0:
-                for match in matchList:
+                for depth, match in matchList:
                     if match:
                         jaString = match
                         originalString = jaString
@@ -714,8 +770,10 @@ def translatePlugin(data, pbar, filename, translatedList):
                         if jaString.replace("\u3000", "").strip():
                             # Pass 1 (deduplicated)
                             if setData == False:
-                                if jaString.strip() not in sceneMenuDrawText:
-                                    sceneMenuDrawText.append(jaString.strip())
+                                # Codes and line breaks at depth one
+                                label = sent(jaString, True).strip()
+                                if label not in sceneMenuDrawText:
+                                    sceneMenuDrawText.append(label)
 
                             # Pass 2 (collect mapping, skip duplicates)
                             else:
@@ -723,6 +781,9 @@ def translatePlugin(data, pbar, filename, translatedList):
                                     # Grab and Pop
                                     translatedText = sceneMenuDrawText[0]
                                     sceneMenuDrawText.pop(0)
+
+                                    # Codes and line breaks as the source writes them
+                                    translatedText = written(translatedText, originalString, depth)
 
                                     # Replace quotes
                                     translatedText = translatedText.replace('"', "'")

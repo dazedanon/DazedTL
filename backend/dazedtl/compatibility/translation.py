@@ -1430,14 +1430,6 @@ def request_payload(request, configuration):
     )
 
 
-def google_batch_client(secret):
-    from google import genai
-
-    # A lost create response is reconciled through our journal, never repeated
-    # underneath it by the SDK's default retry loop.
-    return genai.Client(api_key=secret, http_options={"retry_options": {"attempts": 1}})
-
-
 class TranslationProvider:
     """One isolated worker's provider connection; no SDK-level paid retries."""
 
@@ -1446,7 +1438,7 @@ class TranslationProvider:
         from .provider_responses import install
 
         install()
-        from util.batch_providers import get_client
+        from util.batch_providers import get_client, google_files_client
 
         self.configuration = configuration
         # One of several provider SDK clients, chosen by configuration.
@@ -1486,7 +1478,7 @@ class TranslationProvider:
             extra["organization"] = configuration["organization"]
         self.client = self.client.with_options(**extra)
         self.google = (
-            google_batch_client(secret)
+            google_files_client(secret)
             if self.provider == "gemini" and configuration["mode"] == "batch"
             else None
         )
@@ -1590,15 +1582,15 @@ class TranslationProvider:
     @provider_errors
     def collect_terminal(self, identity, mapping):
         """Keep successful paid rows from a canceled/expired compatible Batch job."""
-        from util.batch_providers import read_openai_results
+        from util.batch_providers import read_openai_results, retrieve_batch
 
         if self.provider in {"anthropic", "openrouter"}:
             return self.collect(identity, mapping)
-        batch = self.client.batches.retrieve(identity)
+        batch = retrieve_batch(self.provider, identity, client=self.client)
         results, errors, usage = read_openai_results(
             self.provider,
-            getattr(batch, "output_file_id", None),
-            getattr(batch, "error_file_id", None),
+            batch["output_file_id"],
+            batch["error_file_id"],
             mapping,
             client=self.client,
             google_client=self.google,

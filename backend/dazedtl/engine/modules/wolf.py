@@ -17,7 +17,7 @@ from tqdm import tqdm
 from util.languages import source_pattern
 from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost, found_mismatch, last_translation_had_mismatch, run_stop_errors
 from util.translation_task import fail_on_parser_error, module_receipt
-from util.speakers import strip_speaker_prefix
+from util.speakers import find_speaker, strip_speaker_prefix, to_prefixed
 from util import system
 
 # OpenAI initialization centralized in util/translation.py
@@ -315,21 +315,18 @@ def searchCodes(events, pbar, jobList, filename):
                 jaString = codeList[i]["stringArgs"][0]
                 speaker = ""
 
-                # Grab Speaker
-                if "\n" in jaString and not setData:
-                    match = re.search(speakerRegex, jaString)
-                    if not match:
-                        # Try alternative pattern without @\d+ prefix
-                        match = re.search(speakerRegexAlt, jaString)
-                    if match:
+                # Grab Speaker (util/speakers), or without the @\d+ prefix
+                if "\n" in jaString:
+                    found = find_speaker(speakerRegex, jaString) or find_speaker(speakerRegexAlt, jaString)
+                    if found:
                         # TL Speaker
-                        response = getSpeaker(match.group(1))
+                        response = getSpeaker(found.name)
                         speaker = response[0]
                         totalTokens[0] += response[1][0]
                         totalTokens[1] += response[1][1]
 
                         # Set Name
-                        codeList[i]["stringArgs"][0] = codeList[i]["stringArgs"][0].replace(match.group(1), speaker)
+                        codeList[i]["stringArgs"][0] = found.written(speaker)
 
                 # Grab Only Text
                 match = re.search(textRegex, jaString, flags=re.DOTALL)
@@ -354,10 +351,7 @@ def searchCodes(events, pbar, jobList, filename):
 
                     # 1st Pass (Save Text to List)
                     if not setData:
-                        if speaker == "":
-                            stringList.append(jaString)
-                        else:
-                            stringList.append(f"[{speaker}]: {jaString}")
+                        stringList.append(to_prefixed(speaker, jaString))
 
                     # 2nd Pass (Set Text)
                     elif stringList is not None:
@@ -365,7 +359,7 @@ def searchCodes(events, pbar, jobList, filename):
                         translatedText = stringList[0]
 
                         # Remove speaker
-                        translatedText = strip_speaker_prefix(translatedText)
+                        translatedText = strip_speaker_prefix(translatedText, speaker)
 
                         # Textwrap
                         if FIXTEXTWRAP is True:
@@ -417,8 +411,8 @@ def searchCodes(events, pbar, jobList, filename):
 
             ### Event Code: 210 Common Event
             if codeList[i]["code"] == 210 and CODE210 == True:
-                # Speaker Event
-                if "stringArgs" in codeList[i] and codeList[i]["intArgs"][0] == None and len(codeList[i]["stringArgs"]) == 2 and not setData:
+                # Speaker Event (util/speakers)
+                if "stringArgs" in codeList[i] and codeList[i]["intArgs"][0] == None and len(codeList[i]["stringArgs"]) == 2:
                     response = getSpeaker(codeList[i]["stringArgs"][1])
                     totalTokens[0] += response[1][0]
                     totalTokens[1] += response[1][1]
@@ -604,22 +598,21 @@ def searchCodes(events, pbar, jobList, filename):
                     jaString = codeList[i]["stringArgs"][1]
                     speaker = ""
 
-                    # Grab Speaker
+                    # Grab Speaker (util/speakers)
                     if "：\n" in jaString or "：\r\n" in jaString:
-                        match = re.search(speakerRegex, jaString)
-                        if match:
-                            if not setData:
-                                # TL Speaker
-                                response = getSpeaker(match.group(1))
-                                speaker = response[0]
-                                totalTokens[0] += response[1][0]
-                                totalTokens[1] += response[1][1]
+                        found = find_speaker(speakerRegex, jaString)
+                        if found:
+                            # TL Speaker
+                            response = getSpeaker(found.name)
+                            speaker = response[0]
+                            totalTokens[0] += response[1][0]
+                            totalTokens[1] += response[1][1]
 
-                                # Set nametag
-                                codeList[i]["stringArgs"][1] = codeList[i]["stringArgs"][1].replace(match.group(1), speaker)
+                            # Set nametag
+                            codeList[i]["stringArgs"][1] = found.written(speaker)
 
                             # Remove nametag from string
-                            jaString = jaString.replace(match.group(0), "")
+                            jaString = re.sub(speakerRegex, "", jaString, count=1)
 
                     # Grab Only Text
                     match = re.search(textRegex, jaString)
@@ -633,10 +626,7 @@ def searchCodes(events, pbar, jobList, filename):
 
                         # 1st Pass (Save Text to List)
                         if not setData:
-                            if speaker == "":
-                                list300.append(jaString)
-                            else:
-                                list300.append(f"[{speaker}]: {jaString}")
+                            list300.append(to_prefixed(speaker, jaString))
 
                         # 2nd Pass (Set Text)
                         elif list300 is not None:
@@ -644,7 +634,7 @@ def searchCodes(events, pbar, jobList, filename):
                             translatedText = list300[0]
 
                             # Remove speaker
-                            translatedText = strip_speaker_prefix(translatedText)
+                            translatedText = strip_speaker_prefix(translatedText, speaker)
 
                             # Textwrap
                             if FIXTEXTWRAP is True:

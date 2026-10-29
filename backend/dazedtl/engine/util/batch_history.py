@@ -33,7 +33,9 @@ from util.translation import (
     batch_usage_cost,
 )
 from util.batch_providers import (
-    _google_client as get_google_client,
+    OWN_API_URLS,
+    PROVIDER_GEMINI,
+    PROVIDER_KIMI,
     cancel_batch as provider_cancel_batch,
     download_results as provider_download_results,
     get_client as get_provider_client,
@@ -121,20 +123,36 @@ def _client_for_entry(entry: dict):
         return get_provider_client(
             provider, api_key=secret or "not-needed", api_url=endpoint or None
         )
+    if provider in (PROVIDER_GEMINI, PROVIDER_KIMI):
+        _require_run_connection(entry, provider)
     return _get_anthropic_client() if provider == "anthropic" else get_provider_client(provider)
 
 
-def _google_client_for_entry(entry: dict):
-    """Resolve the native Gemini Files client from the job's saved key."""
-    key_name = str(entry.get("key_name") or "")
-    if key_name:
-        from util import api_keys as api_key_vault
+def _require_run_connection(entry: dict, provider: str) -> None:
+    """A Gemini or Kimi Batch recorded without a saved key's name was sent
+    with the run's key of the time: to the address it records, or, before
+    it recorded one, to its provider's own API. It is read with the run's
+    key, so only while the run's connection is that one, any address on the
+    provider's own API counting as that API; otherwise the run's key would
+    go where it does not belong, or the Batch be asked for where it is not,
+    so it is refused before anything is sent."""
+    from dazedtl.settings.providers import absolute, own_api
 
-        secret = api_key_vault.get_secret(key_name) or ""
-        if not secret:
-            raise ValueError(f"Saved API key {key_name!r} is unavailable")
-        return get_google_client(api_key=secret)
-    return get_google_client()
+    def connection(address):
+        if own_api(provider, address):
+            return OWN_API_URLS[provider]
+        return absolute(address).rstrip("/").lower() if address else ""
+
+    recorded = str(entry.get("endpoint") or "").strip() or OWN_API_URLS[provider]
+    # With no address set, the run sends to its protocol's own API.
+    protocol = os.getenv("API_PROVIDER", "openai").strip().lower()
+    current = os.getenv("api", "").strip() or OWN_API_URLS.get(protocol, "")
+    if connection(current) and connection(current) == connection(recorded):
+        return
+    raise ValueError(
+        f"Batch {entry.get('id') or ''} was sent with the connection at "
+        f"{recorded} and names no saved key. Select that connection to read it."
+    )
 
 
 def active_key_name_for_environment() -> str:
@@ -181,21 +199,12 @@ def client_for_batch(
         if endpoint and not resolved.get("endpoint"):
             resolved["endpoint"] = endpoint
         return _client_for_entry(resolved)
-    if key_name:
-        return _client_for_entry({
-            "provider": provider,
-            "key_name": key_name,
-            "endpoint": endpoint,
-        })
-    return _get_anthropic_client() if provider == "anthropic" else get_provider_client(provider)
-
-
-def google_client_for_batch(batch_id: str, key_name: str = ""):
-    """Resolve Gemini's native Files client using the submitted credential."""
-    if key_name:
-        return _google_client_for_entry({"provider": "gemini", "key_name": key_name})
-    entry = entry_for_batch(batch_id)
-    return _google_client_for_entry(entry or {})
+    return _client_for_entry({
+        "id": batch_id,
+        "provider": provider,
+        "key_name": key_name,
+        "endpoint": endpoint,
+    })
 
 
 def key_name_for_batch(batch_id: str) -> str:
@@ -618,12 +627,8 @@ def usage_for_batch(batch_id: str, model: Optional[str] = None) -> dict:
         raise ValueError(f"Batch {batch_id} is not ended (status={api_status})")
 
     custom_ids = dict(entry.get("custom_ids") or {})
-    google_client = (
-        _google_client_for_entry(entry) if provider == "gemini" else None
-    )
     _results, errors, usage = download_batch_results(
         batch_id, custom_ids, client=client, provider=provider,
-        google_client=google_client,
     )
     succeeded, errored = len(_results), len(errors)
     use_model = model or entry.get("model") or ""
@@ -872,10 +877,7 @@ def redownload_batch(batch_id: str) -> dict:
             or status_info.get("counts", {}).get("errored", 0)
         ):
             raise ValueError(f"Sequential batch {row_id} failed; consume/write blocked.")
-        google_client = (
-            _google_client_for_entry(row) if provider == "gemini" else None
-        )
-        resolved.append((row, provider, client, google_client))
+        resolved.append((row, provider, client))
 
     results, errored = {}, []
     usage = {
@@ -886,14 +888,13 @@ def redownload_batch(batch_id: str) -> dict:
         "thinking_tokens": 0,
     }
     fetched_parts = []
-    for row, provider, client, google_client in resolved:
+    for row, provider, client in resolved:
         row_id = str(row.get("id") or "")
         part, row_errors, row_usage = download_batch_results(
             row_id,
             dict(row.get("custom_ids") or {}),
             client=client,
             provider=provider,
-            google_client=google_client,
         )
         results.update(part)
         errored.extend(row_errors)
