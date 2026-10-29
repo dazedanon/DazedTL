@@ -68,8 +68,8 @@ export function TranslateWorkspace({
 }) {
   const languages = useLanguages();
   const unavailable = state.provider.batchUnavailable;
-  // Why estimates wait while whether the connection runs Batch isn't read
-  // yet; Batch stays choosable meanwhile.
+  // Why Batch waits while whether the connection runs it isn't read yet,
+  // where Live goes ahead; Batch stays choosable meanwhile.
   const reason = unavailable || state.provider.batchUnread;
   const rows = useMemo(
     () =>

@@ -17,7 +17,8 @@ def batch_reasons(settings):
     isn't read yet, such as after a failed check (openrouter.Unread), each
     "" otherwise. Both workflows keep Batch until they know it can't run,
     so both are "" while no connection with a key and a model is chosen,
-    and the second shows beside the method choice while estimates wait."""
+    and the second shows beside the method choice and in place of a Batch
+    figure while Batch waits and Live goes ahead (openrouter.UNREAD)."""
     if not (settings.connection_summary() or {}).get("model"):
         return "", ""
     defaults = settings.translation_defaults()
@@ -57,16 +58,18 @@ def entries_per_request(settings):
 
 # What a model's looked-up defaults decide, which a snapshot reading cached
 # prices only may not know yet.
-LOOKED_UP = ("rates", "maxOutputTokens", "openrouterBatch")
+LOOKED_UP = ("rates", "maxOutputTokens", "openrouterBatch", openrouter.UNREAD)
 
 
 def configuration(settings, mode, *, cached_only=False, unpriced=False, pair=None):
     """The settings a run freezes, translating between the game's language
     *pair* (settings/language_pair), Japanese into Settings' target when
-    none is given. They refuse an OpenRouter Batch policy no lookup could
-    read yet (openrouter.Unread) before anything else is priced. ``unpriced``
-    returns them with unknown rates instead of refusing, and leaves such a
-    policy out, for comparisons that read cached prices only."""
+    none is given. An OpenRouter Batch policy no lookup could read yet
+    (openrouter.Unread) is frozen as not read yet in a Live mode, and a
+    Batch refuses it before anything else is priced (openrouter.frozen).
+    ``unpriced`` returns them with unknown rates instead of refusing, and
+    leaves such a Batch's policy out, for comparisons that read cached
+    prices only."""
     state = settings._read()
     languages = language_pair.frozen({}, pair or language_pair.default(settings))
     if mode == "agent":
@@ -85,16 +88,15 @@ def configuration(settings, mode, *, cached_only=False, unpriced=False, pair=Non
     selected = connection["model_options"].get(
         connection["model"], preferences.DEFAULT_OPTIONS
     )
-    policy, unread = None, False
+    frozen = {}
     if connection["provider"] == "openrouter":
         try:
-            policy = openrouter.policy(
+            frozen = openrouter.frozen(
                 connection, connection["model"], selected, required=mode == "batch"
             )
         except openrouter.Unread:
             if not unpriced:
                 raise
-            unread = True
     defaults = settings.model_defaults(
         connection["id"],
         connection["model"],
@@ -146,18 +148,18 @@ def configuration(settings, mode, *, cached_only=False, unpriced=False, pair=Non
     }
     if connection["provider"] == "openrouter":
         value["openrouterStructuredOutputs"] = openrouter.STRUCTURED_OUTPUTS
-    # A policy not read yet stays out, so it reads as a price not known
-    # rather than as no Batch (translation/repricing.priced).
-    if connection["provider"] == "openrouter" and not unread:
-        value["openrouterBatch"] = policy
-        if policy:
-            value["rates"].update(
-                batch_input=policy["input"], batch_output=policy["output"]
+    # A Batch's policy not read yet stays out, so it reads as a price not
+    # known rather than as no Batch (translation/repricing.priced).
+    value.update(frozen)
+    policy = frozen.get("openrouterBatch")
+    if policy:
+        value["rates"].update(
+            batch_input=policy["input"], batch_output=policy["output"]
+        )
+        if mode == "batch":
+            value["maxOutputTokens"] = preferences.output_allowance(
+                value["maxOutputTokens"], policy.get("max_output")
             )
-            if mode == "batch":
-                value["maxOutputTokens"] = preferences.output_allowance(
-                    value["maxOutputTokens"], policy.get("max_output")
-                )
     if (
         connection["provider"] == "openai"
         or selected.get("batchInputTokens") is not None

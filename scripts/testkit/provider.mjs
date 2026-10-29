@@ -7,7 +7,7 @@
 //   { "refuse": ["text"], "decline": ["text"], "fail": ["text"],
 //     "failStatus": 400, "failError": null, "failFirst": false, "stall": false, "answer": null, "hold": false,
 //     "batchSeconds": 0, "long": ["text"], "reply": { "text": "reply" },
-//     "target": null, "effort": null }
+//     "target": null, "effort": null, "lists": true }
 //
 // - refuse: lines holding the text come back as a refusal note until the
 //   app sends its clarification; decline: they always do.
@@ -31,6 +31,10 @@
 //   takes no reasoning, and "accept" reports the reasoning tokens it spent;
 //   otherwise the field is ignored, as many servers do. Settings' effort
 //   check, which asks "Reply with OK.", is answered "OK".
+// - lists: false answers every GET to the Anthropic and OpenRouter presets,
+//   their model lists and OpenRouter's Batch endpoints, with HTTP 503, as
+//   in an outage, so their connection checks fail and a model's Batch
+//   can't be read.
 //
 // Every request is recorded in <folder>/requests.jsonl as its time, method,
 // route, status and, for a JSON body, that body, so a check can confirm a
@@ -42,7 +46,8 @@
 //
 // Its model lists stand in for the Anthropic and OpenRouter presets' too,
 // under /api.anthropic.com and /openrouter.ai/api, with the effort data
-// each provider's own list carries (`claudeModels`, `routedModels`).
+// each provider's own list carries (`claudeModels`, `routedModels`), and
+// GLM 6 runs OpenRouter's Batch at half its Live price on one endpoint.
 //
 //   node scripts/testkit/provider.mjs --folder <dir> [--port <n>]
 //
@@ -107,16 +112,31 @@ const routed = (id, reasoning) => ({
   supported_parameters: ["response_format", "structured_outputs", "reasoning"],
   reasoning,
 });
+const glm = {
+  supported_efforts: ["high", "low", "none"],
+  default_enabled: false,
+};
 export const routedModels = [
   routed("anthropic/claude-opus-5.5", {
     supported_efforts: ["max", "high", "medium", "low"],
     default_effort: "high",
     mandatory: true,
   }),
-  routed("z-ai/glm-6", {
-    supported_efforts: ["high", "low", "none"],
-    default_enabled: false,
-  }),
+  routed("z-ai/glm-6", glm),
+  // OpenRouter lists a model that runs Batch again, as `<id>:batch`.
+  {
+    ...routed("z-ai/glm-6:batch", glm),
+    pricing: { prompt: "0.0000005", completion: "0.000002" },
+  },
+];
+/** OpenRouter's GET /models/<id>:batch/endpoints rows for GLM 6's Batch. */
+const batchEndpoints = [
+  {
+    tag: "deepinfra",
+    pricing: { prompt: "0.0000005", completion: "0.000002" },
+    max_completion_tokens: 32768,
+    supported_parameters: ["response_format", "structured_outputs"],
+  },
 ];
 /** What the app sends when it asks again after a refusal. */
 const clarification = "Context clarification from the project owner";
@@ -547,6 +567,12 @@ export async function startProvider({ folder, port = 0 }) {
           );
           return reply(200, { id: crypto.randomUUID(), event: "message" });
         }
+        if (
+          request.method === "GET" &&
+          /\/(api\.anthropic\.com|openrouter\.ai\/api)\//.test(url) &&
+          mode().lists === false
+        )
+          return reply(503, { error: { message: "The stand-in is down." } });
         if (request.method === "GET" && url.includes("/api.anthropic.com/"))
           return reply(200, {
             data: claudeModels,
@@ -557,7 +583,11 @@ export async function startProvider({ folder, port = 0 }) {
         if (request.method === "GET" && url.includes("/openrouter.ai/api/"))
           return route === "/models/user"
             ? reply(200, { data: routedModels })
-            : reply(404, { error: { message: "Not in the stand-in." } });
+            : route === "/models/z-ai/glm-6:batch/endpoints"
+              ? reply(200, {
+                  data: { id: "z-ai/glm-6:batch", endpoints: batchEndpoints },
+                })
+              : reply(404, { error: { message: "Not in the stand-in." } });
         if (request.method === "GET" && route === "/models")
           return reply(200, {
             object: "list",

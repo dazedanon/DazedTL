@@ -84,9 +84,13 @@ function TaskActivity({
 export function CostEstimate({
   value,
   mode,
+  batchUnread,
 }: {
   value: FullEstimate;
   mode: string;
+  /** Why whether the connection runs Batch isn't read yet, which an
+   * estimate shows in place of its Batch price. */
+  batchUnread: string;
 }) {
   const result = value.result;
   const working = value.status === "working";
@@ -115,7 +119,9 @@ export function CostEstimate({
     ? `Live would be about ${cost(estimateTotal(tasks, "liveCost"))}.`
     : result?.batchSupported
       ? `Batch would be about ${costRange(batchLow, batchHigh)}.`
-      : "";
+      : batchUnread
+        ? `Batch isn't priced yet. ${batchUnread}`
+        : "";
   const notes = [
     batch &&
       batchHigh > batchLow &&

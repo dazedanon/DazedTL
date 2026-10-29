@@ -15,6 +15,7 @@ from dazedtl.api.contracts.validation import check_response
 from dazedtl.api.server import assistant_dispatch
 from dazedtl.compatibility import estimate_prices, original_files
 from dazedtl.projects.store import Projects
+from dazedtl.settings import openrouter
 from dazedtl.settings.execution import configuration, connection_summary, worker_secret
 from dazedtl.settings.store import Settings
 from dazedtl.storage import WorkspaceLock, write_json
@@ -59,6 +60,12 @@ from dazedtl.translation.skill_users import for_batch
 from util import provider_costs
 
 from tests.fixtures import old_backup
+
+
+def frozen_batch(settings):
+    """The OpenRouter Batch policy frozen settings hold, and whether they
+    froze it as not read yet (settings/openrouter UNREAD)."""
+    return settings["openrouterBatch"], settings.get(openrouter.UNREAD, False)
 
 
 class Engine:
@@ -1370,17 +1377,38 @@ class WorkflowTests(unittest.TestCase):
                 (self.game / (WORK + "/progress.json")).read_bytes(), before
             )
 
-    def test_a_failed_openrouter_check_keeps_a_waiting_quote_and_says_so(self):
-        # With custom Live rates, a failed check left only whether the model
-        # runs Batch unknown, which read as none: the waiting quote was
-        # priced again as Live-only. It now stands, and approving it while
-        # that is unknown says why instead of calling the settings changed.
+    def test_openrouter_live_goes_ahead_while_batch_is_not_read_and_batch_waits(
+        self,
+    ):
+        # With custom Live rates, a failed check leaves only whether the
+        # model runs Batch unknown. A waiting Batch quote stands, and
+        # approving it says why it waits instead of calling the settings
+        # changed. Live waited for the check too, though only Batch needs
+        # what it reads: it now freezes Batch as not read yet and goes ahead
+        # at its Live price with no Batch figure, which the check prices once
+        # it passes without outdating the Live one.
         from dazedtl.compatibility.openrouter_batch import BASE_URL
+        from dazedtl.compatibility.translation import TranslationEngine
 
-        selected = self.project.read()
-        self.service.save(
-            self.identity, selected["revision"], {**selected["options"], "mode": "live"}
-        )
+        # The one rule a run's worker and every view read a route by.
+        self.engine.batch_supported = TranslationEngine.batch_supported
+
+        def mode(value):
+            selected = self.project.read()
+            self.service.save(
+                self.identity,
+                selected["revision"],
+                {**selected["options"], "mode": value},
+            )
+
+        def view(identity):
+            jobs = self.service.state(self.identity)["jobs"]
+            return next(job for job in jobs if job["id"] == identity)
+
+        def configured(identity):
+            return self.service.jobs.store.load(identity)[1]["configuration"]
+
+        mode("batch")
         row = {
             "input": 1,
             "output": 2,
@@ -1409,32 +1437,59 @@ class WorkflowTests(unittest.TestCase):
                 },
             },
         )
-        run = self.prepared(self.service.compile(self.identity, self.plan_path))
-        _job, frozen = self.service.jobs.store.load(run["id"])
-        self.assertEqual(frozen["configuration"]["openrouterBatch"]["input"], 0.5)
-
-        def view():
-            jobs = self.service.state(self.identity)["jobs"]
-            return next(job for job in jobs if job["id"] == run["id"])
-
-        connection["check"] = {**connection["check"], "status": "failed"}
-        shown = view()
+        batch = self.prepared(self.service.compile(self.identity, self.plan_path))
+        self.assertEqual(configured(batch["id"])["openrouterBatch"]["input"], 0.5)
+        verified = connection["check"]
+        connection["check"] = {**verified, "status": "failed"}
+        shown = view(batch["id"])
         self.assertFalse(shown["settings_changed"])
-        self.assertEqual(shown["quote"], run["quote"])
-        self.assertEqual(shown["approval_token"], run["approval_token"])
+        self.assertEqual(shown["quote"], batch["quote"])
+        self.assertEqual(shown["approval_token"], batch["approval_token"])
         with self.assertRaisesRegex(ValueError, "check failed"):
-            self.service.start(self.identity, run["id"], run["approval_token"])
-        # Estimate again says so too, as the whole game's does, where it
-        # found the quote current by pricing it as Live-only.
+            self.service.start(self.identity, batch["id"], batch["approval_token"])
+        # Estimate again and a new Batch estimate wait too.
         with self.assertRaisesRegex(ValueError, "check failed"):
-            self.service.reestimate(self.identity, run["id"])
-        # A new estimate froze the policy as none, priced on no Batch route
-        # at half its Live price; it waits for the check as Guided's does.
+            self.service.reestimate(self.identity, batch["id"])
         with self.assertRaisesRegex(ValueError, "check failed"):
             self.service.compile(self.identity, self.plan_path)
-        connection["check"] = {**connection["check"], "status": "verified"}
+
+        # A Live quote made while the check passed is priced again at its
+        # Live price with Batch not read yet, so Estimate again finds it
+        # current and approving the price shown starts it.
+        connection["check"] = verified
+        mode("live")
+        live = self.prepared(self.service.compile(self.identity, self.plan_path))
+        self.assertEqual(live["quote"]["batch_cost"], batch["quote"]["cost"])
+        connection["check"] = {**verified, "status": "failed"}
+        shown = view(live["id"])
+        self.assertFalse(shown["settings_changed"])
+        self.assertEqual(shown["quote"]["cost"], live["quote"]["cost"])
+        self.assertIsNone(shown["quote"]["batch_cost"])
+        self.assertEqual(
+            self.service.reestimate(self.identity, live["id"])["id"], live["id"]
+        )
         with self.assertRaisesRegex(ValueError, "Provider execution is disabled"):
-            self.service.start(self.identity, run["id"], run["approval_token"])
+            self.service.start(self.identity, live["id"], shown["approval_token"])
+        self.assertEqual(frozen_batch(configured(live["id"])), (None, True))
+
+        # A new Live quote freezes Batch as not read yet, as it does for a
+        # model whose Batch endpoints weren't read, and the check prices its
+        # Batch figure once it passes, its Live one current.
+        unread = self.prepared(self.service.compile(self.identity, self.plan_path))
+        self.assertEqual(frozen_batch(configured(unread["id"])), (None, True))
+        self.assertEqual(unread["quote"]["cost"], live["quote"]["cost"])
+        self.assertIsNone(unread["quote"]["batch_cost"])
+        connection["check"] = verified
+        priced = view(unread["id"])
+        self.assertFalse(priced["settings_changed"])
+        self.assertEqual(priced["quote"]["cost"], live["quote"]["cost"])
+        self.assertEqual(priced["quote"]["batch_cost"], batch["quote"]["cost"])
+        connection["batch_endpoints"] = {**connection["batch_endpoints"], "host": "x"}
+        endpoints = self.prepared(self.service.compile(self.identity, self.plan_path))
+        self.assertEqual(frozen_batch(configured(endpoints["id"])), (None, True))
+        mode("batch")
+        with self.assertRaisesRegex(ValueError, "Save preferences"):
+            self.service.compile(self.identity, self.plan_path)
 
     def test_a_model_switch_prices_a_waiting_estimate_again(self):
         selected = self.project.read()

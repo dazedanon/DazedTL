@@ -767,7 +767,7 @@ def price(counts, configuration, provider, cache=None):
         # A frozen policy this version can't run is never priced.
         validate_policy(configuration["openrouterBatch"], configuration["model"])
     value = prices(counts, configuration, provider, cache)
-    batch = value["batch_max_cost"] if provider else None
+    batch = value["batch_max_cost"]
     reused = (
         value["batch_cached_cost"]
         if batch is not None and value["batch_cached_cost"] < batch

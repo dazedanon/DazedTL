@@ -44,7 +44,7 @@ export function OptionsPanel({
   // Batch unless the connection cannot run it, the default new projects get.
   // `options` reads such a Batch as Live already (runnableMode), so the
   // card says why beside the choice instead; while whether it can isn't read
-  // yet, Batch stays and the card says why estimates wait.
+  // yet, Batch stays and the card says why it waits, where Live goes ahead.
   const unavailable = state.batchUnavailable;
   const recommended: Mode = unavailable ? "live" : "batch";
   const cards: OptionCard<Mode>[] = [

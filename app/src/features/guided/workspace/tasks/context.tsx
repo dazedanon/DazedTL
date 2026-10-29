@@ -509,7 +509,13 @@ export function estimateView(w: GuidedWorkspace): TaskView {
     />
   );
   return {
-    content: <CostEstimate value={estimate} mode={mode} />,
+    content: (
+      <CostEstimate
+        value={estimate}
+        mode={mode}
+        batchUnread={state.provider.batchUnread}
+      />
+    ),
     heading: {
       // The estimate prices the model chosen here; another model needs a new one.
       actions: (

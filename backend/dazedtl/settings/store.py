@@ -1305,15 +1305,16 @@ class Settings:
         configured = (
             active["model_options"] if active else state["model_options"]
         ).get(values["model"], preferences.DEFAULT_OPTIONS)
-        batch_policy = None
+        frozen_batch = {"openrouterBatch": None}
         if mode and active and active["provider"] == "openrouter":
             try:
-                batch_policy = openrouter.policy(
+                frozen_batch = openrouter.frozen(
                     active, values["model"], configured, required=mode == "batch"
                 )
             except openrouter.Unread:
-                # New work waits for it before anything else is checked or
-                # priced; a resumed run keeps the policy it froze.
+                # A new Batch waits for it before anything else is checked
+                # or priced, where Live freezes it as not read yet; a resumed
+                # run keeps the policy it froze.
                 if resume is None:
                     raise
         if mode == "batch" and not self.translation_defaults()["batch_supported"]:
@@ -1411,8 +1412,9 @@ class Settings:
                 self.adapter.manual.request_policy["openrouterStructuredOutputs"] = (
                     openrouter.STRUCTURED_OUTPUTS
                 )
-                self.adapter.manual.request_policy["openrouterBatch"] = batch_policy
+                self.adapter.manual.request_policy.update(frozen_batch)
                 if mode == "batch":
+                    batch_policy = frozen_batch["openrouterBatch"]
                     assert batch_policy is not None  # Required policies raise instead.
                     batch_limit = batch_policy.get("max_output")
                     self.adapter.manual.request_policy["maxOutputTokens"] = (

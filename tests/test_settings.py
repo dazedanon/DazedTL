@@ -33,6 +33,12 @@ LISTED_SOURCE = (
 )
 
 
+def frozen_batch(settings):
+    """The OpenRouter Batch policy frozen settings hold, and whether they
+    froze it as not read yet (settings/openrouter UNREAD)."""
+    return settings["openrouterBatch"], settings.get(openrouter.UNREAD, False)
+
+
 class SettingsTests(unittest.TestCase):
     def test_openrouter_connection_keeps_its_route_and_secret_through_save_check_and_reload(
         self,
@@ -108,10 +114,16 @@ class SettingsTests(unittest.TestCase):
                 {"language": "English", "model": model, "sourceLanguage": "Japanese"},
                 options,
             )
-            # Unchecked, it can't say whether the model runs Batch, so even
-            # a Live estimate waits for a check that says it runs none.
+            # Unchecked, it can't say whether the model runs Batch: a Live
+            # estimate freezes that and goes ahead at its Live price, and a
+            # Batch one waits for a check.
+            unread = configuration(settings, "live")
+            self.assertEqual(frozen_batch(unread), (None, True))
+            self.assertEqual(
+                unread["rates"], {"input": 3, "output": 15, "source": "custom"}
+            )
             with self.assertRaisesRegex(ValueError, "check failed"):
-                configuration(settings, "live")
+                configuration(settings, "batch")
             row = {
                 "input": 3,
                 "output": 15,
@@ -753,9 +765,10 @@ class SettingsTests(unittest.TestCase):
                 self.assertNotIn("openrouterBatch", unknown)
                 # With the model's public Live prices, a Guided or whole-game
                 # estimate froze that policy as none, so it was priced on no
-                # Batch route at half its Live price: every read a run or an
-                # estimate freezes now waits for the check, as a Batch one
-                # did, and a saved Batch choice stays Batch meanwhile.
+                # Batch route at half its Live price. Live work and estimates
+                # freeze it as not read yet, on no Batch route with no Batch
+                # price, while Batch ones wait for the check and a saved
+                # Batch choice stays Batch meanwhile.
                 settings.retain_prices(
                     settings.pricing_lookup(),
                     {
@@ -768,11 +781,21 @@ class SettingsTests(unittest.TestCase):
                         "stale": False,
                     },
                 )
-                for mode in ("translate", "batch"):
-                    with self.assertRaisesRegex(ValueError, "check failed"):
-                        settings.guided_configuration(mode)
+                live = settings.guided_configuration("translate")
+                self.assertEqual(frozen_batch(live), (None, True))
+                self.assertEqual(
+                    live["rates"], {"input": 2, "output": 8, "source": "catalog"}
+                )
+                self.assertIsNone(TranslationEngine.batch_supported(live))
+                for mode in ("estimate", "translate"):
+                    settings.prepare_engine(mode)
+                    self.assertEqual(
+                        frozen_batch(adapter.manual.request_policy), (None, True)
+                    )
                 with self.assertRaisesRegex(ValueError, "check failed"):
-                    settings.prepare_engine("estimate")
+                    settings.guided_configuration("batch")
+                with self.assertRaisesRegex(ValueError, "check failed"):
+                    settings.prepare_engine("batch")
                 self.assertEqual(runnable_mode(settings, "batch", "live"), "batch")
                 self.assertEqual(batch_reasons(settings)[0], "")
                 self.assertTrue(batch_reasons(settings)[1])
@@ -855,8 +878,16 @@ class SettingsTests(unittest.TestCase):
                 openrouter_host="deepinfra",
             )
             self.assertFalse(settings.translation_defaults()["batch_supported"])
-            with self.assertRaises(ValueError):
+            # Its Batch endpoints on the new host aren't read yet: Batch
+            # waits for them, Live freezes them as not read yet.
+            with self.assertRaisesRegex(ValueError, "Save preferences"):
                 configuration(settings, "batch")
+            self.assertEqual(
+                frozen_batch(
+                    configuration(settings, "live", cached_only=True, unpriced=True)
+                ),
+                (None, True),
+            )
             endpoints = {
                 "model": model,
                 "host": "deepinfra",
@@ -1194,9 +1225,19 @@ class SettingsTests(unittest.TestCase):
             self.assertIn("changed while reading prices", str(failures[0]))
             self.assertIsNone(settings.model_defaults(identity, model)["inputRate"])
             # Without the catalog, whether the model runs Batch isn't read
-            # either, so estimates wait for a check, which loads it.
+            # either: a Live estimate freezes that at its Live price, and a
+            # Batch one waits for a check, which loads it.
+            with patch.object(
+                openrouter, "live_prices", return_value={**prices, "host": "novita"}
+            ):
+                Application.prepare_model_pricing(
+                    app, "guided_preview", {"action": "start"}
+                )
+            unread = configuration(settings, "live")
+            self.assertEqual(frozen_batch(unread), (None, True))
+            self.assertEqual(unread["rates"]["input"], 0.1)
             with self.assertRaisesRegex(ValueError, "check failed"):
-                configuration(settings, "live")
+                configuration(settings, "batch")
             row = {
                 "input": 0.1,
                 "output": 0.28,

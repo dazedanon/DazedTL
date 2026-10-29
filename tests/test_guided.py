@@ -11,6 +11,8 @@ from tempfile import TemporaryDirectory
 from types import ModuleType, SimpleNamespace
 from unittest.mock import Mock, patch
 
+from dazedtl.api.contracts.runs import RunEstimate
+from dazedtl.api.contracts.validation import _close_contracts
 from dazedtl.compatibility import original_files
 from dazedtl.compatibility.game_write import write_game
 from dazedtl.languages import load_language_pair
@@ -32,12 +34,19 @@ from dazedtl.translation.guided import Guided, retained_position
 from dazedtl.translation.guided_inputs import GuidedInputs
 from dazedtl.translation.release import packing_state
 from dazedtl.translation.repricing import current_rules
+from pydantic import TypeAdapter
 
 from tests.engine import engine_module, replaced_modules
 from tests.fonts import truetype
 from tests.game_writes import game_write
 
 custom_patterns = engine_module("util/custom_patterns.py")
+
+
+def frozen_batch(settings):
+    """The OpenRouter Batch policy frozen settings hold, and whether they
+    froze it as not read yet (settings/openrouter UNREAD)."""
+    return settings["openrouterBatch"], settings.get(openrouter.UNREAD, False)
 
 
 class FilePreviewTests(unittest.TestCase):
@@ -406,14 +415,20 @@ class GuidedTests(unittest.TestCase):
                 if not unpriced:
                     raise ValueError("Model pricing is unknown.")
                 configuration["rates"] = {"input": None, "output": None}
-            # A read with unknown prices leaves it out; a full read, which a
-            # run or an estimate freezes, refuses it (settings/execution).
+            # Live freezes it as not read yet; a Batch read with unknown
+            # prices leaves it out, and a full one, which a Batch run or
+            # estimate freezes, refuses it (settings/execution).
             if self.batch_unknown and "openrouterBatch" in configuration:
-                if not unpriced:
-                    raise openrouter.Unread.of(
-                        openrouter.batch({}, configuration["model"])
+                try:
+                    configuration.update(
+                        openrouter.frozen(
+                            {}, configuration["model"], {}, required=mode == "batch"
+                        )
                     )
-                del configuration["openrouterBatch"]
+                except openrouter.Unread:
+                    if not unpriced:
+                        raise
+                    del configuration["openrouterBatch"]
             return configuration
 
         self.settings = SimpleNamespace(
@@ -815,14 +830,13 @@ class GuidedTests(unittest.TestCase):
         self.assertIsNone(moved["job"]["estimate"]["provider"])
         self.assertEqual(moved["job"]["estimate"]["live_cost"], estimate["live_cost"])
 
-    def test_work_starts_from_an_estimate_once_its_prices_can_be_read(self):
+    def test_live_work_goes_ahead_while_batch_is_not_read_and_batch_waits(self):
         # A failed OpenRouter check leaves whether the model runs Batch
-        # unknown. The views read it so and keep an estimate at its Batch
-        # price, but starting work read the full settings, which read it as
-        # none: Translate priced the estimate again as Live-only, a review
-        # made before the check failed was refused as changed, and the whole
-        # game's Estimate again found its estimate current. Each now says the
-        # check failed, as Assistant-led approval does, until it passes.
+        # unknown. Translate's Live estimate and start and the whole game's
+        # estimate then waited for the check, though only Batch needs what it
+        # reads. Live now freezes Batch as not read yet and goes ahead at its
+        # Live price with no Batch figure, which the check prices once it
+        # passes without outdating the Live one; Batch still waits.
         from dazedtl.compatibility.openrouter_batch import BASE_URL
         from dazedtl.compatibility.translation import TranslationEngine
         from dazedtl.settings.openrouter import TRANSPORT
@@ -847,37 +861,66 @@ class GuidedTests(unittest.TestCase):
                 "max_bytes": 10_000_000,
             },
         )
+        # Its Batch at the policy's rates, 4000 input and 3000 output tokens.
+        batch_cost = (4000 * 0.5 + 3000 * 1) / 1_000_000
         estimate = self.backend.manual.jobs[self.seed_estimate(mode="translate")][
             "estimate"
         ]
         estimate.update(provider="openrouter", model=model)
 
-        def review():
-            return self.guided.preview(
-                self.identity, "start", options={"mode": "translate"}
-            )
+        def review(mode="translate"):
+            return self.guided.preview(self.identity, "start", options={"mode": mode})
+
+        def shown():
+            return self.guided.runs.quote(
+                self.identity, self.native, "database", "translate", cached_only=True
+            )[0]["job"]["estimate"]
 
         reviewed = review()
         self.assertEqual(reviewed["estimate"]["value"], estimate)
         self.batch_unknown = True
-        shown = self.guided.runs.quote(
-            self.identity, self.native, "database", "translate", cached_only=True
-        )[0]
-        self.assertTrue(shown["current"])
-        self.assertEqual(shown["job"]["estimate"], estimate)
-        with self.assertRaisesRegex(ValueError, "check failed"):
+        live = shown()
+        self.assertEqual(
+            (live["live_cost"], live["provider"], live["batch_cost"]),
+            (estimate["live_cost"], None, None),
+        )
+        # With no Batch price at all, which the renderer's contract refused.
+        self.assertIsNone(live["batch_max_cost"])
+        _close_contracts()
+        TypeAdapter(RunEstimate).validate_json(json.dumps(live), strict=True)
+        # A review made before the check failed bound the Batch it read, so
+        # it is reviewed again, and that review starts Live.
+        with self.assertRaisesRegex(ValueError, "inputs changed"):
             self.guided.execute(self.identity, reviewed["token"])
-        with self.assertRaisesRegex(ValueError, "check failed"):
-            review()
-        self.assertEqual(self.started, [])
-        self.batch_unknown = False
         self.guided.execute(self.identity, review()["token"])
         self.assertEqual(len(self.started), 1)
-        # The whole game's estimate, made at the same settings.
+        with self.assertRaisesRegex(ValueError, "check failed"):
+            review("batch")
+        # A Live estimate made meanwhile, on no Batch route, takes its Batch
+        # figure once the check passes.
+        identity = self.seed_estimate(mode="translate")
+        self.assertEqual(
+            frozen_batch(
+                self.guided.runs.records(self.identity)[identity]["configuration"]
+            ),
+            (None, True),
+        )
+        unread = self.backend.manual.jobs[identity]["estimate"]
+        unread.update(provider=None, model=model, batch_cost=None)
+        self.assertEqual(shown(), unread)
+        self.batch_unknown = False
+        priced = shown()
+        self.assertEqual(
+            (priced["live_cost"], priced["batch_cost"], priced["provider"]),
+            (unread["live_cost"], batch_cost, "openrouter"),
+        )
+
+        # The whole game's estimate goes ahead at Live prices too.
+        self.batch_unknown = True
         self.git_configured = True
         self.settings.translation_defaults = lambda: {
             "model": model,
-            "batch_supported": True,
+            "batch_supported": False,
         }
         self.backend.workflows.phase_workflow = lambda _owner, phase: {"phase": phase}
         self.backend.manual.request_policy = {"model": model}
@@ -888,6 +931,8 @@ class GuidedTests(unittest.TestCase):
         )
         self.guided.full_estimate.start(self.identity)
         options = plans[0]["options"]
+        self.assertEqual(frozen_batch(options["configuration"]), (None, True))
+        self.assertFalse(options["batchSupported"])
         self.backend.operations.jobs["estimate"] = {
             "id": "estimate",
             "action": "full_estimate",
@@ -896,32 +941,54 @@ class GuidedTests(unittest.TestCase):
             "updated": "2026-01-01",
             "status": "complete",
             "result": {
-                **{key: options[key] for key in ("fingerprint", "shape", "model")},
+                **{
+                    key: options[key]
+                    for key in ("fingerprint", "shape", "model", "batchSupported")
+                },
                 "configuration": options["configuration"],
                 "price_rules": current_rules(),
-                "tasks": [{"phase": "dialogue", "inputTokens": 4000, "liveCost": 0.01}],
+                "tasks": [
+                    {
+                        "phase": "dialogue",
+                        "inputTokens": 4000,
+                        "liveCost": 0.01,
+                        "batchCost": 0.0,
+                    }
+                ],
                 "measured": {
                     "dialogue": {
-                        "provider": "openrouter",
+                        "provider": None,
                         "input_tokens": 4000,
                         "output_tokens": 3000,
                     }
                 },
             },
         }
-        self.batch_unknown = True
-        with self.guided.observations.read():
-            found = self.guided.event_text.status(self.identity, self.native)
-            whole = self.guided.full_estimate.status(self.identity, self.native, found)
-        self.assertTrue(whole["current"])
+
+        def whole():
+            with self.guided.observations.read():
+                found = self.guided.event_text.status(self.identity, self.native)
+                return self.guided.full_estimate.status(
+                    self.identity, self.native, found
+                )
+
+        self.assertTrue(whole()["current"])
         self.assertIs(
-            whole["result"], self.backend.operations.jobs["estimate"]["result"]
+            whole()["result"], self.backend.operations.jobs["estimate"]["result"]
         )
-        with self.assertRaisesRegex(ValueError, "check failed"):
-            self.guided.full_estimate.start(self.identity)
         self.batch_unknown = False
-        with self.assertRaisesRegex(ValueError, "Nothing changed"):
-            self.guided.full_estimate.start(self.identity)
+        checked = whole()
+        self.assertTrue(checked["current"])
+        self.assertTrue(checked["result"]["batchSupported"])
+        self.assertEqual(
+            (
+                checked["result"]["tasks"][0]["liveCost"],
+                checked["result"]["tasks"][0]["batchCost"],
+            ),
+            (0.01, batch_cost),
+        )
+        # Pricing it again is all Estimate again needs.
+        self.guided.full_estimate.start(self.identity)
         self.assertEqual(len(plans), 1)
 
     def test_translate_reopens_an_unchanged_estimate_until_its_work_is_approved(self):

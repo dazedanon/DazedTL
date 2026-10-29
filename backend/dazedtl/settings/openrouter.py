@@ -313,8 +313,12 @@ def live_prices(model, host=""):
 
 
 def _endpoint_rows(model, secret):
+    from .providers import PROVIDERS
+
+    # The preset's address, which test scenarios point at their stand-in.
     url = (
-        "https://openrouter.ai/api/v1/models/"
+        PROVIDERS["openrouter"]["endpoint"].rstrip("/")
+        + "/models/"
         + quote(model + ":batch", safe="/:")
         + "/endpoints"
     )
@@ -474,27 +478,40 @@ def validate_endpoints(value):
 
 class Unread(ValueError):
     """A Batch policy no lookup could read yet (``batch`` not ``looked_up``),
-    as after a failed check: whether the model runs Batch, and at what
-    price, is not known, which is neither no Batch nor Batch. The settings a
-    run or an estimate freezes refuse it, so new work waits for the lookup
-    instead of being priced on no Batch route; a read with unknown prices
-    leaves the policy out (settings/execution.configuration), which a saved
-    figure reads as a price not known (translation/repricing.priced); and a
-    chosen Batch stays Batch meanwhile (execution.batch_reasons)."""
+    as before a connection's first check, after a failed one or before its
+    model's Batch endpoints are read: whether the model runs Batch, and at
+    what price, is not known, which is neither no Batch nor Batch. A Batch
+    run or estimate refuses it (``frozen``), so Batch work, estimates and
+    approvals wait for the lookup; a Batch read with unknown prices leaves
+    the policy out (settings/execution.configuration), which a saved figure
+    reads as a price not known (translation/repricing.priced); and a chosen
+    Batch stays Batch meanwhile (execution.batch_reasons). Live freezes it
+    as not read yet (``UNREAD``) and goes ahead."""
 
     @classmethod
     def of(cls, available):
         """The refusal for ``available`` (``Batch``), saying what reads it."""
         return cls(
-            "Prices on this connection can't be read until it loads whether "
-            "the model runs Batch, such as after its check failed. " + available.reason
+            "Batch can't be estimated or started until this connection loads "
+            "whether the model runs Batch, such as after its check failed; "
+            "Live works meanwhile. " + available.reason
         )
 
 
+# The key Live work and estimates freeze true beside no Batch policy while
+# no lookup could read the policy (``Unread``). They go ahead at their Live
+# price on no Batch route, with no Batch price; once a lookup reads the
+# policy, a view prices their figures' Batch on its route and keeps their
+# Live price current (translation/repricing). Settings and run records saved
+# before it hold a policy or none, which read as before, and every reader of
+# the policy, an older release's included, reads none.
+UNREAD = "openrouterBatchUnread"
+
+
 def policy(connection, model, options, *, required=False):
-    """The Batch policy a run or an estimate on ``model`` freezes, None for
-    a model looked up to run no Batch, which ``required`` refuses; raises
-    Unread while no lookup could read it."""
+    """The Batch policy a run or an estimate on ``model`` is sent on, None
+    for a model looked up to run no Batch, which ``required`` refuses;
+    raises Unread while no lookup could read it."""
     available = batch(connection, model)
     if not available.looked_up:
         raise Unread.of(available)
@@ -531,6 +548,21 @@ def policy(connection, model, options, *, required=False):
         "context": row["context"],
         "max_output": row["max_output"],
     }
+
+
+def frozen(connection, model, options, *, required=False):
+    """The OpenRouter Batch settings a run or an estimate on ``model``
+    freezes: its ``openrouterBatch`` policy (``policy``), or while no lookup
+    could read it, which ``required``, as a Batch reads it, refuses
+    (Unread), none with ``UNREAD`` true beside it."""
+    try:
+        return {
+            "openrouterBatch": policy(connection, model, options, required=required)
+        }
+    except Unread:
+        if required:
+            raise
+        return {"openrouterBatch": None, UNREAD: True}
 
 
 def validate_policy(value, model):

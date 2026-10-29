@@ -52,11 +52,12 @@ class RunEstimate(TypedDict):
     live_cost: NotRequired[float]
     estimated_cost: NotRequired[float]
     batch_supported: NotRequired[bool]
+    # Each Batch price is None on no Batch route (estimate_prices.prices).
     batch_cost: NotRequired[float | None]
-    batch_cached_cost: NotRequired[float]
-    batch_nocache_cost: NotRequired[float]
+    batch_cached_cost: NotRequired[float | None]
+    batch_nocache_cost: NotRequired[float | None]
     # The most a Batch costs: no cached prefix reused, so every one written.
-    batch_max_cost: NotRequired[float]
+    batch_max_cost: NotRequired[float | None]
     unestimated_thinking_tokens: NotRequired[bool]
     # The thinking effort the run sends, as its review names it
     # (settings/effort summary); estimates before it name none.

@@ -1374,9 +1374,10 @@ Additional project instructions:
             # rules of its day; approving it after either changed would
             # approve a cost the user no longer sees. A quote priced again
             # (job_views) has its own token, and its approval freezes the run
-            # with the settings and price it was shown at. Those settings
-            # wait for a price no lookup could read yet, such as after a
-            # failed check, which the view shows as saved (openrouter.Unread).
+            # with the settings and price it was shown at. A Batch's settings
+            # wait for a Batch price no lookup could read yet, such as after a
+            # failed check, which the view shows as saved (openrouter.Unread);
+            # a Live one's freeze it as not read yet and go ahead.
             _record, project = self.project(project_id)
             mode = priced_mode(
                 plan.get("finishes"),

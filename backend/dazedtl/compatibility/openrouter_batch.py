@@ -13,7 +13,7 @@ from urllib.parse import quote
 import httpx
 
 from dazedtl.settings.openrouter import MAX_BYTES, MAX_REQUESTS, validate_policy
-from dazedtl.settings.providers import openrouter_host
+from dazedtl.settings.providers import PROVIDERS, openrouter_host
 from dazedtl.storage import write_json
 from dazedtl.translation.files import decode_json, digest, project_path, read_json
 from dazedtl.translation.refusals import refusal_reason, refused
@@ -73,7 +73,11 @@ def error_reason(body, secret):
 
 
 def is_route(endpoint):
-    return str(endpoint or "").rstrip("/") == BASE_URL
+    """Whether ``endpoint`` is OpenRouter's API, or the OpenRouter preset's
+    address, which test scenarios point at their stand-in
+    (settings/providers PROVIDERS)."""
+    endpoint = str(endpoint or "").rstrip("/")
+    return endpoint in {BASE_URL, PROVIDERS["openrouter"]["endpoint"].rstrip("/")}
 
 
 def count(value):
@@ -182,7 +186,8 @@ class Client:
         self.receipt_root = Path(receipt_root) if receipt_root is not None else None
         self.timeout = 45
         self.http = httpx.Client(
-            base_url=BASE_URL + "/",
+            # The address it was given, a test scenario's stand-in included.
+            base_url=str(api_url).rstrip("/") + "/",
             follow_redirects=False,
             transport=transport,
             headers={

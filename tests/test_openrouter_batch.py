@@ -6,13 +6,14 @@ from copy import deepcopy
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import ModuleType, SimpleNamespace
+from unittest.mock import patch
 
 import httpx
 from dazedtl.api.contracts.translation import TranslationQuote
 from dazedtl.api.contracts.validation import _close_contracts
 from dazedtl.compatibility import openrouter_batch as batch
 from dazedtl.compatibility import openrouter_pricing
-from dazedtl.settings import openrouter
+from dazedtl.settings import openrouter, providers
 from dazedtl.translation.files import digest, read_json
 from dazedtl.translation.requests import quote
 from pydantic import TypeAdapter
@@ -297,6 +298,22 @@ class OpenRouterBatchTests(unittest.TestCase):
                         [{**strict, "params": {**strict["params"], **changes}}]
                     )
             self.assertEqual(len(calls), 2)
+        # A test scenario's stand-in for the preset counts as OpenRouter, and
+        # its Batch goes there, where it went to openrouter.ai.
+        stand_in = "http://127.0.0.1:9/openrouter.ai/api/v1"
+        with (
+            TemporaryDirectory() as directory,
+            patch.dict(providers.PROVIDERS["openrouter"], endpoint=stand_in),
+            batch.Client(
+                "fixture-key",
+                api_url=stand_in,
+                policy=POLICY,
+                receipt_root=directory,
+                transport=httpx.MockTransport(respond),
+            ) as client,
+        ):
+            client.submit([request()])
+        self.assertEqual(str(calls[-1].url), stand_in + "/batches")
         for failure in (httpx.ReadTimeout("lost response"), 500, 408):
             attempts = []
 

@@ -102,9 +102,9 @@ export type RunEstimate = {
   estimated_cost?: number;
   batch_supported?: boolean;
   batch_cost?: number | null;
-  batch_cached_cost?: number;
-  batch_nocache_cost?: number;
-  batch_max_cost?: number;
+  batch_cached_cost?: number | null;
+  batch_nocache_cost?: number | null;
+  batch_max_cost?: number | null;
   unestimated_thinking_tokens?: boolean;
   thinking_effort?: string;
   approximate_input?: boolean;

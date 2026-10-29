@@ -54,7 +54,7 @@ def prices(counts, configuration, provider, cache=None):
     instructions cost (util/claude_tokens.Cache). A cached Batch is a range,
     from ``batch_cached_cost`` with every expected cache hit to
     ``batch_max_cost`` with none; ``batch_cost`` is the price a Translate
-    estimate shows.
+    estimate shows. Without a ``provider`` each Batch price is None.
     """
     from util.provider_costs import (
         PRICE_RULES_VERSION,
@@ -75,11 +75,14 @@ def prices(counts, configuration, provider, cache=None):
     # As estimateCostComparison prices it, so the figures match to the cent.
     live = (inputs * rates["input"] + outputs * rates["output"]) / 1_000_000
     router = configuration.get("openrouterBatch") if provider == "openrouter" else None
-    nocache = (
-        batch_cost(router, inputs, outputs)
-        if router
-        else live * batch_price_factor(provider)
-    )
+    if router:
+        nocache = batch_cost(router, inputs, outputs)
+    elif provider:
+        nocache = live * batch_price_factor(provider)
+    else:
+        # No Batch route has no Batch price, as estimateCostComparison has
+        # none, such as an OpenRouter one whose Batch isn't read yet.
+        nocache = None
     value = {
         "model": model,
         "provider": provider,
