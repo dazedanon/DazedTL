@@ -1412,8 +1412,13 @@ class CompatibilityContracts(unittest.TestCase):
         sent = provider.live({"model": "deepseek-flash", "messages": []})
         self.assertEqual(sent["created"], int(ten))
         # Guided's receipts add up its Live responses one by one, the file's
-        # and the run's TOTAL alike.
+        # and the run's TOTAL alike, and its ledger counts each as Assistant-led
+        # prices the same responses.
+        from dazedtl.compatibility.estimate_prices import usage_cost
+        from util import extensions
+
         usage = SimpleNamespace(prompt_tokens=1_000_000, completion_tokens=1_000_000)
+        counted = []
         with (
             patch.dict(os.environ, {"api": "https://api.deepseek.com"}),
             patch.object(
@@ -1423,7 +1428,11 @@ class CompatibilityContracts(unittest.TestCase):
             ),
             patch.object(translation, "_thread_local", threading.local()),
             patch.object(translation, "_global_accurate_cost", 0.0),
+            patch.dict(extensions._layers),
         ):
+            translation.record_paid.layer(
+                "ledger", lambda _native, figures: counted.append(figures)
+            )
             for created in (ten - 1, ten):
                 translation._log_live_response(
                     "openai", {}, SimpleNamespace(created=created, usage=usage)
@@ -1434,6 +1443,29 @@ class CompatibilityContracts(unittest.TestCase):
                     translation.calculateCost(2_000_000, 2_000_000, "deepseek-flash"),
                     1.50 + 0.75,
                 )
+        self.assertEqual(
+            [(item["input"], item["output"]) for item in counted],
+            [(1_000_000, 1_000_000)] * 2,
+        )
+        rows = [
+            {**item["usage"], "received_at": received_at(created)}
+            for item, created in zip(counted, (ten - 1, ten))
+        ]
+        self.assertAlmostEqual(
+            sum(item["cost"] for item in counted),
+            usage_cost(
+                {"input_tokens": 2_000_000, "output_tokens": 2_000_000},
+                {
+                    "mode": "live",
+                    "model": "deepseek-flash",
+                    "endpoint": "https://api.deepseek.com",
+                    "rates": {"input": 0.30, "output": 1.20},
+                },
+                "openai",
+                rows,
+            )
+            or 0,
+        )
 
     def test_assistant_led_live_sends_extra_body_fields_in_the_request(self):
         # Assistant-led Live handed extra_body's fields to the real OpenAI SDK
@@ -1835,6 +1867,8 @@ class CompatibilityContracts(unittest.TestCase):
         from dazedtl.settings.providers import own_api
         from util import translation
         from util.batch_providers import detect_batch_provider, live_price_route
+        from util.evaluation import is_openrouter_endpoint
+        from util.model_catalog import ModelCatalogCore, list_provider
         from util.provider_costs import (
             cache_read_multiplier,
             foreign_claude_name,
@@ -1855,6 +1889,13 @@ class CompatibilityContracts(unittest.TestCase):
             # The same own APIs without a scheme.
             "api.anthropic.com",
             "api.openai.com/v1",
+            # Gemini's own API, with and without a scheme, and a proxy path
+            # holding its host, which is not its API.
+            "https://generativelanguage.googleapis.com/v1beta/openai/",
+            "generativelanguage.googleapis.com/v1beta/openai",
+            "https://proxy.example/generativelanguage.googleapis.com/v1beta/openai/",
+            # OpenRouter without a scheme.
+            "openrouter.ai/api/v1",
         )
         # Per address: native Live send, Batch provider, Live price route,
         # Settings' engine route.
@@ -1868,6 +1909,10 @@ class CompatibilityContracts(unittest.TestCase):
             (False, "openai", "anthropic", "openai"),
             (True, "anthropic", "anthropic", "anthropic"),
             (False, "openai", "anthropic", "openai"),
+            (False, "gemini", "anthropic", "openai"),
+            (False, "gemini", "anthropic", "openai"),
+            (False, None, "anthropic", "openai"),
+            (False, None, "anthropic", "openai"),
         )
         other = (
             (False, "openai", "openai", "openai"),
@@ -1879,7 +1924,51 @@ class CompatibilityContracts(unittest.TestCase):
             (False, "openai", "openai", "openai"),
             (False, None, "", "openai"),
             (False, "openai", "openai", "openai"),
+            (False, "gemini", "gemini", "openai"),
+            (False, "gemini", "gemini", "openai"),
+            (False, None, "", "openai"),
+            (False, None, "", "openai"),
         )
+        # Per address: whose model list Settings fetches with no provider
+        # set, whether OpenAI's list keeps only its chat models, and whether
+        # an evaluation prices the address at OpenRouter's rates.
+        hosts = (
+            ("openai", True, False),
+            ("anthropic", False, False),
+            ("openai", False, False),
+            ("openai", False, False),
+            ("openai", False, True),
+            ("openai", False, False),
+            ("openai", True, False),
+            ("anthropic", False, False),
+            ("openai", True, False),
+            ("gemini", False, False),
+            ("gemini", False, False),
+            ("openai", False, False),
+            ("openai", False, True),
+        )
+        for address, expected in zip(addresses, hosts, strict=True):
+            with self.subTest(address=address, rule="hosts"):
+                os.environ.pop("DAZEDTL_TEST_OPENAI_ENDPOINT", None)
+                catalog = ModelCatalogCore()
+                catalog.initialize("key", address)
+                listed = SimpleNamespace(
+                    models=SimpleNamespace(
+                        list=lambda: [
+                            SimpleNamespace(id=i) for i in ("gpt-5", "whisper-1")
+                        ]
+                    )
+                )
+                with patch("openai.OpenAI", return_value=listed):
+                    chat_only = catalog._fetch_openai() == ["gpt-5"]
+                self.assertEqual(
+                    (
+                        list_provider(address),
+                        chat_only,
+                        is_openrouter_endpoint(address),
+                    ),
+                    expected,
+                )
         gpt = tuple((False, batch, "openai", "openai") for _n, batch, *_r in other)
         for model, routes in (
             ("claude-sonnet-5-5", claude),
@@ -2365,23 +2454,28 @@ class CompatibilityContracts(unittest.TestCase):
                 )
             client.request.assert_not_called()
 
-    def test_a_paid_attempt_replaces_a_files_receipt_and_a_failed_save_fails(self):
-        # A later attempt can read and count the same Batch results again, as
-        # after a Stop and resume, so an attempt that paid replaces the file's
-        # receipt instead of adding to it; one that paid nothing, reading back
-        # what an earlier attempt saved, keeps it. An RPG Maker file whose
-        # save failed after validation mismatches read as a soft success, so
-        # the run did not show it failed.
+    def test_a_runs_total_counts_what_its_ledger_paid_once_and_a_failed_save_fails(
+        self,
+    ):
+        # A run's TOTAL combined the totals each attempt's workers reported,
+        # so a Batch result read again after a Stop, or a failed reply read
+        # again by a retry, counted twice, and a file whose worker never
+        # reported, as when Stop ended it, counted nothing. Its tokens and
+        # cost are what the run's evidence ledger counted, each billed item
+        # once, beside the receipts saved before it did, and its seconds
+        # what each attempt spent. An RPG Maker file whose save failed after
+        # validation mismatches read as a soft success, so the run did not
+        # show it failed.
+        from util import extensions, translation_task
         from util.translation_task import TranslationTask, file_marker_result
 
         def worker(task, files, estimate_only, batch_phase, file_result_callback):
+            # What each attempt's workers read and counted, again on resume.
             saved = "TOTAL: [Input: 70][Output: 9][Cost: $0.5000][4.0s] ✓"
-            unsaved = "Map002.json: [Input: 30][Output: 3][Cost: $0.2500][2.0s] ✗"
-            # A retry reads back what an earlier attempt saved, paying nothing.
-            replayed = "TOTAL: [Input: 0][Output: 0][Cost: $0.0000][0.1s] ✓"
+            replayed = "TOTAL: [Input: 0][Output: 0][Cost: $0.0000][0.5s] ✓"
             for name, payload, mismatches in (
                 ("Map001.json", {"result": saved}, 0),
-                ("Map002.json", {"result": "Fail", "receipt": unsaved}, 2),
+                ("Map002.json", {"result": "Fail"}, 2),
                 ("Map003.json", {"result": replayed}, 0),
             ):
                 file_result_callback(
@@ -2389,51 +2483,58 @@ class CompatibilityContracts(unittest.TestCase):
                 )
             return "Success"
 
-        def figures(tokens_in, tokens_out, cost, seconds):
-            return {
-                "input": tokens_in,
-                "output": tokens_out,
-                "cost": cost,
-                "seconds": seconds,
-            }
-
         files = ["Map001.json", "Map002.json", "Map003.json"]
-        expected = [
-            ("Map001.json", figures(70, 9, 0.5, 4.0)),
-            ("Map002.json", figures(30, 3, 0.25, 2.0)),
-            ("Map003.json", figures(10, 1, 0.25, 1.0)),
-        ]
-        total = "TOTAL: [Input: 110][Output: 13][Cost: $1.0000][7.0s] ✓"
-        with TemporaryDirectory() as directory:
+        paid = {
+            "Map001.json": {"input": 70, "output": 9, "cost": 0.5},
+            "Map002.json": {"input": 30, "output": 3, "cost": 0.25},
+            "speakers": {"input": 4, "output": 1, "cost": 0.125},
+        }
+        with TemporaryDirectory() as directory, patch.dict(extensions._layers):
+            translation_task.paid_receipts.layer(
+                "ledger",
+                lambda _native, root: paid if root == Path(directory) else {},
+            )
             task = TranslationTask(
                 Path(directory),
                 ("RPG Maker MV/MZ", (".json",), None),
+                # Map003.json was saved before the ledger counted paid usage.
                 receipts={
-                    "Map001.json": figures(50, 5, 0.25, 3.0),
-                    "Map003.json": figures(10, 1, 0.25, 1.0),
+                    "Map003.json": {
+                        "input": 10,
+                        "output": 1,
+                        "cost": 0.25,
+                        "seconds": 1.0,
+                    }
                 },
+                seconds={"Map001.json": 3.0, "speakers": 2.0},
             )
-            errors, mismatched, receipts = [], [], []
-            task.receipt_signal.connect(lambda *args: receipts.append(args))
+            errors, mismatched, seconds = [], [], []
+            task.seconds_signal.connect(lambda *args: seconds.append(args))
             with patch.object(TranslationTask, "run_module_in_process", worker):
                 # Batch collection only queues requests: nothing is paid.
                 task._run_files(files, False, "collect")
-                self.assertEqual(receipts, [])
+                self.assertEqual(seconds, [])
                 task.file_error_signal.connect(lambda *args: errors.append(args))
                 task.file_mismatch_signal.connect(lambda *args: mismatched.append(args))
                 result = task._run_files(files, False, "consume")
                 self.assertEqual(result, "Fail")
                 self.assertEqual([name for name, _ in errors], ["Map002.json"])
                 self.assertEqual(mismatched, [])
-                # The run's records keep what its TOTAL adds up.
-                self.assertEqual(receipts, expected)
-                self.assertEqual(task._run_total(result), total)
+                # The run's records keep the seconds; the rest is the ledger's.
+                self.assertEqual(seconds, [("Map001.json", 7.0), ("Map003.json", 0.5)])
+                self.assertEqual(
+                    task._run_total(result),
+                    "TOTAL: [Input: 114][Output: 14][Cost: $1.1250][10.5s] ✓",
+                )
                 # Stop lost the consume worker's cache writes, so the resumed
-                # attempt reads the same Batch result and failed reply again:
-                # each counts once.
+                # attempt reads the same Batch result and failed reply again,
+                # which the ledger counted once.
                 result = task._run_files(files, False, "consume")
-        self.assertEqual(receipts, expected * 2)
-        self.assertEqual(task._run_total(result), total)
+            self.assertEqual(seconds[2:], [("Map001.json", 11.0), ("Map003.json", 1.0)])
+            self.assertEqual(
+                task._run_total(result),
+                "TOTAL: [Input: 114][Output: 14][Cost: $1.1250][15.0s] ✓",
+            )
 
     def test_declined_speaker_preflight_retains_provider_work_and_resets_retry_phase(
         self,
@@ -2571,49 +2672,33 @@ class ManualJobs:
             self.assertEqual(
                 (paid["status"], paid["outputs"]), ("complete", {"Items.json": "kept"})
             )
-            # Keep every receipt the run's worker reports after the native log
+            # Keep the seconds the run's worker reports after the native log
             # cap: a file's, and the names passes', which name no file.
-            from dazedtl.compatibility.process_view import file_metrics
-
             metric_run = {
+                "id": "fixture",
                 "mode": "batch",
                 "phase": "consume",
                 "files": ["Items.json"],
                 "log": [],
+                "file_metrics": {"Items.json": {"cost": 0.0042, "seconds": 12.5}},
             }
-            items = {"input": 120, "output": 20, "cost": 0.0042, "seconds": 12.5}
-            names = {"input": 60, "output": 12, "cost": 0.02, "seconds": 3.0}
-            for name, figures in (
-                ("Items.json", items),
-                ("speakers", names),
-                ("Other.json", items),
+            for name, seconds in (
+                ("Items.json", 14.0),
+                ("speakers", 3.0),
+                ("Other.json", 1.0),
             ):
                 controller._event(
-                    metric_run, {"event": "receipt", "args": [name, figures]}
+                    metric_run, {"event": "seconds", "args": [name, seconds]}
                 )
+            # A resumed attempt starts from them, and from the receipts saved
+            # before the run's ledger counted paid usage.
             self.assertEqual(
-                file_metrics(metric_run),
-                {"Items.json": {"cost": 0.0042, "seconds": 12.5}},
+                (controller.receipts(metric_run), controller.seconds(metric_run)),
+                (
+                    {"Items.json": {"cost": 0.0042, "seconds": 12.5}},
+                    {"Items.json": 14.0, "speakers": 3.0},
+                ),
             )
-            # A resumed attempt's TOTAL starts from the same receipts.
-            self.assertEqual(
-                controller.receipts(metric_run),
-                {"Items.json": items, "speakers": names},
-            )
-            restored = json.loads(json.dumps(metric_run))
-            self.assertEqual(file_metrics(restored), file_metrics(metric_run))
-            # Live runs from before receipts were kept show the ones their
-            # log retained.
-            legacy = {
-                "mode": "translate",
-                "files": ["Items.json"],
-                "log": [
-                    "Items.json: [Input: 120] [Output: 20] [Cost: $0.0042] [12.5s] ✓"
-                ],
-            }
-            self.assertEqual(file_metrics(legacy), file_metrics(restored))
-            legacy["files"] = ["Other.json"]
-            self.assertEqual(file_metrics(legacy), {})
 
     def test_event_text_catalog_excludes_dictionary_keys_but_retains_coarse_handlers(
         self,

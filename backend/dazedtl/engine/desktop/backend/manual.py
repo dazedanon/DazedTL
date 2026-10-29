@@ -376,9 +376,16 @@ class ManualJobs:
         atomic_json(self.folder(job["id"]) / "job.json", job)
 
     def receipts(self, job):
-        """Each file's figures from the run's earlier attempts, which a resumed
-        attempt's TOTAL adds its own files to. A host that records them
-        returns them here."""
+        """Each file's figures that the run's earlier attempts saved before
+        its evidence ledger counted paid usage, which a resumed attempt's
+        TOTAL adds to (util/translation_task run_receipts). A host that
+        records them returns them here."""
+        return {}
+
+    def seconds(self, job):
+        """The seconds the run's earlier attempts spent on each file, which
+        a resumed attempt adds its own to. A host that records them returns
+        them here."""
         return {}
 
     def state(self):
@@ -506,7 +513,7 @@ class ManualJobs:
                 job.pop("batch_recovery", None)
             files = plan["selected"] if plan["mode"] in {"batch", "estimate", "speakers"} else [name for name in plan["selected"] if name not in job["completed"]]
             atomic_json(directory / "attempt.json", {"files": files, "resume": resume, "batch_resume_state": batch_state,
-                                                     "receipts": self.receipts(job)})
+                                                     "receipts": self.receipts(job), "seconds": self.seconds(job)})
             if not files:
                 with self.lock:
                     job.update(status="complete", message="All selected files were already completed.")

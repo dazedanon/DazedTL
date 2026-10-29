@@ -161,10 +161,18 @@ class ProcessTests(unittest.TestCase):
         # Only tries that never connected, were refused outright or failed by
         # the model server itself prove that resending cannot charge twice.
         # The tries go through a real SDK client, whose HTTP library is the
-        # one that must be observed.
+        # one that must be observed. A gateway's timeout was sent again by the
+        # SDK's retries and the engine's, 15 times; under the resend policy
+        # the engine sends a request again only when the same rule proves it
+        # unbilled and another try may pass (RequestUnprocessedError).
         import socket
 
         import openai
+        from dazedtl.compatibility import resends
+        from dazedtl.settings.preferences import RESENDS
+
+        class Unprocessed(Exception):
+            pass
 
         server = socket.socket()
         server.bind(("127.0.0.1", 0))
@@ -213,17 +221,22 @@ class ProcessTests(unittest.TestCase):
         own = live + "api.openai.com/v1"
         crash = b"HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\n\r\n"
         timeout = b"HTTP/1.1 504 Gateway Timeout\r\nContent-Length: 0\r\n\r\n"
+        limited = b"HTTP/1.1 429 Too Many Requests\r\nContent-Length: 0\r\n\r\n"
+        # (name, addresses tried, answers, record state, sent again)
         cases = [
-            ("refused connection", [dead], [], "failed"),
-            ("refused request", [live], [refusal], "failed"),
-            ("server error", [own, own], [crash, crash], "failed"),
-            ("another host's server error", [live], [crash], "uncertain"),
-            ("gateway timeout", [own], [timeout], "uncertain"),
+            ("refused connection", [dead], [], "failed", True),
+            # Sent again, it would be refused alike.
+            ("refused request", [live], [refusal], "failed", False),
+            ("rate limited", [live], [limited], "failed", True),
+            ("server error", [own, own], [crash, crash], "failed", True),
+            ("another host's server error", [live], [crash], "uncertain", False),
+            ("gateway timeout", [own], [timeout], "uncertain", False),
             (
                 "lost response, then refused connection",
                 [live, dead],
                 [b""],
                 "uncertain",
+                False,
             ),
         ]
         params = {
@@ -234,7 +247,7 @@ class ProcessTests(unittest.TestCase):
             TemporaryDirectory() as temporary,
             patch.dict("os.environ", {"DAZEDTL_TEST_OPENAI_ENDPOINT": own}),
         ):
-            for name, urls, answers, state in cases:
+            for name, urls, answers, state, resent in cases:
                 with self.subTest(name=name):
                     replies[:] = answers
                     root = Path(temporary) / name
@@ -265,10 +278,19 @@ class ProcessTests(unittest.TestCase):
                         translateText=point(tries(urls, evidence)),
                         translateAI=point(lambda text: None),
                         openai=SimpleNamespace(api_key="fixture-key"),
+                        RequestUnprocessedError=Unprocessed,
                     )
                     evidence.install(translation)
-                    with self.assertRaises(RuntimeError):
+                    resends.configure(translation, {"resends": RESENDS})
+                    failure = None
+                    try:
                         translation.translateText('{"Line1":"薬"}')
+                    except Unprocessed as error:
+                        failure, sent_again = error.__cause__, True
+                    except RuntimeError as error:
+                        failure, sent_again = error, False
+                    self.assertEqual(str(failure), "Connection error.")
+                    self.assertEqual(sent_again, resent)
                     self.assertEqual(process_view.payload(root, 0)["state"], state)
 
     def test_live_clarification_groups_require_exact_ownership_and_preserve_each_receipt(
@@ -1590,6 +1612,91 @@ class ProcessTests(unittest.TestCase):
             evidence.prepared({"messages": []})
             self.assertEqual(process_view.no_request_files(root, job, items), [])
 
+    def test_a_runs_receipts_hold_each_live_response_however_its_file_ends(self):
+        # Stop ended a Live worker before it reported what its files had paid
+        # for, so those responses never reached their cost or the run's TOTAL.
+        # The ledger counts each response as it arrives, under the file whose
+        # request it answered; a run started before keeps the receipts it
+        # saved and adds what its later attempts paid for.
+        def paid(tokens_in, tokens_out, cost):
+            return {"input": tokens_in, "output": tokens_out, "cost": cost, "usage": {}}
+
+        def ledger(folder):
+            """Pays for a response of each file named, in the run in *folder*."""
+            evidence = Evidence(folder, "translate")
+            translation = SimpleNamespace(
+                queue_batch_request=point(lambda *_: "unused"),
+                _join_queued_request=point(lambda kept, _entry: kept),
+                _write_request_debug_log=point(lambda *_: None),
+                translateText=point(lambda *_: None),
+                translateAI=point(lambda text: None),
+                record_paid=point(lambda *_: None),
+            )
+            evidence.install(translation)
+
+            def respond(name, figures):
+                evidence.local.filename, evidence.local.sources = name, ["line"]
+                evidence.prepared({"messages": []}, "received")
+                translation.record_paid(figures)
+
+            return respond
+
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary) / "run"
+            older = Path(temporary) / "older"
+            respond = ledger(root)
+            respond("Map001.json", paid(10, 2, 0.5))
+            respond(process_view.NAMES_FILE, paid(4, 1, 0.125))
+            respond("Map002.json", paid(6, 1, 0.25))
+            # A replayed response pays for nothing.
+            respond("Map003.json", paid(0, 0, 0.0))
+            # The older run's ledger holds a response from before, which its
+            # saved receipts count, and one a later attempt paid for.
+            Evidence(older, "translate").prepared({"messages": []}, "validated")
+            ledger(older)("Map002.json", paid(6, 1, 0.25))
+            files = ["Map001.json", "Map002.json", "Map003.json"]
+            job = {"mode": "translate", "status": "stopped", "files": files}
+            seconds = {"Map001.json": 2.5}
+            self.assertEqual(
+                process_view.file_receipts(root, {**job, "file_seconds": seconds}),
+                {
+                    "Map001.json": {
+                        "input": 10,
+                        "output": 2,
+                        "cost": 0.5,
+                        "seconds": 2.5,
+                    },
+                    process_view.NAMES_FILE: {
+                        "input": 4,
+                        "output": 1,
+                        "cost": 0.125,
+                        "seconds": 0,
+                    },
+                    "Map002.json": {
+                        "input": 6,
+                        "output": 1,
+                        "cost": 0.25,
+                        "seconds": 0,
+                    },
+                },
+            )
+            saved = {"Map001.json": {"cost": 0.75, "seconds": 3.0}}
+            self.assertEqual(
+                process_view.file_metrics(
+                    older, {**job, "file_metrics": saved, "file_seconds": seconds}
+                ),
+                {
+                    "Map001.json": {"cost": 0.75, "seconds": 5.5},
+                    "Map002.json": {"cost": 0.25, "seconds": 0},
+                },
+            )
+            # A run from before the ledger keeps the receipts its log retained.
+            line = "Map003.json: [Input: 1][Output: 1][Cost: $0.0100][0.5s] ✓"
+            self.assertEqual(
+                process_view.file_metrics(Path(temporary), {**job, "log": [line]}),
+                {"Map003.json": {"cost": 0.01, "seconds": 0.5}},
+            )
+
     def test_batch_names_pass_is_its_own_group_before_the_queue(self):
         # The Live names pass before a Batch was filed under the last scanned
         # map: it read as Batch work without a receipt, counted as that map's
@@ -1774,7 +1881,9 @@ class ProcessTests(unittest.TestCase):
             )
             with evidence.connect() as connection:
                 connection.executemany(
-                    "INSERT INTO batch_validation VALUES (?,?,?,?,?)",
+                    "INSERT INTO batch_validation"
+                    "(request_key,filename,source,response_hash,state) "
+                    "VALUES (?,?,?,?,?)",
                     [
                         (
                             key,

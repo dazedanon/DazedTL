@@ -255,20 +255,23 @@ _thread_local = threading.local()
 # Cross-thread running total of accurate cache-discounted cost (protected by lock).
 _global_accurate_cost      = 0.0
 _global_accurate_cost_lock = threading.Lock()
-# The input and output tokens and cost of every response this process paid
-# for, which reset_accurate_cost leaves alone (protected by the same lock).
-_global_paid = {"input": 0, "output": 0, "cost": 0.0}
 
 
-def _add_paid(input_tokens, output_tokens, cost):
-    """Add a paid response's tokens and cost to the run's TOTAL and to what
-    this process paid for (paid_usage), together."""
+def _add_priced_cost(cost):
+    """Add a priced response's cost to the total calculateCost reports."""
     global _global_accurate_cost
     with _global_accurate_cost_lock:
         _global_accurate_cost += cost
-        _global_paid["input"] += int(input_tokens or 0)
-        _global_paid["output"] += int(output_tokens or 0)
-        _global_paid["cost"] += cost
+
+
+@extensions.point
+def record_paid(figures):
+    """One Live response this worker counted as it arrived
+    (_record_live_cost), the billed item it is: *figures* hold its ``input``
+    and ``output`` tokens, the billed ``usage`` it was priced from and its
+    ``cost``. The host keeps each in the run's evidence ledger
+    (compatibility/run_evidence), whose items make up the run's receipts; a
+    fetched Batch result is kept as it is read (batch_result_paid)."""
 
 
 def _usage_to_debug_dict(usage):
@@ -2061,6 +2064,13 @@ class RequestRejectedError(Exception):
     retried."""
 
 
+class RequestUnprocessedError(Exception):
+    """In a run frozen with the resend policy (RESENDS), a Live request the
+    provider provably did not process and another try may pass, such as one
+    that never connected or met a rate limit (compatibility/resends): the
+    one error translateAI's retry sends again."""
+
+
 # The errors the modules' per-line and per-page handling lets through to the
 # file's result: a Batch phase's missing result and a run's stop.
 RUN_STOPPING = (BatchResultUnavailableError, RunStoppingError)
@@ -2071,6 +2081,23 @@ RUN_STOPPING = (BatchResultUnavailableError, RunStoppingError)
 RUN_STOPS = False
 # The stops this worker raised, for a module that caught one.
 _run_stops = []
+# A run frozen with the resend policy (settings/preferences RESENDS) sends a
+# failed Live request again only as _send_live says, and its SDK clients send
+# nothing again themselves (sdk_retries).
+RESENDS = False
+# How many times in all translateAI sends a failing Live call, or under the
+# resend policy its failing request, and the seconds between.
+LIVE_TRIES = 5
+RETRY_DELAY = 5
+# The longest a provider's Retry-After is waited for, as the SDKs wait.
+RETRY_AFTER_LIMIT = 60
+
+
+def sdk_retries(sdk):
+    """How often an SDK client (the openai or anthropic module) sends one
+    Live request again itself: never in a run frozen with the resend policy,
+    where translateAI's retry alone decides; the SDK's default otherwise."""
+    return 0 if RESENDS else sdk.DEFAULT_MAX_RETRIES
 
 
 def run_stop(error=None):
@@ -3713,8 +3740,12 @@ def callMistral(params, retries=6):
     the live x-ratelimit headers after each response, honours Retry-After on
     429, backs off with jitter on 5xx/network errors, and downgrades
     json_schema -> json_object for models without structured-output support
-    except in strict structured runs (STRICT_STRUCTURED_OUTPUTS).
+    except in strict structured runs (STRICT_STRUCTURED_OUTPUTS). In a run
+    frozen with the resend policy (RESENDS) it sends each request once, its
+    JSON-mode request aside, and translateAI's retry alone decides.
     """
+    if RESENDS:
+        retries = 0
     limiter = _get_mistral_limiter()
     est = sum(_estimate_mistral_tokens(m.get("content", "")) for m in params.get("messages", []))
     est += params.get("max_tokens", 0) // 2
@@ -3731,9 +3762,11 @@ def callMistral(params, retries=6):
             last_error = e
             resp = getattr(e, "response", None)
             limiter.update(getattr(resp, "headers", None))
-            # The last attempt raises at once, as the other errors do.
+            # The last attempt raises at once, as the other errors do; under
+            # the resend policy as the provider's own error, whose wait
+            # translateAI's retry follows.
             if attempt >= retries:
-                if _keeps_provider_error(params):
+                if RESENDS or _keeps_provider_error(params):
                     raise
                 break
             retry_after = None
@@ -5376,7 +5409,9 @@ def translateText(system, user, history, penalty, formatType, model, numLines=No
 
         from util.batch_providers import create_anthropic_message
 
-        ant_client = anthropic.Anthropic(api_key=openai.api_key)
+        ant_client = anthropic.Anthropic(
+            api_key=openai.api_key, max_retries=sdk_retries(anthropic)
+        )
         try:
             ant_resp = create_anthropic_message(ant_client, ant_kwargs)
         except Exception as e:
@@ -5395,6 +5430,9 @@ def translateText(system, user, history, penalty, formatType, model, numLines=No
         compat_response = _AnthropicCompat(_ant_text, _total_prompt, _out, _cr, _cw)
         _log_live_response("anthropic", ant_kwargs, compat_response)
         return compat_response
+
+    # The routes below send through the SDK's module client.
+    openai.max_retries = sdk_retries(openai)
 
     # Mistral (la Plateforme): same OpenAI-compatible request, but routed
     # through the adaptive rate limiter so the per-minute request/token
@@ -5623,11 +5661,14 @@ def _record_live_cost(usage, model):
     follows (provider_costs.usage_cost): its cache reads and writes at the
     route's cache prices, Live cache writes lasting five minutes, all at the
     price of the time it arrived. Add it to the file's and the run's cost,
-    which calculateCost then reports in place of pricing the token totals."""
+    which calculateCost then reports in place of pricing the token totals,
+    and record it as a billed item (record_paid). A refused request and the
+    clarification sent for it arrive as one response, priced together."""
     pricing = getPricingConfig(model)
     route = live_price_route(model)
+    billed = {**_live_usage(usage, route), "cache_creation_1h_input_tokens": 0}
     cost = usage_cost(
-        {**_live_usage(usage, route), "cache_creation_1h_input_tokens": 0},
+        billed,
         route,
         model,
         pricing["inputAPICost"] / 1_000_000,
@@ -5637,10 +5678,16 @@ def _record_live_cost(usage, model):
         ),
     )
     _thread_local.file_live_cost = getattr(_thread_local, "file_live_cost", 0) + cost
-    _add_paid(
-        getattr(usage, "prompt_tokens", 0), getattr(usage, "completion_tokens", 0), cost
-    )
+    _add_priced_cost(cost)
     _thread_local.file_cost_ready = True
+    record_paid(
+        {
+            "input": int(getattr(usage, "prompt_tokens", 0) or 0),
+            "output": int(getattr(usage, "completion_tokens", 0) or 0),
+            "cost": cost,
+            "usage": billed,
+        }
+    )
 
 
 # The per-file counters fetched Batch results add to, by the usage keys
@@ -5654,16 +5701,12 @@ _BATCH_USAGE_COUNTERS = {
 }
 
 
-def _batch_usage(since=None):
-    """The current file's fetched Batch results' usage, or what was added to
-    it after ``since``, an earlier reading."""
-    usage = {
+def _batch_usage():
+    """The current file's fetched Batch results' usage."""
+    return {
         key: getattr(_thread_local, name, 0)
         for name, key in _BATCH_USAGE_COUNTERS.items()
     }
-    if since is not None:
-        usage = {key: count - since[key] for key, count in usage.items()}
-    return usage
 
 
 @extensions.point
@@ -5691,20 +5734,48 @@ def _batch_results_cost(usage, model):
     return batch_usage_cost(usage, model, getBatchProvider(model) or "anthropic")
 
 
-def _record_batch_cost(since, model):
-    """Add the Batch results this file fetched after ``since``, an earlier
-    _batch_usage, to the run's TOTAL; the file's line prices them all once
-    the file is done (calculateCost)."""
-    added = _batch_usage(since)
-    if not any(added.values()):
-        return
-    _add_paid(
-        added["input_tokens"]
-        + added["cache_read_input_tokens"]
-        + added["cache_creation_input_tokens"],
-        added["output_tokens"],
-        _batch_results_cost(added, model),
-    )
+def batch_result_paid(result, model):
+    """A fetched Batch *result* as the billed item it is: its ``input`` and
+    ``output`` tokens, its billed ``usage`` by the keys
+    provider_costs.usage_cost reads, and its ``cost`` on the run's Batch.
+    Consume counts it as it reads it (_count_batch_result), and the run's
+    evidence ledger keeps it at its first read in the run
+    (compatibility/batch_validation)."""
+
+    def count(key):
+        value = result.get(key)
+        return int(value) if value else 0
+
+    reads = count("cache_read_input_tokens")
+    writes = count("cache_creation_input_tokens")
+    one_hour = result.get("cache_creation_1h_input_tokens")
+    usage = {
+        "cache_read_input_tokens": reads,
+        "cache_creation_input_tokens": writes,
+        # A result saved before Anthropic's TTL split was recorded used the
+        # one-hour cache, as every Batch then did.
+        "cache_creation_1h_input_tokens": writes if one_hour is None else int(one_hour),
+        "input_tokens": max(0, count("prompt_tokens") - reads - writes),
+        "output_tokens": count("completion_tokens"),
+    }
+    return {
+        "input": usage["input_tokens"] + reads + writes,
+        "output": usage["output_tokens"],
+        "cost": _batch_results_cost(usage, model),
+        "usage": usage,
+    }
+
+
+def _count_batch_result(result, model):
+    """Count one fetched Batch *result* as consume reads it: add its billed
+    usage to the file's counters, which the file's line prices once the file
+    is done (calculateCost), and its price to the run's TOTAL."""
+    paid = batch_result_paid(result, model)
+    for name, key in _BATCH_USAGE_COUNTERS.items():
+        setattr(
+            _thread_local, name, getattr(_thread_local, name, 0) + paid["usage"][key]
+        )
+    _add_priced_cost(paid["cost"])
 
 
 _BATCH_COLLECT_FILE_COUNTERS = (
@@ -5771,19 +5842,6 @@ def priced_cost():
     TOTAL calculateCost reports."""
     with _global_accurate_cost_lock:
         return _global_accurate_cost
-
-
-def paid_usage(since=None):
-    """The tokens and cost of every response this process paid for so far,
-    as ``{"input", "output", "cost"}``, or only those after ``since``, an
-    earlier reading. What a file or page paid for is what was paid after a
-    reading taken when it began, which stays known when it fails before
-    counting its responses (util/subprocess_runner)."""
-    with _global_accurate_cost_lock:
-        paid = dict(_global_paid)
-    if since is not None:
-        paid = {key: value - since[key] for key, value in paid.items()}
-    return paid
 
 
 def reset_accurate_cost():
@@ -5930,7 +5988,11 @@ def found_mismatch(mismatches, filename):
 def _retry_live_translation(func):
     """Retry live provider work; batch phases only read or write local data.
     A RunStoppingError stops the run at once instead, and a
-    RequestRejectedError fails the call: every retry would be refused alike."""
+    RequestRejectedError fails the call: every retry would be refused alike.
+    A run frozen with the resend policy (RESENDS) sends the call once: its
+    failed request alone is sent again, and only if unprocessed (_send_live),
+    since sending the whole call again would also send its other requests,
+    whose answers it may have paid for and not kept."""
 
     def attempt(*args, **kwargs):
         try:
@@ -5938,13 +6000,15 @@ def _retry_live_translation(func):
         except (RunStoppingError, RequestRejectedError) as error:
             return _Final(error)
 
-    retried = retry(exceptions=Exception, tries=5, delay=5)(attempt)
+    retried = retry(exceptions=Exception, tries=LIVE_TRIES, delay=RETRY_DELAY)(
+        attempt
+    )
 
     @wraps(func)
     def wrapped(*args, **kwargs):
         if get_batch_phase():
             return func(*args, **kwargs)
-        result = retried(*args, **kwargs)
+        result = (attempt if RESENDS else retried)(*args, **kwargs)
         if isinstance(result, _Final):
             if RUN_STOPS and isinstance(result.error, RunStoppingError):
                 _run_stops.append(str(result.error))
@@ -5960,6 +6024,55 @@ class _Final:
 
     def __init__(self, error):
         self.error = error
+
+
+def _send_live(config, send):
+    """The response of the Live request *send* sends, each failure logged
+    for the run. In a run frozen with the resend policy (RESENDS) it is sent
+    again, up to LIVE_TRIES in all, only while the provider provably did not
+    process it (RequestUnprocessedError); any other error fails it at once,
+    since a request that may have been billed must not be paid twice. Runs
+    frozen without it send it once here, and translateAI's retry sends the
+    whole call again."""
+    for left in reversed(range(LIVE_TRIES if RESENDS else 1)):
+        try:
+            return send()
+        except Exception as error:
+            message = f"[API_ERROR] {error}"
+            # Print to stdout so the GUI captures it immediately, and only
+            # there: the progress bar's write goes to stdout too, which
+            # printed each failed attempt twice in the Run log.
+            print(message, flush=True)
+            # Also write to the translation log file for persistence
+            try:
+                Path(config.logFilePath).parent.mkdir(parents=True, exist_ok=True)
+                with open(config.logFilePath, "a", encoding="utf-8") as log:
+                    log.write(f"{message}\n")
+                    log.flush()
+            except Exception:
+                pass
+            if not left or not isinstance(error, RequestUnprocessedError):
+                raise
+            time.sleep(_retry_delay(error))
+
+
+def _retry_delay(error):
+    """Seconds before a request that failed with *error* is sent again:
+    RETRY_DELAY, or the longer wait its provider's answer asks for
+    (Retry-After, as with a rate limit), at most RETRY_AFTER_LIMIT."""
+    seen = set()
+    while error is not None and id(error) not in seen:
+        seen.add(id(error))
+        headers = getattr(getattr(error, "response", None), "headers", None)
+        for name, unit in (("retry-after-ms", 0.001), ("retry-after", 1)):
+            try:
+                wait = float(headers.get(name)) * unit
+            except (AttributeError, TypeError, ValueError):
+                continue
+            if wait > 0:
+                return min(max(RETRY_DELAY, wait), RETRY_AFTER_LIMIT)
+        error = error.__cause__ or error.__context__
+    return RETRY_DELAY
 
 
 @extensions.point
@@ -6018,8 +6131,6 @@ def translateAI(text, history, config, filename=None, pbar=None, lock=None,
         _thread_local.file_batch_write_1h = 0
         _thread_local.file_batch_regular = 0
         _thread_local.file_batch_output  = 0
-    # Snapshot accumulators so end-of-call delta only counts tokens from this call.
-    _batch_before = _batch_usage()
     _thread_local.file_cost_ready = False  # will be set True at end of translateAI
 
     # Provider batch phase; Estimate uses the collect request builder with a
@@ -6509,6 +6620,10 @@ def translateAI(text, history, config, filename=None, pbar=None, lock=None,
                     batch_result.get("cache_creation_1h_input_tokens"),
                 )
                 from_batch = True
+                # Counted as it is read, so nothing after the read, such as a
+                # result this call misses later, drops it from what the file
+                # paid for.
+                _count_batch_result(batch_result, config.model)
                 # A Batch's results arrive together, at its own price.
                 _thread_local.received_at = None
                 _write_request_debug_log(
@@ -6530,30 +6645,17 @@ def translateAI(text, history, config, filename=None, pbar=None, lock=None,
                     )
                 # Set again when the response arrives (_log_live_response).
                 _thread_local.received_at = None
-                try:
-                    response = translateText(
+                response = _send_live(
+                    config,
+                    lambda: translateText(
                         static_system, current_user, request_history, 0.05,
                         formatType, config.model, numLines,
                         vocab_text=vocab_text,
                         context_kind=CONTEXT_SOURCE,
                         request_instructions=persistent_instructions,
                         delivered_context=delivered_context,
-                    )
-                except Exception as api_err:
-                    err_msg = f"[API_ERROR] {api_err}"
-                    # Print to stdout so the GUI captures it immediately, and
-                    # only there: the progress bar's write goes to stdout too,
-                    # which printed each failed attempt twice in the Run log.
-                    print(err_msg, flush=True)
-                    # Also write to the translation log file for persistence
-                    try:
-                        Path(config.logFilePath).parent.mkdir(parents=True, exist_ok=True)
-                        with open(config.logFilePath, "a", encoding="utf-8") as _lf:
-                            _lf.write(f"{err_msg}\n")
-                            _lf.flush()
-                    except Exception:
-                        pass
-                    raise  # Let retry decorator handle it
+                    ),
+                )
             choice = response.choices[0]
             message = getattr(choice, "message", None)
             translatedText = getattr(message, "content", None)
@@ -6573,36 +6675,6 @@ def translateAI(text, history, config, filename=None, pbar=None, lock=None,
             totalTokens[1] += response.usage.completion_tokens
             if not from_batch and not config.estimateMode:
                 _record_live_cost(response.usage, config.model)
-
-            # --- Batch cost tracking ---
-            if from_batch:
-                usage = response.usage
-
-                # Read cache fields from _AnthropicCompat._Usage; fall back to model_extra.
-                def _get_usage_field(field):
-                    v = getattr(usage, field, None)
-                    if v is None:
-                        v = (getattr(usage, "model_extra", None) or {}).get(field)
-                    return int(v) if v else 0
-
-                batch_cache_read  = _get_usage_field("cache_read_input_tokens")
-                batch_cache_write = _get_usage_field("cache_creation_input_tokens")
-                batch_prompt_total = getattr(usage, "prompt_tokens", 0) or 0
-                batch_regular = max(0, batch_prompt_total - batch_cache_read - batch_cache_write)
-                batch_output  = getattr(usage, "completion_tokens", 0) or 0
-
-                # Accumulate into per-file thread-local counters at the
-                # Batch discount.
-                one_hour = getattr(usage, "cache_creation_1h_input_tokens", None)
-                _thread_local.file_batch_read    += batch_cache_read
-                _thread_local.file_batch_write   += batch_cache_write
-                # A result saved before Anthropic's TTL split was recorded
-                # used the one-hour cache, as every Batch then did.
-                _thread_local.file_batch_write_1h = getattr(
-                    _thread_local, 'file_batch_write_1h', 0
-                ) + (batch_cache_write if one_hour is None else int(one_hour))
-                _thread_local.file_batch_regular += batch_regular
-                _thread_local.file_batch_output  += batch_output
 
             # --- Debug Token Logging ---
             if _debug_logging_enabled():
@@ -6996,12 +7068,10 @@ def translateAI(text, history, config, filename=None, pbar=None, lock=None,
     if batch_phase in {"collect", "estimate"}:
         flush_batch_queue()
 
-    # Add this call's fetched Batch results to the run's cost at the Batch
-    # discount; file_* accumulators hold full per-file totals, which
-    # calculateCost() reads. Live responses were priced as they arrived.
+    # Live responses and fetched Batch results were priced as they arrived;
+    # file_* accumulators hold full per-file totals, which calculateCost()
+    # reads.
     _is_claude_final = isClaudeModel(config.model)
-    if not config.estimateMode:
-        _record_batch_cost(_batch_before, config.model)
     # A Live call's file cost is what its responses were priced at, none when
     # the cache answered every line, so calculateCost reads the accumulators.
     if not config.estimateMode and (

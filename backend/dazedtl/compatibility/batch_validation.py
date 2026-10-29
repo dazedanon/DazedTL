@@ -24,6 +24,7 @@ from .process_view import (
     kept_lines,
     ledger,
     ledger_stamp,
+    paid_record,
     saved,
 )
 
@@ -63,12 +64,19 @@ LAYER = "batch-validation"
 
 
 def install(evidence, translation):
-    """Record native pass/fail per consumed response, independent of its wording."""
+    """Record native pass/fail per consumed response, independent of its
+    wording, and the billed item each result is at its first read in the run."""
     with evidence.connect() as connection:
         connection.execute(
             "CREATE TABLE IF NOT EXISTS batch_validation "
             "(request_key TEXT PRIMARY KEY, filename TEXT, source TEXT, response_hash TEXT, state TEXT)"
         )
+        # The billed item a result is, as the worker priced and counted it
+        # (process_view paid_record), naming the file that read it first.
+        if "paid" not in {
+            row[1] for row in connection.execute("PRAGMA table_info(batch_validation)")
+        }:
+            connection.execute("ALTER TABLE batch_validation ADD COLUMN paid TEXT")
         # The lines a validated response left in their original text.
         connection.execute(
             "CREATE TABLE IF NOT EXISTS batch_kept_lines "
@@ -88,15 +96,33 @@ def install(evidence, translation):
                 key = translation.get_cache_key(payload, language, cache_context)
             if translation._batch_results.get(key) == response:
                 local.call[key] = (payload, language, cache_context, request_context)
+                # Its first read in the run counts the result, priced by the
+                # worker as consume counts it, under the file reading it. A
+                # result read again, as after a Stop and resume, by a retry of
+                # a reply that failed validation or by another file it serves,
+                # keeps that; the file reading it last records its outcome.
+                paid = (
+                    None
+                    if local.model is None
+                    else paid_record(
+                        local.filename,
+                        translation.batch_result_paid(response, local.model),
+                    )
+                )
                 with evidence.connect() as connection:
                     connection.execute(
-                        "INSERT OR REPLACE INTO batch_validation VALUES (?,?,?,?,?)",
+                        "INSERT INTO batch_validation"
+                        "(request_key,filename,source,response_hash,state,paid) "
+                        "VALUES (?,?,?,?,?,?) ON CONFLICT(request_key) DO UPDATE SET "
+                        "filename=excluded.filename,source=excluded.source,"
+                        "response_hash=excluded.response_hash,state=excluded.state",
                         (
                             key,
                             local.filename,
                             canonical(json.loads(payload)),
                             digest(response),
                             "received",
+                            paid,
                         ),
                     )
                     connection.execute(
@@ -138,9 +164,21 @@ def install(evidence, translation):
                 )
 
     def validated(native, *args, **kwargs):
-        previous = getattr(local, "call", None), getattr(local, "filename", None)
+        previous = (
+            getattr(local, "call", None),
+            getattr(local, "filename", None),
+            getattr(local, "model", None),
+        )
+        arguments = call_signature.bind(*args, **kwargs).arguments
         local.call = {}
-        local.filename = call_signature.bind(*args, **kwargs).arguments.get("filename")
+        local.filename = arguments.get("filename")
+        # The model whose Batch prices the call's results; an older
+        # translator's call names none, and its results go unpriced.
+        local.model = (
+            getattr(arguments.get("config"), "model", None)
+            if getattr(translation, "batch_result_paid", None) is not None
+            else None
+        )
         try:
             result = native(*args, **kwargs)
             # Only a returned native validation pass settles rejected responses.
@@ -153,7 +191,7 @@ def install(evidence, translation):
                     )
             return result
         finally:
-            local.call, local.filename = previous
+            local.call, local.filename, local.model = previous
 
     translation.require_batch_result.layer(LAYER, received)
     translation.cache_translation.layer(LAYER, accepted)
