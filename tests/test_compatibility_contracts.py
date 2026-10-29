@@ -2388,19 +2388,21 @@ class CompatibilityContracts(unittest.TestCase):
         self.assertEqual(sent, ["json_schema", "json_schema"])
 
         # A rate limit on the last attempt raises at once instead of first
-        # waiting out its Retry-After.
+        # waiting out its Retry-After, with the provider's error under the
+        # engine's, so the run reports the provider's status (run_stops).
         sent.clear()
         with (
             patch.object(translation, "openai", client),
             patch.object(translation, "_get_mistral_limiter", return_value=limiter),
             patch.object(translation.time, "sleep") as sleep,
-            self.assertRaisesRegex(Exception, "failed after 1 attempts"),
+            self.assertRaisesRegex(Exception, "failed after 1 attempts") as raised,
         ):
             translation.callMistral(
                 {"messages": [], "response_format": {"type": "json_schema"}},
                 retries=0,
             )
         sleep.assert_not_called()
+        self.assertIsInstance(raised.exception.__cause__, openai.RateLimitError)
         # A strict run's last rate limit is the provider's own error too.
         sent.clear()
         with (

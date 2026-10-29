@@ -22,7 +22,7 @@ def guarded(translation, native, *args, **kwargs):
         try:
             return native(*args, **kwargs)
         except Exception as error:
-            if transmission.resendable(tries):
+            if transmission.resendable(tries, error):
                 raise translation.RequestUnprocessedError(str(error)) from error
             raise
 

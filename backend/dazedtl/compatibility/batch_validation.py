@@ -12,6 +12,7 @@ from collections import Counter
 from contextlib import closing
 from functools import lru_cache
 from inspect import signature
+from pathlib import Path
 
 from dazedtl.translation.files import digest
 
@@ -27,6 +28,7 @@ from .process_view import (
     paid_record,
     saved,
 )
+from .run_evidence import connected
 
 
 def canonical(value):
@@ -61,6 +63,18 @@ def source_value(value):
 
 
 LAYER = "batch-validation"
+
+
+class Ledger:
+    """The evidence ledger of the run in *root*, for a Batch run whose
+    workers keep only this part of it (worker_policy keep_paid_items)."""
+
+    def __init__(self, root):
+        self.path = Path(root) / "log/dazedtl-process.sqlite3"
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+
+    def connect(self):
+        return connected(self.path)
 
 
 def install(evidence, translation):

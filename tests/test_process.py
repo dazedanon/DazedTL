@@ -167,6 +167,7 @@ class ProcessTests(unittest.TestCase):
         # unbilled and another try may pass (RequestUnprocessedError).
         import socket
 
+        import anthropic
         import openai
         from dazedtl.compatibility import resends
         from dazedtl.settings.preferences import RESENDS
@@ -222,6 +223,18 @@ class ProcessTests(unittest.TestCase):
         crash = b"HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\n\r\n"
         timeout = b"HTTP/1.1 504 Gateway Timeout\r\nContent-Length: 0\r\n\r\n"
         limited = b"HTTP/1.1 429 Too Many Requests\r\nContent-Length: 0\r\n\r\n"
+        # Claude's overload streamed after its 200, the 529 it stands for
+        # (transmission.STREAMED); "claude" in an address sends through
+        # Anthropic's SDK.
+        event = (
+            b"event: error\n"
+            b'data: {"type":"error","error":{"type":"overloaded_error",'
+            b'"message":"Overloaded"}}\n\n'
+        )
+        overloaded = (
+            b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\n"
+            b"Content-Length: %d\r\n\r\n%s" % (len(event), event)
+        )
         # (name, addresses tried, answers, record state, sent again)
         cases = [
             ("refused connection", [dead], [], "failed", True),
@@ -231,6 +244,14 @@ class ProcessTests(unittest.TestCase):
             ("server error", [own, own], [crash, crash], "failed", True),
             ("another host's server error", [live], [crash], "uncertain", False),
             ("gateway timeout", [own], [timeout], "uncertain", False),
+            ("streamed overload", [own + "/claude"], [overloaded], "failed", True),
+            (
+                "another host's streamed overload",
+                [live + "claude"],
+                [overloaded],
+                "uncertain",
+                False,
+            ),
             (
                 "lost response, then refused connection",
                 [live, dead],
@@ -256,18 +277,33 @@ class ProcessTests(unittest.TestCase):
                     def tries(urls, evidence):
                         def native(user):
                             evidence.record(params)
+                            last = None
                             for url in urls:
-                                client = openai.OpenAI(
-                                    api_key="fixture-key",
-                                    base_url=url,
-                                    max_retries=0,
-                                    timeout=5,
-                                )
+                                options = {
+                                    "api_key": "fixture-key",
+                                    "base_url": url,
+                                    "max_retries": 0,
+                                    "timeout": 5,
+                                }
                                 try:
-                                    client.chat.completions.create(**params)
-                                except openai.OpenAIError:
-                                    pass
-                            raise RuntimeError("Connection error.")
+                                    if "claude" in url:
+                                        with anthropic.Anthropic(
+                                            **options
+                                        ).messages.stream(
+                                            max_tokens=16, **params
+                                        ) as stream:
+                                            stream.get_final_message()
+                                    else:
+                                        openai.OpenAI(
+                                            **options
+                                        ).chat.completions.create(**params)
+                                except (
+                                    openai.OpenAIError,
+                                    anthropic.AnthropicError,
+                                ) as error:
+                                    last = error
+                            # As the engine raises it, over the SDK's error.
+                            raise RuntimeError("Connection error.") from last
 
                         return native
 
