@@ -329,15 +329,20 @@ class ImageCompatibility:
         return value
 
     def skill(self, root, profile):
-        """Read skill templates without context migration or other game writes."""
-        source = Path(self.backend.source)
-        from util.image_manager import legacy_tool_python, tool_placeholders
+        """The image skill filled in for a game: the one fill both methods'
+        image tasks hand to an assistant. Reads the Skills tab's copy without
+        context migration or other game writes."""
+        scripts = Path(self.backend.source) / "scripts"
         from util.paths import SKILLS_DIR, runtime_data_file
 
         path = runtime_data_file(
             SKILLS_DIR / "image_translation.md", self.backend.workspace
         )
-        value = legacy_tool_python(path.read_text(encoding="utf-8"))
+        # A Skills tab copy from before {{IMAGE_TOOL_PYTHON}} became a whole
+        # command quoted it as a path; the command goes unquoted.
+        value = path.read_text(encoding="utf-8").replace(
+            '"{{IMAGE_TOOL_PYTHON}}"', "{{IMAGE_TOOL_PYTHON}}"
+        )
         folder = root / ".dazedtl/images"
         from desktop.backend.guidance import documents
 
@@ -348,7 +353,14 @@ class ImageCompatibility:
             "{{GAME_ROOT}}": str(root),
             "{{EDITABLE_IMAGES_FOLDER}}": str(folder),
             "{{VOCAB_FILE}}": glossary,
-            **tool_placeholders(source / "scripts"),
+            # DazedTL's own Python as a whole command: an assistant runs the
+            # tools with the app's options, which keep compiled Python out of
+            # the install.
+            "{{IMAGE_TOOL_PYTHON}}": system.shell_command(system.python_command()),
+            "{{IMAGE_INPAINT_CLI}}": str(scripts / "image_inpaint.py"),
+            "{{IMAGE_VALIDATE_CLI}}": str(scripts / "image_validate.py"),
+            "{{IMAGE_RECIPE_CLI}}": str(scripts / "image_recipe.py"),
+            "{{IMAGE_FAMILY_CLI}}": str(scripts / "image_family.py"),
             "{{SOURCE_LANGUAGE}}": read_source(root),
         }
         for name, replacement in replacements.items():

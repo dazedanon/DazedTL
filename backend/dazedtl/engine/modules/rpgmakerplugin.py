@@ -14,6 +14,7 @@ from dotenv import load_dotenv
 from retry import retry
 from tqdm import tqdm
 from util.languages import source_pattern
+from util.runtime_text import CONTROL_CODE
 from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost, found_mismatch, run_stop_errors
 from util.translation_task import fail_on_parser_error, module_receipt, write_output
 
@@ -160,14 +161,15 @@ def parsePlugin(readFile, filename):
 # - an escaped line break, n except before [ and a number or backslash, or <;
 # - an actor name or name box code, \n[1], \n[\v[1]] or \n<Alice>, where a
 #   note's line break before [1 or < reads the same, one level shallower;
-# - any other control code: letters before [ or <, such as \C[2], \I[5] or
-#   \V[1], a capital letter, such as \G, or one of { } . ! | ^ > < # $ @ , -.
-#   A lowercase letter alone can be the string's own escape, such as \r.
+# - any other control code as game text reads one (runtime_text's
+#   CONTROL_CODE), such as \C[2], \I[5], \G or \{, but a lowercase word
+#   alone, which can be the string's own escape, such as \r or \u3000.
 # A request sends each code with one backslash, and the translation writes
 # each back at its source's depth. A line break is read as its source writes
 # it: at its codes' depth in a txtSubject, one level shallower in a note.
 ESCAPE = re.compile(
-    r"(\\+)(?:(n)(?!\[[\d\\]|<)|(?=(n)[\[<])|(?=[A-Za-z]+[\[<]|[A-Z]|[{}.!|^><#$@,\-]))"
+    r"(\\+)(?:(n)(?!\[[\d\\]|<)|(?=(n)[\[<])"
+    r"|(?![a-z][A-Za-z0-9_]*(?![A-Za-z0-9_\[<]))(?=" + CONTROL_CODE + "))"
 )
 
 
@@ -228,6 +230,32 @@ def written(translation, source, depth=None, width=None):
     return text.replace("\n", newline or " ")
 
 
+# The quote that opens a drawTextEx call's text, with the backslashes before
+# it where the call is itself in a string.
+DRAW_TEXT_QUOTE = re.compile(r"drawTextEx\(\s*(\\*[\"'`])")
+
+
+def drawTextLabel(translation, line, position, depth):
+    """A drawTextEx label's *translation* as its string in *line* writes it.
+
+    Where the label at *position* is in the text of a drawTextEx call, each
+    of that string's own quotes in the translation, escaped by the reply or
+    not, is escaped at half the depth of the label's codes, *depth*, so it
+    does not end the string; a label elsewhere keeps the translation as it is.
+    """
+    opening = None
+    for opening in DRAW_TEXT_QUOTE.finditer(line, 0, position):
+        pass
+    if opening is None:
+        return translation
+    quote = opening.group(1)
+    closing = re.compile(r"(?<!\\)" + re.escape(quote)).search(line, opening.end())
+    if closing and closing.start() < position:
+        return translation
+    escaped = "\\" * max(1, len(depth) // 2) + quote
+    return re.sub(r"\\*" + re.escape(quote[-1]), lambda _found: escaped, translation)
+
+
 def translatePlugin(data, pbar, filename, translatedList):
     if len(translatedList) > 0:
         questList = translatedList[0]
@@ -235,8 +263,10 @@ def translatePlugin(data, pbar, filename, translatedList):
         sceneMenuText = translatedList[2] if len(translatedList) > 2 else []
         sceneMenuCommonHelpText = translatedList[3] if len(translatedList) > 3 else []
         sceneMenuHelpText = translatedList[4] if len(translatedList) > 4 else []
-        sceneMenuDrawText = translatedList[5] if len(translatedList) > 5 else []
-        sceneMenuStatLabel = translatedList[6] if len(translatedList) > 6 else []
+        # Each drawTextEx label's translation by its label, as a label is
+        # sent once however many times the file draws it
+        sceneMenuDrawText = translatedList[5] if len(translatedList) > 5 else {}
+        sceneMenuStatLabel = translatedList[6] if len(translatedList) > 6 else {}
         saveParamName = translatedList[7] if len(translatedList) > 7 else []
         setData = True
     else:
@@ -257,8 +287,6 @@ def translatePlugin(data, pbar, filename, translatedList):
     i = 0
     in_disp_list = False
     brace_count = 0
-    _pending_drawtext = {}   # Deferred drawTextEx brace label replacements (longest-first)
-    _pending_statlabel = {}  # Deferred drawTextEx stat label replacements (longest-first)
 
     # Category
     with open("log/translations.txt", "a+", encoding="utf-8") as tlFile:
@@ -751,88 +779,72 @@ def translatePlugin(data, pbar, filename, translatedList):
         # DrawTextEx - Brace-delimited labels (e.g., \}【口づけ】\{, \}回数：\{)
         # Only process lines containing drawTextEx calls
         if 'drawTextEx' in data[i]:
+            pending = {}  # Each label's text on this line, by its source
             regex = r'([\\]+)\}(.+?)[\\]+\{'
-            matchList = re.findall(regex, data[i])
-            if len(matchList) > 0:
-                for depth, match in matchList:
-                    if match:
-                        jaString = match
-                        originalString = jaString
+            for found in re.finditer(regex, data[i]):
+                depth, jaString = found.groups()
 
-                        # Skip game variable references (handled separately)
-                        if '$gameVariables' in jaString:
-                            continue
+                # Skip game variable references (handled separately)
+                if '$gameVariables' in jaString:
+                    continue
 
-                        # Make sure it contains Japanese
-                        if not re.search(LANGREGEX, jaString):
-                            continue
+                # Make sure it contains Japanese
+                if not re.search(LANGREGEX, jaString):
+                    continue
 
-                        if jaString.replace("\u3000", "").strip():
-                            # Pass 1 (deduplicated)
-                            if setData == False:
-                                # Codes and line breaks at depth one
-                                label = sent(jaString, True).strip()
-                                if label not in sceneMenuDrawText:
-                                    sceneMenuDrawText.append(label)
+                if jaString.replace("\u3000", "").strip():
+                    # Codes and line breaks at depth one
+                    label = sent(jaString, True).strip()
 
-                            # Pass 2 (collect mapping, skip duplicates)
-                            else:
-                                if sceneMenuDrawText and originalString not in _pending_drawtext:
-                                    # Grab and Pop
-                                    translatedText = sceneMenuDrawText[0]
-                                    sceneMenuDrawText.pop(0)
+                    # Pass 1, each label once
+                    if setData == False:
+                        if label not in sceneMenuDrawText:
+                            sceneMenuDrawText.append(label)
 
-                                    # Codes and line breaks as the source writes them
-                                    translatedText = written(translatedText, originalString, depth)
+                    # Pass 2, the label's translation wherever it is drawn
+                    elif label in sceneMenuDrawText and jaString not in pending:
+                        # Codes and line breaks as the source writes them
+                        translatedText = written(sceneMenuDrawText[label], jaString, depth)
 
-                                    # Replace quotes
-                                    translatedText = translatedText.replace('"', "'")
-
-                                    # Queue for deferred replacement
-                                    _pending_drawtext[originalString] = translatedText
+                        # Replace quotes
+                        translatedText = translatedText.replace('"', "'")
+                        pending[jaString] = drawTextLabel(
+                            translatedText, data[i], found.start(), depth
+                        )
 
             # Apply deferred replacements longest-first to avoid substring collisions
             # (e.g., replacing 回数： before 使用回数： would corrupt the longer string)
-            if setData and _pending_drawtext:
-                for orig in sorted(_pending_drawtext, key=len, reverse=True):
-                    data[i] = data[i].replace(orig, _pending_drawtext[orig])
-                _pending_drawtext.clear()
+            for orig in sorted(pending, key=len, reverse=True):
+                data[i] = data[i].replace(orig, pending[orig])
 
         # DrawTextEx - Stat labels (e.g., C[16]攻撃力\\...C[0])
         if 'drawTextEx' in data[i]:
-            regex = r'C\[\d+\]([^C\\,`\[\]]+?)[\\]+C\[0\]'
-            matchList = re.findall(regex, data[i])
-            if len(matchList) > 0:
-                for match in matchList:
-                    if match:
-                        jaString = match
-                        originalString = jaString
+            pending = {}  # Each label's text on this line, by its source
+            regex = r'C\[\d+\]([^C\\,`\[\]]+?)([\\]+)C\[0\]'
+            for found in re.finditer(regex, data[i]):
+                jaString, depth = found.groups()
 
-                        # Make sure it contains Japanese
-                        if not re.search(LANGREGEX, jaString):
-                            continue
+                # Make sure it contains Japanese
+                if not re.search(LANGREGEX, jaString):
+                    continue
 
-                        if jaString.replace("\u3000", "").strip():
-                            # Pass 1 (deduplicated)
-                            if setData == False:
-                                if jaString.strip() not in sceneMenuStatLabel:
-                                    sceneMenuStatLabel.append(jaString.strip())
+                if jaString.replace("\u3000", "").strip():
+                    label = jaString.strip()
 
-                            # Pass 2 (collect mapping, skip duplicates)
-                            else:
-                                if sceneMenuStatLabel and originalString not in _pending_statlabel:
-                                    # Grab and Pop
-                                    translatedText = sceneMenuStatLabel[0]
-                                    sceneMenuStatLabel.pop(0)
+                    # Pass 1, each label once
+                    if setData == False:
+                        if label not in sceneMenuStatLabel:
+                            sceneMenuStatLabel.append(label)
 
-                                    # Queue for deferred replacement
-                                    _pending_statlabel[originalString] = translatedText
+                    # Pass 2, the label's translation wherever it is drawn
+                    elif label in sceneMenuStatLabel and jaString not in pending:
+                        pending[jaString] = drawTextLabel(
+                            sceneMenuStatLabel[label], data[i], found.start(), depth
+                        )
 
             # Apply deferred replacements longest-first to avoid substring collisions
-            if setData and _pending_statlabel:
-                for orig in sorted(_pending_statlabel, key=len, reverse=True):
-                    data[i] = data[i].replace(orig, _pending_statlabel[orig])
-                _pending_statlabel.clear()
+            for orig in sorted(pending, key=len, reverse=True):
+                data[i] = data[i].replace(orig, pending[orig])
 
         # DrawTextEx - Game variable counter word (hardcoded: 回 → time(s))
         if setData and 'drawTextEx' in data[i] and '$gameVariables' in data[i]:
@@ -844,6 +856,10 @@ def translatePlugin(data, pbar, filename, translatedList):
 
         # Next Line
         i += 1
+
+    # Pass 2 only writes what pass 1 translated
+    if setData:
+        return tokens
 
     # EOF
     translate = False
@@ -865,55 +881,16 @@ def translatePlugin(data, pbar, filename, translatedList):
         pbar.total = combinedTotal
         pbar.refresh()
 
-    # Quest
-    if len(questList) > 0:
-        # Quest Name
-        response = translateAI(questList[0], "Quest Name")
+    # Quest Name, Client, Location, Target, Summary and Goal 1
+    questHistories = ("Quest Name", "Quest Client", "Quest Location", "Quest Location", "Quest Summary", "Quest Goal")
+    for field, history in enumerate(questHistories):
+        response = translateAI(questList[field], history)
         tokens[0] += response[1][0]
         tokens[1] += response[1][1]
-        questName = response[0]
 
-        # Quest Client
-        response = translateAI(questList[1], "Quest Client")
-        tokens[0] += response[1][0]
-        tokens[1] += response[1][1]
-        questClient = response[0]
-
-        # Quest Location
-        response = translateAI(questList[2], "Quest Location")
-        tokens[0] += response[1][0]
-        tokens[1] += response[1][1]
-        questLocation = response[0]
-
-        # Quest Target
-        response = translateAI(questList[3], "Quest Location")
-        tokens[0] += response[1][0]
-        tokens[1] += response[1][1]
-        questTarget = response[0]
-
-        # Quest Summary
-        response = translateAI(questList[4], "Quest Summary")
-        tokens[0] += response[1][0]
-        tokens[1] += response[1][1]
-        questSummary = response[0]
-
-        # Quest Goal 1
-        response = translateAI(questList[5], "Quest Goal")
-        tokens[0] += response[1][0]
-        tokens[1] += response[1][1]
-        questGoal1 = response[0]
-
-        # Check Mismatch
-        if (
-            len(questName) == len(questList[0])
-            or len(questClient) == len(questList[1])
-            or len(questLocation) == len(questList[2])
-            or len(questTarget) == len(questList[3])
-            or len(questSummary) == len(questList[4])
-            or len(questGoal1) == len(questList[5])
-        ):
-            # Set Strings
-            questListTL = [questName, questClient, questLocation, questTarget, questSummary, questGoal1]
+        # Check Mismatch, each field on its own
+        if len(response[0]) == len(questList[field]):
+            questListTL[field] = response[0]
             translate = True
 
         # Mismatch
@@ -943,8 +920,8 @@ def translatePlugin(data, pbar, filename, translatedList):
     sceneMenuTextTL = []
     sceneMenuCommonHelpTextTL = []
     sceneMenuHelpTextTL = []
-    sceneMenuDrawTextTL = []
-    sceneMenuStatLabelTL = []
+    sceneMenuDrawTextTL = {}
+    sceneMenuStatLabelTL = {}
     saveParamNameTL = []
 
     if sceneMenuText:
@@ -1010,7 +987,7 @@ def translatePlugin(data, pbar, filename, translatedList):
 
         # Check Mismatch
         if len(sceneMenuDrawText) == len(sceneMenuDrawTextResponse):
-            sceneMenuDrawTextTL = sceneMenuDrawTextResponse
+            sceneMenuDrawTextTL = dict(zip(sceneMenuDrawText, sceneMenuDrawTextResponse))
             translate = True
 
         # Mismatch
@@ -1028,7 +1005,7 @@ def translatePlugin(data, pbar, filename, translatedList):
 
         # Check Mismatch
         if len(sceneMenuStatLabel) == len(sceneMenuStatLabelResponse):
-            sceneMenuStatLabelTL = sceneMenuStatLabelResponse
+            sceneMenuStatLabelTL = dict(zip(sceneMenuStatLabel, sceneMenuStatLabelResponse))
             translate = True
 
         # Mismatch
@@ -1055,7 +1032,7 @@ def translatePlugin(data, pbar, filename, translatedList):
                 found_mismatch(MISMATCH, filename)
 
     # Pass 2
-    if translate and not setData:
+    if translate:
         translatePlugin(data, pbar, filename, [questListTL, customTL, sceneMenuTextTL, sceneMenuCommonHelpTextTL, sceneMenuHelpTextTL, sceneMenuDrawTextTL, sceneMenuStatLabelTL, saveParamNameTL])
     return tokens
 

@@ -96,6 +96,10 @@ def _skill_values(task_dir: Path, task: dict[str, Any]) -> dict[str, str]:
         ),
         "TASK": shell_argument(task_dir),
         "CONTEXT": str(task_dir / "context.json"),
+        # The README, every brief and the prompt that hands a worker its
+        # first command, the brief, start with it. It goes at the start of a
+        # line, never indented: its here-document's end marker must be.
+        "SHELL_NOTE": system.shell_note(),
         "RECEIPTS": str(
             Path(task["game_root"]) / ".dazedtl" / "qa-receipts" / task_dir.name
         ),
@@ -128,7 +132,7 @@ def _task_instructions(task_dir: Path, task: dict[str, Any]) -> str:
         f"## {title}\n\n{text}" for title, text in sections.items() if title != "Handoff"
     )
     return _fill(
-        f"# Text QA task\n\n{system.shell_note()}{_languages(task)}Task: `{task_dir}`"
+        f"# Text QA task\n\n{{{{SHELL_NOTE}}}}{_languages(task)}Task: `{task_dir}`"
         f"\n\n{focus}\n\n{intro}\n\n{body}\n",
         _skill_values(task_dir, task),
     )
@@ -166,7 +170,7 @@ def brief(task_dir: str | Path, role: str, worker: str = "") -> str:
     root, task, _checkpoint = _load_task(task_dir)
     _intro, sections, focus = _skill_sections(task["focus"])
     # A worker starts from its brief alone, so it carries the shell note too.
-    parts = [system.shell_note() + _languages(task) + focus] + [
+    parts = ["{{SHELL_NOTE}}" + _languages(task) + focus] + [
         f"## {name}\n\n{sections[name]}"
         for name in ("Policy", *_BRIEF_SECTIONS[role], "Commands", "Result formats")
     ]

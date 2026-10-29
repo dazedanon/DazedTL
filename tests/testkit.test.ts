@@ -11,6 +11,7 @@ import { appEnvironment, stopApp } from "../scripts/testkit/app.mjs";
 import { until } from "../scripts/testkit/cdp.mjs";
 import { ciScenarios } from "../scripts/testkit/ci.mjs";
 import { displayName } from "../scripts/testkit/display.mjs";
+import { spawnGroup } from "../scripts/testkit/group.mjs";
 import { startProvider } from "../scripts/testkit/provider.mjs";
 import {
   failedTests,
@@ -319,6 +320,57 @@ test(
         } catch {
           // Already gone.
         }
+    }
+  },
+);
+
+test(
+  "a scenario's stop returns only once its stand-in provider's process group has ended",
+  { skip: process.platform !== "linux" },
+  async () => {
+    // The stand-in takes a moment to end at SIGTERM, as one closing its
+    // connections and request record does, and outlives what started it, as
+    // it does for `scenario.mjs app`.
+    const work = fs.mkdtempSync(path.join(os.tmpdir(), "dazedtl-stop-"));
+    const ready = path.join(work, "ready");
+    const slow = `trap 'sleep 1; exit 0' TERM; touch "$0"; sleep 30 & wait`;
+    const group = spawnGroup("sh", ["-c", slow, ready], {
+      stdio: "ignore",
+      outlive: true,
+    }).pid as number;
+    try {
+      fs.writeFileSync(
+        path.join(work, "scenario.json"),
+        JSON.stringify({
+          work,
+          tag: "no-such-tag",
+          provider: { port: 0, url: "", pid: group },
+          app: null,
+          display: null,
+        }),
+      );
+      await until("the stand-in to start", () => fs.existsSync(ready), 5_000);
+      await new Promise<void>((resolve, reject) =>
+        execFile(
+          process.execPath,
+          [
+            fileURLToPath(new URL("../scripts/scenario.mjs", import.meta.url)),
+            "stop",
+            "--work",
+            work,
+          ],
+          { timeout: 20_000 },
+          (error) => (error ? reject(error) : resolve()),
+        ),
+      );
+      assert.throws(() => process.kill(-group, 0), { code: "ESRCH" });
+    } finally {
+      try {
+        process.kill(-group, "SIGKILL");
+      } catch {
+        // Already gone.
+      }
+      fs.rmSync(work, { recursive: true, force: true });
     }
   },
 );

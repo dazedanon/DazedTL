@@ -54,10 +54,11 @@ LABELS = {
     "max": "Maximum",
 }
 
-_FULL = ("low", "medium", "high", "xhigh", "max")
+_TO_XHIGH = ("low", "medium", "high", "xhigh")
+_FULL = (*_TO_XHIGH, "max")
 _OFF_FULL = ("none", *_FULL)
 _OLD_CLAUDE = ("none", "low", "medium", "high", "max")
-_GPT5 = ("none", "low", "medium", "high", "xhigh")
+_GPT5 = ("none", *_TO_XHIGH)
 _LMH = ("low", "medium", "high")
 _MLMH = ("minimal", *_LMH)
 
@@ -72,35 +73,36 @@ _NATIVE = {
     # 4.8/4.7/4.6 and Sonnet 4.6 means no thinking. Haiku 4.5 and older
     # take a thinking budget, not an effort.
     "anthropic": {
-        "claude-opus-5-5": (_FULL, "medium", None),
-        "claude-opus-5": (_OFF_FULL, "high", None),
-        "claude-opus-4-8": (_OFF_FULL, "none", None),
-        "claude-opus-4-7": (_OFF_FULL, "none", None),
-        "claude-opus-4-6": (_OLD_CLAUDE, "none", None),
-        "claude-sonnet-5-5": (_OFF_FULL, "high", None),
-        "claude-sonnet-5": (_OFF_FULL, "high", None),
-        "claude-sonnet-4-6": (_OLD_CLAUDE, "none", None),
-        "claude-haiku-5-5": (_OFF_FULL, "medium", None),
-        "claude-fable-5-1": (_FULL, "high", None),
-        "claude-fable-5": (_FULL, "high", None),
+        "claude-opus-5-5": (_FULL, "medium", "2026-10-29"),
+        "claude-opus-5": (_OFF_FULL, "high", "2026-10-29"),
+        "claude-opus-4-8": (_OFF_FULL, "none", "2026-10-29"),
+        "claude-opus-4-7": (_OFF_FULL, "none", "2026-10-29"),
+        "claude-opus-4-6": (_OLD_CLAUDE, "none", "2026-10-29"),
+        "claude-sonnet-5-5": (_OFF_FULL, "high", "2026-10-29"),
+        "claude-sonnet-5": (_OFF_FULL, "high", "2026-10-29"),
+        "claude-sonnet-4-6": (_OLD_CLAUDE, "none", "2026-10-29"),
+        "claude-haiku-5-5": (_OFF_FULL, "medium", "2026-10-29"),
+        "claude-fable-5-1": (_FULL, "high", "2026-10-29"),
+        "claude-fable-5": (_FULL, "high", "2026-10-29"),
         "claude-mythos-5-1": (_FULL, "high", None),
         "claude-mythos-5": (_FULL, "high", None),
     },
-    # GPT-4.x and other models without reasoning take none.
+    # GPT-4.x and other models without reasoning take none. GPT-6.x and
+    # GPT-5.6 refuse "max" (scripts/effort_check.py, 2026-10-29).
     "openai": {
-        "gpt-6.1-sol": (_FULL, "medium", None),
-        "gpt-6.1-terra": (_OFF_FULL, "medium", None),
-        "gpt-6-astra": (_FULL, None, None),
-        "gpt-6-sol": (_OFF_FULL, "medium", None),
-        "gpt-6-luna": (_OFF_FULL, "medium", None),
-        "gpt-5.6-sol": (_OFF_FULL, "medium", None),
-        "gpt-5.6-terra": (_OFF_FULL, "medium", None),
-        "gpt-5.6-luna": (_OFF_FULL, "medium", None),
-        "gpt-5.5": (_GPT5, "medium", None),
-        "gpt-5.4": (_GPT5, "none", None),
-        "gpt-5.2": (_GPT5, "none", None),
-        "gpt-5.1": (("none", *_LMH), "none", None),
-        "gpt-5": (_MLMH, None, None),
+        "gpt-6.1-sol": (_TO_XHIGH, "medium", "2026-10-29"),
+        "gpt-6.1-terra": (_GPT5, "medium", "2026-10-29"),
+        "gpt-6-astra": (_TO_XHIGH, None, "2026-10-29"),
+        "gpt-6-sol": (_GPT5, "medium", "2026-10-29"),
+        "gpt-6-luna": (_GPT5, "medium", "2026-10-29"),
+        "gpt-5.6-sol": (_GPT5, "medium", "2026-10-29"),
+        "gpt-5.6-terra": (_GPT5, "medium", "2026-10-29"),
+        "gpt-5.6-luna": (_GPT5, "medium", "2026-10-29"),
+        "gpt-5.5": (_GPT5, "medium", "2026-10-29"),
+        "gpt-5.4": (_GPT5, "none", "2026-10-29"),
+        "gpt-5.2": (_GPT5, "none", "2026-10-29"),
+        "gpt-5.1": (("none", *_LMH), "none", "2026-10-29"),
+        "gpt-5": (_MLMH, None, "2026-10-29"),
     },
     # Only levels each model's own thinking levels hold, since the
     # endpoint's mapping of the others is not documented. Thinking can be
@@ -126,10 +128,10 @@ _NATIVE = {
     # The K3 series always thinks; K2.6 only turns thinking on or off, and
     # K2.7 Code only thinks.
     "kimi": {
-        "kimi-k3": (("low", "high", "max"), "max", None),
-        "kimi-k3.1-pro": (("low", "high", "max"), "max", None),
-        "kimi-k3.1-pro-highspeed": (("low", "high", "max"), "max", None),
-        "kimi-k2.6": (("none",), None, None),
+        "kimi-k3": (("low", "high", "max"), "max", "2026-10-29"),
+        "kimi-k3.1-pro": (("low", "high", "max"), "max", "2026-10-29"),
+        "kimi-k3.1-pro-highspeed": (("low", "high", "max"), "max", "2026-10-29"),
+        "kimi-k2.6": (("none",), None, "2026-10-29"),
     },
     # The docs name only these levels for these models.
     "mistral": {
@@ -151,143 +153,191 @@ _NATIVE = {
 # OpenRouter endpoint of these models that takes structured outputs also
 # takes `reasoning`, so `provider.require_parameters` routes as before.
 _OPENROUTER = {
-    "anthropic/claude-opus-5.5": ("anthropic", "claude-opus-5-5", _FULL, "high", None),
-    "anthropic/claude-opus-5": ("anthropic", "claude-opus-5", _OFF_FULL, "high", None),
+    "anthropic/claude-opus-5.5": (
+        "anthropic",
+        "claude-opus-5-5",
+        _FULL,
+        "high",
+        "2026-10-29",
+    ),
+    "anthropic/claude-opus-5": (
+        "anthropic",
+        "claude-opus-5",
+        _OFF_FULL,
+        "high",
+        "2026-10-29",
+    ),
     "anthropic/claude-opus-4.8": (
         "anthropic",
         "claude-opus-4-8",
         _OFF_FULL,
         "none",
-        None,
+        "2026-10-29",
     ),
     "anthropic/claude-opus-4.7": (
         "anthropic",
         "claude-opus-4-7",
         _OFF_FULL,
         "none",
-        None,
+        "2026-10-29",
     ),
     "anthropic/claude-opus-4.6": (
         "anthropic",
         "claude-opus-4-6",
         _OLD_CLAUDE,
         "none",
-        None,
+        "2026-10-29",
     ),
     "anthropic/claude-sonnet-5.5": (
         "anthropic",
         "claude-sonnet-5-5",
         _FULL,
         "high",
-        None,
+        "2026-10-29",
     ),
     "anthropic/claude-sonnet-5": (
         "anthropic",
         "claude-sonnet-5",
         _OFF_FULL,
         "high",
-        None,
+        "2026-10-29",
     ),
     "anthropic/claude-sonnet-4.6": (
         "anthropic",
         "claude-sonnet-4-6",
         _OLD_CLAUDE,
         "medium",
-        None,
+        "2026-10-29",
     ),
     "anthropic/claude-haiku-5.5": (
         "anthropic",
         "claude-haiku-5-5",
         _OFF_FULL,
         "medium",
-        None,
+        "2026-10-29",
     ),
     "anthropic/claude-fable-5.1": (
         "anthropic",
         "claude-fable-5-1",
         _FULL,
         "high",
-        None,
+        "2026-10-29",
     ),
-    "anthropic/claude-fable-5": ("anthropic", "claude-fable-5", _FULL, "high", None),
-    "openai/gpt-6.1-sol": ("openai", "gpt-6.1-sol", _FULL, "medium", None),
-    "openai/gpt-6.1-terra": ("openai", "gpt-6.1-terra", _OFF_FULL, "medium", None),
-    "openai/gpt-6-astra": ("openai", "gpt-6-astra", _FULL, "medium", None),
-    "openai/gpt-6-sol": ("openai", "gpt-6-sol", _OFF_FULL, "medium", None),
-    "openai/gpt-6-luna": ("openai", "gpt-6-luna", _OFF_FULL, "medium", None),
-    "openai/gpt-5.6-sol": ("openai", "gpt-5.6-sol", _OFF_FULL, "medium", None),
-    "openai/gpt-5.6-terra": ("openai", "gpt-5.6-terra", _OFF_FULL, "medium", None),
-    "openai/gpt-5.6-luna": ("openai", "gpt-5.6-luna", _OFF_FULL, "medium", None),
-    "openai/gpt-5.5": ("openai", "gpt-5.5", _GPT5, "medium", None),
-    "openai/gpt-5.4": ("openai", "gpt-5.4", _GPT5, "none", None),
-    "openai/gpt-5.2": ("openai", "gpt-5.2", _GPT5, "medium", None),
-    "openai/gpt-5.1": ("openai", "gpt-5.1", ("none", *_LMH), "none", None),
-    "openai/gpt-5": ("openai", "gpt-5", _MLMH, "medium", None),
-    "google/gemini-4-argon": ("gemini", "gemini-4-argon", _LMH, "medium", None),
-    "google/gemini-3.8-flash": ("gemini", "gemini-3.8-flash", _LMH, "medium", None),
-    "google/gemini-3.6-flash": ("gemini", "gemini-3.6-flash", _MLMH, "medium", None),
+    "anthropic/claude-fable-5": (
+        "anthropic",
+        "claude-fable-5",
+        _FULL,
+        "high",
+        "2026-10-29",
+    ),
+    "openai/gpt-6.1-sol": ("openai", "gpt-6.1-sol", _FULL, "medium", "2026-10-29"),
+    "openai/gpt-6.1-terra": (
+        "openai",
+        "gpt-6.1-terra",
+        _OFF_FULL,
+        "medium",
+        "2026-10-29",
+    ),
+    "openai/gpt-6-astra": ("openai", "gpt-6-astra", _FULL, "medium", "2026-10-29"),
+    "openai/gpt-6-sol": ("openai", "gpt-6-sol", _OFF_FULL, "medium", "2026-10-29"),
+    "openai/gpt-6-luna": ("openai", "gpt-6-luna", _OFF_FULL, "medium", "2026-10-29"),
+    "openai/gpt-5.6-sol": ("openai", "gpt-5.6-sol", _OFF_FULL, "medium", "2026-10-29"),
+    "openai/gpt-5.6-terra": (
+        "openai",
+        "gpt-5.6-terra",
+        _OFF_FULL,
+        "medium",
+        "2026-10-29",
+    ),
+    "openai/gpt-5.6-luna": (
+        "openai",
+        "gpt-5.6-luna",
+        _OFF_FULL,
+        "medium",
+        "2026-10-29",
+    ),
+    "openai/gpt-5.5": ("openai", "gpt-5.5", _GPT5, "medium", "2026-10-29"),
+    "openai/gpt-5.4": ("openai", "gpt-5.4", _GPT5, "none", "2026-10-29"),
+    "openai/gpt-5.2": ("openai", "gpt-5.2", _GPT5, "medium", "2026-10-29"),
+    "openai/gpt-5.1": ("openai", "gpt-5.1", ("none", *_LMH), "none", "2026-10-29"),
+    "openai/gpt-5": ("openai", "gpt-5", _MLMH, "medium", "2026-10-29"),
+    "google/gemini-4-argon": ("gemini", "gemini-4-argon", _LMH, "medium", "2026-10-29"),
+    "google/gemini-3.8-flash": (
+        "gemini",
+        "gemini-3.8-flash",
+        _LMH,
+        "medium",
+        "2026-10-29",
+    ),
+    "google/gemini-3.6-flash": (
+        "gemini",
+        "gemini-3.6-flash",
+        _MLMH,
+        "medium",
+        "2026-10-29",
+    ),
     "google/gemini-3.5-flash-lite": (
         "gemini",
         "gemini-3.5-flash-lite",
         _MLMH,
         "minimal",
-        None,
+        "2026-10-29",
     ),
     "google/gemini-3.1-pro-preview": (
         "gemini",
         "gemini-3.1-pro-preview",
         _LMH,
         "medium",
-        None,
+        "2026-10-29",
     ),
     "google/gemini-3-flash-preview": (
         "gemini",
         "gemini-3-flash-preview",
         ("none", *_MLMH),
         "medium",
-        None,
+        "2026-10-29",
     ),
     "moonshotai/kimi-k3": (
         "kimi",
         "kimi-k3",
         ("none", "low", "high", "max"),
         "max",
-        None,
+        "2026-10-29",
     ),
     "moonshotai/kimi-k3.1-pro": (
         "kimi",
         "kimi-k3.1-pro",
         ("none", "low", "high", "max"),
         "max",
-        None,
+        "2026-10-29",
     ),
     "deepseek/deepseek-v4-pro": (
         "deepseek",
         "deepseek-v4-pro",
         ("none", "high", "xhigh"),
         "high",
-        None,
+        "2026-10-29",
     ),
     "deepseek/deepseek-v4-flash": (
         "deepseek",
         "deepseek-v4-flash",
         ("none", "high", "xhigh"),
         "high",
-        None,
+        "2026-10-29",
     ),
     "mistralai/mistral-large-4-0": (
         "mistral",
         "mistral-large-4-0",
         ("none", "high"),
         "high",
-        None,
+        "2026-10-29",
     ),
     "mistralai/mistral-medium-3-5": (
         "mistral",
         "mistral-medium-3-5",
         ("none", "high"),
         "high",
-        None,
+        "2026-10-29",
     ),
 }
 
@@ -866,13 +916,34 @@ _EARLIER_REFUSAL = re.compile(
 _EARLIER_STATUS = re.compile(r"\b400\b|invalid_request", re.IGNORECASE)
 
 
+# An HTTP 400 that says the reply reached its output cap before it finished,
+# as OpenAI answers a check whose reasoning outruns CHECK_TOKENS
+# (settings/providers): the server took the request, its effort included.
+_CAPPED = re.compile(
+    r"\bmax_tokens or model output limit was reached\b",
+    re.IGNORECASE,
+)
+
+
+def capped(status, text):
+    """Whether a provider's HTTP 400 *text* says the reply reached its output
+    cap, which shows the server took the request and its effort; Check an
+    effort reads it as accepted, and it never refuses the effort
+    (``refuses``)."""
+    return status == 400 and bool(_CAPPED.search(text))
+
+
 def refuses(status, text):
     """Whether a provider's error refused a request for its thinking effort:
     HTTP 400 or 422, which providers don't bill, whose *text* refuses the
     effort, reasoning or thinking itself (``_REFUSED``). With *status* None,
     *text* names it, as a Batch row's error does."""
     refused = status in (400, 422) if status is not None else bool(_STATUS.search(text))
-    return refused and bool(_REFUSED.search(_LIMIT.sub(" ", text)))
+    return (
+        refused
+        and not capped(status, text)
+        and bool(_REFUSED.search(_LIMIT.sub(" ", text)))
+    )
 
 
 def rejected(error, level, rule=None):

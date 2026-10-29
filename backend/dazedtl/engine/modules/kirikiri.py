@@ -193,8 +193,9 @@ def translateKiriKiri(data, pbar, filename, jobList):
             data[i] = found.written(speaker)
             checkLine(data, i, filename)
             i += 1
-            if i == len(data):
-                break
+            # A speaker right after it says the line instead
+            if i == len(data) or find_speaker(speakerRegex, data[i]):
+                continue
 
         # Choices
         match = re.search(choicesRegex, data[i])
@@ -266,20 +267,21 @@ def translateKiriKiri(data, pbar, filename, jobList):
                 if data[i].strip() == "[▼]":
                     pass
                 else:
+                    # The text sent: no wrapping, glyph markers or furigana.
+                    # A line of spaces alone sends nothing, so it takes no reply.
+                    line_content = data[i].rstrip("\n")
+                    line_content = line_content.replace("[r]", " ")
+                    line_content = re.sub(r"\[▼\]", "", line_content)
+                    matchList = re.findall(furiganaRegex, line_content)
+                    if matchList:
+                        for fm in matchList:
+                            line_content = line_content.replace(fm[0], fm[1])
+                    cleaned = line_content.strip()
+                    if not cleaned:
+                        pass
                     # Pass 1
-                    if not setData:
-                        line_content = data[i].rstrip("\n")
-                        # Remove inline wrapping markers and glyph markers
-                        line_content = line_content.replace("[r]", " ")
-                        line_content = re.sub(r"\[▼\]", "", line_content)
-                        # Remove furigana blocks
-                        matchList = re.findall(furiganaRegex, line_content)
-                        if matchList:
-                            for fm in matchList:
-                                line_content = line_content.replace(fm[0], fm[1])
-                        cleaned = line_content.strip()
-                        if cleaned:
-                            stringList.append(cleaned)
+                    elif not setData:
+                        stringList.append(cleaned)
                     # Pass 2
                     else:
                         if len(stringList) > 0:

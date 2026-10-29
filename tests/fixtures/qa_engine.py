@@ -8,13 +8,16 @@ import json
 import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from unittest.mock import patch
 
 root, temporary = map(Path, sys.argv[1:])
 sys.path.insert(0, str(root / "backend/dazedtl/engine"))
 
 from util import rpgmaker_qa as qa
 from util import rpgmaker_script_strings as script_strings
+from util import system
 from util.qa import advance as qa_advance
+from util.qa import briefs as qa_briefs
 from util.qa import claims as qa_claims
 from util.qa import pace as qa_pace
 from util.qa import prepare as qa_prepare
@@ -248,6 +251,15 @@ worker = qa.brief(task, "worker")
 assert "{{" not in worker and str(task / "context.json") not in worker, worker
 assert all(f"## {title}" in worker for title in qa._BRIEF_SECTIONS["worker"]), worker
 assert f"## Translation quirks\n\n{QUIRK}" in worker, worker
+# On Windows a worker's first command, the brief, is PowerShell, so the prompt
+# the coordinator hands it carries the shell note its brief starts with.
+# Its here-document ends only on an unindented end marker.
+NOTE = "PowerShell:\n```\npowershell.exe \"$(cat <<'END'\n<command>\nEND\n)\"\n```\n\n"
+with patch.object(system, "shell_note", return_value=NOTE):
+    readme = qa_briefs._task_instructions(task, qa_storage.task_json(task))
+    assert qa.brief(task, "worker").startswith(NOTE)
+assert readme.startswith(f"# Text QA task\n\n{NOTE}"), readme
+assert f"\n````text\n{NOTE}You are text QA worker <name>. Run " in readme, readme
 
 
 def result_path(name, value):
