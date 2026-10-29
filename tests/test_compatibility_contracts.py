@@ -614,6 +614,22 @@ class CompatibilityContracts(unittest.TestCase):
         )
         self.assertEqual((reading.route, reading.figure["route"]), (None, None))
         self.assertEqual(reading.figure["cost"], quote["cost"])
+
+        # Approving it reads the full settings, which read a policy not
+        # looked up as none too: only one looked up as none prices it again,
+        # and one that can't be looked up says so.
+        def approved(looked_up):
+            return Translation.reading(
+                {"quote": quote, "configuration": frozen},
+                change,
+                live,
+                route,
+                lambda: looked_up,
+            )
+
+        self.assertEqual(approved(live), reading)
+        with self.assertRaisesRegex(ValueError, "check failed"):
+            approved(custom)
         # A quote saved before quotes named their route, by a run whose
         # record kept no settings, reads the current settings' route, so an
         # OpenAI one priced before OpenAI's rules last changed still reads

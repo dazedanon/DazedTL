@@ -17,7 +17,9 @@ of the settings it is read at (``read_at``): one whose settings now send it
 on another route than the one that priced it (``rerouted``) is priced again
 on theirs the same way. ``read`` decides this for every saved figure a user
 approves or reads: an Assistant-led quote waiting for approval, a Guided
-Translate estimate and a whole-game estimate.
+Translate estimate and a whole-game estimate. Work starts from one by the
+same reading at the settings it would freeze (``start``), which refuses it
+while a price it needs can't be read (``require_readable``).
 """
 
 from dataclasses import dataclass, replace
@@ -227,6 +229,41 @@ def read(change, before, after, route, again):
     on = route(settings)
     figure = again(settings, on)
     return OUTDATED if figure is None else Reading(True, settings, figure, on)
+
+
+# Why work can't start from a figure while a price it needs can't be read.
+UNREADABLE = "This estimate's prices can't be read right now, such as after its connection's check failed. Check the connection in Settings, then try again."
+
+
+def require_readable(change, before, lookup):
+    """Refuses work priced with the settings ``before`` whose full settings
+    now differ from them, under ``change`` (freshness.compare), only in a
+    price that can't be read at the moment. The full settings a start
+    freezes read an OpenRouter Batch policy not looked up, as after a failed
+    check, as no Batch, so ``lookup()`` reads them again leaving out each
+    price no lookup finds now (settings/execution.configuration
+    ``unpriced``), reusing the lookups the full read just made. The view
+    shows such work as saved, reading it at its own settings (``read_at``),
+    but nothing can start at a price that can't be read: this raises
+    ValueError(UNREADABLE) instead of calling the settings changed or
+    pricing it as if it had no Batch."""
+    if (
+        change is not None
+        and change.settings
+        and change.priced_only
+        and before
+        and unknown_prices(before, lookup())
+    ):
+        raise ValueError(UNREADABLE)
+
+
+def start(change, before, after, route, again, lookup):
+    """How a figure priced with the settings ``before`` reads when work
+    starts from it: as ``read`` reads it at ``after``, the full settings the
+    work would freeze, once its prices can be read there
+    (``require_readable``)."""
+    require_readable(change, before, lookup)
+    return read(change, before, after, route, again)
 
 
 def approval_token(token, configuration, route):
