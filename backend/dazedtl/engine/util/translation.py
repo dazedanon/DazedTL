@@ -4029,6 +4029,44 @@ def _lookup_model_price(model: str):
     return None
 
 
+def _claude_pricing(model):
+    """getPricingConfig's table for a Claude model (is_claude_model), by its
+    family and version in any host's form, in lower case."""
+    if "claude-fable" in model or "claude-mythos" in model:
+        rates = (10.00, 50.00)
+    elif "claude-opus-5-5" in model:
+        rates = (4.00, 20.00)
+    elif (
+        "claude-opus-4-5" in model or "claude-opus-4-6" in model
+        or "claude-opus-4-7" in model or "claude-opus-4-8" in model
+        or "claude-opus-5" in model
+    ):
+        rates = (5.00, 25.00)
+    elif "claude-opus" in model or model == "claude-3-opus":
+        # Opus 4, 4.1, 3
+        rates = (15.00, 75.00)
+    elif "claude-haiku-4-5" in model or "claude-haiku-4-6" in model:
+        rates = (1.00, 5.00)
+    elif "claude-haiku-3-5" in model:
+        rates = (0.80, 4.00)
+    elif "claude-3-haiku" in model:
+        rates = (0.25, 1.25)
+    elif "haiku" in model:
+        # An unknown Haiku version: the current flagship's price as a best guess.
+        rates = (1.00, 5.00)
+    elif "claude-sonnet-5" in model:
+        # Sonnet 5 and 5.5
+        rates = (2.00, 10.00)
+    else:
+        rates = (3.00, 15.00)
+    return {
+        "inputAPICost": rates[0],
+        "outputAPICost": rates[1],
+        "batchSize": 30,
+        "frequencyPenalty": 0.05,
+    }
+
+
 def getPricingConfig(model):
     """
     Get pricing configuration for a given model.
@@ -4091,33 +4129,11 @@ def getPricingConfig(model):
         cfg = {"inputAPICost": 0.30,  "outputAPICost": 0.90,  "batchSize": 40, "frequencyPenalty": 0.0}
     elif "mistral" in model or "pixtral" in model:
         cfg = {"inputAPICost": 2.00,  "outputAPICost": 6.00,  "batchSize": 40, "frequencyPenalty": 0.0}
-    elif "claude-fable" in model or "claude-mythos" in model:
-        cfg = {"inputAPICost": 10.00, "outputAPICost": 50.00, "batchSize": 30, "frequencyPenalty": 0.05}
-    elif "claude-opus-5-5" in model:
-        cfg = {"inputAPICost": 4.00,  "outputAPICost": 20.00, "batchSize": 30, "frequencyPenalty": 0.05}
-    elif (
-        "claude-opus-4-5" in model or "claude-opus-4-6" in model
-        or "claude-opus-4-7" in model or "claude-opus-4-8" in model
-        or "claude-opus-5" in model
-    ):
-        cfg = {"inputAPICost": 5.00,  "outputAPICost": 25.00, "batchSize": 30, "frequencyPenalty": 0.05}
-    elif "claude-opus" in model or model == "claude-3-opus":
-        # Opus 4, 4.1, 3 — $15/$75
-        cfg = {"inputAPICost": 15.00, "outputAPICost": 75.00, "batchSize": 30, "frequencyPenalty": 0.05}
-    elif "claude-haiku-4-5" in model or "claude-haiku-4-6" in model:
-        cfg = {"inputAPICost": 1.00,  "outputAPICost": 5.00,  "batchSize": 30, "frequencyPenalty": 0.05}
-    elif "claude-haiku-3-5" in model:
-        cfg = {"inputAPICost": 0.80,  "outputAPICost": 4.00,  "batchSize": 30, "frequencyPenalty": 0.05}
-    elif "claude-3-haiku" in model:
-        cfg = {"inputAPICost": 0.25,  "outputAPICost": 1.25,  "batchSize": 30, "frequencyPenalty": 0.05}
-    elif "haiku" in model:
-        # Unknown haiku version — use current flagship pricing as best guess
-        cfg = {"inputAPICost": 1.00,  "outputAPICost": 5.00,  "batchSize": 30, "frequencyPenalty": 0.05}
-    elif "claude-sonnet-5" in model:
-        # Sonnet 5 and 5.5
-        cfg = {"inputAPICost": 2.00,  "outputAPICost": 10.00, "batchSize": 30, "frequencyPenalty": 0.05}
-    elif "sonnet" in model or "claude" in model:
-        cfg = {"inputAPICost": 3.00,  "outputAPICost": 15.00, "batchSize": 30, "frequencyPenalty": 0.05}
+    elif is_claude_model(model):
+        # Only a Claude name, by the one rule, takes Claude's rates; another
+        # model whose name holds a family word, such as "sonnet-like", takes
+        # the unknown model's below.
+        cfg = _claude_pricing(str(model).lower())
     elif "gemini-3.6-flash" in model:
         # Google AI Developer API standard rates. Batch is applied separately
         # by estimateBatchCost/_price_usage at the provider's 50% discount.

@@ -1900,6 +1900,18 @@ class CompatibilityContracts(unittest.TestCase):
                     # the engine's settings.
                     self.assertEqual(translation.isClaudeNative(model), expected[0])
                     self.assertEqual(translation.isClaudeModel(model), routes is claude)
+            # Pricing gives Claude's rates to a Claude name only: another
+            # model, with no catalog price, takes the unknown model's
+            # fallback, which a price lookup reads as unpriced.
+            with (
+                self.subTest(model=model, rule="price"),
+                patch.object(translation, "_lookup_model_price", return_value=None),
+                patch.dict(os.environ, {"input_cost": "-1", "output_cost": "-1"}),
+            ):
+                self.assertEqual(
+                    translation.getPricingConfig(model)["inputAPICost"] == -1,
+                    routes is other and not model.startswith("deepseek-"),
+                )
 
     def test_mistral_follows_the_json_mode_strict_and_retry_rules(self):
         # The JSON-mode downgrade spent a retry attempt, so a format rejection
