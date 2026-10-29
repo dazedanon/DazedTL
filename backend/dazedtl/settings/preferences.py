@@ -159,13 +159,12 @@ SMALL_KANA = "small-kana-v1"
 # without it retries every failed request and fails only the file, as it did
 # when approved.
 RUN_STOPS = "repeated-errors-v1"
-# A Guided Live request is sent again only when no try of it may have been
-# processed and billed and another may pass: it never connected, met a rate
-# limit (429) or a preset provider's own server error
-# (compatibility/resends). The SDKs send nothing again themselves; the
-# engine's retry alone decides. A request any try of which may have been
-# billed, such as one a gateway timed out, is not sent again and reads
-# uncertain. A run frozen without it retries every failed request, each try
+# A failed Guided Live request is sent again, alone, only when no try of it
+# may have been billed and another may pass (compatibility/transmission
+# resendable), and the SDKs send nothing again themselves
+# (compatibility/resends). A request any try of which may have been billed,
+# such as one a gateway timed out, is not sent again and reads uncertain. A
+# run frozen without it sends every failed call again whole, each try up to
 # three times in the SDK, as it did when approved.
 RESENDS = "unprocessed-only-v1"
 # The policies every new run freezes in its request policy alone, unlike

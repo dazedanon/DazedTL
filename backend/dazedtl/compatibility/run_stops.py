@@ -189,5 +189,5 @@ def configure(translation, policy, root, *, coordinator=False):
     record = Record(root)
     if coordinator:
         record.reset()
-    # Outermost, so it also sees the effort refusal (request_parameters).
+    # Outside request_parameters' layer, so it also sees the effort refusal.
     translation.translateText.layer(LAYER, partial(guarded, translation, record))

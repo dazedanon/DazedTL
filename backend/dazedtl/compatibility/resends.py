@@ -1,11 +1,9 @@
-"""The resend rule of a Guided run frozen with settings/preferences RESENDS:
-the engine's retry sends a failed Live request again only when the provider
-provably did not process it and another try may pass (transmission
-resendable). The SDKs send nothing again themselves (the engine's RESENDS).
-A request any try of which may have been billed, such as one a gateway timed
-out after the model answered, fails its call at once; its record reads
-uncertain for the user to check (run_evidence), and the run goes on with
-its other requests."""
+"""The resend rule of a Guided run frozen with settings/preferences RESENDS,
+which the engine's retry follows (util/translation _send_live): a failed Live
+request is sent again only when transmission.resendable reads its tries as
+unprocessed and worth another try. Any other failure, such as a gateway's
+timeout, fails the call at once, and its record reads uncertain
+(run_evidence)."""
 
 from functools import partial
 
@@ -30,6 +28,8 @@ def guarded(translation, native, *args, **kwargs):
 
 
 def configure(translation, policy):
+    """Follows the rule in a run frozen with it. The layer watches every try
+    its call sends, so its place among the other layers does not matter."""
     translation.RESENDS = bool(policy and policy.get("resends") == RESENDS)
     if not translation.RESENDS:
         translation.translateText.remove(LAYER)

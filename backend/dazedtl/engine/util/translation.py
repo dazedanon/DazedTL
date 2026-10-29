@@ -2079,16 +2079,14 @@ RUN_STOPS = False
 # The stops this worker raised, for a module that caught one.
 _run_stops = []
 # A run frozen with the resend policy (settings/preferences RESENDS) sends a
-# failed Live request again only when the provider provably did not process
-# it (RequestUnprocessedError), and its SDK clients send nothing again
-# themselves (sdk_retries). Runs frozen without it retry every failed call,
-# each in the SDK's own retries too.
+# failed Live request again only as _send_live says, and its SDK clients send
+# nothing again themselves (sdk_retries).
 RESENDS = False
-# How often translateAI sends a failed Live call, and the seconds between.
+# How many times in all translateAI sends a failing Live call, or under the
+# resend policy its failing request, and the seconds between.
 LIVE_TRIES = 5
 RETRY_DELAY = 5
-# The longest wait a provider's Retry-After is followed for, as the SDKs'
-# own retries follow it.
+# The longest a provider's Retry-After is waited for, as the SDKs wait.
 RETRY_AFTER_LIMIT = 60
 
 
@@ -3761,9 +3759,11 @@ def callMistral(params, retries=6):
             last_error = e
             resp = getattr(e, "response", None)
             limiter.update(getattr(resp, "headers", None))
-            # The last attempt raises at once, as the other errors do.
+            # The last attempt raises at once, as the other errors do; under
+            # the resend policy as the provider's own error, whose wait
+            # translateAI's retry follows.
             if attempt >= retries:
-                if _keeps_provider_error(params):
+                if RESENDS or _keeps_provider_error(params):
                     raise
                 break
             retry_after = None
@@ -6036,7 +6036,7 @@ def _send_live(config, send):
 def _retry_delay(error):
     """Seconds before a request that failed with *error* is sent again:
     RETRY_DELAY, or the longer wait its provider's answer asks for
-    (Retry-After, as with a rate limit) up to RETRY_AFTER_LIMIT."""
+    (Retry-After, as with a rate limit), at most RETRY_AFTER_LIMIT."""
     seen = set()
     while error is not None and id(error) not in seen:
         seen.add(id(error))
@@ -6046,8 +6046,8 @@ def _retry_delay(error):
                 wait = float(headers.get(name)) * unit
             except (AttributeError, TypeError, ValueError):
                 continue
-            if 0 < wait <= RETRY_AFTER_LIMIT:
-                return max(RETRY_DELAY, wait)
+            if wait > 0:
+                return min(max(RETRY_DELAY, wait), RETRY_AFTER_LIMIT)
         error = error.__cause__ or error.__context__
     return RETRY_DELAY
 

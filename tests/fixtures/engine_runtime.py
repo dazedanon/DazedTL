@@ -4467,7 +4467,20 @@ try:
                 ),
             )
 
+        # A rate limit's wait is followed, up to a minute, as the SDK's own
+        # retries followed it.
+        from openai import RateLimitError
+
         unprocessed = translation.RequestUnprocessedError("HTTP 429")
+        unprocessed.__cause__ = RateLimitError(
+            "Error code: 429",
+            response=httpx.Response(
+                429,
+                headers={"retry-after": "90"},
+                request=httpx.Request("POST", "https://provider.invalid/v1"),
+            ),
+            body=None,
+        )
         gateway = Exception("API server error (504)")
         kept = '{"translations":["鎧"]}'
         helm = '{"translations":["Helm"]}'
@@ -4475,10 +4488,17 @@ try:
         translation.translateText.layer("resend-check", answered)
         try:
             # Each case asks for a new second line, which the first saved.
-            for resends, script, sent, other, output in (
-                (True, [kept, unprocessed, unprocessed, helm], 4, "兜", "Helm"),
-                (True, [kept, gateway], 2, "籠手", None),
-                (False, [kept, gateway, kept, helm], 4, "靴", "Helm"),
+            for resends, script, sent, other, output, waits in (
+                (
+                    True,
+                    [kept, unprocessed, unprocessed, helm],
+                    4,
+                    "兜",
+                    "Helm",
+                    [60] * 2,
+                ),
+                (True, [kept, gateway], 2, "籠手", None, []),
+                (False, [kept, gateway, kept, helm], 4, "靴", "Helm", [5]),
             ):
                 answers[:], asked[:] = script, []
                 with (
@@ -4486,7 +4506,7 @@ try:
                         os.environ, {"BATCH_PHASE": "", "API_PROVIDER": "openai"}
                     ),
                     patch.object(translation, "RESENDS", resends),
-                    patch("time.sleep"),
+                    patch("time.sleep") as slept,
                 ):
                     try:
                         result = translation.translateAI(
@@ -4500,6 +4520,7 @@ try:
                 assert len(asked) == sent, (case, asked)
                 # Only the failed request is sent again under the policy.
                 assert asked.count("鎧") == (1 if resends else 2), (case, asked)
+                assert [wait.args[0] for wait in slept.call_args_list] == waits, case
         finally:
             translation.translateText.remove("resend-check")
     # Structured refusals survive the real native normalizers, including empty
