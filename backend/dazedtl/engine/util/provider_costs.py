@@ -106,10 +106,12 @@ def is_openai_model(model: str) -> bool:
 # A Claude model by its name, on Anthropic's API or any other host: a name
 # starting "claude-", in any dated or versioned form, alone or as another host
 # names it: OpenRouter's "anthropic/" (or "~anthropic/" for its latest
-# aliases) and Bedrock's "anthropic." with or without a region. Another
-# model's name holding a Claude family word, such as "magnum-opus-72b", is
-# not Claude's.
-_CLAUDE_MODEL = re.compile(r"~?(?:(?:[a-z]+\.)?anthropic[./])?claude-[a-z0-9]")
+# aliases) and Bedrock's "anthropic." with or without a region, behind a
+# gateway's own prefix such as "bedrock/". Another model's name holding a
+# Claude family word, such as "magnum-opus-72b", is not Claude's.
+_CLAUDE_MODEL = re.compile(
+    r"(?:(?:[\w.~-]+/)*~?(?:[a-z-]+\.)?anthropic[./])?claude-[a-z0-9]"
+)
 
 
 def is_claude_model(model: str) -> bool:

@@ -3661,6 +3661,17 @@ def _get_mistral_limiter():
         return _mistral_limiter
 
 
+def _keeps_provider_error(params):
+    """Whether a failed Mistral request raises the provider's own error: a
+    structured (json_schema) request in a strict structured run, which keeps
+    it for the evidence and retry guards instead of sending a weaker output
+    format, as translateText's OpenAI path does."""
+    return (
+        STRICT_STRUCTURED_OUTPUTS
+        and (params.get("response_format") or {}).get("type") == "json_schema"
+    )
+
+
 def callMistral(params, retries=6):
     """Call the Mistral chat completions endpoint with adaptive pacing.
 
@@ -3688,6 +3699,8 @@ def callMistral(params, retries=6):
             limiter.update(getattr(resp, "headers", None))
             # The last attempt raises at once, as the other errors do.
             if attempt >= retries:
+                if _keeps_provider_error(params):
+                    raise
                 break
             retry_after = None
             try:
@@ -3697,11 +3710,7 @@ def callMistral(params, retries=6):
             time.sleep(retry_after if retry_after is not None else min(60, 2 ** attempt + random.random() * 2))
         except openai.APIStatusError as e:
             last_error = e
-            structured = (params.get("response_format") or {}).get("type") == "json_schema"
-            # Strict structured runs keep the provider's error for the
-            # evidence and retry guards instead of sending a weaker output
-            # format, as translateText's OpenAI path does.
-            if structured and STRICT_STRUCTURED_OUTPUTS:
+            if _keeps_provider_error(params):
                 if e.status_code < 500 or attempt >= retries:
                     raise
             # Mistral rejects unsupported params with 400/422 - downgrade the
@@ -3710,7 +3719,7 @@ def callMistral(params, retries=6):
             # attempt: on the last attempt it is still sent.
             elif (
                 e.status_code in (400, 422)
-                and structured
+                and (params.get("response_format") or {}).get("type") == "json_schema"
                 and falls_back_to_json_mode(e)
             ):
                 params = dict(params)

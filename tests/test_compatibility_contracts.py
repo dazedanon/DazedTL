@@ -1810,6 +1810,8 @@ class CompatibilityContracts(unittest.TestCase):
             ("anthropic/claude-sonnet-4.5:beta", claude),
             ("~anthropic/claude-opus-latest", claude),
             ("us.anthropic.claude-sonnet-4-5-20250929-v1:0", claude),
+            ("us-gov.anthropic.claude-3-5-sonnet-20240620-v1:0", claude),
+            ("bedrock/anthropic.claude-3-haiku", claude),
             # Other models whose names hold a Claude family word are not
             # Claude's.
             ("magnum-opus-72b", other),
@@ -1932,6 +1934,18 @@ class CompatibilityContracts(unittest.TestCase):
                 retries=0,
             )
         sleep.assert_not_called()
+        # A strict run's last rate limit is the provider's own error too.
+        sent.clear()
+        with (
+            patch.object(translation, "openai", client),
+            patch.object(translation, "_get_mistral_limiter", return_value=limiter),
+            patch.object(translation, "STRICT_STRUCTURED_OUTPUTS", True),
+            self.assertRaises(openai.RateLimitError),
+        ):
+            translation.callMistral(
+                {"messages": [], "response_format": {"type": "json_schema"}},
+                retries=0,
+            )
 
     def test_an_openai_batch_estimate_prices_cache_reads_at_the_models_price(self):
         # Every OpenAI Batch estimate priced cache reads at a tenth of input,
