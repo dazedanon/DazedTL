@@ -1,9 +1,9 @@
 """Translate ``image_text.json`` - the text found in a game's images.
 
 Step 3 of the image workflow. The user reads the images and confirms the boxes
-in the review editor (Images tab -> "Edit text..."), which exports this file
-into ``files/``; they then pick the **Image Text** module here and press
-Translate like any other engine.
+in the review editor, which exports this file as the input of an Image Text
+run; the run reads it from ``files/`` like any other engine, and the Images
+task imports the result from ``translated/``.
 
 Running it as a normal translation module rather than a one-off button is the
 point: progress, the live log, cost accounting, estimate mode, and the project's
