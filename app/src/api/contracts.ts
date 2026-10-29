@@ -1485,6 +1485,7 @@ export type TranslationQuote = {
   output_rules?: number;
   model: string;
   provider: string;
+  route?: string | null;
   basis: string;
   rates: QuoteRates;
 };

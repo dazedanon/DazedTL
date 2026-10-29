@@ -104,11 +104,20 @@ def route_rules(*routes):
     its price, the newest at which any of their rules changed: a figure's
     route is the Batch provider that priced it, None for none
     (provider_costs.route_price_rules). A Guided estimate and each task of a
-    whole-game estimate record it as ``provider``; an Assistant-led quote's
-    is its settings' Batch provider."""
+    whole-game estimate record it as ``provider``, an Assistant-led quote as
+    ``route`` (``quote_route``)."""
     from util.provider_costs import route_price_rules
 
     return max(route_price_rules(route) for route in routes or (None,))
+
+
+def quote_route(quote, provider):
+    """The route that priced an Assistant-led quote, the Batch provider it
+    records as ``route``; one saved before quotes recorded it reads as
+    ``provider``, the Batch provider of its run's current settings. A quote
+    whose route is no longer its settings' is priced again on theirs
+    (service.changed_since)."""
+    return quote.get("route", provider)
 
 
 @dataclass(frozen=True)
@@ -147,10 +156,11 @@ def read(change, before, after, again):
     return OUTDATED if figure is None else Reading(True, settings, figure)
 
 
-def approval_token(token, configuration):
-    """The approval of a quote priced again with these settings under
-    today's price rules: it takes a new token, so approving binds to the
-    price shown."""
+def approval_token(token, configuration, route):
+    """The approval of a quote priced again with these settings on ``route``
+    under today's price rules: it takes a new token, so approving binds to
+    the price shown. The token follows only the rules of its own route
+    (``route_rules``), so a fix to another route's rules keeps it."""
     return digest(
-        {"token": token, "configuration": configuration, "rules": current_rules()}
+        {"token": token, "configuration": configuration, "rules": route_rules(route)}
     )[:32]
