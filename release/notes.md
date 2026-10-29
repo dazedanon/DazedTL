@@ -38,5 +38,8 @@
 - **Translate:** a line, speaker name or glossary entry holding text such as `<|endoftext|>` no longer fails its estimate or its Guided request with "Encountered text corresponding to disallowed special token"; it is counted as the text it is.
 - **Translate:** a file of a game other than RPG Maker or WOLF that fails partway when translated again now keeps its earlier translation as it was, instead of replacing it with the part that finished, or with an empty file for Lune, Ren'Py, Unity and CSV.
 - **Translate:** on Windows, a Lune, Ren'Py or Unity file no longer waits about two seconds after each line it translates.
+- **Translate:** an NScripter game's choices (`csel`) are now written with their own translation, where each choice was replaced with the dialogue line translated before it, and a file whose choices come before any dialogue no longer fails.
+- **Translate:** an RPG Maker plugin file with a quest name (`QuestName`) before any `txtSubject` line, or after one without a line break, no longer fails, and a quest name's own line break is now sent as a space.
+- **Translate:** a CSV file has no speaker column unless one is chosen, where the target column was read as each row's speaker, so a row whose target held text was sent with it as a speaker name and each row's translation was written to the next row; a speaker column set to the target column no longer shifts translations either.
 - **Translate:** a CSV file with nothing left to translate is now written whole, which wrote it empty.
 - **Translate:** an RPG Maker data or plugin file that cannot be saved now fails with the reason, such as a full disk, where an RPG Maker file read only "Translation failed" and a plugin file counted as translated.
