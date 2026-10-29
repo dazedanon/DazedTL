@@ -16,7 +16,7 @@ from tqdm import tqdm
 from util.languages import source_pattern
 from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost, found_mismatch, run_stop_errors
 from util.translation_task import fail_on_parser_error, module_receipt, write_output
-from util.speakers import strip_speaker_prefix
+from util.speakers import find_speaker, strip_speaker_prefix, to_prefixed
 
 # Globals
 MODEL = os.getenv("model")
@@ -197,32 +197,26 @@ def translateRegex(data, filename, translatedList):
                 title = re.sub(r"(?<!\\)'", r"\\'", title)
                 data[i] = data[i].replace(match.group(1), title)
 
-        # Speaker, translated in pass 1 only: pass 2 finds the name it wrote
-        match = re.search(lineRegexSpeaker, data[i])
-        if match and not translatedList:
-            response = getSpeaker(match.group(1))
+        # Speaker (util/speakers)
+        found = find_speaker(lineRegexSpeaker, data[i])
+        if found:
+            response = getSpeaker(found.name)
             speaker = response[0]
             tokens[0] += response[1][0]
-            tokens[1] += response[1][1] 
-            data[i] = data[i].replace(match.group(1), speaker)
+            tokens[1] += response[1][1]
+            data[i] = found.written(speaker)
 
         # Dialogue (JSON text field)
         match = re.search(dialogueRegex, data[i])
         if match:
             jaString = match.group(1)
-            
+
             # Replace linebreaks
             jaString = jaString.replace('\\n', ' ')
-            
+
             # Pass 1 - Collect for batch translation
             if not translatedList:
-                # Add with speaker prefix if available
-                if speaker:
-                    stringList.append(f"[{speaker}]: {jaString}")
-                else:
-                    stringList.append(jaString)
-                # Reset speaker after using it
-                speaker = ""
+                stringList.append(to_prefixed(speaker, jaString))
 
             # Pass 2 - Apply translated text
             else:
@@ -236,8 +230,8 @@ def translateRegex(data, filename, translatedList):
                         stringList = None
 
                     # Remove speaker prefix from translation
-                    translatedText = strip_speaker_prefix(translatedText)
-                    
+                    translatedText = strip_speaker_prefix(translatedText, speaker)
+
                     # Textwrap
                     translatedText = dazedwrap.wrapText(translatedText, width=WIDTH)
                     translatedText = translatedText.replace('\n', '\\n')
@@ -247,6 +241,9 @@ def translateRegex(data, filename, translatedList):
 
                     # Set
                     data[i] = data[i].replace(match.group(1), translatedText)
+
+            # The speaker says this text alone
+            speaker = ""
 
         # Sel (Selection menu)
         match = re.search(selRegex, data[i])
@@ -308,10 +305,7 @@ def translateRegex(data, filename, translatedList):
                 jaString = jaString.replace('\n', ' ')
 
                 if jaString:
-                    if speaker:
-                        stringList.append(f"[{speaker}]: {jaString}")
-                    else:
-                        stringList.append(jaString)
+                    stringList.append(to_prefixed(speaker, jaString))
 
             # Pass 2
             else:
@@ -326,7 +320,7 @@ def translateRegex(data, filename, translatedList):
                         stringList = None
 
                     # Remove speaker
-                    translatedText = strip_speaker_prefix(translatedText)
+                    translatedText = strip_speaker_prefix(translatedText, speaker)
 
                     # Escape Quotes
                     translatedText = re.sub(r'(?<!\\)"', r"", translatedText)

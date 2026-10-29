@@ -5,21 +5,26 @@ from __future__ import annotations
 import re
 from datetime import UTC, datetime
 
-# The version of the rules that price counted tokens: a Batch discount, a
-# cache read or write multiple, the Live formula. Every quote and estimate
-# saved for later display or approval records the version it was priced
-# under (PRICE_RULES_VERSION). One priced under an older version than the
-# one its route's rules last changed at (ROUTE_PRICE_RULES) is priced again
-# from its counts on its next view, or reads outdated when its counts can't
-# be (translation/repricing); one on a route a fix left alone stands.
-# A figure's route is the Batch provider that priced it, as
-# batch_providers.detect_batch_provider names it, "openrouter" for an
-# OpenRouter Batch and None for a route without one: an estimate's Live price
-# is its rates alone, and every rule that prices its cache or discount
-# follows that provider.
-# A change that prices the same counts differently sets each route it
-# changes to the next version here, or EVERY_ROUTE_PRICE_RULES when it
-# changes them all, which raises PRICE_RULES_VERSION.
+# The version of the rules that price a quote's or estimate's counted tokens:
+# a Batch discount, a Batch's cache read or write multiple, the Live formula.
+# Every quote and estimate saved for later display or approval records the
+# version it was priced under (PRICE_RULES_VERSION). One priced under an
+# older version than the one its route's rules last changed at
+# (ROUTE_PRICE_RULES) is priced again from its counts on its next view, or
+# reads outdated when its counts can't be (translation/repricing); one on a
+# route a fix left alone stands.
+# A figure's route is the Batch provider that priced it, by the one rule its
+# worker and the views read it by (compatibility/openrouter_batch
+# batch_route), "openrouter" for an OpenRouter Batch and None for settings
+# without one. Its routes are Batch providers alone: a figure's Live price
+# is its counts at its rates, which no route's rules touch, and every rule
+# that prices its cache or discount follows its Batch provider. A fix to a
+# Live price, such as a Live response's cache prices on its Live price route
+# (batch_providers.live_price_route), changes no saved figure, only what a
+# run's usage costs, so it names no route here.
+# A change that prices the same counts differently takes the next version,
+# setting each route it changes to it here, or EVERY_ROUTE_PRICE_RULES when
+# it changes them all; PRICE_RULES_VERSION is the newest.
 # A change to what is counted, such as the output allowance, changes the
 # counts themselves and raises the counting kind's own version instead.
 # 1: every figure saved before figures recorded it. 2: OpenAI's per-model
@@ -27,13 +32,13 @@ from datetime import UTC, datetime
 # no cache reads in an OpenAI Batch on the models whose Batch doesn't cache
 # (openai_batch_caches). 4, OpenAI: an OpenAI Batch that writes the cache but
 # expects no reads shows its price with those writes
-# (translation.openai_cache_prices). 5, no Batch route: Claude's cache reads
-# at each model's rate in any host's form of its name, such as a native-Claude
-# proxy's "claude-opus-5.5" (cache_read_multiplier); the Batch routes take no
-# such name or, on OpenRouter, price at its policy's frozen rates.
+# (translation.openai_cache_prices). 5: no route's. A fix to Claude's Live
+# cache reads in any host's form of its name (cache_read_multiplier) first
+# named the route without a Batch, though it changed no saved figure's price;
+# figures priced since record it, so the next fix takes 6.
 EVERY_ROUTE_PRICE_RULES = 2
-ROUTE_PRICE_RULES = {"openai": 4, None: 5}
-PRICE_RULES_VERSION = max(EVERY_ROUTE_PRICE_RULES, *ROUTE_PRICE_RULES.values())
+ROUTE_PRICE_RULES = {"openai": 4}
+PRICE_RULES_VERSION = max(5, EVERY_ROUTE_PRICE_RULES, *ROUTE_PRICE_RULES.values())
 
 
 def route_price_rules(route: str | None) -> int:
@@ -149,19 +154,24 @@ def is_claude_model(model: str) -> bool:
 
 def is_claude_native(model: str, address: str | None) -> bool:
     """Whether a Live request for ``model`` to ``address`` goes through
-    Anthropic's own SDK: a Claude model with no address set, or one holding
-    "anthropic", such as a proxy path. Any other address, OpenRouter's or a
-    Custom host's, takes the OpenAI-compatible path even for Claude models.
-    Batches need Anthropic's own API (batch_providers.detect_batch_provider)."""
-    address = str(address or "").strip().lower()
-    return is_claude_model(model) and (not address or "anthropic" in address)
+    Anthropic's own SDK: a Claude model on Anthropic's own API
+    (on_anthropic_api) or under a proxy path holding "anthropic". Any other
+    address, OpenRouter's or a Custom host's, one whose host name holds
+    "anthropic" included, takes the OpenAI-compatible path even for Claude
+    models. Batches need Anthropic's own API
+    (batch_providers.detect_batch_provider)."""
+    from dazedtl.settings.providers import address_path
+
+    return is_claude_model(model) and (
+        on_anthropic_api(address) or "anthropic" in address_path(address)
+    )
 
 
 def on_anthropic_api(address: str | None) -> bool:
     """Whether a native Claude request to ``address`` reaches Anthropic's own
     API: no address set, or one at its host (settings/providers own_api). A
-    proxy path holding "anthropic", or another host whose name holds it, is
-    sent Live natively but is not Anthropic's API."""
+    proxy path holding "anthropic" is sent Live natively but is not
+    Anthropic's API."""
     from dazedtl.settings.providers import own_api
 
     return not str(address or "").strip() or own_api("anthropic", address)

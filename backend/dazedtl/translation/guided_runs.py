@@ -282,14 +282,18 @@ class GuidedRuns:
         while it is current for ``inputs``; for an estimate run, its
         ``estimate`` priced under older price rules than its route's
         (repricing.route_rules) changed too, as did one priced on another
-        route than ``route``, the Batch provider of ``inputs``' settings
-        (repricing.rerouted). With ``reprice``, settings that differ only in
-        prices not known yet count as the same."""
+        route than its settings take now, which ``route`` gives
+        (repricing.route_of, repricing.rerouted). With ``reprice``, settings
+        that differ only in prices not known yet count as the same."""
         saved = cls.saved(record, inputs)
         current = Basis(RUN_VERSION, {}, inputs["fingerprint"], inputs["shape"])
+        before = record.get("configuration")
         priced = None
         if estimate is not None:
-            priced = repricing.estimate_route(estimate, route)
+            assert route is not None  # An estimate is read with its route rule.
+            priced = repricing.estimate_route(
+                estimate, repricing.own_route(route, before, inputs["configuration"])
+            )
             saved = replace(saved, prices=repricing.rules(estimate))
             current = replace(current, prices=repricing.route_rules(priced))
         change = compare(
@@ -303,21 +307,19 @@ class GuidedRuns:
         )
         if estimate is None:
             return change
-        return repricing.rerouted(change, [priced], route)
+        return repricing.rerouted(
+            change, [priced], before, inputs["configuration"], route
+        )
 
     def route(self, configuration):
-        """The Batch route ``configuration`` would send a run on, the
-        provider whose prices an estimate made with it records; None for
-        none, or for a frozen OpenRouter policy this version refuses."""
-        try:
-            return self.guided.translation.engine.batch_supported(configuration)
-        except KeyError, ValueError:
-            return None
+        """The route an estimate priced with ``configuration`` takes
+        (repricing.route_of)."""
+        return repricing.route_of(self.guided.translation.engine, configuration)
 
     def reading(self, project_id, native, identity, inputs):
         """How a phase's estimate run reads for ``inputs`` (repricing.read):
         a finished estimate still in use stands as saved, is priced again
-        from its counts on the route its settings take now, or reads
+        from its counts on the route of the settings it is read at, or reads
         outdated."""
         from dazedtl.compatibility.estimate_prices import reprice
 
@@ -326,12 +328,12 @@ class GuidedRuns:
             return repricing.OUTDATED
         record = self.records(project_id).get(identity, {})
         estimate = job["estimate"]
-        route = self.route(inputs["configuration"])
         return repricing.read(
-            self.changed(record, inputs, estimate=estimate, route=route),
+            self.changed(record, inputs, estimate=estimate, route=self.route),
             record.get("configuration"),
             inputs["configuration"],
-            lambda settings: reprice(estimate, settings, route),
+            self.route,
+            lambda settings, route: reprice(estimate, settings, route),
         )
 
     def publish_names(self, project_id, native):

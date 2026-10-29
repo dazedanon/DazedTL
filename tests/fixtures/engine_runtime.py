@@ -624,6 +624,7 @@ try:
                     CODE122=True,
                     CODE300=True,
                     MISMATCH=[],
+                    NAMESLIST=[],
                     translateAI=wolf_odd,
                 ),
                 redirect_stdout(printed),
@@ -645,17 +646,23 @@ try:
         dialogue = {"code": 101, "stringArgs": ["こんにちは"]}
         script = {"code": 122, "stringArgs": ["薬草"]}
         battle = {"code": 300, "stringArgs": ["BTLメッセージ", "攻撃"]}
+        # A speaker's name is written to its nameplate alone: written over the
+        # whole message, it also renamed the speaker in a line left in its
+        # source text.
+        speaking = {"code": 101, "stringArgs": ["@1\n村人：\n村人だよ"]}
         for commands, written, marked in (
             ([choices], [choices], 1),
             ([window], [window], 1),
             ([asking], [asking], 1),
+            ([speaking], [{**speaking, "stringArgs": ["@1\nEn 村人：\n村人だよ"]}], 1),
             (
                 [dialogue, script, battle],
                 [dialogue, {**script, "stringArgs": ["EN 薬草"]}, battle],
                 2,
             ),
         ):
-            assert wolf_misfit(*commands) == (written, ["M.json"], marked), commands
+            got = wolf_misfit(*commands)
+            assert got == (written, ["M.json"], marked), (commands, got)
         # A chunk translateAI kept in its source text after failed validation
         # came back the right length, so its lines were written back with
         # their line breaks turned into spaces ("勇者の 記録"); a page's list
@@ -955,12 +962,33 @@ try:
         # the next row. CSV, Kirikiri, Regex, Lune, Tyrano and WOLF2 sent each
         # speaker name again in the pass that writes the translations, as it
         # then held its translation, and WOLF2 its choices too; Lune refused
-        # the .l files it is offered.
+        # the .l files it is offered. Lune moved on once per text field, so it
+        # skipped the entry after one with two, and after a mismatch wrote the
+        # next batch one entry early. WOLF2 and CSV found the lines to write
+        # by parsing the file again, so a name translated with the parser's
+        # own mark ("/", "]") moved or dropped a translation; CSV and Kirikiri
+        # also wrote the name over the rest of its line or cell. WOLF2's
+        # last-resort reader, for a file no encoding reads whole, kept "\r\n"
+        # line ends, which joined the whole file into one line. Text and
+        # JSON's list format still sent each speaker again; Regex wrote a
+        # name over its whole line, renaming a voice file on it; a name
+        # holding "]" kept the "[Speaker]: " the request added in the game
+        # text, and Lune cut any reply starting with a word and a colon.
+        # WOLF2 read a line holding "：" as a speaker, skipped a choice right
+        # after a line of text, and failed a file ending on a speaker or a
+        # choice. CSV kept a target's :name[] tag in Japanese, and wrote the
+        # reply to a tag with no line after it between every letter of a
+        # filled target.
         shapes = temporary / "engine-shapes"
         for folder in ("files", "translated", "log"):
             (shapes / folder).mkdir(parents=True)
         os.chdir(shapes)
-        platform_line_ends = {"modules.nscript", "modules.regex", "modules.wolf2"}
+        platform_line_ends = {
+            "modules.nscript",
+            "modules.regex",
+            "modules.renpy",
+            "modules.wolf2",
+        }
         try:
             for module_name, handler, scene, source, options, requests, output in (
                 (
@@ -1144,19 +1172,35 @@ try:
                     "modules.csv",
                     "handleCSV",
                     "Scene.csv",
-                    'Source,Target\n":name[アリス]\nやあ",\n',
-                    {"PARSE_NAME_TAGS": True},
-                    ["アリス", ["[Alice]: やあ"]],
-                    'Source,Target\r\n":name[Alice]\nやあ","EN ""[Alice]: やあ"""\r\n',
+                    (
+                        'Source,Target\n":name[アリス]\nアリスだよ",'
+                        '":name[アリス]\nアリスだよ"\n":name[アリス]\nやあ",\n'
+                        '":name[アリス]\n",":name[アリス]\n"\n'
+                    ),
+                    {
+                        "PARSE_NAME_TAGS": True,
+                        "name": "Al]Ice",
+                        "replies": {"[Al]Ice]: やあ": "[Al]Ice]: Hi"},
+                    },
+                    ["アリス", ["[Al]Ice]: アリスだよ", "[Al]Ice]: やあ"]],
+                    (
+                        'Source,Target\r\n":name[Al]Ice]\nアリスだよ",'
+                        '":name[Al]Ice]\nEN ""[Al]Ice]: アリスだよ"""\r\n'
+                        '":name[Al]Ice]\nやあ",Hi\r\n'
+                        '":name[Al]Ice]\n",":name[Al]Ice]\n"\r\n'
+                    ),
                 ),
                 (
                     "modules.kirikiri",
                     "handleKirikiri",
                     "scene.ks",
-                    "【アリス】[CR]\n[text]やあ[KeyWait]\n",
+                    '【アリス】[CR][voice storage="アリス01"]\n[text]やあ[KeyWait]\n',
                     {},
                     ["アリス", ["[Alice]: やあ"]],
-                    "【Alice】[CR]\n[text]EN '[Alice]: やあ'[KeyWait]\n",
+                    (
+                        '【Alice】[CR][voice storage="アリス01"]\n'
+                        "[text]EN '[Alice]: やあ'[KeyWait]\n"
+                    ),
                 ),
                 (
                     "modules.regex",
@@ -1171,10 +1215,26 @@ try:
                     "modules.lune",
                     "handleLune",
                     "scene.l",
-                    '[{"name": "アリス", "message": "やあ"}]',
-                    {},
-                    ["アリス", ["やあ"]],
-                    '[\n    {\n        "name": "Alice",\n        "message": "EN \\"やあ\\""\n    }\n]',
+                    json.dumps(
+                        [
+                            {"name": "アリス", "text": "一", "message": "二"},
+                            {"message": "三"},
+                            {"message": "四"},
+                            {"message": "五"},
+                        ]
+                    ),
+                    {"BATCHSIZE": 2, "MISMATCH": [], "short": 2},
+                    ["アリス", ["一", "二"], ["三", "四"], ["五"]],
+                    json.dumps(
+                        [
+                            {"name": "Alice", "text": 'EN "一"', "message": 'EN "二"'},
+                            {"message": "三"},
+                            {"message": "四"},
+                            {"message": 'EN "五"'},
+                        ],
+                        ensure_ascii=False,
+                        indent=4,
+                    ),
                 ),
                 (
                     "modules.tyrano",
@@ -1194,6 +1254,127 @@ try:
                     ["アリス", ["はい", "いいえ"], ["[Alice]: やあ "]],
                     'Alice：\nEN "[Alice]: やあ "\n\n//選択肢\n//EN "はい"\n//EN "いいえ"\n//はいの場合\n',
                 ),
+                (
+                    "modules.wolf2",
+                    "handleWOLF2",
+                    "Map001.txt",
+                    "アリス：\n「待って：ね」\n\nまたね\n",
+                    {"name": "Al/Ice"},
+                    ["アリス", ["[Al/Ice]: 「待って：ね」 ", "またね "]],
+                    'Al/Ice：\nEN "[Al/Ice]: 「待って：ね」 "\n\nEN "またね "\n',
+                ),
+                (
+                    "modules.wolf2",
+                    "handleWOLF2",
+                    "Map001.txt",
+                    "やあ\r\n\r\n".encode("cp932")
+                    + b"\x81 "
+                    + "またね\r\n".encode("cp932"),
+                    {},
+                    [["やあ ", " またね "]],
+                    'EN "やあ "\n\nEN " またね "\n',
+                ),
+                (
+                    "modules.text",
+                    "handleText",
+                    "dialogue.txt",
+                    "[アリス]: やあ\n",
+                    {"name": "Al]Ice", "replies": {"[Al]Ice]: やあ": "[Al]Ice]: Hi"}},
+                    ["アリス", ["[Al]Ice]: やあ"]],
+                    "Hi\n",
+                ),
+                (
+                    "modules.regex",
+                    "handleRegex",
+                    "script.txt",
+                    '{\n    "name": "アリス", "voice": "アリス01"\n    "text": "やあ",\n},\n',
+                    {"name": "Al]Ice", "replies": {"[Al]Ice]: やあ": "[Al]Ice]: Hi"}},
+                    ["アリス", ["[Al]Ice]: やあ"]],
+                    '﻿{\n    "name": "Al]Ice", "voice": "アリス01"\n    "text": "Hi",\n},\n',
+                ),
+                (
+                    "modules.tyrano",
+                    "handleTyrano",
+                    "scene.ks",
+                    "#アリス\nやあ[p]\n",
+                    {"name": "Al]Ice", "replies": {"[Al]Ice]: やあ": "[Al]Ice]: Hi"}},
+                    ["アリス", ["[Al]Ice]: やあ"]],
+                    "#Al]Ice\nHi[p]\n",
+                ),
+                (
+                    "modules.kirikiri",
+                    "handleKirikiri",
+                    "scene.ks",
+                    "【アリス】[CR]\n[text]やあ[KeyWait]\n【アリス】[CR]\n",
+                    {"name": "Al]Ice", "replies": {"[Al]Ice]: やあ": "[Al]Ice]: Hi"}},
+                    ["アリス", ["[Al]Ice]: やあ"]],
+                    "【Al]Ice】[CR]\n[text]Hi[KeyWait]\n【Al]Ice】[CR]\n",
+                ),
+                (
+                    "modules.renpy",
+                    "handleRenpy",
+                    "script.rpy",
+                    '    アリス "やあ"\n',
+                    {"name": "Al]Ice", "replies": {"[Al]Ice]: やあ": "[Al]Ice]: Hi"}},
+                    ["アリス", ["[Al]Ice]: やあ"]],
+                    '    アリス "Hi"\n',
+                ),
+                (
+                    "modules.lune",
+                    "handleLune",
+                    "scene.l",
+                    json.dumps([{"name": "アリス", "message": "注意：扉"}]),
+                    {"replies": {"注意：扉": "Note: the door"}},
+                    ["アリス", ["注意：扉"]],
+                    json.dumps(
+                        [{"name": "Alice", "message": "Note: the door"}],
+                        ensure_ascii=False,
+                        indent=4,
+                    ),
+                ),
+                (
+                    "modules.json",
+                    "handleJSON",
+                    "Talk.json",
+                    json.dumps([{"character_nameText": "アリス", "m_text": "やあ"}]),
+                    {"replies": {"[Alice]: やあ": "[Alice]: Hi"}},
+                    ["アリス", ["[Alice]: やあ"]],
+                    json.dumps(
+                        [{"character_nameText": "Alice", "m_text": "Hi"}],
+                        ensure_ascii=False,
+                        indent=4,
+                    ),
+                ),
+                (
+                    "modules.wolf2",
+                    "handleWOLF2",
+                    "Map001.txt",
+                    "やあ\n//選択肢\n//はい\n//いいえ\n//はいの場合\n\n「待って：ね」\n\n：さて\n",
+                    {},
+                    [["はい", "いいえ"], ["やあ ", "「待って：ね」 ", "：さて "]],
+                    (
+                        'EN "やあ "\n//選択肢\n//EN "はい"\n//EN "いいえ"\n//はいの場合\n'
+                        '\nEN "「待って：ね」 "\n\nEN "：さて "\n'
+                    ),
+                ),
+                (
+                    "modules.wolf2",
+                    "handleWOLF2",
+                    "Map001.txt",
+                    "アリス：\nやあ\n\nアリス：\n",
+                    {"name": "Al]Ice", "replies": {"[Al]Ice]: やあ ": "[Al]Ice]: Hi"}},
+                    ["アリス", ["[Al]Ice]: やあ "]],
+                    "Al]Ice：\nHi\n\nAl]Ice：\n",
+                ),
+                (
+                    "modules.wolf2",
+                    "handleWOLF2",
+                    "Map001.txt",
+                    "やあ\n\n//選択肢\n//はい\n//いいえ\n",
+                    {},
+                    [["はい", "いいえ"], ["やあ "]],
+                    'EN "やあ "\n\n//選択肢\n//EN "はい"\n//EN "いいえ"\n',
+                ),
             ):
                 module = import_module(module_name)
                 encoding = "utf-8"
@@ -1203,17 +1384,36 @@ try:
                     "modules.wolf2",
                 ):
                     encoding = "cp932"
-                (shapes / "files" / scene).write_bytes(source.encode(encoding))
+                if isinstance(source, str):
+                    source = source.encode(encoding)
+                (shapes / "files" / scene).write_bytes(source)
                 sent = []
+                # The reply to a name, which list reply leaves out its last
+                # line (a mismatch), counting from 1, and replies to some
+                # lines in place of EN "line"
+                reply, short = options.pop("name", "Alice"), options.pop("short", 0)
+                line_replies = options.pop("replies", {})
+                assert isinstance(line_replies, dict)
+                assert isinstance(reply, str) and isinstance(short, int)
+                listed = []
 
                 def shape_reply(text, *_args, **_kwargs):
                     if text:
                         sent.append(list(text) if isinstance(text, list) else text)
                     if isinstance(text, list):
-                        return [[f'EN "{line}"' for line in text], [1, 1]]
-                    return ["Alice", [1, 1]]
+                        listed.append(text)
+                        lines = [
+                            line_replies.get(line, f'EN "{line}"') for line in text
+                        ]
+                        if len(listed) == short:
+                            lines.pop()
+                        return [lines, [1, 1]]
+                    return [reply, [1, 1]]
 
-                its = {"translateAI": shape_reply, "NAMESLIST": [], **options}
+                # Each run starts with an empty speaker name cache
+                its = {"translateAI": shape_reply, **options}
+                if hasattr(module, "NAMESLIST"):
+                    its["NAMESLIST"] = []
                 with patch.multiple(module, **its), redirect_stdout(StringIO()):
                     getattr(module, handler)(scene, False)
                 assert sent == requests, (module_name, sent)
@@ -2843,11 +3043,15 @@ try:
 
         with patch.dict(
             os.environ,
-            {"API_PROVIDER": "openai", "api": "https://openrouter.ai/api/v1"},
+            {
+                "API_PROVIDER": "openai",
+                "api": "https://openrouter.ai/api/v1",
+                "key": "fixture-key",
+            },
         ):
-            # A Batch client built without an address takes the run's route,
-            # never OpenAI's own address behind it.
-            client = get_client(PROVIDER_OPENAI, api_key="fixture-key")
+            # The run's Batch client takes the run's route, never OpenAI's
+            # own address behind it.
+            client = get_client(PROVIDER_OPENAI)
             assert str(client.base_url).startswith("https://openrouter.ai/api/v1")
             for _ in range(2):
                 translation.STRICT_STRUCTURED_OUTPUTS = True

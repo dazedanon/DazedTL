@@ -1,8 +1,7 @@
 # Libraries
 import json
 import os
-import re
-from util.speakers import translate_speaker
+from util.speakers import strip_speaker_prefix, translate_speaker
 import util.dazedwrap as dazedwrap
 import threading
 import time
@@ -132,137 +131,70 @@ def parseJSON(data, filename):
     return [data, totalTokens, None]
 
 
+# The text fields of an entry with a message, in the order they are sent
+TEXT_FIELDS = ("text", "text2", "help1", "help2", "help3", "like", "message", "me")
+
+
 def translateJSON(data, pbar):
+    """Walks the entries once: translates each name on the spot and sends
+    the text fields in batches of BATCHSIZE, writing each reply line to the
+    entry and field its source line came from."""
     global PBAR
     PBAR = pbar
-    textHistory = []
-    batch = []
-    maxHistory = MAXHISTORY
     tokens = [0, 0]
-    speaker = "None"
-    insertBool = False
-    i = 0
-    batchStartIndex = 0
-    # Entries whose name is translated: setting a batch's text walks its
-    # entries again, which then hold their translated names
-    named = set()
+    history = []
+    batch = []  # Source lines waiting to be sent
+    slots = []  # The (entry index, field) each line in batch came from
 
-    while i < len(data):
-        item = data[i]
-        # Speaker
-        if "name" in item and i not in named:
-            named.add(i)
-            if item["name"] not in [None, "-"]:
-                response = getSpeaker(item["name"])
-                speaker = response[0]
-                tokens[0] += response[1][0]
-                tokens[1] += response[1][1]
-                item["name"] = speaker
-            else:
-                speaker = "None"
+    def send():
+        nonlocal history, batch, slots
+        response = translateAI(batch, history)
+        tokens[0] += response[1][0]
+        tokens[1] += response[1][1]
+        translatedBatch = response[0]
+        history = batch[-10:]
 
-        # Text
-        if "message" in item:
-            for text in [
-                "text",
-                "text2",
-                "help1",
-                "help2",
-                "help3",
-                "like",
-                "message",
-                "me",
-            ]:
-                if text in item:
-                    if item[text] != None:
-                        jaString = item[text]
+        if len(batch) == len(translatedBatch):
+            for (index, field), translatedText in zip(slots, translatedBatch):
+                # A speaker the model added (util/speakers)
+                translatedText = strip_speaker_prefix(translatedText)
+                data[index][field] = dazedwrap.wrapText(translatedText, width=WIDTH)
 
-                        # Remove any textwrap
-                        if FIXTEXTWRAP == True:
-                            finalJAString = jaString.replace("\n", " ")
-
-                        # [Passthrough 1] Pulling From File
-                        if insertBool is False:
-                            # Append to List and Clear Values
-                            batch.append(finalJAString)
-                            speaker = ""
-
-                            # Translate Batch if Full
-                            if len(batch) == BATCHSIZE:
-                                # Translate
-                                response = translateAI(batch, textHistory)
-                                tokens[0] += response[1][0]
-                                tokens[1] += response[1][1]
-                                translatedBatch = response[0]
-                                textHistory = batch[-10:]
-
-                                # Set Values
-                                if len(batch) == len(translatedBatch):
-                                    i = batchStartIndex
-                                    insertBool = True
-
-                                # Mismatch
-                                else:
-                                    pbar.write(f"Mismatch: {batchStartIndex} - {i}")
-                                    MISMATCH.append(batch)
-                                    report_mismatch(FILENAME)
-                                    batchStartIndex = i
-                                    batch.clear()
-
-                            if insertBool is False:
-                                i += 1
-
-                            currentGroup = []
-
-                        # [Passthrough 2] Setting Data
-                        else:
-                            # Get Text
-                            translatedText = translatedBatch[0]
-
-                            # Remove added speaker
-                            translatedText = re.sub(r"^.+?:\s", "", translatedText)
-
-                            # Textwrap
-                            translatedText = dazedwrap.wrapText(translatedText, width=WIDTH)
-
-                            # Set Text
-                            item[text] = translatedText
-                            translatedBatch.pop(0)
-                            speaker = ""
-                            currentGroup = []
-                            i += 1
-
-                            # If Batch is empty. Move on.
-                            if len(translatedBatch) == 0:
-                                insertBool = False
-                                batchStartIndex = i
-                                batch.clear()
+        # Mismatch: the batch keeps its source text
         else:
-            i += 1
+            pbar.write(f"Mismatch: {slots[0][0]} - {slots[-1][0]}")
+            MISMATCH.append(batch)
+            report_mismatch(FILENAME)
+        batch, slots = [], []
 
-        # Translate Batch if not empty and EOF
-        if len(batch) != 0 and i >= len(data):
-            # Translate
-            response = translateAI(batch, textHistory)
+    for index, item in enumerate(data):
+        # Speaker
+        if "name" in item and item["name"] not in [None, "-"]:
+            response = getSpeaker(item["name"])
             tokens[0] += response[1][0]
             tokens[1] += response[1][1]
-            translatedBatch = response[0]
-            textHistory = batch[-10:]
+            item["name"] = response[0]
 
-            # Set Values
-            if len(batch) == len(translatedBatch):
-                i = batchStartIndex
-                insertBool = True
+        # Text
+        if "message" not in item:
+            continue
+        for field in TEXT_FIELDS:
+            if item.get(field) is None:
+                continue
+            jaString = item[field]
 
-            # Mismatch
-            else:
-                pbar.write(f"Mismatch: {batchStartIndex} - {i}")
-                MISMATCH.append(batch)
-                report_mismatch(FILENAME)
-                batchStartIndex = i
-                batch.clear()
+            # Remove any textwrap
+            if FIXTEXTWRAP:
+                jaString = jaString.replace("\n", " ")
 
-            currentGroup = []
+            batch.append(jaString)
+            slots.append((index, field))
+            if len(batch) == BATCHSIZE:
+                send()
+
+    # The last batch
+    if batch:
+        send()
     return tokens
 
 # Save some money and enter the character before translation

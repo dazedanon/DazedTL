@@ -160,6 +160,16 @@ def hostname(address):
         return None
 
 
+def address_path(address):
+    """The path of a server *address* in lower case, such as "/anthropic/v1"
+    in "https://proxy.example/anthropic/v1", read as hostname reads its host;
+    "" when it names none."""
+    try:
+        return urlsplit(absolute(address)).path.lower()
+    except ValueError:
+        return ""
+
+
 def own_server(url):
     """Whether *url* is on a preset provider's own API (PRESET_HOSTS), so an
     error it answers is the provider's own and not a gateway's. The one rule a
@@ -174,6 +184,7 @@ def own_server(url):
 STAND_INS = {
     "openai": "DAZEDTL_TEST_OPENAI_ENDPOINT",
     "anthropic": "DAZEDTL_TEST_ANTHROPIC_ENDPOINT",
+    "openrouter": "DAZEDTL_TEST_OPENROUTER_ENDPOINT",
 }
 
 

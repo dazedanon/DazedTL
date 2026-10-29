@@ -18,7 +18,7 @@ from tqdm import tqdm
 from util.languages import source_pattern
 from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost, found_mismatch, run_stop_errors
 from util.translation_task import fail_on_parser_error, module_receipt, write_output
-from util.speakers import strip_speaker_prefix
+from util.speakers import find_speaker, strip_speaker_prefix, to_prefixed
 
 # Globals
 MODEL = os.getenv("model")
@@ -166,7 +166,7 @@ def parseCSV(readFile, filename):
             data.append(row)
 
         try:
-            response = translateCSV(data, pbar, filename, None)
+            response = translateCSV(data, pbar, filename)
             totalTokens[0] = response[0]
             totalTokens[1] = response[1]
         except run_stop_errors():
@@ -236,10 +236,10 @@ def _collect_process_indices(data):
     return process
 
 
-def translateCSV(data, pbar, filename, translatedList, process_indices=None):
+def translateCSV(data, pbar, filename):
     """
     Unified CSV translation function using configurable settings.
-    
+
     Uses global settings:
     - SOURCE_COLUMN: column index for source text
     - TARGET_COLUMN: column index to write translations
@@ -253,45 +253,44 @@ def translateCSV(data, pbar, filename, translatedList, process_indices=None):
     - REMOVE_FURIGANA: remove furigana
     - SKIP_COMMENT_ROWS: skip rows with 'comment' in first column
 
-    Pass 2 gets the rows pass 1 sent, since pass 1 can change a cell that
-    decides which rows are sent, such as a speaker column that is also the
-    target. Pass 1 translates each speaker and writes its name back, so pass
-    2 sends nothing.
+    Translates each speaker on the spot and writes its name back, gathers
+    the rows' text, then writes each translation to the row it came from,
+    replacing the text that row sent. The rows and their text are kept from
+    the gathering, since a name written back can change a cell that decides
+    them, such as a speaker column that is also the target or a :name[] tag.
     """
     global LOCK, ESTIMATE, PBAR
     PBAR = pbar
-    setData = bool(translatedList)
-    translatedText = ""
     totalTokens = [0, 0]
     stringList = []
-    if process_indices is None:
-        process_indices = _collect_process_indices(data)
+    # (row index, text the row's translation replaces, its speaker) per string
+    sent = []
 
     # Translate
-    for i in process_indices:
+    for i in _collect_process_indices(data):
         # Get source text
         jaString = _row_source_text(data[i])
         speaker = ""
-        
+
         # Handle speaker column if configured
-        if not setData and SPEAKER_COLUMN >= 0 and len(data[i]) > SPEAKER_COLUMN and data[i][SPEAKER_COLUMN]:
+        if SPEAKER_COLUMN >= 0 and len(data[i]) > SPEAKER_COLUMN and data[i][SPEAKER_COLUMN]:
             speakerResponse = getSpeaker(data[i][SPEAKER_COLUMN])
             totalTokens[0] += speakerResponse[1][0]
             totalTokens[1] += speakerResponse[1][1]
             speaker = speakerResponse[0]
             data[i][SPEAKER_COLUMN] = speaker
-        
+
         # Parse :name[] tags if configured
         if PARSE_NAME_TAGS and ':name' in jaString:
-            match = re.search(r":name\[([^\]]+?)\]\n([\w\W]*)", jaString)
+            match = re.search(NAME_TAG, jaString)
             if match:
-                # Translate speaker name
-                if not setData:
-                    response = getSpeaker(match.group(1))
-                    speaker = response[0]
-                    totalTokens[0] += response[1][0]
-                    totalTokens[1] += response[1][1]
-                    data[i][SOURCE_COLUMN] = data[i][SOURCE_COLUMN].replace(match.group(1), speaker)
+                # Translate speaker name, written to the tags alone: the
+                # dialogue after it can hold the same name
+                response = getSpeaker(match.group(1))
+                speaker = response[0]
+                totalTokens[0] += response[1][0]
+                totalTokens[1] += response[1][1]
+                _write_name(data[i], match.group(1), speaker)
 
                 # Extract text portion
                 jaString = match.group(2)
@@ -299,7 +298,7 @@ def translateCSV(data, pbar, filename, translatedList, process_indices=None):
                 voMatch = re.search(r"\\[vfF]+\[.+]", jaString)
                 if voMatch:
                     jaString = jaString.replace(voMatch.group(0), "")
-        
+
         # Parse \M markers if configured
         if PARSE_M_MARKERS and '\\M' in jaString:
             match = re.search(r"\\M.+\n([\w\W]*)", jaString)
@@ -308,51 +307,24 @@ def translateCSV(data, pbar, filename, translatedList, process_indices=None):
                 voMatch = re.search(r"\\[vfF]+\[.+]", jaString)
                 if voMatch:
                     jaString = jaString.replace(voMatch.group(0), "")
-        
+
         # Remove furigana if configured
         if REMOVE_FURIGANA:
             jaString = re.sub(r"＜(.*)＝.*＞", r"\1", jaString)
-        
+
+        # A name tag with no line after it has nothing to translate
+        if not jaString.strip():
+            continue
+
         # Store original for replacement
-        ojaString = jaString
-        
+        sent.append((i, jaString, speaker))
+
         # Remove textwrap
         jaString = jaString.replace("\\n", " ")
         jaString = jaString.replace("\n", " ")
-        
-        # Pass 1: Collect strings
-        if not setData:
-            if speaker:
-                stringList.append(f"[{speaker}]: {jaString}")
-            else:
-                stringList.append(jaString)
-        
-        # Pass 2: Apply translations
-        else:
-            # Grab and pop translation
-            translatedText = translatedList[0]
-            translatedList.pop(0)
-            
-            # Remove speaker prefix from translation if present
-            translatedText = strip_speaker_prefix(translatedText)
-            
-            # Add wordwrap
-            translatedText = dazedwrap.wrapText(translatedText, WIDTH)
-            translatedText = translatedText.replace("\n", "\\n")
-            
-            # Determine target column
-            actual_target = _actual_target_column()
-            
-            # Ensure row has enough columns
-            while len(data[i]) <= actual_target:
-                data[i].append("")
-            
-            # Set data
-            if PARSE_NAME_TAGS or PARSE_M_MARKERS:
-                # Replace original text portion
-                data[i][actual_target] = data[i][actual_target].replace(ojaString, translatedText) if data[i][actual_target] else translatedText
-            else:
-                data[i][actual_target] = translatedText
+
+        # Collect strings
+        stringList.append(to_prefixed(speaker, jaString))
 
     # EOF - Process collected strings
     if len(stringList) > 0:
@@ -368,13 +340,57 @@ def translateCSV(data, pbar, filename, translatedList, process_indices=None):
 
         # Set Strings
         if len(stringList) == len(translatedList):
-            translateCSV(data, pbar, filename, translatedList, process_indices)
+            for (i, ojaString, speaker), translatedText in zip(sent, translatedList):
+                _set_translation(data[i], ojaString, translatedText, speaker)
         # Mismatch
         else:
             with LOCK:
                 found_mismatch(MISMATCH, filename)
 
     return totalTokens
+
+
+# A :name[] tag: the speaker's name, then the line the speaker says
+NAME_TAG = r":name\[([^\]]+?)\]\n([\w\W]*)"
+
+
+def _write_name(row, name, translated):
+    """Writes *translated* over the :name[] tag that holds *name* in each cell
+    *row* reads its text from (_row_source_text) or writes its translation to
+    (util/speakers)."""
+    columns = {SOURCE_COLUMN, _actual_target_column()}
+    if USE_TARGET_IF_NOT_EMPTY:
+        columns.add(TARGET_COLUMN)
+    for column in sorted(columns):
+        found = find_speaker(NAME_TAG, row[column]) if column < len(row) else None
+        if found and found.name == name:
+            row[column] = found.written(translated)
+
+
+def _set_translation(row, ojaString, translatedText, speaker):
+    """Writes *translatedText*, the translation of *ojaString* sent with
+    *speaker*, to *row*'s target column."""
+    # Remove speaker prefix from translation if present
+    translatedText = strip_speaker_prefix(translatedText, speaker)
+
+    # Add wordwrap
+    translatedText = dazedwrap.wrapText(translatedText, WIDTH)
+    translatedText = translatedText.replace("\n", "\\n")
+
+    # Determine target column
+    actual_target = _actual_target_column()
+
+    # Ensure row has enough columns
+    while len(row) <= actual_target:
+        row.append("")
+
+    # Set data
+    if PARSE_NAME_TAGS or PARSE_M_MARKERS:
+        # Replace original text portion
+        row[actual_target] = row[actual_target].replace(ojaString, translatedText) if row[actual_target] else translatedText
+    else:
+        row[actual_target] = translatedText
+
 
 # Save some money and enter the character before translation
 def getSpeaker(speaker):
