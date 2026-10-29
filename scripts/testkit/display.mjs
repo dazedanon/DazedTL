@@ -81,7 +81,12 @@ export function displayName(/** @type {string} */ work) {
 // The first process of a group `spawnGroup` binds: once the process that
 // started it has gone, the whole group ends.
 const boundGroup = [
-  "trap 'trap - TERM; kill -TERM 0' TERM",
+  // As the starter ends, this process passes to its other threads in turn,
+  // and the kernel signals it again each time one of them ends first, so a
+  // SIGTERM can come again while the first is handled. It is ignored until
+  // the group has been signalled: one that ended this process before its
+  // `kill` would leave the rest of the group running.
+  "trap 'trap \"\" TERM; kill -TERM 0; trap - TERM; kill -TERM $$' TERM",
   // A starter that died before the kernel was asked to signal it never will.
   '[ "$PPID" = "$1" ] || exit 1',
   "shift",
