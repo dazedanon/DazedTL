@@ -149,11 +149,22 @@ def parsePlugin(readFile, filename):
     return [data, totalTokens, None]
 
 
+# An escaped line break: a backslash run and n, one more level of escaping per
+# level of nesting. Before [ and a number or code it is the actor name code
+# \n[1] or \n[\v[1]], and before < a name box \n<Alice>, which stay.
+ESCAPED_NEWLINE = re.compile(r"\\+n(?!\[[\d\\]|<)")
+
+
 def escapedNewline(text):
-    """The escaped line break a plugin string uses, as its backslashes and n
-    (one more level of escaping per level of nesting), or None."""
-    found = re.search(r"\\+n", text)
+    """The escaped line break a plugin string uses, as its backslashes and n,
+    or None."""
+    found = ESCAPED_NEWLINE.search(text)
     return found.group(0) if found else None
+
+
+def unwrapped(text):
+    """The text with each escaped line break read as a space."""
+    return ESCAPED_NEWLINE.sub(" ", text)
 
 
 def translatePlugin(data, pbar, filename, translatedList):
@@ -220,7 +231,7 @@ def translatePlugin(data, pbar, filename, translatedList):
                     originalString = jaString
 
                     # Replace \n for translation
-                    jaStringClean = jaString.replace("\\n", " ")
+                    jaStringClean = unwrapped(jaString)
 
                     if jaStringClean.strip():
                         # Pass 1
@@ -239,12 +250,11 @@ def translatePlugin(data, pbar, filename, translatedList):
                                     custom = []
 
                                 # Restore original newlines but keep translated text
-                                # Count original newlines
-                                newline_count = jaString.count("\\n")
-                                if newline_count > 0:
+                                newline = escapedNewline(jaString)
+                                if newline:
                                     # Textwrap the translation
                                     translatedText = dazedwrap.wrapText(translatedText, 50)
-                                    translatedText = translatedText.replace("\n", "\\n")
+                                    translatedText = translatedText.replace("\n", newline)
 
                                 # Escape quotes in translation
                                 translatedText = translatedText.replace('"', '\\"')
@@ -278,14 +288,12 @@ def translatePlugin(data, pbar, filename, translatedList):
 
                 # Replace \n and \c
                 newline = escapedNewline(jaString)
-                if newline:
-                    jaString = re.sub(r"\\+n", r"\\n", jaString)
                 if re.search(r"\\+C", jaString):
                     colorCode = re.search(r"\\+C", jaString).group(0)
                     jaString = re.sub(r"\\+C", r"\\C", jaString)
 
                 # Remove any textwrap
-                jaString = jaString.replace("\\n", " ")
+                jaString = unwrapped(jaString)
 
                 if jaString.replace("\u3000", "") and jaString:
                     # Pass 1
@@ -330,9 +338,7 @@ def translatePlugin(data, pbar, filename, translatedList):
                     originalString = match
 
                     # Remove any textwrap
-                    newline = escapedNewline(match)
-                    if newline:
-                        match = match.replace(newline, " ")
+                    match = unwrapped(match)
 
                     # Pass 1
                     if setData == False:
@@ -367,6 +373,9 @@ def translatePlugin(data, pbar, filename, translatedList):
                     # Save Original String
                     originalString = match
 
+                    # Remove any textwrap
+                    match = unwrapped(match)
+
                     # Pass 1
                     if setData == False:
                         # Add String
@@ -400,6 +409,9 @@ def translatePlugin(data, pbar, filename, translatedList):
                     # Save Original String
                     originalString = match
 
+                    # Remove any textwrap
+                    match = unwrapped(match)
+
                     # Pass 1
                     if setData == False:
                         # Add String
@@ -432,6 +444,9 @@ def translatePlugin(data, pbar, filename, translatedList):
                 if match:
                     # Save Original String
                     originalString = match
+
+                    # Remove any textwrap
+                    match = unwrapped(match)
 
                     # Pass 1
                     if setData == False:
@@ -467,7 +482,7 @@ def translatePlugin(data, pbar, filename, translatedList):
                     originalString = match
 
                     # Remove any textwrap
-                    match = match.replace(r"\\\\\\\\n", " ")
+                    match = unwrapped(match)
                     match = match.replace(r"\\\\\\\\\\\\\\\\c", "\\c")
 
                     # Pass 1
@@ -489,7 +504,8 @@ def translatePlugin(data, pbar, filename, translatedList):
 
                             # Textwrap
                             translatedText = dazedwrap.wrapText(translatedText, width=WIDTH)
-                            translatedText = translatedText.replace("\n", r"\\\\\\\\n")
+                            newline = escapedNewline(originalString) or r"\\\\\\\\n"
+                            translatedText = translatedText.replace("\n", newline)
                             match = match.replace("\\c", r"\\\\\\\\\\\\\\\\c")
 
                             # Replace Single Quotes
@@ -509,7 +525,7 @@ def translatePlugin(data, pbar, filename, translatedList):
                     originalString = match
 
                     # Remove any textwrap
-                    match = match.replace(r"\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\n", " ")
+                    match = unwrapped(match)
 
                     # Pass 1
                     if setData == False:
@@ -530,7 +546,10 @@ def translatePlugin(data, pbar, filename, translatedList):
 
                             # Textwrap
                             translatedText = dazedwrap.wrapText(translatedText, width=WIDTH)
-                            translatedText = translatedText.replace("\n", r"\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\n")
+                            newline = escapedNewline(originalString) or (
+                                r"\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\n"
+                            )
+                            translatedText = translatedText.replace("\n", newline)
 
                             # Replace Single Quotes
                             translatedText = translatedText.replace('"', "'")

@@ -252,7 +252,7 @@ class ExistingBackend:
         return route(protocol, endpoint or PROVIDERS[protocol]["endpoint"])
 
     def validate_route(self, values):
-        from dazedtl.settings.providers import route, validate_model_name
+        from dazedtl.settings.providers import route
 
         expected = route(values["API_PROVIDER"], values["api"])
         if (
@@ -262,7 +262,6 @@ class ExistingBackend:
             raise ValueError(
                 "The model and server use a different provider route. Choose the matching provider and model in Settings."
             )
-        validate_model_name(values["model"], values["api"])
 
     def provider_defaults(self, values):
         from util.batch_providers import detect_batch_provider

@@ -40,6 +40,7 @@ FIXTEXTWRAP = True  # Overwrites textwrap
 IGNORETLTEXT = False  # Ignores all translated text.
 MISMATCH = []  # Lists files that throw a mismatch error (Length of GPT list response is wrong)
 CONVERTTOWIDE = False # Default (False)
+CHOICE = r"\"(.*?)\""  # A quoted choice on a csel line
 
 # tqdm Globals
 BAR_FORMAT = "{l_bar}{bar:10}{r_bar}{bar:-10b}"
@@ -260,7 +261,8 @@ def translateOnscripter(data, pbar, filename, translatedList):
             choiceList = []
             jaString = data[i]
 
-            choiceList = re.findall(r"\"(.*?)\"", jaString)
+            # An empty choice "" stays empty.
+            choiceList = [choice for choice in re.findall(CHOICE, jaString) if choice]
             if len(choiceList) > 0:
                 # Translate
                 response = translateAI(choiceList, "This will be a dialogue option")
@@ -268,16 +270,23 @@ def translateOnscripter(data, pbar, filename, translatedList):
                 tokens[0] += response[1][0]
                 tokens[1] += response[1][1]
 
-                # Set Data
-                for j in range(len(translatedTextList)):
-                    choiceText = translatedTextList[j]
+                # Set Data: each choice into its own quotes, so a choice that
+                # is part of another one stays whole.
+                translatedChoices = iter(translatedTextList)
+
+                def setChoice(found):
+                    if not found.group(1):
+                        return found.group(0)
+                    choiceText = next(translatedChoices, None)
+                    if choiceText is None:
+                        return found.group(0)
 
                     # Convert to Wide
                     if CONVERTTOWIDE:
                         choiceText = choiceText.translate(ascii_to_wide)
+                    return f'"{singleQuotes(choiceText)}"'
 
-                    # Set
-                    data[i] = data[i].replace(choiceList[j], singleQuotes(choiceText))
+                data[i] = re.sub(CHOICE, setChoice, data[i])
                 checkLine(data, i, filename)
             i += 1
 
@@ -285,7 +294,10 @@ def translateOnscripter(data, pbar, filename, translatedList):
         else:
             i += 1
 
-    # EOF
+    # EOF: the first pass translates the dialogue, then a second pass sets it
+    # and translates the choices, also in a file with no dialogue (None).
+    if translatedList != []:
+        return tokens
     if len(stringList) > 0:
         # Set Progress
         pbar.total = len(stringList)
@@ -297,14 +309,18 @@ def translateOnscripter(data, pbar, filename, translatedList):
         tokens[1] += response[1][1]
         translatedList = response[0]
 
-        # Set Strings
-        if len(stringList) == len(translatedList):
-            translateOnscripter(data, pbar, filename, translatedList)
-
         # Mismatch
-        else:
+        if len(stringList) != len(translatedList):
             with LOCK:
                 found_mismatch(MISMATCH, filename)
+            return tokens
+    else:
+        translatedList = None
+
+    # Set Strings
+    result = translateOnscripter(data, pbar, filename, translatedList)
+    tokens[0] += result[0]
+    tokens[1] += result[1]
     return tokens
 
 

@@ -48,6 +48,7 @@ class SettingsTests(unittest.TestCase):
             validate_route=lambda values: ExistingBackend.validate_route(
                 ExistingBackend, values
             ),
+            engine_route=ExistingBackend.engine_route,
             provider_defaults=lambda _: {"batch_supported": False},
             manual=SimpleNamespace(request_policy=None),
             install_settings=Mock(),
@@ -240,6 +241,42 @@ class SettingsTests(unittest.TestCase):
             write_json(path, saved)
             with self.assertRaisesRegex(ValueError, "Claude's own model IDs"):
                 Settings(temporary, adapter).prepare_engine("translate")
+            # A run created with a capitalized ID before Settings refused one
+            # still resumes; another host's name never ran there and is
+            # refused on resume too.
+            for name, refused in (("Claude-Opus-5", False), (model, True)):
+                resume = {
+                    "mode": "translate",
+                    "key_name": saved["connections"][0]["runtime_name"],
+                    "settings": {
+                        "model": name,
+                        "API_PROVIDER": "anthropic",
+                        "api": "https://api.anthropic.com",
+                    },
+                }
+                saved["connections"][0]["model"] = name
+                write_json(path, saved)
+                # An image run resumes in its mode, which reads Settings' model
+                # too; an unpriced one is refused only after the name passed.
+                for mode, after in ((None, None), ("translate", "No price")):
+                    with (
+                        self.subTest(model=name, mode=mode),
+                        patch.object(
+                            Settings,
+                            "model_defaults",
+                            return_value={"inputRate": None, "outputRate": None},
+                        ),
+                    ):
+                        expected = "Claude's own model IDs" if refused else after
+                        if expected:
+                            with self.assertRaisesRegex(ValueError, expected):
+                                Settings(temporary, adapter).prepare_engine(
+                                    mode, resume=resume
+                                )
+                        else:
+                            Settings(temporary, adapter).prepare_engine(
+                                mode, resume=resume
+                            )
 
     def test_removing_a_connection_forgets_its_key_and_respects_saved_runs(self):
         # Removal must not strand a run silently or leave the removed key in the engine's derived key cache.
