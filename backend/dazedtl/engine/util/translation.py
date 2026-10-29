@@ -3667,7 +3667,8 @@ def callMistral(params, retries=6):
     Acquires from the shared limiter before each attempt, syncs budgets from
     the live x-ratelimit headers after each response, honours Retry-After on
     429, backs off with jitter on 5xx/network errors, and downgrades
-    json_schema -> json_object for models without structured-output support.
+    json_schema -> json_object for models without structured-output support
+    except in strict structured runs (STRICT_STRUCTURED_OUTPUTS).
     """
     limiter = _get_mistral_limiter()
     est = sum(_estimate_mistral_tokens(m.get("content", "")) for m in params.get("messages", []))
@@ -3685,6 +3686,9 @@ def callMistral(params, retries=6):
             last_error = e
             resp = getattr(e, "response", None)
             limiter.update(getattr(resp, "headers", None))
+            # The last attempt raises at once, as the other errors do.
+            if attempt >= retries:
+                break
             retry_after = None
             try:
                 retry_after = float(resp.headers.get("retry-after"))
@@ -3693,13 +3697,20 @@ def callMistral(params, retries=6):
             time.sleep(retry_after if retry_after is not None else min(60, 2 ** attempt + random.random() * 2))
         except openai.APIStatusError as e:
             last_error = e
+            structured = (params.get("response_format") or {}).get("type") == "json_schema"
+            # Strict structured runs keep the provider's error for the
+            # evidence and retry guards instead of sending a weaker output
+            # format, as translateText's OpenAI path does.
+            if structured and STRICT_STRUCTURED_OUTPUTS:
+                if e.status_code < 500 or attempt >= retries:
+                    raise
             # Mistral rejects unsupported params with 400/422 - downgrade the
             # structured-output format once and send it at once. The JSON-mode
             # request is a different request, not a retry, so it spends no
             # attempt: on the last attempt it is still sent.
-            if (
+            elif (
                 e.status_code in (400, 422)
-                and (params.get("response_format") or {}).get("type") == "json_schema"
+                and structured
                 and falls_back_to_json_mode(e)
             ):
                 params = dict(params)

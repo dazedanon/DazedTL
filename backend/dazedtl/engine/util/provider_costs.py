@@ -103,15 +103,19 @@ def is_openai_model(model: str) -> bool:
     return bool(_OPENAI_MODEL.search(str(model or "").lower()))
 
 
-# A Claude model by its name, on Anthropic's API or any other host: any name
-# holding a Claude family word.
-_CLAUDE_MODEL = re.compile(r"claude|sonnet|haiku|opus")
+# A Claude model by its name, on Anthropic's API or any other host: a name
+# starting "claude-", in any dated or versioned form, alone or as another host
+# names it: OpenRouter's "anthropic/" (or "~anthropic/" for its latest
+# aliases) and Bedrock's "anthropic." with or without a region. Another
+# model's name holding a Claude family word, such as "magnum-opus-72b", is
+# not Claude's.
+_CLAUDE_MODEL = re.compile(r"~?(?:(?:[a-z]+\.)?anthropic[./])?claude-[a-z0-9]")
 
 
 def is_claude_model(model: str) -> bool:
     """Whether ``model`` names a Claude model, priced at Anthropic's cache
     prices wherever it runs (batch_providers.live_price_route)."""
-    return bool(_CLAUDE_MODEL.search(str(model or "").lower()))
+    return bool(_CLAUDE_MODEL.match(str(model or "").strip().lower()))
 
 
 def is_claude_native(model: str, address: str | None) -> bool:
