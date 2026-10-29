@@ -5772,6 +5772,26 @@ def last_translation_had_mismatch() -> bool:
     return bool(getattr(_thread_local, "last_translation_had_mismatch", False))
 
 
+def report_mismatch(filename):
+    """Tells the run that a chunk of *filename* kept its source text after a
+    mismatch: a MISMATCH_EVENT line on standard output, which the run counts
+    as the file's mismatches (util/translation_task). Standard output is read
+    as it is written, unlike the mismatch log."""
+    try:
+        print(f"MISMATCH_EVENT:{filename}", flush=True)
+    except Exception:
+        pass
+
+
+def found_mismatch(mismatches, filename):
+    """A mismatch an engine module found itself, as a reply with the wrong
+    number of lines whose lines keep their source text: *filename* joins the
+    module's *mismatches* and the run counts it, as translateAI's own."""
+    if filename not in mismatches:
+        mismatches.append(filename)
+    report_mismatch(filename)
+
+
 def _retry_live_translation(func):
     """Retry live provider work; batch phases only read or write local data.
     A RunStoppingError stops the run at once instead, and a
@@ -6787,13 +6807,7 @@ def translateAI(text, history, config, filename=None, pbar=None, lock=None,
                     "original text kept. Check mismatch log."
                 )
 
-            # Emit a machine-readable marker on stdout so the GUI worker
-            # thread can detect the mismatch reliably (stdout is captured
-            # synchronously, unlike file-tail polling which can be racy).
-            try:
-                print(f"MISMATCH_EVENT:{filename}", flush=True)
-            except Exception:
-                pass
+            report_mismatch(filename)
 
             formatted_mismatch_output = last_raw_translation
             try:

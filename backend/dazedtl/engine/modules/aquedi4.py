@@ -15,7 +15,8 @@ from dotenv import load_dotenv
 from retry import retry
 from tqdm import tqdm
 from util.languages import source_pattern
-from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost, run_stop_errors
+from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost, found_mismatch, run_stop_errors
+from util.translation_task import fail_on_parser_error, module_receipt
 # from modules.json import translateSimpleKeyValueJSON
 import tempfile
 from util import system
@@ -58,28 +59,22 @@ def handleAquedi4(filename, estimate):
     ESTIMATE = estimate
     FILENAME = filename
 
-    try:
-        start = time.time()
-        translatedData = openFiles(filename)
+    start = time.time()
+    translatedData = openFiles(filename)
+    fail_on_parser_error(translatedData)
 
-        if not estimate:
-            # Write final result after translation is complete
-            with open("translated/" + filename, "w", encoding="utf-8", newline="\n") as outFile:
-                json.dump(translatedData[0], outFile, ensure_ascii=False, indent=4)
-        
-        end = time.time()
-        tqdm.write(getResultString(translatedData, end - start, filename))
-        with LOCK:
-            TOKENS[0] += translatedData[1][0]
-            TOKENS[1] += translatedData[1][1]
+    if not estimate:
+        # Write final result after translation is complete
+        with open("translated/" + filename, "w", encoding="utf-8", newline="\n") as outFile:
+            json.dump(translatedData[0], outFile, ensure_ascii=False, indent=4)
 
-    except run_stop_errors():
-        raise
-    except Exception as e:
-        traceback.print_exc()
-        return "Fail"
+    end = time.time()
+    tqdm.write(module_receipt(filename, translatedData[1], end - start, MODEL))
+    with LOCK:
+        TOKENS[0] += translatedData[1][0]
+        TOKENS[1] += translatedData[1][1]
 
-    return getResultString(["", TOKENS, None], end - start, "TOTAL")
+    return module_receipt("TOTAL", TOKENS, end - start, MODEL)
 
 
 def openFiles(filename):
@@ -161,8 +156,7 @@ def translateSimpleKeyValueJSON(data, filename, stringList, keyList):
         # Check for mismatch
         if len(preparedStringList) != len(translatedList):
             with LOCK:
-                if FILENAME not in MISMATCH:
-                    MISMATCH.append(FILENAME)
+                found_mismatch(MISMATCH, FILENAME)
         
         # Pass 2: Update the values with translations
         for i, original_key in enumerate(keyList):
@@ -192,21 +186,6 @@ def save_progress_json(data, filename):
     except Exception:
         traceback.print_exc()
 
-
-def getResultString(translatedData, translationTime, filename):
-    cost = calculateCost(translatedData[1][0], translatedData[1][1], MODEL)
-    totalTokenstring = (
-        Fore.YELLOW + f"[Input: {translatedData[1][0]}]"
-        f"[Output: {translatedData[1][1]}]"
-        f"[Cost: ${cost:,.4f}]"
-    )
-    timeString = Fore.BLUE + f"[{round(translationTime, 1)}s]"
-
-    if translatedData[2] is None:
-        return f"{filename}: {totalTokenstring}{timeString}" + Fore.GREEN + " \u2713 " + Fore.RESET
-    else:
-        errorString = str(translatedData[2]) + Fore.RED
-        return f"{filename}: {totalTokenstring}{timeString}" + Fore.RED + " \u2717 " + errorString + Fore.RESET
 
 def translateAI(text, history, history_ctx=None):
     """Legacy wrapper for the shared translation utility."""

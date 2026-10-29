@@ -6,8 +6,10 @@ import re
 import socket
 import sys
 import threading
+from contextlib import redirect_stdout
 from copy import deepcopy
 from importlib import import_module
+from io import StringIO
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -613,19 +615,26 @@ try:
 
         def wolf_misfit(*commands):
             page = deepcopy(list(commands))
-            with patch.multiple(
-                wolf,
-                CODE101=True,
-                CODE102=True,
-                CODE122=True,
-                CODE300=True,
-                MISMATCH=[],
-                translateAI=wolf_odd,
+            printed = StringIO()
+            with (
+                patch.multiple(
+                    wolf,
+                    CODE101=True,
+                    CODE102=True,
+                    CODE122=True,
+                    CODE300=True,
+                    MISMATCH=[],
+                    translateAI=wolf_odd,
+                ),
+                redirect_stdout(printed),
             ):
                 wolf.searchCodes(
                     page, SimpleNamespace(refresh=lambda: None), [], "M.json"
                 )
-                return page, wolf.MISMATCH
+                # The run counts a file's mismatches from these markers; one
+                # a module found itself only named the file in its TOTAL.
+                marked = printed.getvalue().count("MISMATCH_EVENT:M.json\n")
+                return page, wolf.MISMATCH, marked
 
         choices = {"code": 102, "stringArgs": ["はい", "いいえ"]}
         window = {"code": 300, "stringArgs": ["選択肢/確認", "行く,残る"]}
@@ -636,16 +645,56 @@ try:
         dialogue = {"code": 101, "stringArgs": ["こんにちは"]}
         script = {"code": 122, "stringArgs": ["薬草"]}
         battle = {"code": 300, "stringArgs": ["BTLメッセージ", "攻撃"]}
-        for commands, written in (
-            ([choices], [choices]),
-            ([window], [window]),
-            ([asking], [asking]),
+        for commands, written, marked in (
+            ([choices], [choices], 1),
+            ([window], [window], 1),
+            ([asking], [asking], 1),
             (
                 [dialogue, script, battle],
                 [dialogue, {**script, "stringArgs": ["EN 薬草"]}, battle],
+                2,
             ),
         ):
-            assert wolf_misfit(*commands) == (written, ["M.json"]), commands
+            assert wolf_misfit(*commands) == (written, ["M.json"], marked), commands
+        # Each engine module ended a file whose parser returned an error its
+        # own way: most printed a ✗ receipt and returned a TOTAL, so the run
+        # read the file translated with part of it written, and its worker
+        # logged a second receipt for what the file paid. Every module now
+        # raises the error before reporting the file, as RPG Maker and WOLF
+        # did, and the worker's receipt is the file's one.
+        from util.translation_task import TRANSLATION_MODULE_SPECS
+
+        refused = ValueError("Refused.")
+        stubs = {
+            name: lambda *_args: [{}, [3, 1], refused]
+            for name in ("openFiles", "openFilesEstimate", "parseYuris")
+        }
+        stubs["yuris_whole_file_pass_through_reason"] = lambda _data: None
+        stubs["refreshRuntimeConfig"] = lambda: None
+        ends = temporary / "file-ends"
+        for folder in ("files", "translated"):
+            (ends / folder).mkdir(parents=True)
+        (ends / "files/Doc.json").write_text("{}", "utf-8")
+        directory = os.getcwd()
+        os.chdir(ends)
+        try:
+            for *_kind, module_name, handler in TRANSLATION_MODULE_SPECS:
+                module = import_module(module_name)
+                its: dict[str, Any] = {
+                    key: stub for key, stub in stubs.items() if hasattr(module, key)
+                }
+                for estimate in (False, True):
+                    printed = StringIO()
+                    with patch.multiple(module, **its), redirect_stdout(printed):
+                        try:
+                            getattr(module, handler)("Doc.json", estimate)
+                        except ValueError as error:
+                            assert error is refused, (module_name, error)
+                        else:
+                            raise AssertionError(f"{module_name} passed a failure.")
+                    assert "[Input:" not in printed.getvalue(), module_name
+        finally:
+            os.chdir(directory)
         # A name a registered reference game already translated is reused
         # instead of guessed: that game read 存子 as Aruko.
         from util import reference_games
@@ -2631,6 +2680,28 @@ try:
         assert estimate_task.estimate_summary["input_tokens"] == 20, (
             estimate_task.estimate_summary
         )
+        # A file is finished only when its module reports success: a stopped
+        # file whose module saved part of its output counted as finished in a
+        # Translation run (desktop/backend/manual.py), which Resume skipped.
+        results = {
+            "a.json": "TOTAL: [Input: 1][Output: 1][Cost: $0.0010][0.1s] ✓",
+            "b.json": ("VALIDATION_MISMATCH", "Kept.", "TOTAL: ✓", 1),
+            "c.json": "Fail",
+            "d.json": "Stopped",
+        }
+        json_task = TranslationTask(temporary, ("JSON", (".json",), None))
+        finished = []
+        json_task.file_finished_signal.connect(finished.append)
+        with (
+            patch.dict(os.environ, {"fileThreads": "1"}),
+            patch.object(
+                TranslationTask,
+                "run_module_in_process",
+                lambda _task, name, *_args: results[name],
+            ),
+        ):
+            json_task._run_files(list(results), False)
+        assert finished == ["a.json", "b.json"], finished
         # Live translation reuses its workers too; a worker per file took two
         # seconds a file. A file that fails ends its worker without failing the
         # files after it, and chunks that kept their original text count as a
@@ -2976,9 +3047,10 @@ try:
                 assert stop_task.run_stop == stopped, case
         # Outside RPG Maker the stop leaves the module's parse and file
         # handlers too, so the stopped file fails instead of being written
-        # out as finished; a run frozen before the policy still writes each
-        # refused file untranslated and goes on, as when approved. A file the per-file executor started
-        # before the stop meets it without sending.
+        # out as finished; a run frozen before the policy goes on, each
+        # refused file failing alone as RPG Maker's do, where it was written
+        # untranslated and read translated. A file the per-file executor
+        # started before the stop meets it without sending.
         for (policy, sends), future in zip(text_runs, text_futures):
             stop_task, result, errors, handed, logged, requests, written = (
                 future.result()
@@ -3000,16 +3072,14 @@ try:
                     if receipt
                 ] == [("Text1.json", paid)], logged
             else:
-                assert result != "Fail", case
-                assert handed == texts and errors == [], case
+                assert result == "Fail", case
+                assert handed == texts, case
+                assert errors == [(name, refused_effort) for name in texts], case
                 assert stop_task.run_stop is None, case
-                assert written == texts, (case, written)
+                assert written == [], (case, written)
         # That worker saves a Batch's files one after another; a file missing
         # a result must not keep the files after it from saving theirs. Each
         # file reports only its own exact cost, which the run's TOTAL adds up.
-        from contextlib import redirect_stdout
-        from io import StringIO
-
         from util import subprocess_runner, translation_task
 
         # A failed worker's error is its closing ERROR line, which the Run log
@@ -3916,8 +3986,15 @@ try:
 
         runs = ManualJobs(temporary / "runs", threading.RLock())
         run = runs.jobs["finishing"] = {"id": "finishing", "status": "running"}
-        run.update(mode="translate", phase="translate", log=[])
-        runs.folder(run["id"]).mkdir(parents=True)
+        run.update(mode="translate", phase="translate", log=[], completed=[], errors={})
+        (runs.folder(run["id"]) / "translated").mkdir(parents=True)
+        # A stopped file's saved progress is not a finished file; only the
+        # file its module finished is.
+        for saved in ("Stopped.json", "Done.json"):
+            (runs.folder(run["id"]) / "translated" / saved).write_text("{}")
+            runs._event(run, {"event": "progress", "args": [1, 2, saved]})
+        runs._event(run, {"event": "file_finished", "args": ["Done.json"]})
+        assert run["completed"] == ["Done.json"], run["completed"]
         outcome = runs._event(run, {"event": "finished", "args": [True, "Done"]})
         assert run["status"] == "running" and outcome["status"] == "complete"
         # A saved run of the retired synthetic "offline" mode stays in history

@@ -32,8 +32,10 @@ from util.translation import (
     translateAI as sharedtranslateAI,
     getPricingConfig,
     calculateCost,
+    report_mismatch,
     run_stop_errors,
 )
+from util.translation_task import fail_on_parser_error, module_receipt
 
 # Globals
 MODEL = os.getenv("model")
@@ -217,6 +219,7 @@ def openFiles(filename):
                         MISMATCH.append(
                             f"{imageName} (expected {len(group)}, got {got})"
                         )
+                        report_mismatch(FILENAME)
                         continue
 
                     if not ESTIMATE:
@@ -239,9 +242,9 @@ def openFiles(filename):
                 )
         except run_stop_errors():
             raise
-        except Exception:
+        except Exception as error:
             traceback.print_exc()
-            return [data, totalTokens, "Fail"]
+            return [data, totalTokens, error]
         finally:
             PBAR = None
 
@@ -254,39 +257,28 @@ def handleImageText(filename, estimate):
     FILENAME = filename
 
     start = time.time()
-    try:
-        translatedData = openFiles(filename)
-    except run_stop_errors():
-        raise
-    except Exception:
-        traceback.print_exc()
-        return "Fail"
-    if translatedData[2] == "Fail":
-        return "Fail"
+    translatedData = openFiles(filename)
+    fail_on_parser_error(translatedData)
 
     if not estimate:
-        try:
-            # Written back to files/ in place: 'imgtl import' reads it from
-            # here, which is what makes this a drop-in step in the loop.
-            os.makedirs("translated", exist_ok=True)
-            payload = json.dumps(translatedData[0], ensure_ascii=False, indent=2)
-            for destination in (
-                os.path.join("files", filename),
-                os.path.join("translated", filename),
-            ):
-                with open(destination, "w", encoding="utf-8", newline="\n") as out:
-                    out.write(payload)
-        except Exception:
-            traceback.print_exc()
-            return "Fail"
+        # Written back to files/ in place: 'imgtl import' reads it from
+        # here, which is what makes this a drop-in step in the loop.
+        os.makedirs("translated", exist_ok=True)
+        payload = json.dumps(translatedData[0], ensure_ascii=False, indent=2)
+        for destination in (
+            os.path.join("files", filename),
+            os.path.join("translated", filename),
+        ):
+            with open(destination, "w", encoding="utf-8", newline="\n") as out:
+                out.write(payload)
 
     end = time.time()
-    tqdm.write(getResultString(translatedData, end - start, filename))
+    tqdm.write(module_receipt(filename, translatedData[1], end - start, MODEL))
     with LOCK:
         TOKENS[0] += translatedData[1][0]
         TOKENS[1] += translatedData[1][1]
 
-    totalString = getResultString(["", TOKENS, None], end - start, "TOTAL")
+    totalString = module_receipt("TOTAL", TOKENS, end - start, MODEL)
     if not estimate:
         remaining = len(_pending(translatedData[0]))
         tqdm.write("")
@@ -307,23 +299,3 @@ def handleImageText(filename, estimate):
     if len(MISMATCH) > 0:
         return totalString + Fore.RED + f"\nMismatch Errors: {MISMATCH}" + Fore.RESET
     return totalString
-
-
-def getResultString(translatedData, translationTime, filename):
-    cost = calculateCost(translatedData[1][0], translatedData[1][1], MODEL)
-    totalTokenstring = (
-        Fore.YELLOW + "[Input: " + str(translatedData[1][0]) + "]"
-        "[Output: "
-        + str(translatedData[1][1])
-        + "]" "[Cost: ${:,.4f}".format(cost)
-        + "]"
-    )
-    timeString = Fore.BLUE + "[" + str(round(translationTime, 1)) + "s]"
-    return (
-        timeString
-        + totalTokenstring
-        + Fore.RESET
-        + Fore.GREEN
-        + f" {filename}"
-        + Fore.RESET
-    )

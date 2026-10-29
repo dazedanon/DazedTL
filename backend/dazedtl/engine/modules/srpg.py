@@ -15,7 +15,8 @@ from dotenv import load_dotenv
 from retry import retry
 from tqdm import tqdm
 from util.languages import source_pattern
-from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost, run_stop_errors
+from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost, found_mismatch, run_stop_errors
+from util.translation_task import fail_on_parser_error, module_receipt
 from util.speakers import strip_speaker_prefix
 
 # Globals
@@ -38,7 +39,6 @@ MISMATCH = []  # Lists files that throw a mismatch error (Length of GPT list res
 NAMESLIST = []  # List of speaker names and their translations
 PBAR = None
 FILENAME = None
-TIMETOTAL = 0  # Total Time Taken for all translations
 
 # Regex - Need to change this if you want to translate from/to other languages. Default is Japanese Regex
 LANGREGEX = source_pattern("srpg")
@@ -144,32 +144,29 @@ def handleSRPG(filename, estimate):
     Returns:
         String with translation results or error message
     """
-    global ESTIMATE, TOKENS, FILENAME, TIMETOTAL
+    global ESTIMATE, TOKENS, FILENAME
     ESTIMATE = estimate
     FILENAME = filename
 
     # Translate
     start = time.time()
     translatedData = openFiles(filename)
+    fail_on_parser_error(translatedData)
 
     # Write output file if not in estimate mode
     if not estimate:
-        try:
-            with open("translated/" + filename, "w", encoding="utf-8", newline="\n") as outFile:
-                json.dump(translatedData[0], outFile, ensure_ascii=False, indent=4)
-        except Exception:
-            traceback.print_exc()
-            return "Fail"
+        with open("translated/" + filename, "w", encoding="utf-8", newline="\n") as outFile:
+            json.dump(translatedData[0], outFile, ensure_ascii=False, indent=4)
 
     # Print File
     end = time.time()
-    tqdm.write(getResultString(translatedData, end - start, filename))
+    tqdm.write(module_receipt(filename, translatedData[1], end - start, MODEL))
     with LOCK:
         TOKENS[0] += translatedData[1][0]
         TOKENS[1] += translatedData[1][1]
 
     # Print Total
-    totalString = getResultString(["", TOKENS, None], end - start, "TOTAL")
+    totalString = module_receipt("TOTAL", TOKENS, end - start, MODEL)
 
     # Print any errors
     if len(MISMATCH) > 0:
@@ -491,20 +488,16 @@ def translateBookmark(data, filename, translatedDataList=None, pbar=None):
         # Mismatch checks
         if len(nameList) != originalNameCount:
             with LOCK:
-                if filename not in MISMATCH:
-                    MISMATCH.append(filename)
+                found_mismatch(MISMATCH, filename)
         if len(descList) != originalDescCount:
             with LOCK:
-                if filename not in MISMATCH:
-                    MISMATCH.append(filename)
+                found_mismatch(MISMATCH, filename)
         if len(dataList) != originalDataCount:
             with LOCK:
-                if filename not in MISMATCH:
-                    MISMATCH.append(filename)
+                found_mismatch(MISMATCH, filename)
         if len(speakerList) != originalSpeakerCount:
             with LOCK:
-                if filename not in MISMATCH:
-                    MISMATCH.append(filename)
+                found_mismatch(MISMATCH, filename)
 
         # PASS 2
         translateBookmark(data, filename, [nameList, descList, dataList, speakerList], pbar)
@@ -981,44 +974,35 @@ def translateGeneric(data, filename, translatedDataList=None, pbar=None):
         # Check for mismatch errors
         if len(nameList) != originalNameCount:
             with LOCK:
-                if filename not in MISMATCH:
-                    MISMATCH.append(filename)
+                found_mismatch(MISMATCH, filename)
         
         if len(descList) != originalDescCount:
             with LOCK:
-                if filename not in MISMATCH:
-                    MISMATCH.append(filename)
+                found_mismatch(MISMATCH, filename)
         
         if len(commandNameList) != originalCommandNameCount:
             with LOCK:
-                if filename not in MISMATCH:
-                    MISMATCH.append(filename)
+                found_mismatch(MISMATCH, filename)
         
         if len(commandList) != originalCommandCount:
             with LOCK:
-                if filename not in MISMATCH:
-                    MISMATCH.append(filename)
+                found_mismatch(MISMATCH, filename)
         
         if len(pagesList) != originalPagesCount:
             with LOCK:
-                if filename not in MISMATCH:
-                    MISMATCH.append(filename)
+                found_mismatch(MISMATCH, filename)
         if len(msgList) != originalMsgCount:
             with LOCK:
-                if filename not in MISMATCH:
-                    MISMATCH.append(filename)
+                found_mismatch(MISMATCH, filename)
         if len(commandArrayList) != originalCommandArrayCount:
             with LOCK:
-                if filename not in MISMATCH:
-                    MISMATCH.append(filename)
+                found_mismatch(MISMATCH, filename)
         if len(rewardDataList) != originalRewardDataCount:
             with LOCK:
-                if filename not in MISMATCH:
-                    MISMATCH.append(filename)
+                found_mismatch(MISMATCH, filename)
         if len(customParametersNameList) != originalCustomParametersNameCount:
             with LOCK:
-                if filename not in MISMATCH:
-                    MISMATCH.append(filename)
+                found_mismatch(MISMATCH, filename)
         
         # PASS 2: Recursively call to apply translations
         translateGeneric(
@@ -1420,28 +1404,23 @@ def translateRecollection(data, filename, translatedDataList=None, pbar=None):
         # Check for mismatch errors
         if len(nameList) != originalNameCount:
             with LOCK:
-                if filename not in MISMATCH:
-                    MISMATCH.append(filename)
+                found_mismatch(MISMATCH, filename)
         
         if len(descList) != originalDescCount:
             with LOCK:
-                if filename not in MISMATCH:
-                    MISMATCH.append(filename)
+                found_mismatch(MISMATCH, filename)
         
         if len(dataList) != originalDataCount:
             with LOCK:
-                if filename not in MISMATCH:
-                    MISMATCH.append(filename)
+                found_mismatch(MISMATCH, filename)
         
         if len(speakerList) != originalSpeakerCount:
             with LOCK:
-                if filename not in MISMATCH:
-                    MISMATCH.append(filename)
+                found_mismatch(MISMATCH, filename)
         
         if len(customParamsList) != originalCustomParamsCount:
             with LOCK:
-                if filename not in MISMATCH:
-                    MISMATCH.append(filename)
+                found_mismatch(MISMATCH, filename)
         
         # PASS 2: Recursively call to apply translations
         translateRecollection(data, filename, [nameList, descList, dataList, speakerList, customParamsList], pbar)
@@ -2000,110 +1979,48 @@ def translateMap(data, filename, translatedDataList=None, pbar=None):
         # Check for mismatch errors
         if len(descList) != originalDescCount:
             with LOCK:
-                if filename not in MISMATCH:
-                    MISMATCH.append(filename)
+                found_mismatch(MISMATCH, filename)
         
         if len(mapNameList) != originalMapNameCount:
             with LOCK:
-                if filename not in MISMATCH:
-                    MISMATCH.append(filename)
+                found_mismatch(MISMATCH, filename)
         
         if len(victoryCondsList) != originalVictoryCondsCount:
             with LOCK:
-                if filename not in MISMATCH:
-                    MISMATCH.append(filename)
+                found_mismatch(MISMATCH, filename)
         
         if len(defeatCondsList) != originalDefeatCondsCount:
             with LOCK:
-                if filename not in MISMATCH:
-                    MISMATCH.append(filename)
+                found_mismatch(MISMATCH, filename)
         
         if len(unitNameList) != originalUnitNameCount:
             with LOCK:
-                if filename not in MISMATCH:
-                    MISMATCH.append(filename)
+                found_mismatch(MISMATCH, filename)
         
         if len(unitDescList) != originalUnitDescCount:
             with LOCK:
-                if filename not in MISMATCH:
-                    MISMATCH.append(filename)
+                found_mismatch(MISMATCH, filename)
         
         if len(eventNameList) != originalEventNameCount:
             with LOCK:
-                if filename not in MISMATCH:
-                    MISMATCH.append(filename)
+                found_mismatch(MISMATCH, filename)
         
         if len(eventDescList) != originalEventDescCount:
             with LOCK:
-                if filename not in MISMATCH:
-                    MISMATCH.append(filename)
+                found_mismatch(MISMATCH, filename)
         
         if len(dataList) != originalDataCount:
             with LOCK:
-                if filename not in MISMATCH:
-                    MISMATCH.append(filename)
+                found_mismatch(MISMATCH, filename)
         
         if len(speakerList) != originalSpeakerCount:
             with LOCK:
-                if filename not in MISMATCH:
-                    MISMATCH.append(filename)
+                found_mismatch(MISMATCH, filename)
         
         # PASS 2: Recursively call to apply translations
         translateMap(data, filename, [descList, mapNameList, victoryCondsList, defeatCondsList, unitNameList, unitDescList, eventNameList, eventDescList, dataList, speakerList], pbar)
     
     return totalTokens
-
-
-def getResultString(translatedData, translationTime, filename):
-    """
-    Formats the translation result string with token counts, cost, and time.
-    
-    Args:
-        translatedData: Tuple of (data, tokens, error)
-        translationTime: Time taken for translation
-        filename: Name of the file
-    
-    Returns:
-        Formatted result string
-    """
-    global TIMETOTAL
-    
-    # Calculate cost
-    cost = calculateCost(translatedData[1][0], translatedData[1][1], MODEL)
-    totalTokenstring = (
-        Fore.YELLOW + "[Input: " + str(translatedData[1][0]) + "]"
-        "[Output: "
-        + str(translatedData[1][1])
-        + "]" "[Cost: ${:,.4f}".format(cost)
-        + "]"
-    )
-    
-    # Format time string
-    if filename != "TOTAL":
-        timeString = Fore.BLUE + "[" + str(round(translationTime, 1)) + "s]"
-        TIMETOTAL += round(translationTime, 1)
-    else:
-        timeString = Fore.BLUE + "[" + str(round(TIMETOTAL, 1)) + "s]"
-
-    # Return success or failure string
-    if translatedData[2] is None:
-        # Success
-        return filename + ": " + totalTokenstring + timeString + Fore.GREEN + " \u2713 " + Fore.RESET
-    else:
-        # Fail
-        try:
-            raise translatedData[2]
-        except Exception as e:
-            traceback.print_exc()
-            return (
-                filename
-                + ": "
-                + totalTokenstring
-                + timeString
-                + Fore.RED
-                + " \u2717 "
-                + Fore.RESET
-            )
 
 
 def getSpeaker(speaker):

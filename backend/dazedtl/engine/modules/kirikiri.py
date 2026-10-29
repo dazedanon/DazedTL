@@ -14,7 +14,8 @@ from dotenv import load_dotenv
 from retry import retry
 from tqdm import tqdm
 from util.languages import source_pattern
-from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost, getPricingConfig, calculateCost, run_stop_errors
+from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost, getPricingConfig, calculateCost, found_mismatch, run_stop_errors
+from util.translation_task import fail_on_parser_error, module_receipt
 from util.speakers import strip_speaker_prefix
 import tempfile
 from util import system
@@ -85,16 +86,17 @@ def handleKirikiri(filename, estimate):
     if ESTIMATE:
         start = time.time()
         translatedData = openFiles(filename)
+        fail_on_parser_error(translatedData)
 
         # Print Result
         end = time.time()
-        tqdm.write(getResultString(translatedData, end - start, filename))
+        tqdm.write(module_receipt(filename, translatedData[1], end - start, MODEL))
         with LOCK:
             TOKENS[0] += translatedData[1][0]
             TOKENS[1] += translatedData[1][1]
 
         # Print Total
-        totalString = getResultString(["", TOKENS, None], end - start, "TOTAL")
+        totalString = module_receipt("TOTAL", TOKENS, end - start, MODEL)
 
         # Print any errors on maps
         if len(MISMATCH) > 0:
@@ -103,64 +105,29 @@ def handleKirikiri(filename, estimate):
             return totalString
 
     else:
-        try:
-            start = time.time()
-            translatedData = openFiles(filename)
-            end = time.time()
+        start = time.time()
+        translatedData = openFiles(filename)
+        end = time.time()
+        fail_on_parser_error(translatedData)
 
-            # Final write safeguard: if for some reason the progress file was
-            # never written (e.g. no translatable lines triggered saves), write it now.
-            try:
-                if translatedData[0]:
-                    lines = writable(translatedData[0], "cp932", filename)
-                    os.makedirs("translated", exist_ok=True)
-                    final_path = os.path.join("translated", filename)
-                    # Write directly (small risk window acceptable on final flush)
-                    with open(final_path, "w", encoding="cp932", errors="ignore", newline="\n") as f:
-                        f.writelines(lines)
-            except UnwritableText as error:
-                translatedData[2] = error
-            except Exception:
-                traceback.print_exc()
+        # Final write safeguard: if for some reason the progress file was
+        # never written (e.g. no translatable lines triggered saves), write it now.
+        # A line the encoding can't write, or a write that fails, fails the
+        # file (util/game_encoding).
+        if translatedData[0]:
+            lines = writable(translatedData[0], "cp932", filename)
+            os.makedirs("translated", exist_ok=True)
+            final_path = os.path.join("translated", filename)
+            # Write directly (small risk window acceptable on final flush)
+            with open(final_path, "w", encoding="cp932", errors="ignore", newline="\n") as f:
+                f.writelines(lines)
 
-            tqdm.write(getResultString(translatedData, end - start, filename))
-            with LOCK:
-                TOKENS[0] += translatedData[1][0]
-                TOKENS[1] += translatedData[1][1]
-        except run_stop_errors():
-            raise
-        except Exception:
-            traceback.print_exc()
-            # Don't blindly remove the file; it may contain partial progress.
-            return "Fail"
+        tqdm.write(module_receipt(filename, translatedData[1], end - start, MODEL))
+        with LOCK:
+            TOKENS[0] += translatedData[1][0]
+            TOKENS[1] += translatedData[1][1]
 
-    return getResultString(["", TOKENS, None], end - start, "TOTAL")
-
-
-def getResultString(translatedData, translationTime, filename):
-    # File Print String
-    cost = calculateCost(translatedData[1][0], translatedData[1][1], MODEL)
-    totalTokenstring = (
-        Fore.YELLOW + "[Input: " + str(translatedData[1][0]) + "]"
-        "[Output: "
-        + str(translatedData[1][1])
-        + "]" "[Cost: ${:,.4f}".format(cost)
-        + "]"
-    )
-    timeString = Fore.BLUE + "[" + str(round(translationTime, 1)) + "s]"
-
-    if translatedData[2] == None:
-        # Success
-        return filename + ": " + totalTokenstring + timeString + Fore.GREEN + " \u2713 " + Fore.RESET
-
-    else:
-        # Fail
-        try:
-            raise translatedData[2]
-        except Exception as e:
-            traceback.print_exc()
-            errorString = str(e) + Fore.RED
-            return filename + ": " + totalTokenstring + timeString + Fore.RED + " \u2717 " + errorString + Fore.RESET
+    return module_receipt("TOTAL", TOKENS, end - start, MODEL)
 
 
 def openFiles(filename):
@@ -451,9 +418,8 @@ def translateKiriKiri(data, pbar, filename, jobList):
         # Validate
         if len(stringList) != len(stringListTL):
             with LOCK:
-                if filename not in MISMATCH:
-                    MISMATCH.append(filename)
-                    stringListTL = stringList
+                found_mismatch(MISMATCH, filename)
+                stringListTL = stringList
 
     # Choices
     if len(choiceList) > 0:
@@ -474,9 +440,8 @@ def translateKiriKiri(data, pbar, filename, jobList):
         # Validate
         if len(choiceList) != len(choiceListTL):
             with LOCK:
-                if filename not in MISMATCH:
-                    MISMATCH.append(filename)
-                    choiceListTL = choiceList
+                found_mismatch(MISMATCH, filename)
+                choiceListTL = choiceList
 
     # Proceed to Pass 2
     if not setData:

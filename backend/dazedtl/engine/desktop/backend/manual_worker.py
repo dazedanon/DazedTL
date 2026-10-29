@@ -56,8 +56,8 @@ def main():
                                adopted_requests=adoptable_requests(root, plan),
                                receipts=attempt.get("receipts"))
         last_progress = [0.0]
-        for name in ("log", "progress", "file_error", "file_mismatch", "status", "batch_phase", "estimate_ready", "speaker_confirmation",
-                     "receipt"):
+        for name in ("log", "progress", "file_error", "file_mismatch", "file_finished", "status", "batch_phase", "estimate_ready",
+                     "speaker_confirmation", "receipt"):
             getattr(task, name + "_signal").connect(lambda *args, event=name: emit(event, *args))
         def finished(success, message):
             if task.estimate_summary:

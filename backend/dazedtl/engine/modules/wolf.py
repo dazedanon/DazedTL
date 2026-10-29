@@ -15,7 +15,8 @@ from dotenv import load_dotenv
 from retry import retry
 from tqdm import tqdm
 from util.languages import source_pattern
-from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost, run_stop_errors
+from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost, found_mismatch, run_stop_errors
+from util.translation_task import fail_on_parser_error, module_receipt
 from util.speakers import strip_speaker_prefix
 from util import system
 
@@ -113,11 +114,7 @@ def handleWOLF(filename, estimate):
     start = time.time()
     translatedData = openFiles(filename)
 
-    # Parsers return the error of the page that failed. Fail the file so
-    # partial output is never written or reported as complete; the run logs
-    # what it paid for (util/subprocess_runner _paid_receipt).
-    if translatedData[2] is not None:
-        raise translatedData[2]
+    fail_on_parser_error(translatedData)
 
     # The file is written once, whole, and only when it finished; a write
     # that fails leaves an earlier translation as it was. Nothing read a
@@ -126,22 +123,18 @@ def handleWOLF(filename, estimate):
     # earlier complete one or, after a stop, counted as finished
     # (desktop/backend/manual.py).
     if not estimate:
-        try:
-            output = json.dumps(translatedData[0], ensure_ascii=False, indent=4)
-            system.write_bytes("translated/" + filename, output.encode("utf-8"), 0o644)
-        except Exception:
-            traceback.print_exc()
-            return "Fail"
+        output = json.dumps(translatedData[0], ensure_ascii=False, indent=4)
+        system.write_bytes("translated/" + filename, output.encode("utf-8"), 0o644)
 
     # Print File
     end = time.time()
-    tqdm.write(getResultString(translatedData, end - start, filename))
+    tqdm.write(module_receipt(filename, translatedData[1], end - start, MODEL))
     with LOCK:
         TOKENS[0] += translatedData[1][0]
         TOKENS[1] += translatedData[1][1]
 
     # Print Total
-    totalString = getResultString(["", TOKENS, None], end - start, "TOTAL")
+    totalString = module_receipt("TOTAL", TOKENS, end - start, MODEL)
 
     # Print any errors on maps
     if len(MISMATCH) > 0:
@@ -172,31 +165,6 @@ def openFiles(filename):
         return parseWhole(data, filename, searchCodes, "commands")
 
     raise NameError(filename + " Not Supported")
-
-
-def getResultString(translatedData, translationTime, filename):
-    # File Print String
-    cost = calculateCost(translatedData[1][0], translatedData[1][1], MODEL)
-    totalTokenstring = (
-        Fore.YELLOW + "[Input: " + str(translatedData[1][0]) + "]"
-        "[Output: "
-        + str(translatedData[1][1])
-        + "]" "[Cost: ${:,.4f}".format(cost)
-        + "]"
-    )
-    timeString = Fore.BLUE + "[" + str(round(translationTime, 1)) + "s]"
-
-    if translatedData[2] is None:
-        # Success
-        return filename + ": " + totalTokenstring + timeString + Fore.GREEN + " \u2713 " + Fore.RESET
-    else:
-        # Fail
-        try:
-            raise translatedData[2]
-        except Exception as e:
-            traceback.print_exc()
-            errorString = str(e) + Fore.RED
-            return filename + ": " + totalTokenstring + timeString + Fore.RED + " \u2717 " + errorString + Fore.RESET
 
 
 def translatePage(search, page, pbar, filename, totalTokens):
@@ -259,8 +227,7 @@ def replyFits(translated, lines, filename):
     if len(translated) == len(lines):
         return True
     with LOCK:
-        if filename not in MISMATCH:
-            MISMATCH.append(filename)
+        found_mismatch(MISMATCH, filename)
     return False
 
 
@@ -2016,8 +1983,7 @@ def searchDB(events, pbar, jobList, filename):
                 or len(descListTL3) != len(npcList[3])
             ):
                 with LOCK:
-                    if filename not in MISMATCH:
-                        MISMATCH.append(filename)
+                    found_mismatch(MISMATCH, filename)
             else:
                 npcListTL = [nameListTL, descListTL1, descListTL2, descListTL3]
                 translate = True
@@ -2062,8 +2028,7 @@ def searchDB(events, pbar, jobList, filename):
             # Check Mismatch
             if len(nameListTL) != len(scenarioList[0]) or len(descListTL1) != len(scenarioList[1]) or len(descListTL2) != len(scenarioList[2]):
                 with LOCK:
-                    if filename not in MISMATCH:
-                        MISMATCH.append(filename)
+                    found_mismatch(MISMATCH, filename)
             else:
                 scenarioListTL = [nameListTL, descListTL1, descListTL2]
                 translate = True
@@ -2108,8 +2073,7 @@ def searchDB(events, pbar, jobList, filename):
             # Check Mismatch
             if len(nameListTL) != len(optionsList[0]) or len(descListTL1) != len(optionsList[1]) or len(descListTL2) != len(optionsList[2]):
                 with LOCK:
-                    if filename not in MISMATCH:
-                        MISMATCH.append(filename)
+                    found_mismatch(MISMATCH, filename)
             else:
                 optionsListTL = [nameListTL, descListTL1, descListTL2]
                 translate = True
@@ -2152,8 +2116,7 @@ def searchDB(events, pbar, jobList, filename):
                 or len(descListTL3) != len(itemList[3])
             ):
                 with LOCK:
-                    if filename not in MISMATCH:
-                        MISMATCH.append(filename)
+                    found_mismatch(MISMATCH, filename)
             else:
                 itemListTL = [nameListTL, descListTL1, descListTL2, descListTL3]
                 translate = True
@@ -2185,8 +2148,7 @@ def searchDB(events, pbar, jobList, filename):
             # Check Mismatch
             if len(nameListTL) != len(armorList[0]) or len(descListTL1) != len(armorList[1]):
                 with LOCK:
-                    if filename not in MISMATCH:
-                        MISMATCH.append(filename)
+                    found_mismatch(MISMATCH, filename)
             else:
                 armorListTL = [nameListTL, descListTL1]
                 translate = True
@@ -2218,8 +2180,7 @@ def searchDB(events, pbar, jobList, filename):
             # Check Mismatch
             if len(nameListTL) != len(enemyList[0]) or len(descListTL1) != len(enemyList[1]):
                 with LOCK:
-                    if filename not in MISMATCH:
-                        MISMATCH.append(filename)
+                    found_mismatch(MISMATCH, filename)
             else:
                 enemyListTL = [nameListTL, descListTL1]
                 translate = True
@@ -2256,8 +2217,7 @@ def searchDB(events, pbar, jobList, filename):
             # Check Mismatch
             if len(nameListTL) != len(weaponsList[0]) or len(descListTL1) != len(weaponsList[1]) or len(descListTL2) != len(weaponsList[2]):
                 with LOCK:
-                    if filename not in MISMATCH:
-                        MISMATCH.append(filename)
+                    found_mismatch(MISMATCH, filename)
             else:
                 weaponsListTL = [nameListTL, descListTL1, descListTL2]
                 translate = True
@@ -2336,8 +2296,7 @@ def searchDB(events, pbar, jobList, filename):
                 or len(descListTL4) != len(skillList[4])
             ):
                 with LOCK:
-                    if filename not in MISMATCH:
-                        MISMATCH.append(filename)
+                    found_mismatch(MISMATCH, filename)
             else:
                 skillListTL = [nameListTL, descListTL1, descListTL2, descListTL3, descListTL4]
                 translate = True
@@ -2449,8 +2408,7 @@ def searchDB(events, pbar, jobList, filename):
                     or len(descListTL6) != len(stateList[6])
                 ):
                     with LOCK:
-                        if filename not in MISMATCH:
-                            MISMATCH.append(filename)
+                        found_mismatch(MISMATCH, filename)
                 else:
                     stateListTL = [
                         nameListTL,
@@ -2482,8 +2440,7 @@ def searchDB(events, pbar, jobList, filename):
             # Check Mismatch
             if len(nameListTL) != len(dbNameList[0]):
                 with LOCK:
-                    if filename not in MISMATCH:
-                        MISMATCH.append(filename)
+                    found_mismatch(MISMATCH, filename)
             else:
                 dbNameListTL = [nameListTL]
                 translate = True
@@ -2506,8 +2463,7 @@ def searchDB(events, pbar, jobList, filename):
             # Check Mismatch
             if len(valueListTL) != len(dbValueList[0]):
                 with LOCK:
-                    if filename not in MISMATCH:
-                        MISMATCH.append(filename)
+                    found_mismatch(MISMATCH, filename)
             else:
                 dbValueListTL = [valueListTL]
                 translate = True

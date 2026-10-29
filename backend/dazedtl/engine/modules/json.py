@@ -13,7 +13,8 @@ from dotenv import load_dotenv
 from retry import retry
 from tqdm import tqdm
 from util.languages import source_pattern
-from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost, getPricingConfig, calculateCost, run_stop_errors
+from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost, getPricingConfig, calculateCost, found_mismatch, run_stop_errors
+from util.translation_task import fail_on_parser_error, module_receipt
 from util.speakers import strip_echoed_speaker, translate_speaker
 import tempfile
 from util import system
@@ -78,37 +79,34 @@ def handleJSON(filename, estimate):
     if estimate:
         start = time.time()
         translatedData = openFiles(filename)
+        fail_on_parser_error(translatedData)
 
         # Print Result
         end = time.time()
-        tqdm.write(getResultString(translatedData, end - start, filename))
+        tqdm.write(module_receipt(filename, translatedData[1], end - start, MODEL))
         with LOCK:
             TOKENS[0] += translatedData[1][0]
             TOKENS[1] += translatedData[1][1]
 
-        return getResultString(["", TOKENS, None], end - start, "TOTAL")
+        return module_receipt("TOTAL", TOKENS, end - start, MODEL)
 
     else:
-        try:
-            start = time.time()
-            translatedData = openFiles(filename)
+        start = time.time()
+        translatedData = openFiles(filename)
+        fail_on_parser_error(translatedData)
 
-            # Write final result after translation is complete
-            with open("translated/" + filename, "w", encoding="utf-8", newline="\n") as outFile:
-                json.dump(translatedData[0], outFile, ensure_ascii=False, indent=4)
-            
-            # Print Result
-            end = time.time()
-            tqdm.write(getResultString(translatedData, end - start, filename))
-            with LOCK:
-                TOKENS[0] += translatedData[1][0]
-                TOKENS[1] += translatedData[1][1]
-        except run_stop_errors():
-            raise
-        except Exception:
-            return "Fail"
+        # Write final result after translation is complete
+        with open("translated/" + filename, "w", encoding="utf-8", newline="\n") as outFile:
+            json.dump(translatedData[0], outFile, ensure_ascii=False, indent=4)
 
-    return getResultString(["", TOKENS, None], end - start, "TOTAL")
+        # Print Result
+        end = time.time()
+        tqdm.write(module_receipt(filename, translatedData[1], end - start, MODEL))
+        with LOCK:
+            TOKENS[0] += translatedData[1][0]
+            TOKENS[1] += translatedData[1][1]
+
+    return module_receipt("TOTAL", TOKENS, end - start, MODEL)
 
 
 def openFiles(filename):
@@ -123,32 +121,6 @@ def openFiles(filename):
             raise NameError(filename + " Not Supported")
 
     return translatedData
-
-
-def getResultString(translatedData, translationTime, filename):
-    # File Print String
-    cost = calculateCost(translatedData[1][0], translatedData[1][1], MODEL)
-    totalTokenstring = (
-        Fore.YELLOW + "[Input: " + str(translatedData[1][0]) + "]"
-        "[Output: "
-        + str(translatedData[1][1])
-        + "]" "[Cost: ${:,.4f}".format(cost)
-        + "]"
-    )
-    timeString = Fore.BLUE + "[" + str(round(translationTime, 1)) + "s]"
-
-    if translatedData[2] == None:
-        # Success
-        return filename + ": " + totalTokenstring + timeString + Fore.GREEN + " \u2713 " + Fore.RESET
-
-    else:
-        # Fail
-        try:
-            raise translatedData[2]
-        except Exception as e:
-            traceback.print_exc()
-            errorString = str(e) + Fore.RED
-            return filename + ": " + totalTokenstring + timeString + Fore.RED + " \u2717 " + errorString + Fore.RESET
 
 
 def parseJSON(data, filename):
@@ -246,8 +218,7 @@ def translateSimpleKeyValueJSON(data, filename):
         # Check for mismatch
         if len(stringList) != len(translatedList):
             with LOCK:
-                if FILENAME not in MISMATCH:
-                    MISMATCH.append(FILENAME)
+                found_mismatch(MISMATCH, FILENAME)
         
         # Pass 2: Update the values with translations
         for i, key in enumerate(keyList):
@@ -286,8 +257,7 @@ def translatePSData(data, filename):
         tokens[1] += response[1][1]
         if len(stringList) != len(response[0]):
             with LOCK:
-                if FILENAME not in MISMATCH:
-                    MISMATCH.append(FILENAME)
+                found_mismatch(MISMATCH, FILENAME)
             return []
         return response[0]
 
@@ -508,8 +478,7 @@ def translateRdData(data, filename):
         tokens[1] += response[1][1]
         if len(stringList) != len(response[0]):
             with LOCK:
-                if FILENAME not in MISMATCH:
-                    MISMATCH.append(FILENAME)
+                found_mismatch(MISMATCH, FILENAME)
             return []
         return response[0]
 
@@ -760,8 +729,7 @@ def translateGameSetting(data, filename):
         tokens[1] += response[1][1]
         if len(stringList) != len(response[0]):
             with LOCK:
-                if FILENAME not in MISMATCH:
-                    MISMATCH.append(FILENAME)
+                found_mismatch(MISMATCH, FILENAME)
             return []
         return response[0]
 
@@ -909,8 +877,7 @@ def translateDialogueSrcTl(data, filename):
 
         if len(srcList) != len(translatedList):
             with LOCK:
-                if FILENAME not in MISMATCH:
-                    MISMATCH.append(FILENAME)
+                found_mismatch(MISMATCH, FILENAME)
 
         for i, (key, entry_type) in enumerate(keyList):
             if i >= len(translatedList):
@@ -1198,8 +1165,7 @@ def translateJSON(data, filename, translatedList):
                 
                 if len(eventList[0]) != len(eventListTL[0]):
                     with LOCK:
-                        if FILENAME not in MISMATCH:
-                            MISMATCH.append(FILENAME)
+                        found_mismatch(MISMATCH, FILENAME)
 
             # Event Process
             if eventList[1]:
@@ -1210,8 +1176,7 @@ def translateJSON(data, filename, translatedList):
                 
                 if len(eventList[1]) != len(eventListTL[1]):
                     with LOCK:
-                        if FILENAME not in MISMATCH:
-                            MISMATCH.append(FILENAME)
+                        found_mismatch(MISMATCH, FILENAME)
 
             # Event Text
             if eventList[2]:
@@ -1222,8 +1187,7 @@ def translateJSON(data, filename, translatedList):
                 
                 if len(eventList[2]) != len(eventListTL[2]):
                     with LOCK:
-                        if FILENAME not in MISMATCH:
-                            MISMATCH.append(FILENAME)
+                        found_mismatch(MISMATCH, FILENAME)
 
             # Event Key
             if eventList[3]:
@@ -1234,8 +1198,7 @@ def translateJSON(data, filename, translatedList):
                 
                 if len(eventList[3]) != len(eventListTL[3]):
                     with LOCK:
-                        if FILENAME not in MISMATCH:
-                            MISMATCH.append(FILENAME)
+                        found_mismatch(MISMATCH, FILENAME)
 
             # Event Target
             if eventList[4]:
@@ -1246,8 +1209,7 @@ def translateJSON(data, filename, translatedList):
                 
                 if len(eventList[4]) != len(eventListTL[4]):
                     with LOCK:
-                        if FILENAME not in MISMATCH:
-                            MISMATCH.append(FILENAME)
+                        found_mismatch(MISMATCH, FILENAME)
 
             # Event Job
             if eventList[5]:
@@ -1258,8 +1220,7 @@ def translateJSON(data, filename, translatedList):
                 
                 if len(eventList[5]) != len(eventListTL[5]):
                     with LOCK:
-                        if FILENAME not in MISMATCH:
-                            MISMATCH.append(FILENAME)
+                        found_mismatch(MISMATCH, FILENAME)
 
             # Event Place
             if eventList[6]:
@@ -1270,8 +1231,7 @@ def translateJSON(data, filename, translatedList):
                 
                 if len(eventList[6]) != len(eventListTL[6]):
                     with LOCK:
-                        if FILENAME not in MISMATCH:
-                            MISMATCH.append(FILENAME)
+                        found_mismatch(MISMATCH, FILENAME)
 
         # String List
         if stringList:
@@ -1285,8 +1245,7 @@ def translateJSON(data, filename, translatedList):
             if len(stringList) != len(stringListTL):
                 # Mismatch
                 with LOCK:
-                    if FILENAME not in MISMATCH:
-                        MISMATCH.append(FILENAME)
+                    found_mismatch(MISMATCH, FILENAME)
 
         # Pass 2: Set Strings (recursive call)
         translateJSON(data, filename, [stringListTL, eventListTL])

@@ -74,6 +74,7 @@ from util.translation import (
     nameplate_gloss_for_alias,
     run_stop_errors,
 )
+from util.translation_task import fail_on_parser_error, module_receipt
 from util import speakers as wolf_speakers
 from util import vocab as wolf_vocab
 from util import wolfdawn
@@ -207,18 +208,15 @@ def handleWolfDawn(filename, estimate):
 
     start = time.time()
     translatedData = openFiles(filename)
+    fail_on_parser_error(translatedData)
 
     # Batch collect only queues API requests; text is still Japanese. Writing
     # translated/ here would overwrite prior work with source echoed back.
     # Real English is written on the consume pass (or a live non-batch run).
     if not estimate and _batch_phase() != "collect":
         out_path = "translated/" + filename
-        try:
-            with open(out_path, "w", encoding="utf-8", newline="\n") as outFile:
-                json.dump(translatedData[0], outFile, ensure_ascii=False, indent=4)
-        except Exception:
-            traceback.print_exc()
-            return "Fail"
+        with open(out_path, "w", encoding="utf-8", newline="\n") as outFile:
+            json.dump(translatedData[0], outFile, ensure_ascii=False, indent=4)
         # Restore positional whitespace pads the model dropped (status-card
         # ``<pad>\nNAME`` fields, etc.). WolfDawn edits the JSON in place.
         try:
@@ -242,12 +240,12 @@ def handleWolfDawn(filename, estimate):
             traceback.print_exc()
 
     end = time.time()
-    tqdm.write(getResultString(translatedData, end - start, filename))
+    tqdm.write(module_receipt(filename, translatedData[1], end - start, MODEL))
     with LOCK:
         TOKENS[0] += translatedData[1][0]
         TOKENS[1] += translatedData[1][1]
 
-    totalString = getResultString(["", TOKENS, None], end - start, "TOTAL")
+    totalString = module_receipt("TOTAL", TOKENS, end - start, MODEL)
     if len(MISMATCH) > 0:
         return totalString + Fore.RED + f"\nMismatch Errors: {MISMATCH}" + Fore.RESET
     return totalString
@@ -781,29 +779,6 @@ def _harvest_db_to_vocab(data):
             wolf_vocab.update_vocab_section(type_name, pairs, merge=True)
     except Exception:
         traceback.print_exc()
-
-
-def getResultString(translatedData, translationTime, filename):
-    """Format the per-file / total cost + status line for the console log."""
-    cost = calculateCost(translatedData[1][0], translatedData[1][1], MODEL)
-    totalTokenstring = (
-        Fore.YELLOW + "[Input: " + str(translatedData[1][0]) + "]"
-        "[Output: " + str(translatedData[1][1]) + "]"
-        "[Cost: ${:,.4f}".format(cost) + "]"
-    )
-    timeString = Fore.BLUE + "[" + str(round(translationTime, 1)) + "s]"
-
-    if translatedData[2] is None:
-        return filename + ": " + totalTokenstring + timeString + Fore.GREEN + " \u2713 " + Fore.RESET
-    try:
-        raise translatedData[2]
-    except Exception as e:
-        traceback.print_exc()
-        errorString = str(e) + Fore.RED
-        return (
-            filename + ": " + totalTokenstring + timeString
-            + Fore.RED + " \u2717 " + errorString + Fore.RESET
-        )
 
 
 def translateAI(text, history, history_ctx=None, *, filename=None):

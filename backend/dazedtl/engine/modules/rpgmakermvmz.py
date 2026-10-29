@@ -34,7 +34,10 @@ from util.translation import (
     speaker_source_lookup_keys,
     split_vocab_source_aliases,
     translateAI as sharedtranslateAI,
+    found_mismatch,
+    report_mismatch,
 )
+from util.translation_task import fail_on_parser_error, module_receipt
 from util.vocab import (
     character_priority,
     fold_glossary_sections,
@@ -542,8 +545,7 @@ def handleMVMZ(filename, estimate):
 
     # Parsers return the exception that stopped them after saving each finished
     # page. Fail the file so partial output is never presented as complete.
-    if translatedData[2] is not None:
-        raise translatedData[2]
+    fail_on_parser_error(translatedData)
 
     if not estimate and not SPEAKER_PARSE_MODE and not _batch_collecting():
         if not saveProgress(translatedData[0], filename, force=True):
@@ -675,45 +677,30 @@ def _batchCollectScanText(stats, *, empty_text="no eligible untranslated text"):
 
 
 def getResultString(translatedData, translationTime, filename):
+    """A file's receipt line (util/translation_task module_receipt), or the
+    scan line of a Batch collection or estimate; the TOTAL's time adds up the
+    files' times since the worker last reset it."""
     global TIMETOTAL
-    # File Print String
-    cost = calculateCost(translatedData[1][0], translatedData[1][1], MODEL)
-    if (
-        filename != "TOTAL"
-        and (os.getenv("BATCH_PHASE") or "").strip().lower()
-        in {"collect", "estimate"}
-    ):
-        totalTokenstring = (
-            Fore.CYAN
-            + "[Scan: "
-            + _batchCollectScanText(batch_collect_file_stats())
-            + "] "
-        )
-    else:
-        totalTokenstring = (
-            Fore.YELLOW + "[Input: " + str(translatedData[1][0]) + "]"
-            "[Output: "
-            + str(translatedData[1][1])
-            + "]" "[Cost: ${:,.4f}".format(cost)
-            + "]"
-        )
-    if filename != "TOTAL":
-        timeString = Fore.BLUE + "[" + str(round(translationTime, 1)) + "s]"
-        TIMETOTAL += round(translationTime, 1)
-    else:
-        timeString = Fore.BLUE + "[" + str(round(TIMETOTAL, 1)) + "s]"
-
-    if translatedData[2] is None:
-        # Success
-        return filename + ": " + totalTokenstring + timeString + Fore.GREEN + " \u2713 " + Fore.RESET
-    else:
-        # Fail
-        try:
-            raise translatedData[2]
-        except Exception as e:
-            traceback.print_exc()
-            errorString = str(e) + Fore.RED
-            return filename + ": " + totalTokenstring + timeString + Fore.RED + " \u2717 " + errorString + Fore.RESET
+    if filename == "TOTAL":
+        return module_receipt(filename, translatedData[1], TIMETOTAL, MODEL)
+    TIMETOTAL += round(translationTime, 1)
+    if (os.getenv("BATCH_PHASE") or "").strip().lower() not in {"collect", "estimate"}:
+        return module_receipt(filename, translatedData[1], translationTime, MODEL)
+    # It closes the file's cost window as a receipt does.
+    calculateCost(translatedData[1][0], translatedData[1][1], MODEL)
+    return (
+        filename
+        + ": "
+        + Fore.CYAN
+        + "[Scan: "
+        + _batchCollectScanText(batch_collect_file_stats())
+        + "] "
+        + Fore.BLUE
+        + f"[{round(translationTime, 1)}s]"
+        + Fore.GREEN
+        + " \u2713 "
+        + Fore.RESET
+    )
 
 
 def _batch_collecting() -> bool:
@@ -1574,8 +1561,7 @@ def _translate_choices(job, history):
 def _apply_choices(cmd, job, translated, filename):
     """Writes a menu's translations back with their condition clauses."""
     if len(translated) != len(job["choices"]):
-        if filename not in MISMATCH:
-            MISMATCH.append(filename)
+        found_mismatch(MISMATCH, filename)
         return
     for idx, translatedText in enumerate(translated):
         originalIndex = job["indexes"][idx]
@@ -3688,6 +3674,7 @@ def searchNames(data, pbar, context, filename, saved=None):
             # Mismatch
             if mismatch == True:
                 MISMATCH.append(nameList)
+                report_mismatch(filename)
                 nameList.clear()
                 nameSourceList.clear()
                 nameIndexList.clear()
@@ -3827,6 +3814,11 @@ def _reply_fits(translated, lines, filenames):
         for filename in filenames:
             if filename not in MISMATCH:
                 MISMATCH.append(filename)
+        # translateAI reported a chunk it kept in its source text itself; a
+        # reply of the wrong length is one mismatch, however many pages of
+        # the file it held.
+        if len(translated) != len(lines):
+            report_mismatch(filenames[0])
     return False
 
 
@@ -6207,8 +6199,7 @@ def _searchCodes(page, pbar, jobList, filename):
             totalTokens[1] += response[1][1]
             if len(list401TL) != len(list401):
                 with LOCK:
-                    if filename not in MISMATCH:
-                        MISMATCH.append(filename)
+                    found_mismatch(MISMATCH, filename)
 
         # 122
         if len(list122) > 0:
@@ -6218,8 +6209,7 @@ def _searchCodes(page, pbar, jobList, filename):
             totalTokens[1] += response[1][1]
             if len(list122TL) != len(list122):
                 with LOCK:
-                    if filename not in MISMATCH:
-                        MISMATCH.append(filename)
+                    found_mismatch(MISMATCH, filename)
             else:
                 # Store each original→translated pair for code 111 consistency (file-backed)
                 set_var_translations_batch(list(zip(list122, list122TL)))
@@ -6243,8 +6233,7 @@ def _searchCodes(page, pbar, jobList, filename):
             totalTokens[1] += response[1][1]
             if len(list355655TL) != len(list355655):
                 with LOCK:
-                    if filename not in MISMATCH:
-                        MISMATCH.append(filename)
+                    found_mismatch(MISMATCH, filename)
 
         # 108
         if len(list108) > 0:
@@ -6254,8 +6243,7 @@ def _searchCodes(page, pbar, jobList, filename):
             totalTokens[1] += response[1][1]
             if len(list108TL) != len(list108):
                 with LOCK:
-                    if filename not in MISMATCH:
-                        MISMATCH.append(filename)
+                    found_mismatch(MISMATCH, filename)
 
         # 356
         if len(list356) > 0:
@@ -6265,8 +6253,7 @@ def _searchCodes(page, pbar, jobList, filename):
             totalTokens[1] += response[1][1]
             if len(list356TL) != len(list356):
                 with LOCK:
-                    if filename not in MISMATCH:
-                        MISMATCH.append(filename)
+                    found_mismatch(MISMATCH, filename)
 
         # 357
         if len(list357) > 0:
@@ -6276,8 +6263,7 @@ def _searchCodes(page, pbar, jobList, filename):
             totalTokens[1] += response[1][1]
             if len(list357TL) != len(list357):
                 with LOCK:
-                    if filename not in MISMATCH:
-                        MISMATCH.append(filename)
+                    found_mismatch(MISMATCH, filename)
 
         # 657
         if len(list657) > 0:
@@ -6287,8 +6273,7 @@ def _searchCodes(page, pbar, jobList, filename):
             totalTokens[1] += response[1][1]
             if len(list657TL) != len(list657):
                 with LOCK:
-                    if filename not in MISMATCH:
-                        MISMATCH.append(filename)
+                    found_mismatch(MISMATCH, filename)
 
         # 408
         if len(list408) > 0:
@@ -6299,7 +6284,11 @@ def _searchCodes(page, pbar, jobList, filename):
             failed408Batch = bool(getattr(THREAD_CTX, "last_translation_had_mismatch", False))
             if failed408Batch or len(list408TL) != len(list408):
                 with LOCK:
-                    if filename not in MISMATCH:
+                    # translateAI reported a chunk it kept in its source
+                    # text itself.
+                    if len(list408TL) != len(list408):
+                        found_mismatch(MISMATCH, filename)
+                    elif filename not in MISMATCH:
                         MISMATCH.append(filename)
                 # A failed internal chunk or short result would make this pass
                 # partially apply or misalign later entries. Keep the entire
@@ -6315,8 +6304,7 @@ def _searchCodes(page, pbar, jobList, filename):
             totalTokens[1] += response[1][1]
             if len(list324TL) != len(list324):
                 with LOCK:
-                    if filename not in MISMATCH:
-                        MISMATCH.append(filename)
+                    found_mismatch(MISMATCH, filename)
 
         # 325
         if len(list325) > 0:
@@ -6327,8 +6315,7 @@ def _searchCodes(page, pbar, jobList, filename):
             totalTokens[1] += response[1][1]
             if len(list325TL) != len(list325):
                 with LOCK:
-                    if filename not in MISMATCH:
-                        MISMATCH.append(filename)
+                    found_mismatch(MISMATCH, filename)
 
         # Start Pass 2
         if deferred:

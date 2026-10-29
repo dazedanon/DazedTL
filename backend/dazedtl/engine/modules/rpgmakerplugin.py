@@ -14,7 +14,8 @@ from dotenv import load_dotenv
 from retry import retry
 from tqdm import tqdm
 from util.languages import source_pattern
-from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost, run_stop_errors
+from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost, found_mismatch, run_stop_errors
+from util.translation_task import fail_on_parser_error, module_receipt
 import tempfile
 from util import system
 
@@ -78,16 +79,17 @@ def handlePlugin(filename, estimate):
     if ESTIMATE:
         start = time.time()
         translatedData = openFiles(filename)
+        fail_on_parser_error(translatedData)
 
         # Print Result
         end = time.time()
-        tqdm.write(getResultString(translatedData, end - start, filename))
+        tqdm.write(module_receipt(filename, translatedData[1], end - start, MODEL))
         with LOCK:
             TOKENS[0] += translatedData[1][0]
             TOKENS[1] += translatedData[1][1]
 
         # Print Total
-        totalString = getResultString(["", TOKENS, None], end - start, "TOTAL")
+        totalString = module_receipt("TOTAL", TOKENS, end - start, MODEL)
 
         # Print any errors on maps
         if len(MISMATCH) > 0:
@@ -96,55 +98,24 @@ def handlePlugin(filename, estimate):
             return totalString
 
     else:
-        try:
-            # Perform translation first; incremental progress writes happen during translation.
-            # We no longer keep the destination file open simultaneously to avoid Windows locking issues
-            # during atomic os.replace operations inside save_progress_lines.
-            start = time.time()
-            translatedData = openFiles(filename)
+        # Perform translation first; incremental progress writes happen during translation.
+        # We no longer keep the destination file open simultaneously to avoid Windows locking issues
+        # during atomic os.replace operations inside save_progress_lines.
+        start = time.time()
+        translatedData = openFiles(filename)
+        fail_on_parser_error(translatedData)
 
-            # Ensure final state is flushed (in case no incremental writes occurred for some reason).
-            save_progress_lines(translatedData[0], filename)
+        # Ensure final state is flushed (in case no incremental writes occurred for some reason).
+        save_progress_lines(translatedData[0], filename)
 
-            # Print Result
-            end = time.time()
-            tqdm.write(getResultString(translatedData, end - start, filename))
-            with LOCK:
-                TOKENS[0] += translatedData[1][0]
-                TOKENS[1] += translatedData[1][1]
-        except run_stop_errors():
-            raise
-        except Exception:
-            traceback.print_exc()
-            return "Fail"
+        # Print Result
+        end = time.time()
+        tqdm.write(module_receipt(filename, translatedData[1], end - start, MODEL))
+        with LOCK:
+            TOKENS[0] += translatedData[1][0]
+            TOKENS[1] += translatedData[1][1]
 
-    return getResultString(["", TOKENS, None], end - start, "TOTAL")
-
-
-def getResultString(translatedData, translationTime, filename):
-    # File Print String
-    cost = calculateCost(translatedData[1][0], translatedData[1][1], MODEL)
-    totalTokenstring = (
-        Fore.YELLOW + "[Input: " + str(translatedData[1][0]) + "]"
-        "[Output: "
-        + str(translatedData[1][1])
-        + "]" "[Cost: ${:,.4f}".format(cost)
-        + "]"
-    )
-    timeString = Fore.BLUE + "[" + str(round(translationTime, 1)) + "s]"
-
-    if translatedData[2] == None:
-        # Success
-        return filename + ": " + totalTokenstring + timeString + Fore.GREEN + " \u2713 " + Fore.RESET
-
-    else:
-        # Fail
-        try:
-            raise translatedData[2]
-        except Exception as e:
-            traceback.print_exc()
-            errorString = str(e) + Fore.RED
-            return filename + ": " + totalTokenstring + timeString + Fore.RED + " \u2717 " + errorString + Fore.RESET
+    return module_receipt("TOTAL", TOKENS, end - start, MODEL)
 
 
 def openFiles(filename):
@@ -933,8 +904,7 @@ def translatePlugin(data, pbar, filename, translatedList):
         # Mismatch
         else:
             with LOCK:
-                if filename not in MISMATCH:
-                    MISMATCH.append(filename)
+                found_mismatch(MISMATCH, filename)
 
     # Custom
     if custom:
@@ -952,8 +922,7 @@ def translatePlugin(data, pbar, filename, translatedList):
         # Mismatch
         else:
             with LOCK:
-                if filename not in MISMATCH:
-                    MISMATCH.append(filename)
+                found_mismatch(MISMATCH, filename)
 
     # SceneCustomMenu Text
     sceneMenuTextTL = []
@@ -978,8 +947,7 @@ def translatePlugin(data, pbar, filename, translatedList):
         # Mismatch
         else:
             with LOCK:
-                if filename not in MISMATCH:
-                    MISMATCH.append(filename)
+                found_mismatch(MISMATCH, filename)
 
     # SceneCustomMenu CommonHelpText
     if sceneMenuCommonHelpText:
@@ -997,8 +965,7 @@ def translatePlugin(data, pbar, filename, translatedList):
         # Mismatch
         else:
             with LOCK:
-                if filename not in MISMATCH:
-                    MISMATCH.append(filename)
+                found_mismatch(MISMATCH, filename)
 
     # SceneCustomMenu HelpText
     if sceneMenuHelpText:
@@ -1016,8 +983,7 @@ def translatePlugin(data, pbar, filename, translatedList):
         # Mismatch
         else:
             with LOCK:
-                if filename not in MISMATCH:
-                    MISMATCH.append(filename)
+                found_mismatch(MISMATCH, filename)
 
     # DrawTextEx - Brace-delimited labels (tracker section headers and field labels)
     if sceneMenuDrawText:
@@ -1035,8 +1001,7 @@ def translatePlugin(data, pbar, filename, translatedList):
         # Mismatch
         else:
             with LOCK:
-                if filename not in MISMATCH:
-                    MISMATCH.append(filename)
+                found_mismatch(MISMATCH, filename)
 
     # DrawTextEx - Stat labels (e.g., 攻撃力, 魔力, etc.)
     if sceneMenuStatLabel:
@@ -1054,8 +1019,7 @@ def translatePlugin(data, pbar, filename, translatedList):
         # Mismatch
         else:
             with LOCK:
-                if filename not in MISMATCH:
-                    MISMATCH.append(filename)
+                found_mismatch(MISMATCH, filename)
 
     # NUUN_SaveScreen ParamName
     if saveParamName:
@@ -1073,8 +1037,7 @@ def translatePlugin(data, pbar, filename, translatedList):
         # Mismatch
         else:
             with LOCK:
-                if filename not in MISMATCH:
-                    MISMATCH.append(filename)
+                found_mismatch(MISMATCH, filename)
 
     # Pass 2
     if translate and not setData:
