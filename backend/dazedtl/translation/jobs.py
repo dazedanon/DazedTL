@@ -81,6 +81,22 @@ def remove_scratch(identity):
         shutil.rmtree(folder, onexc=retry)  # noqa: TID251
 
 
+def failed_run(job):
+    """What a failed translation run hands to ``Jobs.run_failed``: the
+    settings it froze, with the message it ended with and when; else None."""
+    if (
+        job["status"] != "failed"
+        or job["kind"] != "translation"
+        or not isinstance(job.get("configuration"), dict)
+    ):
+        return None
+    return {
+        **job["configuration"],
+        "message": job["message"],
+        "ended": job.get("updated"),
+    }
+
+
 class RunStore:
     def __init__(self, workspace, owner_alive=lambda: True):
         self.workspace = Path(workspace)
@@ -550,15 +566,26 @@ class Jobs:
         self.store = RunStore(workspace)
         self.allow_providers = allow_providers
         self.processes = {}
-        # Called with what a failed translation run froze and the message it
-        # ended with once its worker exits (settings/store refused_in_run).
+        # Called with what a failed translation run froze, the message it
+        # ended with and when, once its worker exits (settings/store
+        # refused_in_run).
         self.run_failed: Callable[[dict[str, Any]], None] | None = None
+        # Runs that may have failed while no app was running to report them,
+        # reported on the next reconcile: what a failed one hands to
+        # run_failed, or None while a previous app's worker may still be
+        # ending it.
+        self.unreported: dict[str, dict[str, Any] | None] = {}
         self.owner_token = uuid.uuid4().hex
         self.owner_path = Path(workspace) / "translation/owner.json"
         write_json(self.owner_path, {"pid": os.getpid(), "token": self.owner_token})
         # The app owns workers. A previous process must not be restarted implicitly.
         for value in self.store.list(None):
+            report = failed_run(value)
+            if report is not None:
+                self.unreported[value["id"]] = report
             if value["status"] in {"running", "waiting"}:
+                if value["kind"] == "translation":
+                    self.unreported[value["id"]] = None
                 value.update(
                     status="interrupted",
                     message="The app closed. Resume to reconcile saved work.",
@@ -602,6 +629,7 @@ class Jobs:
             if process.poll() is None:
                 continue
             self.processes.pop(identity)
+            self.unreported.pop(identity, None)
             remove_scratch(identity)
             job = self.store.record(identity)
             if job["status"] in {"running", "waiting"}:
@@ -613,13 +641,29 @@ class Jobs:
                     else "The worker exited before completion. Run it again to continue.",
                 )
                 self.store.save(job)
-            elif (
-                self.run_failed
-                and job["status"] == "failed"
-                and job["kind"] == "translation"
-                and isinstance(job.get("configuration"), dict)
-            ):
-                self.run_failed({**job["configuration"], "message": job["message"]})
+            elif self.run_failed and (report := failed_run(job)) is not None:
+                self.run_failed(report)
+        if not self.run_failed:
+            return
+        for identity, report in list(self.unreported.items()):
+            if identity in self.processes:
+                continue  # Resumed: reported once its worker exits, above.
+            if report is None:
+                try:
+                    lock = WorkspaceLock(self.store.folder(identity))
+                except WorkspaceError:
+                    continue  # The previous app's worker is still ending it.
+                except ValueError, OSError:
+                    lock = None  # Gone or unreadable: nothing to report.
+                if lock is not None:
+                    lock.close()
+                    try:
+                        report = failed_run(self.store.record(identity))
+                    except ValueError, OSError, KeyError, TypeError:
+                        pass  # Unreadable now; Runs reports its file.
+            self.unreported.pop(identity, None)
+            if report is not None:
+                self.run_failed(report)
 
     def start(self, identity, project_id):
         self.reconcile()

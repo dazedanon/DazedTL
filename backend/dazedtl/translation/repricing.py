@@ -26,7 +26,8 @@ from .files import digest
 # What a model or mode switch changes in the frozen settings without
 # changing the text of the requests built under them. The thinking effort,
 # like the output allowance, changes what a reply may cost, not its text, and
-# so does the frozen record of the model's effort levels it is judged by.
+# so does the frozen record of the model's effort levels it is judged by and
+# the rule its refusal is read by.
 PRICE_ONLY = frozenset(
     {
         "mode",
@@ -35,6 +36,7 @@ PRICE_ONLY = frozenset(
         "maxOutputTokens",
         "thinkingEffort",
         "thinkingEffortListed",
+        "thinkingEffortRefusals",
         "openrouterBatch",
         "batchInputTokens",
     }

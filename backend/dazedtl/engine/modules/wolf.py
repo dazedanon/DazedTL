@@ -15,7 +15,7 @@ from dotenv import load_dotenv
 from retry import retry
 from tqdm import tqdm
 from util.languages import source_pattern
-from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost, getPricingConfig, calculateCost, run_stop_errors
+from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost, run_stop_errors
 from util.speakers import strip_speaker_prefix
 from util import system
 
@@ -289,6 +289,12 @@ def parseMap(data, filename):
 
 
 def searchCodes(events, pbar, jobList, filename):
+    """Translate one page of event commands; returns its [input, output] tokens.
+
+    The first pass translates choices and names on the spot and gathers the
+    rest into lists, which are translated at the end of the page; the
+    set-data pass (*jobList* holds those translations) only writes them, so
+    it never sends what the first pass already translated."""
     # Lists
     if jobList:
         stringList = jobList[0]
@@ -346,7 +352,7 @@ def searchCodes(events, pbar, jobList, filename):
                 speaker = ""
 
                 # Grab Speaker
-                if "\n" in jaString:
+                if "\n" in jaString and not setData:
                     match = re.search(speakerRegex, jaString)
                     if not match:
                         # Try alternative pattern without @\d+ prefix
@@ -408,7 +414,7 @@ def searchCodes(events, pbar, jobList, filename):
                         stringList.pop(0)
 
             ### Event Code: 102 Choices
-            if codeList[i]["code"] == 102 and CODE102 == True:
+            if codeList[i]["code"] == 102 and CODE102 == True and not setData:
                 # Grab Choice List
                 choiceList = []
                 jaChoiceList = codeList[i]["stringArgs"]
@@ -448,9 +454,9 @@ def searchCodes(events, pbar, jobList, filename):
             ### Event Code: 210 Common Event
             if codeList[i]["code"] == 210 and CODE210 == True:
                 # Speaker Event
-                if "stringArgs" in codeList[i] and codeList[i]["intArgs"][0] == None and len(codeList[i]["stringArgs"]) == 2:
+                if "stringArgs" in codeList[i] and codeList[i]["intArgs"][0] == None and len(codeList[i]["stringArgs"]) == 2 and not setData:
                     response = getSpeaker(codeList[i]["stringArgs"][1])
-                    totalTokens[1] += response[1][0]
+                    totalTokens[0] += response[1][0]
                     totalTokens[1] += response[1][1]
 
                     # Set Data
@@ -575,7 +581,7 @@ def searchCodes(events, pbar, jobList, filename):
             ### Event Code: 300 Common Events
             if codeList[i]["code"] == 300 and CODE300 == True and "stringArgs" in codeList[i] and len(codeList[i]["stringArgs"]) > 1:
                 # Choices
-                if codeList[i]["stringArgs"][0] == "[共]汎用ウィンドウ生成" or codeList[i]["stringArgs"][0] == "選択肢/確認":
+                if (codeList[i]["stringArgs"][0] == "[共]汎用ウィンドウ生成" or codeList[i]["stringArgs"][0] == "選択肢/確認") and not setData:
                     # Grab String
                     choiceList = codeList[i]["stringArgs"][1].split(",")
 
@@ -649,14 +655,17 @@ def searchCodes(events, pbar, jobList, filename):
                     if "：\n" in jaString or "：\r\n" in jaString:
                         match = re.search(speakerRegex, jaString)
                         if match:
-                            # TL Speaker
-                            response = getSpeaker(match.group(1))
-                            speaker = response[0]
-                            totalTokens[0] += response[1][0]
-                            totalTokens[1] += response[1][1]
+                            if not setData:
+                                # TL Speaker
+                                response = getSpeaker(match.group(1))
+                                speaker = response[0]
+                                totalTokens[0] += response[1][0]
+                                totalTokens[1] += response[1][1]
 
-                            # Set nametag and remove from string
-                            codeList[i]["stringArgs"][1] = codeList[i]["stringArgs"][1].replace(match.group(1), speaker)
+                                # Set nametag
+                                codeList[i]["stringArgs"][1] = codeList[i]["stringArgs"][1].replace(match.group(1), speaker)
+
+                            # Remove nametag from string
                             jaString = jaString.replace(match.group(0), "")
 
                     # Grab Only Text
@@ -850,7 +859,9 @@ def searchCodes(events, pbar, jobList, filename):
         if setData == True:
             stringList = []
             jobList = [stringListTL, list210TL, list300TL, list150TL, list250TL, list122TL]  # Add list122TL
-            searchCodes(events, pbar, jobList, filename)
+            tokens = searchCodes(events, pbar, jobList, filename)
+            totalTokens[0] += tokens[0]
+            totalTokens[1] += tokens[1]
 
         else:
             # Set Data

@@ -338,13 +338,21 @@ class BatchMonitor:
             self.views.pop(identity, None)
 
     def _finish_empty(self, identity):
+        from dazedtl.compatibility.process_view import batch_refusal
+
         job = self.backend.manual.jobs[identity]
+        # A refusal of the run's thinking effort, which every request
+        # carries, reads as the one message a Live run stops with.
+        refused = batch_refusal(self.backend.manual.folder(identity))
         job.update(
             status="failed",
             phase="failed",
             approval=None,
-            message="No successful Batch responses. Use Translate for a fresh estimate of remaining work.",
+            message=refused
+            or "No successful Batch responses. Use Translate for a fresh estimate of remaining work.",
         )
         self.backend.manual.save(job)
+        if refused:
+            self.backend.manual.failed_run(identity)
         self.settled.add(identity)
         self.views.pop(identity, None)
