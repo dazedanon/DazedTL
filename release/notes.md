@@ -7,4 +7,5 @@
 ### Fixed
 
 - **Translate:** a WOLF RPG Editor map that fails on its first event page now shows its own error, such as the provider's refusal or the run's stop, instead of "cannot access local variable 'tt'".
+- **Translate:** a file that fails after some of its requests were answered, such as on a later request's error or a missing Batch result, now keeps what those requests cost in its cost and the run's total, which left them out.
 - **Assistant-led:** Live runs on OpenRouter, and on DeepSeek or Kimi with Thinking effort set to None, no longer fail every request with "unexpected keyword argument".
