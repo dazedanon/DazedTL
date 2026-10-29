@@ -1,6 +1,7 @@
 """One durable clarification allowance for a guided Live translation request."""
 
 import json
+import os
 from types import SimpleNamespace
 from typing import Any
 
@@ -51,11 +52,12 @@ def send_once(translation, evidence, params):
     from util.batch_providers import create_anthropic_message, get_client
 
     provider = "anthropic" if "system" in params else "openai"
-    # The SDK client type depends on the provider chosen above.
+    # The SDK client type depends on the provider chosen above; a Claude
+    # request goes to the run's address, as its Live send did.
     client: Any = get_client(
         provider,
         api_key=translation.openai.api_key,
-        api_url=None
+        api_url=os.getenv("api", "")
         if provider == "anthropic"
         else str(translation.openai.base_url or ""),
         max_retries=0,

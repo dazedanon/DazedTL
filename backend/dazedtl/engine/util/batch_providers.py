@@ -163,14 +163,12 @@ def get_client(provider: str, *, api_key: str | None = None,
     # Each SDK loads with its first client; importing both took most of a
     # worker's startup, seconds on Windows.
     if provider == PROVIDER_ANTHROPIC:
-        import anthropic
-
-        kwargs = {"api_key": key}
-        if max_retries is not None:
-            kwargs["max_retries"] = max_retries
-        if (api_url or "").strip():
-            kwargs["base_url"] = anthropic_base_url(api_url)
-        return anthropic.Anthropic(**kwargs)
+        # The run's key goes to the run's address; a key given here goes to
+        # the address given with it, Anthropic's own API when none is.
+        if api_url is None:
+            api_url = os.getenv("api", "") if api_key is None else ""
+        options = {} if max_retries is None else {"max_retries": max_retries}
+        return anthropic_client(key, api_url, **options)
     import openai
 
     if provider in (PROVIDER_GEMINI, PROVIDER_KIMI):
@@ -199,15 +197,42 @@ def get_client(provider: str, *, api_key: str | None = None,
     raise ValueError(f"Unsupported batch provider: {provider}")
 
 
-def anthropic_base_url(address: str) -> str:
-    """The Anthropic SDK's base URL for *address*: Anthropic's own API without
-    the "/v1" the SDK adds to each path; any other address as typed."""
-    from dazedtl.settings.providers import own_api
+# Anthropic's own API, where a Claude request with no address set goes.
+ANTHROPIC_API_URL = "https://api.anthropic.com"
 
+
+def anthropic_base_url(address: str | None) -> str:
+    """The Anthropic SDK's base URL for a Claude request to *address*:
+    Anthropic's own API when none is set, otherwise the address without a
+    trailing "/v1", which the SDK adds to each path itself ("/v1/messages"),
+    on any host: a proxy serves Anthropic's Messages API at "/v1/messages"
+    under its root as Anthropic does, so "https://proxy.example/v1" names
+    that root and no server answers "/v1/v1/...". An address without a
+    scheme reads as HTTPS, as settings/providers hostname reads it.
+
+    The one address rule of every Claude client, the SDK's
+    (anthropic_client) and the token count's (claude_tokens.CountClient),
+    so none sends where ANTHROPIC_BASE_URL in the environment says instead
+    of where its key's address does."""
     base_url = str(address or "").strip().rstrip("/")
-    if own_api("anthropic", base_url) and base_url.endswith("/v1"):
-        base_url = base_url[:-3]
+    if base_url[-3:].lower() == "/v1":
+        base_url = base_url[:-3].rstrip("/")
+    if not base_url:
+        return ANTHROPIC_API_URL
+    if not re.match(r"[a-z][a-z0-9+.-]*://", base_url, re.IGNORECASE):
+        base_url = "https://" + base_url.lstrip("/")
     return base_url
+
+
+def anthropic_client(api_key: str, address: str | None, **options):
+    """The Anthropic SDK client that sends *api_key*'s Claude requests to
+    *address* (anthropic_base_url); *options* are the SDK's, such as
+    max_retries. Every SDK client for Claude is made here."""
+    import anthropic
+
+    return anthropic.Anthropic(
+        api_key=api_key, base_url=anthropic_base_url(address), **options
+    )
 
 
 def _google_client(api_key: str | None = None):

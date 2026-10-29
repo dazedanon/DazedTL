@@ -2113,6 +2113,178 @@ class CompatibilityContracts(unittest.TestCase):
                     (pricing["inputAPICost"], pricing["outputAPICost"]), rates
                 )
 
+    def test_every_claude_client_sends_to_its_keys_address(self):
+        # Each Claude client read its address its own way: Guided Live sends
+        # and Batches went to the SDK's default whatever the run's address,
+        # and a proxy's "/v1" was kept by model lists and Batches but dropped
+        # by token counts. Each now sends where its key's address says, with
+        # one "/v1", never where ANTHROPIC_BASE_URL says.
+        import os
+        from unittest.mock import MagicMock
+
+        import httpx
+        import httpx2
+        from dazedtl.compatibility import refusal_retry
+        from dazedtl.settings.providers import own_server
+        from util import claude_tokens, translation
+        from util.batch_providers import get_client
+        from util.model_catalog import ModelCatalogCore
+
+        sent = []
+        # A Live send streams its reply.
+        events = (
+            {
+                "type": "message_start",
+                "message": {
+                    "id": "msg_1",
+                    "type": "message",
+                    "role": "assistant",
+                    "model": "claude-sonnet-5-5",
+                    "content": [],
+                    "stop_reason": None,
+                    "stop_sequence": None,
+                    "usage": {"input_tokens": 1, "output_tokens": 0},
+                },
+            },
+            {
+                "type": "content_block_start",
+                "index": 0,
+                "content_block": {"type": "text", "text": ""},
+            },
+            {
+                "type": "content_block_delta",
+                "index": 0,
+                "delta": {"type": "text_delta", "text": '{"Line1": "Potion"}'},
+            },
+            {"type": "content_block_stop", "index": 0},
+            {
+                "type": "message_delta",
+                "delta": {"stop_reason": "end_turn", "stop_sequence": None},
+                "usage": {"output_tokens": 3},
+            },
+            {"type": "message_stop"},
+        )
+        stream = "".join(
+            f"event: {event['type']}\ndata: {json.dumps(event)}\n\n" for event in events
+        )
+
+        def answering(module):
+            def handle(_transport, request):
+                url = str(request.url).split("?")[0]
+                sent.append(url)
+                if url.endswith("/messages"):
+                    return module.Response(
+                        200,
+                        headers={"content-type": "text/event-stream"},
+                        content=stream,
+                    )
+                body = (
+                    {"input_tokens": 5}
+                    if url.endswith("/count_tokens")
+                    else {"data": [], "has_more": False}
+                )
+                return module.Response(200, json=body)
+
+            return handle
+
+        def reached(send):
+            sent.clear()
+            send()
+            return sent
+
+        proxy = "https://proxy.example/anthropic/v1"
+        # Each request's path holds the address's "/v1" once.
+        root = proxy
+        with (
+            patch.object(httpx.HTTPTransport, "handle_request", answering(httpx)),
+            patch.object(httpx2.HTTPTransport, "handle_request", answering(httpx2)),
+            # translateText configures the shared OpenAI module for every
+            # provider.
+            patch.multiple(
+                translation.openai,
+                base_url=translation.openai.base_url,
+                api_key=translation.openai.api_key,
+            ),
+            patch.dict(
+                os.environ,
+                {
+                    "ANTHROPIC_BASE_URL": "https://elsewhere.example",
+                    "api": proxy,
+                    "key": "run-key",
+                    "API_PROVIDER": "anthropic",
+                },
+            ),
+        ):
+            catalog = ModelCatalogCore()
+            catalog.initialize("key", proxy, "anthropic")
+            for client, send, url in (
+                (
+                    "token count",
+                    lambda: claude_tokens.CountClient("key", proxy).count_tokens(
+                        model="claude-sonnet-5-5",
+                        messages=[{"role": "user", "content": "薬"}],
+                    ),
+                    root + "/messages/count_tokens",
+                ),
+                (
+                    "Batch client",
+                    lambda: get_client(
+                        "anthropic", api_key="key", api_url=proxy, max_retries=0
+                    ).models.list(),
+                    root + "/models",
+                ),
+                ("model list", catalog._fetch_anthropic, root + "/models"),
+                (
+                    "run's Batch client",
+                    lambda: translation._get_anthropic_client().models.list(),
+                    root + "/models",
+                ),
+                (
+                    "Guided Live",
+                    lambda: translation.translateText(
+                        "Translate.",
+                        '```json\n{"Line1": "薬"}\n```',
+                        [],
+                        0,
+                        "json",
+                        "claude-sonnet-5-5",
+                        1,
+                    ),
+                    root + "/messages",
+                ),
+                (
+                    "Guided Live clarification",
+                    lambda: refusal_retry.send_once(
+                        translation,
+                        MagicMock(),
+                        translation.buildClaudeRequest(
+                            "Translate.", "薬", [], "json", "claude-sonnet-5-5", 1
+                        ),
+                    ),
+                    root + "/messages",
+                ),
+                # With no address, Anthropic's own API; without a scheme, it
+                # reads as HTTPS.
+                *(
+                    (
+                        f"address {address!r}",
+                        lambda address=address: get_client(
+                            "anthropic", api_key="key", api_url=address
+                        ).models.list(),
+                        "https://api.anthropic.com/v1/models",
+                    )
+                    for address in ("", "api.anthropic.com/v1")
+                ),
+            ):
+                with self.subTest(client=client):
+                    self.assertEqual(reached(send), [url])
+        # A test scenario's Anthropic stand-in answers as Anthropic's own
+        # server, so its overloads read failed as Anthropic's do.
+        stand_in = "http://127.0.0.1:9/api.anthropic.com"
+        with patch.dict(os.environ, {"DAZEDTL_TEST_ANTHROPIC_ENDPOINT": stand_in}):
+            self.assertTrue(own_server(stand_in + "/v1"))
+            self.assertFalse(own_server("http://127.0.0.1:9/other"))
+
     def test_mistral_follows_the_json_mode_strict_and_retry_rules(self):
         # The JSON-mode downgrade spent a retry attempt, so a format rejection
         # on the last attempt, here after a rate limit, raised "failed after
