@@ -285,7 +285,6 @@ def exchange(job, relatives, path):
         raise ValueError(
             "Confirm at least one image with source text before translation."
         )
-    # Never mirror into the frozen engine's files directory or another project.
     write_json(path, payload)
     return payload
 

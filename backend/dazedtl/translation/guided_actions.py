@@ -55,6 +55,8 @@ class ActionPlan:
     manifest: dict[str, Any] | None = None
     run_inputs: dict[str, Any] | None = None
     quote: dict[str, Any] | None = None
+    # The game's guard the run's inputs read, which the review freezes.
+    guard: dict[str, Any] | None = None
 
 
 class GuidedActions:
@@ -325,10 +327,12 @@ class GuidedActions:
             self.guided.event_text.require(project_id, native)
         run_inputs = None
         quote = None
+        guard = None
         if mode != "speakers":
             target_mode = self.guided.run_mode(native) if mode == "estimate" else mode
+            guard = self.guided.runs.guard(native)
             matched, run_inputs = self.guided.runs.quote(
-                project_id, native, phase, target_mode, start=mode != "estimate"
+                project_id, native, phase, target_mode, guard=guard
             )
             if mode != "estimate":
                 if not matched["current"]:
@@ -358,7 +362,9 @@ class GuidedActions:
             "estimate": "Estimate selected phase",
             "speakers": "Collect speaker names",
         }[mode]
-        return ActionPlan(label, paths, options, run_inputs=run_inputs, quote=quote)
+        return ActionPlan(
+            label, paths, options, run_inputs=run_inputs, quote=quote, guard=guard
+        )
 
     def plan_lifecycle(self, context):
         """Version baselines, resync and release lifecycle operations."""
@@ -575,9 +581,9 @@ class GuidedActions:
                 "paths": paths,
                 "evidence": expected,
                 "manifest": manifest,
-                "guard": self.guided.backend.guided_guard(
-                    native, self.guided.backend.workflows.folder(native["id"])
-                ),
+                "guard": self.guided.runs.guard(native)
+                if plan.guard is None
+                else plan.guard,
                 "revision": native["revision"],
                 "phase": project["phase"],
                 "settings_revision": self.guided.settings.describe()["revision"],
@@ -676,11 +682,9 @@ class GuidedActions:
             if action == "export_selected":
                 self.require_current_sources(native, confirmed["paths"])
             return self.guided.backend.workflows.execute(token)
+        guard = self.guided.runs.guard(native)
         if (
-            confirmed["guard"]
-            != self.guided.backend.guided_guard(
-                native, self.guided.backend.workflows.folder(native["id"])
-            )
+            confirmed["guard"] != guard
             or confirmed["revision"] != native["revision"]
             or confirmed["phase"] != project["phase"]
             or confirmed["settings_revision"]
@@ -707,11 +711,12 @@ class GuidedActions:
                     "Version tracking changed. Review the current patch scope again."
                 )
         if action == "start":
-            return self.execute_run(project_id, native, confirmed)
+            return self.execute_run(project_id, native, confirmed, guard)
         return self.execute_lifecycle(project_id, project, native, confirmed, options)
 
-    def execute_run(self, project_id, native, confirmed):
-        """Rechecks a run's estimate binding before starting it."""
+    def execute_run(self, project_id, native, confirmed, guard):
+        """Rechecks a run's estimate binding, with the game's guard execute
+        just compared, before starting it."""
         options = confirmed["options"]
         if confirmed["run_inputs"]:
             current = self.guided.runs.inputs(
@@ -719,14 +724,18 @@ class GuidedActions:
                 native,
                 options["phase"],
                 confirmed["run_inputs"]["mode"],
+                guard=guard,
             )
-            if not self.guided.runs.reviewed(native, confirmed["run_inputs"], current):
+            if self.guided.runs.changed(
+                confirmed["run_inputs"], current, reprice=False
+            ):
                 raise ValueError(
                     "The estimate inputs changed. Refresh the estimate and review this run again."
                 )
             if options["mode"] != "estimate":
-                matched, _ = self.guided.runs.quote(
-                    project_id, native, options["phase"], options["mode"], start=True
+                # The review bound these inputs in the run's own mode.
+                matched = self.guided.runs.match(
+                    project_id, native, options["phase"], current
                 )
                 if (
                     not matched["current"]
@@ -845,21 +854,11 @@ class GuidedActions:
         from dazedtl.compatibility.preparations import temporary
 
         manual = self.guided.backend.manual
-        records = self.guided.runs.records(project_id)
-        owned = set(self.guided.owned_runs(native))
-        identity = next(
-            (
-                identity
-                for identity, record in reversed(list(records.items()))
-                if identity in owned
-                and manual.jobs.get(identity, {}).get("mode") == "estimate"
-                and record["phase"] == phase
-            ),
-            None,
-        )
-        if identity is None:
+        latest = self.guided.runs.latest_estimate(project_id, native, phase)
+        if latest is None:
             return None
-        job = manual.jobs[identity]
+        identity, job, _record = latest
+        records = self.guided.runs.records(project_id)
         if (
             not temporary(job)
             or not self.guided.runs.reading(

@@ -886,6 +886,9 @@ class GuidedProvider(TypedDict):
     # Why the connection cannot run Batch, "" when it can or none is ready;
     # the method then reads and runs as Live.
     batchUnavailable: str
+    # Why whether it runs Batch isn't read yet, "" once it is; the method
+    # keeps Batch and estimates wait.
+    batchUnread: str
     ready: bool
     enabled: bool
 

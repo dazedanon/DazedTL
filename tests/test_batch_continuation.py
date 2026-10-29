@@ -433,3 +433,84 @@ class BatchContinuationTests(unittest.TestCase):
             self.assertEqual(
                 read_json(root / "log" / ARCHIVE)["results"], {**original, **new}
             )
+
+    def test_only_the_engine_version_that_collected_a_batch_submits_it(self):
+        # Engine changes built different requests from the same files (WOLF2's
+        # choices, every plain engine's speakers) without a new version, so a
+        # Batch collected before an update was submitted after it, paying for
+        # requests the new engine might not take. A queue an older version
+        # collected is refused before anything is sent; a Batch already
+        # submitted, in whole or in part, is still finished and collected, and
+        # RPG Maker, whose request changes each run freezes, keeps version 1.
+        import threading
+
+        from desktop.backend import manual
+        from desktop.backend.settings import SettingsStore, validate_values
+
+        launched = []
+
+        def launch(_native, arguments, **_kwargs):
+            launched.append(Path(arguments[-1]).name)
+            raise RuntimeError("The fixture starts no worker.")
+
+        legacy = manual.VERSION_1_SIGNATURES["RPG Maker MV/MZ"]
+        stale = "dazedtl-engine-1"
+        cases = {
+            "stale-queue": ("Wolf RPG 2", stale, "queued", False),
+            "stale-submitted": ("Wolf RPG 2", stale, "submitted", True),
+            "stale-sent-queue": ("Wolf RPG 2", stale, "queued", True),
+            "stale-partial": ("Text", stale, "partially_submitted", True),
+            "stale-fetched": ("JSON", stale, "fetched", True),
+            "current-queue": ("Text", manual.signature("Text"), "queued", False),
+            "rpgmaker-queue": ("RPG Maker MV/MZ", legacy, "queued", False),
+            "rpgmaker-v1-queue": ("RPG Maker MV/MZ", stale, "queued", False),
+        }
+        manual.launch_worker.layer("fixture-launch", launch)
+        try:
+            with TemporaryDirectory() as directory:
+                workspace = Path(directory)
+                SettingsStore(workspace).key_action("save", "saved-key", secret="x")
+                for identity, (engine, recorded, status, sent) in cases.items():
+                    root = workspace / "manual/jobs" / identity
+                    write_json(
+                        root / "plan.json",
+                        {
+                            "engine": engine,
+                            "signature": recorded,
+                            "mode": "batch",
+                            "files": [],
+                            "selected": ["Map001.txt"],
+                            "settings": validate_values({}),
+                            "key_name": "saved-key",
+                            "context_hashes": {},
+                        },
+                    )
+                    write_json(
+                        root / "log/batch_state.json",
+                        {"status": status, "batches": [{"id": "paid"}] if sent else []},
+                    )
+                    write_json(
+                        root / "job.json",
+                        {
+                            "version": 1,
+                            "id": identity,
+                            "mode": "batch",
+                            "status": "interrupted",
+                            "completed": [],
+                            "plan_hash": digest((root / "plan.json").read_bytes()),
+                        },
+                    )
+                jobs = manual.ManualJobs(
+                    workspace, threading.RLock(), allow_providers=True
+                )
+                messages = {}
+                for identity in cases:
+                    jobs.resume(identity)
+                    jobs.worker.join()
+                    messages[identity] = jobs.jobs[identity]["message"]
+        finally:
+            manual.launch_worker.remove("fixture-launch")
+        self.assertEqual(
+            messages["stale-queue"], manual.STALE_QUEUE.format(engine="Wolf RPG 2")
+        )
+        self.assertEqual(sorted(launched), sorted(set(cases) - {"stale-queue"}))

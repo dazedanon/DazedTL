@@ -81,19 +81,33 @@ export function spawnGroup(command, args, { stdio, outlive = false } = {}) {
 }
 
 /**
- * Ends a process group `spawnGroup` started, such as a display, and waits
- * until it has, so a display started next can take its socket name.
+ * Sends signal `name` to the process group `spawnGroup` started as `group`,
+ * its first process's pid, and says whether any of it was there to get it.
+ * On Windows, which has no process groups, it is that process alone.
+ * @param {number | undefined} group
+ * @param {NodeJS.Signals | 0} name
+ */
+function signalGroup(group, name) {
+  if (!group) return false;
+  try {
+    process.kill(process.platform === "win32" ? group : -group, name);
+    return true;
+  } catch {
+    return false; // Already gone.
+  }
+}
+
+/** Whether any process of the group `spawnGroup` started as `group` runs. */
+export const groupRuns = (group) => signalGroup(group, 0);
+
+/**
+ * Ends a process group `spawnGroup` started, such as a display or the
+ * stand-in provider, and waits until it has, so a display started next can
+ * take its socket name, a stand-in its port, and its folder can be removed.
+ * @param {number | undefined} group
  */
 export async function stopGroup(group) {
-  if (!group) return;
-  const signal = (name) => {
-    try {
-      process.kill(-group, name);
-      return true;
-    } catch {
-      return false; // Already gone.
-    }
-  };
+  const signal = (name) => signalGroup(group, name);
   if (!signal("SIGTERM")) return;
   const ended = (timeout) =>
     until("the process group to end", () => !signal(0), timeout);

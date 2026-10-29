@@ -472,14 +472,37 @@ def validate_endpoints(value):
         raise ValueError("Invalid OpenRouter endpoint prices.")
 
 
+class Unread(ValueError):
+    """A Batch policy no lookup could read yet (``batch`` not ``looked_up``),
+    as after a failed check: whether the model runs Batch, and at what
+    price, is not known, which is neither no Batch nor Batch. The settings a
+    run or an estimate freezes refuse it, so new work waits for the lookup
+    instead of being priced on no Batch route; a read with unknown prices
+    leaves the policy out (settings/execution.configuration), which a saved
+    figure reads as a price not known (translation/repricing.priced); and a
+    chosen Batch stays Batch meanwhile (execution.batch_reasons)."""
+
+    @classmethod
+    def of(cls, available):
+        """The refusal for ``available`` (``Batch``), saying what reads it."""
+        return cls(
+            "Prices on this connection can't be read until it loads whether "
+            "the model runs Batch, such as after its check failed. " + available.reason
+        )
+
+
 def policy(connection, model, options, *, required=False):
-    defaults = describe(connection, model)
-    if not defaults["batchSupported"]:
+    """The Batch policy a run or an estimate on ``model`` freezes, None for
+    a model looked up to run no Batch, which ``required`` refuses; raises
+    Unread while no lookup could read it."""
+    available = batch(connection, model)
+    if not available.looked_up:
+        raise Unread.of(available)
+    if not available.supported:
         if required:
-            raise ValueError(defaults["batchReason"])
+            raise ValueError(available.reason)
         return None
-    row = connection["catalog"][model + ":batch"]
-    row = {**row, **connection["batch_endpoints"]["rates"]}
+    row = dict(available.rates)
     if connection["batch_endpoints"].get("max_output") is not None:
         row["max_output"] = connection["batch_endpoints"]["max_output"]
     custom = options.get("batchPricing", "automatic") == "custom"
@@ -502,7 +525,7 @@ def policy(connection, model, options, *, required=False):
         "cache_read": None if custom else row["cache_read"],
         "cache_write": None if custom else row["cache_write"],
         "source": "custom" if custom else "catalog",
-        "updatedAt": defaults["updatedAt"],
+        "updatedAt": connection.get("check", {}).get("checkedAt"),
         "max_requests": MAX_REQUESTS,
         "max_bytes": MAX_BYTES,
         "context": row["context"],

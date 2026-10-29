@@ -15,6 +15,7 @@ from dazedtl.compatibility import original_files
 from dazedtl.compatibility.game_write import write_game
 from dazedtl.languages import load_language_pair
 from dazedtl.projects.store import Projects
+from dazedtl.settings import openrouter
 from dazedtl.storage import write_json
 from dazedtl.translation import (
     comment_text,
@@ -406,12 +407,13 @@ class GuidedTests(unittest.TestCase):
                     raise ValueError("Model pricing is unknown.")
                 configuration["rates"] = {"input": None, "output": None}
             # A read with unknown prices leaves it out; a full read, which a
-            # run freezes, reads it as none (settings/execution).
+            # run or an estimate freezes, refuses it (settings/execution).
             if self.batch_unknown and "openrouterBatch" in configuration:
-                if unpriced:
-                    del configuration["openrouterBatch"]
-                else:
-                    configuration["openrouterBatch"] = None
+                if not unpriced:
+                    raise openrouter.Unread.of(
+                        openrouter.batch({}, configuration["model"])
+                    )
+                del configuration["openrouterBatch"]
             return configuration
 
         self.settings = SimpleNamespace(
@@ -1071,13 +1073,23 @@ class GuidedTests(unittest.TestCase):
         kept = status()
         self.assertTrue(kept["current"])
         self.assertIs(kept["result"], saved)
-        # An OpenAI Batch estimate priced before them is priced again.
+        # An OpenAI Batch estimate priced before them is priced again. It
+        # shows its Batch price while its route runs one, whatever Settings
+        # says at the moment: during a failed OpenRouter check that read as
+        # no Batch, so the panel showed only Live.
         self.route = "openai"
         saved["measured"]["dialogue"].update(
             provider="openai", cache_read_tokens=0, cacheable_tokens=0
         )
+        defaults = self.settings.translation_defaults
+        self.settings.translation_defaults = lambda: {
+            **defaults(),
+            "batch_supported": False,
+        }
         fixed = status()
+        self.settings.translation_defaults = defaults
         self.assertTrue(fixed["current"])
+        self.assertTrue(fixed["result"]["batchSupported"])
         self.assertEqual(fixed["result"]["price_rules"], current_rules())
         # Under today's rules, one whose settings now send it on another
         # route is priced again on theirs, or reads outdated when Claude
@@ -3146,6 +3158,35 @@ class GuidedTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.guided.saved_form(self.identity)
         self.assertEqual(path.read_bytes(), invalid)
+
+    def test_reviewing_and_starting_work_read_its_inputs_and_guard_once(self):
+        # Each read digests every selected working file and each guard hashes
+        # the game's data, which on a large game doubled the time a review and
+        # a reviewed Live or Batch start took.
+        backend = self.guided.backend
+        for mode in ("batch", "translate"):
+            with self.subTest(mode=mode):
+                self.started.clear()
+                self.seed_estimate(mode=mode)
+                with patch.object(
+                    backend, "guided_guard", wraps=backend.guided_guard
+                ) as guard:
+                    preview = self.guided.preview(
+                        self.identity, "start", options={"mode": mode}
+                    )
+                self.assertEqual(guard.call_count, 1)
+                with (
+                    patch.object(
+                        self.guided.runs, "inputs", wraps=self.guided.runs.inputs
+                    ) as read,
+                    patch.object(
+                        backend, "guided_guard", wraps=backend.guided_guard
+                    ) as guard,
+                ):
+                    self.guided.execute(self.identity, preview["token"])
+                self.assertEqual(read.call_count, 1)
+                self.assertEqual(guard.call_count, 1)
+                self.assertEqual(len(self.started), 1)
 
     def test_submission_preview_rejects_other_owner_changed_inputs_and_repeated_use(
         self,

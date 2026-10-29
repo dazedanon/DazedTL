@@ -68,6 +68,9 @@ export function TranslateWorkspace({
 }) {
   const languages = useLanguages();
   const unavailable = state.provider.batchUnavailable;
+  // Why estimates wait while whether the connection runs Batch isn't read
+  // yet; Batch stays choosable meanwhile.
+  const reason = unavailable || state.provider.batchUnread;
   const rows = useMemo(
     () =>
       state.files.filter(
@@ -121,7 +124,7 @@ export function TranslateWorkspace({
               value: "batch",
               label: "Batch",
               disabled: !!unavailable,
-              title: unavailable || "Review Batch pricing before submitting",
+              title: reason || "Review Batch pricing before submitting",
             },
             { value: "translate", label: "Live" },
           ]}
@@ -130,9 +133,9 @@ export function TranslateWorkspace({
             recommendation. */}
         <small
           className="translation-method-hint"
-          data-reason={unavailable ? "" : undefined}
+          data-reason={reason ? "" : undefined}
         >
-          {unavailable || "Batch recommended · often 50% cheaper"}
+          {reason || "Batch recommended · often 50% cheaper"}
         </small>
         {/* The model follows the method controls, so the note that a model
             was saved grows into free space instead of moving them. */}
