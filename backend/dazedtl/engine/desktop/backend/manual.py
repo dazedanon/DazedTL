@@ -52,11 +52,51 @@ def relative_file(value):
     return path
 
 
-# A saved plan records the engine version that prepared it, and only that
-# version resumes it. Raise ENGINE_VERSION when a change would make a resumed run
-# build requests or parse files differently; refactors and fixes outside saved
-# runs keep it.
-ENGINE_VERSION = 1
+# Each engine's version, which a saved plan records (signature); an engine not
+# named here is at version 1. Raise an engine's version when a change makes it
+# build different requests from the same files; a fix to how replies are
+# written keeps it. RPG Maker MV/MZ keeps version 1: a change to its requests
+# is a request policy each run freezes (dazedtl/settings/preferences
+# FROZEN_POLICIES), so a run keeps the requests it was approved with. Version 2
+# takes in the request changes these engines made since 2.0.0 without a new
+# version, such as speakers and WOLF choices sent once and WOLF RPG 2 choices
+# after dialogue sent.
+#
+# Only the version that collected a Batch starts submitting it: a queue an
+# older version collected is refused before anything is sent (STALE_QUEUE),
+# since this version may build some of its requests differently and the Batch
+# would pay for results no file takes. Everything else a resumed run does is
+# safe on any version, so nothing else is refused. A Batch already started is
+# finished and collected as approved, its unsent part too, since its paid part
+# is collected only with it: consume takes a result only for a request built
+# exactly as it was sent (translation get_cache_key), so its reply goes only
+# to the lines whose text it carries, and a request built differently fails its
+# file without a Live request. A Live run's resume builds its requests anew and
+# reuses the replies it saved for those built the same; refusing it would only
+# pay again for what its unfinished files already have.
+ENGINE_VERSIONS = {
+    "CSV": 2,
+    "Tyrano": 2,
+    "Kirikiri": 2,
+    "JSON": 2,
+    "Lune": 2,
+    "Yuris": 2,
+    "NScript": 2,
+    "Wolf RPG (WolfDawn)": 2,
+    "Wolf RPG": 2,
+    "Wolf RPG 2": 2,
+    "Regex": 2,
+    "Text": 2,
+    "RenPy": 2,
+    "Unity": 2,
+    "RPG Maker Plugin": 2,
+    "SRPG Studio": 2,
+}
+STALE_QUEUE = (
+    "An update changed how DazedTL builds {engine} requests after this Batch was "
+    "collected, so this version does not submit it. Translate these files again "
+    "to prepare a new Batch with its own estimate."
+)
 # Before explicit versions, plans recorded a hash of the engine's bytes. These
 # hashes identify the code released as version 1.
 VERSION_1_SIGNATURES = {
@@ -85,13 +125,13 @@ VERSION_1_SIGNATURES = {
 def signature(engine):
     if not any(spec[0] == engine for spec in TRANSLATION_MODULE_SPECS):
         raise ValueError("Unsupported engine.")
-    return f"dazedtl-engine-{ENGINE_VERSION}"
+    return f"dazedtl-engine-{ENGINE_VERSIONS.get(engine, 1)}"
 
 
 def compatible(engine, recorded):
-    """Whether a plan's recorded engine identity is the engine version running now."""
+    """Whether a plan's recorded engine identity is its engine's version running now."""
     return recorded == signature(engine) or (
-        ENGINE_VERSION == 1 and recorded == VERSION_1_SIGNATURES.get(engine)
+        engine not in ENGINE_VERSIONS and recorded == VERSION_1_SIGNATURES.get(engine)
     )
 
 
@@ -484,8 +524,6 @@ class ManualJobs:
             if plan_path.is_symlink() or digest(system.read_bytes(plan_path)) != job["plan_hash"]:
                 raise ValueError("The saved plan changed. Start a new run.")
             plan = json.loads(system.read_text(plan_path))
-            if not compatible(plan["engine"], plan["signature"]):
-                raise ValueError("The engine changed. Start a new run to keep saved requests tied to their original code.")
             for name, expected in plan["context_hashes"].items():
                 if resume and name == "game/.dazedtl/glossary.txt":
                     continue  # The engine deliberately harvests translated names.
@@ -497,8 +535,10 @@ class ManualJobs:
             from .batches import batch_root, read_document
             batch_directory = batch_root(directory, plan)
             batch_path = batch_directory / "log/batch_state.json"
+            submitted = False
             if resume and plan["mode"] == "batch" and batch_path.exists():
-                batch_state = read_document(batch_directory, 'batch_state.json').get("status")
+                document = read_document(batch_directory, 'batch_state.json')
+                batch_state, submitted = document.get("status"), bool(document.get("batches"))
                 if batch_state not in {"queued", "submitted", "partially_submitted", "fetched"}:
                     batch_state = None
             if resume and plan["mode"] == "batch":
@@ -510,6 +550,8 @@ class ManualJobs:
                     raise ValueError('Prepare this linked queue in Batch history before resuming.')
                 if recovery and (recovery_hashes(batch_directory) != recovery["hashes"] or batch_state != recovery["state"]):
                     raise ValueError("The batch changed after recovery was prepared. Prepare it again in Batch history.")
+                if batch_state == "queued" and not submitted and not compatible(plan["engine"], plan["signature"]):
+                    raise ValueError(STALE_QUEUE.format(engine=plan["engine"]))
                 job.pop("batch_recovery", None)
             files = plan["selected"] if plan["mode"] in {"batch", "estimate", "speakers"} else [name for name in plan["selected"] if name not in job["completed"]]
             atomic_json(directory / "attempt.json", {"files": files, "resume": resume, "batch_resume_state": batch_state,
