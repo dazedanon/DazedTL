@@ -261,12 +261,12 @@ def handleImageText(filename, estimate):
     fail_on_parser_error(translatedData)
 
     if not estimate:
+        # Only translated/ is written: the Images task imports the run's
+        # output from there. files/ is the run's engine input, a hard link to
+        # its frozen inputs/, so writing it changed the run's record of what
+        # it sent and stopped the run from resuming.
         payload = json.dumps(translatedData[0], ensure_ascii=False, indent=2)
         write_output(filename, payload, newline="\n")
-        # Written back to files/ in place: 'imgtl import' reads it from
-        # here, which is what makes this a drop-in step in the loop.
-        with open(os.path.join("files", filename), "w", encoding="utf-8", newline="\n") as out:
-            out.write(payload)
 
     end = time.time()
     tqdm.write(module_receipt(filename, translatedData[1], end - start, MODEL))

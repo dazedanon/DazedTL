@@ -895,6 +895,47 @@ try:
             assert unwritable == ["アリス"], unwritable
         finally:
             os.chdir(directory)
+        # A run's files/<name> is a hard link to its frozen inputs/<name>.
+        # Image Text wrote its result back over files/ in place, so the run's
+        # record of what it sent changed with it and the run refused to resume.
+        from desktop.backend.manual import prepare_inputs
+        from desktop.backend.project import digest
+
+        images = temporary / "image-text-source"
+        images.mkdir()
+        exported = json.dumps(
+            {"images": [{"image": "title.png", "regions": [{"source": "はじめる"}]}]},
+            ensure_ascii=False,
+        ).encode()
+        (images / "image_text.json").write_bytes(exported)
+        image_run = temporary / "image-text-run"
+        image_run.mkdir()
+        image_plan = {
+            "source": str(images),
+            "files": [{"name": "image_text.json", "sha256": digest(exported)}],
+        }
+        prepare_inputs(image_run, image_plan)
+        frozen = image_run / "inputs/image_text.json"
+        assert os.path.samestat(
+            frozen.stat(), (image_run / "files/image_text.json").stat()
+        ), "The run's engine input no longer shares its frozen input."
+        imagetext = import_module("modules.imagetext")
+        os.chdir(image_run)
+        try:
+            with (
+                patch.object(imagetext, "translateAI", lambda *_a: [["Start"], [1, 1]]),
+                redirect_stdout(StringIO()),
+            ):
+                imagetext.handleImageText("image_text.json", False)
+        finally:
+            os.chdir(directory)
+        written = json.loads(
+            (image_run / "translated/image_text.json").read_text("utf-8")
+        )
+        assert written["images"][0]["regions"][0]["target"] == "Start", written
+        assert frozen.read_bytes() == exported, frozen.read_text("utf-8")
+        assert (image_run / "files/image_text.json").read_bytes() == exported
+        prepare_inputs(image_run, image_plan)  # The run can still resume.
         # A name a registered reference game already translated is reused
         # instead of guessed: that game read 存子 as Aruko.
         from util import reference_games
