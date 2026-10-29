@@ -462,19 +462,20 @@ def manual_jobs(source, workspace, lock, allow_providers):
                         current, self.folder(job["id"]), finishing=True
                     ):
                         job["phase"] = "canceled"
-                from .process_view import batch_refusal
+                from .process_view import empty_batch
 
-                refused = (
+                empty = (
                     failed
                     and job.get("mode") == "batch"
                     and job.get("phase") != "canceled"
                     and not self.stopping.is_set()
-                    and batch_refusal(self.folder(job["id"]))
+                    and empty_batch(self.folder(job["id"]))
                 )
-                if refused:
-                    # The provider refused the run's thinking effort, which
-                    # every request carries: the run says so once, as Live.
-                    event = {**event, "args": [False, refused, *args[2:]]}
+                if empty:
+                    # The provider answered none of the Batch's requests: the
+                    # run ends with the one message the app's monitor also
+                    # ends it with, such as a refused thinking effort's.
+                    event = {**event, "args": [False, empty, *args[2:]]}
                 elif failed and args[1] == ENGINE_FAILURE and job.get("errors"):
                     name, error = next(iter(job["errors"].items()))
                     files = len(job["errors"])

@@ -211,7 +211,7 @@ def collect(
             # Complete downloaded success coverage distinguishes canceled or
             # rejected requests from a missing paid response, with the
             # provider's reason where it gave one, such as a refused thinking
-            # effort (process_view batch_refusal).
+            # effort (process_view empty_batch).
             reasons = errors if isinstance(errors, dict) else {}
             previous = {
                 error.get("custom_id"): error

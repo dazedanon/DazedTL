@@ -1115,28 +1115,46 @@ def error_messages(root, errors):
     )
 
 
-def batch_refusal(root):
-    """The one message a Guided Batch run ends with when its provider refused
-    the run's thinking effort: it answered none of the run's requests, and
-    refused one for the effort (each Batch's ``provider_errors``); else
-    None, also when its records can't be read."""
+# How a Guided Batch the provider answered no request of ends without a
+# reason from its provider.
+NO_SUCCESSFUL_RESPONSES = (
+    "No successful Batch responses. Use Translate for a fresh estimate of "
+    "remaining work."
+)
+
+
+def empty_batch(root):
+    """The one message a Guided Batch run ends with when its provider
+    answered none of its requests (batch_control no_successful_results),
+    whether its worker or the app's monitor ends it: a refusal of the run's
+    thinking effort as the one message that says so, as a Live run stops,
+    else the provider's reason when it ended every request with the same,
+    else that none succeeded. None while some request succeeded, or
+    when the run's records can't be read."""
     from .batch_control import no_successful_results
+    from .provider_responses import provider_reason
 
     try:
-        refusal = _effort_refusal(root)
-        if refusal is None or not no_successful_results(root):
+        if not no_successful_results(root):
             return None
-        message, refused = refusal
         batches = saved(evidence_root(root), "batch_history.json").get("batches", [])
-        return (
-            message
-            if any(
-                refused(str(error.get("message") or ""))
-                for batch in batches
-                for error in batch.get("provider_errors") or []
+        errors = [
+            str(error.get("message") or "")
+            for batch in batches
+            for error in batch.get("provider_errors") or []
+        ]
+        refusal = _effort_refusal(root)
+        if refusal is not None and any(refusal[1](error) for error in errors):
+            return refusal[0]
+        reasons = {provider_reason(error) for error in errors}
+        sent = sum(len(batch.get("custom_ids") or {}) for batch in batches)
+        if len(errors) == sent and len(reasons) == 1 and None not in reasons:
+            return (
+                f"The provider ended every request of the Batch with an error: "
+                f"{reasons.pop()} Use Translate for a fresh estimate of remaining "
+                "work."
             )
-            else None
-        )
+        return NO_SUCCESSFUL_RESPONSES
     except OSError, ValueError, TypeError, AttributeError:
         return None
 
