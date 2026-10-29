@@ -2559,7 +2559,7 @@ try:
         # The run's TOTAL adds up each file's own total from every worker and
         # its names passes, starting from the receipts of the run's earlier
         # attempts; a file read back without usage keeps what the earlier
-        # attempt cost.
+        # attempt cost, and one that paid again adds to it.
         resumed = TranslationTask(
             live_root,
             ("RPG Maker MV/MZ", (".json",), None),
@@ -2574,7 +2574,7 @@ try:
         resumed._record_names_receipt(20, 4, 0.06121, 0.54)
         with patch.dict(os.environ, {"fileThreads": "3"}):
             total = resumed._run_total(resumed._run_files(many, False))
-        assert total == "TOTAL: [Input: 1266][Output: 26][Cost: $0.9612][10.5s] ✓", (
+        assert total == "TOTAL: [Input: 1273][Output: 33][Cost: $7.9612][17.5s] ✓", (
             total
         )
         handed = [name for names in worker_files() for name in names]
@@ -2720,7 +2720,7 @@ try:
                     receipt
                     for receipt in (file_receipt(line, files) for line in logged)
                     if receipt
-                ] == [("Map001.json", paid, True)], logged
+                ] == [("Map001.json", paid)], logged
             elif stopped is True:
                 # The two rejections before the stop failed their own files.
                 # They read as the provider's own error, which the run's
@@ -2802,7 +2802,7 @@ try:
                     receipt
                     for receipt in (file_receipt(line, texts) for line in logged)
                     if receipt
-                ] == [("Text1.json", paid, True)], logged
+                ] == [("Text1.json", paid)], logged
             else:
                 assert result != "Fail", case
                 assert handed == texts and errors == [], case
