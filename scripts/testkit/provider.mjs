@@ -5,13 +5,15 @@
 // while it runs through <folder>/mode.json:
 //
 //   { "refuse": ["text"], "decline": ["text"], "fail": ["text"],
-//     "failFirst": false, "stall": false, "answer": null, "hold": false,
+//     "failStatus": 400, "failError": null, "failFirst": false, "stall": false, "answer": null, "hold": false,
 //     "batchSeconds": 0, "long": ["text"], "reply": { "text": "reply" },
 //     "target": null, "effort": null }
 //
 // - refuse: lines holding the text come back as a refusal note until the
 //   app sends its clarification; decline: they always do.
-// - fail: requests holding the text get HTTP 400.
+// - fail: requests holding the text get HTTP 400, or failStatus, such as 500,
+//   with an error saying the stand-in fails them, or the error object
+//   failError, such as {} for one without a message.
 // - failFirst: each request's first attempt keeps its Japanese, so the app's
 //   validation retries it.
 // - target: "Japanese" answers an English game's lines in Japanese, and
@@ -391,8 +393,12 @@ export async function startProvider({ folder, port = 0 }) {
     const text = requestText(params);
     if ((settings.fail || []).some((item) => text.includes(item)))
       return {
-        status: 400,
-        value: { error: { message: "The stand-in fails this request." } },
+        status: settings.failStatus || 400,
+        value: {
+          error: settings.failError ?? {
+            message: "The stand-in fails this request.",
+          },
+        },
       };
     const clarified = text.includes(clarification);
     const key = crypto
