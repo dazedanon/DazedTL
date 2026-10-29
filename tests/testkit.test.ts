@@ -12,7 +12,12 @@ import { until } from "../scripts/testkit/cdp.mjs";
 import { ciScenarios } from "../scripts/testkit/ci.mjs";
 import { displayName } from "../scripts/testkit/display.mjs";
 import { startProvider } from "../scripts/testkit/provider.mjs";
-import { testsWithRetry, withRetry } from "../scripts/testkit/retry.mjs";
+import {
+  failedTests,
+  failureReport,
+  testsWithRetry,
+  withRetry,
+} from "../scripts/testkit/retry.mjs";
 
 test("CI runs every test scenario, so a new one cannot land unchecked", () => {
   assert.ok(ciScenarios().some(([name]) => name === "fresh"));
@@ -81,6 +86,77 @@ test("a test run that fails on a busy machine runs again once the load falls, wa
   waited = 0;
   assert.equal((await testsWithRetry(suite(1, 1), deps(4))).passed, false);
   assert.equal(waited, 300_000);
+});
+
+test("a failed test run's report names every failed test and probe above the passing ones that end it", () => {
+  const passing = (count: number) =>
+    Array.from({ length: count }, (_, i) => `✔ passes ${i} (1.2ms)`);
+  const python = [
+    "..F.E",
+    "=".repeat(70),
+    "FAIL: test_stop (tests.test_probe.Probe.test_stop)",
+    "-".repeat(70),
+    "AssertionError: 1 != 2",
+    "=".repeat(70),
+    "ERROR: test_read (tests.test_files.Files.test_read)",
+    "-".repeat(70),
+    "OSError: busy",
+    "FAILED (problems=2)",
+  ];
+  const node = [
+    ...passing(30),
+    "▶ outer",
+    "  ✖ inner fails (0.1ms)",
+    "✖ outer (0.4ms)",
+    ...passing(30),
+    "ℹ fail 2",
+    "",
+    "✖ failing tests:",
+    "",
+    "test at tests/x.test.ts:4:33",
+    "✖ inner fails (0.1ms)",
+    "  Error: boom",
+  ];
+  const run = [...python, ...node, "Full test suite: 8.128s / 10s"].join("\n");
+  const report = failureReport(run, 15).split("\n");
+  assert.deepEqual(report.slice(0, 5), [
+    "Failed:",
+    "  FAIL: test_stop (tests.test_probe.Probe.test_stop)",
+    "  ERROR: test_read (tests.test_files.Files.test_read)",
+    "  ✖ inner fails",
+    "  ✖ outer",
+  ]);
+  assert.deepEqual(report.slice(5, 9), [
+    "First failure:",
+    "FAIL: test_stop (tests.test_probe.Probe.test_stop)",
+    "-".repeat(70),
+    "AssertionError: 1 != 2",
+  ]);
+  // Node's own failures show its failing tests' details.
+  assert.deepEqual(
+    failureReport([...node, "Full test suite: 8.1s / 10s"].join("\n"))
+      .split("\n")
+      .slice(3, 6),
+    ["First failure:", "test at tests/x.test.ts:4:33", "✖ inner fails (0.1ms)"],
+  );
+  // A run over its budget names that, then its end with the time; one naming
+  // nothing shows its end.
+  const over =
+    "Full test suite: 10.2s / 10s\nTest runtime budget exceeded. Do not expand coverage.";
+  assert.equal(
+    failureReport(over),
+    `Failed:\n  Test runtime budget exceeded. Do not expand coverage.\nEnd of run:\n${over}`,
+  );
+  assert.equal(failureReport("a\nb\nc\n", 2), "b\nc");
+  assert.deepEqual(
+    failedTests(
+      passing(3)
+        .map((line) => line.replace("✔", "✖"))
+        .join("\n"),
+      2,
+    ),
+    ["✖ passes 0", "✖ passes 1", "and 1 more"],
+  );
 });
 
 test("the stand-in records each request's JSON body and never its credentials", async () => {

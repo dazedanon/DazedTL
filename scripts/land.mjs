@@ -23,7 +23,7 @@ import {
 import { generated } from "./contracts.mjs";
 import { gitIn, withLock } from "./land-lock.mjs";
 import { repository } from "./release.mjs";
-import { testsWithRetry } from "./testkit/retry.mjs";
+import { failureReport, tail, testsWithRetry } from "./testkit/retry.mjs";
 import { mirrors } from "./update.mjs";
 
 const appPoll = 30_000;
@@ -135,20 +135,6 @@ export function timer(now = Date.now) {
   };
 }
 
-const tail = (/** @type {string} */ text, lines = 40) =>
-  text.trimEnd().split("\n").slice(-lines).join("\n");
-/**
- * What a failed test run shows: from its first failure marker (a Python FAIL
- * or ERROR header, or a Node test's cross), since the summary that ends the
- * run sits below the Python failures and would hide them; else the tail.
- */
-export function failureReport(/** @type {string} */ text, count = 40) {
-  const all = text.trimEnd().split("\n");
-  const first = all.findIndex((line) => /^(FAIL|ERROR): |^✖ /.test(line));
-  return first < 0
-    ? tail(text, count)
-    : all.slice(first, first + count).join("\n");
-}
 const lines = (/** @type {string} */ text) =>
   text
     .split("\n")
@@ -396,7 +382,7 @@ async function underLock(deps, { top, main, branch }, time, tell) {
     );
   if (tests.flaky)
     log(
-      `Flaky: node scripts/test.mjs failed once and passed when run again; the first run ended:\n${tail(tests.outputs[0], 15)}`,
+      `Flaky: node scripts/test.mjs failed once and passed when run again; the first run:\n${failureReport(tests.outputs[0], 15)}`,
     );
   time.lap("test");
   const runtime = lastRun.match(/^Full test suite: .*$/m);

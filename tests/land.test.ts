@@ -9,13 +9,7 @@ import {
   lockRef,
   releaseLock,
 } from "../scripts/land-lock.mjs";
-import {
-  failureReport,
-  formatBranch,
-  mergeDev,
-  timer,
-  waitForApp,
-} from "../scripts/land.mjs";
+import { formatBranch, mergeDev, timer, waitForApp } from "../scripts/land.mjs";
 import { notesTemplate } from "../scripts/changelog.mjs";
 
 test("a landing waits for a live lock, takes over a dead or unrenewed one and tells the user of a long wait once", async (t) => {
@@ -99,17 +93,6 @@ test("a landing's timing line gives the total and each stage reached", () => {
     time.summary(),
     "Took 95 s: lock wait 4 s, merge 1 s, test 90 s.",
   );
-});
-
-test("a failed test run reports from its first failure, not the summary that ends the run", () => {
-  const python =
-    "..F\n====\nFAIL: test_x (tests.test_x)\nAssertionError: 1 != 2\n";
-  const node = Array.from({ length: 50 }, (_, i) => `ℹ line ${i}`).join("\n");
-  const report = failureReport(`${python}${node}\n`);
-  assert.match(report, /^FAIL: test_x/);
-  assert.match(report, /AssertionError/);
-  assert.equal(report.split("\n").length, 40);
-  assert.equal(failureReport("a\nb\nc\n", 2), "b\nc");
 });
 
 test("a conflicting merge of dev stays in progress with the release notes merged by kind", async (t) => {
