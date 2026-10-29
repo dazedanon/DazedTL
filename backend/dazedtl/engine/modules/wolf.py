@@ -113,18 +113,22 @@ def handleWOLF(filename, estimate):
     start = time.time()
     translatedData = openFiles(filename)
 
-    # Parsers return the error of the page that failed, after saving each
-    # page that finished. Fail the file so partial output is never written or
-    # reported as complete; the run logs what it paid for
-    # (util/subprocess_runner _paid_receipt).
+    # Parsers return the error of the page that failed. Fail the file so
+    # partial output is never written or reported as complete; the run logs
+    # what it paid for (util/subprocess_runner _paid_receipt).
     if translatedData[2] is not None:
         raise translatedData[2]
 
-    # Translate
+    # The file is written once, whole, and only when it finished; a write
+    # that fails leaves an earlier translation as it was. Nothing read a
+    # page's progress back (a run translates files/ again, its finished lines
+    # from the translation cache), and a partial translated/ file replaced an
+    # earlier complete one or, after a stop, counted as finished
+    # (desktop/backend/manual.py).
     if not estimate:
         try:
-            with open("translated/" + filename, "w", encoding="utf-8", newline="\n") as outFile:
-                json.dump(translatedData[0], outFile, ensure_ascii=False, indent=4)
+            output = json.dumps(translatedData[0], ensure_ascii=False, indent=4)
+            system.write_bytes("translated/" + filename, output.encode("utf-8"), 0o644)
         except Exception:
             traceback.print_exc()
             return "Fail"
@@ -150,25 +154,24 @@ def openFiles(filename):
     with open("files/" + filename, "r", encoding="utf-8-sig") as f:
         data = json.load(f)
 
-        # Map Files
-        if "'events':" in str(data):
-            if len(data["events"]) > 0:
-                translatedData = parseMap(data, filename)
-            else:
-                return [data, [0, 0], None]
+    # A file's kind is its top-level key, never text found anywhere in it
+    keys = data if isinstance(data, dict) else {}
 
-        # Map Files
-        elif "'types':" in str(data):
-            translatedData = parseDB(data, filename)
+    # Map Files
+    if "events" in keys:
+        if len(data["events"]) > 0:
+            return parseMap(data, filename)
+        return [data, [0, 0], None]
 
-        # Other Files
-        elif "'commands':" in str(data):
-            translatedData = parseOther(data, filename)
+    # DataBase Files
+    if "types" in keys:
+        return parseWhole(data, filename, searchDB, "types")
 
-        else:
-            raise NameError(filename + " Not Supported")
+    # CommonEvent Files
+    if "commands" in keys:
+        return parseWhole(data, filename, searchCodes, "commands")
 
-    return translatedData
+    raise NameError(filename + " Not Supported")
 
 
 def getResultString(translatedData, translationTime, filename):
@@ -196,38 +199,11 @@ def getResultString(translatedData, translationTime, filename):
             return filename + ": " + totalTokenstring + timeString + Fore.RED + " \u2717 " + errorString + Fore.RESET
 
 
-def save_progress_json(data, filename):
-    """Atomically write current JSON data to translated/filename; skip in estimate mode."""
-    try:
-        if ESTIMATE:
-            return
-        os.makedirs("translated", exist_ok=True)
-        tmp_path = os.path.join("translated", f"{filename}.tmp")
-        final_path = os.path.join("translated", filename)
-        with open(tmp_path, "w", encoding="utf-8", newline="\n") as outFile:
-            json.dump(data, outFile, ensure_ascii=False, indent=4)
-        system.replace(tmp_path, final_path)
-    except Exception:
-        traceback.print_exc()
-
-
-def maybe_save_progress_json(data, filename, tokens):
-    """Save JSON progress only when tokens indicate actual translation work."""
-    try:
-        if not tokens:
-            return
-        if isinstance(tokens, (list, tuple)) and len(tokens) >= 2 and (tokens[0] or tokens[1]):
-            save_progress_json(data, filename)
-    except Exception:
-        traceback.print_exc()
-
-
-def translatePage(search, data, page, pbar, filename, totalTokens):
-    """Translate one *page* of *data* with *search* (searchCodes or searchDB);
-    None when it finished, else its error, which a run's stop is not: that
-    goes through unchanged. A finished page adds its tokens to *totalTokens*
-    and saves the file's progress; a failing page does neither, and the
-    caller ends the file with its error."""
+def translatePage(search, page, pbar, filename, totalTokens):
+    """Translate one *page* with *search* (searchCodes or searchDB); None
+    when it finished, else its error, which a run's stop is not: that goes
+    through unchanged. A finished page adds its tokens to *totalTokens*; the
+    caller ends the file with a failing page's error."""
     try:
         tokens = search(page, pbar, [], filename)
     except run_stop_errors():
@@ -236,29 +212,17 @@ def translatePage(search, data, page, pbar, filename, totalTokens):
         return e
     totalTokens[0] += tokens[0]
     totalTokens[1] += tokens[1]
-    maybe_save_progress_json(data, filename, tokens)
     return None
 
 
-def parseOther(data, filename):
+def parseWhole(data, filename, search, key):
+    """A file that is one page: a CommonEvent's "commands" or a DataBase's
+    "types", translated with *search*."""
     totalTokens = [0, 0]
-
-    # The whole file is one page
     with tqdm(bar_format=BAR_FORMAT, position=POSITION, leave=LEAVE) as pbar:
         pbar.desc = filename
         pbar.total = 0
-        error = translatePage(searchCodes, data, data["commands"], pbar, filename, totalTokens)
-    return [data, totalTokens, error]
-
-
-def parseDB(data, filename):
-    totalTokens = [0, 0]
-
-    # The whole file is one page
-    with tqdm(bar_format=BAR_FORMAT, position=POSITION, leave=LEAVE) as pbar:
-        pbar.desc = filename
-        pbar.total = 0
-        error = translatePage(searchDB, data, data["types"], pbar, filename, totalTokens)
+        error = translatePage(search, data[key], pbar, filename, totalTokens)
     return [data, totalTokens, error]
 
 
@@ -282,27 +246,36 @@ def parseMap(data, filename):
             if event is not None:
                 for page in event["pages"]:
                     if page is not None:
-                        error = translatePage(searchCodes, data, page["list"], pbar, filename, totalTokens)
+                        error = translatePage(searchCodes, page["list"], pbar, filename, totalTokens)
                         if error is not None:
                             return [data, totalTokens, error]
     return [data, totalTokens, None]
+
+
+def replyFits(translated, lines, filename):
+    """Whether a reply has one translation per line sent. One that does not
+    is never written, since its lines cannot be placed: they keep their
+    source text and the file joins MISMATCH, as RPG Maker's _apply_choices."""
+    if len(translated) == len(lines):
+        return True
+    with LOCK:
+        if filename not in MISMATCH:
+            MISMATCH.append(filename)
+    return False
 
 
 def searchCodes(events, pbar, jobList, filename):
     """Translate one page of event commands; returns its [input, output] tokens.
 
     The first pass translates choices and names on the spot and gathers the
-    rest into lists, which are translated at the end of the page; the
+    rest into six lists, which are translated at the end of the page; the
     set-data pass (*jobList* holds those translations) only writes them, so
-    it never sends what the first pass already translated."""
-    # Lists
+    it never sends what the first pass already translated. A list whose
+    reply did not fit (replyFits) reaches it as None and is not written, and
+    a page whose passes did not read the same lines fails."""
+    # Lists, in the order they are sent
     if jobList:
-        stringList = jobList[0]
-        list210 = jobList[1]
-        list300 = jobList[2]
-        list150 = jobList[3]
-        list250 = jobList[4]
-        list122 = jobList[5]
+        stringList, list210, list250, list300, list150, list122 = jobList
         setData = True
     else:
         stringList = []
@@ -396,7 +369,7 @@ def searchCodes(events, pbar, jobList, filename):
                             stringList.append(f"[{speaker}]: {jaString}")
 
                     # 2nd Pass (Set Text)
-                    else:
+                    elif stringList is not None:
                         # Grab Translated String
                         translatedText = stringList[0]
 
@@ -445,7 +418,7 @@ def searchCodes(events, pbar, jobList, filename):
                 totalTokens[1] += response[1][1]
 
                 # Validate and Set Data
-                if len(translatedChoiceList) == len(choiceList):
+                if replyFits(translatedChoiceList, choiceList, filename):
                     for j in range(len(jaChoiceList)):
                         if jaChoiceList[j]:
                             codeList[i]["stringArgs"][j] = translatedChoiceList[0]
@@ -477,7 +450,7 @@ def searchCodes(events, pbar, jobList, filename):
                         list210.append(jaString)
 
                     # 2nd Pass (Set Text)
-                    else:
+                    elif list210 is not None:
                         # Grab Translated String
                         translatedText = list210[0]
 
@@ -521,20 +494,19 @@ def searchCodes(events, pbar, jobList, filename):
                             list122.append(jaString)
 
                         # 2nd Pass (Set Text)
-                        else:
-                            if len(list122) > 0:
-                                # Grab Translated String
-                                translatedText = list122[0]
+                        elif list122 is not None:
+                            # Grab Translated String
+                            translatedText = list122[0]
 
-                                # Textwrap
-                                if FIXTEXTWRAP is True:
-                                    translatedText = dazedwrap.wrapText(translatedText, width=WIDTH)
+                            # Textwrap
+                            if FIXTEXTWRAP is True:
+                                translatedText = dazedwrap.wrapText(translatedText, width=WIDTH)
 
-                                # Set Data
-                                codeList[i]["stringArgs"][0] = codeList[i]["stringArgs"][0].replace(originalString, translatedText)
+                            # Set Data
+                            codeList[i]["stringArgs"][0] = codeList[i]["stringArgs"][0].replace(originalString, translatedText)
 
-                                # Pop Item
-                                list122.pop(0)
+                            # Pop Item
+                            list122.pop(0)
 
             ### Event Code: 150 Picture String
             if codeList[i]["code"] == 150 and CODE150 == True:
@@ -566,7 +538,7 @@ def searchCodes(events, pbar, jobList, filename):
                             list150.append(jaString)
 
                         # Pass 2 (Set Text)
-                        else:
+                        elif list150 is not None:
                             translatedText = list150[0]
 
                             # Textwrap
@@ -584,41 +556,31 @@ def searchCodes(events, pbar, jobList, filename):
                 if (codeList[i]["stringArgs"][0] == "[共]汎用ウィンドウ生成" or codeList[i]["stringArgs"][0] == "選択肢/確認") and not setData:
                     # Grab String
                     choiceList = codeList[i]["stringArgs"][1].split(",")
+                    choiceContext = f"Reply with the {LANGUAGE} translation of the dialogue choice"
 
-                    # Translate Question
-                    question = codeList[i]['stringArgs'][2]
-                    response = translateAI(question, "Reply with the {LANGUAGE} translation")
-                    translatedText = response[0]
-                    totalTokens[0] += response[1][0]
-                    totalTokens[1] += response[1][1]
-
-                    codeList[i]['stringArgs'][2] = translatedText
-
-                    # Translate choices using the original Japanese question as
-                    # context, never the model's translated output.
+                    # Translate the Question, which a 選択肢/確認 may leave
+                    # out, then the choices with the original Japanese
+                    # question as context, never the model's translated output.
+                    question = codeList[i]["stringArgs"][2] if len(codeList[i]["stringArgs"]) > 2 else ""
                     if question:
-                        response = translateAI(
-                            choiceList,
-                            {
-                                "instructions": [
-                                    f"Reply with the {LANGUAGE} translation of the dialogue choice"
-                                ],
-                                "source_items": [question],
-                            },
-                        )
-                    else:
-                        response = translateAI(choiceList, f"Reply with the {LANGUAGE} translation of the dialogue choice")
+                        response = translateAI(question, f"Reply with the {LANGUAGE} translation")
+                        translatedQuestion = response[0]
+                        totalTokens[0] += response[1][0]
+                        totalTokens[1] += response[1][1]
+                        choiceContext = {"instructions": [choiceContext], "source_items": [question]}
+                    response = translateAI(choiceList, choiceContext)
                     choiceListTL = response[0]
                     totalTokens[0] += response[1][0]
                     totalTokens[1] += response[1][1]
 
-                    # Replace Commas
-                    for j in range(len(choiceListTL)):
-                        choiceListTL[j] = choiceListTL[j].replace(", ", "、")
+                    # The window is written whole, once its choices fit
+                    if replyFits(choiceListTL, choiceList, filename):
+                        if question:
+                            codeList[i]["stringArgs"][2] = translatedQuestion
 
-                    # Convert to String and Set
-                    translatedText = ",".join(choiceListTL)
-                    codeList[i]["stringArgs"][1] = translatedText
+                        # Replace Commas, Convert to String and Set
+                        choiceListTL = [choice.replace(", ", "、") for choice in choiceListTL]
+                        codeList[i]["stringArgs"][1] = ",".join(choiceListTL)
 
                 # Dialogue
                 elif codeList[i]["stringArgs"][0] == "BTLメッセージ" or codeList[i]["stringArgs"][0] == "X[移]メニュー時文章表示":
@@ -634,7 +596,7 @@ def searchCodes(events, pbar, jobList, filename):
                         list300.append(jaString)
 
                     # Pass 2
-                    else:
+                    elif list300 is not None:
                         # Add Textwrap and Font
                         translatedText = dazedwrap.wrapText(list300[0], WIDTH)
                         list300.pop(0)
@@ -686,7 +648,7 @@ def searchCodes(events, pbar, jobList, filename):
                                 list300.append(f"[{speaker}]: {jaString}")
 
                         # 2nd Pass (Set Text)
-                        else:
+                        elif list300 is not None:
                             # Grab Translated String
                             translatedText = list300[0]
 
@@ -725,7 +687,7 @@ def searchCodes(events, pbar, jobList, filename):
                             list250.append(jaString)
 
                         # Pass 2 (Set Text)
-                        else:
+                        elif list250 is not None:
                             translatedText = list250[0]
                             list250.pop(0)
 
@@ -746,126 +708,33 @@ def searchCodes(events, pbar, jobList, filename):
             ### Iterate
             i += 1
 
-        # EOF
-        stringListTL = []
-        list210TL = []
-        list150TL = []
-        list250TL = []
-        list300TL = []
-        list122TL = []
-        setData = False
+        # The set-data pass ends here, having written every line it was
+        # given; a line left over means the passes read the page differently,
+        # and the page fails rather than write text out of its place.
+        if setData:
+            if any(jobList):
+                raise ValueError("The set-data pass left translations unwritten. ")
+            return totalTokens
 
-        # String List
-        if len(stringList) > 0:
-            pbar.total = len(stringList)
-            pbar.refresh()
-            response = translateAI(stringList, textHistory)
-            stringListTL = response[0]
-            totalTokens[0] += response[1][0]
-            totalTokens[1] += response[1][1]
-            if len(stringListTL) != len(stringList):
-                with LOCK:
-                    if filename not in MISMATCH:
-                        MISMATCH.append(filename)
-            else:
-                setData = True
+        # EOF: translate each list; the set-data pass writes each reply that
+        # fits and gets None for one that does not (replyFits)
+        jobList = []
+        for lines in (stringList, list210, list250, list300, list150, list122):
+            translated = []
+            if len(lines) > 0:
+                pbar.total = len(lines)
+                pbar.refresh()
+                response = translateAI(lines, textHistory)
+                totalTokens[0] += response[1][0]
+                totalTokens[1] += response[1][1]
+                translated = response[0] if replyFits(response[0], lines, filename) else None
+            jobList.append(translated)
 
-        # 210 List
-        if len(list210) > 0:
-            pbar.total = len(list210)
-            pbar.refresh()
-            response = translateAI(list210, textHistory)
-            list210TL = response[0]
-            totalTokens[0] += response[1][0]
-            totalTokens[1] += response[1][1]
-            if len(list210TL) != len(list210):
-                with LOCK:
-                    if filename not in MISMATCH:
-                        MISMATCH.append(filename)
-            else:
-                setData = True
-
-        # 250 List
-        if len(list250) > 0:
-            pbar.total = len(list250)
-            pbar.refresh()
-            response = translateAI(list250, textHistory)
-            list250TL = response[0]
-            totalTokens[0] += response[1][0]
-            totalTokens[1] += response[1][1]
-            if len(list250TL) != len(list250):
-                with LOCK:
-                    if filename not in MISMATCH:
-                        MISMATCH.append(filename)
-            else:
-                setData = True
-
-        # 300 List
-        if len(list300) > 0:
-            pbar.total = len(list300)
-            pbar.refresh()
-            response = translateAI(list300, textHistory)
-            list300TL = response[0]
-            totalTokens[0] += response[1][0]
-            totalTokens[1] += response[1][1]
-            if len(list300TL) != len(list300):
-                with LOCK:
-                    if filename not in MISMATCH:
-                        MISMATCH.append(filename)
-            else:
-                setData = True
-
-        # 150 List
-        if len(list150) > 0:
-            # Progress Bar
-            pbar.total = len(list150)
-            pbar.refresh()
-
-            # Translate
-            response = translateAI(
-                list150,
-                textHistory,
-                True,
-            )
-            list150TL = response[0]
-            totalTokens[0] += response[1][0]
-            totalTokens[1] += response[1][1]
-
-            # Check Mismatch
-            if len(list150TL) != len(list150):
-                with LOCK:
-                    if filename not in MISMATCH:
-                        MISMATCH.append(filename)
-            else:
-                list150 = list150TL
-                setData = True
-
-        # 122 List
-        if len(list122) > 0:
-            pbar.total = len(list122)
-            pbar.refresh()
-            response = translateAI(list122, textHistory)
-            list122TL = response[0]
-            totalTokens[0] += response[1][0]
-            totalTokens[1] += response[1][1]
-            if len(list122TL) != len(list122):
-                with LOCK:
-                    if filename not in MISMATCH:
-                        MISMATCH.append(filename)
-            else:
-                setData = True
-
-        # Update jobList before recursive call
-        if setData == True:
-            stringList = []
-            jobList = [stringListTL, list210TL, list300TL, list150TL, list250TL, list122TL]  # Add list122TL
+        # Set Data
+        if any(jobList):
             tokens = searchCodes(events, pbar, jobList, filename)
             totalTokens[0] += tokens[0]
             totalTokens[1] += tokens[1]
-
-        else:
-            # Set Data
-            events = codeList
 
     except run_stop_errors():
         raise

@@ -43,7 +43,11 @@ class Backend {
       "-I",
       "-X",
       "utf8",
-      "-B",
+      // Compiled modules go to the profile, never beside the sources: a
+      // release's files must match its signed manifest. The backend's Python
+      // children compile into the same folder (dazedtl/system.py).
+      "-X",
+      `pycache_prefix=${path.join(profile, "python-cache")}`,
       "-u",
       path.join(root, "backend/dazedtl/api/server.py"),
       "--workspace",

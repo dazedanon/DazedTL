@@ -191,10 +191,6 @@ def manual_jobs(source, workspace, lock, allow_providers):
             str(Path(__file__).with_name("manual_worker.py")),
             arguments[3],
         ]
-        kwargs["env"] = {
-            **kwargs["env"],
-            "PYTHONDONTWRITEBYTECODE": "1",
-        }
         return native_launch(arguments, **kwargs)
 
     native.launch_worker.layer("dazedtl-worker", launch)

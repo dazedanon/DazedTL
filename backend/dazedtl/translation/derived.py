@@ -238,7 +238,6 @@ class Store:
                 [
                     sys.executable,
                     "-I",
-                    "-B",
                     str(Path(__file__).with_name("derived_worker.py")),
                 ],
                 stdin=subprocess.PIPE,

@@ -27,9 +27,8 @@ def workflow_operations(source, workspace, lock):
             raise RuntimeError(
                 "The workflow worker changed. Update its compatibility adapter."
             )
-        kwargs["env"] = {**kwargs["env"], "PYTHONDONTWRITEBYTECODE": "1"}
         if FOLDER in os.environ:
-            kwargs["env"][FOLDER] = os.environ[FOLDER]
+            kwargs["env"] = {**kwargs["env"], FOLDER: os.environ[FOLDER]}
         return native_launch(
             [
                 *arguments[:2],

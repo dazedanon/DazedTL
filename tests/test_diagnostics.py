@@ -12,7 +12,7 @@ from tempfile import TemporaryDirectory
 from dazedtl.diagnostics import FOLDER, Diagnostics
 from dazedtl.watchdog import Watchdog
 
-from tests.probe import Background, bytecode
+from tests.probe import Background
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -104,7 +104,6 @@ def worker(script, plan, *arguments, attempt=None):
             "-I",
             "-X",
             "utf8",
-            *bytecode(),
             str(ROOT / "backend/dazedtl/compatibility" / script),
             str(run),
             *arguments,

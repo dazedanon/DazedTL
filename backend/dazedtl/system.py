@@ -35,6 +35,15 @@ Processes
 - Python children run in UTF-8 mode (-X utf8): -I ignores PYTHONUTF8, and
   without it Windows decodes pipes and JSON as cp1252, turning Japanese folder
   names into mojibake. Text pipes are read as UTF-8.
+- Python children compile modules where this process does: into its
+  pycache_prefix, the profile's python-cache folder the app starts the backend
+  with, or nowhere when it runs with -B. Nothing may be written inside the
+  install, whose files must match the release's signed manifest, and without a
+  cache every worker compiled DazedTL and the engine again, about half of a
+  translation worker's start on Linux. No launch passes -B or
+  PYTHONDONTWRITEBYTECODE itself, which would stop its child caching; only
+  the project helper command, which an assistant runs outside the app, keeps
+  -B.
 - Console children open no window on Windows.
 - Stopping a worker stops everything it started (stop_tree), or a Git command
   it waits on outlives it.
@@ -319,7 +328,7 @@ Process = subprocess.Popen
 def run(arguments, *, check=False, console=False, **options):
     """subprocess.run with the rules above; see popen."""
     return subprocess.run(
-        _utf8_python(arguments), check=check, **_options(options, console)
+        _python_command(arguments), check=check, **_options(options, console)
     )
 
 
@@ -328,14 +337,15 @@ def popen(arguments, *, console=False, group=False, **options):
 
     Standard input is the null device unless given; text pipes read UTF-8,
     replacing bytes that are not, unless an encoding is given; a command that
-    starts sys.executable gets -X utf8; on Windows a console child opens
+    starts sys.executable gets -X utf8 and this process's bytecode cache, or
+    -B when it writes no bytecode; on Windows a console child opens
     no window unless console is set. group starts the child as the head of its
     own process group, so stop_tree can stop what it starts too.
     """
     options = _options(options, console)
     if group and os.name != "nt":
         options["start_new_session"] = True
-    return subprocess.Popen(_utf8_python(arguments), **options)
+    return subprocess.Popen(_python_command(arguments), **options)
 
 
 def _options(options, console):
@@ -354,17 +364,42 @@ def _options(options, console):
     return options
 
 
-def _utf8_python(arguments):
-    """Adds -X utf8 to a command that starts this Python without it."""
+def _python_command(arguments):
+    """Adds -X utf8 and this process's bytecode rule to a command that starts
+    this Python, where it does not set them."""
     if isinstance(arguments, (str, bytes)) or not arguments:
         return arguments
     arguments = list(arguments)
     if os.fspath(arguments[0]) != sys.executable:
         return arguments
-    flags = arguments[1:]
-    if any(flag == "utf8" and previous == "-X" for previous, flag in pairwise(flags)):
-        return arguments
-    return [arguments[0], "-X", "utf8", *flags]
+    flags = _interpreter_options(arguments[1:])
+    options = {
+        os.fspath(flag).partition("=")[0]
+        for previous, flag in pairwise(flags)
+        if previous == "-X"
+    }
+    added = [] if "utf8" in options else ["-X", "utf8"]
+    if sys.pycache_prefix and "pycache_prefix" not in options:
+        added += ["-X", "pycache_prefix=" + sys.pycache_prefix]
+    if sys.dont_write_bytecode and "-B" not in flags:
+        added.append("-B")
+    return [arguments[0], *added, *arguments[1:]]
+
+
+def _interpreter_options(arguments):
+    """The options a Python command gives the interpreter: those before its
+    script, -c or -m, whose own arguments may look like options."""
+    options = []
+    rest = iter(arguments)
+    for argument in rest:
+        if not isinstance(argument, str) or argument in {"-c", "-m"}:
+            break
+        if not argument.startswith("-") or argument == "-":
+            break
+        options.append(argument)
+        if argument in {"-X", "-W"}:
+            options.append(next(rest, ""))
+    return options
 
 
 def stop_tree(process, force=False):

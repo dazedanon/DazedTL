@@ -459,7 +459,7 @@ try:
         # failing later page saved progress with the page before's tokens.
         # handleWOLF then wrote the map with the lines the failing page had
         # set and reported it complete; it now fails the file, as the run's
-        # other file errors do, keeping only the pages that finished.
+        # other file errors do.
         from modules import wolf
         from util import translation as stops
 
@@ -480,14 +480,14 @@ try:
             ]
             return {"events": [None, {"pages": pages}]}
 
-        def wolf_file(name, document):
+        def wolf_file(name, document, error=None):
             (wolf_root / "files" / name).write_text(json.dumps(document), "utf-8")
             try:
                 wolf.handleWOLF(name, False)
-            except ValueError as error:
-                assert error is failure, error
+            except ValueError as raised:
+                assert raised is error, raised
             else:
-                raise AssertionError(f"A WOLF file whose page failed passed: {name}")
+                assert error is None, f"A WOLF file whose page failed passed: {name}"
 
         wolf_root = temporary / "wolf-pages"
         (wolf_root / "files").mkdir(parents=True)
@@ -510,18 +510,33 @@ try:
                 failure = ValueError("Refused.")
                 result = wolf.parseMap(wolf_map(failure, None), "Map001.json")
                 assert result[1:] == [[0, 0], failure], result
-                assert not saved.exists(), saved.read_text("utf-8")
-                wolf_file("Map001.json", wolf_map(None, failure))
-                pages = json.loads(saved.read_text("utf-8"))["events"][1]["pages"]
-                assert [page["list"][0]["stringArgs"][0] for page in pages] == [
-                    "EN:一頁",
-                    "二頁",
-                ], pages
+                # Each finished page was saved over translated/, so a file
+                # failing again replaced an earlier run's complete output
+                # with a partial one; a WOLF file is now written once, whole.
+                saved.parent.mkdir()
+                saved.write_text("complete", "utf-8")
+                wolf_file("Map001.json", wolf_map(None, failure), failure)
+                assert saved.read_text("utf-8") == "complete"
                 # A CommonEvent or DataBase file is one page.
                 wolf_fails["一頁"] = failure
-                wolf_file("CommonEvent.json", {"commands": [{"stringArgs": ["一頁"]}]})
-                wolf_file("DataBase.json", {"types": [{"stringArgs": ["一頁"]}]})
+                wolf_file(
+                    "CommonEvent.json",
+                    {"commands": [{"stringArgs": ["一頁"]}]},
+                    failure,
+                )
+                wolf_file(
+                    "DataBase.json", {"types": [{"stringArgs": ["一頁"]}]}, failure
+                )
                 assert sorted(os.listdir("translated")) == ["Map001.json"]
+                # A file's kind was searched for in its whole text, so a
+                # CommonEvent line holding "'events':" was parsed as a map.
+                wolf_fails.clear()
+                wolf_file(
+                    "CommonEvent.json", {"commands": [{"stringArgs": ["'events':"]}]}
+                )
+                assert json.loads(
+                    Path("translated/CommonEvent.json").read_text("utf-8")
+                ) == {"commands": [{"stringArgs": ["EN:'events':"]}]}
         finally:
             os.chdir(directory)
         # A WOLF page's set-data pass translated its choices, choice window
@@ -529,9 +544,11 @@ try:
         # was translated again ("EN EN はい"); its tokens were dropped, and a
         # 210 speaker's input tokens counted as output.
         wolf_sent = []
+        wolf_contexts = []
 
         def wolf_answer(text, history, *_args):
             wolf_sent.append(text)
+            wolf_contexts.append(history)
             if isinstance(text, list):
                 return [[f"EN {line}" for line in text], [3, 1]]
             return ["Rin" if "NPC name" in str(history) else f"EN {text}", [3, 1]]
@@ -574,6 +591,61 @@ try:
         assert wolf_window["stringArgs"][1:] == ["EN 行く,EN 残る", "EN 宿屋"], (
             wolf_window
         )
+        # The window's question asked for the "{LANGUAGE}" translation.
+        assert "{LANGUAGE}" not in str(wolf_contexts), wolf_contexts
+        # The set-data pass ran once any one list of the page came back
+        # whole, then wrote a list that came back short (an IndexError failed
+        # the page) or long (its extra line was sent again and written over a
+        # later command). A list, choices or window reply of the wrong length
+        # is now left in its source text, a window's question with it, and
+        # the file joins MISMATCH; a 選択肢/確認 without a question failed on
+        # its missing argument.
+
+        def wolf_odd(text, *_args):
+            if isinstance(text, str):
+                return [f"EN {text}", [3, 1]]
+            reply = [f"EN {line}" for line in text]
+            if "攻撃" in text:
+                reply.append("EN extra")
+            elif "薬草" not in text:
+                reply.pop()
+            return [reply, [3, 1]]
+
+        def wolf_misfit(*commands):
+            page = deepcopy(list(commands))
+            with patch.multiple(
+                wolf,
+                CODE101=True,
+                CODE102=True,
+                CODE122=True,
+                CODE300=True,
+                MISMATCH=[],
+                translateAI=wolf_odd,
+            ):
+                wolf.searchCodes(
+                    page, SimpleNamespace(refresh=lambda: None), [], "M.json"
+                )
+                return page, wolf.MISMATCH
+
+        choices = {"code": 102, "stringArgs": ["はい", "いいえ"]}
+        window = {"code": 300, "stringArgs": ["選択肢/確認", "行く,残る"]}
+        asking = {
+            "code": 300,
+            "stringArgs": ["[共]汎用ウィンドウ生成", "行く,残る", "宿屋"],
+        }
+        dialogue = {"code": 101, "stringArgs": ["こんにちは"]}
+        script = {"code": 122, "stringArgs": ["薬草"]}
+        battle = {"code": 300, "stringArgs": ["BTLメッセージ", "攻撃"]}
+        for commands, written in (
+            ([choices], [choices]),
+            ([window], [window]),
+            ([asking], [asking]),
+            (
+                [dialogue, script, battle],
+                [dialogue, {**script, "stringArgs": ["EN 薬草"]}, battle],
+            ),
+        ):
+            assert wolf_misfit(*commands) == (written, ["M.json"]), commands
         # A name a registered reference game already translated is reused
         # instead of guessed: that game read 存子 as Aruko.
         from util import reference_games
@@ -2178,7 +2250,7 @@ try:
         import httpx
         from dazedtl.compatibility.request_parameters import configure_builders
         from dazedtl.settings.preferences import GENERATION_PARAMETERS
-        from openai import BadRequestError
+        from openai import BadRequestError, UnprocessableEntityError
         from util import translation
         from util.batch_providers import (
             PROVIDER_OPENAI,
@@ -2269,6 +2341,105 @@ try:
             )
             assert legacy["response_format"] == {"type": "json_object"}
             assert "provider" not in legacy.get("extra_body", {})
+
+            # A json_schema request's 400 was sent again in JSON mode whatever
+            # it said, so under the run-stop policy each rejected request
+            # reached the provider twice. There only an error saying the
+            # response format falls back, never one echoing the request back;
+            # a run frozen before falls back at every 400. A validating
+            # server's 422 failed every request instead of using JSON mode.
+            def status_error(status, body):
+                error = BadRequestError if status == 400 else UnprocessableEntityError
+                return error(
+                    f"Error code: {status} - {body}",
+                    response=httpx.Response(
+                        status,
+                        request=httpx.Request(
+                            "POST", "https://provider.invalid/v1/chat/completions"
+                        ),
+                    ),
+                    body=body,
+                )
+
+            unrelated = {"message": "The model `gone` does not exist."}
+            unsupported = {
+                "message": "Invalid parameter: 'response_format' of type "
+                "'json_schema' is not supported with this model."
+            }
+            echoed = {
+                "object": "error",
+                "message": "1 validation error for ChatCompletionRequest\n"
+                "model\n  Field required [type=missing, input_value={'messages':"
+                " [], 'response_format': {'type': 'json_schema'}}, input_type=dict]",
+            }
+            literal = {
+                "detail": [
+                    {
+                        "type": "literal_error",
+                        "loc": ["body", "response_format", "type"],
+                        "msg": "Input should be 'text' or 'json_object'",
+                        "input": "json_schema",
+                    }
+                ]
+            }
+            missing = {
+                "detail": [
+                    {
+                        "type": "missing",
+                        "loc": ["body", "model"],
+                        "msg": "Field required",
+                        "input": {"response_format": {"type": "json_schema"}},
+                    }
+                ]
+            }
+            for run_stops, status, body, sent in (
+                (True, 400, unrelated, 1),
+                (True, 400, unsupported, 2),
+                (True, 400, echoed, 1),
+                # JSON mode, or no format at all, would be rejected too.
+                (True, 400, {"message": "Input should be 'json_schema'"}, 1),
+                (False, 400, unrelated, 2),
+                (True, 422, literal, 2),
+                (False, 422, literal, 2),
+                (False, 422, missing, 1),
+                # OpenRouter passes on the upstream server's body as text.
+                (
+                    True,
+                    400,
+                    {
+                        "message": "Provider returned error",
+                        "metadata": {"raw": json.dumps(missing)},
+                    },
+                    1,
+                ),
+            ):
+                send = Mock(side_effect=[status_error(status, body), good])
+                with (
+                    patch.object(translation, "RUN_STOPS", run_stops),
+                    patch.object(
+                        translation.openai,
+                        "chat",
+                        SimpleNamespace(completions=SimpleNamespace(create=send)),
+                    ),
+                ):
+                    try:
+                        translation.translateText(
+                            "Translate.",
+                            '{"Line1":"薬"}',
+                            [],
+                            0,
+                            "json",
+                            "openai/gpt-4.1",
+                            numLines=1,
+                        )
+                    except Exception as error:
+                        assert sent == 1 and f"({status})" in str(error), error
+                    else:
+                        assert sent == 2, (run_stops, body)
+                assert send.call_count == sent, (run_stops, body, send.call_count)
+                assert send.call_args.kwargs["response_format"]["type"] == (
+                    "json_object" if sent == 2 else "json_schema"
+                )
             # DeepSeek's own models think within max_tokens by default, so a
             # long request gets the full ceiling there and the cap elsewhere.
             for model, endpoint, ceiling in (

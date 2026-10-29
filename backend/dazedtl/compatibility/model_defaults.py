@@ -77,7 +77,6 @@ class ModelDefaults:
         # A negative fallback lets us distinguish an unknown model from a free one.
         env.update(
             PYTHON_DOTENV_DISABLED="1",
-            PYTHONDONTWRITEBYTECODE="1",
             PYTHONNOUSERSITE="1",
             PYTHONUTF8="1",
             PYTHONIOENCODING="utf-8",
