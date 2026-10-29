@@ -30,6 +30,7 @@ from dazedtl.compatibility.translation import (
     TranslationEngine,
     provider_errors,
 )
+from dazedtl.settings import effort
 from dazedtl.settings.preferences import GENERATION_PARAMETERS
 from dazedtl.settings.providers import PROVIDERS
 from dazedtl.storage import write_json
@@ -690,6 +691,29 @@ class CompatibilityContracts(unittest.TestCase):
                 translation.RunRefusedError, "gpt-6.1-sol refused thinking effort High"
             ):
                 translation.translateText("s", "u", [], 0, "json", "gpt-6.1-sol")
+            # A 422 naming reasoning refuses the effort too, by the rule a new
+            # run freezes (settings/effort REFUSALS), which Check an effort
+            # reads by; a run frozen before it sends and fails as it did.
+            unsupported = Exception(
+                "API status error (422): Reasoning is not supported for this model"
+            )
+            translation.translateText = point(Mock(side_effect=unsupported))
+            environment.prepare(root)
+            with self.assertRaises(Exception) as caught:
+                translation.translateText("s", "u", [], 0, "json", "gpt-6.1-sol")
+            self.assertIs(caught.exception, unsupported)
+            plan["dazedtl_request_policy"] = {
+                **policy,
+                "thinkingEffort": "high",
+                "thinkingEffortRefusals": effort.REFUSALS,
+            }
+            write_json(root / "plan.json", plan)
+            environment.prepare(root)
+            with self.assertRaisesRegex(
+                translation.RunRefusedError, "gpt-6.1-sol refused thinking effort High"
+            ):
+                translation.translateText("s", "u", [], 0, "json", "gpt-6.1-sol")
+            translation.translateText = point(Mock(side_effect=refused))
             plan["dazedtl_request_policy"] = policy
             write_json(root / "plan.json", plan)
             environment.prepare(root)

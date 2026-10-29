@@ -184,7 +184,7 @@ def collect(
                 raise ValueError(
                     "The provider is still working. Keep monitoring until every Batch finishes or cancels."
                 )
-            part, _errors, usage = provider.collect_terminal(
+            part, errors, usage = provider.collect_terminal(
                 batch["id"], batch["custom_ids"]
             )
         if set(part) - set(batch["custom_ids"].values()):
@@ -208,13 +208,18 @@ def collect(
             "request_counts"
         ]["succeeded"] == len(part):
             # Complete downloaded success coverage distinguishes canceled or
-            # rejected requests from a missing paid response.
+            # rejected requests from a missing paid response, with the
+            # provider's reason where it gave one, such as a refused thinking
+            # effort (process_view batch_refusal).
+            reasons = errors if isinstance(errors, dict) else {}
             previous = {
                 error.get("custom_id"): error
                 for error in batch.get("provider_errors") or []
             }
             batch["provider_errors"] = [
-                previous.get(custom)
+                {"custom_id": custom, "message": reasons[custom]}
+                if reasons.get(custom)
+                else previous.get(custom)
                 or {
                     "custom_id": custom,
                     "message": "This request ended without a successful response.",

@@ -3412,6 +3412,7 @@ def fetchTranslationBatches(batches=None):
                     errored=len(err_part),
                     usage=usage_part,
                     actual_cost=part_cost,
+                    errors=err_part,
                 )
             except Exception as exc:
                 print(

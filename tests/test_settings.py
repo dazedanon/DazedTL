@@ -5,6 +5,7 @@ import threading
 import time
 import unittest
 from copy import deepcopy
+from datetime import UTC, datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import ModuleType, SimpleNamespace
@@ -1734,14 +1735,18 @@ class SettingsTests(unittest.TestCase):
                 {"thinkingEffort": "low"},
                 listed["claude-opus-5-5"],
             ),
-            {"thinkingEffort": "low"},
+            {"thinkingEffort": "low", "thinkingEffortRefusals": effort.REFUSALS},
         )
         self.assertEqual(effort.frozen("anthropic", "claude-opus-4-5", {}, older), {})
         self.assertEqual(
             effort.frozen(
                 "anthropic", "claude-opus-4-5", {"thinkingEffort": "low"}, older
             ),
-            {"thinkingEffort": "low", "thinkingEffortListed": older},
+            {
+                "thinkingEffort": "low",
+                "thinkingEffortRefusals": effort.REFUSALS,
+                "thinkingEffortListed": older,
+            },
         )
         self.assertEqual(
             effort.frozen("openrouter", "z-ai/glm-6", {}, glm),
@@ -2130,14 +2135,17 @@ class SettingsTests(unittest.TestCase):
             # A run the server refused the effort in marks that check refused;
             # any other failure, or a run on another connection, changes none.
             refused = effort.rejection("qwen-local", "low")
+            ended = datetime.now(UTC).isoformat()
             for run in (
                 {**frozen, "message": "The server didn't answer in time."},
                 {**frozen, "connection_id": "other", "message": refused},
                 {**frozen, "endpoint": "http://127.0.0.1:9/v1", "message": refused},
+                # A run that ended before the check passed says nothing of it.
+                {**frozen, "message": refused, "ended": "2026-01-01T00:00:00+00:00"},
             ):
-                settings.refused_in_run(run)
+                settings.refused_in_run({"ended": ended, **run})
             self.assertEqual(configuration(settings, "live")["thinkingEffort"], "low")
-            settings.refused_in_run({**frozen, "message": refused})
+            settings.refused_in_run({**frozen, "message": refused, "ended": ended})
             offered = settings.model_defaults("local", "qwen-local")["thinkingEffort"]
             self.assertEqual(
                 [option["value"] for option in offered["options"]], [None, "high"]
@@ -2151,9 +2159,12 @@ class SettingsTests(unittest.TestCase):
                 ],
                 "low",
             )
-            # Checked again, it passes again.
+            # Checked again, it passes again, also when the refused run is
+            # reported again, as after a restart.
             server["status"] = 200
             offered = settings.check_effort("local", "qwen-local", "low")
+            settings.refused_in_run({**frozen, "message": refused, "ended": ended})
+            offered = settings.model_defaults("local", "qwen-local")["thinkingEffort"]
             self.assertTrue(offered["check"]["results"][0]["passed"])
 
             # Another address clears the checks; the frozen run is unchanged.
@@ -2173,6 +2184,71 @@ class SettingsTests(unittest.TestCase):
                 ],
                 "low",
             )
+
+    def test_a_run_and_a_check_read_an_effort_refusal_by_one_rule(self):
+        # Check an effort and a run frozen with REFUSALS count the same
+        # replies as a refusal of the effort, so a server refusing it with a
+        # 422 or by naming reasoning stops a run at once and marks the check;
+        # a run frozen before reads its errors as it did when approved.
+        from dazedtl.settings import effort
+
+        class Refusal(Exception):
+            def __init__(self, status, text):
+                super().__init__(text)
+                self.status_code = status
+
+        for status, reason, refused in (
+            (400, "Unrecognized request argument supplied: reasoning_effort", True),
+            (422, "Reasoning is not supported for this model", True),
+            (400, "This model does not support thinking", True),
+            (
+                400,
+                "Reasoning is mandatory for this endpoint and cannot be disabled",
+                True,
+            ),
+            (400, "Budget 0 is invalid. This model only works in thinking mode.", True),
+            (400, "max_tokens must be greater than thinking.budget_tokens", False),
+            # Errors about thinking a request carries back are no refusal.
+            (400, "Missing `reasoning_content` field in the assistant message", False),
+            (
+                400,
+                (
+                    "When `thinking` is enabled, a final assistant message must "
+                    "start with a thinking block. To avoid this requirement, "
+                    "disable `thinking`."
+                ),
+                False,
+            ),
+            (400, "Model qwen-local not found", False),
+            (500, "reasoning_effort is temporarily unavailable", False),
+        ):
+            with self.subTest(status=status, reason=reason):
+                self.assertIs(effort.refuses(status, reason), refused)
+                self.assertIs(
+                    effort.rejected(Refusal(status, reason), "low", effort.REFUSALS),
+                    refused,
+                )
+                # A Batch row names its status in its text.
+                self.assertIs(
+                    effort.rejected(
+                        f"Error code: {status} - {reason}", "low", effort.REFUSALS
+                    ),
+                    refused,
+                )
+                self.assertFalse(
+                    effort.rejected(Refusal(status, reason), None, effort.REFUSALS)
+                )
+        # Frozen before the rule: only a 400 naming the effort field itself.
+        self.assertFalse(
+            effort.rejected(
+                Refusal(422, "Reasoning is not supported for this model"), "low"
+            )
+        )
+        self.assertTrue(
+            effort.rejected(
+                Refusal(400, "Unsupported value: 'reasoning_effort'"), "low"
+            )
+        )
 
     def test_the_effort_table_check_plans_before_it_sends(self):
         # The maintainer's check of the effort table spends money on real

@@ -36,15 +36,15 @@ def thinking(params, configuration, provider):
     )
 
 
-def refusal(translation, level, native, *args, **kwargs):
+def refusal(translation, level, rule, native, *args, **kwargs):
     """A Guided Live request, which stops the run with one plain message
-    when the provider refuses the run's thinking effort: every later request
-    carries the same effort, and sending it without one would change what
-    the user chose."""
+    when the provider refuses the run's thinking effort, by the refusal
+    *rule* it froze: every later request carries the same effort, and
+    sending it without one would change what the user chose."""
     try:
         return native(*args, **kwargs)
     except Exception as error:
-        if effort.rejected(error, level):
+        if effort.rejected(error, level, rule):
             model = kwargs.get("model") or (args[5] if len(args) > 5 else "")
             raise translation.RunRefusedError(effort.rejection(model, level)) from error
         raise
@@ -137,11 +137,13 @@ def configure_builders(
     provider=None,
     thinking_effort=None,
     thinking_listed=None,
+    thinking_refusals=None,
 ):
     """Layers the run's frozen request policy over the engine's builders.
     *provider* is the connection's identity (settings/providers), which
     decides how *thinking_effort* is written, with the model list's record
-    the run froze, *thinking_listed* (settings/effort profile)."""
+    the run froze, *thinking_listed* (settings/effort profile), and the
+    rule a refusal of it is read by, *thinking_refusals*."""
     output_tokens(max_output_tokens)
     effort.checked(thinking_effort)
     if thinking_listed is not None:
@@ -159,7 +161,7 @@ def configure_builders(
         translation.translateText.remove(LAYER)
     else:
         translation.translateText.layer(
-            LAYER, partial(refusal, translation, thinking_effort)
+            LAYER, partial(refusal, translation, thinking_effort, thinking_refusals)
         )
     if thinking_effort is None and thinking_listed is None:
         translation.unestimatedThinking.remove(LAYER)

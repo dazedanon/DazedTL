@@ -1069,7 +1069,50 @@ class TranslationTests(unittest.TestCase):
         jobs.processes = {failed["id"]: Exited(), interrupted["id"]: Exited()}
         jobs.reconcile()
         self.assertEqual(
-            runs, [{"mode": "live", "model": "fixture", "message": "Refused."}]
+            runs,
+            [
+                {
+                    "mode": "live",
+                    "model": "fixture",
+                    "message": "Refused.",
+                    "ended": failed["updated"],
+                }
+            ],
+        )
+
+    def test_a_run_that_failed_with_no_app_to_see_it_reaches_settings_later(self):
+        # A worker that fails its run while the app is closed or restarting
+        # has no app to report it to Settings; the next app reports it once,
+        # when a previous app's worker still ending a run has let it go.
+        closed, finishing = (self.run_record()[0] for _ in range(2))
+        closed.update(status="failed", message="Refused.")
+        finishing.update(status="running")
+        for job in (closed, finishing):
+            self.store.save(job)
+        worker = WorkspaceLock(self.store.folder(finishing["id"]))
+        try:
+            jobs = Jobs(self.store.workspace, False)
+            runs = []
+            jobs.reconcile()
+            jobs.run_failed = runs.append
+            jobs.reconcile()
+            self.assertEqual(
+                [(run["message"], run["ended"]) for run in runs],
+                [("Refused.", closed["updated"])],
+            )
+            # The previous app's worker ends its run failed.
+            ended = self.store.record(finishing["id"])
+            ended.update(status="failed", message="Refused too.")
+            self.store.save(ended)
+            jobs.reconcile()
+            self.assertEqual(len(runs), 1)
+        finally:
+            worker.close()
+        for _ in range(2):
+            jobs.reconcile()
+        self.assertEqual(
+            [(run["message"], run["ended"]) for run in runs],
+            [("Refused.", closed["updated"]), ("Refused too.", ended["updated"])],
         )
 
     def test_cancellation_retains_completed_rows_and_does_not_submit_later_chunks(self):
