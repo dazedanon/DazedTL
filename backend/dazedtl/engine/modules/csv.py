@@ -9,6 +9,7 @@ import time
 import traceback
 import tiktoken
 import csv
+import io
 from pathlib import Path
 from colorama import Fore
 from dotenv import load_dotenv
@@ -16,9 +17,8 @@ from retry import retry
 from tqdm import tqdm
 from util.languages import source_pattern
 from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost, found_mismatch, run_stop_errors
-from util.translation_task import fail_on_parser_error, module_receipt
+from util.translation_task import fail_on_parser_error, module_receipt, write_output
 from util.speakers import strip_speaker_prefix
-import tempfile
 
 # Globals
 MODEL = os.getenv("model")
@@ -94,18 +94,20 @@ def handleCSV(filename, estimate):
     FILENAME = filename
 
     if not ESTIMATE:
-        with open("translated/" + filename, "w+t", newline="", encoding=ENCODING, errors="xmlcharrefreplace") as writeFile:
-            # Translate
-            start = time.time()
-            translatedData = openFiles(filename, writeFile)
-            fail_on_parser_error(translatedData)
+        # Translate
+        start = time.time()
+        translatedData = openFiles(filename)
+        fail_on_parser_error(translatedData)
+        rows = io.StringIO()
+        csv.writer(rows, delimiter=CSV_DELIMITER).writerows(translatedData[0])
+        write_output(filename, rows.getvalue(), encoding=ENCODING, errors="xmlcharrefreplace", newline="")
 
-            # Print Result
-            end = time.time()
-            tqdm.write(module_receipt(filename, translatedData[1], end - start, MODEL))
-            with LOCK:
-                TOKENS[0] += translatedData[1][0]
-                TOKENS[1] += translatedData[1][1]
+        # Print Result
+        end = time.time()
+        tqdm.write(module_receipt(filename, translatedData[1], end - start, MODEL))
+        with LOCK:
+            TOKENS[0] += translatedData[1][0]
+            TOKENS[1] += translatedData[1][1]
     else:
         # Translate
         start = time.time()
@@ -129,21 +131,21 @@ def handleCSV(filename, estimate):
         return totalString
 
 
-def openFiles(filename, writeFile):
-    with open("files/" + filename, "r", encoding=ENCODING) as readFile, writeFile:
-        translatedData = parseCSV(readFile, writeFile, filename)
+def openFiles(filename):
+    with open("files/" + filename, "r", encoding=ENCODING) as readFile:
+        translatedData = parseCSV(readFile, filename)
 
     return translatedData
 
 
 def openFilesEstimate(filename):
     with open("files/" + filename, "r", encoding="utf8") as readFile:
-        translatedData = parseCSV(readFile, "", filename)
+        translatedData = parseCSV(readFile, filename)
 
     return translatedData
 
 
-def parseCSV(readFile, writeFile, filename):
+def parseCSV(readFile, filename):
     totalTokens = [0, 0]
     totalLines = 0
     global LOCK
@@ -153,13 +155,6 @@ def parseCSV(readFile, writeFile, filename):
     readFile.seek(0)
 
     reader = csv.reader(readFile, delimiter=CSV_DELIMITER)
-    if not ESTIMATE:
-        writer = csv.writer(
-            writeFile,
-            delimiter=CSV_DELIMITER,
-        )
-    else:
-        writer = ""
 
     with tqdm(bar_format=BAR_FORMAT, position=POSITION, total=totalLines, leave=LEAVE) as pbar:
         pbar.desc = filename
@@ -171,31 +166,15 @@ def parseCSV(readFile, writeFile, filename):
             data.append(row)
 
         try:
-            response = translateCSV(data, pbar, writeFile, writer, filename, None)
+            response = translateCSV(data, pbar, filename, None)
             totalTokens[0] = response[0]
             totalTokens[1] = response[1]
         except run_stop_errors():
             raise
-        except Exception:
+        except Exception as e:
             traceback.print_exc()
+            return [data, totalTokens, e]
     return [data, totalTokens, None]
-
-
-def flush_progress_csv(writeFile, writer, rows):
-    """Flush current CSV progress to the already-open output file (Windows-safe)."""
-    try:
-        if ESTIMATE or writeFile is None:
-            return
-        with LOCK:
-            writeFile.seek(0)
-            # Recreate writer at current position to avoid state issues
-            tmp_writer = csv.writer(writeFile, delimiter=CSV_DELIMITER)
-            tmp_writer.writerows(rows)
-            writeFile.truncate()
-            writeFile.flush()
-            os.fsync(writeFile.fileno())
-    except Exception:
-        traceback.print_exc()
 
 
 def _actual_target_column():
@@ -257,7 +236,7 @@ def _collect_process_indices(data):
     return process
 
 
-def translateCSV(data, pbar, writeFile, writer, filename, translatedList):
+def translateCSV(data, pbar, filename, translatedList):
     """
     Unified CSV translation function using configurable settings.
     
@@ -281,136 +260,111 @@ def translateCSV(data, pbar, writeFile, writer, filename, translatedList):
     stringList = []
     process_indices = _collect_process_indices(data)
 
-    try:
+    # Translate
+    for i in process_indices:
+        # Get source text
+        jaString = _row_source_text(data[i])
+        speaker = ""
+        
+        # Handle speaker column if configured
+        if SPEAKER_COLUMN >= 0 and len(data[i]) > SPEAKER_COLUMN and data[i][SPEAKER_COLUMN]:
+            speakerResponse = getSpeaker(data[i][SPEAKER_COLUMN])
+            totalTokens[0] += speakerResponse[1][0]
+            totalTokens[1] += speakerResponse[1][1]
+            speaker = speakerResponse[0]
+            data[i][SPEAKER_COLUMN] = speaker
+        
+        # Parse :name[] tags if configured
+        if PARSE_NAME_TAGS and ':name' in jaString:
+            match = re.search(r":name\[([^\]]+?)\]\n([\w\W]*)", jaString)
+            if match:
+                # Translate speaker name
+                response = getSpeaker(match.group(1))
+                speaker = response[0]
+                totalTokens[0] += response[1][0]
+                totalTokens[1] += response[1][1]
+                data[i][SOURCE_COLUMN] = data[i][SOURCE_COLUMN].replace(match.group(1), speaker)
+                
+                # Extract text portion
+                jaString = match.group(2)
+                # Remove voice markers
+                voMatch = re.search(r"\\[vfF]+\[.+]", jaString)
+                if voMatch:
+                    jaString = jaString.replace(voMatch.group(0), "")
+        
+        # Parse \M markers if configured
+        if PARSE_M_MARKERS and '\\M' in jaString:
+            match = re.search(r"\\M.+\n([\w\W]*)", jaString)
+            if match:
+                jaString = match.group(1)
+                voMatch = re.search(r"\\[vfF]+\[.+]", jaString)
+                if voMatch:
+                    jaString = jaString.replace(voMatch.group(0), "")
+        
+        # Remove furigana if configured
+        if REMOVE_FURIGANA:
+            jaString = re.sub(r"＜(.*)＝.*＞", r"\1", jaString)
+        
+        # Store original for replacement
+        ojaString = jaString
+        
+        # Remove textwrap
+        jaString = jaString.replace("\\n", " ")
+        jaString = jaString.replace("\n", " ")
+        
+        # Pass 1: Collect strings
+        if not translatedList:
+            if speaker:
+                stringList.append(f"[{speaker}]: {jaString}")
+            else:
+                stringList.append(jaString)
+        
+        # Pass 2: Apply translations
+        else:
+            # Grab and pop translation
+            translatedText = translatedList[0]
+            translatedList.pop(0)
+            
+            # Remove speaker prefix from translation if present
+            translatedText = strip_speaker_prefix(translatedText)
+            
+            # Add wordwrap
+            translatedText = dazedwrap.wrapText(translatedText, WIDTH)
+            translatedText = translatedText.replace("\n", "\\n")
+            
+            # Determine target column
+            actual_target = _actual_target_column()
+            
+            # Ensure row has enough columns
+            while len(data[i]) <= actual_target:
+                data[i].append("")
+            
+            # Set data
+            if PARSE_NAME_TAGS or PARSE_M_MARKERS:
+                # Replace original text portion
+                data[i][actual_target] = data[i][actual_target].replace(ojaString, translatedText) if data[i][actual_target] else translatedText
+            else:
+                data[i][actual_target] = translatedText
+
+    # EOF - Process collected strings
+    if len(stringList) > 0:
+        # Set Progress
+        pbar.total = len(stringList)
+        pbar.refresh()
+
         # Translate
-        for i in process_indices:
-            # Get source text
-            jaString = _row_source_text(data[i])
-            speaker = ""
-            
-            # Handle speaker column if configured
-            if SPEAKER_COLUMN >= 0 and len(data[i]) > SPEAKER_COLUMN and data[i][SPEAKER_COLUMN]:
-                speakerResponse = getSpeaker(data[i][SPEAKER_COLUMN])
-                totalTokens[0] += speakerResponse[1][0]
-                totalTokens[1] += speakerResponse[1][1]
-                speaker = speakerResponse[0]
-                data[i][SPEAKER_COLUMN] = speaker
-            
-            # Parse :name[] tags if configured
-            if PARSE_NAME_TAGS and ':name' in jaString:
-                match = re.search(r":name\[([^\]]+?)\]\n([\w\W]*)", jaString)
-                if match:
-                    # Translate speaker name
-                    response = getSpeaker(match.group(1))
-                    speaker = response[0]
-                    totalTokens[0] += response[1][0]
-                    totalTokens[1] += response[1][1]
-                    data[i][SOURCE_COLUMN] = data[i][SOURCE_COLUMN].replace(match.group(1), speaker)
-                    
-                    # Extract text portion
-                    jaString = match.group(2)
-                    # Remove voice markers
-                    voMatch = re.search(r"\\[vfF]+\[.+]", jaString)
-                    if voMatch:
-                        jaString = jaString.replace(voMatch.group(0), "")
-            
-            # Parse \M markers if configured
-            if PARSE_M_MARKERS and '\\M' in jaString:
-                match = re.search(r"\\M.+\n([\w\W]*)", jaString)
-                if match:
-                    jaString = match.group(1)
-                    voMatch = re.search(r"\\[vfF]+\[.+]", jaString)
-                    if voMatch:
-                        jaString = jaString.replace(voMatch.group(0), "")
-            
-            # Remove furigana if configured
-            if REMOVE_FURIGANA:
-                jaString = re.sub(r"＜(.*)＝.*＞", r"\1", jaString)
-            
-            # Store original for replacement
-            ojaString = jaString
-            
-            # Remove textwrap
-            jaString = jaString.replace("\\n", " ")
-            jaString = jaString.replace("\n", " ")
-            
-            # Pass 1: Collect strings
-            if not translatedList:
-                if speaker:
-                    stringList.append(f"[{speaker}]: {jaString}")
-                else:
-                    stringList.append(jaString)
-            
-            # Pass 2: Apply translations
-            else:
-                # Grab and pop translation
-                translatedText = translatedList[0]
-                translatedList.pop(0)
-                
-                # Remove speaker prefix from translation if present
-                translatedText = strip_speaker_prefix(translatedText)
-                
-                # Add wordwrap
-                translatedText = dazedwrap.wrapText(translatedText, WIDTH)
-                translatedText = translatedText.replace("\n", "\\n")
-                
-                # Determine target column
-                actual_target = _actual_target_column()
-                
-                # Ensure row has enough columns
-                while len(data[i]) <= actual_target:
-                    data[i].append("")
-                
-                # Set data
-                if PARSE_NAME_TAGS or PARSE_M_MARKERS:
-                    # Replace original text portion
-                    data[i][actual_target] = data[i][actual_target].replace(ojaString, translatedText) if data[i][actual_target] else translatedText
-                else:
-                    data[i][actual_target] = translatedText
-                
-                flush_progress_csv(writeFile, writer, data)
+        response = translateAI(stringList, "")
+        totalTokens[0] += response[1][0]
+        totalTokens[1] += response[1][1]
+        translatedList = response[0]
 
-        # EOF - Process collected strings
-        if len(stringList) > 0:
-            # Set Progress
-            pbar.total = len(stringList)
-            pbar.refresh()
-
-            # Translate
-            response = translateAI(stringList, "")
-            totalTokens[0] += response[1][0]
-            totalTokens[1] += response[1][1]
-            translatedList = response[0]
-
-            # Set Strings
-            if len(stringList) == len(translatedList):
-                translateCSV(data, pbar, writeFile, writer, filename, translatedList)
-            # Mismatch
-            else:
-                with LOCK:
-                    found_mismatch(MISMATCH, filename)
-
-            # Write all Data
+        # Set Strings
+        if len(stringList) == len(translatedList):
+            translateCSV(data, pbar, filename, translatedList)
+        # Mismatch
+        else:
             with LOCK:
-                if not ESTIMATE:
-                    for row in data:
-                        writer.writerow(row)
-            flush_progress_csv(writeFile, writer, data)
-
-    except Exception as error:
-        traceback.print_exc()
-
-        # Write all Data
-        with LOCK:
-            if not ESTIMATE:
-                for row in data:
-                    writer.writerow(row)
-        flush_progress_csv(writeFile, writer, data)
-        # The output file is already truncated, so a run's stop still writes
-        # every row before it ends the file.
-        if isinstance(error, run_stop_errors()):
-            raise
-        return totalTokens
+                found_mismatch(MISMATCH, filename)
 
     return totalTokens
 

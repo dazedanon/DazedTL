@@ -15,10 +15,8 @@ from retry import retry
 from tqdm import tqdm
 from util.languages import source_pattern
 from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost, found_mismatch, run_stop_errors
-from util.translation_task import fail_on_parser_error, module_receipt
-import tempfile
-from util import system
-from util.game_encoding import UnwritableText, writable
+from util.translation_task import fail_on_parser_error, module_receipt, write_output
+from util.game_encoding import check_line, writable
 
 # Globals
 MODEL = os.getenv("model")
@@ -117,8 +115,7 @@ def handleOnscripter(filename, estimate):
             TOKENS[1] += translatedData[1][1]
         # A line the encoding can't write fails the file (util/game_encoding).
         lines = writable(translatedData[0], "cp932", filename)
-        with open("translated/" + filename, "w", encoding="cp932", errors="ignore") as outFile:
-            outFile.writelines(lines)
+        write_output(filename, "".join(lines), encoding="cp932", errors="ignore")
         tqdm.write(module_receipt(filename, translatedData[1], end - start, MODEL))
 
     return module_receipt("TOTAL", TOKENS, end - start, MODEL)
@@ -160,25 +157,12 @@ def parseOnscripter(readFile, filename):
     return [data, totalTokens, None]
 
 
-def save_progress_lines(lines, filename, encoding="cp932"):
-    """Atomically save current line-based translation progress."""
-    try:
-        if ESTIMATE:
-            return
-        lines = writable(lines, encoding, filename)
-        os.makedirs("translated", exist_ok=True)
-        tmp_fd, tmp_path = tempfile.mkstemp(prefix=f"{filename}.", suffix=".tmp", dir="translated")
-        try:
-            with os.fdopen(tmp_fd, "w", encoding=encoding, newline="\n", errors="ignore") as tmp_file:
-                tmp_file.writelines(lines)
-            system.replace(tmp_path, os.path.join("translated", filename))
-        finally:
-            if os.path.exists(tmp_path):
-                system.unlink(tmp_path, ignore_errors=True)
-    except UnwritableText:
-        raise
-    except Exception:
-        traceback.print_exc()
+def checkLine(data, i, filename):
+    """Fails the file at once when line i, just set, holds a letter the
+    game's cp932 can't write, before its later requests are paid for
+    (util/game_encoding). An estimate writes nothing."""
+    if not ESTIMATE:
+        check_line(data, i, "cp932", filename)
 
 
 def translateOnscripter(data, pbar, filename, translatedList):
@@ -268,7 +252,7 @@ def translateOnscripter(data, pbar, filename, translatedList):
 
                     # Set Data
                     data[i] = data[i].replace(originalString, f"{translatedText}")
-                    save_progress_lines(data, filename)
+                    checkLine(data, i, filename)
             i += 1
 
         # Choices
@@ -292,7 +276,7 @@ def translateOnscripter(data, pbar, filename, translatedList):
 
                     # Set
                     data[i] = data[i].replace(choiceList[j], translatedText)
-                save_progress_lines(data, filename)
+                checkLine(data, i, filename)
             i += 1
 
         # Nothing relevant. Skip Line.

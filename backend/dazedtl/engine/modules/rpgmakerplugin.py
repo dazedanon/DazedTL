@@ -15,9 +15,7 @@ from retry import retry
 from tqdm import tqdm
 from util.languages import source_pattern
 from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost, found_mismatch, run_stop_errors
-from util.translation_task import fail_on_parser_error, module_receipt
-import tempfile
-from util import system
+from util.translation_task import fail_on_parser_error, module_receipt, write_output
 
 # Globals
 MODEL = os.getenv("model")
@@ -98,15 +96,10 @@ def handlePlugin(filename, estimate):
             return totalString
 
     else:
-        # Perform translation first; incremental progress writes happen during translation.
-        # We no longer keep the destination file open simultaneously to avoid Windows locking issues
-        # during atomic os.replace operations inside save_progress_lines.
         start = time.time()
         translatedData = openFiles(filename)
         fail_on_parser_error(translatedData)
-
-        # Ensure final state is flushed (in case no incremental writes occurred for some reason).
-        save_progress_lines(translatedData[0], filename)
+        write_output(filename, "".join(translatedData[0]), encoding="utf_8", errors="ignore", newline="\n")
 
         # Print Result
         end = time.time()
@@ -154,48 +147,6 @@ def parsePlugin(readFile, filename):
             traceback.print_exc()
             return [data, totalTokens, e]
     return [data, totalTokens, None]
-
-
-def save_progress_lines(lines, filename, encoding="utf_8"):
-    """Atomically save current line-based translation progress."""
-    try:
-        if ESTIMATE:
-            return
-        global LOCK
-        os.makedirs("translated", exist_ok=True)
-        # Use a single lock to prevent concurrent replace attempts on Windows (which causes PermissionError)
-        with LOCK:
-            tmp_fd, tmp_path = tempfile.mkstemp(prefix=f"{filename}.", suffix=".tmp", dir="translated")
-            try:
-                with os.fdopen(tmp_fd, "w", encoding=encoding, newline="\n", errors="ignore") as tmp_file:
-                    tmp_file.writelines(lines)
-
-                dest_path = os.path.join("translated", filename)
-                # Retry a few times in case another process/thread still has the file open momentarily.
-                for attempt in range(5):
-                    try:
-                        system.replace(tmp_path, dest_path)
-                        break
-                    except PermissionError:
-                        if attempt == 4:
-                            raise
-                        time.sleep(0.1 * (attempt + 1))
-            finally:
-                if os.path.exists(tmp_path):
-                    system.unlink(tmp_path, ignore_errors=True)
-    except Exception:
-        traceback.print_exc()
-
-
-def saveCheckLines(lines, filename, tokens=None, encoding="utf_8"):
-    """Save progress only when tokens indicate work or when explicitly called after a mutation."""
-    try:
-        if tokens is not None:
-            if not (isinstance(tokens, (list, tuple)) and len(tokens) >= 2 and (tokens[0] or tokens[1])):
-                return
-        save_progress_lines(lines, filename, encoding=encoding)
-    except Exception:
-        traceback.print_exc()
 
 
 def translatePlugin(data, pbar, filename, translatedList):
@@ -293,7 +244,6 @@ def translatePlugin(data, pbar, filename, translatedList):
 
                                 # Set Data
                                 data[i] = data[i].replace(f'"{originalString}"', f'"{translatedText}"')
-                                saveCheckLines(data, filename)
 
         # Custom
         # Useful Regex's
@@ -362,7 +312,6 @@ def translatePlugin(data, pbar, filename, translatedList):
                             with open("log/translations.txt", "a+", encoding="utf-8") as tlFile:
                                 tlFile.write(f"{originalString} ({translatedText})\n")
                             data[i] = data[i].replace(originalString, translatedText)
-                            saveCheckLines(data, filename)
 
         # Quest Name
         regex = r'[\\]+"QuestName[\\]+":[\\]+"(.*?)[\\]+"'
@@ -399,7 +348,6 @@ def translatePlugin(data, pbar, filename, translatedList):
 
                             # Set Data
                             data[i] = data[i].replace(originalString, translatedText)
-                            saveCheckLines(data, filename)
 
         # Quest Client
         regex = r'QuestClientName[\\]+":[\\]+"(.*?)[\\]+"'
@@ -433,7 +381,6 @@ def translatePlugin(data, pbar, filename, translatedList):
 
                             # Set Data
                             data[i] = data[i].replace(originalString, translatedText)
-                            saveCheckLines(data, filename)
 
         # Quest Location
         regex = r'QuestLocation[\\]+":[\\]+"(.*?)[\\]+"'
@@ -467,7 +414,6 @@ def translatePlugin(data, pbar, filename, translatedList):
 
                             # Set Data
                             data[i] = data[i].replace(originalString, translatedText)
-                            saveCheckLines(data, filename)
 
         # Quest Target
         regex = r'PlaceInformation[\\]+":[\\]+"(.*?)[\\]+"'
@@ -501,7 +447,6 @@ def translatePlugin(data, pbar, filename, translatedList):
 
                             # Set Data
                             data[i] = data[i].replace(originalString, translatedText)
-                            saveCheckLines(data, filename)
 
         # Quest Summary
         regex = r'[\\]+"QuestContent[\\]+":[\\]+"[\\]+"(.*?)[\\]+"[\\]+"'
@@ -544,7 +489,6 @@ def translatePlugin(data, pbar, filename, translatedList):
 
                             # Set Data
                             data[i] = data[i].replace(originalString, translatedText)
-                            saveCheckLines(data, filename)
 
         # Quest Goal 1
         regex = r'ObjectiveContent[\\]+":[\\]+"[\\]+"(.*?)[\\]+"'
@@ -585,7 +529,6 @@ def translatePlugin(data, pbar, filename, translatedList):
 
                             # Set Data
                             data[i] = data[i].replace(originalString, translatedText)
-                            saveCheckLines(data, filename)
 
         # SceneCustomMenu - Text (Command Labels)
         regex = r'[\\]+"Text[\\]+":[\\]+"(.+?)[\\]+"'
@@ -622,7 +565,6 @@ def translatePlugin(data, pbar, filename, translatedList):
 
                                 # Set Data
                                 data[i] = data[i].replace(originalString, translatedText)
-                                saveCheckLines(data, filename)
 
         # SceneCustomMenu - CommonHelpText
         regex = r'[\\]+"CommonHelpText[\\]+":[\\]+"(.+?)[\\]+"'
@@ -659,7 +601,6 @@ def translatePlugin(data, pbar, filename, translatedList):
 
                                 # Set Data
                                 data[i] = data[i].replace(originalString, translatedText)
-                                saveCheckLines(data, filename)
 
         # SceneCustomMenu - HelpText (Command Help)
         regex = r'[\\]+"HelpText[\\]+":[\\]+"(.+?)[\\]+"'
@@ -696,7 +637,6 @@ def translatePlugin(data, pbar, filename, translatedList):
 
                                 # Set Data
                                 data[i] = data[i].replace(originalString, translatedText)
-                                saveCheckLines(data, filename)
 
         # NUUN_SaveScreen - ParamName (save screen labels like 現在地, プレイ時間, 所持金)
         regex = r'[\\]+"ParamName[\\]+":[\\]+"(.+?)[\\]+"'
@@ -733,7 +673,6 @@ def translatePlugin(data, pbar, filename, translatedList):
 
                                 # Set Data
                                 data[i] = data[i].replace(originalString, translatedText)
-                                saveCheckLines(data, filename)
 
         # DrawTextEx - Brace-delimited labels (e.g., \}【口づけ】\{, \}回数：\{)
         # Only process lines containing drawTextEx calls
@@ -779,7 +718,6 @@ def translatePlugin(data, pbar, filename, translatedList):
                 for orig in sorted(_pending_drawtext, key=len, reverse=True):
                     data[i] = data[i].replace(orig, _pending_drawtext[orig])
                 _pending_drawtext.clear()
-                saveCheckLines(data, filename)
 
         # DrawTextEx - Stat labels (e.g., C[16]攻撃力\\...C[0])
         if 'drawTextEx' in data[i]:
@@ -816,7 +754,6 @@ def translatePlugin(data, pbar, filename, translatedList):
                 for orig in sorted(_pending_statlabel, key=len, reverse=True):
                     data[i] = data[i].replace(orig, _pending_statlabel[orig])
                 _pending_statlabel.clear()
-                saveCheckLines(data, filename)
 
         # DrawTextEx - Game variable counter word (hardcoded: 回 → time(s))
         if setData and 'drawTextEx' in data[i] and '$gameVariables' in data[i]:
@@ -825,7 +762,6 @@ def translatePlugin(data, pbar, filename, translatedList):
                 r'\1x',
                 data[i]
             )
-            saveCheckLines(data, filename)
 
         # Next Line
         i += 1

@@ -37,7 +37,7 @@ from util.translation import (
     found_mismatch,
     report_mismatch,
 )
-from util.translation_task import fail_on_parser_error, module_receipt
+from util.translation_task import OutputNotSaved, fail_on_parser_error, module_receipt
 from util.vocab import (
     character_priority,
     fold_glossary_sections,
@@ -548,8 +548,7 @@ def handleMVMZ(filename, estimate):
     fail_on_parser_error(translatedData)
 
     if not estimate and not SPEAKER_PARSE_MODE and not _batch_collecting():
-        if not saveProgress(translatedData[0], filename, force=True):
-            return "Fail"
+        saveProgress(translatedData[0], filename, force=True)
 
     # Print File
     end = time.time()
@@ -713,7 +712,9 @@ def _batch_collecting() -> bool:
 @extensions.point
 def saveProgress(data, filename, *, force=False):
     """Atomically write current data to translated/filename to avoid progress loss.
-    Intermediate checkpoints are throttled; a forced final save always writes.
+    Intermediate checkpoints are throttled and best-effort; a forced final
+    save always writes, and one that fails raises OutputNotSaved, which fails
+    the file with its error.
     """
     try:
         # Also skip progress saves during speaker-parse mode
@@ -779,7 +780,9 @@ def saveProgress(data, filename, *, force=False):
                 raise last_err
         THREAD_CTX.last_progress_save_at = now
         return True
-    except Exception:
+    except Exception as error:
+        if force:
+            raise OutputNotSaved(filename, error) from error
         # Best-effort; don't crash the translation if saving fails
         traceback.print_exc()
         return False

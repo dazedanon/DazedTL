@@ -74,7 +74,7 @@ from util.translation import (
     nameplate_gloss_for_alias,
     run_stop_errors,
 )
-from util.translation_task import fail_on_parser_error, module_receipt
+from util.translation_task import fail_on_parser_error, module_receipt, write_output
 from util import speakers as wolf_speakers
 from util import vocab as wolf_vocab
 from util import wolfdawn
@@ -214,9 +214,7 @@ def handleWolfDawn(filename, estimate):
     # translated/ here would overwrite prior work with source echoed back.
     # Real English is written on the consume pass (or a live non-batch run).
     if not estimate and _batch_phase() != "collect":
-        out_path = "translated/" + filename
-        with open(out_path, "w", encoding="utf-8", newline="\n") as outFile:
-            json.dump(translatedData[0], outFile, ensure_ascii=False, indent=4)
+        out_path = write_output(filename, json.dumps(translatedData[0], ensure_ascii=False, indent=4), newline="\n")
         # Restore positional whitespace pads the model dropped (status-card
         # ``<pad>\nNAME`` fields, etc.). WolfDawn edits the JSON in place.
         try:

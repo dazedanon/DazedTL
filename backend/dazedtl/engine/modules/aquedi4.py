@@ -16,10 +16,8 @@ from retry import retry
 from tqdm import tqdm
 from util.languages import source_pattern
 from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost, found_mismatch, run_stop_errors
-from util.translation_task import fail_on_parser_error, module_receipt
+from util.translation_task import fail_on_parser_error, module_receipt, write_output
 # from modules.json import translateSimpleKeyValueJSON
-import tempfile
-from util import system
 
 # Boilerplate Globals
 MODEL = os.getenv("model")
@@ -64,9 +62,7 @@ def handleAquedi4(filename, estimate):
     fail_on_parser_error(translatedData)
 
     if not estimate:
-        # Write final result after translation is complete
-        with open("translated/" + filename, "w", encoding="utf-8", newline="\n") as outFile:
-            json.dump(translatedData[0], outFile, ensure_ascii=False, indent=4)
+        write_output(filename, json.dumps(translatedData[0], ensure_ascii=False, indent=4), newline="\n")
 
     end = time.time()
     tqdm.write(module_receipt(filename, translatedData[1], end - start, MODEL))
@@ -167,24 +163,8 @@ def translateSimpleKeyValueJSON(data, filename, stringList, keyList):
                     translatedText = translatedText.replace("|", "\r\n")
                 # Set the translated text as the value
                 data[original_key] = translatedText
-                
-                # Save progress after each translation
-                save_progress_json(data, filename)
     
     return tokens
-
-def save_progress_json(data, filename):
-    """Save current JSON translation progress."""
-    try:
-        if ESTIMATE: return
-        os.makedirs("translated", exist_ok=True)
-        tmp_path = os.path.join("translated", f"{filename}.tmp")
-        final_path = os.path.join("translated", filename)
-        with open(tmp_path, "w", encoding="utf-8", newline="\n") as outFile:
-            json.dump(data, outFile, ensure_ascii=False, indent=4)
-        system.replace(tmp_path, final_path)
-    except Exception:
-        traceback.print_exc()
 
 
 def translateAI(text, history, history_ctx=None):

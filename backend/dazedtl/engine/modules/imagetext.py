@@ -35,7 +35,7 @@ from util.translation import (
     report_mismatch,
     run_stop_errors,
 )
-from util.translation_task import fail_on_parser_error, module_receipt
+from util.translation_task import fail_on_parser_error, module_receipt, write_output
 
 # Globals
 MODEL = os.getenv("model")
@@ -261,16 +261,12 @@ def handleImageText(filename, estimate):
     fail_on_parser_error(translatedData)
 
     if not estimate:
+        payload = json.dumps(translatedData[0], ensure_ascii=False, indent=2)
+        write_output(filename, payload, newline="\n")
         # Written back to files/ in place: 'imgtl import' reads it from
         # here, which is what makes this a drop-in step in the loop.
-        os.makedirs("translated", exist_ok=True)
-        payload = json.dumps(translatedData[0], ensure_ascii=False, indent=2)
-        for destination in (
-            os.path.join("files", filename),
-            os.path.join("translated", filename),
-        ):
-            with open(destination, "w", encoding="utf-8", newline="\n") as out:
-                out.write(payload)
+        with open(os.path.join("files", filename), "w", encoding="utf-8", newline="\n") as out:
+            out.write(payload)
 
     end = time.time()
     tqdm.write(module_receipt(filename, translatedData[1], end - start, MODEL))

@@ -675,6 +675,10 @@ try:
         for folder in ("files", "translated"):
             (ends / folder).mkdir(parents=True)
         (ends / "files/Doc.json").write_text("{}", "utf-8")
+        # Lune, Ren'Py, Unity and CSV opened translated/<file> before their
+        # parse, so a file that failed emptied an earlier complete output.
+        complete = ends / "translated/Doc.json"
+        complete.write_text("complete", "utf-8")
         directory = os.getcwd()
         os.chdir(ends)
         try:
@@ -693,6 +697,116 @@ try:
                         else:
                             raise AssertionError(f"{module_name} passed a failure.")
                     assert "[Input:" not in printed.getvalue(), module_name
+                    assert complete.read_text("utf-8") == "complete", module_name
+            # A file whose output can't be written fails with the error: RPG
+            # Maker's returned a bare "Fail" and the plugin module's passed.
+            # WOLF writes its own file (system.write_bytes) and fails with it.
+            from util.translation_task import OutputNotSaved
+
+            finished = {
+                name: lambda *_args: [["text\n"], [3, 1], None]
+                for name in ("openFiles", "parseYuris")
+            }
+            complete.unlink()
+            Path("translated").rmdir()
+            Path("translated").write_text("not a folder", "utf-8")
+            for *_kind, module_name, handler in TRANSLATION_MODULE_SPECS:
+                module = import_module(module_name)
+                if module_name == "modules.wolf":
+                    continue
+                its = {
+                    key: stub
+                    for key, stub in {**stubs, **finished}.items()
+                    if hasattr(module, key)
+                }
+                with patch.multiple(module, **its), redirect_stdout(StringIO()):
+                    try:
+                        getattr(module, handler)("Doc.json", False)
+                    except OutputNotSaved as error:
+                        assert str(error).startswith("Doc.json could not be saved: ")
+                    else:
+                        raise AssertionError(f"{module_name} passed an unsaved file.")
+        finally:
+            os.chdir(directory)
+        # Every module but RPG Maker saved its progress over translated/ as
+        # it went, which nothing read back (Resume translates a stopped file
+        # again from the translation cache), so a file translated again that
+        # failed replaced an earlier complete output with a partial one; CSV
+        # also wrote it as finished. A module writes its file once now.
+        progress = temporary / "progress-saves"
+        for folder in ("files", "translated"):
+            (progress / folder).mkdir(parents=True)
+        os.chdir(progress)
+        try:
+            for module_name, handler, scene, source in (
+                (
+                    "modules.lune",
+                    "handleLune",
+                    "Scene.json",
+                    '[{"name": "アリス", "message": "やあ"}]',
+                ),
+                (
+                    "modules.kirikiri",
+                    "handleKirikiri",
+                    "Scene.ks",
+                    "【アリス】[CR]\n[text]やあ[KeyWait]\n",
+                ),
+                (
+                    "modules.csv",
+                    "handleCSV",
+                    "Scene.csv",
+                    "Source,Target\nやあ,アリス\n",
+                ),
+            ):
+                module = import_module(module_name)
+                (progress / "files" / scene).write_bytes(
+                    source.encode("cp932" if scene.endswith(".ks") else "utf-8")
+                )
+                (progress / "translated" / scene).write_text("complete", "utf-8")
+                sent = []
+
+                def speaker_only(text, *_args, **_kwargs):
+                    sent.append(text)
+                    if len(sent) > 1:
+                        raise refused
+                    return ["Alice", [1, 1]]
+
+                with (
+                    patch.multiple(module, translateAI=speaker_only, NAMESLIST=[]),
+                    redirect_stdout(StringIO()),
+                ):
+                    try:
+                        getattr(module, handler)(scene, False)
+                    except ValueError as error:
+                        assert error is refused, (module_name, error)
+                    else:
+                        raise AssertionError(f"{module_name} passed a failure.")
+                assert sent[0] == "アリス" and len(sent) == 2, (module_name, sent)
+                saved = (progress / "translated" / scene).read_bytes()
+                assert saved == b"complete", (module_name, saved)
+            # A line the game's Shift-JIS can't hold still fails the file at
+            # once, before the file's later requests are paid for, as those
+            # saves made it.
+            from util.game_encoding import UnwritableText
+
+            kirikiri = import_module("modules.kirikiri")
+            unwritable = []
+
+            def eng(text, *_args, **_kwargs):
+                unwritable.append(text)
+                return ["Ŋina", [1, 1]]
+
+            with (
+                patch.multiple(kirikiri, translateAI=eng, NAMESLIST=[]),
+                redirect_stdout(StringIO()),
+            ):
+                try:
+                    kirikiri.handleKirikiri("Scene.ks", False)
+                except UnwritableText as error:
+                    assert "line 1 holds Ŋ" in str(error), error
+                else:
+                    raise AssertionError("A Kirikiri file kept a line it can't write.")
+            assert unwritable == ["アリス"], unwritable
         finally:
             os.chdir(directory)
         # A name a registered reference game already translated is reused
@@ -3199,6 +3313,8 @@ try:
             translation._add_paid(5, 2, 0.25)
             if name == "Map001.json":
                 raise translation.BatchResultUnavailableError("Missing.")
+            if name == "Map003.json":
+                raise translation_task.OutputNotSaved(name, OSError("Disk full."))
             return str(translation._global_accurate_cost)
 
         reported = StringIO()
@@ -3210,7 +3326,10 @@ try:
             redirect_stdout(reported),
         ):
             subprocess_runner.run_handler(
-                temporary, "RPG Maker MV/MZ", ["Map001.json", "Map002.json"], False
+                temporary,
+                "RPG Maker MV/MZ",
+                ["Map001.json", "Map003.json", "Map002.json"],
+                False,
             )
         reports = [
             (kind, json.loads(value))
@@ -3221,9 +3340,14 @@ try:
         ]
         assert [(kind, report["filename"]) for kind, report in reports] == [
             ("FILE_ERROR", "Map001.json"),
+            ("FILE_ERROR", "Map003.json"),
             ("FILE_RESULT", "Map002.json"),
         ], reported.getvalue()
-        assert reports[1][1]["result"] == "0.25", reports
+        assert reports[2][1]["result"] == "0.25", reports
+        # A map whose final save failed returned a bare "Fail", so the run
+        # read "Translation failed" without the error; it fails with it now,
+        # still only its own file.
+        assert reports[1][1]["error"] == "Map003.json could not be saved: Disk full."
         # The file that failed keeps the results it paid for on its receipt,
         # logged as its line and sent with its error for the run's TOTAL.
         receipt = reports[0][1]["receipt"]

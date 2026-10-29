@@ -15,10 +15,8 @@ from retry import retry
 from tqdm import tqdm
 from util.languages import source_pattern
 from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost, found_mismatch, run_stop_errors
-from util.translation_task import fail_on_parser_error, module_receipt
+from util.translation_task import fail_on_parser_error, module_receipt, write_output
 from util.speakers import strip_speaker_prefix
-import tempfile
-from util import system
 
 # OpenAI initialization centralized in util/translation.py
 
@@ -86,8 +84,7 @@ def handleTyrano(filename, estimate):
 
     # Translate
     if not estimate:
-        with open("translated/" + filename, "w", encoding="utf-8", newline="\n") as outFile:
-            outFile.writelines(translatedData[0])
+        write_output(filename, "".join(translatedData[0]), newline="\n")
 
     # Print File
     end = time.time()
@@ -142,36 +139,6 @@ def parseTyrano(readFile, filename):
             traceback.print_exc()
             return [data, totalTokens, e]
     return [data, totalTokens, None]
-
-
-def save_progress_lines(lines, filename, encoding="utf-8"):
-    """Atomically save current line-based translation progress."""
-    try:
-        if ESTIMATE:
-            return
-        os.makedirs("translated", exist_ok=True)
-        tmp_fd, tmp_path = tempfile.mkstemp(prefix=f"{filename}.", suffix=".tmp", dir="translated")
-        try:
-            with os.fdopen(tmp_fd, "w", encoding=encoding, newline="\n", errors="ignore") as tmp_file:
-                tmp_file.writelines(lines)
-            system.replace(tmp_path, os.path.join("translated", filename))
-        finally:
-            if os.path.exists(tmp_path):
-                system.unlink(tmp_path, ignore_errors=True)
-    except Exception:
-        traceback.print_exc()
-
-
-def saveCheckLines(lines, filename, tokens=None, encoding="utf-8"):
-    """Save progress only when tokens indicate work or when tokens is None but we know a mutation occurred."""
-    try:
-        # If explicit tokens provided, gate on tokens; otherwise assume we were called on actual mutation
-        if tokens is not None:
-            if not (isinstance(tokens, (list, tuple)) and len(tokens) >= 2 and (tokens[0] or tokens[1])):
-                return
-        save_progress_lines(lines, filename, encoding=encoding)
-    except Exception:
-        traceback.print_exc()
 
 
 def translateTyrano(data, filename, translatedList):
@@ -307,8 +274,6 @@ def translateTyrano(data, filename, translatedList):
 
                     # Set Data
                     data[i] = data[i].replace(originalString, translatedText)
-                    # Save progress after each line change (we mutated, so tokens gate optional)
-                    saveCheckLines(data, filename)
 
         # Choices
         match = re.search(choiceRegex, data[i])
@@ -329,7 +294,6 @@ def translateTyrano(data, filename, translatedList):
 
                 # Set
                 data[i] = data[i].replace(match.group(1), translatedText)
-                saveCheckLines(data, filename)
 
             i += 1
         else:

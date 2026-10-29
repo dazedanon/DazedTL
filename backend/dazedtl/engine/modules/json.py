@@ -14,10 +14,8 @@ from retry import retry
 from tqdm import tqdm
 from util.languages import source_pattern
 from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost, getPricingConfig, calculateCost, found_mismatch, run_stop_errors
-from util.translation_task import fail_on_parser_error, module_receipt
+from util.translation_task import fail_on_parser_error, module_receipt, write_output
 from util.speakers import strip_echoed_speaker, translate_speaker
-import tempfile
-from util import system
 
 # Globals
 MODEL = os.getenv("model")
@@ -95,9 +93,7 @@ def handleJSON(filename, estimate):
         translatedData = openFiles(filename)
         fail_on_parser_error(translatedData)
 
-        # Write final result after translation is complete
-        with open("translated/" + filename, "w", encoding="utf-8", newline="\n") as outFile:
-            json.dump(translatedData[0], outFile, ensure_ascii=False, indent=4)
+        write_output(filename, json.dumps(translatedData[0], ensure_ascii=False, indent=4), newline="\n")
 
         # Print Result
         end = time.time()
@@ -164,21 +160,6 @@ def parseJSON(data, filename):
     return [data, totalTokens, None]
 
 
-def save_progress_json(data, filename):
-    """Save current JSON translation progress."""
-    try:
-        if ESTIMATE:
-            return
-        os.makedirs("translated", exist_ok=True)
-        tmp_path = os.path.join("translated", f"{filename}.tmp")
-        final_path = os.path.join("translated", filename)
-        with open(tmp_path, "w", encoding="utf-8", newline="\n") as outFile:
-            json.dump(data, outFile, ensure_ascii=False, indent=4)
-        system.replace(tmp_path, final_path)
-    except Exception:
-        traceback.print_exc()
-
-
 def translateSimpleKeyValueJSON(data, filename):
     """
     Translate simple key-value JSON format where keys contain Japanese text
@@ -226,9 +207,6 @@ def translateSimpleKeyValueJSON(data, filename):
                 translatedText = translatedList[i]
                 # Set the translated text as the value
                 data[key] = translatedText
-                
-                # Save progress after each translation
-                save_progress_json(data, filename)
     
     return tokens
 
@@ -375,23 +353,15 @@ def translatePSData(data, filename):
 
         for tl, idx in zip(batchTranslate(mailNameS, "Character Name"), mailNameI):
             mails[idx]["Name"] = tl
-        if mailNameS:
-            save_progress_json(data, filename)
 
         for tl, idx in zip(batchTranslate(mailTitleS, "Mail Subject"), mailTitleI):
             mails[idx]["Title"] = tl
-        if mailTitleS:
-            save_progress_json(data, filename)
 
         for tl, idx in zip(batchTranslate(mailListNameS, "Mail List Entry"), mailListNameI):
             mails[idx]["MailListName"] = tl
-        if mailListNameS:
-            save_progress_json(data, filename)
 
         for tl, idx in zip(batchTranslate(mailTextS, "Mail Body Text"), mailTextI):
             mails[idx]["MailText"] = dazedwrap.wrapText(tl, WIDTH)
-        if mailTextS:
-            save_progress_json(data, filename)
 
     # -- MemoryData --
     if "MemoryData" in data:
@@ -399,28 +369,18 @@ def translatePSData(data, filename):
 
         for tl, idx in zip(batchTranslate(memTitleS, "Scene Title"), memTitleI):
             memories[idx]["_Title"] = tl
-        if memTitleS:
-            save_progress_json(data, filename)
 
         for tl, idx in zip(batchTranslate(memSetuS, "Scene Description"), memSetuI):
             memories[idx]["_Setu"] = tl
-        if memSetuS:
-            save_progress_json(data, filename)
 
         for tl, idx in zip(batchTranslate(memHintS, "Hint Text"), memHintI):
             memories[idx]["_Hint"] = tl
-        if memHintS:
-            save_progress_json(data, filename)
 
         for tl, (mi, pi) in zip(batchTranslate(memPtnS, "Scene Description"), memPtnI):
             memories[mi]["_Ptn"][pi] = tl
-        if memPtnS:
-            save_progress_json(data, filename)
 
         for tl, (mi, di) in zip(batchTranslate(memDtlSetuS, "Character Commentary"), memDtlSetuI):
             memories[mi]["_DtlCheck"][di]["_Setu"] = dazedwrap.wrapText(tl, LISTWIDTH)
-        if memDtlSetuS:
-            save_progress_json(data, filename)
 
     # -- ShopDatas --
     if "ShopDatas" in data:
@@ -428,14 +388,10 @@ def translatePSData(data, filename):
 
         for tl, idx in zip(batchTranslate(shopNameS, "Shop Name"), shopNameI):
             shops[idx]["name"] = tl
-        if shopNameS:
-            save_progress_json(data, filename)
 
         for field in shopTextFields:
             for tl, idx in zip(batchTranslate(shopTextS[field], "Shop Dialogue"), shopTextI[field]):
                 shops[idx][field]["text"] = dazedwrap.wrapText(tl, WIDTH)
-            if shopTextS[field]:
-                save_progress_json(data, filename)
 
     # -- hStData --
     if "hStData" in data:
@@ -443,18 +399,12 @@ def translatePSData(data, filename):
 
         for tl, (an, idx) in zip(batchTranslate(rankSetuS, "Rank Description"), rankSetuI):
             hst[an][idx]["rankSetu"] = dazedwrap.wrapText(tl, WIDTH)
-        if rankSetuS:
-            save_progress_json(data, filename)
 
         for tl, (an, idx) in zip(batchTranslate(rankText1S, "Rank Label"), rankText1I):
             hst[an][idx]["rankText1"] = tl
-        if rankText1S:
-            save_progress_json(data, filename)
 
         for tl, (an, idx) in zip(batchTranslate(rankText2S, "Rank Subtitle"), rankText2I):
             hst[an][idx]["rankText2"] = tl
-        if rankText2S:
-            save_progress_json(data, filename)
 
     return tokens
 
@@ -617,95 +567,61 @@ def translateRdData(data, filename):
     # -- Dungeon short fields --
     for tl, idx in zip(batchTranslate(dgnNameS, "Dungeon Name"), dgnNameI):
         dgns[idx]["name"] = tl
-    if dgnNameS:
-        save_progress_json(data, filename)
 
     for tl, idx in zip(batchTranslate(clearTxtS, "Clear Condition"), clearTxtI):
         dgns[idx]["clearTxt"] = tl
-    if clearTxtS:
-        save_progress_json(data, filename)
 
     for tl, idx in zip(batchTranslate(hosyuTxtS, "Reward Description"), hosyuTxtI):
         dgns[idx]["hosyuTxt"] = tl
-    if hosyuTxtS:
-        save_progress_json(data, filename)
 
     for tl, idx in zip(batchTranslate(firstHosyuTxtS, "First Clear Reward"), firstHosyuTxtI):
         dgns[idx]["firstHosyuTxt"] = tl
-    if firstHosyuTxtS:
-        save_progress_json(data, filename)
 
     for tl, idx in zip(batchTranslate(memoTxtS, "Memo Label"), memoTxtI):
         dgns[idx]["memoTxt"] = tl
-    if memoTxtS:
-        save_progress_json(data, filename)
 
     for tl, idx in zip(batchTranslate(appMemoTxtS, "App Memo"), appMemoTxtI):
         dgns[idx]["appMemoTxt"] = tl
-    if appMemoTxtS:
-        save_progress_json(data, filename)
 
     for tl, idx in zip(batchTranslate(areaMemoS, "Area Label"), areaMemoI):
         dgns[idx]["areaMemo"] = tl
-    if areaMemoS:
-        save_progress_json(data, filename)
 
     # -- Dungeon long text fields (with word wrap) --
     for tl, idx in zip(batchTranslate(naiyoTxtS, "Mission Description"), naiyoTxtI):
         dgns[idx]["naiyoTxt"] = dazedwrap.wrapText(tl, WIDTH)
-    if naiyoTxtS:
-        save_progress_json(data, filename)
 
     for tl, idx in zip(batchTranslate(naiyoTxtExS, "Extended Mission Description"), naiyoTxtExI):
         dgns[idx]["naiyoTxtEx"] = dazedwrap.wrapText(tl, WIDTH)
-    if naiyoTxtExS:
-        save_progress_json(data, filename)
 
     for tl, idx in zip(batchTranslate(johoTxtS, "Info Text"), johoTxtI):
         dgns[idx]["johoTxt"] = dazedwrap.wrapText(tl, WIDTH)
-    if johoTxtS:
-        save_progress_json(data, filename)
 
     for tl, idx in zip(batchTranslate(johoTxtExS, "Extended Info Text"), johoTxtExI):
         dgns[idx]["johoTxtEx"] = dazedwrap.wrapText(tl, WIDTH)
-    if johoTxtExS:
-        save_progress_json(data, filename)
 
     # -- Floor names --
     for tl, (di, ki) in zip(batchTranslate(kaisoNameS, "Floor Name"), kaisoNameI):
         dgns[di]["kaisoDatas"][ki]["kaisoName"] = tl
-    if kaisoNameS:
-        save_progress_json(data, filename)
 
     # -- Dialogue event names --
     for tl, (di, tk, ti) in zip(batchTranslate(talkNameS, "Event Label"), talkNameI):
         dgns[di][tk][ti]["name"] = tl
-    if talkNameS:
-        save_progress_json(data, filename)
 
     # -- Speaker names --
     for tl, (di, tk, ti, si) in zip(batchTranslate(speakerNameS, "Character Name"), speakerNameI):
         dgns[di][tk][ti]["speachDatas"][si]["name"] = tl
-    if speakerNameS:
-        save_progress_json(data, filename)
 
     # -- Dialogue text (with word wrap) --
     for tl, (di, tk, ti, si) in zip(batchTranslate(dialogueS, "Dialogue"), dialogueI):
         dgns[di][tk][ti]["speachDatas"][si]["text"] = dazedwrap.wrapText(tl, WIDTH)
-    if dialogueS:
-        save_progress_json(data, filename)
 
     # -- Choice event names --
     for tl, (di, si) in zip(batchTranslate(sijiNameS, "Event Name"), sijiNameI):
         dgns[di]["sijiDatas"][si]["name"] = tl
-    if sijiNameS:
-        save_progress_json(data, filename)
 
     # -- Choice text (with word wrap) --
     for tl, (di, si) in zip(batchTranslate(sijiChoiceS, "Choice Event Text"), sijiChoiceI):
         dgns[di]["sijiDatas"][si]["choiceSijiTxt"] = dazedwrap.wrapText(tl, WIDTH)
-    if sijiChoiceS:
-        save_progress_json(data, filename)
 
     return tokens
 
@@ -791,13 +707,9 @@ def translateGameSetting(data, filename):
 
         for tl, idx in zip(batchTranslate(desc1S, "Card Description"), desc1I):
             cards[idx]["desc1"] = dazedwrap.wrapText(tl, WIDTH)
-        if desc1S:
-            save_progress_json(data, filename)
 
         for tl, idx in zip(batchTranslate(desc2S, "Card Description"), desc2I):
             cards[idx]["desc2"] = dazedwrap.wrapText(tl, WIDTH)
-        if desc2S:
-            save_progress_json(data, filename)
 
     # -- fzDeckDatas --
     if "fzDeckDatas" in data:
@@ -805,13 +717,9 @@ def translateGameSetting(data, filename):
 
         for tl, idx in zip(batchTranslate(deckNameS, "Deck Name"), deckNameI):
             decks[idx]["name"] = tl
-        if deckNameS:
-            save_progress_json(data, filename)
 
         for tl, idx in zip(batchTranslate(deckDescS, "Deck Description"), deckDescI):
             decks[idx]["desc"] = dazedwrap.wrapText(tl, WIDTH)
-        if deckDescS:
-            save_progress_json(data, filename)
 
     # -- rentalDecks --
     if "rentalDecks" in data:
@@ -819,8 +727,6 @@ def translateGameSetting(data, filename):
 
         for tl, idx in zip(batchTranslate(rentalMemoS, "Deck Label"), rentalMemoI):
             rentals[idx]["memo"] = tl
-        if rentalMemoS:
-            save_progress_json(data, filename)
 
     return tokens
 
@@ -889,11 +795,9 @@ def translateDialogueSrcTl(data, filename):
             translatedText = strip_echoed_speaker(translatedText, LANGUAGE)
 
             data[key]["tl"] = translatedText
-            save_progress_json(data, filename)
 
     # Translate any Japanese speaker names found in the data
     seen_speakers = {}
-    speaker_updated = False
     for key, entry in data.items():
         if not isinstance(entry, dict):
             continue
@@ -906,9 +810,6 @@ def translateDialogueSrcTl(data, filename):
             tokens[1] += response[1][1]
             seen_speakers[speaker] = response[0]
         data[key]["speaker"] = seen_speakers[speaker]
-        speaker_updated = True
-    if speaker_updated:
-        save_progress_json(data, filename)
 
     return tokens
 
@@ -947,7 +848,6 @@ def translateJSON(data, filename, translatedList):
                     
                     # Set Data
                     data[i]["key"] = translatedText
-                    save_progress_json(data, filename)
 
         # Event List Format - Title
         if "title" in data[i] and data[i]["title"]:
@@ -965,7 +865,6 @@ def translateJSON(data, filename, translatedList):
                     
                     # Set Data
                     data[i]["title"] = translatedText
-                    save_progress_json(data, filename)
 
         # Event List Format - Target
         if "target" in data[i] and data[i]["target"]:
@@ -983,7 +882,6 @@ def translateJSON(data, filename, translatedList):
                     
                     # Set Data
                     data[i]["target"] = translatedText
-                    save_progress_json(data, filename)
 
         # Event List Format - Job
         if "job" in data[i] and data[i]["job"]:
@@ -1001,7 +899,6 @@ def translateJSON(data, filename, translatedList):
                     
                     # Set Data
                     data[i]["job"] = translatedText
-                    save_progress_json(data, filename)
 
         # Event List Format - Place
         if "place" in data[i] and data[i]["place"]:
@@ -1019,7 +916,6 @@ def translateJSON(data, filename, translatedList):
                     
                     # Set Data
                     data[i]["place"] = translatedText
-                    save_progress_json(data, filename)
 
         # Event List Format - Process
         if "process" in data[i] and data[i]["process"]:
@@ -1037,7 +933,6 @@ def translateJSON(data, filename, translatedList):
                     
                     # Set Data
                     data[i]["process"] = translatedText
-                    save_progress_json(data, filename)
 
         # Event List Format - Text
         if "text" in data[i] and data[i]["text"]:
@@ -1059,7 +954,6 @@ def translateJSON(data, filename, translatedList):
                     
                     # Set Data
                     data[i]["text"] = translatedText
-                    save_progress_json(data, filename)
 
         # Speaker
         if speakerKey in data[i] and data[i][speakerKey]:
@@ -1144,8 +1038,6 @@ def translateJSON(data, filename, translatedList):
                     else:
                         data[i][messageKey] = data[i][messageKey].replace(originalString, f"{translatedText}")
 
-                    # Save progress after each message replacement
-                    save_progress_json(data, filename)
         # Next Value
         i += 1       
 

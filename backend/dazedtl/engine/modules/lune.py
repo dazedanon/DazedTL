@@ -15,9 +15,7 @@ from retry import retry
 from tqdm import tqdm
 from util.languages import source_pattern
 from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost, report_mismatch, run_stop_errors
-from util.translation_task import fail_on_parser_error, module_receipt
-import tempfile
-from util import system
+from util.translation_task import fail_on_parser_error, module_receipt, write_output
 
 # Globals
 MODEL = os.getenv("model")
@@ -91,18 +89,17 @@ def handleLune(filename, estimate):
         return module_receipt("TOTAL", TOKENS, end - start, MODEL)
 
     else:
-        with open("translated/" + filename, "w", encoding="utf-8", newline="\n") as outFile:
-            start = time.time()
-            translatedData = openFiles(filename)
-            fail_on_parser_error(translatedData)
+        start = time.time()
+        translatedData = openFiles(filename)
+        fail_on_parser_error(translatedData)
 
-            # Print Result
-            end = time.time()
-            json.dump(translatedData[0], outFile, ensure_ascii=False, indent=4)
-            tqdm.write(module_receipt(filename, translatedData[1], end - start, MODEL))
-            with LOCK:
-                TOKENS[0] += translatedData[1][0]
-                TOKENS[1] += translatedData[1][1]
+        # Print Result
+        end = time.time()
+        write_output(filename, json.dumps(translatedData[0], ensure_ascii=False, indent=4), newline="\n")
+        tqdm.write(module_receipt(filename, translatedData[1], end - start, MODEL))
+        with LOCK:
+            TOKENS[0] += translatedData[1][0]
+            TOKENS[1] += translatedData[1][1]
 
     return module_receipt("TOTAL", TOKENS, end - start, MODEL)
 
@@ -141,24 +138,6 @@ def parseJSON(data, filename):
     return [data, totalTokens, None]
 
 
-def save_progress_json(data, filename):
-    """Atomically save current JSON translation progress."""
-    try:
-        if ESTIMATE:
-            return
-        os.makedirs("translated", exist_ok=True)
-        tmp_fd, tmp_path = tempfile.mkstemp(prefix=f"{filename}.", suffix=".tmp", dir="translated")
-        try:
-            with os.fdopen(tmp_fd, "w", encoding="utf-8", newline="\n") as tmp_file:
-                json.dump(data, tmp_file, ensure_ascii=False, indent=4)
-            system.replace(tmp_path, os.path.join("translated", filename))
-        finally:
-            if os.path.exists(tmp_path):
-                system.unlink(tmp_path, ignore_errors=True)
-    except Exception:
-        traceback.print_exc()
-
-
 def translateJSON(data, pbar):
     global PBAR
     PBAR = pbar
@@ -181,7 +160,6 @@ def translateJSON(data, pbar):
                 tokens[0] += response[1][0]
                 tokens[1] += response[1][1]
                 item["name"] = speaker
-                save_progress_json(data, FILENAME or "output.json")
             else:
                 speaker = "None"
 
@@ -251,7 +229,6 @@ def translateJSON(data, pbar):
 
                             # Set Text
                             item[text] = translatedText
-                            save_progress_json(data, FILENAME or "output.json")
                             translatedBatch.pop(0)
                             speaker = ""
                             currentGroup = []
@@ -288,8 +265,6 @@ def translateJSON(data, pbar):
                 batch.clear()
 
             currentGroup = []
-            # After applying a batch, persist progress
-            save_progress_json(data, FILENAME or "output.json")
     return tokens
 
 # Save some money and enter the character before translation
