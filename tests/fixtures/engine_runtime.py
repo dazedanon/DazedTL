@@ -524,6 +524,56 @@ try:
                 assert sorted(os.listdir("translated")) == ["Map001.json"]
         finally:
             os.chdir(directory)
+        # A WOLF page's set-data pass translated its choices, choice window
+        # and speakers again, so each was paid for twice and a translation
+        # was translated again ("EN EN はい"); its tokens were dropped, and a
+        # 210 speaker's input tokens counted as output.
+        wolf_sent = []
+
+        def wolf_answer(text, history, *_args):
+            wolf_sent.append(text)
+            if isinstance(text, list):
+                return [[f"EN {line}" for line in text], [3, 1]]
+            return ["Rin" if "NPC name" in str(history) else f"EN {text}", [3, 1]]
+
+        wolf_choices = {"code": 102, "stringArgs": ["はい", "", "いいえ"]}
+        wolf_window = {"code": 300, "stringArgs": ["選択肢/確認", "行く,残る", "宿屋"]}
+        with patch.multiple(
+            wolf,
+            CODE101=True,
+            CODE102=True,
+            CODE210=True,
+            CODE300=True,
+            NAMESLIST=[],
+            translateAI=wolf_answer,
+        ):
+            tokens = wolf.searchCodes(
+                [
+                    {"code": 101, "stringArgs": ["@1\n村人：\nこんにちは"]},
+                    wolf_choices,
+                    {"code": 210, "intArgs": [None], "stringArgs": ["", "勇者"]},
+                    wolf_window,
+                    {"code": 300, "stringArgs": ["援護文章", "@1\n店主：\nさようなら"]},
+                ],
+                SimpleNamespace(refresh=lambda: None),
+                [],
+                "Map001.json",
+            )
+        assert wolf_sent == [
+            "村人",
+            ["はい", "いいえ"],
+            "勇者",
+            "宿屋",
+            ["行く", "残る"],
+            "店主",
+            ["[Rin]: こんにちは"],
+            ["[Rin]: さようなら"],
+        ], wolf_sent
+        assert tokens == [3 * len(wolf_sent), len(wolf_sent)], tokens
+        assert wolf_choices["stringArgs"] == ["EN はい", "", "EN いいえ"], wolf_choices
+        assert wolf_window["stringArgs"][1:] == ["EN 行く,EN 残る", "EN 宿屋"], (
+            wolf_window
+        )
         # A name a registered reference game already translated is reused
         # instead of guessed: that game read 存子 as Aruko.
         from util import reference_games
