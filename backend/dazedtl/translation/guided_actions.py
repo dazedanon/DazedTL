@@ -727,8 +727,9 @@ class GuidedActions:
                     "The estimate inputs changed. Refresh the estimate and review this run again."
                 )
             if options["mode"] != "estimate":
-                matched, _ = self.guided.runs.quote(
-                    project_id, native, options["phase"], options["mode"]
+                # The review bound these inputs in the run's own mode.
+                matched = self.guided.runs.match(
+                    project_id, native, options["phase"], current
                 )
                 if (
                     not matched["current"]

@@ -746,9 +746,14 @@ class GuidedRuns:
         inputs = self.inputs(
             project_id, native, phase, mode, guard=guard, cached_only=cached_only
         )
+        return self.match(project_id, native, phase, inputs, run_view=run_view), inputs
+
+    def match(self, project_id, native, phase, inputs, *, run_view=None):
+        """The phase's newest estimate as it reads for ``inputs`` already
+        read, so a caller holding them digests no working file again."""
         latest = self.latest_estimate(project_id, native, phase)
         if latest is None:
-            return {"job": None, "current": False}, inputs
+            return {"job": None, "current": False}
         identity, _job, _record = latest
         view = (run_view or self.guided.run_view)(identity, compact=True)
         # A model switch that keeps its requests, or a pricing fix, prices it
@@ -756,7 +761,7 @@ class GuidedRuns:
         reading = self.reading(project_id, native, identity, inputs)
         if reading.figure is not None:
             view = {**view, "estimate": reading.figure}
-        return {"job": view, "current": reading.current}, inputs
+        return {"job": view, "current": reading.current}
 
     def usable(self, native, identity, job):
         """Whether an estimate run holds a finished estimate still in use,
