@@ -218,8 +218,7 @@ def install_worker(root, plan):
 
             # Use the original run's pinned connection, exactly as native fetch.
             from util.batch_history import client_for_batch
-
-            from .translation import google_batch_client
+            from util.batch_providers import google_files_client
 
             @contextmanager
             def connection(batch, _resolve):
@@ -232,7 +231,7 @@ def install_worker(root, plan):
                     str(batch.get("endpoint") or ""),
                 ).with_options(max_retries=0, timeout=45)
                 provider.google = (
-                    google_batch_client(provider.client.api_key)
+                    google_files_client(provider.client.api_key)
                     if batch["provider"] == "gemini"
                     else None
                 )

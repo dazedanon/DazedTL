@@ -177,17 +177,22 @@ class FullEstimate:
         """The settings the tasks are priced with, the same for every task."""
         return next(task["configuration"] for task in tasks if task["fingerprint"])
 
-    def reading(self, result, tasks, *, reprice=True):
+    def reading(self, result, tasks, lookup=None):
         """How a saved estimate reads for ``tasks`` (repricing.read): as
         saved, priced again from each task's counts on the route of the
-        settings it is read at, or outdated."""
+        settings it is read at, or outdated. Given the reader
+        GuidedRuns.lookup makes, it reads as Estimate again starts from it
+        (repricing.start)."""
         route = self.guided.runs.route
-        return repricing.read(
-            self.changed(result, tasks, route, reprice=reprice),
+        rule = (
+            self.changed(result, tasks, route, reprice=lookup is None),
             result.get("configuration"),
             self.configuration(tasks),
             route,
             lambda settings, on: self.priced(result, settings, on),
+        )
+        return (
+            repricing.read(*rule) if lookup is None else repricing.start(*rule, lookup)
         )
 
     def priced(self, result, configuration, route):
@@ -248,7 +253,9 @@ class FullEstimate:
         if saved and not any(
             task.get("approximateInput") for task in saved["result"]["tasks"]
         ):
-            reading = self.reading(saved["result"], tasks, reprice=False)
+            reading = self.reading(
+                saved["result"], tasks, self.guided.runs.lookup(native, MODE)
+            )
             if reading.current and reading.figure is None:
                 raise ValueError(
                     "Nothing changed since the last estimate, so it is still current."

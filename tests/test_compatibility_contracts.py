@@ -614,6 +614,22 @@ class CompatibilityContracts(unittest.TestCase):
         )
         self.assertEqual((reading.route, reading.figure["route"]), (None, None))
         self.assertEqual(reading.figure["cost"], quote["cost"])
+
+        # Approving it reads the full settings, which read a policy not
+        # looked up as none too: only one looked up as none prices it again,
+        # and one that can't be looked up says so.
+        def approved(looked_up):
+            return Translation.reading(
+                {"quote": quote, "configuration": frozen},
+                change,
+                live,
+                route,
+                lambda: looked_up,
+            )
+
+        self.assertEqual(approved(live), reading)
+        with self.assertRaisesRegex(ValueError, "check failed"):
+            approved(custom)
         # A quote saved before quotes named their route, by a run whose
         # record kept no settings, reads the current settings' route, so an
         # OpenAI one priced before OpenAI's rules last changed still reads
@@ -623,6 +639,95 @@ class CompatibilityContracts(unittest.TestCase):
             live, digest(live), None, legacy, lambda _settings: "openai"
         )
         self.assertTrue(change.prices)
+
+    def test_a_gemini_compatible_proxy_runs_live_only(self):
+        # Every Gemini-compatible connection was offered Gemini's Batch, so a
+        # Custom proxy's estimates and quotes showed Batch prices a user
+        # approved before the submit refused it: its files go only through
+        # Google's own Files API, where the proxy's key does not belong.
+        from dazedtl.translation.requests import price
+        from dazedtl.translation.service import Translation, changed_since
+        from util import evaluation
+        from util.batch_providers import detect_batch_provider, live_price_route
+
+        model = "gemini-3-flash"
+        proxy = "https://proxy.example/v1beta/openai"
+        for address, batch in (
+            ("", "gemini"),
+            ("https://generativelanguage.googleapis.com/v1beta/openai", "gemini"),
+            ("generativelanguage.googleapis.com/v1beta/openai/", "gemini"),
+            (proxy, None),
+            ("https://proxy.example/generativelanguage.googleapis.com/v1beta/", None),
+        ):
+            with self.subTest(address=address):
+                self.assertEqual(detect_batch_provider(model, address, "gemini"), batch)
+                self.assertEqual(
+                    TranslationEngine.batch_supported(
+                        {"model": model, "endpoint": address, "protocol": "gemini"}
+                    ),
+                    batch,
+                )
+                # Its Live responses still read as Gemini's.
+                self.assertEqual(live_price_route(model, address, "gemini"), "gemini")
+        # A quote waiting for approval that Gemini's Batch priced is priced
+        # again as Live, and a Batch's reads outdated, to estimate again.
+        route = TranslationEngine.batch_supported
+        counts = {"input_tokens": 1000, "output_tokens": 2500, "output_rules": 1}
+        for mode in ("live", "batch"):
+            frozen = {
+                "mode": mode,
+                "provider": "custom",
+                "protocol": "gemini",
+                "endpoint": proxy,
+                "model": model,
+                "rates": {"input": 1, "output": 2},
+            }
+            quote = price(counts, frozen, "gemini")
+            change = changed_since(frozen, digest(frozen), frozen, quote, route)
+            reading = Translation.reading(
+                {"quote": quote, "configuration": frozen}, change, frozen, route
+            )
+            with self.subTest(mode=mode):
+                self.assertEqual(reading.current, mode == "live")
+                if mode == "live":
+                    self.assertEqual(reading.figure["route"], None)
+                    self.assertEqual(reading.figure["cost"], quote["live_cost"])
+        # Requests Guided queued for its Batch before then show no price to
+        # approve when the run resumes.
+        import os
+
+        from util import translation
+
+        with (
+            TemporaryDirectory() as temporary,
+            patch.object(
+                translation,
+                "tiktoken",
+                SimpleNamespace(encoding_for_model=lambda _model: Characters()),
+            ),
+            patch.object(
+                translation, "BATCH_LOCK_FILE", Path(temporary) / "batch.lock"
+            ),
+            patch.dict(os.environ, {"api": proxy, "API_PROVIDER": "gemini"}),
+            redirect_stdout(StringIO()),
+        ):
+            queue = Path(temporary) / "queue.json"
+            request = {"model": model, "messages": []}
+            write_json(queue, {"1": {"params": request, "provider": "gemini"}})
+            with self.assertRaisesRegex(RuntimeError, "Google's own API"):
+                translation.estimateBatchCost(model, queue_file=queue)
+        # An evaluation row is refused before it is priced.
+        rows = [
+            {
+                "provider": "openai",
+                "endpoint": "https://api.openai.com/v1",
+                "model": "gpt-5",
+            },
+            {"provider": "gemini", "endpoint": proxy, "model": model},
+        ]
+        with self.assertRaisesRegex(ValueError, "to Live"):
+            evaluation._validate_candidates(rows)
+        evaluation._validate_candidates([*rows[:1], {**rows[1], "execution": "live"}])
 
     def test_engine_extension_layers_reach_aliases_and_reconfigure_in_place(self):
         # Host wrappers used to reassign module attributes: aliases bound at
@@ -2463,7 +2568,9 @@ class CompatibilityContracts(unittest.TestCase):
         def answering(module):
             def handle(_transport, request):
                 url = str(request.url)
-                sent.append((url, request.headers.get("authorization")))
+                # Google's own SDK sends its key in its own header.
+                key = request.headers.get("authorization")
+                sent.append((url, key or request.headers.get("x-goog-api-key")))
                 return module.Response(
                     200,
                     json=completion
@@ -2581,45 +2688,98 @@ class CompatibilityContracts(unittest.TestCase):
                     sent.clear()
                     send()
                     self.assertEqual(sent, [reached])
-            for client, send in (
-                (
-                    "run's Gemini Batch",
-                    lambda: batch_providers.submit_batch(
-                        "gemini",
-                        [{"custom_id": "1", "params": {"model": "gemini-3-flash"}}],
+            sent.clear()
+            with self.assertRaisesRegex(RuntimeError, "Google's own API"):
+                batch_providers.submit_batch(
+                    "gemini",
+                    [{"custom_id": "1", "params": {"model": "gemini-3-flash"}}],
+                )
+            self.assertEqual(sent, [])
+            # A Gemini Batch exists only at Google, as its files do, so one
+            # sent on a proxy before such Batches were refused, whose record
+            # names the proxy, is read and cancelled there with its own key,
+            # which went there with its files. Its status reads had gone to
+            # the proxy and its results were refused.
+            google = google.removesuffix("/openai")
+            for address in (proxy, google + "/openai"):
+                own = get_client("gemini", api_key="saved-key", api_url=address)
+                for operation, send, reached in (
+                    (
+                        "status",
+                        lambda: batch_providers.retrieve_batch(
+                            "gemini", "b1", client=own
+                        ),
+                        (google + "/openai/batches/b1", "Bearer saved-key"),
                     ),
+                    (
+                        "cancel",
+                        lambda: batch_providers.cancel_batch(
+                            "gemini", "b1", client=own
+                        ),
+                        (google + "/openai/batches/b1/cancel", "Bearer saved-key"),
+                    ),
+                    (
+                        "results",
+                        lambda: batch_providers.read_openai_results(
+                            "gemini", "files/out", None, {}, client=own
+                        ),
+                        (google + "/files/out:download", "saved-key"),
+                    ),
+                ):
+                    with self.subTest(address=address, operation=operation):
+                        sent.clear()
+                        send()
+                        self.assertEqual(
+                            [(url.split("?")[0], key) for url, key in sent],
+                            [reached],
+                        )
+            # A Gemini or Kimi Batch recorded without a saved key's name is
+            # read with the run's key, so only on the connection it was sent
+            # on: one recording no address was sent to its provider's own
+            # API. Elsewhere the run's key went to the run's address, where
+            # the Batch is not.
+            kimi = "https://api.moonshot.ai/v1"
+            for row, address, reached in (
+                (
+                    {"provider": "gemini", "endpoint": proxy},
+                    proxy,
+                    (google + "/openai/batches/b1", "Bearer run-key"),
+                ),
+                ({"provider": "gemini"}, proxy, None),
+                ({"provider": "kimi", "endpoint": kimi}, proxy, None),
+                # An OpenAI connection with no address set is OpenAI's API.
+                ({"provider": "kimi", "endpoint": kimi}, "", None),
+                (
+                    {"provider": "kimi", "endpoint": kimi + "/"},
+                    kimi,
+                    (kimi + "/batches/b1", "Bearer run-key"),
                 ),
                 (
-                    "given Gemini Batch's results",
-                    lambda: batch_providers.read_openai_results(
-                        "gemini",
-                        "files/out",
-                        None,
-                        {},
-                        client=get_client("gemini", api_key="saved-key", api_url=proxy),
-                        google_client=batch_providers._google_client("saved-key"),
-                    ),
+                    {"provider": "kimi"},
+                    kimi,
+                    (kimi + "/batches/b1", "Bearer run-key"),
                 ),
             ):
-                with self.subTest(client=client):
+                with (
+                    self.subTest(row=row, address=address),
+                    patch.dict(os.environ, {"api": address, "API_PROVIDER": "openai"}),
+                ):
                     sent.clear()
-                    with self.assertRaisesRegex(RuntimeError, "Google's own API"):
-                        send()
-                    self.assertEqual(sent, [])
-            # On Google's own API, Gemini Batch files still go to Google.
-            sent.clear()
-            batch_providers.read_openai_results(
-                "gemini",
-                "files/out",
-                None,
-                {},
-                client=get_client("gemini", api_key="saved-key", api_url=google),
-                google_client=batch_providers._google_client("saved-key"),
-            )
-            self.assertEqual(
-                [url.split("?")[0] for url, _key in sent],
-                ["https://generativelanguage.googleapis.com/v1beta/files/out:download"],
-            )
+                    if reached is None:
+                        with self.assertRaisesRegex(
+                            ValueError, "Select that connection"
+                        ):
+                            batch_history._client_for_entry(row)
+                    else:
+                        batch_providers.retrieve_batch(
+                            row["provider"],
+                            "b1",
+                            client=batch_history._client_for_entry(row),
+                        )
+                    self.assertEqual(
+                        [(url.split("?")[0], key) for url, key in sent],
+                        [reached] if reached else [],
+                    )
 
     def test_a_failed_claude_count_is_asked_again(self):
         # The estimate's instructions count saved the approximate count when
