@@ -124,6 +124,7 @@ OWN_HOSTS = {
     "openai": "api.openai.com",
     "kimi": "api.moonshot.ai",
     "deepseek": "api.deepseek.com",
+    "gemini": "generativelanguage.googleapis.com",
 }
 # The hosts of the presets' own APIs, whose error answers are the provider's
 # own, OpenRouter's for the providers it routes to; on any other host, a local
@@ -131,7 +132,6 @@ OWN_HOSTS = {
 PRESET_HOSTS = frozenset(
     {
         *OWN_HOSTS.values(),
-        "generativelanguage.googleapis.com",
         "api.mistral.ai",
         "openrouter.ai",
     }
@@ -175,8 +175,9 @@ STAND_INS = {
 def own_api(identity, endpoint):
     """Whether `endpoint` is the provider `identity`'s own API: Anthropic's,
     with Message Batches and only Claude's own IDs; OpenAI's, whose Batches
-    share one enqueued-token window; Kimi's, with its own Batches; or
-    DeepSeek's, with its own output ceiling and JSON mode. The one rule the app
+    share one enqueued-token window; Kimi's, with its own Batches;
+    DeepSeek's, with its own output ceiling and JSON mode; or Gemini's, with
+    its own Batches and model list. The one rule the app
     and the engine ask; in test scenarios the OpenAI and Anthropic presets'
     stand-ins (STAND_INS) count as their APIs, paths under them included."""
     value = str(endpoint or "").strip().rstrip("/").lower()

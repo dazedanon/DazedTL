@@ -74,7 +74,7 @@ def detect_batch_provider(model: str = "", api_url: str | None = None,
     # Anthropic's own API.
     if is_claude_model(model) and on_anthropic_api(url):
         return PROVIDER_ANTHROPIC
-    if provider == "gemini" or "generativelanguage.googleapis.com" in url:
+    if provider == "gemini" or own_api("gemini", address):
         return PROVIDER_GEMINI
     if provider == "openai" and own_api("kimi", address):
         return PROVIDER_KIMI if model_l in KIMI_BATCH_MODELS else None
@@ -169,10 +169,7 @@ def get_client(provider: str, *, api_key: str | None = None,
         if max_retries is not None:
             kwargs["max_retries"] = max_retries
         if (api_url or "").strip():
-            base_url = str(api_url).strip().rstrip("/")
-            if "api.anthropic.com" in base_url.lower() and base_url.endswith("/v1"):
-                base_url = base_url[:-3]
-            kwargs["base_url"] = base_url
+            kwargs["base_url"] = anthropic_base_url(api_url)
         return anthropic.Anthropic(**kwargs)
     import openai
 
@@ -200,6 +197,17 @@ def get_client(provider: str, *, api_key: str | None = None,
             kwargs["base_url"] = url
         return openai.OpenAI(**kwargs)
     raise ValueError(f"Unsupported batch provider: {provider}")
+
+
+def anthropic_base_url(address: str) -> str:
+    """The Anthropic SDK's base URL for *address*: Anthropic's own API without
+    the "/v1" the SDK adds to each path; any other address as typed."""
+    from dazedtl.settings.providers import own_api
+
+    base_url = str(address or "").strip().rstrip("/")
+    if own_api("anthropic", base_url) and base_url.endswith("/v1"):
+        base_url = base_url[:-3]
+    return base_url
 
 
 def _google_client(api_key: str | None = None):

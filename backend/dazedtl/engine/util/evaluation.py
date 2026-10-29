@@ -508,18 +508,12 @@ def pricing_for(model: str, provider: str = "") -> dict[str, float]:
 
 
 def is_openrouter_endpoint(endpoint: str) -> bool:
-    """Return whether an API base URL belongs to OpenRouter."""
-    try:
-        hostname = urllib.parse.urlsplit(str(endpoint or "").strip()).hostname
-    except ValueError:
-        return False
-    return bool(
-        hostname
-        and (
-            hostname.casefold() == "openrouter.ai"
-            or hostname.casefold().endswith(".openrouter.ai")
-        )
-    )
+    """Return whether an API base URL belongs to OpenRouter, with or without
+    a scheme (settings/providers hostname)."""
+    from dazedtl.settings.providers import hostname
+
+    host = hostname(endpoint) or ""
+    return host == "openrouter.ai" or host.endswith(".openrouter.ai")
 
 
 def _openrouter_pricing_for(model: str) -> dict[str, float] | None:

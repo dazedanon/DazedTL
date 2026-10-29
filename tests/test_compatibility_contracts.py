@@ -1835,6 +1835,8 @@ class CompatibilityContracts(unittest.TestCase):
         from dazedtl.settings.providers import own_api
         from util import translation
         from util.batch_providers import detect_batch_provider, live_price_route
+        from util.evaluation import is_openrouter_endpoint
+        from util.model_catalog import ModelCatalogCore, list_provider
         from util.provider_costs import (
             cache_read_multiplier,
             foreign_claude_name,
@@ -1855,6 +1857,13 @@ class CompatibilityContracts(unittest.TestCase):
             # The same own APIs without a scheme.
             "api.anthropic.com",
             "api.openai.com/v1",
+            # Gemini's own API, with and without a scheme, and a proxy path
+            # holding its host, which is not its API.
+            "https://generativelanguage.googleapis.com/v1beta/openai/",
+            "generativelanguage.googleapis.com/v1beta/openai",
+            "https://proxy.example/generativelanguage.googleapis.com/v1beta/openai/",
+            # OpenRouter without a scheme.
+            "openrouter.ai/api/v1",
         )
         # Per address: native Live send, Batch provider, Live price route,
         # Settings' engine route.
@@ -1868,6 +1877,10 @@ class CompatibilityContracts(unittest.TestCase):
             (False, "openai", "anthropic", "openai"),
             (True, "anthropic", "anthropic", "anthropic"),
             (False, "openai", "anthropic", "openai"),
+            (False, "gemini", "anthropic", "openai"),
+            (False, "gemini", "anthropic", "openai"),
+            (False, None, "anthropic", "openai"),
+            (False, None, "anthropic", "openai"),
         )
         other = (
             (False, "openai", "openai", "openai"),
@@ -1879,7 +1892,51 @@ class CompatibilityContracts(unittest.TestCase):
             (False, "openai", "openai", "openai"),
             (False, None, "", "openai"),
             (False, "openai", "openai", "openai"),
+            (False, "gemini", "gemini", "openai"),
+            (False, "gemini", "gemini", "openai"),
+            (False, None, "", "openai"),
+            (False, None, "", "openai"),
         )
+        # Per address: whose model list Settings fetches with no provider
+        # set, whether OpenAI's list keeps only its chat models, and whether
+        # an evaluation prices the address at OpenRouter's rates.
+        hosts = (
+            ("openai", True, False),
+            ("anthropic", False, False),
+            ("openai", False, False),
+            ("openai", False, False),
+            ("openai", False, True),
+            ("openai", False, False),
+            ("openai", True, False),
+            ("anthropic", False, False),
+            ("openai", True, False),
+            ("gemini", False, False),
+            ("gemini", False, False),
+            ("openai", False, False),
+            ("openai", False, True),
+        )
+        for address, expected in zip(addresses, hosts, strict=True):
+            with self.subTest(address=address, rule="hosts"):
+                os.environ.pop("DAZEDTL_TEST_OPENAI_ENDPOINT", None)
+                catalog = ModelCatalogCore()
+                catalog.initialize("key", address)
+                listed = SimpleNamespace(
+                    models=SimpleNamespace(
+                        list=lambda: [
+                            SimpleNamespace(id=i) for i in ("gpt-5", "whisper-1")
+                        ]
+                    )
+                )
+                with patch("openai.OpenAI", return_value=listed):
+                    chat_only = catalog._fetch_openai() == ["gpt-5"]
+                self.assertEqual(
+                    (
+                        list_provider(address),
+                        chat_only,
+                        is_openrouter_endpoint(address),
+                    ),
+                    expected,
+                )
         gpt = tuple((False, batch, "openai", "openai") for _n, batch, *_r in other)
         for model, routes in (
             ("claude-sonnet-5-5", claude),
