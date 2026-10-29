@@ -2,6 +2,7 @@
 // (https://keepachangelog.com/en/1.1.0/). The next release's notes wait in
 // release/notes.md; scripts/release.mjs files them under their version, so
 // nobody edits CHANGELOG.md by hand.
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 
 export const CHANGELOG = "CHANGELOG.md";
@@ -87,23 +88,65 @@ export const formatSections = (sections) =>
  * those `ours` removed or reworded, and gains the lines `ours` added under
  * their own headings. Git's line merges would misfile one branch's Fixed line
  * under the other's new Added heading, repeat headings, or bring back lines a
- * release filed away. Refuses notes parseNotes refuses.
+ * release filed away. When `ours` adds a line `released` lists, or rewords a
+ * line `theirs` released since they parted (drops it and adds lines under its
+ * heading), it refuses and names them: keeping the line would repeat the
+ * released entry and dropping it could lose a change, and only a person can
+ * tell what of it is new. Refuses notes parseNotes refuses.
  * @param {string} base The notes where the branches parted.
  * @param {string} ours
  * @param {string} theirs
+ * @param {Release[]} [released] The releases on the `theirs` side.
  */
-export function mergeNotes(base, ours, theirs) {
+export function mergeNotes(base, ours, theirs, released = []) {
   const lines = (/** @type {string} */ text) =>
     parseNotes(text).flatMap(({ kind, items }) =>
       items.map((text) => `${kind}\n${text}`),
     );
+  const [kindOf, textOf] = [0, 1].map(
+    (part) => (/** @type {string} */ line) => line.split("\n")[part],
+  );
+  /** @type {Map<string, string>} */
+  const versions = new Map();
+  for (const { version, sections } of released.toReversed())
+    for (const { items } of sections)
+      for (const text of items) versions.set(text, version);
   const before = new Set(lines(base));
   const kept = new Set(lines(ours));
-  const merged = lines(theirs).filter(
+  const theirLines = new Set(lines(theirs));
+  const added = [...kept].filter((line) => !before.has(line));
+  const problems = added
+    .filter((line) => versions.has(textOf(line)))
+    .map(
+      (line) =>
+        `${NOTES}: this branch adds a line ${versions.get(textOf(line))} released: "${textOf(line)}".`,
+    );
+  for (const line of before) {
+    const rewordings = added.filter(
+      (other) => kindOf(other) === kindOf(line) && !versions.has(textOf(other)),
+    );
+    if (
+      versions.has(textOf(line)) &&
+      !kept.has(line) &&
+      !theirLines.has(line) &&
+      rewordings.length
+    )
+      problems.push(
+        `${NOTES}: this branch rewords a line ${versions.get(textOf(line))} released: "${textOf(line)}". Its ${kindOf(line)} lines:`,
+        ...rewordings.map((other) => `${NOTES}: - ${textOf(other)}`),
+      );
+  }
+  if (problems.length)
+    throw new Error(
+      [
+        ...problems,
+        `${NOTES}: keep only what is new as its own line, then commit the merge.`,
+      ].join("\n"),
+    );
+  const merged = [...theirLines].filter(
     (line) => kept.has(line) || !before.has(line),
   );
-  for (const line of kept)
-    if (!before.has(line) && !merged.includes(line)) merged.push(line);
+  for (const line of added) if (!merged.includes(line)) merged.push(line);
   const sections = KINDS.map((kind) => ({
     kind,
     items: merged
@@ -171,15 +214,30 @@ export function addRelease(text, { version, date, sections, link }) {
 
 // Git's merge driver for release/notes.md, which scripts/land.mjs names when
 // it merges dev: node scripts/changelog.mjs merge <base> <ours> <theirs>
-// writes the merged notes over <ours>; notes it cannot read stay a conflict.
+// <commit> writes the merged notes over <ours>, reading the releases from
+// CHANGELOG.md at <commit>, the side being merged in; notes it cannot read or
+// merge stay a conflict, with the reason on stderr.
 if (import.meta.main && process.argv[2] === "merge") {
   const [base, ours, theirs] = process.argv
-    .slice(3)
+    .slice(3, 6)
     .map((file) => fs.readFileSync(file, "utf8"));
+  const commit = process.argv[6];
   try {
-    fs.writeFileSync(process.argv[4], mergeNotes(base, ours, theirs));
+    const git = (/** @type {string[]} */ ...args) =>
+      execFileSync("git", args, { encoding: "utf8" });
+    // A side with no CHANGELOG.md has released nothing.
+    const changelog =
+      commit && git("ls-tree", "--name-only", commit, "--", CHANGELOG).trim()
+        ? git("show", `${commit}:${CHANGELOG}`)
+        : "";
+    fs.writeFileSync(
+      process.argv[4],
+      mergeNotes(base, ours, theirs, parseChangelog(changelog)),
+    );
   } catch (error) {
-    console.error(error instanceof Error ? error.message : error);
+    // land.mjs reports the lines that name the notes file.
+    const message = String(error instanceof Error ? error.message : error);
+    console.error(message.startsWith(NOTES) ? message : `${NOTES}: ${message}`);
     process.exitCode = 1;
   }
 }

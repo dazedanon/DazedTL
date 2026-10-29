@@ -447,10 +447,13 @@ def manual_jobs(source, workspace, lock, allow_providers):
                     from .process_view import record_receipt
 
                     record_receipt(job, args[0], args[1])
-                if (
+                failed = (
                     event.get("event") == "finished"
                     and len(args) >= 2
                     and args[0] is False
+                )
+                if (
+                    failed
                     and args[1] == SPEAKER_CANCELLATION
                     and not self.stopping.is_set()
                 ):
@@ -459,20 +462,27 @@ def manual_jobs(source, workspace, lock, allow_providers):
                         current, self.folder(job["id"]), finishing=True
                     ):
                         job["phase"] = "canceled"
-                if (
-                    event.get("event") == "finished"
-                    and len(args) >= 2
-                    and args[0] is False
-                    and args[1] == ENGINE_FAILURE
-                    and job.get("errors")
-                ):
+                from .process_view import batch_refusal
+
+                refused = (
+                    failed
+                    and job.get("mode") == "batch"
+                    and job.get("phase") != "canceled"
+                    and not self.stopping.is_set()
+                    and batch_refusal(self.folder(job["id"]))
+                )
+                if refused:
+                    # The provider refused the run's thinking effort, which
+                    # every request carries: the run says so once, as Live.
+                    event = {**event, "args": [False, refused, *args[2:]]}
+                elif failed and args[1] == ENGINE_FAILURE and job.get("errors"):
                     name, error = next(iter(job["errors"].items()))
-                    failed = len(job["errors"])
+                    files = len(job["errors"])
                     event = {
                         **event,
                         "args": [
                             False,
-                            (f"{failed} files failed. " if failed > 1 else "")
+                            (f"{files} files failed. " if files > 1 else "")
                             + f"{name}: {error}",
                             *args[2:],
                         ],
@@ -525,7 +535,8 @@ def manual_jobs(source, workspace, lock, allow_providers):
 
         def failed_run(self, identity):
             """Hands a failed API run's frozen connection, model and thinking
-            effort, with the message it ended with, to ``run_failed``."""
+            effort, with the message it ended with and when, to
+            ``run_failed``."""
             with self.lock:
                 job = self.jobs.get(identity)
                 if (
@@ -553,6 +564,7 @@ def manual_jobs(source, workspace, lock, allow_providers):
                             plan.get("dazedtl_request_policy") or {}
                         ).get("thinkingEffort"),
                         "message": job.get("message"),
+                        "ended": job.get("updated"),
                     }
                 )
 

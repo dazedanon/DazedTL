@@ -641,9 +641,14 @@ def frozen(provider, model, options, listed=None):
     it, so runs that send none keep the settings, and estimates, they had
     before the choice existed. The model list's record is frozen too when it,
     not the notes, decides what the run sends or the default its review
-    names, so a later check never changes a frozen run."""
+    names, so a later check never changes a frozen run. An effort is frozen
+    with the rule its refusal is read by (``REFUSALS``)."""
     level = chosen(provider, model, options.get("thinkingEffort"), listed)
-    value = {} if level is None else {"thinkingEffort": level}
+    value = (
+        {}
+        if level is None
+        else {"thinkingEffort": level, "thinkingEffortRefusals": REFUSALS}
+    )
     notes = _notes(provider, model)
     resolved = profile(provider, model, listed)
     if resolved != notes and (
@@ -816,26 +821,66 @@ def thinks(provider, model, level=None, listed=None):
     )
 
 
-# The effort field itself, not another limit that mentions thinking, such
-# as a thinking budget or reasoning tokens running out.
-_REJECTION = re.compile(
+# How a run reads its provider's refusal of its thinking effort, frozen
+# beside the effort it sends (``frozen``): by ``refuses``, the rule Check an
+# effort reads a server's reply by too. A run frozen before it reads one as
+# it did when approved (``rejected``).
+REFUSALS = "effort-refusals-v1"
+# What a refusal of the effort says: it names the effort or how thinking is
+# turned on or off, or that the model doesn't take reasoning or thinking, or
+# only works with it ...
+_REFUSED = re.compile(
+    r"effort|thinking[._ ]type|between_tools"
+    r"|\b(?:reasoning|thinking)\b[^.]*\b(?:not supported|unsupported|not available"
+    r"|unrecognized|unknown|not allowed|not permitted|extra|invalid|disabled"
+    r"|adaptive|mandatory|cannot be)"
+    r"|\b(?:not support|doesn't support|don't support|unsupported|unrecognized"
+    r"|unknown|only (?:works|supports?)|requires?)\b[^.]*\b(?:reasoning|thinking)\b",
+    re.IGNORECASE,
+)
+# ... once another limit that mentions them, such as a thinking budget or
+# reasoning tokens running out, is left out. Other errors that mention
+# reasoning or thinking, such as a missing thinking block in a reply sent
+# back, are no refusal of the level.
+_LIMIT = re.compile(
+    r"(?:reasoning|thinking)[._ -]?(?:budget\w*|tokens?)\b|budget_tokens",
+    re.IGNORECASE,
+)
+# A Batch row's error or an engine's wrapped one names its status in its
+# text, or the refusal by its type.
+_STATUS = re.compile(r"\b(?:400|422)\b|invalid_request", re.IGNORECASE)
+# Runs frozen before REFUSALS: an HTTP 400 naming the effort field itself or
+# how thinking is turned on or off.
+_EARLIER_REFUSAL = re.compile(
     r"effort|thinking[._ ]type|between_tools|thinking[^.]*\b(?:disabled|adaptive)\b",
     re.IGNORECASE,
 )
-# A Batch row names the refusal by its type rather than its status.
-_BAD_REQUEST = re.compile(r"\b400\b|invalid_request", re.IGNORECASE)
+_EARLIER_STATUS = re.compile(r"\b400\b|invalid_request", re.IGNORECASE)
 
 
-def rejected(error, level):
-    """Whether a provider refused a request (HTTP 400) for its effort: the
-    run sent one and the refusal names the effort or how thinking is
-    turned on or off."""
+def refuses(status, text):
+    """Whether a provider's error refused a request for its thinking effort:
+    HTTP 400 or 422, which providers don't bill, whose *text* refuses the
+    effort, reasoning or thinking itself (``_REFUSED``). With *status* None,
+    *text* names it, as a Batch row's error does."""
+    refused = status in (400, 422) if status is not None else bool(_STATUS.search(text))
+    return refused and bool(_REFUSED.search(_LIMIT.sub(" ", text)))
+
+
+def rejected(error, level, rule=None):
+    """Whether a run that sends *level* got *error* as its provider's refusal
+    of it, by the refusal *rule* the run froze (``REFUSALS``); a run frozen
+    without one counts only an HTTP 400 naming the effort field itself or
+    how thinking is turned on or off, as it did when approved."""
     if level is None:
         return False
     status = getattr(error, "status_code", None)
+    status = status if type(status) is int else None
     text = str(error)
-    return (status == 400 or bool(_BAD_REQUEST.search(text))) and bool(
-        _REJECTION.search(text)
+    if rule == REFUSALS:
+        return refuses(status, text)
+    return (status == 400 or bool(_EARLIER_STATUS.search(text))) and bool(
+        _EARLIER_REFUSAL.search(text)
     )
 
 

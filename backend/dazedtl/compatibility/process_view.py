@@ -1080,21 +1080,59 @@ def request_page(view, group=None, index=None):
     }
 
 
+def _effort_refusal(root):
+    """The one message the provider's refusal of a Guided run's thinking
+    effort reads as (settings/effort rejection), with the test of an error
+    by the refusal rule the run froze; None for a run that sends no effort."""
+    from dazedtl.settings import effort
+
+    plan_path = Path(root) / "plan.json"
+    if not plan_path.is_file() or plan_path.is_symlink():
+        return None
+    plan = _read_cached(str(plan_path), file_stamp(plan_path))
+    policy = plan.get("dazedtl_request_policy") or {}
+    level, rule = policy.get("thinkingEffort"), policy.get("thinkingEffortRefusals")
+    if level is None:
+        return None
+    message = effort.rejection(plan.get("settings", {}).get("model", ""), level)
+    return message, lambda error: effort.rejected(error, level, rule)
+
+
 def refused_effort(root, errors):
     """*errors* with each refusal of the run's thinking effort read as the
     one message that says so (settings/effort), so a Batch whose requests
     all failed this way reports it once."""
-    from dazedtl.settings import effort
+    refusal = _effort_refusal(root) if errors else None
+    if refusal is None:
+        return errors
+    message, refused = refusal
+    return [message if refused(error) else error for error in errors]
 
-    plan_path = Path(root) / "plan.json"
-    if not errors or not plan_path.is_file() or plan_path.is_symlink():
-        return errors
-    plan = _read_cached(str(plan_path), file_stamp(plan_path))
-    level = (plan.get("dazedtl_request_policy") or {}).get("thinkingEffort")
-    if level is None:
-        return errors
-    message = effort.rejection(plan.get("settings", {}).get("model", ""), level)
-    return [message if effort.rejected(error, level) else error for error in errors]
+
+def batch_refusal(root):
+    """The one message a Guided Batch run ends with when its provider refused
+    the run's thinking effort: it answered none of the run's requests, and
+    refused one for the effort (each Batch's ``provider_errors``); else
+    None, also when its records can't be read."""
+    from .batch_control import no_successful_results
+
+    try:
+        refusal = _effort_refusal(root)
+        if refusal is None or not no_successful_results(root):
+            return None
+        message, refused = refusal
+        batches = saved(evidence_root(root), "batch_history.json").get("batches", [])
+        return (
+            message
+            if any(
+                refused(str(error.get("message") or ""))
+                for batch in batches
+                for error in batch.get("provider_errors") or []
+            )
+            else None
+        )
+    except OSError, ValueError, TypeError, AttributeError:
+        return None
 
 
 def summary(root, job, view=None):

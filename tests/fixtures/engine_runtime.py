@@ -2834,7 +2834,7 @@ try:
             f"    message = {stand_in_messages!r}[refused]\n"
             "    rejecting['reject'](rejecting['Rejected'](message))\n"
             "translation.translateText.layer('stand-in', provider)\n"
-            "translation.translateText.layer('request-parameters', partial(request_parameters.refusal, translation, 'high'))\n"
+            "translation.translateText.layer('request-parameters', partial(request_parameters.refusal, translation, 'high', None))\n"
             "policy = {'runStops': RUN_STOPS} if stand_in['policy'] == '1' else None\n"
             "run_stops.configure(translation, policy, folder)\n"
             "from modules import rpgmakermvmz\n"

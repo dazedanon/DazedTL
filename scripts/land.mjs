@@ -20,10 +20,11 @@ import {
   githubReader,
   workflow,
 } from "./ci-wait.mjs";
+import { NOTES } from "./changelog.mjs";
 import { generated } from "./contracts.mjs";
 import { gitIn, withLock } from "./land-lock.mjs";
 import { repository } from "./release.mjs";
-import { testsWithRetry } from "./testkit/retry.mjs";
+import { failureReport, tail, testsWithRetry } from "./testkit/retry.mjs";
 import { mirrors } from "./update.mjs";
 
 const appPoll = 30_000;
@@ -135,20 +136,6 @@ export function timer(now = Date.now) {
   };
 }
 
-const tail = (/** @type {string} */ text, lines = 40) =>
-  text.trimEnd().split("\n").slice(-lines).join("\n");
-/**
- * What a failed test run shows: from its first failure marker (a Python FAIL
- * or ERROR header, or a Node test's cross), since the summary that ends the
- * run sits below the Python failures and would hide them; else the tail.
- */
-export function failureReport(/** @type {string} */ text, count = 40) {
-  const all = text.trimEnd().split("\n");
-  const first = all.findIndex((line) => /^(FAIL|ERROR): |^✖ /.test(line));
-  return first < 0
-    ? tail(text, count)
-    : all.slice(first, first + count).join("\n");
-}
 const lines = (/** @type {string} */ text) =>
   text
     .split("\n")
@@ -299,7 +286,8 @@ export async function mergeDev(git, top, run, log) {
     /** @type {number} */ code,
     /** @type {string[]} */ ...report
   ) => ({ code, report });
-  const notes = `"${process.execPath}" "${path.join(import.meta.dirname, "changelog.mjs")}" merge %O %A %B`;
+  // The notes merge reads what dev's CHANGELOG.md has released.
+  const notes = `"${process.execPath}" "${path.join(import.meta.dirname, "changelog.mjs")}" merge %O %A %B ${out("rev-parse", "--verify", "dev")}`;
   const merge = git([
     "-c",
     "merge.dazedtl-notes.name=DazedTL release notes",
@@ -331,6 +319,10 @@ export async function mergeDev(git, top, run, log) {
       return finish(
         2,
         `Merging dev conflicts in ${conflicted.join(", ")}. The merge is left in progress with everything else merged: resolve these files, commit, and land again.`,
+        // Why the notes merge refused, as changelog.mjs printed it.
+        ...lines(merge.stdout + merge.stderr).filter((line) =>
+          line.startsWith(NOTES),
+        ),
       );
     log(
       `Merging dev conflicts only in generated ${conflicted.join(", ")}; writing them again.`,
@@ -396,7 +388,7 @@ async function underLock(deps, { top, main, branch }, time, tell) {
     );
   if (tests.flaky)
     log(
-      `Flaky: node scripts/test.mjs failed once and passed when run again; the first run ended:\n${tail(tests.outputs[0], 15)}`,
+      `Flaky: node scripts/test.mjs failed once and passed when run again; the first run:\n${failureReport(tests.outputs[0], 15)}`,
     );
   time.lap("test");
   const runtime = lastRun.match(/^Full test suite: .*$/m);

@@ -344,15 +344,24 @@ def record_fetch(
     errored: int = 0,
     usage: Optional[dict] = None,
     actual_cost: Optional[float] = None,
+    errors: Optional[Iterable[tuple[str, str]]] = None,
 ) -> None:
-    """Mark batches as fetched after results land locally."""
+    """Mark batches as fetched after results land locally. *errors* are the
+    errored requests' ``(custom_id, provider reason)``, kept as the Batch's
+    ``provider_errors`` so the run can tell why they failed, such as a
+    refused thinking effort."""
     note = f"fetched ok={succeeded} err={errored}"
     for bid in batch_ids:
-        fields = {
+        fields: dict[str, Any] = {
             "status": STATUS_FETCHED,
             "api_status": "ended",
             "notes": note,
         }
+        if errors is not None:
+            fields["provider_errors"] = [
+                {"custom_id": str(custom), "message": str(reason)}
+                for custom, reason in errors
+            ]
         if usage is not None:
             fields["usage"] = copy.deepcopy(usage)
         if actual_cost is not None:
@@ -955,7 +964,7 @@ def redownload_batch(batch_id: str) -> dict:
     for row_id, part, row_errors, row_usage, row_cost in fetched_parts:
         record_fetch(
             [row_id], succeeded=len(part), errored=len(row_errors),
-            usage=row_usage, actual_cost=row_cost,
+            usage=row_usage, actual_cost=row_cost, errors=row_errors,
         )
     return {
         "id": batch_id,

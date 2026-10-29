@@ -721,10 +721,12 @@ class Settings:
         server refuses it in a run. *run* is what the run froze: its
         connection (``connection_id``, or Guided's ``key_name``),
         ``protocol``, ``endpoint``, ``organization``, ``model`` and
-        ``thinkingEffort``, with the ``message`` it ended with. Only a run
-        that ended with the effort's own refusal (settings/effort rejection)
-        counts, and only on the connection, address and organization it ran
-        on while a check there still holds that level passed; the frozen
+        ``thinkingEffort``, with the ``message`` it ended with and when it
+        ended (``ended``, ISO 8601). Only a run that ended with the effort's
+        own refusal (settings/effort rejection) counts, and only on the
+        connection, address and organization it ran on while a check there,
+        saved before the run ended, still holds that level passed: a run is
+        reported again after a restart, and a later check stands. The frozen
         run itself never changes."""
         model, level = run.get("model"), run.get("thinkingEffort")
         if (
@@ -732,6 +734,12 @@ class Settings:
             or not isinstance(model, str)
             or run.get("message") != effort.rejection(model, level)
         ):
+            return
+        try:
+            ended = datetime.fromisoformat(run["ended"])
+        except KeyError, TypeError, ValueError:
+            return
+        if ended.tzinfo is None:
             return
         try:
             state = self._read()
@@ -753,8 +761,16 @@ class Settings:
             != providers.route(run.get("protocol"), run.get("endpoint") or "")
         ):
             return
-        saved = connection.get("effort_checks", {}).get(effort.model_id(model), {})
-        if not saved.get(level, {}).get("passed"):
+        saved = (
+            connection.get("effort_checks", {})
+            .get(effort.model_id(model), {})
+            .get(level, {})
+        )
+        try:
+            checked = datetime.fromisoformat(saved["checkedAt"])
+        except KeyError, TypeError, ValueError:
+            return
+        if not saved.get("passed") or checked.tzinfo is None or checked >= ended:
             return
         try:
             self._keep_check(

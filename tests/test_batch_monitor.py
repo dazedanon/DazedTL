@@ -657,6 +657,52 @@ class BatchMonitorTests(unittest.TestCase):
                 provider.submit.assert_not_called()
                 provider.live.assert_not_called()
 
+    def test_a_refused_thinking_effort_ends_the_batch_with_its_one_message(self):
+        # Every request carries the run's effort, so a provider refusing it
+        # ends a Batch as it stops a Live run: with the one message, which
+        # marks the effort's check refused (settings/store refused_in_run).
+        from dazedtl.settings import effort
+
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            monitor, job, _ = self.fixture(root)
+            write_json(
+                root / "plan.json",
+                {
+                    "settings": {"model": "stand-in"},
+                    "dazedtl_request_policy": {
+                        "thinkingEffort": "low",
+                        "thinkingEffortRefusals": effort.REFUSALS,
+                    },
+                },
+            )
+            monitor.backend.manual.failed_run = Mock()
+            provider = Mock()
+            provider.status.return_value = {
+                "api_status": "completed",
+                "counts": {"succeeded": 0, "errored": 1, "processing": 0},
+            }
+            reason = (
+                "{'code': 'invalid_request', 'message': 'Reasoning is not supported'}"
+            )
+            provider.collect_terminal.return_value = ({}, {"one": reason}, {})
+            with patch.object(
+                batch_control, "TranslationProvider", return_value=provider
+            ):
+                monitor.tick()
+            self.assertEqual(
+                (job["status"], job["message"]),
+                ("failed", effort.rejection("stand-in", "low")),
+            )
+            monitor.backend.manual.failed_run.assert_called_once_with("run")
+            # The provider's reason stays beside its request.
+            self.assertEqual(
+                read_json(root / "log/batch_history.json")["batches"][0][
+                    "provider_errors"
+                ],
+                [{"custom_id": "one", "message": reason}],
+            )
+
     def test_a_worker_that_found_its_batch_ended_reads_as_collecting_until_checked(
         self,
     ):

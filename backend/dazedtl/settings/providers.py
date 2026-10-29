@@ -458,8 +458,6 @@ CHECK_TOKENS = 16
 # (api/server REQUEST_STALL_SECONDS).
 CHECK_TIMEOUT = httpx.Timeout(10, connect=4)
 CHECK_SECONDS = 20
-# The fields a refusal of the effort itself names.
-_EFFORT_FIELD = re.compile(r"effort|reasoning|thinking", re.IGNORECASE)
 
 
 def effort_request(connection, model, level, listed=None):
@@ -601,8 +599,9 @@ def check_effort(connection, model, level, listed=None):
     if status in (400, 422):
         reason = _reason(payload, text, connection.get("secret", ""))
         # A refusal that doesn't name the effort, such as an unknown model,
-        # says nothing about the level, so it saves nothing either.
-        if not _EFFORT_FIELD.search(reason):
+        # says nothing about the level, so it saves nothing either; runs read
+        # a refusal by the same rule (settings/effort).
+        if not effort.refuses(status, reason):
             return failed(
                 f"The server refused the request for another reason: {reason}."
             )

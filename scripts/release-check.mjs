@@ -11,7 +11,7 @@ import { spawn } from "node:child_process";
 import { root, requireNode } from "./dependencies.mjs";
 import { ensureRenderer } from "./testkit/app.mjs";
 import { checkout, previousRelease } from "./testkit/checkout.mjs";
-import { withRetry } from "./testkit/retry.mjs";
+import { failedTests, withRetry } from "./testkit/retry.mjs";
 import { ciScenarios } from "./testkit/ci.mjs";
 import { readOptions } from "./testkit/options.mjs";
 
@@ -116,6 +116,13 @@ async function run(name, args, kept = "") {
   console.log(
     `${outcome.flaky ? "flaky " : outcome.passed ? "passed" : "FAILED"}  ${name} (${result.seconds.toFixed(0)} s)`,
   );
+  // The tests a failed run of the behavior tests named, as a landing reports
+  // them: a flake's first run, a failure's last.
+  if (args[0] === script("test.mjs") && (!outcome.passed || outcome.flaky))
+    for (const failure of failedTests(
+      fs.readFileSync(outcome.flaky ? first : result.log, "utf8"),
+    ))
+      console.log(`        ${failure}`);
   return result;
 }
 
