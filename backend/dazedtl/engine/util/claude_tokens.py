@@ -157,34 +157,46 @@ class Cache(NamedTuple):
     reads: int  # then read by those later requests
     reused: float  # the cached prefixes priced as input when reused that way
     unreused: float  # priced as input when no request reuses one
+    keys: int  # the cache keys (see split) the requests write
 
 
-def cache(requests, prefixes, provider, model):
+def cache(requests, provider, model, count_text, counted=None):
     """What the requests' cached prefixes cost, from every request that shares
     a cache key reusing it to none doing so.
 
     A Batch runs its requests independently and largely at once, and an
     entry is readable only once the request writing it has started to
     answer, so any request may write its prefix again instead of reading it.
-    ``prefixes`` holds each cache key's tokens.
+    Each cache key (see split) counts once: Claude's count of it in
+    ``counted`` (the Count or Inputs of these requests) when there is one,
+    else ``count_text`` of its cached_text. Estimates reach this through
+    util.translation.claude_prompt_cache, which names the approximate count.
     """
     groups = {}
     for params in requests:
         key = split(params)[0]
-        if key:
-            groups.setdefault(key, [0, cache_ttl(params)])[0] += 1
+        if not key:
+            continue
+        group = groups.get(key)
+        if group is None:
+            tokens = (
+                counted.prefixes[key]
+                if counted is not None
+                else count_text(cached_text(params))
+            )
+            group = groups[key] = [0, cache_ttl(params), tokens]
+        group[0] += 1
     read = cache_read_multiplier(provider, model)
     cached = writes = reads = 0
     reused = unreused = 0.0
-    for key, (count, ttl) in groups.items():
-        tokens = prefixes[key]
+    for count, ttl, tokens in groups.values():
         write = cache_write_multiplier(provider, model, ttl)
         cached += tokens * count
         writes += tokens
         reads += tokens * (count - 1)
         reused += tokens * (write + (count - 1) * read)
         unreused += tokens * count * write
-    return Cache(cached, writes, reads, reused, unreused)
+    return Cache(cached, writes, reads, reused, unreused, len(groups))
 
 
 def spread(total, limit=SAMPLES):

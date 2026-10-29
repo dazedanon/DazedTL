@@ -311,6 +311,7 @@ class CompatibilityContracts(unittest.TestCase):
                     queue, {str(index): request(before, index) for index in range(3)}
                 )
                 expected = translation.estimateBatchCost(after, queue_file=queue)
+                assert expected is not None
                 configuration = {
                     "mode": "batch",
                     "model": after,
@@ -398,6 +399,7 @@ class CompatibilityContracts(unittest.TestCase):
                     queue = Path(temporary) / f"{cached}.json"
                     write_json(queue, {str(i): e for i, e in enumerate(entries)})
                     expected = translation.estimateBatchCost(model, queue_file=queue)
+                    assert expected is not None
                     # Assistant-led counts the cached prefixes with its own
                     # token count, here the same characters.
                     cache = TranslationEngine.claude_cache(
@@ -438,6 +440,53 @@ class CompatibilityContracts(unittest.TestCase):
                             expected["batch_cached_cost"],
                         ),
                     )
+            # The Live speaker estimate keys, counts and prices its requests'
+            # cached prefixes by the same rule, without the Batch discount;
+            # it once kept its own copy of each.
+            from util.translation_task import TranslationTaskCore
+
+            sent = []
+            build = translation.buildClaudeRequest
+
+            def recorded(*args, **kwargs):
+                sent.append(build(*args, **kwargs))
+                return sent[-1]
+
+            config = translation.TranslationConfig(
+                model=model,
+                prompt="Name the speakers. " * 40,
+                vocab="",
+                batchSize=2,
+                useSfxReference=False,
+            )
+            with (
+                patch.dict("os.environ", {"api": ""}),
+                patch.object(translation, "buildClaudeRequest", recorded),
+            ):
+                live = TranslationTaskCore._estimate_grouped_speakers(
+                    ["太郎", "花子", "長老", "村人", "兵士"],
+                    "Name each.",
+                    config,
+                    model,
+                )
+            entries = [{"params": params, "payload": "名前" * 5} for params in sent]
+            cache = TranslationEngine.claude_cache(None, entries, {"model": model})
+            # Two names a request, then one: two reply schemas, one read.
+            self.assertEqual((len(sent), cache.keys), (3, 2))
+            self.assertEqual(
+                live["estimated_cost"],
+                translation.claude_cache_cost(
+                    cache, live["input_tokens"], live["output_tokens"], 4e-6, 20e-6
+                ),
+            )
+            queue = Path(temporary) / "speakers.json"
+            write_json(queue, {str(i): e for i, e in enumerate(entries)})
+            expected = translation.estimateBatchCost(model, queue_file=queue)
+            assert expected is not None
+            self.assertEqual(
+                (expected["cache_write_tokens"], expected["cache_max_write_tokens"]),
+                (cache.writes, cache.cached),
+            )
 
     def test_a_quote_reads_the_runs_frozen_effort_record_and_counting_rule(self):
         # Assistant-led quotes and repriced estimates judged the effort from
@@ -1223,7 +1272,7 @@ class CompatibilityContracts(unittest.TestCase):
         prefix = 1000 + len(json.dumps({"format": {"lines": 1}})) + 3
         self.assertEqual(sorted(estimate.prefixes.values())[1:], [prefix, prefix])
         cache = claude_tokens.cache(
-            requests, estimate.prefixes, "anthropic", "claude-opus-5-5"
+            requests, "anthropic", "claude-opus-5-5", len, estimate
         )
         self.assertEqual((cache.cached, cache.writes), (100 * prefix, 2 * prefix))
         self.assertAlmostEqual(cache.reused, prefix * (2 * 1.25 + 98 * 0.05))
