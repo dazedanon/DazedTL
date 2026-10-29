@@ -17,7 +17,7 @@ from dazedtl.freshness import Basis, Change, compare
 from dazedtl.languages import pair_note
 from dazedtl.settings import language_pair
 from dazedtl.settings.execution import (
-    batch_unavailable,
+    batch_reasons,
     configuration,
     connection_summary,
     entries_per_request,
@@ -481,6 +481,7 @@ class Translation:
                     "The reported engine evidence changed. Recheck the engine before adapting its tools."
                 )
         legacy = self.legacy_record(project_id)
+        unavailable, unread = batch_reasons(self.settings)
         return {
             "projectId": project_id,
             **selected,
@@ -510,7 +511,8 @@ class Translation:
             else "",
             "providerEnabled": self.settings.adapter.allow_providers,
             "connection": connection_summary(self.settings),
-            "batchUnavailable": batch_unavailable(self.settings),
+            "batchUnavailable": unavailable,
+            "batchUnread": unread,
             "legacyRun": (
                 {
                     key: value
@@ -779,13 +781,12 @@ Additional project instructions:
         return repricing.route_of(self.engine, configuration)
 
     @staticmethod
-    def reading(job, change, settings, route, lookup=None):
+    def reading(job, change, settings, route):
         """How a run's quote waiting for approval reads (repricing.read)
         under ``change``: priced again from its counts at the settings it is
         read at, on their route by ``route`` (repricing.route_of), when they
-        keep its requests; a Batch also needs a route that runs one. Given
-        the reader ``lookup`` makes, it reads as approving it starts the run
-        (repricing.start)."""
+        keep its requests; a Batch also needs a route that runs one.
+        Approving it reads it so at the full settings the run would freeze."""
         quote = job["quote"]
 
         def again(configuration, provider):
@@ -797,16 +798,7 @@ Additional project instructions:
                 return None
             return price(counted(quote), configuration, provider)
 
-        rule = (change, job.get("configuration"), settings, route, again)
-        return (
-            repricing.read(*rule) if lookup is None else repricing.start(*rule, lookup)
-        )
-
-    def lookup(self, mode, root):
-        """A reader of the settings a run on the game at *root* compiled now
-        would freeze, with a price no lookup finds left out
-        (repricing.require_readable)."""
-        return lambda: self.api_configuration(mode, root, unpriced=True)[0]
+        return repricing.read(change, job.get("configuration"), settings, route, again)
 
     def reprice(self, job, plan, configuration, provider, quote):
         """Freezes a waiting run again with settings that only price it
@@ -862,9 +854,7 @@ Additional project instructions:
             self.route,
             reprice=False,
         )
-        if self.reading(
-            job, change, current, self.route, self.lookup(mode, project.root)
-        ).current:
+        if self.reading(job, change, current, self.route).current:
             return self.jobs.store.view(job)
         preparation = next(
             (
@@ -1384,7 +1374,9 @@ Additional project instructions:
             # rules of its day; approving it after either changed would
             # approve a cost the user no longer sees. A quote priced again
             # (job_views) has its own token, and its approval freezes the run
-            # with the settings and price it was shown at.
+            # with the settings and price it was shown at. Those settings
+            # wait for a price no lookup could read yet, such as after a
+            # failed check, which the view shows as saved (openrouter.Unread).
             _record, project = self.project(project_id)
             mode = priced_mode(
                 plan.get("finishes"),
@@ -1400,11 +1392,6 @@ Additional project instructions:
                 self.route,
                 reprice=False,
             )
-            # Refused while a price it needs can't be read, such as after a
-            # failed check, which the view shows as saved (repricing.start).
-            reading = self.reading(
-                job, change, current, self.route, self.lookup(mode, project.root)
-            )
             if approval_token == job["approval_token"]:
                 if change is not None:
                     raise ValueError(
@@ -1413,6 +1400,7 @@ Additional project instructions:
                         else "API settings or the translation mode changed after this estimate. Compile and review a new plan."
                     )
             else:
+                reading = self.reading(job, change, current, self.route)
                 if reading.figure is None or approval_token != repricing.approval_token(
                     job["approval_token"], reading.settings, reading.route
                 ):

@@ -546,11 +546,18 @@ class Settings:
             values["model"] = ""
         result = self.adapter.provider_defaults(values)
         if active and active["provider"] == "openrouter" and values["model"]:
-            defaults = openrouter.describe(active, values["model"])
+            # While whether it runs Batch isn't read yet, Batch stays the
+            # default, as a chosen Batch stays Batch (openrouter.Unread).
+            available = openrouter.batch(active, values["model"])
             result.update(
-                batch_supported=defaults["batchSupported"],
-                batch_reason=defaults["batchReason"],
-                default_mode=("batch" if defaults["batchSupported"] else "translate")
+                batch_supported=available.supported,
+                batch_reason=available.reason,
+                batch_looked_up=available.looked_up,
+                default_mode=(
+                    "batch"
+                    if available.supported or not available.looked_up
+                    else "translate"
+                )
                 if self.adapter.allow_providers
                 else "estimate",
             )
@@ -1293,10 +1300,24 @@ class Settings:
             providers.validate_model_name(
                 values["model"], values["api"], created=resume is not None
             )
-        if mode == "batch" and not self.translation_defaults()["batch_supported"]:
-            raise ValueError("This connection does not support provider batch jobs.")
         if not values["model"]:
             values["model"] = state["values"]["model"]
+        configured = (
+            active["model_options"] if active else state["model_options"]
+        ).get(values["model"], preferences.DEFAULT_OPTIONS)
+        batch_policy = None
+        if mode and active and active["provider"] == "openrouter":
+            try:
+                batch_policy = openrouter.policy(
+                    active, values["model"], configured, required=mode == "batch"
+                )
+            except openrouter.Unread:
+                # New work waits for it before anything else is checked or
+                # priced; a resumed run keeps the policy it froze.
+                if resume is None:
+                    raise
+        if mode == "batch" and not self.translation_defaults()["batch_supported"]:
+            raise ValueError("This connection does not support provider batch jobs.")
         vault = {
             "active": active["runtime_name"] if self._configured(active) else "",
             "keys": {
@@ -1349,9 +1370,6 @@ class Settings:
                 vault["keys"][key_name]["endpoint"] = frozen["api"]
         self.adapter.manual.request_policy = None
         if mode:
-            configured = (
-                active["model_options"] if active else state["model_options"]
-            ).get(values["model"], preferences.DEFAULT_OPTIONS)
             custom = configured["pricing"] == "custom"
             defaults = self.model_defaults(
                 state["active"], values["model"], cached_only=custom
@@ -1392,9 +1410,6 @@ class Settings:
             if active and active["provider"] == "openrouter":
                 self.adapter.manual.request_policy["openrouterStructuredOutputs"] = (
                     openrouter.STRUCTURED_OUTPUTS
-                )
-                batch_policy = openrouter.policy(
-                    active, values["model"], configured, required=mode == "batch"
                 )
                 self.adapter.manual.request_policy["openrouterBatch"] = batch_policy
                 if mode == "batch":

@@ -15,6 +15,7 @@ from dazedtl.compatibility import original_files
 from dazedtl.compatibility.game_write import write_game
 from dazedtl.languages import load_language_pair
 from dazedtl.projects.store import Projects
+from dazedtl.settings import openrouter
 from dazedtl.storage import write_json
 from dazedtl.translation import (
     comment_text,
@@ -406,12 +407,13 @@ class GuidedTests(unittest.TestCase):
                     raise ValueError("Model pricing is unknown.")
                 configuration["rates"] = {"input": None, "output": None}
             # A read with unknown prices leaves it out; a full read, which a
-            # run freezes, reads it as none (settings/execution).
+            # run or an estimate freezes, refuses it (settings/execution).
             if self.batch_unknown and "openrouterBatch" in configuration:
-                if unpriced:
-                    del configuration["openrouterBatch"]
-                else:
-                    configuration["openrouterBatch"] = None
+                if not unpriced:
+                    raise openrouter.Unread.of(
+                        openrouter.batch({}, configuration["model"])
+                    )
+                del configuration["openrouterBatch"]
             return configuration
 
         self.settings = SimpleNamespace(
@@ -1071,13 +1073,23 @@ class GuidedTests(unittest.TestCase):
         kept = status()
         self.assertTrue(kept["current"])
         self.assertIs(kept["result"], saved)
-        # An OpenAI Batch estimate priced before them is priced again.
+        # An OpenAI Batch estimate priced before them is priced again. It
+        # shows its Batch price while its route runs one, whatever Settings
+        # says at the moment: during a failed OpenRouter check that read as
+        # no Batch, so the panel showed only Live.
         self.route = "openai"
         saved["measured"]["dialogue"].update(
             provider="openai", cache_read_tokens=0, cacheable_tokens=0
         )
+        defaults = self.settings.translation_defaults
+        self.settings.translation_defaults = lambda: {
+            **defaults(),
+            "batch_supported": False,
+        }
         fixed = status()
+        self.settings.translation_defaults = defaults
         self.assertTrue(fixed["current"])
+        self.assertTrue(fixed["result"]["batchSupported"])
         self.assertEqual(fixed["result"]["price_rules"], current_rules())
         # Under today's rules, one whose settings now send it on another
         # route is priced again on theirs, or reads outdated when Claude

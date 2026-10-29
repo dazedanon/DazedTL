@@ -12,16 +12,25 @@ def connection_summary(settings):
     return {key: connection[key] for key in ("name", "model")} if connection else None
 
 
-def batch_unavailable(settings):
-    """Why the active connection cannot run Batch, or "" when it can or no
-    connection with a key and a model is chosen yet, as both workflows keep
-    Batch until the user picks one."""
+def batch_reasons(settings):
+    """Why the active connection cannot run Batch, and why whether it can
+    isn't read yet, such as after a failed check (openrouter.Unread), each
+    "" otherwise. Both workflows keep Batch until they know it can't run,
+    so both are "" while no connection with a key and a model is chosen,
+    and the second shows beside the method choice while estimates wait."""
     if not (settings.connection_summary() or {}).get("model"):
-        return ""
+        return "", ""
     defaults = settings.translation_defaults()
     if not defaults.get("model") or defaults.get("batch_supported"):
-        return ""
-    return defaults.get("batch_reason") or "This connection can't run Batch."
+        return "", ""
+    if not defaults.get("batch_looked_up", True):
+        return "", defaults.get("batch_reason", "")
+    return defaults.get("batch_reason") or "This connection can't run Batch.", ""
+
+
+def batch_unavailable(settings):
+    """Why the active connection cannot run Batch (``batch_reasons``)."""
+    return batch_reasons(settings)[0]
 
 
 def runnable_mode(settings, mode, live):
@@ -54,9 +63,10 @@ LOOKED_UP = ("rates", "maxOutputTokens", "openrouterBatch")
 def configuration(settings, mode, *, cached_only=False, unpriced=False, pair=None):
     """The settings a run freezes, translating between the game's language
     *pair* (settings/language_pair), Japanese into Settings' target when
-    none is given. ``unpriced`` returns them with unknown rates instead of
-    refusing, and leaves out an OpenRouter Batch policy not looked up yet,
-    for comparisons that read cached prices only."""
+    none is given. They refuse an OpenRouter Batch policy no lookup could
+    read yet (openrouter.Unread) before anything else is priced. ``unpriced``
+    returns them with unknown rates instead of refusing, and leaves such a
+    policy out, for comparisons that read cached prices only."""
     state = settings._read()
     languages = language_pair.frozen({}, pair or language_pair.default(settings))
     if mode == "agent":
@@ -75,6 +85,16 @@ def configuration(settings, mode, *, cached_only=False, unpriced=False, pair=Non
     selected = connection["model_options"].get(
         connection["model"], preferences.DEFAULT_OPTIONS
     )
+    policy, unread = None, False
+    if connection["provider"] == "openrouter":
+        try:
+            policy = openrouter.policy(
+                connection, connection["model"], selected, required=mode == "batch"
+            )
+        except openrouter.Unread:
+            if not unpriced:
+                raise
+            unread = True
     defaults = settings.model_defaults(
         connection["id"],
         connection["model"],
@@ -126,15 +146,9 @@ def configuration(settings, mode, *, cached_only=False, unpriced=False, pair=Non
     }
     if connection["provider"] == "openrouter":
         value["openrouterStructuredOutputs"] = openrouter.STRUCTURED_OUTPUTS
-    # Read with unknown rates, the settings leave the Batch policy out while
-    # Batch availability isn't looked up, as after a failed check, so it reads
-    # as not known rather than as no Batch (translation/repricing.priced).
-    if connection["provider"] == "openrouter" and (
-        not unpriced or openrouter.batch(connection, connection["model"]).looked_up
-    ):
-        policy = openrouter.policy(
-            connection, connection["model"], selected, required=mode == "batch"
-        )
+    # A policy not read yet stays out, so it reads as a price not known
+    # rather than as no Batch (translation/repricing.priced).
+    if connection["provider"] == "openrouter" and not unread:
         value["openrouterBatch"] = policy
         if policy:
             value["rates"].update(

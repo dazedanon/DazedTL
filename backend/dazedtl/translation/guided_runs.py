@@ -316,12 +316,12 @@ class GuidedRuns:
         (repricing.route_of)."""
         return repricing.route_of(self.guided.translation.engine, configuration)
 
-    def reading(self, project_id, native, identity, inputs, lookup=None):
+    def reading(self, project_id, native, identity, inputs):
         """How a phase's estimate run reads for ``inputs`` (repricing.read):
         a finished estimate still in use stands as saved, is priced again
         from its counts on the route of the settings it is read at, or reads
-        outdated. Given the reader ``lookup`` makes, it reads as work starts
-        from it (repricing.start)."""
+        outdated. Work starts from it by the same reading of the full
+        settings it would freeze."""
         from dazedtl.compatibility.estimate_prices import reprice
 
         job = self.guided.backend.manual.jobs.get(identity, {})
@@ -329,39 +329,12 @@ class GuidedRuns:
             return repricing.OUTDATED
         record = self.records(project_id).get(identity, {})
         estimate = job["estimate"]
-        rule = (
-            self.changed(
-                record,
-                inputs,
-                reprice=lookup is None,
-                estimate=estimate,
-                route=self.route,
-            ),
+        return repricing.read(
+            self.changed(record, inputs, estimate=estimate, route=self.route),
             record.get("configuration"),
             inputs["configuration"],
             self.route,
             lambda settings, route: reprice(estimate, settings, route),
-        )
-        return (
-            repricing.read(*rule) if lookup is None else repricing.start(*rule, lookup)
-        )
-
-    def reviewed(self, native, bound, inputs):
-        """Whether work reviewed for the inputs ``bound`` may start now that
-        they are ``inputs``: only while they are the same, since a review
-        binds them exactly; while they differ only in a price that can't be
-        read now, it says so (repricing.require_readable)."""
-        change = self.changed(bound, inputs, reprice=False)
-        repricing.require_readable(
-            change, bound["configuration"], self.lookup(native, inputs["mode"])
-        )
-        return change is None
-
-    def lookup(self, native, mode):
-        """A reader of the settings a phase's work in ``mode`` would freeze,
-        with a price no lookup finds left out (repricing.require_readable)."""
-        return lambda: self.guided.settings.guided_configuration(
-            mode, unpriced=True, pair=self.pair(native)
         )
 
     def publish_names(self, project_id, native):
@@ -767,12 +740,9 @@ class GuidedRuns:
         guard=None,
         run_view=None,
         cached_only=False,
-        start=False,
     ):
         """The phase's newest estimate as it reads for its inputs in
-        ``mode`` (``reading``), with those inputs; with ``start``, as work
-        starts from it, at the full settings it would freeze."""
-        assert not (start and cached_only)  # A start reads the full settings.
+        ``mode`` (``reading``), with those inputs."""
         inputs = self.inputs(
             project_id, native, phase, mode, guard=guard, cached_only=cached_only
         )
@@ -783,13 +753,7 @@ class GuidedRuns:
         view = (run_view or self.guided.run_view)(identity, compact=True)
         # A model switch that keeps its requests, or a pricing fix, prices it
         # again.
-        reading = self.reading(
-            project_id,
-            native,
-            identity,
-            inputs,
-            self.lookup(native, mode) if start else None,
-        )
+        reading = self.reading(project_id, native, identity, inputs)
         if reading.figure is not None:
             view = {**view, "estimate": reading.figure}
         return {"job": view, "current": reading.current}, inputs

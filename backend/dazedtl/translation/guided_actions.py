@@ -328,7 +328,7 @@ class GuidedActions:
         if mode != "speakers":
             target_mode = self.guided.run_mode(native) if mode == "estimate" else mode
             matched, run_inputs = self.guided.runs.quote(
-                project_id, native, phase, target_mode, start=mode != "estimate"
+                project_id, native, phase, target_mode
             )
             if mode != "estimate":
                 if not matched["current"]:
@@ -720,13 +720,15 @@ class GuidedActions:
                 options["phase"],
                 confirmed["run_inputs"]["mode"],
             )
-            if not self.guided.runs.reviewed(native, confirmed["run_inputs"], current):
+            if self.guided.runs.changed(
+                confirmed["run_inputs"], current, reprice=False
+            ):
                 raise ValueError(
                     "The estimate inputs changed. Refresh the estimate and review this run again."
                 )
             if options["mode"] != "estimate":
                 matched, _ = self.guided.runs.quote(
-                    project_id, native, options["phase"], options["mode"], start=True
+                    project_id, native, options["phase"], options["mode"]
                 )
                 if (
                     not matched["current"]
