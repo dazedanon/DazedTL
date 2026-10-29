@@ -27,3 +27,5 @@
 - **Translate:** a file stopped partway in a Translation run is now translated again on Resume, which skipped it as finished when its engine had saved part of it.
 - **Translate:** a reply with the wrong number of lines that an engine kept in its original text now counts toward the run's mismatches, which read the file as fully translated.
 - **Translate:** an Image Text file's cost and time now show with the file, which left them out.
+- **Translate:** a model whose name only holds a Claude family word, such as `magnum-opus-72b` on OpenRouter or a custom server, is no longer priced at Claude's cache prices or sent through Anthropic's own connection when no address is set; only Claude's own names, such as `claude-sonnet-5-5` or `anthropic/claude-opus-5.5`, count as Claude.
+- **Translate:** a Guided Live request to Mistral that hits a rate limit on its last retry now fails at once, instead of first waiting out the provider's wait time, up to a minute or more.
