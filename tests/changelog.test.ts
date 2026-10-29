@@ -114,3 +114,45 @@ test("parallel branches' notes merge by kind, and a release's filed notes stay f
     [{ kind: "Fixed", items: ["New."] }],
   );
 });
+
+test("a branch's notes never bring back a line a release filed, and a reworded one stops the merge", () => {
+  const shipped = "**Translate:** a run stops on rejected requests.";
+  const base = `${notesTemplate}\n### Changed\n\n- ${shipped}\n`;
+  const released = parseChangelog(
+    addRelease("", {
+      version: "2.52.0",
+      date: "2026-10-28",
+      sections: [{ kind: "Changed", items: [shipped] }],
+      link: "L",
+    }),
+  );
+  const reworded = `${notesTemplate}\n### Changed\n\n- ${shipped} Its cost still counts.\n`;
+  // The branch rewords a line dev released since: keeping the rewording
+  // would repeat the released entry, and dropping it would lose the change.
+  assert.throws(
+    () => mergeNotes(base, reworded, notesTemplate, released),
+    /rewords a line 2\.52\.0 released: "\*\*Translate:\*\* a run stops on rejected requests\."[^]*Its cost still counts\./,
+  );
+  // Without a release, the same edit merges as before.
+  assert.deepEqual(parseNotes(mergeNotes(base, reworded, base)), [
+    { kind: "Changed", items: [`${shipped} Its cost still counts.`] },
+  ]);
+  // A line added word for word as released stops it too.
+  assert.throws(
+    () => mergeNotes(notesTemplate, base, notesTemplate, released),
+    /adds a line 2\.52\.0 released/,
+  );
+  // Dropping the released line and adding one under another heading is no
+  // rewording.
+  assert.deepEqual(
+    parseNotes(
+      mergeNotes(
+        base,
+        `${notesTemplate}\n### Fixed\n\n- New.\n`,
+        notesTemplate,
+        released,
+      ),
+    ),
+    [{ kind: "Fixed", items: ["New."] }],
+  );
+});

@@ -192,6 +192,7 @@ def install(*, coordinator=False):
             or policy.get("shortOutputs") not in (None, SHORT_OUTPUTS)
             or policy.get("smallKana") not in (None, SMALL_KANA)
             or policy.get("runStops") not in (None, RUN_STOPS)
+            or policy.get("thinkingEffortRefusals") not in (None, effort.REFUSALS)
             or policy.get("battleMessageUsers")
             not in (None, *BATTLE_MESSAGE_USERS_LEVELS)
             or policy.get("openrouterStructuredOutputs")
@@ -280,6 +281,7 @@ def install(*, coordinator=False):
             provider=provider,
             thinking_effort=thinking_effort,
             thinking_listed=thinking_listed,
+            thinking_refusals=policy.get("thinkingEffortRefusals"),
         )
         run_stops.configure(translation, policy, root, coordinator=coordinator)
         configure_states(plan, grouping_root, policy)

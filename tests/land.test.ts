@@ -10,7 +10,7 @@ import {
   releaseLock,
 } from "../scripts/land-lock.mjs";
 import { formatBranch, mergeDev, timer, waitForApp } from "../scripts/land.mjs";
-import { notesTemplate } from "../scripts/changelog.mjs";
+import { addRelease, notesTemplate } from "../scripts/changelog.mjs";
 
 test("a landing waits for a live lock, takes over a dead or unrenewed one and tells the user of a long wait once", async (t) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dazedtl-land-"));
@@ -143,6 +143,61 @@ test("a conflicting merge of dev stays in progress with the release notes merged
   assert.equal(
     fs.readFileSync(path.join(dir, "release/notes.md"), "utf8"),
     notes("Base.", "Dev.", "Work."),
+  );
+});
+
+test("merging dev stops on notes that reword a line dev has released, and says which", async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dazedtl-land-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const git = gitIn(dir);
+  const write = (file: string, text: string) => {
+    fs.mkdirSync(path.dirname(path.join(dir, file)), { recursive: true });
+    fs.writeFileSync(path.join(dir, file), text);
+  };
+  const changed = (line: string) =>
+    `${notesTemplate}\n### Changed\n\n- ${line}\n`;
+  const commit = (message: string) => {
+    git(["add", "-A"]);
+    git(["commit", "-qm", message]);
+  };
+  git(["init", "-q", "-b", "dev"]);
+  git(["config", "user.name", "Test"]);
+  git(["config", "user.email", "test@example.com"]);
+  write(".gitattributes", "release/notes.md merge=dazedtl-notes\n");
+  write("release/notes.md", changed("Runs stop."));
+  commit("base");
+  git(["switch", "-qc", "work"]);
+  write("release/notes.md", changed("Runs stop, and costs count."));
+  commit("work");
+  git(["switch", "-q", "dev"]);
+  write("release/notes.md", notesTemplate);
+  write(
+    "CHANGELOG.md",
+    addRelease("", {
+      version: "1.0.0",
+      date: "2026-01-01",
+      sections: [{ kind: "Changed", items: ["Runs stop."] }],
+      link: "L",
+    }),
+  );
+  commit("release");
+  git(["switch", "-q", "work"]);
+
+  const result = await mergeDev(
+    git,
+    dir,
+    async () => assert.fail(),
+    () => {},
+  );
+  assert.equal(result?.code, 2);
+  assert.match(
+    result?.report.join("\n") ?? "",
+    /conflicts in release\/notes\.md\.[^]*rewords a line 1\.0\.0 released: "Runs stop\."[^]*- Runs stop, and costs count\./,
+  );
+  // The branch's wording waits in the file to be resolved, not merged away.
+  assert.equal(
+    fs.readFileSync(path.join(dir, "release/notes.md"), "utf8"),
+    changed("Runs stop, and costs count."),
   );
 });
 

@@ -25,9 +25,10 @@
 // - hold: a Batch stays in progress until hold is turned off; otherwise it
 //   completes batchSeconds after it was created.
 // - effort: "refuse" answers a request carrying `reasoning_effort` with
-//   HTTP 400, and "accept" reports the reasoning tokens it spent; otherwise
-//   the field is ignored, as many servers do. Settings' effort check, which
-//   asks "Reply with OK.", is answered "OK".
+//   HTTP 400 naming the field, "unsupported" with HTTP 422 saying the model
+//   takes no reasoning, and "accept" reports the reasoning tokens it spent;
+//   otherwise the field is ignored, as many servers do. Settings' effort
+//   check, which asks "Reply with OK.", is answered "OK".
 //
 // Every request is recorded in <folder>/requests.jsonl as its time, method,
 // route, status and, for a JSON body, that body, so a check can confirm a
@@ -361,6 +362,13 @@ export async function startProvider({ folder, port = 0 }) {
           error: {
             message: "Unrecognized request argument supplied: reasoning_effort",
           },
+        },
+      };
+    if (level !== undefined && settings.effort === "unsupported")
+      return {
+        status: 422,
+        value: {
+          error: { message: "Reasoning is not supported for this model." },
         },
       };
     const usage =

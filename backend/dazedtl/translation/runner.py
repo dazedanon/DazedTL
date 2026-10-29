@@ -777,12 +777,14 @@ class Runner:
 
     def refused_effort(self, errors):
         """The run's one message when the provider refused its thinking
-        effort (settings/effort) in any of *errors*, else ""."""
+        effort (settings/effort) in any of *errors*, by the refusal rule the
+        run froze, else ""."""
         from dazedtl.settings import effort
 
         configuration = self.plan["configuration"]
         level = configuration.get("thinkingEffort")
-        if any(effort.rejected(error, level) for error in errors):
+        rule = configuration.get("thinkingEffortRefusals")
+        if any(effort.rejected(error, level, rule) for error in errors):
             return effort.rejection(configuration["model"], level)
         return ""
 
