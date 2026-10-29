@@ -1,9 +1,9 @@
 """Translate ``image_text.json`` - the text found in a game's images.
 
 Step 3 of the image workflow. The user reads the images and confirms the boxes
-in the review editor (Images tab -> "Edit text..."), which exports this file
-into ``files/``; they then pick the **Image Text** module here and press
-Translate like any other engine.
+in the review editor, which exports this file as the input of an Image Text
+run; the run reads it from ``files/`` like any other engine, and the Images
+task imports the result from ``translated/``.
 
 Running it as a normal translation module rather than a one-off button is the
 point: progress, the live log, cost accounting, estimate mode, and the project's
@@ -261,12 +261,12 @@ def handleImageText(filename, estimate):
     fail_on_parser_error(translatedData)
 
     if not estimate:
+        # Only translated/ is written: the Images task imports the run's
+        # output from there. files/ is the run's engine input, a hard link to
+        # its frozen inputs/, so writing it changed the run's record of what
+        # it sent and stopped the run from resuming.
         payload = json.dumps(translatedData[0], ensure_ascii=False, indent=2)
         write_output(filename, payload, newline="\n")
-        # Written back to files/ in place: 'imgtl import' reads it from
-        # here, which is what makes this a drop-in step in the loop.
-        with open(os.path.join("files", filename), "w", encoding="utf-8", newline="\n") as out:
-            out.write(payload)
 
     end = time.time()
     tqdm.write(module_receipt(filename, translatedData[1], end - start, MODEL))

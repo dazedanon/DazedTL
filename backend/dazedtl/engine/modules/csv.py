@@ -48,7 +48,7 @@ BRACKETNAMES = False
 CSV_DELIMITER = ","  # CSV delimiter character (comma, semicolon, tab)
 SOURCE_COLUMN = 0  # Which column has the source text to translate (0-indexed)
 TARGET_COLUMN = 1  # Which column to write translations to
-SPEAKER_COLUMN = 1  # Which column has speaker names (-1 = none)
+SPEAKER_COLUMN = -1  # Which column has speaker names (-1 = none)
 SKIP_HEADER_ROW = True  # Skip the first row (header)
 USE_TARGET_IF_NOT_EMPTY = False  # Use target column text if not empty (T++ style)
 SKIP_IF_TARGET_TRANSLATED = True  # Skip batches whose targets are already translated
@@ -236,7 +236,7 @@ def _collect_process_indices(data):
     return process
 
 
-def translateCSV(data, pbar, filename, translatedList):
+def translateCSV(data, pbar, filename, translatedList, process_indices=None):
     """
     Unified CSV translation function using configurable settings.
     
@@ -252,13 +252,18 @@ def translateCSV(data, pbar, filename, translatedList):
     - PARSE_M_MARKERS: parse \\M markers
     - REMOVE_FURIGANA: remove furigana
     - SKIP_COMMENT_ROWS: skip rows with 'comment' in first column
+
+    Pass 2 gets the rows pass 1 sent, since pass 1 can change a cell that
+    decides which rows are sent, such as a speaker column that is also the
+    target.
     """
     global LOCK, ESTIMATE, PBAR
     PBAR = pbar
     translatedText = ""
     totalTokens = [0, 0]
     stringList = []
-    process_indices = _collect_process_indices(data)
+    if process_indices is None:
+        process_indices = _collect_process_indices(data)
 
     # Translate
     for i in process_indices:
@@ -360,7 +365,7 @@ def translateCSV(data, pbar, filename, translatedList):
 
         # Set Strings
         if len(stringList) == len(translatedList):
-            translateCSV(data, pbar, filename, translatedList)
+            translateCSV(data, pbar, filename, translatedList, process_indices)
         # Mismatch
         else:
             with LOCK:
