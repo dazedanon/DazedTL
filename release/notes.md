@@ -31,3 +31,4 @@
 - **Translate:** a Guided Live request to Mistral that hits a rate limit on its last retry now fails at once, instead of first waiting out the provider's wait time, up to a minute or more.
 - **Translate:** a WOLF line or database entry that kept its original text because its replies kept failing is now left exactly as it was, which wrote it back with its line breaks turned into spaces.
 - **Settings:** a model the price list doesn't know whose name only holds a Claude family word, such as `sonnet-like` or `haiku-writer-8b`, now asks for custom rates instead of taking Claude Sonnet's or Haiku's per-token price, and a Claude name in capitals, such as `Claude-Opus-5`, takes its Claude price instead of none.
+- **Translate:** an estimate for a model whose name only holds a Claude model's, such as `someone/claude-opus-5-distill`, no longer warns that it leaves out the model's thinking, as a Claude 5 model's estimate does.

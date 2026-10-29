@@ -789,12 +789,15 @@ def apply(params, provider, model, level, listed=None):
 
 # Models that think when no effort is sent, for those whose default level
 # the table does not name: billed as output an estimate cannot predict.
-_THINKS_BY_DEFAULT = re.compile(
-    # Claude Opus, Sonnet and Haiku 5 and up, Fable and Mythos think when a
-    # request omits ``thinking``.
+# Claude Opus, Sonnet and Haiku 5 and up, Fable and Mythos think when a
+# request omits ``thinking``; matched from the start of the Claude name
+# (provider_costs.claude_model_name), in any host's form.
+_CLAUDE_THINKS_BY_DEFAULT = re.compile(
     r"claude-(?:(?:opus|sonnet|haiku)-(?:[5-9]|[1-9]\d)\b|fable|mythos)"
+)
+_THINKS_BY_DEFAULT = re.compile(
     # Kimi K3 always thinks; K2.6 and K2.7 Code think unless told not to.
-    r"|kimi-k(?:3|2\.[67])"
+    r"kimi-k(?:3|2\.[67])"
     # DeepSeek's Flash and V4 models think unless told not to; its reasoner
     # always does.
     r"|deepseek-(?:flash|v4|reasoner)",
@@ -815,7 +818,12 @@ def thinks(provider, model, level=None, listed=None):
         return False
     if level is not None:
         return level != "none"
+    from util.provider_costs import claude_model_name
+
     normalized = model_id(model)
+    claude = claude_model_name(normalized)
+    if claude is not None:
+        return bool(_CLAUDE_THINKS_BY_DEFAULT.match(claude))
     return (provider == "gemini" and normalized.startswith("gemini-3")) or bool(
         _THINKS_BY_DEFAULT.search(normalized)
     )

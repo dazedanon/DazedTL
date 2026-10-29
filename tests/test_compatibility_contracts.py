@@ -1812,12 +1812,14 @@ class CompatibilityContracts(unittest.TestCase):
 
     def test_each_claude_route_rule_routes_a_model_and_address_alike(self):
         # The Claude name test and the native-Anthropic route test were copied
-        # into the Live send, the estimate, Batch detection, Live pricing and
-        # Settings' route check; each copy must keep answering the same.
+        # into the Live send, the estimate, Batch detection, Live pricing,
+        # per-token rates, default thinking and Settings' route check; each
+        # copy must keep answering the same.
         import os
 
         from dazedtl.compatibility import openrouter_batch
         from dazedtl.compatibility.dazedmtl import ExistingBackend
+        from dazedtl.settings import effort
         from util import translation
         from util.batch_providers import detect_batch_provider, live_price_route
 
@@ -1869,6 +1871,7 @@ class CompatibilityContracts(unittest.TestCase):
             ("sonnet-like", other),
             ("haiku-writer-8b", other),
             ("someone/claude-style-7b", other),
+            ("someone/claude-opus-5-distill", other),
             ("gpt-5.4", gpt),
             ("deepseek-v4-flash", other),
             ("", other),
@@ -1911,6 +1914,13 @@ class CompatibilityContracts(unittest.TestCase):
                 self.assertEqual(
                     translation.getPricingConfig(model)["inputAPICost"] == -1,
                     routes is other and not model.startswith("deepseek-"),
+                )
+            # An estimate reads a Claude 5 name with no effort table row as
+            # thinking only when the name is Claude's.
+            with self.subTest(model=model, rule="thinks"):
+                self.assertEqual(
+                    effort.thinks(None, model),
+                    model in {"claude-sonnet-5-5", "Claude-Opus-5", "deepseek-v4-flash"},
                 )
 
     def test_mistral_follows_the_json_mode_strict_and_retry_rules(self):

@@ -110,14 +110,22 @@ def is_openai_model(model: str) -> bool:
 # gateway's own prefix such as "bedrock/". Another model's name holding a
 # Claude family word, such as "magnum-opus-72b", is not Claude's.
 _CLAUDE_MODEL = re.compile(
-    r"(?:(?:[\w.~-]+/)*~?(?:[a-z-]+\.)?anthropic[./])?claude-[a-z0-9]"
+    r"(?:(?:[\w.~-]+/)*~?(?:[a-z-]+\.)?anthropic[./])?(claude-[a-z0-9].*)", re.DOTALL
 )
+
+
+def claude_model_name(model: str) -> str | None:
+    """The Claude name in ``model``, from "claude-" on in lower case, such as
+    "claude-opus-5.5" in "anthropic/claude-opus-5.5"; None when ``model``
+    names no Claude model."""
+    match = _CLAUDE_MODEL.fullmatch(str(model or "").strip().lower())
+    return match.group(1) if match else None
 
 
 def is_claude_model(model: str) -> bool:
     """Whether ``model`` names a Claude model, priced at Anthropic's cache
     prices wherever it runs (batch_providers.live_price_route)."""
-    return bool(_CLAUDE_MODEL.match(str(model or "").strip().lower()))
+    return claude_model_name(model) is not None
 
 
 def is_claude_native(model: str, address: str | None) -> bool:
