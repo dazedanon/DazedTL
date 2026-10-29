@@ -733,6 +733,69 @@ class GuidedTests(unittest.TestCase):
         del estimate["provider"]
         self.assertEqual(quote()["job"]["estimate"], estimate)
 
+    def test_an_estimate_is_read_on_the_route_of_the_settings_it_is_read_at(self):
+        # The views read an estimate's route from the current settings even
+        # while those differed from its own only in prices not known at the
+        # moment, as on an OpenRouter connection whose check failed, whose
+        # catalog then gives neither rates nor a Batch policy: the estimate
+        # read as moved off OpenRouter's Batch and was priced again as a
+        # Live-only one. A fix to a Live price (CN5's, to Claude's cache
+        # reads) also priced again every Live-only estimate, though a saved
+        # figure's Live price is its counts at its rates alone.
+        from dazedtl.compatibility.openrouter_batch import BASE_URL
+        from dazedtl.compatibility.translation import TranslationEngine
+        from dazedtl.settings.openrouter import TRANSPORT
+
+        # The one rule a run's worker records an estimate's route by.
+        engine = TranslationEngine(self.root / "engine")
+        self.translation.engine.batch_supported = engine.batch_supported
+        jobs = self.backend.manual.jobs
+
+        def shown():
+            return self.guided.runs.quote(
+                self.identity, self.native, "database", "translate", cached_only=True
+            )[0]
+
+        # A Live-only estimate, on no Batch route, priced under version 4.
+        live = jobs[self.seed_estimate(mode="translate")]["estimate"]
+        live.update(provider=None, price_rules=4)
+        self.assertTrue(shown()["current"])
+        self.assertEqual(shown()["job"]["estimate"], live)
+        # An estimate on OpenRouter's Batch stands while its connection's
+        # prices aren't known, and is priced again on no Batch once its
+        # settings send it on none.
+        model = "author/model"
+        self.configuration.update(
+            model=model,
+            provider="openrouter",
+            endpoint=BASE_URL,
+            openrouterBatch={
+                "transport": TRANSPORT,
+                "model": model,
+                "host": "",
+                "input": 0.5,
+                "output": 1,
+                "cache_read": None,
+                "cache_write": None,
+                "max_requests": 1000,
+                "max_bytes": 10_000_000,
+            },
+        )
+        estimate = jobs[self.seed_estimate(mode="translate")]["estimate"]
+        estimate.update(provider="openrouter", model=model)
+        self.assertEqual(shown()["job"]["estimate"], estimate)
+        rates = self.configuration["rates"]
+        self.configuration.update(
+            rates={"input": None, "output": None}, openrouterBatch=None
+        )
+        self.assertTrue(shown()["current"])
+        self.assertEqual(shown()["job"]["estimate"], estimate)
+        self.configuration["rates"] = rates
+        moved = shown()
+        self.assertTrue(moved["current"])
+        self.assertIsNone(moved["job"]["estimate"]["provider"])
+        self.assertEqual(moved["job"]["estimate"]["live_cost"], estimate["live_cost"])
+
     def test_translate_reopens_an_unchanged_estimate_until_its_work_is_approved(self):
         # Each Translate click estimated the whole selection again, minutes on
         # a large game, though declining its review changed nothing. Reopening

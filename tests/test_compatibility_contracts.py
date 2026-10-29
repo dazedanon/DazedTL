@@ -518,6 +518,11 @@ class CompatibilityContracts(unittest.TestCase):
             "thinkingEffortListed": listed,
         }
         counts = {"input_tokens": 1000, "output_tokens": 2500}
+
+        def route(_configuration):
+            # These settings send a run on no Batch.
+            return None
+
         for level, named, thinks in (
             (None, "Provider default (Low)", True),
             ("high", "High", True),
@@ -533,24 +538,86 @@ class CompatibilityContracts(unittest.TestCase):
         # again instead of counting its requests again.
         quote = {"price_rules": repricing.current_rules(), "output_rules": 1}
         current = {**frozen, "thinkingEffortListed": None}
-        change = changed_since(current, digest(frozen), frozen, quote, None)
+        change = changed_since(current, digest(frozen), frozen, quote, route)
         self.assertTrue(change.priced_only)
         self.assertFalse(corrected(change))
         # A quote counts its output by a versioned rule; one saved before
         # quotes named it stands, and raising it outdates the quote.
         old = {"price_rules": repricing.current_rules()}
-        self.assertIsNone(changed_since(frozen, digest(frozen), frozen, old, None))
+        self.assertIsNone(changed_since(frozen, digest(frozen), frozen, old, route))
         with patch.object(estimate_prices, "OUTPUT_RULES_VERSION", 2):
-            change = changed_since(frozen, digest(frozen), frozen, old, None)
+            change = changed_since(frozen, digest(frozen), frozen, old, route)
             self.assertFalse(change.priced_only)
             self.assertTrue(corrected(change))
             # The settings changing as well are still the settings' doing.
             moved = {**frozen, "endpoint": "https://elsewhere.test/v1"}
-            change = changed_since(moved, digest(frozen), frozen, old, None)
+            change = changed_since(moved, digest(frozen), frozen, old, route)
             self.assertTrue(change.version and change.reshaped)
             self.assertFalse(corrected(change))
             # A run without a quote has no counts to outdate.
-            self.assertIsNone(changed_since(frozen, digest(frozen), frozen, None, None))
+            self.assertIsNone(
+                changed_since(frozen, digest(frozen), frozen, None, route)
+            )
+
+    def test_a_waiting_quote_is_read_on_the_route_of_the_settings_it_is_read_at(self):
+        # A waiting quote's route was compared with the current settings'
+        # even while those differed from its own only in prices not known at
+        # the moment, as on an OpenRouter connection whose check failed: its
+        # OpenRouter quote read as moved, was priced again as a Live one and
+        # took a new approval token.
+        from dazedtl.compatibility.openrouter_batch import BASE_URL
+        from dazedtl.settings.openrouter import TRANSPORT
+        from dazedtl.translation.requests import price
+        from dazedtl.translation.service import Translation, changed_since
+
+        model = "author/model"
+        frozen = {
+            "mode": "live",
+            "provider": "openrouter",
+            "protocol": "openai",
+            "endpoint": BASE_URL,
+            "model": model,
+            "rates": {"input": 1, "output": 2},
+            "openrouterBatch": {
+                "transport": TRANSPORT,
+                "model": model,
+                "host": "",
+                "input": 0.5,
+                "output": 1,
+                "cache_read": None,
+                "cache_write": None,
+                "max_requests": 1000,
+                "max_bytes": 10_000_000,
+            },
+        }
+        # The one rule a run's worker records a quote's route by.
+        route = TranslationEngine.batch_supported
+        counts = {"input_tokens": 1000, "output_tokens": 2500, "output_rules": 1}
+        quote = price(counts, frozen, route(frozen))
+        self.assertEqual(quote["route"], "openrouter")
+        unknown = {
+            **frozen,
+            "rates": {"input": None, "output": None},
+            "openrouterBatch": None,
+        }
+        self.assertIsNone(changed_since(unknown, digest(frozen), frozen, quote, route))
+        # Settings that send it on no Batch price it again on none.
+        live = {**frozen, "openrouterBatch": None}
+        change = changed_since(live, digest(frozen), frozen, quote, route)
+        reading = Translation.reading(
+            {"quote": quote, "configuration": frozen}, change, live, route
+        )
+        self.assertEqual((reading.route, reading.figure["route"]), (None, None))
+        self.assertEqual(reading.figure["cost"], quote["cost"])
+        # A quote saved before quotes named their route, by a run whose
+        # record kept no settings, reads the current settings' route, so an
+        # OpenAI one priced before OpenAI's rules last changed still reads
+        # changed.
+        legacy = {"price_rules": 3, "output_rules": 1}
+        change = changed_since(
+            live, digest(live), None, legacy, lambda _settings: "openai"
+        )
+        self.assertTrue(change.prices)
 
     def test_engine_extension_layers_reach_aliases_and_reconfigure_in_place(self):
         # Host wrappers used to reassign module attributes: aliases bound at
@@ -2029,6 +2096,13 @@ class CompatibilityContracts(unittest.TestCase):
                         ),
                         expected,
                     )
+                    # The views read the Batch route the worker records.
+                    self.assertEqual(
+                        TranslationEngine.batch_supported(
+                            {"model": model, "endpoint": address, "protocol": "openai"}
+                        ),
+                        expected[1],
+                    )
                     # The Live send and the estimate read the address from
                     # the engine's settings.
                     self.assertEqual(translation.isClaudeNative(model), expected[0])
@@ -2064,6 +2138,35 @@ class CompatibilityContracts(unittest.TestCase):
                         "deepseek-v4-flash",
                     },
                 )
+        # Under a frozen OpenRouter Batch policy, the worker that froze it
+        # and the views read OpenRouter's Batch alike.
+        from dazedtl.settings.openrouter import TRANSPORT
+
+        policy = {
+            "transport": TRANSPORT,
+            "model": "author/model",
+            "host": "",
+            "input": 0.5,
+            "output": 1,
+            "max_requests": 1000,
+            "max_bytes": 10_000_000,
+        }
+        settings = {
+            "model": "author/model",
+            "endpoint": openrouter_batch.BASE_URL,
+            "protocol": "openai",
+            "openrouterBatch": policy,
+        }
+        with patch.multiple(
+            openrouter_batch, _worker_policy=policy, _worker_configured=True
+        ):
+            self.assertEqual(
+                detect_batch_provider(
+                    settings["model"], settings["endpoint"], "openai"
+                ),
+                "openrouter",
+            )
+        self.assertEqual(TranslationEngine.batch_supported(settings), "openrouter")
         # A test scenario's stand-in for Anthropic's API counts as its API.
         stand_in = "http://127.0.0.1:9/api.anthropic.com"
         with patch.dict(os.environ, {"DAZEDTL_TEST_ANTHROPIC_ENDPOINT": stand_in}):

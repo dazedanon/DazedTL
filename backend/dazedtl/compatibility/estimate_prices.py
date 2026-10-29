@@ -140,11 +140,12 @@ def prices(counts, configuration, provider, cache=None):
 
 def reprice(estimate, configuration, route):
     """``estimate`` priced with the model and rates of ``configuration`` as
-    a Batch of ``route``, the Batch provider its settings send it on now,
-    or None when its counts can't be priced again. Claude counts with each
-    model's own tokenizer, so an estimate counted for Claude, or one whose
-    route is now Claude's, is never priced again; a Batch also needs a route
-    that runs one, as an Assistant-led quote does (service.reading)."""
+    a Batch of ``route``, the Batch provider ``configuration`` sends it on
+    (translation/repricing route_of), or None when its counts can't be
+    priced again. Claude counts with each model's own tokenizer, so an
+    estimate counted for Claude, or one whose route is now Claude's, is
+    never priced again; a Batch also needs a route that runs one, as an
+    Assistant-led quote does (service.reading)."""
     if (
         "anthropic" in (estimate.get("provider"), route)
         or configuration.get("mode") == "batch"

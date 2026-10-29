@@ -376,26 +376,21 @@ class TranslationEngine:
             "input_tokens": tokens + 8 * len(requests),
         }
 
-    def batch_supported(self, configuration):
-        if configuration.get("provider") == "openrouter":
-            from dazedtl.settings.openrouter import validate_policy
-
-            policy = configuration.get("openrouterBatch")
-            return (
-                "openrouter"
-                if policy and validate_policy(policy, configuration["model"])
-                else None
-            )
-        from .openrouter_batch import is_route
-
-        if is_route(configuration.get("endpoint")):
-            return None
+    @staticmethod
+    def batch_supported(configuration):
+        """The Batch provider a run on ``configuration`` is sent on, None for
+        none, by the rule its worker records an estimate's by
+        (openrouter_batch.batch_route)."""
         from util.batch_providers import detect_batch_provider
 
-        return detect_batch_provider(
+        from .openrouter_batch import batch_route
+
+        return batch_route(
+            detect_batch_provider,
             configuration["model"],
-            api_url=configuration["endpoint"],
-            api_provider=configuration["protocol"],
+            configuration["endpoint"],
+            configuration["protocol"],
+            configuration.get("openrouterBatch"),
         )
 
     def batch_limits(self, configuration):

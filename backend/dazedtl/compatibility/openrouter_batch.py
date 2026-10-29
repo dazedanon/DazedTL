@@ -519,18 +519,39 @@ def usage(batch, results):
     return totals
 
 
+def on_openrouter(endpoint, protocol):
+    """Whether a run with this address and protocol is sent to OpenRouter."""
+    return protocol in {"openai", "openrouter"} and is_route(endpoint)
+
+
+def batch_route(native, model, endpoint, protocol, policy):
+    """The Batch provider a run on these settings is sent on, so the one its
+    estimate or quote is priced on: the one rule a run's worker records it
+    by (``detect``, with the policy the run froze) and every view reads it
+    by (TranslationEngine.batch_supported, with its settings' policy). Sent
+    to OpenRouter, it is OpenRouter's Batch under a frozen ``policy`` this
+    version runs for ``model`` (settings/openrouter validate_policy, which
+    raises for one it refuses), and none without one; elsewhere it is
+    ``native``'s, the engine's detect_batch_provider."""
+    if on_openrouter(endpoint, protocol):
+        return (
+            "openrouter"
+            if policy is not None and validate_policy(policy, model)
+            else None
+        )
+    return native(model, endpoint, protocol)
+
+
 def detect(native, model="", api_url=None, api_provider=None):
     endpoint = os.getenv("api", "") if api_url is None else api_url
     protocol = (
         os.getenv("API_PROVIDER", "openai") if api_provider is None else api_provider
     )
-    if protocol in {"openai", "openrouter"} and is_route(endpoint):
-        return (
-            "openrouter"
-            if not _worker_configured or _worker_policy is not None
-            else None
-        )
-    return native(model, api_url, api_provider)
+    if not _worker_configured and on_openrouter(endpoint, protocol):
+        # The app's own process freezes no policy: Settings and a Batch's
+        # start ask whether OpenRouter's API can run one at all.
+        return "openrouter"
+    return batch_route(native, model, endpoint, protocol, _worker_policy)
 
 
 def client(native, provider, *, api_key=None, api_url=None, max_retries=None):
