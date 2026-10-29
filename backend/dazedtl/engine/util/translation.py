@@ -2097,22 +2097,45 @@ MISSING_BATCH_RESULT = {
     "prepared.",
     None: "The Batch has no translation for some of this file's lines.",
 }
+# An unreturned request whose provider gave its reason.
+MISSING_BATCH_RESULT_REASON = (
+    "The provider ended the Batch request for some of this file's lines with "
+    "an error: {reason}"
+)
 MISSING_BATCH_RESULT_NEXT = (
     "No full-price request was sent. Translate this file again with Live or a "
     "new Batch."
 )
 
 
-def _missing_batch_result_cause(key):
-    from util.batch_history import submitted_result_keys
+@extensions.point
+def batch_failure_reason(error):
+    """How the error a provider ended a Batch request with, as the fetch kept
+    it (batch_history provider_errors), reads beside the file's name, or None
+    to give no reason; the host reads it as it reads provider errors."""
+    return None
+
+
+def _missing_batch_result(key):
+    """Why the Batch has no result for *key*, in the words beside the file's
+    name: its provider's reason for ending the request when it gave one,
+    such as an error every request got, else the miss's cause."""
+    from util.batch_history import submitted_results
 
     try:
-        submitted = submitted_result_keys()
+        submitted = submitted_results()
     except BatchFileCorruptionError:
-        return None
+        submitted = {}
     if not submitted:
-        return None
-    return "unreturned" if key in submitted else "changed"
+        return None, MISSING_BATCH_RESULT[None]
+    if key not in submitted:
+        return "changed", MISSING_BATCH_RESULT["changed"]
+    reason = batch_failure_reason(submitted[key]) if submitted[key] else None
+    return "unreturned", (
+        MISSING_BATCH_RESULT_REASON.format(reason=reason)
+        if reason
+        else MISSING_BATCH_RESULT["unreturned"]
+    )
 
 
 @extensions.point
@@ -2124,12 +2147,10 @@ def require_batch_result(
         payload, language, cache_context, request_context
     )
     if result is None:
-        cause = _missing_batch_result_cause(
+        cause, why = _missing_batch_result(
             get_cache_key(payload, language, cache_context, request_context)
         )
-        raise BatchResultUnavailableError(
-            f"{MISSING_BATCH_RESULT[cause]} {MISSING_BATCH_RESULT_NEXT}", cause
-        )
+        raise BatchResultUnavailableError(f"{why} {MISSING_BATCH_RESULT_NEXT}", cause)
     return result
 
 

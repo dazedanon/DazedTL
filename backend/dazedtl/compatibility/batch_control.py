@@ -10,6 +10,7 @@ from dazedtl.translation.files import digest, live_path
 
 from .batch_evidence import extends
 from .process_view import batch_results, evidence_root, queue, saved
+from .provider_responses import NO_REASON
 from .translation import TranslationProvider
 
 TERMINAL = {"completed", "ended", "failed", "expired", "cancelled", "canceled"}
@@ -219,11 +220,7 @@ def collect(
             batch["provider_errors"] = [
                 {"custom_id": custom, "message": reasons[custom]}
                 if reasons.get(custom)
-                else previous.get(custom)
-                or {
-                    "custom_id": custom,
-                    "message": "This request ended without a successful response.",
-                }
+                else previous.get(custom) or {"custom_id": custom, "message": NO_REASON}
                 for custom, key in batch["custom_ids"].items()
                 if key not in part
             ]

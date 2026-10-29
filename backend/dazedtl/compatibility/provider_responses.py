@@ -81,6 +81,17 @@ def provider_error(detail):
     return f"HTTP {status} - {text}" if text else f"HTTP {status} with no reason given."
 
 
+# What a collected Batch keeps for a request that ended without a result and
+# without a reason from its provider, such as a canceled one.
+NO_REASON = "This request ended without a successful response."
+
+
+def provider_reason(text):
+    """The provider's reason for ending a Batch request without a result, as
+    a run's messages read it (stored_reason); None when it gave none."""
+    return stored_reason(text) if text and text != NO_REASON else None
+
+
 def stored_reason(text):
     """How a Batch request's error, as a fetch stores it (batch_providers: the
     provider's error object, failed response or error-file row as Python

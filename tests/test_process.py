@@ -2087,6 +2087,7 @@ class ProcessTests(unittest.TestCase):
                 _clear_run_batch_queue=point(
                     lambda **_: queue_file.unlink(missing_ok=True)
                 ),
+                batch_failure_reason=point(lambda _error: None),
             )
             batch_evidence.install(native, root, {"mode": "translate"})
             with patch.object(batch_evidence, "preserve") as preserve:
