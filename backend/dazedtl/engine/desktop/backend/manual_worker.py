@@ -54,10 +54,10 @@ def main():
                                speaker_scan=speaker_scan_inputs(plan) if plan["mode"] == "estimate" and plan.get("scan_speakers") else None,
                                scanned_speakers=reusable_speaker_scan(plan),
                                adopted_requests=adoptable_requests(root, plan),
-                               receipts=attempt.get("receipts"))
+                               receipts=attempt.get("receipts"), seconds=attempt.get("seconds"))
         last_progress = [0.0]
         for name in ("log", "progress", "file_error", "file_mismatch", "file_finished", "status", "batch_phase", "estimate_ready",
-                     "speaker_confirmation", "receipt"):
+                     "speaker_confirmation", "seconds"):
             getattr(task, name + "_signal").connect(lambda *args, event=name: emit(event, *args))
         def finished(success, message):
             if task.estimate_summary:

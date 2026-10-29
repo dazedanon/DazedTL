@@ -3336,27 +3336,31 @@ try:
         for path in live_root.glob("launches-*.txt"):
             path.unlink()
         many = [f"Map1{number:02d}.json" for number in range(12)]
-        # The run's TOTAL adds up each file's own total from every worker and
-        # its names passes, starting from the receipts of the run's earlier
-        # attempts; a file read back without usage keeps what the earlier
-        # attempt cost, and one that paid again replaces it.
+        # The run's TOTAL adds what its evidence ledger counted for its files
+        # and names passes to the receipts its earlier attempts saved before
+        # the ledger did, with the seconds every worker's files took; what
+        # the workers report counts no tokens or cost of its own.
+        from util import extensions, translation_task
+
         resumed = TranslationTask(
             live_root,
             ("RPG Maker MV/MZ", (".json",), None),
             runner_script=runner,
-            receipts={
-                "speakers": {"input": 30, "output": 6, "cost": 0.04, "seconds": 1.5},
-                "Map099.json": {"cost": 0.25, "seconds": 1.0},
-                "Map100.json": {"input": 50, "output": 5, "cost": 0.5, "seconds": 2},
-                "Map101.json": {"input": 7, "output": 7, "cost": 7.0, "seconds": 7},
-            },
+            receipts={"Map099.json": {"cost": 0.25, "seconds": 1.0}},
+            seconds={"speakers": 1.5, "Map100.json": 2.0},
         )
         resumed._record_names_receipt(20, 4, 0.06121, 0.54)
-        with patch.dict(os.environ, {"fileThreads": "3"}):
+        ledger = {
+            "Map100.json": {"input": 50, "output": 5, "cost": 0.5},
+            "speakers": {"input": 20, "output": 4, "cost": 0.0625},
+        }
+        with (
+            patch.dict(os.environ, {"fileThreads": "3"}),
+            patch.dict(extensions._layers),
+        ):
+            translation_task.paid_receipts.layer("ledger", lambda *_: ledger)
             total = resumed._run_total(resumed._run_files(many, False))
-        assert total == "TOTAL: [Input: 1266][Output: 26][Cost: $0.9612][10.5s] ✓", (
-            total
-        )
+        assert total == "TOTAL: [Input: 70][Output: 9][Cost: $0.8125][10.5s] ✓", total
         handed = [name for names in worker_files() for name in names]
         assert sorted(handed) == many, handed
         # A run frozen with the run-stop policy ends at an error every later
@@ -3529,17 +3533,13 @@ try:
             return task, result, errors, handed, logged, requests, written
 
         maps = [f"Map00{number}.json" for number in range(1, 5)]
-        from dazedtl.compatibility.process_view import file_receipt
-
         mvmz_runs = (
             ("effort", "1", maps[:2], maps[:1], refused_effort),
             ("effort", "0", maps[:2], maps[:2], None),
             ("model", "1", maps, maps[:3], True),
         )
         # Under the policy the stand-in answers the first request, which the
-        # file pays for before the stop leaves its handler: its receipt keeps
-        # it, read from its log line by the run's records and from its result
-        # by the run's TOTAL.
+        # file pays for before the stop leaves its handler.
         text_runs = (("1", 2), ("0", 2))
         with (
             patch.dict(os.environ, stop_environment),
@@ -3579,18 +3579,10 @@ try:
             assert [name for name, _ in errors] == files, case
             if stopped is None:
                 # The refusal fails each file alone, as when the run was
-                # approved. The stand-in answers the first file's first
-                # request, which that file paid for before it failed: its
-                # receipt keeps it, in the run's records and its TOTAL.
+                # approved, after the stand-in answered the first file's first
+                # request.
                 assert {error for _, error in errors} == {refused_effort}, case
                 assert stop_task.run_stop is None, case
-                paid = stop_task.receipts["Map001.json"]
-                assert (paid["input"], paid["output"]) == (11, 3), paid
-                assert [
-                    receipt
-                    for receipt in (file_receipt(line, files) for line in logged)
-                    if receipt
-                ] == [("Map001.json", paid)], logged
             elif stopped is True:
                 # The two rejections before the stop failed their own files.
                 # They read as the provider's own error, which the run's
@@ -3633,13 +3625,6 @@ try:
                 assert errors == [(name, refused_effort) for name in handed], case
                 assert stop_task.run_stop == refused_effort, case
                 assert written == [], (case, written)
-                paid = stop_task.receipts["Text1.json"]
-                assert (paid["input"], paid["output"]) == (11, 3), paid
-                assert [
-                    receipt
-                    for receipt in (file_receipt(line, texts) for line in logged)
-                    if receipt
-                ] == [("Text1.json", paid)], logged
             else:
                 assert result == "Fail", case
                 assert handed == texts, case
@@ -3648,7 +3633,7 @@ try:
                 assert written == [], (case, written)
         # That worker saves a Batch's files one after another; a file missing
         # a result must not keep the files after it from saving theirs. Each
-        # file reports only its own exact cost, which the run's TOTAL adds up.
+        # file reports only its own exact cost.
         from util import subprocess_runner, translation_task
 
         # A failed worker's error is its closing ERROR line, which the Run log
@@ -3666,7 +3651,7 @@ try:
         )
 
         def consume(name, _estimate):
-            translation._add_paid(5, 2, 0.25)
+            translation._add_priced_cost(0.25)
             if name == "Map001.json":
                 raise translation.BatchResultUnavailableError("Missing.")
             if name == "Map003.json":
@@ -3704,43 +3689,12 @@ try:
         # read "Translation failed" without the error; it fails with it now,
         # still only its own file.
         assert reports[1][1]["error"] == "Map003.json could not be saved: Disk full."
-        # The file that failed keeps the results it paid for on its receipt,
-        # logged as its line and sent with its error for the run's TOTAL.
-        receipt = reports[0][1]["receipt"]
-        assert receipt in reported.getvalue().splitlines(), reported.getvalue()
-        failed = translation_task.file_marker_result(*reports[0])
-        assert failed == ("SUBPROCESS_ERROR", "Missing.", receipt), failed
-        figures = translation_task._result_figures(failed)
-        assert (figures["input"], figures["output"], figures["cost"]) == (5, 2, 0.25)
-
-        # So does a file a module failed in a worker given that one file,
-        # whose exit reports the failure.
-        def failing(_name, _estimate):
-            translation._add_paid(7, 1, 0.5)
-            return "Fail"
-
-        reported = StringIO()
-        with (
-            patch.object(
-                translation_task, "translation_module", lambda _: (0, 0, failing)
-            ),
-            redirect_stdout(reported),
-        ):
-            subprocess_runner.run_handler(temporary, "JSON", "Text1.json", False)
-        marker = next(
-            line
-            for line in reported.getvalue().splitlines()
-            if line.startswith("FILE_RESULT:")
-        )
-        failed = translation_task.file_marker_result(
-            "FILE_RESULT", json.loads(marker.partition(":")[2])
-        )
-        assert failed[0] == "FAILED", reported.getvalue()
-        figures = translation_task._result_figures(failed)
-        assert (figures["input"], figures["output"], figures["cost"]) == (7, 1, 0.5)
-        assert reported.getvalue().splitlines()[-1] == "RESULT:Fail"
-        # A module that caught the run's stop still ends it, and what its file
-        # cost before the stop reaches the run's receipts.
+        assert translation_task.file_marker_result(*reports[0]) == (
+            "SUBPROCESS_ERROR",
+            "Missing.",
+        ), reports
+        # A module that caught the run's stop still ends it, with the TOTAL
+        # its file reported.
         spent = "TOTAL: [Input: 5][Output: 2][Cost: $0.0100][0.5s] ✓"
 
         def caught(_name, _estimate):
@@ -3870,7 +3824,11 @@ try:
         from dazedtl.compatibility.batch_evidence import (
             install as retain_batch_evidence,
         )
-        from dazedtl.compatibility.process_view import payload, request_view
+        from dazedtl.compatibility.process_view import (
+            paid_receipts,
+            payload,
+            request_view,
+        )
         from dazedtl.compatibility.request_parameters import batch_routing
         from dazedtl.compatibility.request_scope import identities
         from dazedtl.compatibility.run_evidence import Evidence
@@ -4153,6 +4111,21 @@ try:
             }
             assert batch_rows[1]["error"]["code"] == "validation_failed", batch_rows[1]
             assert len(sent_batches) == 2
+            # The run's receipts counted each result at every read: the
+            # failing reply, never saved for reuse, read again by the file
+            # sharing it and by a retry. Its ledger counts each result once,
+            # under the file that read it first, at the policy's rates.
+            translation.translateAI(["回復", "毒"], [], config, filename="Items.json")
+            paid = paid_receipts(router_root)
+            assert set(paid) == {"Items.json"}, paid
+            assert (paid["Items.json"]["input"], paid["Items.json"]["output"]) == (
+                20,
+                8,
+            ), paid
+            assert (
+                abs(paid["Items.json"]["cost"] - 2 * (8 * 0.8 + 2 * 0.2 + 4 * 3) / 1e6)
+                < 1e-12
+            ), paid
             # A miss tells a request the Batch never sent from one it sent
             # without a result, as a canceled Batch leaves; neither goes Live.
             for source, results, cause in (
@@ -4195,6 +4168,45 @@ try:
                 else:
                     raise AssertionError("No Batch result for the ended request.")
             assert len(sent_batches) == 2
+            # A call that reads a result and then misses the next keeps the
+            # one it read, which its file's receipt left out, as a retry reads
+            # it again for nothing.
+            earlier = paid_receipts(router_root)["Items.json"]
+            reads = []
+
+            def then_missing(payload, language, cache_context=None, context=None):
+                reads.append(payload)
+                if len(reads) > 1:
+                    return None
+                result = {
+                    "text": json.dumps({"Line1": "", "Line2": ""}),
+                    "prompt_tokens": 10,
+                    "completion_tokens": 4,
+                }
+                key = translation.get_cache_key(
+                    payload, language, cache_context, context
+                )
+                translation._batch_results[key] = result
+                return result
+
+            with (
+                patch.object(translation, "take_batch_result", then_missing),
+                patch.dict(translation._batch_results),
+            ):
+                try:
+                    translation.translateAI(
+                        ["剣", "盾", "杖"], [], config, filename="Items.json"
+                    )
+                except translation.BatchResultUnavailableError:
+                    pass
+                else:
+                    raise AssertionError("The second Batch result was read.")
+            paid = paid_receipts(router_root)["Items.json"]
+            assert len(reads) == 2, reads
+            assert (
+                paid["input"] - earlier["input"],
+                paid["output"] - earlier["output"],
+            ) == (10, 4), (earlier, paid)
             translation.set_batch_phase(None)
             # The run's new speaker names go out Live before any Batch phase;
             # OpenRouter's Live route refuses the Batch endpoint pin.
@@ -4250,6 +4262,7 @@ try:
             finally:
                 provider.client.close()
         from dazedtl.compatibility.process_view import (
+            file_receipts,
             payload,
             request_view,
             source_values,
@@ -4368,6 +4381,7 @@ try:
         )
         evidence.install(translation)
         configure_builders(translation, GENERATION_PARAMETERS, evidence.record)
+        priced = translation.priced_cost()
         with (
             patch.dict(
                 os.environ,
@@ -4394,6 +4408,15 @@ try:
             )
         assert output == ["Potion", "毒", "Heal"], output
         assert tokens == [20, 8], tokens
+        # Stop ended a worker before it reported what its file had paid for,
+        # which its receipt then lacked. The run's records read the ledger,
+        # which counted each response as it arrived, the rejected ones too,
+        # under the file it answered.
+        stopped = {"mode": "translate", "status": "stopped", "files": ["Map001.json"]}
+        paid = file_receipts(live_root, stopped)["Map001.json"]
+        assert (paid["input"], paid["output"], paid["seconds"]) == (20, 8, 0), paid
+        assert abs(paid["cost"] - (translation.priced_cost() - priced)) < 1e-12, paid
+        assert paid["cost"] > 0, paid
         # Collection runs before the Batch cost review; text it cannot queue
         # stops it instead of becoming a Live request.
         with (
