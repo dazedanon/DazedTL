@@ -17,7 +17,8 @@ from tqdm import tqdm
 from util.languages import source_pattern
 from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost, found_mismatch, run_stop_errors
 from util.translation_task import fail_on_parser_error, module_receipt, write_output
-from util.speakers import find_speaker, strip_speaker_prefix, to_prefixed
+from util.sent_lines import SentLines
+from util.speakers import find_speaker
 from util.game_encoding import check_line, writable
 
 # OpenAI initialization centralized in util/translation.py
@@ -180,46 +181,33 @@ def checkLine(data, i, filename):
         check_line(data, i, "shift_jis", filename)
 
 
-# A speaker: a text line of its own ending in "：", the name before it, saying
-# the run of text lines after it. A "：" inside a line is the line's own text.
+def isText(line):
+    """Whether *line* is a line of text: not blank, a "//" comment or choice,
+    or an "@" command."""
+    return "/" not in line and "@" not in line and line != "\n"
+
+
+# A speaker: the first line of a message, of its own and ending in "：", the
+# name before it, as WOLF writes a message's nameplate (Name：, then the
+# message). A message is a run of text lines, so it starts at the file's
+# start or after a blank line, a "//" line or an "@" command; any later line
+# of the run, "：" or not, is the message's text.
 SPEAKER = r"^([^/@\n]+)：\s*$"
 
 
-def isText(line):
-    """Whether *line* is a line of text: not blank, a "//" comment or choice,
-    an "@" command or a speaker, which starts the next run."""
-    return "/" not in line and "@" not in line and line != "\n" and find_speaker(SPEAKER, line) is None
-
-
 def translateWOLF(data, pbar, filename):
-    """Translates speakers and choices on the spot and gathers the lines,
-    each run of consecutive text lines as one, then replaces each run with
-    its translation. The runs are kept by position, so a translated speaker
-    holding the parser's own marks, such as "/", cannot move a translation
-    to another run."""
-    stringList = []
-    groups = []  # Each run in stringList: [start, end) in data and its speaker
-    currentGroup = []
+    """Translates speakers and choices on the spot and sends each message,
+    a run of consecutive text lines, as one line (util/sent_lines), then
+    writes each translation over its run. The runs are kept by position, so
+    a translated speaker holding the parser's own marks, such as "/", cannot
+    move a translation to another run."""
+    lines = SentLines()
     tokens = [0, 0]
     global LOCK, ESTIMATE, PBAR
     PBAR = pbar
     i = 0
 
     while i < len(data):
-        # Speaker (util/speakers)
-        speaker = ""
-        found = find_speaker(SPEAKER, data[i])
-        if found:
-            response = getSpeaker(found.name)
-            speaker = response[0]
-            tokens[0] += response[1][0]
-            tokens[1] += response[1][1]
-            data[i] = found.written(speaker)
-            checkLine(data, i, filename)
-            i += 1
-            if i == len(data):
-                break
-
         # Options, up to the "の場合" line that starts the first one's branch
         if "//選択肢" in data[i]:
             i += 1
@@ -246,59 +234,67 @@ def translateWOLF(data, pbar, filename):
                 with LOCK:
                     found_mismatch(MISMATCH, filename)
 
-        # Lines: the line that ends the run, such as a choice, is read next
-        if i < len(data) and isText(data[i]):
-            # Grab Consecutive Strings
-            groupStart = i
-            currentGroup.append(data[i])
-            i += 1
-            while i < len(data) and isText(data[i]):
-                currentGroup.append(data[i])
+            # The line that ends the options, such as a message, is read next
+            continue
+
+        # A message, its speaker first if it names one
+        if isText(data[i]):
+            speaker = ""
+            found = find_speaker(SPEAKER, data[i])
+            if found:
+                response = getSpeaker(found.name)
+                speaker = response[0]
+                tokens[0] += response[1][0]
+                tokens[1] += response[1][1]
+                data[i] = found.written(speaker)
+                checkLine(data, i, filename)
                 i += 1
-            groups.append((groupStart, i, speaker))
 
-            # Join up 401 groups for better translation.
-            jaString = "".join(currentGroup)
-            currentGroup = []
+            # Its lines, joined up for better translation and without textwrap
+            start = i
+            while i < len(data) and isText(data[i]):
+                i += 1
+            jaString = "".join(data[start:i]).replace("\n", " ")
+            lines.send(jaString, _run_writer(data, start, i, filename), speaker)
 
-            # Remove any textwrap
-            jaString = jaString.replace("\n", " ")
-
-            # Add String
-            stringList.append(to_prefixed(speaker, jaString))
-
-        # Nothing relevant: skip the line, unless it is a speaker, read next
-        elif i < len(data) and find_speaker(SPEAKER, data[i]) is None:
+        # Nothing relevant. Skip Line.
+        else:
             i += 1
 
     # EOF
-    if len(stringList) > 0:
+    if len(lines) > 0:
         # Set Progress
-        pbar.total = len(stringList)
+        pbar.total = len(lines)
         pbar.refresh()
 
         # Translate
-        response = translateAI(stringList, "")
+        response = translateAI(lines.lines, "")
         tokens[0] += response[1][0]
         tokens[1] += response[1][1]
         translatedList = response[0]
 
-        # Set Strings: each run becomes one line, so later runs move up
-        if len(stringList) == len(translatedList):
-            removed = 0
-            for (groupStart, groupEnd, speaker), translatedText in zip(groups, translatedList):
-                translatedText = strip_speaker_prefix(translatedText, speaker)
-                translatedText = dazedwrap.wrapText(translatedText, width=WIDTH)
-                index = groupStart - removed
-                data[index : groupEnd - removed] = [f"{translatedText}\n"]
-                checkLine(data, index, filename)
-                removed += groupEnd - groupStart - 1
+        # Set Strings
+        if len(lines) == len(translatedList):
+            lines.write(translatedList)
 
         # Mismatch
         else:
             with LOCK:
                 found_mismatch(MISMATCH, filename)
     return tokens
+
+
+def _run_writer(data, start, end, filename):
+    """Writes the translation of the run of lines *start* to *end* as its one
+    line. The run's other lines are emptied, not removed, so the runs after
+    it keep their places."""
+
+    def write(translatedText):
+        translatedText = dazedwrap.wrapText(translatedText, width=WIDTH)
+        data[start:end] = [f"{translatedText}\n"] + [""] * (end - start - 1)
+        checkLine(data, start, filename)
+
+    return write
 
 
 # Save some money and enter the character before translation

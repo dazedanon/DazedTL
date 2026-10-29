@@ -15,7 +15,8 @@ from tqdm import tqdm
 from util.languages import source_pattern
 from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost, getPricingConfig, calculateCost, found_mismatch, run_stop_errors
 from util.translation_task import fail_on_parser_error, module_receipt, write_output
-from util.speakers import strip_echoed_speaker, to_prefixed, translate_speaker
+from util.sent_lines import SentLines
+from util.speakers import strip_echoed_speaker, translate_speaker
 
 # Globals
 MODEL = os.getenv("model")
@@ -147,9 +148,9 @@ def parseJSON(data, filename):
                 elif data and all(isinstance(v, dict) and "src" in v for v in data.values()):
                     result = translateDialogueSrcTl(data, filename)
                 else:
-                    result = translateJSON(data, filename, [])
+                    result = translateJSON(data, filename)
             else:
-                result = translateJSON(data, filename, [])
+                result = translateJSON(data, filename)
             totalTokens[0] += result[0]
             totalTokens[1] += result[1]
         except run_stop_errors():
@@ -745,10 +746,9 @@ def translateDialogueSrcTl(data, filename):
     """
     global LOCK, ESTIMATE, FILENAME, PBAR, MISMATCH
     tokens = [0, 0]
-    srcList = []
-    keyList = []   # list of (key, entry_type)
+    lines = SentLines(unlabel=_unlabel)
 
-    # Collect all entries with translatable content
+    # Send each entry with translatable content (util/sent_lines)
     for key, entry in data.items():
         if not isinstance(entry, dict):
             continue
@@ -756,42 +756,31 @@ def translateDialogueSrcTl(data, filename):
         if not src:
             continue
         tl = entry.get("tl", "")
-        entry_type = entry.get("type", "")
-        speaker = entry.get("speaker", "")
 
         if tl:
             # Already has a translation — send tl so the module can decide to skip it
-            srcList.append(tl)
+            lines.send(tl, _field_writer(entry, "tl"))
         else:
             if not re.search(LANGREGEX, src):
                 continue
             srcClean = src.replace("\r\n", " ").replace("\n", " ").strip()
-            srcList.append(to_prefixed(speaker, srcClean))
-        keyList.append((key, entry_type, "" if tl else speaker))
+            lines.send(srcClean, _field_writer(entry, "tl"), entry.get("speaker", ""))
 
-    if srcList:
-        PBAR.total = len(srcList)
+    if len(lines) > 0:
+        PBAR.total = len(lines)
         PBAR.refresh()
 
-        response = translateAI(srcList, "Reply with the English Translation")
+        response = translateAI(lines.lines, "Reply with the English Translation")
         tokens[0] += response[1][0]
         tokens[1] += response[1][1]
         translatedList = response[0]
 
-        if len(srcList) != len(translatedList):
+        if len(lines) != len(translatedList):
             with LOCK:
                 found_mismatch(MISMATCH, FILENAME)
 
-        for i, (key, entry_type, speaker) in enumerate(keyList):
-            if i >= len(translatedList):
-                break
-            translatedText = translatedList[i]
-
-            # Strip speaker prefix if the AI echoed it back
-            # Handles: [Speaker]: text  |  Speaker: text  |  Speaker(text) / CJK(text)
-            translatedText = strip_echoed_speaker(translatedText, LANGUAGE, speaker)
-
-            data[key]["tl"] = translatedText
+        # A short reply list still answers the entries it reaches
+        lines.write(translatedList)
 
     # Translate any Japanese speaker names found in the data
     seen_speakers = {}
@@ -811,332 +800,140 @@ def translateDialogueSrcTl(data, filename):
     return tokens
 
 
-def translateJSON(data, filename, translatedList):
+# The event list format's fields, each sent as its own list with this history
+EVENT_FIELDS = (
+    ("title", "Event Title"),
+    ("process", "Event Process"),
+    ("text", "Event Description"),
+    ("key", "Event Key"),
+    ("target", "Character Name"),
+    ("job", "Job/Occupation"),
+    ("place", "Location Name"),
+)
+
+
+def translateJSON(data, filename):
+    """Translates a list of entries: the event list format's fields, and the
+    dialogue list format's messages with the speaker each entry names. Walks
+    the entries once, translating speakers on the spot and sending each
+    field and message with the place its reply goes (util/sent_lines), then
+    writes each reply there."""
     global LOCK, ESTIMATE, FILENAME, PBAR, MISMATCH
-    if translatedList:
-        stringList = translatedList[0]
-        eventList = translatedList[1]
-    else:
-        stringList = []
-        eventList = [[], [], [], [], [], [], []]  # [title, process, text, key, target, job, place]
     tokens = [0, 0]
-    i = 0
-    stringListTL = []
-    eventListTL = [[], [], [], [], [], [], []]
+    speakerKey = "character_nameText"
+    messageKey = "m_text"
+    events = {field: SentLines(unlabel=None) for field, _history in EVENT_FIELDS}
+    dialogue = SentLines(unlabel=_unlabel)
 
-    while i < len(data):
-        speakerKey = "character_nameText"
-        messageKey = "m_text"
+    for i in range(len(data)):
+        entry = data[i]
 
-        # Event List Format - Key
-        if "key" in data[i] and data[i]["key"]:
-            jaString = data[i]["key"]
-            
-            # Pass 1
-            if not translatedList:
-                eventList[3].append(jaString.strip())
-            
-            # Pass 2
-            else:
-                if eventList[3]:
-                    translatedText = eventList[3][0]
-                    eventList[3].pop(0)
-                    
-                    # Set Data
-                    data[i]["key"] = translatedText
+        # Event List Format
+        for field, _history in EVENT_FIELDS:
+            if field in entry and entry[field]:
+                jaString = entry[field]
+                if field == "text":
+                    # Replace \n with space for translation
+                    jaString = jaString.replace("\n", " ")
+                events[field].send(jaString.strip(), _field_writer(entry, field))
 
-        # Event List Format - Title
-        if "title" in data[i] and data[i]["title"]:
-            jaString = data[i]["title"]
-            
-            # Pass 1
-            if not translatedList:
-                eventList[0].append(jaString.strip())
-            
-            # Pass 2
-            else:
-                if eventList[0]:
-                    translatedText = eventList[0][0]
-                    eventList[0].pop(0)
-                    
-                    # Set Data
-                    data[i]["title"] = translatedText
-
-        # Event List Format - Target
-        if "target" in data[i] and data[i]["target"]:
-            jaString = data[i]["target"]
-            
-            # Pass 1
-            if not translatedList:
-                eventList[4].append(jaString.strip())
-            
-            # Pass 2
-            else:
-                if eventList[4]:
-                    translatedText = eventList[4][0]
-                    eventList[4].pop(0)
-                    
-                    # Set Data
-                    data[i]["target"] = translatedText
-
-        # Event List Format - Job
-        if "job" in data[i] and data[i]["job"]:
-            jaString = data[i]["job"]
-            
-            # Pass 1
-            if not translatedList:
-                eventList[5].append(jaString.strip())
-            
-            # Pass 2
-            else:
-                if eventList[5]:
-                    translatedText = eventList[5][0]
-                    eventList[5].pop(0)
-                    
-                    # Set Data
-                    data[i]["job"] = translatedText
-
-        # Event List Format - Place
-        if "place" in data[i] and data[i]["place"]:
-            jaString = data[i]["place"]
-            
-            # Pass 1
-            if not translatedList:
-                eventList[6].append(jaString.strip())
-            
-            # Pass 2
-            else:
-                if eventList[6]:
-                    translatedText = eventList[6][0]
-                    eventList[6].pop(0)
-                    
-                    # Set Data
-                    data[i]["place"] = translatedText
-
-        # Event List Format - Process
-        if "process" in data[i] and data[i]["process"]:
-            jaString = data[i]["process"]
-            
-            # Pass 1
-            if not translatedList:
-                eventList[1].append(jaString.strip())
-            
-            # Pass 2
-            else:
-                if eventList[1]:
-                    translatedText = eventList[1][0]
-                    eventList[1].pop(0)
-                    
-                    # Set Data
-                    data[i]["process"] = translatedText
-
-        # Event List Format - Text
-        if "text" in data[i] and data[i]["text"]:
-            jaString = data[i]["text"]
-            # Pass 1
-            if not translatedList:
-                # Replace \n with space for translation
-                jaStringClean = jaString.replace("\n", " ")
-                eventList[2].append(jaStringClean.strip())
-            
-            # Pass 2
-            else:
-                if eventList[2]:
-                    translatedText = eventList[2][0]
-                    eventList[2].pop(0)
-                    
-                    # Apply text wrapping and restore linebreaks
-                    translatedText = dazedwrap.wrapText(translatedText, 70)
-                    
-                    # Set Data
-                    data[i]["text"] = translatedText
-
-        # Speaker: the entry's own, so an entry without one has none
+        # Speaker: the entry's own, so an entry without one has none, as
+        # speakers come only from the game's own nameplates
         speaker = ""
-        if speakerKey in data[i] and data[i][speakerKey]:
+        if speakerKey in entry and entry[speakerKey]:
             # Grab and TL
-            speaker = data[i][speakerKey]
-            response = getSpeaker(speaker)
+            response = getSpeaker(entry[speakerKey])
             speaker = response[0]
             tokens[0] += response[1][0]
             tokens[1] += response[1][1]
 
             # Set Speaker
-            data[i][speakerKey] = speaker
+            entry[speakerKey] = speaker
 
-        # Dialogue
-        if messageKey in data[i]\
-            and data[i][messageKey].strip()\
-            and data[i][messageKey] != "a"\
-            and data[i][messageKey].replace("\u3000", "").strip() != "":
-            jaString = data[i][messageKey]
+        # Dialogue, unless it holds no Japanese
+        if messageKey in entry\
+            and entry[messageKey].strip()\
+            and entry[messageKey] != "a"\
+            and entry[messageKey].replace("\u3000", "").strip() != ""\
+            and re.search(LANGREGEX, entry[messageKey]):
+            dialogue.send(entry[messageKey].strip(), _message_writer(entry, messageKey), speaker)
 
-            # Save Original String
-            originalString = jaString
+    # EOF
+    lists = [(events[field], history) for field, history in EVENT_FIELDS]
+    lists.append((dialogue, "Reply with the English Translation"))
+    totalItems = sum(len(lines) for lines, _history in lists)
+    if totalItems > 0:
+        PBAR.total = totalItems
+        PBAR.refresh()
+    replies = [
+        (lines, _translate(lines, history, tokens)) for lines, history in lists if lines
+    ]
 
-            # If there isn't any Japanese in the text just skip
-            if not re.search(LANGREGEX, jaString):
-                i += 1
-                continue
-
-            # Pass 1
-            if not translatedList:
-                # Strip Spaces
-                jaString = jaString.strip()
-
-                # Remove Textwrap
-                # jaString = jaString.replace('\n', ' ')
-
-                if jaString:
-                    stringList.append(to_prefixed(speaker, jaString))
-
-            # Pass 2
-            else:
-                # Get Text
-                if stringList:
-                    # Grab and Pop
-                    translatedText = stringList[0]
-                    stringList.pop(0)
-
-                    # Set to None if empty list
-                    if len(stringList) <= 0:
-                        stringList = None
-
-                    # Remove speaker prefix — handles [Name]: / Name: / CJK(text)
-                    translatedText = strip_echoed_speaker(translatedText, LANGUAGE, speaker)
-
-                    # Escape Quotes
-                    translatedText = re.sub(r'(?<!\\)"', r"", translatedText)
-
-                    # Remove characters that may break scripts
-                    # translatedText = translatedText.replace("<", "(")
-                    # translatedText = translatedText.replace(">", ")")
-                    translatedText = translatedText.replace("『", "")
-                    translatedText = translatedText.replace("』", "")
-
-                    # Remove GPT ' Quotes
-                    if translatedText:
-                        if translatedText[0] == "'":
-                            translatedText = translatedText[1:]
-                        if translatedText[-1] == "'":
-                            translatedText = translatedText[:-1]
-                    else:
-                        print("Warning: Empty Translation for", originalString)
-
-                    # Textwrap
-                    # translatedText = dazedwrap.wrapText(translatedText, width=WIDTH)  
-                    
-                    # Set Data
-                    if "『" in data[i][messageKey] and "』" not in translatedText:
-                        data[i][messageKey] = data[i][messageKey].replace(originalString, f"『{translatedText}』")
-                    else:
-                        data[i][messageKey] = data[i][messageKey].replace(originalString, f"{translatedText}")
-
-        # Next Value
-        i += 1       
-
-    # EOF - Only do translation if this is Pass 1 (collecting strings)
-    if not translatedList:
-        # Event List
-        if any(eventList):
-            PBAR.total = sum(len(event) for event in eventList)
-            PBAR.refresh()
-            
-            # Event Title
-            if eventList[0]:
-                response = translateAI(eventList[0], "Event Title")
-                tokens[0] += response[1][0]
-                tokens[1] += response[1][1]
-                eventListTL[0] = response[0]
-                
-                if len(eventList[0]) != len(eventListTL[0]):
-                    with LOCK:
-                        found_mismatch(MISMATCH, FILENAME)
-
-            # Event Process
-            if eventList[1]:
-                response = translateAI(eventList[1], "Event Process")
-                tokens[0] += response[1][0]
-                tokens[1] += response[1][1]
-                eventListTL[1] = response[0]
-                
-                if len(eventList[1]) != len(eventListTL[1]):
-                    with LOCK:
-                        found_mismatch(MISMATCH, FILENAME)
-
-            # Event Text
-            if eventList[2]:
-                response = translateAI(eventList[2], "Event Description")
-                tokens[0] += response[1][0]
-                tokens[1] += response[1][1]
-                eventListTL[2] = response[0]
-                
-                if len(eventList[2]) != len(eventListTL[2]):
-                    with LOCK:
-                        found_mismatch(MISMATCH, FILENAME)
-
-            # Event Key
-            if eventList[3]:
-                response = translateAI(eventList[3], "Event Key")
-                tokens[0] += response[1][0]
-                tokens[1] += response[1][1]
-                eventListTL[3] = response[0]
-                
-                if len(eventList[3]) != len(eventListTL[3]):
-                    with LOCK:
-                        found_mismatch(MISMATCH, FILENAME)
-
-            # Event Target
-            if eventList[4]:
-                response = translateAI(eventList[4], "Character Name")
-                tokens[0] += response[1][0]
-                tokens[1] += response[1][1]
-                eventListTL[4] = response[0]
-                
-                if len(eventList[4]) != len(eventListTL[4]):
-                    with LOCK:
-                        found_mismatch(MISMATCH, FILENAME)
-
-            # Event Job
-            if eventList[5]:
-                response = translateAI(eventList[5], "Job/Occupation")
-                tokens[0] += response[1][0]
-                tokens[1] += response[1][1]
-                eventListTL[5] = response[0]
-                
-                if len(eventList[5]) != len(eventListTL[5]):
-                    with LOCK:
-                        found_mismatch(MISMATCH, FILENAME)
-
-            # Event Place
-            if eventList[6]:
-                response = translateAI(eventList[6], "Location Name")
-                tokens[0] += response[1][0]
-                tokens[1] += response[1][1]
-                eventListTL[6] = response[0]
-                
-                if len(eventList[6]) != len(eventListTL[6]):
-                    with LOCK:
-                        found_mismatch(MISMATCH, FILENAME)
-
-        # String List
-        if stringList:
-            PBAR.total = len(stringList)
-            PBAR.refresh()
-            response = translateAI(stringList, "Reply with the English Translation")
-            tokens[0] += response[1][0]
-            tokens[1] += response[1][1]
-            stringListTL = response[0]
-
-            if len(stringList) != len(stringListTL):
-                # Mismatch
-                with LOCK:
-                    found_mismatch(MISMATCH, FILENAME)
-
-        # Pass 2: Set Strings (recursive call)
-        translateJSON(data, filename, [stringListTL, eventListTL])
-    
+    # A short reply list still answers the entries it reaches
+    for lines, translated in replies:
+        lines.write(translated)
     return tokens
+
+
+def _translate(lines, history, tokens):
+    """The replies to *lines*, sent as one list with *history*; adds the
+    request's tokens to *tokens* and reports a reply list of another length."""
+    response = translateAI(lines.lines, history)
+    tokens[0] += response[1][0]
+    tokens[1] += response[1][1]
+    if len(lines) != len(response[0]):
+        with LOCK:
+            found_mismatch(MISMATCH, FILENAME)
+    return response[0]
+
+
+def _unlabel(translatedText, speaker):
+    """A dialogue reply without the speaker it was sent with, or one the model
+    echoed: [Name]: / Name: / CJK(text) (util/speakers)."""
+    return strip_echoed_speaker(translatedText, LANGUAGE, speaker)
+
+
+def _field_writer(entry, field):
+    """Writes a reply to *entry*'s *field*, an event description wrapped."""
+
+    def write(translatedText):
+        if field == "text":
+            # Apply text wrapping and restore linebreaks
+            translatedText = dazedwrap.wrapText(translatedText, 70)
+        entry[field] = translatedText
+
+    return write
+
+
+def _message_writer(entry, messageKey):
+    """Writes a dialogue reply over *entry*'s message."""
+    originalString = entry[messageKey]
+
+    def write(translatedText):
+        # Escape Quotes
+        translatedText = re.sub(r'(?<!\\)"', r"", translatedText)
+
+        # Remove characters that may break scripts
+        translatedText = translatedText.replace("『", "")
+        translatedText = translatedText.replace("』", "")
+
+        # Remove GPT ' Quotes
+        if translatedText:
+            if translatedText[0] == "'":
+                translatedText = translatedText[1:]
+            if translatedText[-1] == "'":
+                translatedText = translatedText[:-1]
+        else:
+            print("Warning: Empty Translation for", originalString)
+
+        # Set Data
+        if "『" in entry[messageKey] and "』" not in translatedText:
+            entry[messageKey] = entry[messageKey].replace(originalString, f"『{translatedText}』")
+        else:
+            entry[messageKey] = entry[messageKey].replace(originalString, f"{translatedText}")
+
+    return write
+
 
 # Save some money and enter the character before translation
 def getSpeaker(speaker):

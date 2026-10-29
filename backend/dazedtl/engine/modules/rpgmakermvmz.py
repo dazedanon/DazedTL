@@ -34,10 +34,10 @@ from util.translation import (
     speaker_source_lookup_keys,
     split_vocab_source_aliases,
     translateAI as sharedtranslateAI,
-    found_mismatch,
+    reply_to_write,
     report_mismatch,
 )
-from util.translation_task import OutputNotSaved, fail_on_parser_error, module_receipt
+from util.translation_task import OutputNotSaved, fail_on_parser_error, module_receipt, write_output
 from util.vocab import (
     character_priority,
     fold_glossary_sections,
@@ -50,6 +50,7 @@ from util.speakers import (
     inline_speaker,
     speaker_translated,
     strip_speaker_prefix,
+    to_prefixed,
 )
 from util import actor_names, battle_users, custom_patterns, extensions, rpgmaker_qa_lint, word_spacing
 from util.request_packing import SHARED_LINES
@@ -711,10 +712,10 @@ def _batch_collecting() -> bool:
 
 @extensions.point
 def saveProgress(data, filename, *, force=False):
-    """Atomically write current data to translated/filename to avoid progress loss.
-    Intermediate checkpoints are throttled and best-effort; a forced final
-    save always writes, and one that fails raises OutputNotSaved, which fails
-    the file with its error.
+    """Write current data to translated/filename, whole (write_output), to
+    avoid progress loss. Intermediate checkpoints are throttled and
+    best-effort; a forced final save always writes, and one that fails raises
+    OutputNotSaved, which fails the file with its error.
     """
     try:
         # Also skip progress saves during speaker-parse mode
@@ -730,58 +731,15 @@ def saveProgress(data, filename, *, force=False):
         ):
             return False
 
-        os.makedirs("translated", exist_ok=True)
-        # Use a unique temp file name to avoid collisions across threads/processes
-        tmp_path = os.path.join(
-            "translated",
-            f"{filename}.{os.getpid()}.{threading.get_ident()}.tmp",
-        )
-        final_path = os.path.join("translated", filename)
-        with open(tmp_path, "w", encoding="utf-8", newline="\n") as outFile:
-            # json.dumps uses the C encoder; json.dump encodes in Python,
-            # many times slower on a large map.
-            outFile.write(json.dumps(data, ensure_ascii=False, indent=4))
-            outFile.flush()
-            try:
-                os.fsync(outFile.fileno())
-            except Exception:
-                # fsync may not be available on some platforms; ignore best-effort
-                pass
-
-        # Replace atomically when possible, with retries to mitigate transient locks on Windows
-        attempts = 6
-        delay = 0.1
-        last_err = None
-        for attempt in range(attempts):
-            try:
-                system.replace(tmp_path, final_path)
-                last_err = None
-                break
-            except PermissionError as e:
-                last_err = e
-                # Try to relax permissions on target if it exists, then back off
-                try:
-                    if os.path.exists(final_path):
-                        os.chmod(final_path, 0o666)
-                except Exception:
-                    pass
-                time.sleep(delay)
-                delay = min(1.0, delay * 2)
-            except Exception as e:
-                last_err = e
-                break
-        if last_err is not None:
-            # Fallback: try move via shutil (not guaranteed atomic), then raise on failure
-            try:
-                shutil.move(tmp_path, final_path)
-            except Exception:
-                # Ensure tmp is cleaned up if move failed
-                system.unlink(tmp_path, ignore_errors=True)
-                raise last_err
+        # json.dumps uses the C encoder; json.dump encodes in Python, many
+        # times slower on a large map.
+        write_output(filename, json.dumps(data, ensure_ascii=False, indent=4), newline="\n")
         THREAD_CTX.last_progress_save_at = now
         return True
     except Exception as error:
         if force:
+            if isinstance(error, OutputNotSaved):
+                raise
             raise OutputNotSaved(filename, error) from error
         # Best-effort; don't crash the translation if saving fails
         traceback.print_exc()
@@ -1561,12 +1519,20 @@ def _translate_choices(job, history):
     return translateAI(job["choices"], ctx("events.choice"))
 
 
-def _apply_choices(cmd, job, translated, filename):
-    """Writes a menu's translations back with their condition clauses."""
-    if len(translated) != len(job["choices"]):
-        found_mismatch(MISMATCH, filename)
-        return
-    for idx, translatedText in enumerate(translated):
+def _next_reply(replies):
+    """Pass 2's next translation from a list's *replies* (reply_to_write),
+    or None for none to write: the list's reply had the wrong length, so
+    pass 2 got none, or this line was left untranslated."""
+    return replies.pop(0) if replies else None
+
+
+def _apply_choices(cmd, job, translated):
+    """Writes what reply_to_write kept of a menu's reply back with its
+    condition clauses: nothing of a reply of the wrong length (None), and a
+    choice left untranslated (None) keeps its source."""
+    for idx, translatedText in enumerate(translated or []):
+        if translatedText is None:
+            continue
         originalIndex = job["indexes"][idx]
 
         # Apply formatting
@@ -3792,37 +3758,18 @@ def _page_lines(list401, choices):
     return lines, menus
 
 
-def _menus_written(translated, list401, choices, filename):
-    """Writes a page's menus from a reply in _page_lines order and returns
-    its dialogue's translations, for pass 2."""
+def _menus_written(translated, list401, choices):
+    """Writes a page's menus from what reply_to_write kept of a reply in
+    _page_lines order and returns its dialogue's, for pass 2."""
     dialogue, cursor, taken = [], 0, 0
     for cmd, job, _history, position in choices:
         dialogue += translated[cursor : cursor + position - taken]
         cursor += position - taken
         taken = position
         count = len(job["choices"])
-        _apply_choices(cmd, job, translated[cursor : cursor + count], filename)
+        _apply_choices(cmd, job, translated[cursor : cursor + count])
         cursor += count
     return dialogue + translated[cursor:]
-
-
-def _reply_fits(translated, lines, filenames):
-    """A reply has one line per line sent and no chunk failed; otherwise the
-    files are marked, and nothing of it is written so it can be retried."""
-    if len(translated) == len(lines) and not getattr(
-        THREAD_CTX, "last_translation_had_mismatch", False
-    ):
-        return True
-    with LOCK:
-        for filename in filenames:
-            if filename not in MISMATCH:
-                MISMATCH.append(filename)
-        # translateAI reported a chunk it kept in its source text itself; a
-        # reply of the wrong length is one mismatch, however many pages of
-        # the file it held.
-        if len(translated) != len(lines):
-            report_mismatch(filenames[0])
-    return False
 
 
 class _PagePacker:
@@ -3882,17 +3829,18 @@ class _PagePacker:
             {"instructions": [PACKED_PAGES + "\n" + "\n".join(notes)], "source_items": []},
         )
         tokens = [response[1][0], response[1][1]]
-        fits = _reply_fits(response[0], lines, [job["filename"] for job in jobs])
+        reply = reply_to_write(
+            response[0], lines, MISMATCH, LOCK, *[job["filename"] for job in jobs]
+        )
         position = 0
         for job, page in zip(jobs, pages):
             list401TL = (
                 _menus_written(
-                    response[0][position : position + len(page)],
+                    reply[position : position + len(page)],
                     job["list401"],
                     job["choices"],
-                    job["filename"],
                 )
-                if fits
+                if reply is not None
                 else []
             )
             position += len(page)
@@ -4436,8 +4384,9 @@ def _searchCodes(page, pbar, jobList, filename):
                             # Pass 1 sent nothing, so no reply is this text's.
                             speaker = ""
                             nametag = ""
-                        elif len(list401) > 0 and rpgmaker_blocks.untranslated(list401[0], sent):
-                            # Its rows stay as the game has them.
+                        elif len(list401) > 0 and list401[0] is None:
+                            # Left untranslated (reply_to_write), its rows
+                            # stay as the game has them.
                             syncIndex = i + 1
                             reduceWidthFlag = False
                             speaker = ""
@@ -4449,8 +4398,8 @@ def _searchCodes(page, pbar, jobList, filename):
                             rawSource = _group_raw_text(codeList, groupStart, sourceGroup)
                             translatedText = list401[0]
 
-                            # Remove speaker prefix if present
-                            translatedText = strip_speaker_prefix(translatedText)
+                            # Remove the speaker label it was sent with
+                            translatedText = strip_speaker_prefix(translatedText, speaker)
 
                             # Its full stops and spacing, as both methods
                             # write a message (util/rpgmaker_blocks).
@@ -4606,11 +4555,10 @@ def _searchCodes(page, pbar, jobList, filename):
 
                     # Pass 2
                     else:
-                        if len(list122) > 0:
+                        if (translatedText := _next_reply(list122)) is not None:
                             rawInner = innerSource
                             hadSemicolon = ';' in jaString
                             # Grab and Replace
-                            translatedText = list122[0]
                             translatedText = jaString.replace(jaString, translatedText)
 
                             # Set, keeping running only the interpolations
@@ -4622,7 +4570,6 @@ def _searchCodes(page, pbar, jobList, filename):
                                 codeList[i]["parameters"][4] += ';'
 
                             _apply_original(codeList[i], rawInner)
-                            list122.pop(0)
 
             ## Event Code: 357 [Picture Text] [Optional]
             if "code" in codeList[i] and codeList[i]["code"] == 357 and CODE357 is True:
@@ -4664,9 +4611,8 @@ def _searchCodes(page, pbar, jobList, filename):
 
                         # Pass 2
                         else:
-                            if len(list357) > 0:
+                            if (translatedText := _next_reply(list357)) is not None:
                                 # Grab and Replace
-                                translatedText = list357[0]
                                 translatedText = jaString.replace(jaString, translatedText)
 
                                 # Remove characters that may break scripts
@@ -4691,7 +4637,6 @@ def _searchCodes(page, pbar, jobList, filename):
 
                                 # Set
                                 codeList[i]["parameters"][3][argVar] = f"{translatedText}"
-                                list357.pop(0)
 
                 # Map Plugins — use module-level registry filtered by ENABLED_PLUGINS_357
                 headerMappings = {
@@ -4749,9 +4694,7 @@ def _searchCodes(page, pbar, jobList, filename):
                             if setData:
                                 list357.append(p2)
                             else:
-                                if len(list357) > 0:
-                                    translatedText = list357[0]
-                                    list357.pop(0)
+                                if (translatedText := _next_reply(list357)) is not None:
                                     translatedText = translatedText.replace('"', "")
                                     codeList[i]["parameters"][2] = translatedText
 
@@ -4798,18 +4741,12 @@ def _searchCodes(page, pbar, jobList, filename):
                                     if FIXTEXTWRAP:
                                         jaString = jaString.replace("\n", " ")
                                     # Include speaker context like 401 does
-                                    if 'speaker' in locals() and isinstance(speaker, str) and speaker.strip():
-                                        list357.append(f"[{speaker}]: {jaString}")
-                                    else:
-                                        list357.append(jaString)
+                                    list357.append(to_prefixed(speaker, jaString))
                                 # Pass 2 (apply translation)
                                 else:
-                                    if len(list357) > 0:
-                                        translatedText = list357[0]
-                                        list357.pop(0)
-
-                                        # Remove speaker prefix if present (same pattern used for 401)
-                                        translatedText = strip_speaker_prefix(translatedText)
+                                    if (translatedText := _next_reply(list357)) is not None:
+                                        # Remove the speaker label it was sent with, as 401 does
+                                        translatedText = strip_speaker_prefix(translatedText, speaker)
 
                                         if FIXTEXTWRAP:
                                             translatedText = rpgmaker_rewrap.wrap_message(
@@ -4851,9 +4788,7 @@ def _searchCodes(page, pbar, jobList, filename):
                                     list357.append(jaString)
                                 # Pass 2
                                 else:
-                                    if len(list357) > 0:
-                                        translatedText = list357[0]
-                                        list357.pop(0)
+                                    if (translatedText := _next_reply(list357)) is not None:
 
                                         # Remove characters that would break the JSON string encoding
                                         translatedText = translatedText.replace('"', "'")
@@ -4955,9 +4890,7 @@ def _searchCodes(page, pbar, jobList, filename):
 
                     # Pass 2 – apply translated value
                     else:
-                        if len(list657) > 0:
-                            translatedText = list657[0]
-                            list657.pop(0)
+                        if (translatedText := _next_reply(list657)) is not None:
                             for char in ['"', "'"]:
                                 translatedText = translatedText.replace(char, "")
                             codeList[i]["parameters"][0] = f"'{kvKey} = {translatedText}'"
@@ -5136,8 +5069,7 @@ def _searchCodes(page, pbar, jobList, filename):
                     entry, start, end = custom
                     if setData:
                         list355655.append(jaString[start:end])
-                    elif list355655:
-                        translatedText = list355655.pop(0)
+                    elif (translatedText := _next_reply(list355655)) is not None:
                         quote = custom_patterns.quote(jaString, start, end)
                         translatedText = (
                             _escape_quoted_script_text(translatedText, quote)
@@ -5187,9 +5119,7 @@ def _searchCodes(page, pbar, jobList, filename):
                                 else:
                                     # Apply each translated line back to its corresponding 655 code
                                     for lineIdx in textLineIndices:
-                                        if len(list355655) > 0:
-                                            translatedText = list355655[0]
-                                            list355655.pop(0)
+                                        if (translatedText := _next_reply(list355655)) is not None:
                                             
                                             # Replace quotes with apostrophes to avoid breaking plugin
                                             translatedText = translatedText.replace('\\"', "'")
@@ -5228,9 +5158,7 @@ def _searchCodes(page, pbar, jobList, filename):
 
                                 if setData:
                                     list355655.append(cap)
-                                else:
-                                    translatedText = list355655[0]
-                                    list355655.pop(0)
+                                elif (translatedText := _next_reply(list355655)) is not None:
 
                                     if key == "$gameScreen.OriginalMessage":
                                         translatedText = _escape_quoted_script_text(
@@ -5297,17 +5225,12 @@ def _searchCodes(page, pbar, jobList, filename):
                             if setData:
                                 romashaCommentContext = True
                                 for s in translatable:
-                                    if speakerPrefix:
-                                        list355655.append(f"[{speakerPrefix}]: {s}")
-                                    else:
-                                        list355655.append(s)
+                                    list355655.append(to_prefixed(speakerPrefix, s))
                             else:
                                 for s in translatable:
-                                    if len(list355655) > 0:
-                                        translatedText = list355655[0]
-                                        list355655.pop(0)
-                                        # Strip speaker prefix if present
-                                        translatedText = strip_speaker_prefix(translatedText)
+                                    if (translatedText := _next_reply(list355655)) is not None:
+                                        # Strip the speaker label it was sent with
+                                        translatedText = strip_speaker_prefix(translatedText, speakerPrefix)
                                         # Replace double quotes to avoid breaking the JSON/JS syntax
                                         translatedText = translatedText.replace('\\"', "'")
                                         translatedText = translatedText.replace('"', "'")
@@ -5347,9 +5270,7 @@ def _searchCodes(page, pbar, jobList, filename):
                                 list355655.append(s)
                         else:
                             for s in translatable:
-                                if len(list355655) > 0:
-                                    translatedText = list355655[0]
-                                    list355655.pop(0)
+                                if (translatedText := _next_reply(list355655)) is not None:
                                     translatedText = translatedText.replace('\\"', "'")
                                     translatedText = translatedText.replace('"', "'")
                                     jaString = jaString.replace(s, translatedText, 1)
@@ -5481,16 +5402,21 @@ def _searchCodes(page, pbar, jobList, filename):
                             for text in textLines:
                                 list355655.append(text)
                         else:
-                            # Collect all translated lines and re-wrap them
+                            # Collect all translated lines and re-wrap them;
+                            # a line left untranslated joins them as it is,
+                            # and lines all left so keep their rows
                             translatedLines = []
-                            for _ in textLineIndices:
+                            translatedAny = False
+                            for text in textLines:
                                 if len(list355655) > 0:
                                     tl = list355655.pop(0)
+                                    translatedAny = translatedAny or tl is not None
+                                    tl = text if tl is None else tl
                                     tl = tl.replace('\\"', "'")
                                     tl = tl.replace('"', "'")
                                     translatedLines.append(tl)
 
-                            if translatedLines:
+                            if translatedLines and translatedAny:
                                 # Join all lines and re-wrap to WIDTH
                                 combined = " ".join(translatedLines)
                                 wrapped = rpgmaker_rewrap.wrap_text(combined, WIDTH)
@@ -5567,17 +5493,12 @@ def _searchCodes(page, pbar, jobList, filename):
 
                         if setData:
                             if textStr:
-                                if speakerPrefix:
-                                    list355655.append(f"[{speakerPrefix}]: {textStr}")
-                                else:
-                                    list355655.append(textStr)
+                                list355655.append(to_prefixed(speakerPrefix, textStr))
                         else:
                             if textStr:
-                                if len(list355655) > 0:
-                                    translatedText = list355655[0]
-                                    list355655.pop(0)
-                                    # Strip speaker prefix if present
-                                    translatedText = strip_speaker_prefix(translatedText)
+                                if (translatedText := _next_reply(list355655)) is not None:
+                                    # Strip the speaker label it was sent with
+                                    translatedText = strip_speaker_prefix(translatedText, speakerPrefix)
                                     # Replace double quotes to avoid breaking JS syntax
                                     translatedText = translatedText.replace('\\"', "'")
                                     translatedText = translatedText.replace('"', "'")
@@ -5627,9 +5548,7 @@ def _searchCodes(page, pbar, jobList, filename):
                     list408.append(jaString)
 
                 # Pass 2
-                elif len(list408) > 0:
-                    translatedText = list408.pop(0)
-
+                elif (translatedText := _next_reply(list408)) is not None:
                     lines = _code408_lines(translatedText, rawSource, block408.face)
                     # Over the lines it owns, adding and removing none.
                     _apply_original(codeList[groupStart408], rawSource)
@@ -5652,9 +5571,9 @@ def _searchCodes(page, pbar, jobList, filename):
                     entry, start, end = custom
                     if setData:
                         list108.append(jaString[start:end])
-                    elif list108:
+                    elif (translatedText := _next_reply(list108)) is not None:
                         translatedText = word_spacing.join_words(
-                            list108.pop(0).replace("\n", " "), entry["spacing"]
+                            translatedText.replace("\n", " "), entry["spacing"]
                         )
                         codeList[i]["parameters"][0] = (
                             jaString[:start] + translatedText + jaString[end:]
@@ -5683,11 +5602,7 @@ def _searchCodes(page, pbar, jobList, filename):
                         #     list108[0] = list108[0].replace("\n", " ")
 
                     # Pass 2
-                    else:
-                        # Grab and Replace
-                        translatedText = list108[0]
-                        list108.pop(0)
-
+                    elif (translatedText := _next_reply(list108)) is not None:
                         # Textwrap
                         # if codeList[i + 1]["code"] == 408:
                         #     translatedText = dazedwrap.wrapText(translatedText, WIDTH)
@@ -5730,9 +5645,9 @@ def _searchCodes(page, pbar, jobList, filename):
                     entry, start, end = custom
                     if setData:
                         list356.append(jaString[start:end])
-                    elif list356:
+                    elif (translatedText := _next_reply(list356)) is not None:
                         translatedText = word_spacing.join_words(
-                            list356.pop(0).replace("\n", " "), entry["spacing"]
+                            translatedText.replace("\n", " "), entry["spacing"]
                         )
                         codeList[i]["parameters"][0] = (
                             jaString[:start] + translatedText + jaString[end:]
@@ -5810,10 +5725,7 @@ def _searchCodes(page, pbar, jobList, filename):
 
                     # Pass 2
                     else:
-                        if len(list356) > 0:
-                            # Grab
-                            translatedText = list356[0]
-
+                        if (translatedText := _next_reply(list356)) is not None:
                             # Remove characters that may break scripts
                             # addLog keeps dots and quotes (they're fine in log text)
                             if "addLog" not in jaString:
@@ -5833,7 +5745,6 @@ def _searchCodes(page, pbar, jobList, filename):
 
                             # Set Data
                             codeList[i]["parameters"][0] = translatedText
-                            list356.pop(0)
 
                 if "namePop" in jaString:
                     # Support both "<namePop: text>" and "namePop [num] text" formats
@@ -5872,9 +5783,7 @@ def _searchCodes(page, pbar, jobList, filename):
 
                         # Pass 2: apply translations from list356
                         else:
-                            if len(list356) > 0:
-                                translatedText = list356[0]
-                                list356.pop(0)
+                            if (translatedText := _next_reply(list356)) is not None:
 
                                 translatedText = word_spacing.join_words(
                                     translatedText,
@@ -5978,7 +5887,13 @@ def _searchCodes(page, pbar, jobList, filename):
                     response = _translate_choices(choiceJob, textHistory)
                     totalTokens[0] += response[1][0]
                     totalTokens[1] += response[1][1]
-                    _apply_choices(codeList[i], choiceJob, response[0], filename)
+                    _apply_choices(
+                        codeList[i],
+                        choiceJob,
+                        reply_to_write(
+                            response[0], choiceJob["choices"], MISMATCH, LOCK, filename
+                        ),
+                    )
                 if not setData:
                     choices = codeList[i]["parameters"][0]
                     for index, choice in enumerate(choices):
@@ -6087,9 +6002,7 @@ def _searchCodes(page, pbar, jobList, filename):
 
                 # Pass 2: apply translations from batch
                 else:
-                    if len(list325) > 0:
-                        translatedText = list325[0]
-                        list325.pop(0)
+                    if (translatedText := _next_reply(list325)) is not None:
 
                         # Textwrap
                         translatedText = rpgmaker_rewrap.wrap_lines(
@@ -6127,9 +6040,7 @@ def _searchCodes(page, pbar, jobList, filename):
 
                 # Pass 2: apply translations from list324
                 else:
-                    if len(list324) > 0:
-                        translatedText = list324[0]
-                        list324.pop(0)
+                    if (translatedText := _next_reply(list324)) is not None:
 
                         # Clean translation
                         for ch in ['"', "\\n"]:
@@ -6173,7 +6084,19 @@ def _searchCodes(page, pbar, jobList, filename):
                 response = _translate_choices(job, history)
                 totalTokens[0] += response[1][0]
                 totalTokens[1] += response[1][1]
-                _apply_choices(cmd, job, response[0], filename)
+                _apply_choices(
+                    cmd,
+                    job,
+                    reply_to_write(response[0], job["choices"], MISMATCH, LOCK, filename),
+                )
+
+        # Pass 2 writes what reply_to_write keeps of each list's reply: none
+        # of one of the wrong length, and a line left untranslated as None.
+        def written(lines, context):
+            response = translateAI(lines, context)
+            totalTokens[0] += response[1][0]
+            totalTokens[1] += response[1][1]
+            return reply_to_write(response[0], lines, MISMATCH, LOCK, filename) or []
 
         # 401
         if folded:
@@ -6193,29 +6116,24 @@ def _searchCodes(page, pbar, jobList, filename):
             )
             totalTokens[0] += response[1][0]
             totalTokens[1] += response[1][1]
-            if _reply_fits(response[0], pageLines, [filename]):
-                list401TL = _menus_written(response[0], list401, pageChoices, filename)
+            reply = reply_to_write(response[0], pageLines, MISMATCH, LOCK, filename)
+            if reply is not None:
+                list401TL = _menus_written(reply, list401, pageChoices)
         elif len(list401) > 0 and not deferred:
-            response = translateAI(list401, "")
-            list401TL = response[0]
-            totalTokens[0] += response[1][0]
-            totalTokens[1] += response[1][1]
-            if len(list401TL) != len(list401):
-                with LOCK:
-                    found_mismatch(MISMATCH, filename)
+            list401TL = written(list401, "")
 
         # 122
         if len(list122) > 0:
-            response = translateAI(list122, ctx("events.code122_brief"))
-            list122TL = response[0]
-            totalTokens[0] += response[1][0]
-            totalTokens[1] += response[1][1]
-            if len(list122TL) != len(list122):
-                with LOCK:
-                    found_mismatch(MISMATCH, filename)
-            else:
+            list122TL = written(list122, ctx("events.code122_brief"))
+            if list122TL:
                 # Store each original→translated pair for code 111 consistency (file-backed)
-                set_var_translations_batch(list(zip(list122, list122TL)))
+                set_var_translations_batch(
+                    [
+                        (source, translated)
+                        for source, translated in zip(list122, list122TL)
+                        if translated is not None
+                    ]
+                )
 
         # 355/655
         if len(list355655) > 0:
@@ -6227,98 +6145,37 @@ def _searchCodes(page, pbar, jobList, filename):
                     ],
                     "source_items": textHistory,
                 }
-            response = translateAI(
-                list355655,
-                list355655_context,
-            )
-            list355655TL = response[0]
-            totalTokens[0] += response[1][0]
-            totalTokens[1] += response[1][1]
-            if len(list355655TL) != len(list355655):
-                with LOCK:
-                    found_mismatch(MISMATCH, filename)
+            list355655TL = written(list355655, list355655_context)
 
         # 108
         if len(list108) > 0:
-            response = translateAI(list108, ctx("events.label_108"))
-            list108TL = response[0]
-            totalTokens[0] += response[1][0]
-            totalTokens[1] += response[1][1]
-            if len(list108TL) != len(list108):
-                with LOCK:
-                    found_mismatch(MISMATCH, filename)
+            list108TL = written(list108, ctx("events.label_108"))
 
         # 356
         if len(list356) > 0:
-            response = translateAI(list356, textHistory)
-            list356TL = response[0]
-            totalTokens[0] += response[1][0]
-            totalTokens[1] += response[1][1]
-            if len(list356TL) != len(list356):
-                with LOCK:
-                    found_mismatch(MISMATCH, filename)
+            list356TL = written(list356, textHistory)
 
         # 357
         if len(list357) > 0:
-            response = translateAI(list357, textHistory)
-            list357TL = response[0]
-            totalTokens[0] += response[1][0]
-            totalTokens[1] += response[1][1]
-            if len(list357TL) != len(list357):
-                with LOCK:
-                    found_mismatch(MISMATCH, filename)
+            list357TL = written(list357, textHistory)
 
         # 657
         if len(list657) > 0:
-            response = translateAI(list657, textHistory)
-            list657TL = response[0]
-            totalTokens[0] += response[1][0]
-            totalTokens[1] += response[1][1]
-            if len(list657TL) != len(list657):
-                with LOCK:
-                    found_mismatch(MISMATCH, filename)
+            list657TL = written(list657, textHistory)
 
         # 408
         if len(list408) > 0:
-            response = translateAI(list408, "")
-            list408TL = response[0]
-            totalTokens[0] += response[1][0]
-            totalTokens[1] += response[1][1]
-            failed408Batch = bool(getattr(THREAD_CTX, "last_translation_had_mismatch", False))
-            if failed408Batch or len(list408TL) != len(list408):
-                with LOCK:
-                    # translateAI reported a chunk it kept in its source
-                    # text itself.
-                    if len(list408TL) != len(list408):
-                        found_mismatch(MISMATCH, filename)
-                    elif filename not in MISMATCH:
-                        MISMATCH.append(filename)
-                # A failed internal chunk or short result would make this pass
-                # partially apply or misalign later entries. Keep the entire
-                # 408 batch untouched so it can be retried safely.
-                list408TL = []
+            list408TL = written(list408, "")
 
         # 324
         if len(list324) > 0:
             # Generic short-text translation for parameter index 1
-            response = translateAI(list324, ctx("events.generic_text"))
-            list324TL = response[0]
-            totalTokens[0] += response[1][0]
-            totalTokens[1] += response[1][1]
-            if len(list324TL) != len(list324):
-                with LOCK:
-                    found_mismatch(MISMATCH, filename)
+            list324TL = written(list324, ctx("events.generic_text"))
 
         # 325
         if len(list325) > 0:
             # Use same short-text speaker-style translation as other name fields
-            response = translateAI(list325, ctx("names.npc"))
-            list325TL = response[0]
-            totalTokens[0] += response[1][0]
-            totalTokens[1] += response[1][1]
-            if len(list325TL) != len(list325):
-                with LOCK:
-                    found_mismatch(MISMATCH, filename)
+            list325TL = written(list325, ctx("names.npc"))
 
         # Start Pass 2
         if deferred:

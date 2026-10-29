@@ -7,7 +7,9 @@
 - Land one feature or fix at a time: merge it into `dev` and verify it there before starting the next.
   Run sessions in parallel only for areas that share no files, and never collect several feature branches to merge together at release time.
 - Put problems you notice outside the task under New in the bug list (`~/DazedTranslations/DazedTL-bugs.md`) instead of fixing them; the `dazedtl-triage` skill works through it.
-- Run every session and subagent you start or propose on Opus 5.5 (`claude-opus-5-5`, Agent model `opus`), never Sonnet or Haiku, and pass its effort explicitly: `xhigh` for the queue coordinator and the hardest calls, such as a rule already patched several times or a fix that did not hold; `high` for design, reworks, hard debugging and triage; `medium` for known one-area fixes, reviews, probes, merges, pushes and mechanical edits; never `low`.
+- Run every session and subagent you start or propose on Opus 5.5 (`claude-opus-5-5`, Agent model `opus`), never Sonnet or Haiku, and pass its effort explicitly by how hard the task is: `xhigh` for highly complex tasks and the queue coordinator; `high` for most tasks; `medium` for easier ones, such as a known one-area fix, a merge or a push; `low` for trivial mechanical ones.
+  Keep at most two delegated sessions or subagents running at once, and start a follow-up without asking only when it is mandatory: a real bug a user can hit that gives wrong output or text, costs money, loses or corrupts saved data, leaks a credential, or fails a run.
+  Put every other follow-up under New in the bug list for triage instead of queuing it.
   A session that starts others runs at the highest effort it hands out, since `start_session` cannot start one above its starter's.
 - Before fixing a bug, read the git history of the code involved.
   If the same behavior was fixed before, stop and report the root cause with a proposed rework instead of patching it again.
