@@ -168,7 +168,6 @@ class ProcessTests(unittest.TestCase):
         import socket
 
         import openai
-
         from dazedtl.compatibility import resends
         from dazedtl.settings.preferences import RESENDS
 

@@ -2792,12 +2792,12 @@ try:
                     1,
                 ),
             ):
-                replies = [status_error(status, body), good]
+                answers = [status_error(status, body), good]
                 retries = []
 
                 def create(**_params):
                     retries.append(translation.openai.max_retries)
-                    reply = replies.pop(0)
+                    reply = answers.pop(0)
                     if isinstance(reply, Exception):
                         raise reply
                     return reply
@@ -4448,11 +4448,11 @@ try:
         # other requests, such as one whose answer kept its source and was
         # not saved, are not sent again; any other failure fails the call at
         # once. A run frozen before sends the whole call again.
-        replies, asked = [], []
+        answers, asked = [], []
 
         def answered(_native, _system, user, *_args, **_kwargs):
             asked.append("鎧" if "鎧" in user else "other")
-            reply = replies.pop(0)
+            reply = answers.pop(0)
             if isinstance(reply, Exception):
                 raise reply
             return SimpleNamespace(
@@ -4480,7 +4480,7 @@ try:
                 (True, [kept, gateway], 2, "籠手", None),
                 (False, [kept, gateway, kept, helm], 4, "靴", "Helm"),
             ):
-                replies[:], asked[:] = script, []
+                answers[:], asked[:] = script, []
                 with (
                     patch.dict(
                         os.environ, {"BATCH_PHASE": "", "API_PROVIDER": "openai"}
