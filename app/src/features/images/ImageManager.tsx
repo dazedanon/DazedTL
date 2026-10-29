@@ -831,7 +831,7 @@ function Manager({
           : "Tick the images to translate, then copy the translation task."
         : flow.step === "translate"
           ? flow.waiting.translation
-            ? `Your assistant is translating ${imageCount(flow.toTranslate)}. Results appear on ${flow.toTranslate === 1 ? "it" : "them"} as it saves them.`
+            ? `Your assistant is translating ${imageCount(flow.translating)}. Results appear on ${flow.translating === 1 ? "it" : "them"} as it saves them.`
             : `${imageCount(flow.untranslated)} in your list ${flow.untranslated === 1 ? "isn't" : "aren't"} translated yet. Copy the translation task to continue.`
           : flow.step === "apply"
             ? `${flow.ready ? `${imageCount(flow.ready)} translated. ` : ""}Look ${flow.ready + flow.review === 1 ? "it" : "them"} over, Compare shows before and after, and tell your assistant about anything to redo.`

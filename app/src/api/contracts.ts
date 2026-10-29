@@ -2243,6 +2243,7 @@ export type ImageAsset = {
   reason: string;
   blockedReason: string;
   heldReason: string;
+  skipReason: string;
   sourceIssue?: string;
   encrypted: boolean;
   changed: boolean;
@@ -2296,6 +2297,7 @@ export type ImageReportState = {
   folders?: string[];
   copiedAt?: string;
   rejected?: string;
+  requested?: number;
 };
 
 export type ImageReceiptAsset = {

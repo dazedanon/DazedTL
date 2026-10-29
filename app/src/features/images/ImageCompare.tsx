@@ -192,7 +192,9 @@ export function ImageCompare({
         {!blocking && asset.heldReason && (
           <Notice tone="warning">{asset.heldReason}</Notice>
         )}
-        {(asset.reason || (asset.aiReviewed && asset.reviewEvidence)) && (
+        {(asset.reason ||
+          asset.skipReason ||
+          (asset.aiReviewed && asset.reviewEvidence)) && (
           <dl className="image-evidence">
             {asset.reason && (
               <>
@@ -201,6 +203,18 @@ export function ImageCompare({
                   <ExpandableText
                     text={imageDiscovery(asset, listed, target, reasonShown)}
                     label="Discovery finding"
+                    appearance="inline"
+                  />
+                </dd>
+              </>
+            )}
+            {asset.skipReason && (
+              <>
+                <dt>Skipped</dt>
+                <dd>
+                  <ExpandableText
+                    text={asset.skipReason}
+                    label="Why the translation skipped it"
                     appearance="inline"
                   />
                 </dd>

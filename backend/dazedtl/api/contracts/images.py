@@ -86,6 +86,9 @@ class ImageAsset(TypedDict):
     # Why the assistant's review of this exact edit does not count yet: its
     # recipe or validation; empty otherwise.
     heldReason: str
+    # Why the translation skipped this image, while that skip holds; empty
+    # otherwise.
+    skipReason: str
     sourceIssue: NotRequired[str]
     encrypted: bool
     changed: bool
@@ -140,6 +143,8 @@ class ImageReportState(TypedDict):
     copiedAt: NotRequired[str]
     # Why the last report found on returning to the window was not accepted.
     rejected: NotRequired[str]
+    # How many images the copied task names.
+    requested: NotRequired[int]
 
 
 class ImageReceiptAsset(TypedDict):

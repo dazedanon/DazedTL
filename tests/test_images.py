@@ -971,6 +971,61 @@ class ImageTests(unittest.TestCase):
         self.assertEqual(preview["included"], 0)
         self.assertEqual(preview["blocked"][0]["id"], "img/A.png")
 
+    def test_a_user_review_of_the_edited_copy_lifts_a_skip_or_exclusion(self):
+        # The assistant skipped an image whose edited copy the user wants.
+        self.choose(["img/A.png"])
+        self.service.action(self.identity, "prepare")
+        request, _ = self.request("edit_task")
+        candidate = png((2, 3, 4, 100))
+        write_bytes(self.game / ".dazedtl/images/img/A.png", candidate)
+        self.recipe(request["assets"][0], candidate)
+        self.report(
+            request,
+            [
+                {
+                    "id": "img/A.png",
+                    "sourceHash": request["assets"][0]["sourceHash"],
+                    "candidateHash": digest(candidate),
+                    "status": "skipped",
+                    "reason": "Only decorative art.",
+                }
+            ],
+            True,
+        )
+
+        def item():
+            return self.service.list(self.identity)["items"][0]
+
+        self.assertEqual(
+            (item()["state"], item()["skipReason"]),
+            ("skipped", "Only decorative art."),
+        )
+        # A revision redoes the image it names, skipped or not, and the task
+        # counts it as the image it translates.
+        revision, _ = self.request("revision_task")
+        self.assertEqual([asset["id"] for asset in revision["assets"]], ["img/A.png"])
+        self.assertEqual(self.service.state(self.identity)["editing"]["requested"], 1)
+        self.service.action(self.identity, "user_review", {"asset_ids": ["img/A.png"]})
+        self.assertEqual((item()["state"], item()["skipReason"]), ("ready", ""))
+        review = {"asset_ids": ["img/A.png"], "reviewed": False}
+        self.service.action(self.identity, "user_review", review)
+        self.assertEqual(item()["state"], "skipped")
+        self.service.action(
+            self.identity,
+            "exclude",
+            {"asset_ids": ["img/A.png"], "reason": "Decorative."},
+        )
+        self.service.action(self.identity, "user_review", {"asset_ids": ["img/A.png"]})
+        self.assertEqual(item()["state"], "ready")
+        # Once in the game it stays applied, though the game's file it was
+        # reviewed against has changed.
+        preview = self.service.action(
+            self.identity, "preview_apply", {"ready_only": True}
+        )["preview"]
+        self.assertEqual(preview["included"], 1)
+        self.service.action(self.identity, "apply", {"token": preview["token"]})
+        self.assertEqual(item()["state"], "applied")
+
     def test_applied_receipt_and_reviewed_restore_preserve_frozen_original_and_existing_copies(
         self,
     ):

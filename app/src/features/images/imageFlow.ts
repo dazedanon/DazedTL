@@ -86,6 +86,10 @@ export function imageFlow(
     toTranslate,
     /** Images in the list the assistant has not translated yet. */
     untranslated: toTranslate - ready - review,
+    /** The images a copied task names, such as one a revision redoes that
+     * the translation skipped; a task copied before it was counted, the
+     * list's. */
+    translating: state.editing.requested ?? toTranslate,
     ready,
     review,
     applied,

@@ -100,6 +100,7 @@ REPORT_KEYS = (
     "folders",
     "copiedAt",
     "rejected",
+    "requested",
 )
 
 
@@ -529,6 +530,7 @@ class ImageService:
             "reason",
             "blockedReason",
             "heldReason",
+            "skipReason",
             "aiReviewed",
             "userReviewed",
             "destination",
@@ -824,20 +826,24 @@ class ImageService:
             row["reason"] += (
                 " Source changed; the manual exclusion is retained, but its investigation is stale."
             )
+        reported = row.get("editResult") or {}
         if issues:
             row["state"], row["blockedReason"] = (
                 "blocked",
                 "; ".join(dict.fromkeys(issues)),
             )
-        elif (
-            row["classification"] == "excluded"
-            or (row.get("editResult") or {}).get("status") == "skipped"
-        ):
-            row["state"], row["blockedReason"] = "skipped", ""
+        # An image in the game reads applied whatever a report said of it.
         elif row.get("candidateHash") == (row.get("applied") or {}).get(
             "candidateHash"
         ) and row.get("sourceHash") == (row.get("applied") or {}).get("runtimeHash"):
             row["state"], row["blockedReason"] = "applied", ""
+        # The user's review of this exact edit outranks the translation's skip
+        # and an exclusion, so the user can apply an image the assistant left
+        # out.
+        elif not row["userReviewed"] and (
+            row["classification"] == "excluded" or reported.get("status") == "skipped"
+        ):
+            row["state"], row["blockedReason"] = "skipped", ""
         elif not row.get("hasEditable"):
             row["state"], row["blockedReason"] = (
                 "not_prepared",
@@ -866,6 +872,13 @@ class ImageService:
         # one the user reviewed, applied or that is blocked for another reason.
         if row["state"] != "needs_review":
             row["heldReason"] = ""
+        # Why the translation skipped the image, while that skip holds; an
+        # exclusion's reason is its finding's.
+        row["skipReason"] = (
+            reported.get("reason", "")
+            if row["state"] == "skipped" and reported.get("status") == "skipped"
+            else ""
+        )
         return row
 
     def _inspect(self, project_id, row, old=None, key=None):
@@ -1673,8 +1686,13 @@ class ImageService:
         message = ""
         if kind == "editing":
             # The list's images not yet in the game. Their editable copies are
-            # made here, so copying the task is the user's only step.
-            rows = [row for row in rows if row["state"] not in {"applied", "skipped"}]
+            # made here, so copying the task is the user's only step. A
+            # revision redoes the images it names, ones the translation skipped
+            # too.
+            left_out = (
+                {"applied"} if action == "revision_task" else {"applied", "skipped"}
+            )
+            rows = [row for row in rows if row["state"] not in left_out]
             if not rows:
                 raise ValueError("Every image in your list is already in the game.")
             unprepared = [
@@ -1848,6 +1866,7 @@ class ImageService:
             errors=[],
             copiedAt=now(),
             scope=scope,
+            requested=len(assets),
         )
         value[kind].pop("rejected", None)
         value[kind].pop("rejectedHash", None)
