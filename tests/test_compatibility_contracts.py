@@ -1822,6 +1822,7 @@ class CompatibilityContracts(unittest.TestCase):
         from dazedtl.settings import effort
         from util import translation
         from util.batch_providers import detect_batch_provider, live_price_route
+        from util.provider_costs import foreign_claude_name
 
         addresses = (
             "",
@@ -1903,6 +1904,13 @@ class CompatibilityContracts(unittest.TestCase):
                     # the engine's settings.
                     self.assertEqual(translation.isClaudeNative(model), expected[0])
                     self.assertEqual(translation.isClaudeModel(model), routes is claude)
+                    # Anthropic's own API, where its Batches go, takes only
+                    # Claude's own IDs, so Settings refuses another host's.
+                    self.assertEqual(
+                        foreign_claude_name(model, address),
+                        expected[1] == "anthropic"
+                        and not model.lower().startswith("claude-"),
+                    )
             # Pricing gives Claude's rates to a Claude name only: another
             # model, with no catalog price, takes the unknown model's
             # fallback, which a price lookup reads as unpriced.

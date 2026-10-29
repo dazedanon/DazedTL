@@ -93,6 +93,21 @@ def address(connection):
     )
 
 
+def validate_model_name(model, endpoint):
+    """Refuses a Claude name in another host's form for Anthropic's own API
+    (provider_costs.foreign_claude_name), where every request, Live or Batch,
+    would fail with not found: when Settings saves it, and before a run
+    starts or resumes with it."""
+    from util.provider_costs import foreign_claude_name
+
+    if foreign_claude_name(model, endpoint):
+        raise ValueError(
+            "Anthropic's API takes Claude's own model IDs, such as claude-opus-5-5, "
+            f"not another host's name for one, such as {str(model).strip()}. "
+            "Enter Anthropic's ID for this model in Settings, or use that host's connection."
+        )
+
+
 # The host only a provider's own API serves, unlike others that serve its models.
 OWN_HOSTS = {
     "openai": "api.openai.com",

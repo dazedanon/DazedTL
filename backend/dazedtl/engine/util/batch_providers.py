@@ -18,7 +18,7 @@ from typing import Any, Iterable, Mapping
 
 from util import system
 from util import extensions
-from util.provider_costs import is_claude_model, is_openai_model
+from util.provider_costs import is_claude_model, is_openai_model, on_anthropic_api
 
 
 PROVIDER_ANTHROPIC = "anthropic"
@@ -72,8 +72,7 @@ def detect_batch_provider(model: str = "", api_url: str | None = None,
     # Stricter than a Live send's native route (provider_costs.is_claude_native),
     # which also takes a proxy path holding "anthropic": Message Batches need
     # Anthropic's own API.
-    on_anthropic_api = not url or "anthropic.com" in url
-    if is_claude_model(model) and on_anthropic_api:
+    if is_claude_model(model) and on_anthropic_api(url):
         return PROVIDER_ANTHROPIC
     if provider == "gemini" or "generativelanguage.googleapis.com" in url:
         return PROVIDER_GEMINI
