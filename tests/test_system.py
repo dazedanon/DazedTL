@@ -4,7 +4,6 @@ import importlib
 import json
 import os
 import stat
-import subprocess
 import sys
 import threading
 import unittest
@@ -34,7 +33,8 @@ child = subprocess.run(
 )
 print(child.stdout.strip(), repr(channel.readline()))
 """
-        result = subprocess.run(
+        # Through the platform layer, so it compiles nothing into the checkout.
+        result = system.run(
             [sys.executable, "-I", "-c", script],
             input="request\n",
             capture_output=True,
