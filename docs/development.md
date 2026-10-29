@@ -320,6 +320,7 @@ A wait on something outside the landing reaches you even while an agent runs it 
 Each of these lines starts with `Notice:` and also shows as a desktop notification where `notify-send` (Linux) or `osascript` (macOS) exists.
 A last line says how long it took, in total and per stage (format, lock wait, merge, test, build, push), so a slow landing shows where the time went.
 In the merge, both sides' [release notes](#release-notes) join under their headings through [changelog.mjs](../scripts/changelog.mjs), and conflicts only in the [generated API contracts](architecture.md#api-changes) are resolved by writing them again.
+A branch that adds a notes line `dev`'s CHANGELOG.md already lists, or rewords one `dev` has released since, stops the merge on `release/notes.md`, naming the released line and the branch's lines under its heading: keep only what is new as its own line, since the branch's line would repeat the released entry and dropping it could lose a change.
 Any other conflict stops it with exit code 2 and leaves the merge in progress with everything else merged, so you resolve only the listed files, commit and land again; a merge started again by hand would merge the notes as text.
 
 [CI](#live-test) runs on `dev` after the push, not on the branch; the landing warns when `dev`'s newest run failed but does not wait for CI.

@@ -20,6 +20,7 @@ import {
   githubReader,
   workflow,
 } from "./ci-wait.mjs";
+import { NOTES } from "./changelog.mjs";
 import { generated } from "./contracts.mjs";
 import { gitIn, withLock } from "./land-lock.mjs";
 import { repository } from "./release.mjs";
@@ -299,7 +300,8 @@ export async function mergeDev(git, top, run, log) {
     /** @type {number} */ code,
     /** @type {string[]} */ ...report
   ) => ({ code, report });
-  const notes = `"${process.execPath}" "${path.join(import.meta.dirname, "changelog.mjs")}" merge %O %A %B`;
+  // The notes merge reads what dev's CHANGELOG.md has released.
+  const notes = `"${process.execPath}" "${path.join(import.meta.dirname, "changelog.mjs")}" merge %O %A %B ${out("rev-parse", "--verify", "dev")}`;
   const merge = git([
     "-c",
     "merge.dazedtl-notes.name=DazedTL release notes",
@@ -331,6 +333,10 @@ export async function mergeDev(git, top, run, log) {
       return finish(
         2,
         `Merging dev conflicts in ${conflicted.join(", ")}. The merge is left in progress with everything else merged: resolve these files, commit, and land again.`,
+        // Why the notes merge refused, as changelog.mjs printed it.
+        ...lines(merge.stdout + merge.stderr).filter((line) =>
+          line.startsWith(NOTES),
+        ),
       );
     log(
       `Merging dev conflicts only in generated ${conflicted.join(", ")}; writing them again.`,
