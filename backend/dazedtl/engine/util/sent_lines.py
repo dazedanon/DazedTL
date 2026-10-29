@@ -1,13 +1,14 @@
 """The lines a plain engine module sends in one request list, each with the
 place its reply goes.
 
-A module (Regex, CSV, WOLF RPG 2, JSON) walks its file once. For each line to
-translate it calls SentLines.send with the text, the speaker who says it and a
-function that writes the reply where the text came from; SentLines.lines is
-the request list; SentLines.write hands each reply to its line's function. A
-module therefore never walks its file a second time to find where its replies
-go, which is how a second walk came to disagree with the first about which
-lines it had sent and moved each later reply to the line after its own.
+A module (Regex, CSV, WOLF RPG 2, JSON, RPG Maker plugin) walks its file
+once. For each line to translate it calls SentLines.send with the text, the
+speaker who says it and a function that writes the reply where the text came
+from; SentLines.lines is the request list; SentLines.write hands each reply
+to its line's function. A module therefore never walks its file a second
+time to find where its replies go, which is how a second walk came to
+disagree with the first about which lines it had sent and moved each later
+reply to the line after its own.
 
 Its rules hold for every module on it:
 

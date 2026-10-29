@@ -18,6 +18,7 @@ from retry import retry
 from tqdm import tqdm
 from util.languages import source_pattern
 from util.runtime_text import CONTROL_CODE
+from util.sent_lines import SentLines
 from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost, found_mismatch, run_stop_errors
 from util.translation_task import fail_on_parser_error, module_receipt, write_output
 
@@ -639,18 +640,23 @@ def translatePlugin(data, pbar, filename):
     with open("log/translations.txt", "a+", encoding="utf-8") as tlFile:
         tlFile.write("\nCustom:\n")
 
-    # Each group's request, and each field's line in it
-    requests = {group: [] for group in GROUPS}
-    sentOnce = {group: {} for group in GROUPS if group.once}
-    slots = []
+    # Each group's request, each line with the fields its reply goes to
+    # (util/sent_lines); a label sent once goes to every field holding it
+    requests = {group: SentLines(unlabel=None) for group in GROUPS}
+    holders, edits = {}, {}
     for field in fields(data):
         group = field.kind.group
-        lines, slot = requests[group], len(requests[group])
-        if group.once:
-            slot = sentOnce[group].setdefault(field.request, slot)
-        if slot == len(lines):
-            lines.append(field.request)
-        slots.append((field, slot))
+        key = (group, field.request) if group.once else field
+        if key in holders:
+            holders[key].append(field)
+            continue
+        holders[key] = [field]
+
+        def write(reply, fields=holders[key]):
+            for held in fields:
+                edits.setdefault(held.line, []).append((held, reply))
+
+        requests[group].send(field.request, write)
 
     total = sum(len(lines) for lines in requests.values())
     if total > 0:
@@ -660,27 +666,24 @@ def translatePlugin(data, pbar, filename):
     # Each group's translations, where its reply has a line for each request
     # line. A quest group is sent even when empty and its empty reply taken:
     # the file is written when any reply is.
-    replies = {}
+    translated = False
     for group in GROUPS:
         lines = requests[group]
         if not lines and group not in QUEST_GROUPS:
             continue
-        response = translateAI(lines, group.history)
+        response = translateAI(lines.lines, group.history)
         tokens[0] += response[1][0]
         tokens[1] += response[1][1]
         if len(response[0]) == len(lines):
-            replies[group] = response[0]
+            lines.write(response[0])
+            translated = True
         else:
             with LOCK:
                 found_mismatch(MISMATCH, filename)
-    if not replies:
+    if not translated:
         return tokens
 
     # Each translation written to its field's span
-    edits = {}
-    for field, slot in slots:
-        if field.kind.group in replies:
-            edits.setdefault(field.line, []).append((field, replies[field.kind.group][slot]))
     for index, lineEdits in edits.items():
         line, parts, last = data[index], [], 0
         for field, translation in sorted(lineEdits, key=lambda edit: edit[0].start):
