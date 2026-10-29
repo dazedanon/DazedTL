@@ -14,7 +14,7 @@ import {
   startDisplay,
   virtualDisplay,
 } from "./testkit/display.mjs";
-import { spawnGroup, stopGroup } from "./testkit/group.mjs";
+import { groupRuns, spawnGroup, stopGroup } from "./testkit/group.mjs";
 import { gameName, makeGame, variants } from "./testkit/games.mjs";
 import { helperCommand, scenarios } from "./testkit/scenarios.mjs";
 import { checkout, previousRelease } from "./testkit/checkout.mjs";
@@ -68,18 +68,12 @@ function readState(work) {
 const writeState = (state) =>
   fs.writeFileSync(stateFile(state.work), JSON.stringify(state, null, 2));
 
-const alive = (pid) => {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-};
-
-/** Starts the scenario's stand-in provider on its saved port, unless it runs. */
+/**
+ * Starts the scenario's stand-in provider on its saved port, unless it runs.
+ * Its `pid` names its process group.
+ */
 async function startProvider(state) {
-  if (state.provider.pid && alive(state.provider.pid)) return;
+  if (groupRuns(state.provider.pid)) return;
   const log = fs.openSync(path.join(state.work, "logs/provider.log"), "a");
   const child = spawnGroup(
     process.execPath,
@@ -109,7 +103,7 @@ async function startProvider(state) {
  */
 async function startScreen(state) {
   if (process.platform !== "linux") return {};
-  if (state.display?.group && alive(state.display.group))
+  if (groupRuns(state.display?.group))
     return state.display.env;
   try {
     state.display = await startDisplay({
@@ -164,10 +158,14 @@ async function openApp(state) {
 
 async function stopAll(state) {
   await stopApp(state.tag, state.app);
-  if (state.provider.pid && alive(state.provider.pid))
-    process.kill(state.provider.pid, "SIGTERM");
+  // Each group ends even if the other cannot.
+  const [provider, display] = await Promise.allSettled([
+    stopGroup(state.provider.pid),
+    stopGroup(state.display?.group),
+  ]);
+  for (const result of [provider, display])
+    if (result.status === "rejected") throw result.reason;
   state.provider.pid = 0;
-  if (state.display?.group) await stopGroup(state.display.group);
   state.display = null;
   state.app = null;
   writeState(state);
