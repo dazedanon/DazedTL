@@ -35,6 +35,8 @@ from util.provider_costs import (
     cache_read_multiplier,
     cache_write_multiplier,
     has_billed_cache_writes,
+    is_claude_model,
+    is_claude_native,
     openai_batch_caches,
     received_at,
     shown_batch_price,
@@ -47,8 +49,9 @@ from util import claude_tokens, request_debug
 from util.batch_providers import (
     KIMI_API_URL,
     live_price_route,
-    names_response_format,
     openai_usage,
+    rejects_response_format,
+    requires_json_schema,
 )
 from util import extensions
 from util.sfx_reference import build_sfx_reference_text
@@ -318,19 +321,15 @@ def _normalize_openai_base_url(url: str) -> str:
 
 def isClaudeModel(model):
     """True when the model name looks like an Anthropic Claude model."""
-    return bool(model) and any(x in model.lower() for x in ("claude", "sonnet", "haiku", "opus"))
+    return is_claude_model(model)
 
 
 def isClaudeNative(model, api_url=None):
-    """True when this model routes to the native Anthropic SDK.
-
-    Mirrors the routing check in translateText: the model must look like Claude
-    AND the configured API URL must be unset or point at anthropic.com.  Any
-    other custom URL (e.g. DeepSeek, OpenAI proxy) uses the OpenAI-compatible
-    path even for Claude-named models.
-    """
-    live_api = os.getenv("api", "").strip() if api_url is None else str(api_url).strip()
-    return isClaudeModel(model) and (not live_api or "anthropic" in live_api.lower())
+    """True when this model routes to the native Anthropic SDK
+    (provider_costs.is_claude_native); *api_url* defaults to the engine's
+    configured API URL."""
+    live_api = os.getenv("api", "") if api_url is None else api_url
+    return is_claude_native(model, live_api)
 
 
 def getBatchProvider(model=None, api_url=None, api_provider=None):
@@ -2092,14 +2091,18 @@ def run_stop_errors():
     return (RunStoppingError,) if RUN_STOPS else ()
 
 
-def falls_back_to_json_mode(error):
+def falls_back_to_json_mode(error, *, before_run_stops=True):
     """Whether a json_schema request that failed with *error* is sent again
-    in JSON mode (json_object). A run frozen with the run-stop policy sends
-    it again only when the error names the response format
-    (batch_providers names_response_format): any other rejection would come
-    back alike, and counts once toward the run's stop. Runs frozen without
-    it send it again, as when approved."""
-    return not RUN_STOPS or names_response_format(error)
+    in JSON mode (json_object): when the error rejects the response format
+    (batch_providers rejects_response_format), as Assistant-led does. A run
+    frozen with the run-stop policy sends it again only then: any other
+    rejection would come back alike, and counts once toward the run's stop.
+    Runs frozen without it also send it again where the caller did before
+    (*before_run_stops*), as when approved, unless the error says the server
+    takes only json_schema, which JSON mode would get too."""
+    if RUN_STOPS or not before_run_stops:
+        return rejects_response_format(error)
+    return not requires_json_schema(error)
 
 
 # A consume miss is the file's failure reason beside its name in the run's
@@ -2112,22 +2115,45 @@ MISSING_BATCH_RESULT = {
     "prepared.",
     None: "The Batch has no translation for some of this file's lines.",
 }
+# An unreturned request whose provider gave its reason.
+MISSING_BATCH_RESULT_REASON = (
+    "The provider ended the Batch request for some of this file's lines with "
+    "an error: {reason}"
+)
 MISSING_BATCH_RESULT_NEXT = (
     "No full-price request was sent. Translate this file again with Live or a "
     "new Batch."
 )
 
 
-def _missing_batch_result_cause(key):
-    from util.batch_history import submitted_result_keys
+@extensions.point
+def batch_failure_reason(error):
+    """How the error a provider ended a Batch request with, as the fetch kept
+    it (batch_history provider_errors), reads beside the file's name, or None
+    to give no reason; the host reads it as it reads provider errors."""
+    return None
+
+
+def _missing_batch_result(key):
+    """Why the Batch has no result for *key*, in the words beside the file's
+    name: its provider's reason for ending the request when it gave one,
+    such as an error every request got, else the miss's cause."""
+    from util.batch_history import submitted_results
 
     try:
-        submitted = submitted_result_keys()
+        submitted = submitted_results()
     except BatchFileCorruptionError:
-        return None
+        submitted = {}
     if not submitted:
-        return None
-    return "unreturned" if key in submitted else "changed"
+        return None, MISSING_BATCH_RESULT[None]
+    if key not in submitted:
+        return "changed", MISSING_BATCH_RESULT["changed"]
+    reason = batch_failure_reason(submitted[key]) if submitted[key] else None
+    return "unreturned", (
+        MISSING_BATCH_RESULT_REASON.format(reason=reason)
+        if reason
+        else MISSING_BATCH_RESULT["unreturned"]
+    )
 
 
 @extensions.point
@@ -2139,12 +2165,10 @@ def require_batch_result(
         payload, language, cache_context, request_context
     )
     if result is None:
-        cause = _missing_batch_result_cause(
+        cause, why = _missing_batch_result(
             get_cache_key(payload, language, cache_context, request_context)
         )
-        raise BatchResultUnavailableError(
-            f"{MISSING_BATCH_RESULT[cause]} {MISSING_BATCH_RESULT_NEXT}", cause
-        )
+        raise BatchResultUnavailableError(f"{why} {MISSING_BATCH_RESULT_NEXT}", cause)
     return result
 
 
@@ -3623,7 +3647,8 @@ def callMistral(params, retries=6):
     est = sum(_estimate_mistral_tokens(m.get("content", "")) for m in params.get("messages", []))
     est += params.get("max_tokens", 0) // 2
     last_error = None
-    for attempt in range(retries + 1):
+    attempt = 0
+    while attempt <= retries:
         limiter.acquire(est)
         try:
             raw = openai.chat.completions.with_raw_response.create(**params)
@@ -3642,8 +3667,10 @@ def callMistral(params, retries=6):
             time.sleep(retry_after if retry_after is not None else min(60, 2 ** attempt + random.random() * 2))
         except openai.APIStatusError as e:
             last_error = e
-            # Mistral rejects unsupported params with 400/422 — downgrade the
-            # structured-output format once and retry immediately.
+            # Mistral rejects unsupported params with 400/422 - downgrade the
+            # structured-output format once and send it at once. The JSON-mode
+            # request is a different request, not a retry, so it spends no
+            # attempt: on the last attempt it is still sent.
             if (
                 e.status_code in (400, 422)
                 and (params.get("response_format") or {}).get("type") == "json_schema"
@@ -3652,16 +3679,15 @@ def callMistral(params, retries=6):
                 params = dict(params)
                 params["response_format"] = {"type": "json_object"}
                 continue
-            if e.status_code >= 500 and attempt < retries:
-                time.sleep(min(45, 2 ** attempt + random.random()))
-                continue
-            raise Exception(f"Mistral API error ({e.status_code}): {e}")
+            if e.status_code < 500 or attempt >= retries:
+                raise Exception(f"Mistral API error ({e.status_code}): {e}")
+            time.sleep(min(45, 2 ** attempt + random.random()))
         except openai.APIConnectionError as e:
             last_error = e
-            if attempt < retries:
-                time.sleep(min(45, 2 ** attempt + random.random()))
-                continue
-            raise Exception(f"Mistral connection error: {e}")
+            if attempt >= retries:
+                raise Exception(f"Mistral connection error: {e}")
+            time.sleep(min(45, 2 ** attempt + random.random()))
+        attempt += 1
     raise Exception(f"Mistral API failed after {retries + 1} attempts: {last_error}")
 
 
@@ -5203,16 +5229,7 @@ def translateText(system, user, history, penalty, formatType, model, numLines=No
     # The builders check this too; an extension may replace them.
     _require_request_text(system, user)
 
-    _live_api_check = os.getenv("api", "").strip()
-    # Only route to the native Anthropic SDK when the model looks like Claude AND
-    # the configured API URL is either unset (implying default Anthropic usage) or
-    # explicitly points at anthropic.com.  Any other custom URL (e.g. DeepSeek,
-    # OpenAI proxy) should use the OpenAI-compatible path even for Claude-named models.
-    _is_claude = (
-        model
-        and any(x in model.lower() for x in ("claude", "sonnet", "haiku", "opus"))
-        and (not _live_api_check or "anthropic" in _live_api_check.lower())
-    )
+    _is_claude = isClaudeNative(model)
     _is_mistral = not _is_claude and isMistralAPI()
 
     # --- API Call Logic ---
@@ -5307,27 +5324,27 @@ def translateText(system, user, history, penalty, formatType, model, numLines=No
         elif e.status_code >= 500:
             raise Exception(f"API server error ({e.status_code}) - retrying... Error: {e}")
         elif (
-            e.status_code == 400
+            e.status_code in (400, 422)
             and formatType == "json"
             and "json_schema" in str(responseFormat)
-            and falls_back_to_json_mode(e)
+            and falls_back_to_json_mode(e, before_run_stops=e.status_code == 400)
         ):
-            # Only fall back to json_object if the error is NOT "Input should be 'json_schema'"
-            # (that message means json_schema IS required and json_object would also be rejected)
-            if "input should be 'json_schema'" in str(e).lower() or "input should be \"json_schema\"" in str(e).lower():
-                raise Exception(f"API status error ({e.status_code}): {e}")
             # Provider doesn't support json_schema (e.g. Claude) — fall back to json_object
             responseFormat = {"type": "json_object"}
             params["response_format"] = responseFormat
             try:
                 response = openai.chat.completions.create(**params)
             except openai.APIStatusError as fallback_error:
-                if fallback_error.status_code == 400 and "input should be 'json_schema'" in str(fallback_error).lower():
+                if requires_json_schema(fallback_error):
                     raise Exception(f"API requires json_schema response format but rejected the schema. Original error: {e}")
                 raise Exception(f"API call failed: {e}. Fallback also failed: {fallback_error}")
             except Exception as fallback_error:
                 raise Exception(f"API call failed: {e}. Fallback also failed: {fallback_error}")
-        elif e.status_code == 400 and "input should be 'json_schema'" in str(e).lower():
+        elif (
+            e.status_code == 400
+            and "json_schema" not in str(responseFormat)
+            and requires_json_schema(e)
+        ):
             # response_format.type was rejected (e.g. sent "text" or "json_object" to a model
             # that only accepts json_schema). Remove response_format and retry with no constraint.
             params.pop("response_format", None)
@@ -5348,10 +5365,8 @@ def translateText(system, user, history, penalty, formatType, model, numLines=No
         if "404" in error_str or "not found" in error_str:
             raise Exception(f"API returned 404 Not Found - check your API configuration. Original error: {e}")
         
-        # If structured output fails, fallback to json_object (unless the error
-        # explicitly states json_schema is required — falling back would just fail again)
+        # If structured output fails, fallback to json_object
         if formatType == "json" and "json_schema" in str(responseFormat) and \
-                "input should be 'json_schema'" not in error_str and \
                 falls_back_to_json_mode(e):
             responseFormat = {"type": "json_object"}
             params["response_format"] = responseFormat
@@ -5726,8 +5741,7 @@ def calculateCost(inputTokens, outputTokens, model):
     # that is cache-written at the live 5-minute TTL rate = 1.25x input rate).
     # Remaining tokens are billed at the regular input rate.
     pricing = getPricingConfig(model)
-    _is_claude_naive = model and any(x in model.lower() for x in ("claude", "sonnet", "haiku", "opus"))
-    if _is_claude_naive:
+    if isClaudeModel(model):
         static_tok  = getattr(_thread_local, 'estimate_static_tokens', 0)
         regular_tok = getattr(_thread_local, 'estimate_regular_tokens', 0)
         batch_count = max(1, getattr(_thread_local, 'estimate_batch_count', 1))
@@ -5795,6 +5809,26 @@ def countTokens(system, user, history):
 def last_translation_had_mismatch() -> bool:
     """Return whether the latest translateAI call on this thread fell back."""
     return bool(getattr(_thread_local, "last_translation_had_mismatch", False))
+
+
+def report_mismatch(filename):
+    """Tells the run that a chunk of *filename* kept its source text after a
+    mismatch: a MISMATCH_EVENT line on standard output, which the run counts
+    as the file's mismatches (util/translation_task). Standard output is read
+    as it is written, unlike the mismatch log."""
+    try:
+        print(f"MISMATCH_EVENT:{filename}", flush=True)
+    except Exception:
+        pass
+
+
+def found_mismatch(mismatches, filename):
+    """A mismatch an engine module found itself, as a reply with the wrong
+    number of lines whose lines keep their source text: *filename* joins the
+    module's *mismatches* and the run counts it, as translateAI's own."""
+    if filename not in mismatches:
+        mismatches.append(filename)
+    report_mismatch(filename)
 
 
 def _retry_live_translation(func):
@@ -6290,13 +6324,7 @@ def translateAI(text, history, config, filename=None, pbar=None, lock=None,
 
             # Track exact cache write size (static_system, constant across batches)
             # and accumulate non-cached (vocab + user + history) tokens per batch.
-            _est_api = os.getenv("api", "").strip()
-            _is_claude_est = (
-                config.model
-                and any(x in config.model.lower() for x in ("claude", "sonnet", "haiku", "opus"))
-                and (not _est_api or "anthropic" in _est_api.lower())
-            )
-            if _is_claude_est:
+            if isClaudeNative(config.model):
                 # Count the shared static prefix once across every concurrent
                 # file worker. The keyed result persists across estimate runs
                 # until the model or prompt changes.
@@ -6812,13 +6840,7 @@ def translateAI(text, history, config, filename=None, pbar=None, lock=None,
                     "original text kept. Check mismatch log."
                 )
 
-            # Emit a machine-readable marker on stdout so the GUI worker
-            # thread can detect the mismatch reliably (stdout is captured
-            # synchronously, unlike file-tail polling which can be racy).
-            try:
-                print(f"MISMATCH_EVENT:{filename}", flush=True)
-            except Exception:
-                pass
+            report_mismatch(filename)
 
             formatted_mismatch_output = last_raw_translation
             try:

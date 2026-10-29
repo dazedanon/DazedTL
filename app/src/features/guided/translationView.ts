@@ -581,11 +581,15 @@ const changedFile = (run: Job, name: string) =>
   run.changedOutputs !== undefined
     ? run.changedOutputs.includes(name)
     : !madeNoRequest(run, name) && !!run.process?.fileMetrics?.[name];
-/** The files whose translation from this run is in the game. An output the
- * same as the file it read, such as one with nothing to translate, is in the
- * game without an Apply, so it counts as no applied translation. */
+/** Of a run's outputs, `names`, those holding its translation: an output the
+ * same as the file it read, such as one with nothing to translate, saved no
+ * translation and is in the game without an Apply. This is the one count of
+ * a run's saved, partial and applied files. */
+export const translatedOutputs = (run: Job, names: readonly string[] = []) =>
+  names.filter((name) => changedFile(run, name));
+/** The files whose translation from this run is in the game. */
 export const appliedFiles = (run: Job) =>
-  (run.appliedOutputs || []).filter((name) => changedFile(run, name));
+  translatedOutputs(run, run.appliedOutputs);
 /**
  * The runs a file in a translation task reads, from the observer's
  * newest-first runs: `owner`, the newest current run that includes the file,
@@ -727,24 +731,19 @@ export function countedFileStatus(
   if (!counted.lines)
     return fileState("done", "Nothing to translate in this file.");
   if (counted.translated < counted.lines) {
+    const unsure = unconfirmedFile(name, run);
+    if (unsure) return unsure;
     if (counted.translated || counted.notes)
-      return fileState(
-        "needs_review",
-        run && uncertainSubmission(name, run)
-          ? unconfirmed
-          : linesLeft(counted, source),
-      );
+      return fileState("needs_review", linesLeft(counted, source));
     // Untouched, the file reads Not started, with why when the run did send
     // its requests or its help lines are left.
     return fileState(
       "not_started",
-      run && uncertainSubmission(name, run)
-        ? unconfirmed
-        : run && requestsFailed(name, run)
-          ? failedRequests
-          : counted.help
-            ? linesLeft(counted, source)
-            : "",
+      run && requestsFailed(name, run)
+        ? failedRequests
+        : counted.help
+          ? linesLeft(counted, source)
+          : "",
     );
   }
   return !state.readiness.outputs.includes(name) ||
@@ -776,10 +775,16 @@ export function fileStatus(
     `${count(notes, "line holds", "lines hold")} a refusal note an earlier run saved instead of a translation. Translate sends ${notes === 1 ? "it" : "them"} again.`,
   );
 }
-/** Why a file reads as it does when a run's request for it may still be at
- * the provider (uncertainSubmission). */
-const unconfirmed =
-  "Its submission could not be confirmed. Check Run history before sending it again.";
+/** A file whose lines are not all saved while a run's request for it may
+ * still be at the provider (uncertainSubmission) reads Needs review, in every
+ * task: sending it again may pay twice. */
+const unconfirmedFile = (name: string, run?: Job) =>
+  run && uncertainSubmission(name, run)
+    ? fileState(
+        "needs_review",
+        "Its submission could not be confirmed. Check Run history before sending it again.",
+      )
+    : undefined;
 /** Why an untouched file reads Not started when its requests failed
  * (requestsFailed). */
 const failedRequests =
@@ -924,12 +929,12 @@ function runFileStatus(
   const states = run.process?.files?.[name]?.states || [];
   // A submission without a provider receipt may still be at the provider, so
   // its reason is checking before sending again, not rejected lines.
-  const incomplete = fileState(
-    "needs_review",
-    uncertainSubmission(name, run)
-      ? unconfirmed
-      : "Some lines were rejected or not saved; Inspect shows which.",
-  );
+  const incomplete =
+    unconfirmedFile(name, run) ||
+    fileState(
+      "needs_review",
+      "Some lines were rejected or not saved; Inspect shows which.",
+    );
   const partial =
     run.partialOutputs?.includes(name) ||
     run.process?.validationIssues?.some((issue) => issue.file === name);

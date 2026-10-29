@@ -19,7 +19,9 @@ from util.translation import (
     getPricingConfig,
     translateAI as sharedtranslateAI,
     run_stop_errors,
+    found_mismatch,
 )
+from util.translation_task import fail_on_parser_error, format_receipt, module_receipt
 from util import system
 
 
@@ -170,45 +172,37 @@ def handleYuris(filename, estimate):
     ESTIMATE = estimate
     FILENAME = filename
 
-    try:
-        start = time.time()
-        with open("files/" + filename, "r", encoding="UTF-8-sig") as readFile:
-            data = json.load(readFile)
+    start = time.time()
+    with open("files/" + filename, "r", encoding="UTF-8-sig") as readFile:
+        data = json.load(readFile)
 
-        pass_reason = yuris_whole_file_pass_through_reason(data)
-        if pass_reason:
-            if not estimate:
-                os.makedirs(os.path.dirname(os.path.join("translated", filename)) or "translated", exist_ok=True)
-                with open("translated/" + filename, "w", encoding="utf-8", newline="\n") as outFile:
-                    json.dump(data, outFile, ensure_ascii=False, indent=4)
-            end = time.time()
-            # Machine-readable line so the GUI can apply totals row state (same as other modules).
-            c0 = calculateCost(0, 0, MODEL)
-            tqdm.write(
-                f"{filename}: [Input: 0][Output: 0][Cost: ${c0:.4f}]"
-                f"[{round(end - start, 1)}s] [skipped] {pass_reason}"
-            )
-            _yuris_pulse_progress_complete(filename)
-        else:
-            translatedData = parseYuris(data, filename)
+    pass_reason = yuris_whole_file_pass_through_reason(data)
+    if pass_reason:
+        if not estimate:
+            os.makedirs(os.path.dirname(os.path.join("translated", filename)) or "translated", exist_ok=True)
+            with open("translated/" + filename, "w", encoding="utf-8", newline="\n") as outFile:
+                json.dump(data, outFile, ensure_ascii=False, indent=4)
+        end = time.time()
+        # Machine-readable line so the GUI can apply totals row state (same as other modules).
+        figures = {"input": 0, "output": 0, "cost": calculateCost(0, 0, MODEL), "seconds": end - start}
+        tqdm.write(format_receipt(filename, figures, f"[skipped] {pass_reason}"))
+        _yuris_pulse_progress_complete(filename)
+    else:
+        translatedData = parseYuris(data, filename)
+        fail_on_parser_error(translatedData)
 
-            if not estimate:
-                os.makedirs(os.path.dirname(os.path.join("translated", filename)) or "translated", exist_ok=True)
-                with open("translated/" + filename, "w", encoding="utf-8", newline="\n") as outFile:
-                    json.dump(translatedData[0], outFile, ensure_ascii=False, indent=4)
+        if not estimate:
+            os.makedirs(os.path.dirname(os.path.join("translated", filename)) or "translated", exist_ok=True)
+            with open("translated/" + filename, "w", encoding="utf-8", newline="\n") as outFile:
+                json.dump(translatedData[0], outFile, ensure_ascii=False, indent=4)
 
-            end = time.time()
-            tqdm.write(getResultString(translatedData, end - start, filename))
-            with LOCK:
-                TOKENS[0] += translatedData[1][0]
-                TOKENS[1] += translatedData[1][1]
-    except run_stop_errors():
-        raise
-    except Exception:
-        traceback.print_exc()
-        return "Fail"
+        end = time.time()
+        tqdm.write(module_receipt(filename, translatedData[1], end - start, MODEL))
+        with LOCK:
+            TOKENS[0] += translatedData[1][0]
+            TOKENS[1] += translatedData[1][1]
 
-    totalString = getResultString(["", TOKENS, None], end - start, "TOTAL")
+    totalString = module_receipt("TOTAL", TOKENS, end - start, MODEL)
     if MISMATCH:
         return totalString + Fore.RED + f"\nMismatch Errors: {MISMATCH}" + Fore.RESET
     return totalString
@@ -290,8 +284,7 @@ def translateYuris(data, filename):
 
     if len(stringList) != len(translatedList):
         with LOCK:
-            if FILENAME not in MISMATCH:
-                MISMATCH.append(FILENAME)
+            found_mismatch(MISMATCH, FILENAME)
         return tokens
 
     for (index, originalMessage, hasSpeaker), translatedText in zip(entries, translatedList):
@@ -333,27 +326,6 @@ def save_progress_json(data, filename):
                 system.unlink(tmp_path, ignore_errors=True)
     except Exception:
         traceback.print_exc()
-
-
-def getResultString(translatedData, translationTime, filename):
-    cost = calculateCost(translatedData[1][0], translatedData[1][1], MODEL)
-    totalTokenstring = (
-        Fore.YELLOW
-        + f"[Input: {translatedData[1][0]}]"
-        + f"[Output: {translatedData[1][1]}]"
-        + f"[Cost: ${cost:,.4f}]"
-    )
-    timeString = Fore.BLUE + f"[{round(translationTime, 1)}s]"
-
-    if translatedData[2] is None:
-        return f"{filename}: {totalTokenstring}{timeString}" + Fore.GREEN + " \u2713 " + Fore.RESET
-
-    try:
-        raise translatedData[2]
-    except Exception as e:
-        traceback.print_exc()
-        errorString = str(e) + Fore.RED
-        return f"{filename}: {totalTokenstring}{timeString}" + Fore.RED + " \u2717 " + errorString + Fore.RESET
 
 
 def getSpeaker(speaker):

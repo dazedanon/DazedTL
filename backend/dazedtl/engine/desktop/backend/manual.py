@@ -574,9 +574,13 @@ class ManualJobs:
                 job["message"] = str(args[0])
             elif kind == "progress":
                 job["progress"] = {"current": args[0], "total": args[1], "file": args[2]}
+            elif kind == "file_finished":
+                # Only a file its module finished: a stopped or failed one may
+                # have saved part of its output, which Resume must translate
+                # again and the run must not collect.
                 if job["mode"] == "translate" or job["phase"] == "consume":
-                    if args[2] not in job["errors"] and (self.folder(job["id"]) / "translated" / args[2]).is_file():
-                        job["completed"] = sorted(set(job["completed"]) | {args[2]})
+                    if (self.folder(job["id"]) / "translated" / args[0]).is_file():
+                        job["completed"] = sorted(set(job["completed"]) | {args[0]})
             elif kind == "item_progress":
                 job["item_progress"] = {"file": args[0], "current": args[1], "total": args[2]}
             elif kind in {"file_error", "file_mismatch"}:

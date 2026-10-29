@@ -5,6 +5,7 @@ from pathlib import Path
 from dazedtl.storage import write_json
 
 from .process_view import saved
+from .provider_responses import provider_reason
 
 ARCHIVE = "dazedtl-batch-evidence.json"
 # A queued request's fields naming the files it serves. Identical requests of
@@ -94,7 +95,8 @@ def preserve(root, requests, results, state):
 
 
 def install(translation, root, plan):
-    """Retains a Batch run's queue, results and state before the run clears them."""
+    """Retains a Batch run's queue, results and state before the run clears
+    them, and reads a missing result's provider reason (provider_reason)."""
     if plan.get("mode") != "batch" or plan.get("batch_link"):
         return
 
@@ -116,3 +118,7 @@ def install(translation, root, plan):
         return native(*args, **kwargs)
 
     translation._clear_run_batch_queue.layer("batch-evidence", clear)
+    # A file's missing result names its provider's reason by the one rule.
+    translation.batch_failure_reason.layer(
+        "batch-evidence", lambda _native, error: provider_reason(error)
+    )

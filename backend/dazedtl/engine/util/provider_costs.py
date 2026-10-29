@@ -103,6 +103,27 @@ def is_openai_model(model: str) -> bool:
     return bool(_OPENAI_MODEL.search(str(model or "").lower()))
 
 
+# A Claude model by its name, on Anthropic's API or any other host: any name
+# holding a Claude family word.
+_CLAUDE_MODEL = re.compile(r"claude|sonnet|haiku|opus")
+
+
+def is_claude_model(model: str) -> bool:
+    """Whether ``model`` names a Claude model, priced at Anthropic's cache
+    prices wherever it runs (batch_providers.live_price_route)."""
+    return bool(_CLAUDE_MODEL.search(str(model or "").lower()))
+
+
+def is_claude_native(model: str, address: str | None) -> bool:
+    """Whether a Live request for ``model`` to ``address`` goes through
+    Anthropic's own SDK: a Claude model with no address set, or one holding
+    "anthropic", such as a proxy path. Any other address, OpenRouter's or a
+    Custom host's, takes the OpenAI-compatible path even for Claude models.
+    Batches need Anthropic's own API (batch_providers.detect_batch_provider)."""
+    address = str(address or "").strip().lower()
+    return is_claude_model(model) and (not address or "anthropic" in address)
+
+
 def _openai_model_at_least(model: str, major: int, minor: int) -> bool:
     match = re.search(
         r"(?:^|/)gpt-(\d+)\.(\d+)(?:\D|$)",

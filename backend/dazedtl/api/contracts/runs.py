@@ -208,6 +208,11 @@ class RequestPage(TypedDict):
     total: int
     previous: int | None
     next: int | None
+    # Review issues' requests, in the groups' order (process_view issue): the
+    # page's own, the first after the page and the first of all.
+    issues: list[int]
+    nextIssue: int | None
+    firstIssue: int | None
 
 
 class ProviderBatch(TypedDict):

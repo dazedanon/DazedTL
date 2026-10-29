@@ -11,11 +11,10 @@ import { Page, until, message } from "./testkit/cdp.mjs";
 import { freePort, startApp, stopApp, running } from "./testkit/app.mjs";
 import {
   displayName,
-  spawnGroup,
   startDisplay,
-  stopGroup,
   virtualDisplay,
 } from "./testkit/display.mjs";
+import { spawnGroup, stopGroup } from "./testkit/group.mjs";
 import { gameName, makeGame, variants } from "./testkit/games.mjs";
 import { helperCommand, scenarios } from "./testkit/scenarios.mjs";
 import { checkout, previousRelease } from "./testkit/checkout.mjs";

@@ -54,7 +54,12 @@ test("Guided work the user may have left alerts once when it ends or waits, unle
   assert.equal(at(0, [run("complete")]), null);
   at(1, [run("running")]);
   at(6, [run("running")]);
-  const saved = [run("complete", { availableOutputs: ["Map001.json"] })];
+  const saved = [
+    run("complete", {
+      availableOutputs: ["Map001.json"],
+      changedOutputs: ["Map001.json"],
+    }),
+  ];
   // Another step may still follow the run.
   assert.equal(at(20, saved), null);
   assert.deepEqual(at(24.5, saved), {

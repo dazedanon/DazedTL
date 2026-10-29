@@ -240,14 +240,13 @@ class ExistingBackend:
 
     @staticmethod
     def engine_route(model, protocol, endpoint):
+        from util.provider_costs import is_claude_native
+
         from dazedtl.settings.providers import PROVIDERS, route
 
-        # Mirrors the preserved live runner's native-Claude routing without
-        # importing its provider clients or changing the translation engine.
-        native_claude = any(
-            marker in model.lower() for marker in ("claude", "sonnet", "haiku", "opus")
-        ) and (not endpoint or "anthropic" in endpoint.lower())
-        if native_claude:
+        # The engine's own native-Claude rule, without importing its provider
+        # clients.
+        if is_claude_native(model, endpoint):
             return "anthropic", PROVIDERS["anthropic"]["endpoint"]
         protocol = protocol if protocol in {"gemini", "mistral"} else "openai"
         return route(protocol, endpoint or PROVIDERS[protocol]["endpoint"])

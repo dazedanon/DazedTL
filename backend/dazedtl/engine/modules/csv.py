@@ -15,7 +15,8 @@ from dotenv import load_dotenv
 from retry import retry
 from tqdm import tqdm
 from util.languages import source_pattern
-from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost, run_stop_errors
+from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost, found_mismatch, run_stop_errors
+from util.translation_task import fail_on_parser_error, module_receipt
 from util.speakers import strip_speaker_prefix
 import tempfile
 
@@ -97,10 +98,11 @@ def handleCSV(filename, estimate):
             # Translate
             start = time.time()
             translatedData = openFiles(filename, writeFile)
+            fail_on_parser_error(translatedData)
 
             # Print Result
             end = time.time()
-            tqdm.write(getResultString(translatedData, end - start, filename))
+            tqdm.write(module_receipt(filename, translatedData[1], end - start, MODEL))
             with LOCK:
                 TOKENS[0] += translatedData[1][0]
                 TOKENS[1] += translatedData[1][1]
@@ -108,16 +110,17 @@ def handleCSV(filename, estimate):
         # Translate
         start = time.time()
         translatedData = openFilesEstimate(filename)
+        fail_on_parser_error(translatedData)
 
         # Print Result
         end = time.time()
-        tqdm.write(getResultString(translatedData, end - start, filename))
+        tqdm.write(module_receipt(filename, translatedData[1], end - start, MODEL))
         with LOCK:
             TOKENS[0] += translatedData[1][0]
             TOKENS[1] += translatedData[1][1]
 
     # Print Total
-    totalString = getResultString(["", TOKENS, None], end - start, "TOTAL")
+    totalString = module_receipt("TOTAL", TOKENS, end - start, MODEL)
 
     # Print any errors on maps
     if len(MISMATCH) > 0:
@@ -138,31 +141,6 @@ def openFilesEstimate(filename):
         translatedData = parseCSV(readFile, "", filename)
 
     return translatedData
-
-
-def getResultString(translatedData, translationTime, filename):
-    # File Print String
-    cost = calculateCost(translatedData[1][0], translatedData[1][1], MODEL)
-    totalTokenstring = (
-        Fore.YELLOW + "[Input: " + str(translatedData[1][0]) + "]"
-        "[Output: "
-        + str(translatedData[1][1])
-        + "]" "[Cost: ${:,.4f}".format(cost)
-        + "]"
-    )
-    timeString = Fore.BLUE + "[" + str(round(translationTime, 1)) + "s]"
-
-    if translatedData[2] is None:
-        # Success
-        return filename + ": " + totalTokenstring + timeString + Fore.GREEN + " \u2713 " + Fore.RESET
-    else:
-        # Fail
-        try:
-            raise translatedData[2]
-        except Exception as e:
-            traceback.print_exc()
-            errorString = str(e) + Fore.RED
-            return filename + ": " + totalTokenstring + timeString + Fore.RED + " \u2717 " + errorString + Fore.RESET
 
 
 def parseCSV(readFile, writeFile, filename):
@@ -410,8 +388,7 @@ def translateCSV(data, pbar, writeFile, writer, filename, translatedList):
             # Mismatch
             else:
                 with LOCK:
-                    if filename not in MISMATCH:
-                        MISMATCH.append(filename)
+                    found_mismatch(MISMATCH, filename)
 
             # Write all Data
             with LOCK:

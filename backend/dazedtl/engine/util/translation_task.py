@@ -123,16 +123,50 @@ def paid_for(figures) -> bool:
     return bool(figures["input"] or figures["output"] or figures["cost"])
 
 
-def format_receipt(name, figures, mark="✓") -> str:
+def format_receipt(name, figures, mark="✓", colored=False) -> str:
     """A receipt's log line, which _result_figures and the records of runs
     from before receipts were reported (compatibility/process_view
-    file_receipt) read back: *name*'s tokens,
-    cost and seconds, then whether it finished."""
-    return (
-        f"{name}: [Input: {int(figures['input'])}]"
-        f"[Output: {int(figures['output'])}]"
-        f"[Cost: ${figures['cost']:,.4f}][{round(figures['seconds'], 1)}s] {mark}"
+    file_receipt) read back: *name*'s tokens, cost and seconds, then whether
+    it finished. An engine module's lines are *colored* (module_receipt)."""
+    tokens = (
+        f"[Input: {int(figures['input'])}][Output: {int(figures['output'])}]"
+        f"[Cost: ${figures['cost']:,.4f}]"
     )
+    seconds = f"[{round(figures['seconds'], 1)}s]"
+    if not colored:
+        return f"{name}: {tokens}{seconds} {mark}"
+    from colorama import Fore
+
+    return (
+        f"{name}: {Fore.YELLOW}{tokens}{Fore.BLUE}{seconds}"
+        f"{Fore.GREEN} {mark} {Fore.RESET}"
+    )
+
+
+def module_receipt(name, tokens, seconds, model) -> str:
+    """The line an engine module prints for a file it finished, and returns
+    as its TOTAL: its (input, output) *tokens*, priced by util/translation
+    calculateCost, which also closes the file's cost window. A file that
+    failed has none (fail_on_parser_error)."""
+    from util.translation import calculateCost
+
+    figures = {
+        "input": tokens[0],
+        "output": tokens[1],
+        "cost": calculateCost(tokens[0], tokens[1], model),
+        "seconds": seconds,
+    }
+    return format_receipt(name, figures, colored=True)
+
+
+def fail_on_parser_error(parsed):
+    """Ends a file whose parser returned an error. Every engine module's
+    parser returns ``[data, tokens, error]``; its error is raised before the
+    module writes the finished file or reports it, so the run records the
+    file failed with what it paid for (util/subprocess_runner _paid_receipt)
+    and never takes partial output for a translated file."""
+    if parsed[2] is not None:
+        raise parsed[2]
 
 def _failed(result):
     """Whether a file's result is a module's failure, with or without the
@@ -1533,6 +1567,7 @@ class TranslationTaskCore:
                         "original text kept for those chunks."
                     )
                     self.file_mismatch_signal.emit(filename, message)
+                    self.file_finished_signal.emit(filename)
                     if cost and cost != "Stopped":
                         total_cost = cost
                     elif total_cost == "Fail":
@@ -1552,6 +1587,7 @@ class TranslationTaskCore:
                 elif result == "Stopped":
                     stopped = True
                 elif result and not _failed(result):
+                    self.file_finished_signal.emit(filename)
                     total_cost = result
                 else:
                     had_failure = True
@@ -2193,8 +2229,8 @@ class TranslationTask(TranslationTaskCore):
     def __init__(self, *args, **kwargs):
         for name in (
             "log", "progress", "item_progress", "file_error", "file_mismatch",
-            "status", "finished", "batch_phase", "estimate_ready", "speaker_confirmation",
-            "receipt",
+            "file_finished", "status", "finished", "batch_phase", "estimate_ready",
+            "speaker_confirmation", "receipt",
         ):
             setattr(self, name + "_signal", TaskSignal())
         self.initialize(*args, **kwargs)

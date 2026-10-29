@@ -662,6 +662,9 @@ class GuidedRequestsRequest(TypedDict):
     run_id: str
     group: NotRequired[str | None]
     index: NotRequired[int | None]
+    # Whether a request still marked at the provider is an issue, as the
+    # inspector decides for its run.
+    unconfirmed: NotRequired[bool]
 
 
 class GuidedPayloadRequest(RunIndexRequest):

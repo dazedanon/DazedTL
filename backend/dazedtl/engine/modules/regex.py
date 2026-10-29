@@ -14,7 +14,8 @@ from dotenv import load_dotenv
 from retry import retry
 from tqdm import tqdm
 from util.languages import source_pattern
-from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost, run_stop_errors
+from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost, found_mismatch, run_stop_errors
+from util.translation_task import fail_on_parser_error, module_receipt
 from util.speakers import strip_speaker_prefix
 import tempfile
 from util import system
@@ -41,8 +42,6 @@ FIXTEXTWRAP = True  # Overwrites textwrap
 IGNORETLTEXT = False  # Ignores all translated text.
 MISMATCH = []  # Lists files that throw a mismatch error (Length of GPT list response is wrong)
 FILENAME = None
-TIMETOTAL = 0  # Total Time Taken for all translations
-TIMETOTAL = 0  # Total Time Taken for all translations
 
 # tqdm Globals
 BAR_FORMAT = "{l_bar}{bar:10}{r_bar}{bar:-10b}"
@@ -81,62 +80,28 @@ def handleRegex(filename, estimate):
     # Translate
     start = time.time()
     translatedData = openFiles(filename)
+    fail_on_parser_error(translatedData)
 
     # Translate
     if not estimate:
-        try:
-            with open("translated/" + filename, "w", encoding="utf-8-sig") as outFile:
-                outFile.writelines(translatedData[0])
-        except Exception:
-            traceback.print_exc()
-            return "Fail"
+        with open("translated/" + filename, "w", encoding="utf-8-sig") as outFile:
+            outFile.writelines(translatedData[0])
 
     # Print File
     end = time.time()
-    tqdm.write(getResultString(translatedData, end - start, filename))
+    tqdm.write(module_receipt(filename, translatedData[1], end - start, MODEL))
     with LOCK:
         TOKENS[0] += translatedData[1][0]
         TOKENS[1] += translatedData[1][1]
 
     # Print Total
-    totalString = getResultString(["", TOKENS, None], end - start, "TOTAL")
+    totalString = module_receipt("TOTAL", TOKENS, end - start, MODEL)
 
     # Print any errors on maps
     if len(MISMATCH) > 0:
         return totalString + Fore.RED + f"\nMismatch Errors: {MISMATCH}" + Fore.RESET
     else:
         return totalString
-
-
-def getResultString(translatedData, translationTime, filename):
-    global TIMETOTAL
-    # File Print String
-    cost = calculateCost(translatedData[1][0], translatedData[1][1], MODEL)
-    totalTokenstring = (
-        Fore.YELLOW + "[Input: " + str(translatedData[1][0]) + "]"
-        "[Output: "
-        + str(translatedData[1][1])
-        + "]" "[Cost: ${:,.4f}".format(cost)
-        + "]"
-    )
-    if filename != "TOTAL":
-        timeString = Fore.BLUE + "[" + str(round(translationTime, 1)) + "s]"
-        TIMETOTAL += round(translationTime, 1)
-    else:
-        timeString = Fore.BLUE + "[" + str(round(TIMETOTAL, 1)) + "s]"
-
-    if translatedData[2] == None:
-        # Success
-        return filename + ": " + totalTokenstring + timeString + Fore.GREEN + " \u2713 " + Fore.RESET        
-
-    else:
-        # Fail
-        try:
-            raise translatedData[2]
-        except Exception as e:
-            traceback.print_exc()
-            errorString = str(e) + Fore.RED
-            return filename + ": " + totalTokenstring + timeString + Fore.RED + " \u2717 " + errorString + Fore.RESET
 
 
 def openFiles(filename):
@@ -453,8 +418,7 @@ def translateRegex(data, filename, translatedList):
             if len(stringList) != len(stringListTL):
                 # Mismatch
                 with LOCK:
-                    if FILENAME not in MISMATCH:
-                        MISMATCH.append(FILENAME)
+                    found_mismatch(MISMATCH, FILENAME)
 
         # Choice List
         if choiceList:
@@ -466,8 +430,7 @@ def translateRegex(data, filename, translatedList):
             if len(choiceList) != len(choiceListTL):
                 # Mismatch
                 with LOCK:
-                    if FILENAME not in MISMATCH:
-                        MISMATCH.append(FILENAME)
+                    found_mismatch(MISMATCH, FILENAME)
 
         # Set Strings
         translateRegex(data, filename, [stringListTL, choiceListTL])

@@ -755,7 +755,7 @@ def _scene(item: dict) -> str:
 
 
 def _judge_params(config: dict, kind: str, user: str) -> dict:
-    from dazedtl.settings.providers import response_format
+    from dazedtl.settings.providers import completion_field, response_format
 
     schema = DEFECT_SCHEMA if kind == "defect" else PAIRWISE_SCHEMA
     prompt = config["prompts"][kind]
@@ -776,10 +776,8 @@ def _judge_params(config: dict, kind: str, user: str) -> dict:
                 batch=config["execution"] == "batch",
             ),
         }
-        official = config["provider"] == "openai" and (
-            not config["endpoint"] or "api.openai.com" in config["endpoint"].lower()
-        )
-        params["max_completion_tokens" if official else "max_tokens"] = config["max_output_tokens"]
+        field = "max_completion_tokens" if completion_field(config["provider"], config["endpoint"]) else "max_tokens"
+        params[field] = config["max_output_tokens"]
     return evaluation.apply_reasoning(params, config["provider"], config["effort"] or "provider_default")
 
 
