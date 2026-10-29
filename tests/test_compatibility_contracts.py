@@ -1832,9 +1832,14 @@ class CompatibilityContracts(unittest.TestCase):
         from dazedtl.compatibility import openrouter_batch
         from dazedtl.compatibility.dazedmtl import ExistingBackend
         from dazedtl.settings import effort
+        from dazedtl.settings.providers import own_api
         from util import translation
         from util.batch_providers import detect_batch_provider, live_price_route
-        from util.provider_costs import foreign_claude_name, on_anthropic_api
+        from util.provider_costs import (
+            cache_read_multiplier,
+            foreign_claude_name,
+            on_anthropic_api,
+        )
 
         addresses = (
             "",
@@ -1847,6 +1852,9 @@ class CompatibilityContracts(unittest.TestCase):
             "https://openrouter.ai/api/v1",
             "https://proxy.example/v1",
             "https://api.openai.com/v1",
+            # The same own APIs without a scheme.
+            "api.anthropic.com",
+            "api.openai.com/v1",
         )
         # Per address: native Live send, Batch provider, Live price route,
         # Settings' engine route.
@@ -1858,6 +1866,8 @@ class CompatibilityContracts(unittest.TestCase):
             (False, None, "anthropic", "openai"),
             (False, None, "anthropic", "openai"),
             (False, "openai", "anthropic", "openai"),
+            (True, "anthropic", "anthropic", "anthropic"),
+            (False, "openai", "anthropic", "openai"),
         )
         other = (
             (False, "openai", "openai", "openai"),
@@ -1865,6 +1875,8 @@ class CompatibilityContracts(unittest.TestCase):
             (False, None, "", "openai"),
             (False, None, "", "openai"),
             (False, None, "", "openai"),
+            (False, None, "", "openai"),
+            (False, "openai", "openai", "openai"),
             (False, None, "", "openai"),
             (False, "openai", "openai", "openai"),
         )
@@ -1968,6 +1980,27 @@ class CompatibilityContracts(unittest.TestCase):
         with patch.dict(os.environ, {"DAZEDTL_TEST_ANTHROPIC_ENDPOINT": stand_in}):
             self.assertTrue(on_anthropic_api(stand_in + "/v1"))
             self.assertFalse(on_anthropic_api("http://127.0.0.1:9/other"))
+        # Kimi's and DeepSeek's own APIs count without a scheme too.
+        for identity, address in (
+            ("kimi", "api.moonshot.ai/v1"),
+            ("deepseek", "API.DeepSeek.com"),
+        ):
+            with self.subTest(identity=identity, address=address):
+                self.assertTrue(own_api(identity, address))
+                self.assertFalse(own_api(identity, "proxy.example/" + address))
+        # Claude's cache reads take each model's rate in any host's form of
+        # its name.
+        for model, read in (
+            ("claude-opus-5-5", 0.05),
+            ("anthropic/claude-opus-5.5", 0.05),
+            ("anthropic/claude-sonnet-5.5:beta", 0.05),
+            ("claude-fable-5.1", 0.025),
+            ("us.anthropic.claude-mythos-5-1-v1:0", 0.025),
+            ("anthropic/claude-opus-4.5", 0.1),
+            ("someone/claude-opus-5.5-distill", 0.1),
+        ):
+            with self.subTest(model=model, rule="cache reads"):
+                self.assertEqual(cache_read_multiplier("anthropic", model), read)
         # With no catalog price, a Claude name takes its version's rates in
         # any host's form: OpenRouter writes versions with dots, Anthropic
         # dates its Claude 3 IDs.

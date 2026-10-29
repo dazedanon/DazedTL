@@ -155,6 +155,7 @@ def configuration(settings, mode, *, cached_only=False, unpriced=False, pair=Non
             "api": value["endpoint"],
         }
     )
+    providers.validate_model_name(value["model"], value["endpoint"])
     return value
 
 

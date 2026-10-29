@@ -27,16 +27,19 @@ from datetime import UTC, datetime
 # no cache reads in an OpenAI Batch on the models whose Batch doesn't cache
 # (openai_batch_caches). 4, OpenAI: an OpenAI Batch that writes the cache but
 # expects no reads shows its price with those writes
-# (translation.openai_cache_prices).
+# (translation.openai_cache_prices). 5, no Batch route: Claude's cache reads
+# at each model's rate in any host's form of its name, such as a native-Claude
+# proxy's "claude-opus-5.5" (cache_read_multiplier); the Batch routes take no
+# such name or, on OpenRouter, price at its policy's frozen rates.
 EVERY_ROUTE_PRICE_RULES = 2
-ROUTE_PRICE_RULES = {"openai": 4}
+ROUTE_PRICE_RULES = {"openai": 4, None: 5}
 PRICE_RULES_VERSION = max(EVERY_ROUTE_PRICE_RULES, *ROUTE_PRICE_RULES.values())
 
 
 def route_price_rules(route: str | None) -> int:
     """The price rules version at which ``route``'s rules last changed: a
     figure priced on it under that version or a later one is current."""
-    return max(EVERY_ROUTE_PRICE_RULES, ROUTE_PRICE_RULES.get(route or "", 0))
+    return max(EVERY_ROUTE_PRICE_RULES, ROUTE_PRICE_RULES.get(route or None, 0))
 
 
 def received_at(created=None) -> str:
@@ -258,7 +261,8 @@ def cache_read_multiplier(provider: str, model: str) -> float:
     """Return cache-read price as a multiple of regular input pricing.
 
     Anthropic reads cost 0.05 times regular input on Claude Opus 5.5 and
-    Sonnet 5.5 and 0.025 times on Claude Fable 5.1 and Mythos 5.1. Several
+    Sonnet 5.5 and 0.025 times on Claude Fable 5.1 and Mythos 5.1, in any
+    host's form of their names (claude_version_name). Several
     OpenAI families read at their own multiple (_OPENAI_CACHE_READS). Kimi
     reads cost $0.16 of K2.6's $0.95 and $0.19 of K2.7 Code's $0.95
     (https://platform.kimi.ai/docs/pricing/chat). DeepSeek reads cost $0.006
@@ -274,9 +278,10 @@ def cache_read_multiplier(provider: str, model: str) -> float:
             if family.search(name):
                 return multiplier
     if normalized_provider == "anthropic":
-        if re.search(r"claude-(?:fable|mythos)-5-1(?:\D|$)", name):
+        claude = claude_version_name(model) or ""
+        if re.match(r"claude-(?:fable|mythos)-5-1(?:\D|$)", claude):
             return 0.025
-        if re.search(r"claude-(?:opus|sonnet)-5-5(?:\D|$)", name):
+        if re.match(r"claude-(?:opus|sonnet)-5-5(?:\D|$)", claude):
             return 0.05
     if normalized_provider == "kimi":
         if "kimi-k2.7-code" in name:
