@@ -2341,6 +2341,59 @@ try:
             )
             assert legacy["response_format"] == {"type": "json_object"}
             assert "provider" not in legacy.get("extra_body", {})
+
+            # A json_schema request's 400 was sent again in JSON mode whatever
+            # it said, so under the run-stop policy each rejected request
+            # reached the provider twice. There only a 400 naming the response
+            # format falls back; a run frozen before falls back at every 400.
+            def bad_request(message):
+                body = {"error": {"message": message}}
+                return BadRequestError(
+                    f"Error code: 400 - {body}",
+                    response=httpx.Response(
+                        400,
+                        request=httpx.Request(
+                            "POST", "https://provider.invalid/v1/chat/completions"
+                        ),
+                    ),
+                    body=body,
+                )
+
+            unrelated = "The model `gone` does not exist."
+            unsupported = (
+                "Invalid parameter: 'response_format' of type 'json_schema' "
+                "is not supported with this model."
+            )
+            for run_stops, message, sent in (
+                (True, unrelated, 1),
+                (True, unsupported, 2),
+                (False, unrelated, 2),
+            ):
+                send = Mock(side_effect=[bad_request(message), good])
+                with (
+                    patch.object(translation, "RUN_STOPS", run_stops),
+                    patch.object(
+                        translation.openai,
+                        "chat",
+                        SimpleNamespace(completions=SimpleNamespace(create=send)),
+                    ),
+                ):
+                    try:
+                        translation.translateText(
+                            "Translate.",
+                            '{"Line1":"薬"}',
+                            [],
+                            0,
+                            "json",
+                            "openai/gpt-4.1",
+                            numLines=1,
+                        )
+                    except Exception as error:
+                        assert sent == 1 and "does not exist" in str(error), error
+                assert send.call_count == sent, (run_stops, message, send.call_count)
+                assert send.call_args.kwargs["response_format"]["type"] == (
+                    "json_object" if sent == 2 else "json_schema"
+                )
             # DeepSeek's own models think within max_tokens by default, so a
             # long request gets the full ceiling there and the cap elsewhere.
             for model, endpoint, ceiling in (
