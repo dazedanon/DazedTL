@@ -2151,9 +2151,11 @@ def falls_back_to_json_mode(error, *, before_run_stops=True):
 MISSING_BATCH_RESULT = {
     "unreturned": "The Batch ended without translating some of this file's "
     "lines, for example because it was canceled.",
+    # Also a Batch an older engine version collected and submitted, which is
+    # still collected (desktop/backend/manual ENGINE_VERSIONS).
     "changed": "Some of this file's lines no longer match the Batch's "
     "translations, for example because the file changed after the Batch was "
-    "prepared.",
+    "prepared, or an update changed how its lines are sent.",
     None: "The Batch has no translation for some of this file's lines.",
 }
 # An unreturned request whose provider gave its reason.
