@@ -956,7 +956,11 @@ try:
         # with one backslash. It sent other codes, such as \I[5], and a help
         # text's line break as nested as their field and wrote back the
         # reply's, and wrapped a QuestContent nested deeper than one game's
-        # with that game's line break, which ended its string. CSV read its
+        # with that game's line break, which ended its string. It wrote every
+        # quest field when any one field's reply had the right count, so a
+        # short reply moved its translations onto other quests; gave a
+        # drawTextEx label drawn on two lines the next label's translation;
+        # and ended a label's single-quoted string at an apostrophe. CSV read its
         # target column as the speaker by default, and as the name it wrote
         # there made the row look translated, wrote each row's translation to
         # the next row. CSV, Kirikiri, Regex, Lune, Tyrano and WOLF2 sent each
@@ -1145,6 +1149,66 @@ try:
                     (
                         r"var q = [\"{\\\"QuestName\\\":\\\"EN \'最初の 依頼\'\\\"}\"];"
                         '\nvar txtSubject = "EN ՚クエスト՚";\n'
+                    ),
+                ),
+                (
+                    "modules.rpgmakerplugin",
+                    "handlePlugin",
+                    "plugins.js",
+                    (
+                        r"var q = [\"{\\\"QuestName\\\":\\\"薬草集め\\\",\\\"QuestClientName\\\":"
+                        r"\\\"村長\\\"}\",\"{\\\"QuestName\\\":\\\"魔物退治\\\",\\\"QuestClientName\\\":"
+                        r"\\\"騎士団長\\\"}\"];"
+                        "\n"
+                    ),
+                    {"short": 2},
+                    [["薬草集め", "魔物退治"], ["村長", "騎士団長"]],
+                    (
+                        r"var q = [\"{\\\"QuestName\\\":\\\"EN \'薬草集め\'\\\",\\\"QuestClientName\\\":"
+                        r"\\\"村長\\\"}\",\"{\\\"QuestName\\\":\\\"EN \'魔物退治\'\\\",\\\"QuestClientName\\\":"
+                        r"\\\"騎士団長\\\"}\"];"
+                        "\n"
+                    ),
+                ),
+                (
+                    "modules.rpgmakerplugin",
+                    "handlePlugin",
+                    "plugins.js",
+                    (
+                        "var kiss = function() {\n"
+                        r"    this.drawTextEx('\\}【口づけ】\\{', 0, 0);"
+                        "\n"
+                        r"    this.drawTextEx('\\C[16]攻撃力\\C[0] ' + n, 0, 36);"
+                        "\n"
+                        "};\nvar touch = function() {\n"
+                        r"    this.drawTextEx('\\}【口づけ】\\{', 0, 72);"
+                        "\n"
+                        r"    this.drawTextEx('\\}【愛撫】\\{', 0, 108);"
+                        "\n"
+                        r"    this.drawTextEx('\\C[16]攻撃力\\C[0] ' + n, 0, 144);"
+                        "\n"
+                        r"    this.drawTextEx('\\C[16]魔力\\C[0] ' + n, 0, 180);"
+                        "\n"
+                        "};\n"
+                    ),
+                    {"replies": {"【口づけ】": "Kiss's", "攻撃力": "Hero's attack"}},
+                    [["【口づけ】", "【愛撫】"], ["攻撃力", "魔力"]],
+                    (
+                        "var kiss = function() {\n"
+                        r"    this.drawTextEx('\\}Kiss\'s\\{', 0, 0);"
+                        "\n"
+                        r"    this.drawTextEx('\\C[16]Hero\'s attack\\C[0] ' + n, 0, 36);"
+                        "\n"
+                        "};\nvar touch = function() {\n"
+                        r"    this.drawTextEx('\\}Kiss\'s\\{', 0, 72);"
+                        "\n"
+                        r"    this.drawTextEx('\\}EN \'【愛撫】\'\\{', 0, 108);"
+                        "\n"
+                        r"    this.drawTextEx('\\C[16]Hero\'s attack\\C[0] ' + n, 0, 144);"
+                        "\n"
+                        r"""    this.drawTextEx('\\C[16]EN "魔力"\\C[0] ' + n, 0, 180);"""
+                        "\n"
+                        "};\n"
                     ),
                 ),
                 (
