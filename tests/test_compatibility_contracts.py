@@ -242,11 +242,15 @@ class Characters:
 
     def encode(self, text, *, disallowed_special="all"):
         if disallowed_special and "<|endoftext|>" in str(text):
-            raise ValueError("Encountered text corresponding to disallowed special token")
+            raise ValueError(
+                "Encountered text corresponding to disallowed special token"
+            )
         return [ord(character) for character in str(text)]
 
     def encode_batch(self, texts, *, disallowed_special="all"):
-        return [self.encode(text, disallowed_special=disallowed_special) for text in texts]
+        return [
+            self.encode(text, disallowed_special=disallowed_special) for text in texts
+        ]
 
 
 class CompatibilityContracts(unittest.TestCase):
@@ -1935,7 +1939,8 @@ class CompatibilityContracts(unittest.TestCase):
             with self.subTest(model=model, rule="thinks"):
                 self.assertEqual(
                     effort.thinks(None, model),
-                    model in {"claude-sonnet-5-5", "Claude-Opus-5", "deepseek-v4-flash"},
+                    model
+                    in {"claude-sonnet-5-5", "Claude-Opus-5", "deepseek-v4-flash"},
                 )
 
     def test_mistral_follows_the_json_mode_strict_and_retry_rules(self):

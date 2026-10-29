@@ -212,7 +212,11 @@ class SettingsTests(unittest.TestCase):
                 reloaded.save(
                     view["revision"],
                     identity,
-                    {"language": "English", "model": model, "sourceLanguage": "Japanese"},
+                    {
+                        "language": "English",
+                        "model": model,
+                        "sourceLanguage": "Japanese",
+                    },
                     options,
                 )
             path = Path(temporary) / "settings/settings.json"
