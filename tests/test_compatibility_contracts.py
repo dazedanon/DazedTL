@@ -1767,6 +1767,7 @@ class CompatibilityContracts(unittest.TestCase):
         # Settings' route check; each copy must keep answering the same.
         import os
 
+        from dazedtl.compatibility import openrouter_batch
         from dazedtl.compatibility.dazedmtl import ExistingBackend
         from util import translation
         from util.batch_providers import detect_batch_provider, live_price_route
@@ -1814,6 +1815,14 @@ class CompatibilityContracts(unittest.TestCase):
                 with (
                     self.subTest(model=model, address=address),
                     patch.dict(os.environ, {"api": address}),
+                    # A run's worker without an OpenRouter Batch policy, which
+                    # an earlier test's worker left this process as or not;
+                    # an unconfigured one reads OpenRouter as its Batch.
+                    patch.multiple(
+                        openrouter_batch,
+                        _worker_policy=None,
+                        _worker_configured=True,
+                    ),
                 ):
                     os.environ.pop("DAZEDTL_TEST_OPENAI_ENDPOINT", None)
                     self.assertEqual(
