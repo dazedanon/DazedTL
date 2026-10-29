@@ -26,3 +26,4 @@
 - **Translate:** a file stopped partway in a Translation run is now translated again on Resume, which skipped it as finished when its engine had saved part of it.
 - **Translate:** a reply with the wrong number of lines that an engine kept in its original text now counts toward the run's mismatches, which read the file as fully translated.
 - **Translate:** an Image Text file's cost and time now show with the file, which left them out.
+- **Translate:** a WOLF line or database entry that kept its original text because its replies kept failing is now left exactly as it was, which wrote it back with its line breaks turned into spaces.
