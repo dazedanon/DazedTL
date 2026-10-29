@@ -477,7 +477,7 @@ class ProviderTransport:
         return self._client
 
     def submit(self, rows: list[dict]) -> str:
-        google = batch_api._google_client(self.secret) if self.connection["provider"] == "gemini" else None
+        google = batch_api.google_files_client(self.secret) if self.connection["provider"] == "gemini" else None
         return batch_api.submit_batch(
             self.connection["provider"], rows, client=self.client(), google_client=google
         )["id"]
@@ -486,7 +486,7 @@ class ProviderTransport:
         return batch_api.retrieve_batch(self.connection["provider"], batch_id, client=self.client())
 
     def results(self, batch_id: str, custom_ids: dict) -> tuple[dict, list, dict]:
-        google = batch_api._google_client(self.secret) if self.connection["provider"] == "gemini" else None
+        google = batch_api.google_files_client(self.secret) if self.connection["provider"] == "gemini" else None
         return batch_api.download_results(
             self.connection["provider"], batch_id, custom_ids, client=self.client(), google_client=google
         )

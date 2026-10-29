@@ -646,7 +646,8 @@ def check_effort(connection, model, level, listed=None):
     takes *level* for *model* (``effort_request``): one attempt with no
     retries or redirects, sent only on the user's click in Settings or by
     the maintainer's scripts/effort_check.py. Its outcome is "accepted",
-    with what the reply shows of the model's thinking; "refused", with the
+    with what the reply shows of the model's thinking, also for an HTTP 400
+    saying the reply reached its token cap (``effort.capped``); "refused", with the
     server's reason (HTTP 400 or 422, which providers don't bill); or
     "failed" when it can say neither, such as an unreachable server or a
     rejected key."""
@@ -685,6 +686,13 @@ def check_effort(connection, model, level, listed=None):
         payload = None
     if status in (400, 422):
         reason = _reason(payload, text, connection.get("secret", ""))
+        if effort.capped(status, reason):
+            return {
+                "status": "accepted",
+                "message": "Accepted. The reply reached the check's token cap before it finished, so the server took the request.",
+                "thought": None,
+                "applied": None,
+            }
         # A refusal that doesn't name the effort, such as an unknown model,
         # says nothing about the level, so it saves nothing either; runs read
         # a refusal by the same rule (settings/effort).

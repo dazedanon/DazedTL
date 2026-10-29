@@ -158,7 +158,8 @@ def translateTyrano(data, filename, translatedList):
     while i < len(data):
         voice = False
         lineRegexNoSpeaker = r"^([^\[#;*@\n]+)\[p\]|^([^\[#;*@\n]+)\[l\]\[[rp]\]|^([^\[#;*@\n]+)\[[rpl]\]|^([^\[#;*@_\n]+)\n$"
-        lineRegexSpeaker = r"^#(.*)"
+        # "#name", or "#name:face" with a face to show, which stays
+        lineRegexSpeaker = r"^#([^:\n]*)"
         furiganaRegex = r"(\[ruby\stext=(.*?)\])"
         choiceRegex = r'\[glink.+?text="(.*?)"'
 
@@ -226,22 +227,21 @@ def translateTyrano(data, filename, translatedList):
 
             originalString = jaString
 
+            # The text sent: no textwrap, commands, ruby or spaces around it.
+            # A line of spaces alone sends nothing, so it takes no reply.
+            jaString = jaString.replace("[r]", " ")
+            jaString = jaString.replace("[l]", "")
+            furiganaList = re.findall(furiganaRegex, jaString)
+            for furigana in furiganaList:
+                jaString = jaString.replace(furigana[0], furigana[1])
+            jaString = jaString.strip()
+
+            if not jaString:
+                pass
+
             # Pass 1
-            if not translatedList:
-                # Remove any textwrap and commands
-                jaString = jaString.replace("[r]", " ")
-                jaString = jaString.replace("[l]", "")
-
-                # Ruby Text
-                furiganaList = re.findall(furiganaRegex, jaString)
-                for furigana in furiganaList:
-                    jaString = jaString.replace(furigana[0], furigana[1])
-
-                # Strip Spaces
-                jaString = jaString.strip()
-
-                if jaString:
-                    stringList.append(to_prefixed(speaker, jaString))
+            elif not translatedList:
+                stringList.append(to_prefixed(speaker, jaString))
 
             # Pass 2
             else:

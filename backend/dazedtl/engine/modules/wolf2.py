@@ -180,15 +180,15 @@ def checkLine(data, i, filename):
         check_line(data, i, "shift_jis", filename)
 
 
-def isText(line):
-    """Whether *line* is a line of text: not blank, a "//" comment or choice,
-    or an "@" command."""
-    return "/" not in line and "@" not in line and line != "\n"
-
-
 # A speaker: a text line of its own ending in "：", the name before it, saying
 # the run of text lines after it. A "：" inside a line is the line's own text.
 SPEAKER = r"^([^/@\n]+)：\s*$"
+
+
+def isText(line):
+    """Whether *line* is a line of text: not blank, a "//" comment or choice,
+    an "@" command or a speaker, which starts the next run."""
+    return "/" not in line and "@" not in line and line != "\n" and find_speaker(SPEAKER, line) is None
 
 
 def translateWOLF(data, pbar, filename):
@@ -267,8 +267,8 @@ def translateWOLF(data, pbar, filename):
             # Add String
             stringList.append(to_prefixed(speaker, jaString))
 
-        # Nothing relevant. Skip Line.
-        else:
+        # Nothing relevant: skip the line, unless it is a speaker, read next
+        elif i < len(data) and find_speaker(SPEAKER, data[i]) is None:
             i += 1
 
     # EOF

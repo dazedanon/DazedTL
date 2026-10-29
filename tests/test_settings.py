@@ -2352,6 +2352,53 @@ class SettingsTests(unittest.TestCase):
             )
         )
 
+    def test_a_check_that_reaches_its_token_cap_reads_the_level_as_accepted(self):
+        # OpenAI answers a check whose reasoning outruns its 16 tokens with an
+        # HTTP 400 (GPT-5.1 Medium and High, GPT-5 Minimal, 2026-10-28). The
+        # server took the level, but Check an effort read it as failed on
+        # every key, so those levels could never pass.
+        from dazedtl.settings import effort
+
+        reason = (
+            "Could not finish the message because max_tokens or model output "
+            "limit was reached. Please try again with higher max_tokens."
+        )
+
+        def respond(request):
+            return httpx.Response(
+                400,
+                json={
+                    "error": {
+                        "message": reason,
+                        "type": "invalid_request_error",
+                        "param": None,
+                        "code": None,
+                    }
+                },
+            )
+
+        client = httpx.Client
+        connection = {
+            "provider": "openai",
+            "protocol": "openai",
+            "endpoint": "",
+            "secret": "fixture-openai-key",
+            "keyless": False,
+            "organization": "",
+        }
+        with patch.object(
+            providers.httpx,
+            "Client",
+            side_effect=lambda **kwargs: client(
+                transport=httpx.MockTransport(respond), **kwargs
+            ),
+        ):
+            result = providers.check_effort(connection, "gpt-5.1", "medium")
+        self.assertEqual(result["status"], "accepted")
+        self.assertIn("token cap", result["message"])
+        # A run never reads it as a refusal of its effort.
+        self.assertFalse(effort.refuses(400, reason))
+
     def test_the_effort_table_check_plans_before_it_sends(self):
         # The maintainer's check of the effort table spends money on real
         # APIs, so it sends nothing without --confirm, reads keys only from

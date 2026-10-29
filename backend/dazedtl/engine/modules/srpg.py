@@ -3,7 +3,6 @@ import json
 import os
 import re
 import shutil
-from util.speakers import translate_speaker
 import util.dazedwrap as dazedwrap
 import threading
 import time
@@ -36,7 +35,6 @@ MAXHISTORY = 10
 ESTIMATE = ""
 TOKENS = [0, 0]
 MISMATCH = []  # Lists files that throw a mismatch error (Length of GPT list response is wrong)
-NAMESLIST = []  # List of speaker names and their translations
 PBAR = None
 FILENAME = None
 
@@ -2020,10 +2018,6 @@ def translateMap(data, filename, translatedDataList=None, pbar=None):
         translateMap(data, filename, [descList, mapNameList, victoryCondsList, defeatCondsList, unitNameList, unitDescList, eventNameList, eventDescList, dataList, speakerList], pbar)
     
     return totalTokens
-
-
-def getSpeaker(speaker):
-    return translate_speaker(speaker, NAMESLIST, LANGUAGE, translateAI)
 
 
 def translateAI(text, history, history_ctx=None, filename=None, pbar=None):

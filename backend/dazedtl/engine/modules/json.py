@@ -15,7 +15,7 @@ from tqdm import tqdm
 from util.languages import source_pattern
 from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost, getPricingConfig, calculateCost, found_mismatch, run_stop_errors
 from util.translation_task import fail_on_parser_error, module_receipt, write_output
-from util.speakers import strip_echoed_speaker, translate_speaker
+from util.speakers import strip_echoed_speaker, to_prefixed, translate_speaker
 
 # Globals
 MODEL = os.getenv("model")
@@ -766,11 +766,8 @@ def translateDialogueSrcTl(data, filename):
             if not re.search(LANGREGEX, src):
                 continue
             srcClean = src.replace("\r\n", " ").replace("\n", " ").strip()
-            if speaker:
-                srcList.append(f"[{speaker}]: {srcClean}")
-            else:
-                srcList.append(srcClean)
-        keyList.append((key, entry_type))
+            srcList.append(to_prefixed(speaker, srcClean))
+        keyList.append((key, entry_type, "" if tl else speaker))
 
     if srcList:
         PBAR.total = len(srcList)
@@ -785,14 +782,14 @@ def translateDialogueSrcTl(data, filename):
             with LOCK:
                 found_mismatch(MISMATCH, FILENAME)
 
-        for i, (key, entry_type) in enumerate(keyList):
+        for i, (key, entry_type, speaker) in enumerate(keyList):
             if i >= len(translatedList):
                 break
             translatedText = translatedList[i]
 
             # Strip speaker prefix if the AI echoed it back
             # Handles: [Speaker]: text  |  Speaker: text  |  Speaker(text) / CJK(text)
-            translatedText = strip_echoed_speaker(translatedText, LANGUAGE)
+            translatedText = strip_echoed_speaker(translatedText, LANGUAGE, speaker)
 
             data[key]["tl"] = translatedText
 
@@ -823,7 +820,6 @@ def translateJSON(data, filename, translatedList):
         stringList = []
         eventList = [[], [], [], [], [], [], []]  # [title, process, text, key, target, job, place]
     tokens = [0, 0]
-    speaker = ""
     i = 0
     stringListTL = []
     eventListTL = [[], [], [], [], [], [], []]
@@ -955,7 +951,8 @@ def translateJSON(data, filename, translatedList):
                     # Set Data
                     data[i]["text"] = translatedText
 
-        # Speaker
+        # Speaker: the entry's own, so an entry without one has none
+        speaker = ""
         if speakerKey in data[i] and data[i][speakerKey]:
             # Grab and TL
             speaker = data[i][speakerKey]
@@ -991,10 +988,7 @@ def translateJSON(data, filename, translatedList):
                 # jaString = jaString.replace('\n', ' ')
 
                 if jaString:
-                    if speaker:
-                        stringList.append(f"[{speaker}]: {jaString}")
-                    else:
-                        stringList.append(jaString)
+                    stringList.append(to_prefixed(speaker, jaString))
 
             # Pass 2
             else:
@@ -1009,7 +1003,7 @@ def translateJSON(data, filename, translatedList):
                         stringList = None
 
                     # Remove speaker prefix — handles [Name]: / Name: / CJK(text)
-                    translatedText = strip_echoed_speaker(translatedText, LANGUAGE)
+                    translatedText = strip_echoed_speaker(translatedText, LANGUAGE, speaker)
 
                     # Escape Quotes
                     translatedText = re.sub(r'(?<!\\)"', r"", translatedText)

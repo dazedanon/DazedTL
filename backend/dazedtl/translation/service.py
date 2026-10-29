@@ -779,21 +779,34 @@ Additional project instructions:
         return repricing.route_of(self.engine, configuration)
 
     @staticmethod
-    def reading(job, change, settings, route):
+    def reading(job, change, settings, route, lookup=None):
         """How a run's quote waiting for approval reads (repricing.read)
         under ``change``: priced again from its counts at the settings it is
         read at, on their route by ``route`` (repricing.route_of), when they
-        keep its requests; a Batch also needs a route that runs one."""
+        keep its requests; a Batch also needs a route that runs one. Given
+        the reader ``lookup`` makes, it reads as approving it starts the run
+        (repricing.start)."""
         quote = job["quote"]
 
         def again(configuration, provider):
-            if (configuration["mode"] == "batch" and not provider) or not repriceable(
-                quote, provider
+            if (
+                quote is None
+                or (configuration["mode"] == "batch" and not provider)
+                or not repriceable(quote, provider)
             ):
                 return None
             return price(counted(quote), configuration, provider)
 
-        return repricing.read(change, job.get("configuration"), settings, route, again)
+        rule = (change, job.get("configuration"), settings, route, again)
+        return (
+            repricing.read(*rule) if lookup is None else repricing.start(*rule, lookup)
+        )
+
+    def lookup(self, mode, root):
+        """A reader of the settings a run on the game at *root* compiled now
+        would freeze, with a price no lookup finds left out
+        (repricing.require_readable)."""
+        return lambda: self.api_configuration(mode, root, unpriced=True)[0]
 
     def reprice(self, job, plan, configuration, provider, quote):
         """Freezes a waiting run again with settings that only price it
@@ -849,7 +862,9 @@ Additional project instructions:
             self.route,
             reprice=False,
         )
-        if self.reading(job, change, current, self.route).current:
+        if self.reading(
+            job, change, current, self.route, self.lookup(mode, project.root)
+        ).current:
             return self.jobs.store.view(job)
         preparation = next(
             (
@@ -1385,22 +1400,11 @@ Additional project instructions:
                 self.route,
                 reprice=False,
             )
-            if change is not None and change.settings:
-                # The quote was shown as saved because a price it needs isn't
-                # known, such as an OpenRouter Batch policy after a failed
-                # check (job_views), not because the settings changed.
-                try:
-                    shown, _provider = self.api_configuration(
-                        mode, project.root, cached_only=True, unpriced=True
-                    )
-                except ValueError:
-                    shown = None
-                if shown is not None and repricing.unknown_prices(
-                    plan["configuration"], shown
-                ):
-                    raise ValueError(
-                        "This estimate's prices can't be read right now, such as after its connection's check failed. Check the connection in Settings, then approve it."
-                    )
+            # Refused while a price it needs can't be read, such as after a
+            # failed check, which the view shows as saved (repricing.start).
+            reading = self.reading(
+                job, change, current, self.route, self.lookup(mode, project.root)
+            )
             if approval_token == job["approval_token"]:
                 if change is not None:
                     raise ValueError(
@@ -1409,11 +1413,6 @@ Additional project instructions:
                         else "API settings or the translation mode changed after this estimate. Compile and review a new plan."
                     )
             else:
-                reading = (
-                    self.reading(job, change, current, self.route)
-                    if job["quote"] is not None
-                    else repricing.OUTDATED
-                )
                 if reading.figure is None or approval_token != repricing.approval_token(
                     job["approval_token"], reading.settings, reading.route
                 ):

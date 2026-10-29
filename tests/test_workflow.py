@@ -1424,6 +1424,10 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(shown["approval_token"], run["approval_token"])
         with self.assertRaisesRegex(ValueError, "check failed"):
             self.service.start(self.identity, run["id"], run["approval_token"])
+        # Estimate again says so too, as the whole game's does, where it
+        # found the quote current by pricing it as Live-only.
+        with self.assertRaisesRegex(ValueError, "check failed"):
+            self.service.reestimate(self.identity, run["id"])
         connection["check"] = {**connection["check"], "status": "verified"}
         with self.assertRaisesRegex(ValueError, "Provider execution is disabled"):
             self.service.start(self.identity, run["id"], run["approval_token"])
