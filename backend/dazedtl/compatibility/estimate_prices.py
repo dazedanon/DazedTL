@@ -109,19 +109,13 @@ def prices(counts, configuration, provider, cache=None):
             listed,
         ),
     }
-    if provider == "anthropic" and cache is not None and cache.writes:
-        # Approximate input leaves out the reply schema the cache key holds.
-        dynamic = max(0, inputs - cache.cached)
-        cached, most = claude_cache_prices(cache, dynamic, outputs, in_rate, out_rate)
-        value.update(
-            cache_write_tokens=cache.writes,
-            cache_read_tokens=cache.reads,
-            cache_max_write_tokens=cache.cached,
-            batch_cached_cost=cached,
-            batch_max_cost=most,
-            uses_prompt_cache=True,
-            cache_kind="explicit",
-        )
+    claude = (
+        claude_cache_prices(cache, inputs, outputs, in_rate, out_rate)
+        if provider == "anthropic"
+        else None
+    )
+    if claude is not None:
+        value.update(claude)
     elif provider == "openai":
         # The reads stay as counted, so the estimate is priced again for
         # another model from them; the hits are what this model's Batch reads.
@@ -144,20 +138,24 @@ def prices(counts, configuration, provider, cache=None):
     return value
 
 
-def reprice(estimate, configuration):
-    """``estimate`` priced with the model and rates of ``configuration``, or
-    None when its counts can't be priced again. Claude counts with each
-    model's own tokenizer, so a Claude estimate is never priced again."""
-    provider = estimate.get("provider")
+def reprice(estimate, configuration, route):
+    """``estimate`` priced with the model and rates of ``configuration`` as
+    a Batch of ``route``, the Batch provider its settings send it on now,
+    or None when its counts can't be priced again. Claude counts with each
+    model's own tokenizer, so an estimate counted for Claude, or one whose
+    route is now Claude's, is never priced again; a Batch also needs a route
+    that runs one, as an Assistant-led quote does (service.reading)."""
     if (
-        provider == "anthropic"
+        "anthropic" in (estimate.get("provider"), route)
+        or configuration.get("mode") == "batch"
+        and not route
         or "input_tokens" not in estimate
         or "output_tokens" not in estimate
-        or provider == "openai"
+        or route == "openai"
         and "cacheable_tokens" not in estimate
     ):
         return None
-    return {**estimate, **prices(estimate, configuration, provider)}
+    return {**estimate, **prices(estimate, configuration, route)}
 
 
 def usage_cost(usage, configuration, provider, rows=None):

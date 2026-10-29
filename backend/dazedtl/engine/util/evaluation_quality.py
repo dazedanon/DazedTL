@@ -446,9 +446,9 @@ def estimate(requests: list[tuple[dict, int]], connection: dict) -> dict:
 
 
 def _token_count(text: str) -> int:
-    import tiktoken
+    from util.translation import approximate_tokens
 
-    return len(tiktoken.encoding_for_model("gpt-4").encode(text, disallowed_special=()))
+    return approximate_tokens(text)
 
 
 def _reply_tokens(built: dict) -> int:

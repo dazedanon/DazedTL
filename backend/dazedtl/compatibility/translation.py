@@ -328,11 +328,9 @@ class TranslationEngine:
         return request_payload(request, configuration)
 
     def token_count(self, text):
-        import tiktoken
+        from util.translation import approximate_tokens
 
-        return len(
-            tiktoken.encoding_for_model("gpt-4").encode(text, disallowed_special=())
-        )
+        return approximate_tokens(text)
 
     def claude_input_tokens(self, requests, configuration, secret):
         """Claude's own count of these requests' input, or None when its
@@ -349,18 +347,16 @@ class TranslationEngine:
         )
 
     def claude_cache(self, requests, configuration, counted=None):
-        """What these requests' cached instructions cost (claude_tokens.cache),
-        with Claude's count of each prefix or, without one, the approximate."""
-        from util import claude_tokens
+        """What these requests' cached instructions cost, with Claude's count
+        of each prefix or, without one, the approximate; Guided's estimate
+        counts them the same way (claude_prompt_cache)."""
+        from util.translation import claude_prompt_cache
 
-        params = [item["params"] for item in requests]
-        prefixes = dict(counted.prefixes) if counted else {}
-        for value in params:
-            key = claude_tokens.split(value)[0]
-            if key and key not in prefixes:
-                prefixes[key] = self.token_count(claude_tokens.cached_text(value))
-        return claude_tokens.cache(
-            params, prefixes, "anthropic", configuration["model"]
+        return claude_prompt_cache(
+            [item["params"] for item in requests],
+            "anthropic",
+            configuration["model"],
+            counted,
         )
 
     @staticmethod

@@ -4,10 +4,7 @@ context view."""
 from __future__ import annotations
 
 import json
-import os
 import re
-import shlex
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -47,22 +44,14 @@ from util.qa.storage import (
 )
 from util.skills import rpgmaker_qa_skill_parts
 
-
-def shell_argument(value: str | Path) -> str:
-    """Quote a handoff argument for PowerShell on Windows, sh elsewhere."""
-    text = str(value)
-    return "'" + text.replace("'", "''") + "'" if os.name == 'nt' else shlex.quote(text)
+# A handoff argument, quoted for the assistant's shell.
+shell_argument = system.shell_argument
 
 
 def runtime_command(script: str | Path) -> str:
-    """Use the running managed interpreter, even with no Python on PATH.
-
-    Windows pipes use the ANSI code page, which cannot hold Japanese game text,
-    so Python writes UTF-8 and PowerShell decodes it; the app's
-    dazedtl.translation.helper_command follows the same form.
-    """
-    prefix = '[Console]::OutputEncoding = [Text.Encoding]::UTF8; & ' if os.name == 'nt' else ''
-    return prefix + shell_argument(sys.executable) + ' -X utf8 ' + shell_argument(script)
+    """Runs script with the running managed interpreter, even with no Python
+    on PATH, by the app's rules for a command an assistant runs."""
+    return system.shell_command(system.python_command(script))
 
 
 # Each brief's sections besides the policy, commands and result formats; a
@@ -139,7 +128,8 @@ def _task_instructions(task_dir: Path, task: dict[str, Any]) -> str:
         f"## {title}\n\n{text}" for title, text in sections.items() if title != "Handoff"
     )
     return _fill(
-        f"# Text QA task\n\n{_languages(task)}Task: `{task_dir}`\n\n{focus}\n\n{intro}\n\n{body}\n",
+        f"# Text QA task\n\n{system.shell_note()}{_languages(task)}Task: `{task_dir}`"
+        f"\n\n{focus}\n\n{intro}\n\n{body}\n",
         _skill_values(task_dir, task),
     )
 
@@ -175,7 +165,8 @@ def brief(task_dir: str | Path, role: str, worker: str = "") -> str:
             _atomic_write_json(root / "checkpoint.json", checkpoint)
     root, task, _checkpoint = _load_task(task_dir)
     _intro, sections, focus = _skill_sections(task["focus"])
-    parts = [_languages(task) + focus] + [
+    # A worker starts from its brief alone, so it carries the shell note too.
+    parts = [system.shell_note() + _languages(task) + focus] + [
         f"## {name}\n\n{sections[name]}"
         for name in ("Policy", *_BRIEF_SECTIONS[role], "Commands", "Result formats")
     ]

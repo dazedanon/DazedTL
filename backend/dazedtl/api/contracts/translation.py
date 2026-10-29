@@ -64,6 +64,9 @@ class TranslationQuote(TypedDict):
     output_rules: NotRequired[int]
     model: str
     provider: str
+    # The Batch provider that priced it, None for a route without one
+    # (translation/repricing.quote_route); quotes before it name none.
+    route: NotRequired[str | None]
     basis: str
     rates: QuoteRates
 

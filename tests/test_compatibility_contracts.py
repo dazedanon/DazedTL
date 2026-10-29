@@ -236,6 +236,23 @@ def checkout(game, *pending):
     )
 
 
+class Characters:
+    """A hermetic stand-in for tiktoken's encoding, which refuses text
+    reading as its special token unless told to count it as text."""
+
+    def encode(self, text, *, disallowed_special="all"):
+        if disallowed_special and "<|endoftext|>" in str(text):
+            raise ValueError(
+                "Encountered text corresponding to disallowed special token"
+            )
+        return [ord(character) for character in str(text)]
+
+    def encode_batch(self, texts, *, disallowed_special="all"):
+        return [
+            self.encode(text, disallowed_special=disallowed_special) for text in texts
+        ]
+
+
 class CompatibilityContracts(unittest.TestCase):
     def test_an_estimate_priced_for_another_model_matches_that_models_estimate(self):
         # A switch that keeps the requests' text prices an estimate's counts
@@ -247,15 +264,6 @@ class CompatibilityContracts(unittest.TestCase):
         from dazedtl.compatibility.estimate_prices import reprice
         from dazedtl.translation.requests import CACHE_COUNTS, price
         from util import translation
-
-        class Characters:
-            """A hermetic stand-in for tiktoken's encoding."""
-
-            def encode(self, text, **_kwargs):
-                return [ord(character) for character in str(text)]
-
-            def encode_batch(self, texts, **_kwargs):
-                return [self.encode(text) for text in texts]
 
         rates = {
             "gpt-5.6-sol": (4, 20),
@@ -310,6 +318,7 @@ class CompatibilityContracts(unittest.TestCase):
                     queue, {str(index): request(before, index) for index in range(3)}
                 )
                 expected = translation.estimateBatchCost(after, queue_file=queue)
+                assert expected is not None
                 configuration = {
                     "mode": "batch",
                     "model": after,
@@ -319,6 +328,7 @@ class CompatibilityContracts(unittest.TestCase):
                 repriced = reprice(
                     translation.estimateBatchCost(before, queue_file=queue),
                     configuration,
+                    "openai",
                 )
                 self.assertEqual({key: repriced[key] for key in expected}, expected)
                 counts = TranslationEngine.openai_cache(
@@ -351,6 +361,144 @@ class CompatibilityContracts(unittest.TestCase):
                         expected["batch_cached_cost"],
                     ),
                 )
+
+    def test_a_claude_batch_estimate_and_quote_give_the_same_figures(self):
+        # Guided's estimate and Assistant-led's quote decide a Claude Batch's
+        # cache by one rule (claude_cache_prices), with and without cached
+        # instructions, so the same requests give the same figures.
+        from dazedtl.compatibility.estimate_prices import prices
+        from dazedtl.translation.requests import price
+        from util import translation
+
+        model = "claude-opus-5-5"
+
+        def request(index, cached):
+            system = [{"type": "text", "text": "System " * 300}]
+            if cached:
+                system[0]["cache_control"] = {"type": "ephemeral"}
+            params = {
+                "model": model,
+                "system": [*system, {"type": "text", "text": f"Context {index % 2}"}],
+                "messages": [{"role": "user", "content": f"Line {index} " * 50}],
+            }
+            return {"params": params, "payload": "台詞" * 40, "provider": "anthropic"}
+
+        with (
+            TemporaryDirectory() as temporary,
+            patch.object(
+                translation,
+                "tiktoken",
+                SimpleNamespace(encoding_for_model=lambda _model: Characters()),
+            ),
+            patch.object(
+                translation,
+                "getPricingConfig",
+                lambda _model: {"inputAPICost": 4, "outputAPICost": 20},
+            ),
+            patch.object(translation, "countClaudeTokens", lambda *_args: None),
+            patch.object(
+                translation, "BATCH_LOCK_FILE", Path(temporary) / "batch.lock"
+            ),
+            redirect_stdout(StringIO()),
+        ):
+            for cached in (True, False):
+                with self.subTest(cached=cached):
+                    entries = [request(index, cached) for index in range(4)]
+                    queue = Path(temporary) / f"{cached}.json"
+                    write_json(queue, {str(i): e for i, e in enumerate(entries)})
+                    expected = translation.estimateBatchCost(model, queue_file=queue)
+                    assert expected is not None
+                    # Assistant-led counts the cached prefixes with its own
+                    # token count, here the same characters.
+                    cache = TranslationEngine.claude_cache(
+                        SimpleNamespace(token_count=len), entries, {"model": model}
+                    )
+                    counts = {
+                        key: expected[key] for key in ("input_tokens", "output_tokens")
+                    }
+                    configuration = {
+                        "mode": "batch",
+                        "model": model,
+                        "provider": "anthropic",
+                        "rates": {"input": 4, "output": 20},
+                    }
+                    value = prices(counts, configuration, "anthropic", cache)
+                    self.assertEqual(
+                        expected["cache_kind"], "explicit" if cached else None
+                    )
+                    self.assertEqual(
+                        {key: value[key] for key in value if key in expected},
+                        {key: expected[key] for key in value if key in expected},
+                    )
+                    quoted = price(
+                        {"requests": 4, "units": 4, **counts},
+                        configuration,
+                        "anthropic",
+                        cache,
+                    )
+                    self.assertEqual(
+                        (
+                            quoted["live_cost"],
+                            quoted["cost"],
+                            quoted.get("batch_cost_reused", quoted["cost"]),
+                        ),
+                        (
+                            expected["live_cost"],
+                            expected["batch_max_cost"],
+                            expected["batch_cached_cost"],
+                        ),
+                    )
+            # The Live speaker estimate keys, counts and prices its requests'
+            # cached prefixes by the same rule, without the Batch discount;
+            # it once kept its own copy of each.
+            from util.translation_task import TranslationTaskCore
+
+            sent = []
+            build = translation.buildClaudeRequest
+
+            def recorded(*args, **kwargs):
+                sent.append(build(*args, **kwargs))
+                return sent[-1]
+
+            config = translation.TranslationConfig(
+                model=model,
+                prompt="Name the speakers. " * 40,
+                vocab="",
+                batchSize=2,
+                useSfxReference=False,
+            )
+            with (
+                patch.dict("os.environ", {"api": ""}),
+                patch.object(translation, "buildClaudeRequest", recorded),
+            ):
+                live = TranslationTaskCore._estimate_grouped_speakers(
+                    # A name reading as the encoder's special token is counted
+                    # as text, which failed the estimate.
+                    ["太郎", "花子", "長老", "<|endoftext|>", "兵士"],
+                    "Name each.",
+                    config,
+                    model,
+                )
+            entries = [
+                {"params": params, "payload": "名前<|endoftext|>"} for params in sent
+            ]
+            cache = TranslationEngine.claude_cache(None, entries, {"model": model})
+            # Two names a request, then one: two reply schemas, one read.
+            self.assertEqual((len(sent), cache.keys), (3, 2))
+            self.assertEqual(
+                live["estimated_cost"],
+                translation.claude_cache_cost(
+                    cache, live["input_tokens"], live["output_tokens"], 4e-6, 20e-6
+                ),
+            )
+            queue = Path(temporary) / "speakers.json"
+            write_json(queue, {str(i): e for i, e in enumerate(entries)})
+            expected = translation.estimateBatchCost(model, queue_file=queue)
+            assert expected is not None
+            self.assertEqual(
+                (expected["cache_write_tokens"], expected["cache_max_write_tokens"]),
+                (cache.writes, cache.cached),
+            )
 
     def test_a_quote_reads_the_runs_frozen_effort_record_and_counting_rule(self):
         # Assistant-led quotes and repriced estimates judged the effort from
@@ -1136,7 +1284,7 @@ class CompatibilityContracts(unittest.TestCase):
         prefix = 1000 + len(json.dumps({"format": {"lines": 1}})) + 3
         self.assertEqual(sorted(estimate.prefixes.values())[1:], [prefix, prefix])
         cache = claude_tokens.cache(
-            requests, estimate.prefixes, "anthropic", "claude-opus-5-5"
+            requests, "anthropic", "claude-opus-5-5", len, estimate
         )
         self.assertEqual((cache.cached, cache.writes), (100 * prefix, 2 * prefix))
         self.assertAlmostEqual(cache.reused, prefix * (2 * 1.25 + 98 * 0.05))
@@ -1676,13 +1824,17 @@ class CompatibilityContracts(unittest.TestCase):
 
     def test_each_claude_route_rule_routes_a_model_and_address_alike(self):
         # The Claude name test and the native-Anthropic route test were copied
-        # into the Live send, the estimate, Batch detection, Live pricing and
-        # Settings' route check; each copy must keep answering the same.
+        # into the Live send, the estimate, Batch detection, Live pricing,
+        # per-token rates, default thinking and Settings' route check; each
+        # copy must keep answering the same.
         import os
 
+        from dazedtl.compatibility import openrouter_batch
         from dazedtl.compatibility.dazedmtl import ExistingBackend
+        from dazedtl.settings import effort
         from util import translation
         from util.batch_providers import detect_batch_provider, live_price_route
+        from util.provider_costs import foreign_claude_name
 
         addresses = (
             "",
@@ -1717,8 +1869,22 @@ class CompatibilityContracts(unittest.TestCase):
             ("claude-sonnet-5-5", claude),
             ("anthropic/claude-haiku-4-5", claude),
             ("Claude-Opus-5", claude),
-            # Any name holding a Claude family word counts as Claude.
-            ("sonnet-like", claude),
+            # Dated, versioned and other hosts' forms of Claude's names.
+            ("claude-3-5-sonnet-20241022", claude),
+            ("claude-3-5-sonnet-v2@20241022", claude),
+            ("anthropic/claude-sonnet-4.5:beta", claude),
+            ("~anthropic/claude-opus-latest", claude),
+            ("us.anthropic.claude-sonnet-4-5-20250929-v1:0", claude),
+            ("us-gov.anthropic.claude-3-5-sonnet-20240620-v1:0", claude),
+            ("bedrock/anthropic.claude-3-haiku", claude),
+            # Other models whose names hold a Claude family word are not
+            # Claude's.
+            ("magnum-opus-72b", other),
+            ("Helsinki-NLP/opus-mt-ja-en", other),
+            ("sonnet-like", other),
+            ("haiku-writer-8b", other),
+            ("someone/claude-style-7b", other),
+            ("someone/claude-opus-5-distill", other),
             ("gpt-5.4", gpt),
             ("deepseek-v4-flash", other),
             ("", other),
@@ -1727,6 +1893,14 @@ class CompatibilityContracts(unittest.TestCase):
                 with (
                     self.subTest(model=model, address=address),
                     patch.dict(os.environ, {"api": address}),
+                    # A run's worker without an OpenRouter Batch policy, which
+                    # an earlier test's worker left this process as or not;
+                    # an unconfigured one reads OpenRouter as its Batch.
+                    patch.multiple(
+                        openrouter_batch,
+                        _worker_policy=None,
+                        _worker_configured=True,
+                    ),
                 ):
                     os.environ.pop("DAZEDTL_TEST_OPENAI_ENDPOINT", None)
                     self.assertEqual(
@@ -1742,8 +1916,35 @@ class CompatibilityContracts(unittest.TestCase):
                     # the engine's settings.
                     self.assertEqual(translation.isClaudeNative(model), expected[0])
                     self.assertEqual(translation.isClaudeModel(model), routes is claude)
+                    # Anthropic's own API, where its Batches go, takes only
+                    # Claude's own IDs, so Settings refuses another host's.
+                    self.assertEqual(
+                        foreign_claude_name(model, address),
+                        expected[1] == "anthropic"
+                        and not model.lower().startswith("claude-"),
+                    )
+            # Pricing gives Claude's rates to a Claude name only: another
+            # model, with no catalog price, takes the unknown model's
+            # fallback, which a price lookup reads as unpriced.
+            with (
+                self.subTest(model=model, rule="price"),
+                patch.object(translation, "_lookup_model_price", return_value=None),
+                patch.dict(os.environ, {"input_cost": "-1", "output_cost": "-1"}),
+            ):
+                self.assertEqual(
+                    translation.getPricingConfig(model)["inputAPICost"] == -1,
+                    routes is other and not model.startswith("deepseek-"),
+                )
+            # An estimate reads a Claude 5 name with no effort table row as
+            # thinking only when the name is Claude's.
+            with self.subTest(model=model, rule="thinks"):
+                self.assertEqual(
+                    effort.thinks(None, model),
+                    model
+                    in {"claude-sonnet-5-5", "Claude-Opus-5", "deepseek-v4-flash"},
+                )
 
-    def test_mistral_sends_its_json_mode_request_on_the_last_attempt(self):
+    def test_mistral_follows_the_json_mode_strict_and_retry_rules(self):
         # The JSON-mode downgrade spent a retry attempt, so a format rejection
         # on the last attempt, here after a rate limit, raised "failed after
         # N attempts" unsent.
@@ -1803,6 +2004,49 @@ class CompatibilityContracts(unittest.TestCase):
                 }
                 self.assertEqual(translation.callMistral(params, retries=1), "reply")
                 self.assertEqual(sent, ["json_schema", "json_schema", "json_object"])
+
+        # A strict structured run keeps the provider's error, as
+        # translateText's OpenAI path does, instead of sending JSON mode.
+        sent.clear()
+        with (
+            patch.object(translation, "openai", client),
+            patch.object(translation, "_get_mistral_limiter", return_value=limiter),
+            patch.object(translation, "RUN_STOPS", True),
+            patch.object(translation, "STRICT_STRUCTURED_OUTPUTS", True),
+            self.assertRaises(openai.UnprocessableEntityError),
+        ):
+            translation.callMistral(
+                {"messages": [], "response_format": {"type": "json_schema"}},
+                retries=1,
+            )
+        self.assertEqual(sent, ["json_schema", "json_schema"])
+
+        # A rate limit on the last attempt raises at once instead of first
+        # waiting out its Retry-After.
+        sent.clear()
+        with (
+            patch.object(translation, "openai", client),
+            patch.object(translation, "_get_mistral_limiter", return_value=limiter),
+            patch.object(translation.time, "sleep") as sleep,
+            self.assertRaisesRegex(Exception, "failed after 1 attempts"),
+        ):
+            translation.callMistral(
+                {"messages": [], "response_format": {"type": "json_schema"}},
+                retries=0,
+            )
+        sleep.assert_not_called()
+        # A strict run's last rate limit is the provider's own error too.
+        sent.clear()
+        with (
+            patch.object(translation, "openai", client),
+            patch.object(translation, "_get_mistral_limiter", return_value=limiter),
+            patch.object(translation, "STRICT_STRUCTURED_OUTPUTS", True),
+            self.assertRaises(openai.RateLimitError),
+        ):
+            translation.callMistral(
+                {"messages": [], "response_format": {"type": "json_schema"}},
+                retries=0,
+            )
 
     def test_an_openai_batch_estimate_prices_cache_reads_at_the_models_price(self):
         # Every OpenAI Batch estimate priced cache reads at a tenth of input,
@@ -2041,12 +2285,13 @@ class CompatibilityContracts(unittest.TestCase):
                 )
             client.request.assert_not_called()
 
-    def test_a_files_receipt_adds_every_paid_attempt_and_a_failed_save_fails(self):
-        # A file that failed in an earlier attempt and was saved in a later
-        # one paid for both, but the later receipt replaced the earlier, so
-        # the run's TOTAL dropped what the failed attempt paid. An RPG Maker
-        # file whose save failed after validation mismatches read as a soft
-        # success, so the run did not show it failed.
+    def test_a_paid_attempt_replaces_a_files_receipt_and_a_failed_save_fails(self):
+        # A later attempt can read and count the same Batch results again, as
+        # after a Stop and resume, so an attempt that paid replaces the file's
+        # receipt instead of adding to it; one that paid nothing, reading back
+        # what an earlier attempt saved, keeps it. An RPG Maker file whose
+        # save failed after validation mismatches read as a soft success, so
+        # the run did not show it failed.
         from util.translation_task import TranslationTask, file_marker_result
 
         def worker(task, files, estimate_only, batch_phase, file_result_callback):
@@ -2073,6 +2318,12 @@ class CompatibilityContracts(unittest.TestCase):
             }
 
         files = ["Map001.json", "Map002.json", "Map003.json"]
+        expected = [
+            ("Map001.json", figures(70, 9, 0.5, 4.0)),
+            ("Map002.json", figures(30, 3, 0.25, 2.0)),
+            ("Map003.json", figures(10, 1, 0.25, 1.0)),
+        ]
+        total = "TOTAL: [Input: 110][Output: 13][Cost: $1.0000][7.0s] ✓"
         with TemporaryDirectory() as directory:
             task = TranslationTask(
                 Path(directory),
@@ -2091,22 +2342,18 @@ class CompatibilityContracts(unittest.TestCase):
                 task.file_error_signal.connect(lambda *args: errors.append(args))
                 task.file_mismatch_signal.connect(lambda *args: mismatched.append(args))
                 result = task._run_files(files, False, "consume")
-        self.assertEqual(result, "Fail")
-        self.assertEqual([name for name, _ in errors], ["Map002.json"])
-        self.assertEqual(mismatched, [])
-        # The run's records keep what its TOTAL adds up.
-        self.assertEqual(
-            receipts,
-            [
-                ("Map001.json", figures(120, 14, 0.75, 7.0)),
-                ("Map002.json", figures(30, 3, 0.25, 2.0)),
-                ("Map003.json", figures(10, 1, 0.25, 1.0)),
-            ],
-        )
-        self.assertEqual(
-            task._run_total(result),
-            "TOTAL: [Input: 160][Output: 18][Cost: $1.2500][10.0s] ✓",
-        )
+                self.assertEqual(result, "Fail")
+                self.assertEqual([name for name, _ in errors], ["Map002.json"])
+                self.assertEqual(mismatched, [])
+                # The run's records keep what its TOTAL adds up.
+                self.assertEqual(receipts, expected)
+                self.assertEqual(task._run_total(result), total)
+                # Stop lost the consume worker's cache writes, so the resumed
+                # attempt reads the same Batch result and failed reply again:
+                # each counts once.
+                result = task._run_files(files, False, "consume")
+        self.assertEqual(receipts, expected * 2)
+        self.assertEqual(task._run_total(result), total)
 
     def test_declined_speaker_preflight_retains_provider_work_and_resets_retry_phase(
         self,

@@ -656,6 +656,92 @@ try:
             ),
         ):
             assert wolf_misfit(*commands) == (written, ["M.json"], marked), commands
+        # A chunk translateAI kept in its source text after failed validation
+        # came back the right length, so its lines were written back with
+        # their line breaks turned into spaces ("勇者の 記録"); a page's list
+        # and a DataBase category whose reply translateAI kept are now left
+        # as they were, and counted once, by translateAI.
+        keeping = [False]
+
+        def wolf_keeps(text, *_args):
+            keeping[0] = isinstance(text, list) and any(
+                "勇者の" in line for line in text
+            )
+            if keeping[0]:
+                return [list(text), [3, 1]]
+            if isinstance(text, list):
+                return [[f"EN {line}" for line in text], [3, 1]]
+            return [f"EN {text}", [3, 1]]
+
+        def wolf_db(*types):
+            document = deepcopy(list(types))
+            sent = []
+            printed = StringIO()
+
+            def answer(text, *_args):
+                sent.append(text)
+                reply = wolf_keeps(text)
+                if not keeping[0] and any("看板" in line for line in text):
+                    reply[0].pop()
+                return reply
+
+            with (
+                patch.multiple(
+                    wolf,
+                    ITEMFLAG=True,
+                    ARMORFLAG=True,
+                    WEAPONFLAG=True,
+                    STATEFLAG=True,
+                    MISMATCH=[],
+                    translateAI=answer,
+                    last_translation_had_mismatch=lambda: keeping[0],
+                ),
+                redirect_stdout(printed),
+            ):
+                wolf.searchDB(
+                    document, SimpleNamespace(refresh=lambda: None), [], "D.json"
+                )
+                marked = printed.getvalue().count("MISMATCH_EVENT:D.json\n")
+                return document, wolf.MISMATCH, marked, sent
+
+        battle = {"code": 300, "stringArgs": ["BTLメッセージ", "勇者の\n記録"]}
+        with patch.multiple(
+            wolf,
+            CODE300=True,
+            translateAI=wolf_keeps,
+            last_translation_had_mismatch=lambda: keeping[0],
+        ):
+            page = [deepcopy(battle)]
+            wolf.searchCodes(page, SimpleNamespace(refresh=lambda: None), [], "M.json")
+            assert page == [battle], page
+
+        def category(name, *fields):
+            return {
+                "name": name,
+                "data": [{"data": [{"name": k, "value": v} for k, v in fields]}],
+            }
+
+        # A DataBase category whose reply had the wrong length reached the
+        # set-data pass as empty lists once another category fit, and the
+        # file failed with an IndexError; the status effects were sent once
+        # for each of their lists that held text.
+        directory = os.getcwd()
+        os.chdir(temporary)
+        (temporary / "log").mkdir(exist_ok=True)
+        try:
+            items = category("道具", ("名前", "薬草"), ("説明", "話\n記録"))
+            armor = category("防具", ("名前", "看板"), ("説明", "宿屋"))
+            weapon = category("武器", ("名前", "剣"), ("説明", "勇者の\n記録"))
+            states = category("ステート", ("名前", "毒"), ("表示名", "毒状態"))
+            written, mismatched, marked, sent = wolf_db(states, items, armor, weapon)
+        finally:
+            os.chdir(directory)
+        assert written[2:] == [armor, weapon], written
+        assert written[1]["data"][0]["data"][0]["value"] == "EN 薬草", written
+        assert (mismatched, marked) == (["D.json"], 1), (mismatched, marked)
+        # Nothing more of a category is sent, and paid for, once it cannot be written.
+        assert ["宿屋"] not in sent, sent
+        assert sum(any("毒" in line for line in lines) for lines in sent) == 2, sent
         # Each engine module ended a file whose parser returned an error its
         # own way: most printed a ✗ receipt and returned a TOTAL, so the run
         # read the file translated with part of it written, and its worker
@@ -2983,7 +3069,7 @@ try:
         # The run's TOTAL adds up each file's own total from every worker and
         # its names passes, starting from the receipts of the run's earlier
         # attempts; a file read back without usage keeps what the earlier
-        # attempt cost, and one that paid again adds to it.
+        # attempt cost, and one that paid again replaces it.
         resumed = TranslationTask(
             live_root,
             ("RPG Maker MV/MZ", (".json",), None),
@@ -2998,7 +3084,7 @@ try:
         resumed._record_names_receipt(20, 4, 0.06121, 0.54)
         with patch.dict(os.environ, {"fileThreads": "3"}):
             total = resumed._run_total(resumed._run_files(many, False))
-        assert total == "TOTAL: [Input: 1273][Output: 33][Cost: $7.9612][17.5s] ✓", (
+        assert total == "TOTAL: [Input: 1266][Output: 26][Cost: $0.9612][10.5s] ✓", (
             total
         )
         handed = [name for names in worker_files() for name in names]

@@ -199,6 +199,32 @@ class SettingsTests(unittest.TestCase):
                 openrouter_host="deepinfra",
             )
             self.assertEqual(view["connections"][0]["openrouter_host"], "")
+            # Anthropic's own API answers OpenRouter's name for a Claude model
+            # with not found, so Settings refuses it before any request: on
+            # save, and at a run's start for a name saved before.
+            view = reloaded.save_connection(
+                view["revision"],
+                "anthropic",
+                connection_id=identity,
+                secret="fixture-anthropic-key",
+            )
+            with self.assertRaisesRegex(ValueError, "Claude's own model IDs"):
+                reloaded.save(
+                    view["revision"],
+                    identity,
+                    {
+                        "language": "English",
+                        "model": model,
+                        "sourceLanguage": "Japanese",
+                    },
+                    options,
+                )
+            path = Path(temporary) / "settings/settings.json"
+            saved = json.loads(path.read_text(encoding="utf-8"))
+            saved["connections"][0]["model"] = model
+            write_json(path, saved)
+            with self.assertRaisesRegex(ValueError, "Claude's own model IDs"):
+                Settings(temporary, adapter).prepare_engine("translate")
 
     def test_removing_a_connection_forgets_its_key_and_respects_saved_runs(self):
         # Removal must not strand a run silently or leave the removed key in the engine's derived key cache.

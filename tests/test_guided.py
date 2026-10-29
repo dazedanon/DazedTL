@@ -426,6 +426,8 @@ class GuidedTests(unittest.TestCase):
             workspace=self.root / "profile",
             jobs=SimpleNamespace(running=lambda: False),
             engine=SimpleNamespace(
+                # The Batch route the settings send a run on.
+                batch_supported=lambda _configuration: self.route,
                 source_bindings=lambda _source, _paths: {},
                 original_bytes=lambda *_args: b"",
                 original_blobs=lambda _source, blobs: ((blob, b"") for blob in blobs),
@@ -437,6 +439,7 @@ class GuidedTests(unittest.TestCase):
                 sync=lambda _: None, require_ready=lambda _: None
             ),
         )
+        self.route = "custom"
         self.git_configured = False
         self.translation.project = lambda _: (
             self.record,
@@ -658,7 +661,7 @@ class GuidedTests(unittest.TestCase):
         self.assertEqual(reopened(), identity)
         # Claude counts with each model's own tokenizer, so its estimate reads
         # outdated: the review refuses it and Translate estimates again.
-        estimate["provider"] = "anthropic"
+        estimate["provider"] = self.route = "anthropic"
         self.assertFalse(quote()["current"])
         with self.assertRaisesRegex(ValueError, "current estimate"):
             self.guided.preview(self.identity, "start", options={"mode": "batch"})
@@ -672,12 +675,63 @@ class GuidedTests(unittest.TestCase):
             self.assertEqual(quote()["job"]["estimate"], estimate)
             self.assertEqual(reopened(), identity)
         # An OpenAI Batch estimate priced before them is priced again.
+        self.route = "openai"
         estimate.update(
             provider="openai", price_rules=3, cache_read_tokens=0, cacheable_tokens=0
         )
         shown = quote()
         self.assertTrue(shown["current"])
         self.assertEqual(shown["job"]["estimate"]["price_rules"], current_rules())
+
+    def test_a_translate_estimate_priced_on_another_route_is_priced_again(self):
+        # An estimate read the price rules of the route its counts recorded,
+        # but stood as current at that route's prices after the same settings
+        # came to send it on another route (a routing fix in an update).
+        identity = self.seed_estimate()
+        self.backend.manual.jobs[identity]["dazedtl_preapproval"] = True
+        estimate = self.backend.manual.jobs[identity]["estimate"]
+        estimate.update(provider="openai", cache_read_tokens=0, cacheable_tokens=0)
+        inputs = self.guided.runs.inputs(
+            self.identity, self.native, "database", "batch"
+        )
+
+        def quote():
+            return self.guided.runs.quote(
+                self.identity, self.native, "database", "batch"
+            )[0]
+
+        def reopened():
+            return self.guided.actions.unchanged_estimate(
+                self.identity, self.native, "database", inputs
+            )
+
+        self.route = "openai"
+        self.assertEqual(quote()["job"]["estimate"], estimate)
+        # Its counts are priced again on the route the settings take now.
+        self.route = "kimi"
+        shown = quote()
+        self.assertTrue(shown["current"])
+        self.assertEqual(shown["job"]["estimate"]["provider"], "kimi")
+        self.assertEqual(shown["job"]["estimate"]["price_rules"], current_rules())
+        review = self.guided.preview(self.identity, "start", options={"mode": "batch"})
+        self.assertEqual(review["estimate"]["value"], shown["job"]["estimate"])
+        self.assertEqual(reopened(), identity)
+        # Counts made for Claude, or for a route that is now Claude's, can't
+        # be, nor can a Batch on settings that no longer run one: the
+        # estimate reads outdated and the review refuses it.
+        for counted, route in (
+            ("anthropic", "kimi"),
+            ("kimi", "anthropic"),
+            ("kimi", None),
+        ):
+            estimate["provider"], self.route = counted, route
+            self.assertFalse(quote()["current"])
+            with self.assertRaisesRegex(ValueError, "current estimate"):
+                self.guided.preview(self.identity, "start", options={"mode": "batch"})
+            self.assertIsNone(reopened())
+        # One saved before estimates named their route reads the settings'.
+        del estimate["provider"]
+        self.assertEqual(quote()["job"]["estimate"], estimate)
 
     def test_translate_reopens_an_unchanged_estimate_until_its_work_is_approved(self):
         # Each Translate click estimated the whole selection again, minutes on
@@ -715,6 +769,7 @@ class GuidedTests(unittest.TestCase):
                 self.identity, self.native, "database", inputs
             )
 
+        self.route = "anthropic"
         manual.jobs[estimate]["estimate"].update(
             provider="anthropic", approximate_input=True
         )
@@ -817,7 +872,7 @@ class GuidedTests(unittest.TestCase):
         self.assertIs(self.guided.full_estimate.start(self.identity), job)
         # Claude's counts can't be priced again: it reads outdated, and
         # Estimate again estimates it.
-        saved["measured"]["dialogue"]["provider"] = "anthropic"
+        saved["measured"]["dialogue"]["provider"] = self.route = "anthropic"
         self.assertFalse(current())
         self.guided.full_estimate.start(self.identity)
         self.assertEqual(len(plans), 2)
@@ -828,13 +883,25 @@ class GuidedTests(unittest.TestCase):
         self.assertTrue(kept["current"])
         self.assertIs(kept["result"], saved)
         # An OpenAI Batch estimate priced before them is priced again.
+        self.route = "openai"
         saved["measured"]["dialogue"].update(
             provider="openai", cache_read_tokens=0, cacheable_tokens=0
         )
         fixed = status()
         self.assertTrue(fixed["current"])
         self.assertEqual(fixed["result"]["price_rules"], current_rules())
-        saved["measured"]["dialogue"]["provider"] = "custom"
+        # Under today's rules, one whose settings now send it on another
+        # route is priced again on theirs, or reads outdated when Claude
+        # counted it.
+        saved.update(price_rules=current_rules())
+        self.assertIs(status()["result"], saved)
+        self.route = "kimi"
+        moved = status()
+        self.assertTrue(moved["current"])
+        self.assertIsNot(moved["result"], saved)
+        saved["measured"]["dialogue"]["provider"] = "anthropic"
+        self.assertFalse(current())
+        saved["measured"]["dialogue"]["provider"] = self.route = "custom"
         saved.update(price_rules=current_rules())
         saved["tasks"][0]["liveCost"] = 0.01
         # An estimate a listed release saved reads as made under version 1,

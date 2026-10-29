@@ -93,12 +93,56 @@ def address(connection):
     )
 
 
+def validate_model_name(model, endpoint):
+    """Refuses a Claude name in another host's form for Anthropic's own API
+    (provider_costs.foreign_claude_name), where every request, Live or Batch,
+    would fail with not found: when Settings saves it, and before a run
+    starts or resumes with it."""
+    from util.provider_costs import foreign_claude_name
+
+    if foreign_claude_name(model, endpoint):
+        raise ValueError(
+            "Anthropic's API takes Claude's own model IDs, such as claude-opus-5-5, "
+            f"not another host's name for one, such as {str(model).strip()}. "
+            "Enter Anthropic's ID for this model in Settings, or use that host's connection."
+        )
+
+
 # The host only a provider's own API serves, unlike others that serve its models.
 OWN_HOSTS = {
     "openai": "api.openai.com",
     "kimi": "api.moonshot.ai",
     "deepseek": "api.deepseek.com",
 }
+# The hosts of the presets' own APIs, whose error answers are the provider's
+# own, OpenRouter's for the providers it routes to; on any other host, a local
+# one included, an error may be a gateway's in front of the model.
+PRESET_HOSTS = frozenset(
+    {
+        *OWN_HOSTS.values(),
+        "api.anthropic.com",
+        "generativelanguage.googleapis.com",
+        "api.mistral.ai",
+        "openrouter.ai",
+    }
+)
+
+
+def own_server(url):
+    """Whether *url* is on a preset provider's own API (PRESET_HOSTS), so an
+    error it answers is the provider's own and not a gateway's. The one rule a
+    run's transmission state asks (compatibility/transmission); in test
+    scenarios the OpenAI preset's stand-in, which DAZEDTL_TEST_OPENAI_ENDPOINT
+    names, counts as OpenAI's."""
+    value = str(url or "").strip()
+    stand_in = os.environ.get("DAZEDTL_TEST_OPENAI_ENDPOINT", "").strip().rstrip("/")
+    try:
+        hostname = urlsplit(value).hostname
+    except ValueError:
+        return False
+    return hostname in PRESET_HOSTS or (
+        bool(stand_in) and (value == stand_in or value.startswith(stand_in + "/"))
+    )
 
 
 def own_api(identity, endpoint):

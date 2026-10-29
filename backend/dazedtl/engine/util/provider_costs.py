@@ -103,15 +103,29 @@ def is_openai_model(model: str) -> bool:
     return bool(_OPENAI_MODEL.search(str(model or "").lower()))
 
 
-# A Claude model by its name, on Anthropic's API or any other host: any name
-# holding a Claude family word.
-_CLAUDE_MODEL = re.compile(r"claude|sonnet|haiku|opus")
+# A Claude model by its name, on Anthropic's API or any other host: a name
+# starting "claude-", in any dated or versioned form, alone or as another host
+# names it: OpenRouter's "anthropic/" (or "~anthropic/" for its latest
+# aliases) and Bedrock's "anthropic." with or without a region, behind a
+# gateway's own prefix such as "bedrock/". Another model's name holding a
+# Claude family word, such as "magnum-opus-72b", is not Claude's.
+_CLAUDE_MODEL = re.compile(
+    r"(?:(?:[\w.~-]+/)*~?(?:[a-z-]+\.)?anthropic[./])?(claude-[a-z0-9].*)", re.DOTALL
+)
+
+
+def claude_model_name(model: str) -> str | None:
+    """The Claude name in ``model``, from "claude-" on in lower case, such as
+    "claude-opus-5.5" in "anthropic/claude-opus-5.5"; None when ``model``
+    names no Claude model."""
+    match = _CLAUDE_MODEL.fullmatch(str(model or "").strip().lower())
+    return match.group(1) if match else None
 
 
 def is_claude_model(model: str) -> bool:
     """Whether ``model`` names a Claude model, priced at Anthropic's cache
     prices wherever it runs (batch_providers.live_price_route)."""
-    return bool(_CLAUDE_MODEL.search(str(model or "").lower()))
+    return claude_model_name(model) is not None
 
 
 def is_claude_native(model: str, address: str | None) -> bool:
@@ -122,6 +136,29 @@ def is_claude_native(model: str, address: str | None) -> bool:
     Batches need Anthropic's own API (batch_providers.detect_batch_provider)."""
     address = str(address or "").strip().lower()
     return is_claude_model(model) and (not address or "anthropic" in address)
+
+
+def on_anthropic_api(address: str | None) -> bool:
+    """Whether a native Claude request to ``address`` reaches Anthropic's own
+    API: no address set, or one at anthropic.com. A proxy path holding
+    "anthropic" is sent Live natively but is not Anthropic's API."""
+    address = str(address or "").strip().lower()
+    return not address or "anthropic.com" in address
+
+
+def foreign_claude_name(model: str, address: str | None) -> bool:
+    """Whether ``model`` names Claude as another host does, such as
+    OpenRouter's "anthropic/claude-opus-5.5" or Bedrock's
+    "us.anthropic.claude-...", for a request to Anthropic's own API, which
+    takes only Claude's own IDs ("claude-...") and answers any other name
+    with not found. Settings refuses it before any request is sent
+    (settings/providers validate_model_name)."""
+    name = claude_model_name(model)
+    return (
+        name is not None
+        and on_anthropic_api(address)
+        and name != str(model).strip().lower()
+    )
 
 
 def _openai_model_at_least(model: str, major: int, minor: int) -> bool:

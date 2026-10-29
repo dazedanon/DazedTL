@@ -783,6 +783,8 @@ def price(counts, configuration, provider, cache=None):
         else value["live_cost"],
         "model": configuration["model"],
         "provider": configuration["provider"],
+        # The Batch provider that priced it (repricing.quote_route).
+        "route": provider,
         "rates": rates,
         "unestimated_thinking_tokens": value["unestimated_thinking_tokens"],
         "thinking_effort": value["thinking_effort"],

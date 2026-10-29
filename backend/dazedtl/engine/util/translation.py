@@ -487,8 +487,7 @@ def _estimate_static_token_count(static_system, model):
             except Exception:
                 pass
         if token_count is None:
-            enc = tiktoken.encoding_for_model("gpt-4")
-            token_count = len(enc.encode(static_system))
+            token_count = approximate_tokens(static_system)
 
         try:
             cache[identity] = token_count
@@ -2488,29 +2487,88 @@ def openai_prompt_cache(params):
     """openai_cache_counts of requests with these parameters, encoded a few
     hundred at a time as estimateBatchCost encodes them, so a big game's
     tokens are never all held at once."""
-    enc = tiktoken.encoding_for_model("gpt-4")
-
     def prompts():
         for start in range(0, len(params), 512):
-            yield from enc.encode_batch(
-                [prompt_text(value) for value in params[start : start + 512]],
-                disallowed_special=(),
+            yield from approximate_encode(
+                prompt_text(value) for value in params[start : start + 512]
             )
 
     return openai_cache_counts(prompts())
 
 
-def claude_cache_prices(cache, dynamic, outputs, in_rate, out_rate):
-    """A Claude Batch's prices with its cached instructions
-    (claude_tokens.Cache), from per-token rates: each cache key written once
-    and read by every later request that shares it, then every request
-    writing its own, with ``dynamic`` input tokens after them."""
+# The approximate encoder: what DazedTL counts tokens with where a
+# provider's own count isn't used. Text that reads as one of its special
+# tokens, such as "<|endoftext|>" in a game's line, a speaker name or a
+# glossary entry, is counted as the text it is.
+def approximate_tokens(text):
+    """The approximate encoder's count of ``text``."""
+    return len(
+        tiktoken.encoding_for_model("gpt-4").encode(text, disallowed_special=())
+    )
+
+
+def approximate_encode(texts):
+    """The approximate encoder's tokens of each of ``texts``, encoded on its
+    threads: the same tokens as approximate_tokens counts, several times
+    faster for many texts."""
+    return tiktoken.encoding_for_model("gpt-4").encode_batch(
+        list(texts), disallowed_special=()
+    )
+
+
+def claude_prompt_cache(requests, provider, model, counted=None):
+    """claude_tokens.cache of Claude requests with these parameters, each
+    cached prefix counted by Claude when ``counted`` (claude_tokens.Count or
+    Inputs of the same requests) holds its count, else by the approximate
+    encoder. Guided's Batch estimate, Assistant-led's quote and the Live
+    speaker estimate key and count a request's cached prefixes here."""
+    return claude_tokens.cache(requests, provider, model, approximate_tokens, counted)
+
+
+def claude_cache_cost(cache, inputs, outputs, in_rate, out_rate, *, reused=True):
+    """What Claude requests cost at their Live rates with their cached
+    prefixes (claude_tokens.Cache), from token counts, ``inputs`` holding the
+    prefixes too, and per-token rates: each cache key written once and read
+    by every later request that shares it, or, without ``reused``, written by
+    every request. The input after the cached prefixes is priced as input.
+    A Batch takes its discount on top (claude_cache_prices)."""
+    # Approximate input leaves out the reply schema the cache key holds.
+    dynamic = max(0, inputs - cache.cached)
+    cached = cache.reused if reused else cache.unreused
+    return (cached + dynamic) * in_rate + outputs * out_rate
+
+
+def claude_cache_prices(cache, inputs, outputs, in_rate, out_rate):
+    """A Claude Batch's cache figures and prices with its cached instructions
+    (claude_tokens.Cache), from token counts and per-token rates, as
+    estimateBatchCost and estimate_prices.prices both report them; None when
+    it writes no cache (or ``cache`` is None), so it is priced without one.
+
+    ``batch_cached_cost`` writes each cache key once and every later request
+    that shares it reads it, ``batch_max_cost`` has every request write its
+    own; the input after the cached prefixes is priced as input. The
+    estimate then expects the explicit cache and shows its cached price
+    (shown_batch_price).
+    """
+    if cache is None or not cache.writes:
+        return None
     factor = batch_price_factor("anthropic")
 
-    def priced(cached):
-        return ((cached + dynamic) * in_rate + outputs * out_rate) * factor
+    def priced(reused):
+        return (
+            claude_cache_cost(cache, inputs, outputs, in_rate, out_rate, reused=reused)
+            * factor
+        )
 
-    return priced(cache.reused), priced(cache.unreused)
+    return {
+        "cache_write_tokens": cache.writes,
+        "cache_read_tokens": cache.reads,
+        "cache_max_write_tokens": cache.cached,
+        "batch_cached_cost": priced(True),
+        "batch_max_cost": priced(False),
+        "uses_prompt_cache": True,
+        "cache_kind": "explicit",
+    }
 
 
 @extensions.point
@@ -2657,8 +2715,6 @@ def estimateBatchCost(model=None, *, queue_file=None, log_prefix="[BATCH]"):
         print(f"{log_prefix} No requests need translation.", flush=True)
         return None
 
-    enc = tiktoken.encoding_for_model("gpt-4")
-    prefix_tokens = {}  # cache key -> token count of its cached prefix
     dynamic_tokens = 0
     request_params = []
     request_dynamic = []  # each request's approximate tokens after its prefix
@@ -2675,18 +2731,16 @@ def estimateBatchCost(model=None, *, queue_file=None, log_prefix="[BATCH]"):
         chunk_params = [entry.get("params", {}) for entry in chunk]
         # Split system blocks at the cache breakpoint ("" = nothing cached).
         splits = [claude_tokens.split(params) for params in chunk_params]
-        messages = enc.encode_batch([prompt_text(params) for params in chunk_params])
-        dynamic = enc.encode_batch([dyn for _prefix, dyn in splits])
-        payloads = enc.encode_batch([str(entry.get("payload", "")) for entry in chunk])
-        for entry, params, (prefix, _dyn), message_tokens, dyn_tokens, payload_tokens in zip(
-            chunk, chunk_params, splits, messages, dynamic, payloads
+        messages = approximate_encode(prompt_text(params) for params in chunk_params)
+        dynamic = approximate_encode(dyn for _prefix, dyn in splits)
+        payloads = approximate_encode(str(entry.get("payload", "")) for entry in chunk)
+        for entry, params, message_tokens, dyn_tokens, payload_tokens in zip(
+            chunk, chunk_params, messages, dynamic, payloads
         ):
             if params.get("model"):
                 models.add(params["model"])
             if entry.get("provider"):
                 providers.add(entry["provider"])
-            if prefix and prefix not in prefix_tokens:
-                prefix_tokens[prefix] = len(enc.encode(claude_tokens.cached_text(params)))
             prompt_token_sequences.append(message_tokens)
             request_params.append(params)
             request_dynamic.append(len(dyn_tokens) + len(message_tokens) + 8)
@@ -2699,7 +2753,6 @@ def estimateBatchCost(model=None, *, queue_file=None, log_prefix="[BATCH]"):
     if est_provider == "anthropic":
         counted = countClaudeTokens(request_params, request_dynamic, log_prefix)
         if counted is not None:
-            prefix_tokens = {p: counted.prefixes[p] for p in prefix_tokens}
             dynamic_tokens = round(dynamic_tokens * counted.scale)
             print(
                 f"{log_prefix} Claude token count: {counted.sampled:,} of "
@@ -2707,7 +2760,7 @@ def estimateBatchCost(model=None, *, queue_file=None, log_prefix="[BATCH]"):
                 flush=True,
             )
 
-    cache = claude_tokens.cache(request_params, prefix_tokens, est_provider, est_model)
+    cache = claude_prompt_cache(request_params, est_provider, est_model, counted)
     cache_write_tok, cache_read_tok = cache.writes, cache.reads
     cache_max_write_tok = cache.cached
     raw_input_tok = cache.cached + dynamic_tokens
@@ -2730,11 +2783,18 @@ def estimateBatchCost(model=None, *, queue_file=None, log_prefix="[BATCH]"):
     live_cost = comparison["live_cost"]
     batch_max = batch_nocache
     cache_kind = None
-    if est_provider == "anthropic" and cache_write_tok > 0:
-        batch_cached, batch_max = claude_cache_prices(
-            cache, dynamic_tokens, output_tokens, in_rate, out_rate
-        )
-        cache_kind = "explicit"
+    claude_cache = (
+        claude_cache_prices(cache, raw_input_tok, output_tokens, in_rate, out_rate)
+        if est_provider == "anthropic"
+        else None
+    )
+    if claude_cache is not None:
+        cache_write_tok = claude_cache["cache_write_tokens"]
+        cache_read_tok = claude_cache["cache_read_tokens"]
+        cache_max_write_tok = claude_cache["cache_max_write_tokens"]
+        batch_cached = claude_cache["batch_cached_cost"]
+        batch_max = claude_cache["batch_max_cost"]
+        cache_kind = claude_cache["cache_kind"]
     elif est_provider == "openai":
         cache_read_tok, cacheable_tokens, _ = openai_cache_counts(
             prompt_token_sequences
@@ -2774,7 +2834,7 @@ def estimateBatchCost(model=None, *, queue_file=None, log_prefix="[BATCH]"):
     )
     if cache_kind == "explicit":
         print(
-            f"{log_prefix} cached prefixes: {len(prefix_tokens):,} "
+            f"{log_prefix} cached prefixes: {cache.keys:,} "
             f"({cache_write_tok:,} tokens), in {cache_max_write_tok:,} tokens "
             "of the requests",
             flush=True,
@@ -2862,11 +2922,10 @@ def _estimate_openai_batch_input_tokens(params):
 
     # Match the existing queue estimator; do not download a model-specific
     # tokenizer while resuming paid work (model aliases also change over time).
-    encoding = tiktoken.encoding_for_model("gpt-4")
     body = json.dumps(
         _openai_batch_body("openai", params), ensure_ascii=False, separators=(",", ":")
     )
-    tokens = len(encoding.encode(body, disallowed_special=()))
+    tokens = approximate_tokens(body)
     return (tokens * 105 + 99) // 100 + 32
 
 
@@ -3635,13 +3694,25 @@ def _get_mistral_limiter():
         return _mistral_limiter
 
 
+def _keeps_provider_error(params):
+    """Whether a failed Mistral request raises the provider's own error: a
+    structured (json_schema) request in a strict structured run, which keeps
+    it for the evidence and retry guards instead of sending a weaker output
+    format, as translateText's OpenAI path does."""
+    return (
+        STRICT_STRUCTURED_OUTPUTS
+        and (params.get("response_format") or {}).get("type") == "json_schema"
+    )
+
+
 def callMistral(params, retries=6):
     """Call the Mistral chat completions endpoint with adaptive pacing.
 
     Acquires from the shared limiter before each attempt, syncs budgets from
     the live x-ratelimit headers after each response, honours Retry-After on
     429, backs off with jitter on 5xx/network errors, and downgrades
-    json_schema -> json_object for models without structured-output support.
+    json_schema -> json_object for models without structured-output support
+    except in strict structured runs (STRICT_STRUCTURED_OUTPUTS).
     """
     limiter = _get_mistral_limiter()
     est = sum(_estimate_mistral_tokens(m.get("content", "")) for m in params.get("messages", []))
@@ -3659,6 +3730,11 @@ def callMistral(params, retries=6):
             last_error = e
             resp = getattr(e, "response", None)
             limiter.update(getattr(resp, "headers", None))
+            # The last attempt raises at once, as the other errors do.
+            if attempt >= retries:
+                if _keeps_provider_error(params):
+                    raise
+                break
             retry_after = None
             try:
                 retry_after = float(resp.headers.get("retry-after"))
@@ -3667,11 +3743,14 @@ def callMistral(params, retries=6):
             time.sleep(retry_after if retry_after is not None else min(60, 2 ** attempt + random.random() * 2))
         except openai.APIStatusError as e:
             last_error = e
+            if _keeps_provider_error(params):
+                if e.status_code < 500 or attempt >= retries:
+                    raise
             # Mistral rejects unsupported params with 400/422 - downgrade the
             # structured-output format once and send it at once. The JSON-mode
             # request is a different request, not a retry, so it spends no
             # attempt: on the last attempt it is still sent.
-            if (
+            elif (
                 e.status_code in (400, 422)
                 and (params.get("response_format") or {}).get("type") == "json_schema"
                 and falls_back_to_json_mode(e)
@@ -3955,6 +4034,46 @@ def _lookup_model_price(model: str):
     return None
 
 
+def _claude_pricing(model):
+    """getPricingConfig's table for a Claude model (is_claude_model), in
+    lower case, by its family and version as Anthropic writes them
+    ("claude-opus-5-5"); another host's dotted form, such as OpenRouter's
+    "claude-opus-5.5", falls to an older version's or the default rates."""
+    if "claude-fable" in model or "claude-mythos" in model:
+        rates = (10.00, 50.00)
+    elif "claude-opus-5-5" in model:
+        rates = (4.00, 20.00)
+    elif (
+        "claude-opus-4-5" in model or "claude-opus-4-6" in model
+        or "claude-opus-4-7" in model or "claude-opus-4-8" in model
+        or "claude-opus-5" in model
+    ):
+        rates = (5.00, 25.00)
+    elif "claude-opus" in model or model == "claude-3-opus":
+        # Opus 4, 4.1, 3
+        rates = (15.00, 75.00)
+    elif "claude-haiku-4-5" in model or "claude-haiku-4-6" in model:
+        rates = (1.00, 5.00)
+    elif "claude-haiku-3-5" in model:
+        rates = (0.80, 4.00)
+    elif "claude-3-haiku" in model:
+        rates = (0.25, 1.25)
+    elif "haiku" in model:
+        # An unknown Haiku version: the current flagship's price as a best guess.
+        rates = (1.00, 5.00)
+    elif "claude-sonnet-5" in model:
+        # Sonnet 5 and 5.5
+        rates = (2.00, 10.00)
+    else:
+        rates = (3.00, 15.00)
+    return {
+        "inputAPICost": rates[0],
+        "outputAPICost": rates[1],
+        "batchSize": 30,
+        "frequencyPenalty": 0.05,
+    }
+
+
 def getPricingConfig(model):
     """
     Get pricing configuration for a given model.
@@ -4017,33 +4136,11 @@ def getPricingConfig(model):
         cfg = {"inputAPICost": 0.30,  "outputAPICost": 0.90,  "batchSize": 40, "frequencyPenalty": 0.0}
     elif "mistral" in model or "pixtral" in model:
         cfg = {"inputAPICost": 2.00,  "outputAPICost": 6.00,  "batchSize": 40, "frequencyPenalty": 0.0}
-    elif "claude-fable" in model or "claude-mythos" in model:
-        cfg = {"inputAPICost": 10.00, "outputAPICost": 50.00, "batchSize": 30, "frequencyPenalty": 0.05}
-    elif "claude-opus-5-5" in model:
-        cfg = {"inputAPICost": 4.00,  "outputAPICost": 20.00, "batchSize": 30, "frequencyPenalty": 0.05}
-    elif (
-        "claude-opus-4-5" in model or "claude-opus-4-6" in model
-        or "claude-opus-4-7" in model or "claude-opus-4-8" in model
-        or "claude-opus-5" in model
-    ):
-        cfg = {"inputAPICost": 5.00,  "outputAPICost": 25.00, "batchSize": 30, "frequencyPenalty": 0.05}
-    elif "claude-opus" in model or model == "claude-3-opus":
-        # Opus 4, 4.1, 3 — $15/$75
-        cfg = {"inputAPICost": 15.00, "outputAPICost": 75.00, "batchSize": 30, "frequencyPenalty": 0.05}
-    elif "claude-haiku-4-5" in model or "claude-haiku-4-6" in model:
-        cfg = {"inputAPICost": 1.00,  "outputAPICost": 5.00,  "batchSize": 30, "frequencyPenalty": 0.05}
-    elif "claude-haiku-3-5" in model:
-        cfg = {"inputAPICost": 0.80,  "outputAPICost": 4.00,  "batchSize": 30, "frequencyPenalty": 0.05}
-    elif "claude-3-haiku" in model:
-        cfg = {"inputAPICost": 0.25,  "outputAPICost": 1.25,  "batchSize": 30, "frequencyPenalty": 0.05}
-    elif "haiku" in model:
-        # Unknown haiku version — use current flagship pricing as best guess
-        cfg = {"inputAPICost": 1.00,  "outputAPICost": 5.00,  "batchSize": 30, "frequencyPenalty": 0.05}
-    elif "claude-sonnet-5" in model:
-        # Sonnet 5 and 5.5
-        cfg = {"inputAPICost": 2.00,  "outputAPICost": 10.00, "batchSize": 30, "frequencyPenalty": 0.05}
-    elif "sonnet" in model or "claude" in model:
-        cfg = {"inputAPICost": 3.00,  "outputAPICost": 15.00, "batchSize": 30, "frequencyPenalty": 0.05}
+    elif is_claude_model(model):
+        # Only a Claude name, by the one rule, takes Claude's rates; another
+        # model whose name holds a family word, such as "sonnet-like", takes
+        # the unknown model's below.
+        cfg = _claude_pricing(str(model).lower())
     elif "gemini-3.6-flash" in model:
         # Google AI Developer API standard rates. Batch is applied separately
         # by estimateBatchCost/_price_usage at the provider's 50% discount.
@@ -4857,8 +4954,7 @@ def _translation_completion_limit(
     floor=MIN_TRANSLATION_OUTPUT_TOKENS,
 ):
     """Size output while retaining safe minimum and maximum bounds."""
-    enc = tiktoken.encoding_for_model("gpt-4")
-    payload_tokens = len(enc.encode(str(user or "")))
+    payload_tokens = approximate_tokens(str(user or ""))
     ceiling = max(1, int(ceiling))
     floor = min(ceiling, max(1, int(floor)))
     return min(
@@ -5789,19 +5885,18 @@ def countTokens(system, user, history):
     """Count tokens for cost estimation"""
     inputTotalTokens = 0
     outputTotalTokens = 0
-    enc = tiktoken.encoding_for_model("gpt-4")
 
     # Input
     if isinstance(history, list):
         for line in history:
-            inputTotalTokens += len(enc.encode(line))
+            inputTotalTokens += approximate_tokens(line)
     else:
-        inputTotalTokens += len(enc.encode(history))
-    inputTotalTokens += len(enc.encode(system))
-    inputTotalTokens += len(enc.encode(user))
+        inputTotalTokens += approximate_tokens(history)
+    inputTotalTokens += approximate_tokens(system)
+    inputTotalTokens += approximate_tokens(user)
 
     # Output
-    outputTotalTokens += output_allowance(len(enc.encode(user)))
+    outputTotalTokens += output_allowance(approximate_tokens(user))
 
     return [inputTotalTokens, outputTotalTokens]
 

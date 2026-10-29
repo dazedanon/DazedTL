@@ -153,14 +153,15 @@ class ProcessTests(unittest.TestCase):
                     self.assertEqual(process_view.payload(root, 0)["error"], detail)
                     self.assertEqual(evidence.path.read_bytes(), before)
 
-    def test_live_failures_count_as_never_sent_only_when_no_try_reached_the_provider(
+    def test_live_failures_count_as_failed_only_when_no_try_could_be_billed(
         self,
     ):
         # SDK clients retry inside one recorded request, so a response lost
         # after the provider processed it can precede a refused connection.
-        # Only tries that never connected or were refused outright prove that
-        # resending cannot charge twice. The tries go through a real SDK client,
-        # whose HTTP library is the one that must be observed.
+        # Only tries that never connected, were refused outright or failed by
+        # the model server itself prove that resending cannot charge twice.
+        # The tries go through a real SDK client, whose HTTP library is the
+        # one that must be observed.
         import socket
 
         import openai
@@ -205,9 +206,19 @@ class ProcessTests(unittest.TestCase):
         closed.close()
         live = f"http://127.0.0.1:{server.getsockname()[1]}/"
         refusal = b"HTTP/1.1 402 Payment Required\r\nContent-Length: 0\r\n\r\n"
+        # A provider's own server error bills nothing; a gateway's timeout, or
+        # any error from another host, may follow a billed answer
+        # (transmission.FAILED). Under this path the server stands in for
+        # OpenAI's own API, as in test scenarios.
+        own = live + "api.openai.com/v1"
+        crash = b"HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\n\r\n"
+        timeout = b"HTTP/1.1 504 Gateway Timeout\r\nContent-Length: 0\r\n\r\n"
         cases = [
             ("refused connection", [dead], [], "failed"),
             ("refused request", [live], [refusal], "failed"),
+            ("server error", [own, own], [crash, crash], "failed"),
+            ("another host's server error", [live], [crash], "uncertain"),
+            ("gateway timeout", [own], [timeout], "uncertain"),
             (
                 "lost response, then refused connection",
                 [live, dead],
@@ -219,7 +230,10 @@ class ProcessTests(unittest.TestCase):
             "model": "fixture",
             "messages": [{"role": "user", "content": '{"Line1":"薬"}'}],
         }
-        with TemporaryDirectory() as temporary:
+        with (
+            TemporaryDirectory() as temporary,
+            patch.dict("os.environ", {"DAZEDTL_TEST_OPENAI_ENDPOINT": own}),
+        ):
             for name, urls, answers, state in cases:
                 with self.subTest(name=name):
                     replies[:] = answers

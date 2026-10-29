@@ -51,6 +51,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from util import system
 from util.imagetools import harmonic, resources
 from util.paths import DATA_DIR
 
@@ -208,8 +209,9 @@ BRIDGE = Path(__file__).resolve().parents[2] / "scripts" / "image_inpaint.py"
 
 
 def install_command(method: str) -> str:
-    """The exact command that installs what *method* needs into this Python."""
-    return f'"{sys.executable}" "{BRIDGE}" install {method}'
+    """The exact command that installs what *method* needs into this Python,
+    quoted for an assistant's shell."""
+    return system.shell_command(system.python_command(BRIDGE, "install", method))
 
 
 def model_env(method: str) -> str:
@@ -283,8 +285,12 @@ def _probe_package(module: str, package: str, method: str) -> tuple[bool, str]:
         return False, (
             f"{package} is installed but will not load {where}: no module "
             f"named {exc.name!r}. Usually a half-finished or mismatched "
-            f"install; reinstall it with: \"{sys.executable}\" -m pip install "
-            f"--force-reinstall {package}"
+            "install; reinstall it with: "
+            + system.shell_command(
+                system.python_command(
+                    "-m", "pip", "install", "--force-reinstall", package
+                )
+            )
         )
     except ImportError as exc:
         return False, (
