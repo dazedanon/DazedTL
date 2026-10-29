@@ -941,7 +941,11 @@ try:
         # before it, and failed a csel before any dialogue. The plugin module
         # took a QuestName's line break from the txtSubject before it, so it
         # failed a QuestName with no txtSubject, or one without a line break,
-        # before it. CSV read its target column as the speaker by default, and
+        # before it. NScripter left a file's choices in Japanese when it had no
+        # dialogue, and wrote a choice that is part of a later one, or an
+        # empty one, over the whole csel line. The plugin module read an actor
+        # code \n[1] as a line break, and sent a quest client's line break
+        # as text. CSV read its target column as the speaker by default, and
         # as the name it wrote there made the row look translated, wrote each
         # row's translation to the next row.
         shapes = temporary / "engine-shapes"
@@ -960,6 +964,30 @@ try:
                     (
                         "*start\ncsel \"EN 'はい'\",*yes,\"EN 'いいえ'\",*no\n"
                         "　EN '「やあ」'\\\n"
+                    ),
+                ),
+                (
+                    "modules.nscript",
+                    "handleOnscripter",
+                    "0.txt",
+                    '*start\ncsel "はい",*a,"はいはい",*b,"",*c\nend\n',
+                    {},
+                    [["はい", "はいはい"]],
+                    ('*start\ncsel "EN \'はい\'",*a,"EN \'はいはい\'",*b,"",*c\nend\n'),
+                ),
+                (
+                    "modules.rpgmakerplugin",
+                    "handlePlugin",
+                    "plugins.js",
+                    (
+                        r"var q = [\"{\\\"QuestClientName\\\":\\\"村の\\\\n村長\\\"}\"];"
+                        '\nvar txtSubject = "\\\\n[1]の\\\\nクエスト";\n'
+                    ),
+                    {},
+                    [["村の 村長"], ["\\\\n[1]の クエスト"]],
+                    (
+                        r"var q = [\"{\\\"QuestClientName\\\":\\\"EN \'村の 村長\'\\\"}\"];"
+                        '\nvar txtSubject = "EN ՚\\\\n[1]の クエスト՚";\n'
                     ),
                 ),
                 (
