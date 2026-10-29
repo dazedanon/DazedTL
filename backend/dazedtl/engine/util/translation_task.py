@@ -117,9 +117,16 @@ def _receipt(figures):
     receipt["input"], receipt["output"] = int(receipt["input"]), int(receipt["output"])
     return receipt
 
+def paid_for(figures) -> bool:
+    """Whether a receipt's figures, or a reading of what a process paid for
+    (util/translation paid_usage), paid for anything."""
+    return bool(figures["input"] or figures["output"] or figures["cost"])
+
+
 def format_receipt(name, figures, mark="✓") -> str:
-    """A receipt's log line, which _result_figures and the run's records
-    (compatibility/process_view file_receipt) read back: *name*'s tokens,
+    """A receipt's log line, which _result_figures and the records of runs
+    from before receipts were reported (compatibility/process_view
+    file_receipt) read back: *name*'s tokens,
     cost and seconds, then whether it finished."""
     return (
         f"{name}: [Input: {int(figures['input'])}]"
@@ -144,6 +151,24 @@ def _with_receipt(result, receipt):
         return (*result[:2], receipt)
     return result
 
+def _file_result(result, receipt, mismatch_count):
+    """A file's result as its worker returned or reported it, with the
+    receipt of what a failed file paid for (_with_receipt). A file that
+    finished with *mismatch_count* validation mismatches kept the original
+    text of those chunks, a soft failure that does not fail the run; a file
+    that failed, as when it could not be saved, stays failed."""
+    result = _with_receipt(result, receipt)
+    if not mismatch_count or _failed(result):
+        return result
+    return (
+        "VALIDATION_MISMATCH",
+        "Translation validation failed after all retries; "
+        "original text was preserved for failed chunks",
+        result,
+        mismatch_count,
+    )
+
+
 def file_marker_result(kind, payload, mismatch_count=0):
     """The result a worker's FILE_RESULT, FILE_ERROR or RUN_STOPPED marker
     (util/subprocess_runner) reports for its file, as a worker per file
@@ -153,16 +178,9 @@ def file_marker_result(kind, payload, mismatch_count=0):
     if kind == "FILE_ERROR":
         error = ("SUBPROCESS_ERROR", payload.get("error") or "Unknown error")
         return _with_receipt(error, payload.get("receipt"))
-    result = _with_receipt(payload.get("result") or "Fail", payload.get("receipt"))
-    if mismatch_count:
-        return (
-            "VALIDATION_MISMATCH",
-            "Translation validation failed after all retries; "
-            "original text was preserved for failed chunks",
-            result,
-            mismatch_count,
-        )
-    return result
+    return _file_result(
+        payload.get("result") or "Fail", payload.get("receipt"), mismatch_count
+    )
 
 def format_run_total(receipts) -> str:
     """The run's TOTAL: every file's receipt added up, in the receipts' own
@@ -884,18 +902,7 @@ class TranslationTaskCore:
                         except UnicodeError:
                             result_text = parsed.encode('ascii', 'ignore').decode('ascii')
                         break
-                result_text = _with_receipt(result_text, receipt[0])
-                if mismatch_count:
-                    # Soft failure: bad chunks keep source text, valid chunks are
-                    # written. Do not fail the whole multi-file run for this.
-                    return (
-                        "VALIDATION_MISMATCH",
-                        "Translation validation failed after all retries; "
-                        "original text was preserved for failed chunks",
-                        result_text,
-                        mismatch_count,
-                    )
-                return result_text
+                return _file_result(result_text, receipt[0], mismatch_count)
             else:
                 # Extract error message from stderr
                 error_msg = stderr.strip() if stderr.strip() else "Unknown error"
@@ -1329,10 +1336,26 @@ class TranslationTaskCore:
             "seconds": round(seconds, 1),
         }
         self.emit_log(format_receipt("Speakers", receipt))
-        earlier = self.receipts.get(NAMES_FILE)
-        if earlier is not None:
-            receipt = {key: earlier[key] + value for key, value in receipt.items()}
-        self.receipts[NAMES_FILE] = receipt
+        self._record_receipt(NAMES_FILE, receipt)
+
+    def _record_receipt(self, name, figures):
+        """Keep *figures*, this attempt's receipt for *name*, a file or the
+        names passes, with the run's receipts, which its TOTAL adds up, and
+        report the result to the run's records (receipt_signal, read by
+        compatibility/process_view record_receipt). Every attempt that paid
+        adds to what the earlier ones paid, as a file that failed and was
+        translated later paid for both; one that paid for nothing, as a retry
+        reading back the files an earlier attempt saved, keeps what they
+        cost."""
+        earlier = self.receipts.get(name)
+        if earlier is None:
+            self.receipts[name] = dict(figures)
+        elif paid_for(figures):
+            self.receipts[name] = {
+                key: earlier[key] + figures[key]
+                for key in ("input", "output", "cost", "seconds")
+            }
+        self.receipt_signal.emit(name, dict(self.receipts[name]))
 
     def _run_total(self, result):
         """The run's TOTAL: every receipt it recorded, the earlier attempts'
@@ -1490,13 +1513,8 @@ class TranslationTaskCore:
                     estimate_input_tokens += usage[0]
                     estimate_output_tokens += usage[1]
             figures = _result_figures(result) if records_receipts else None
-            # A retry reads the files an earlier attempt saved back without
-            # usage; keep what that attempt cost.
-            if figures is not None and (
-                figures["input"] + figures["output"] > 0
-                or filename not in self.receipts
-            ):
-                self.receipts[filename] = figures
+            if figures is not None:
+                self._record_receipt(filename, figures)
             try:
                 if (
                     isinstance(result, tuple)
@@ -1515,7 +1533,7 @@ class TranslationTaskCore:
                         "original text kept for those chunks."
                     )
                     self.file_mismatch_signal.emit(filename, message)
-                    if cost and cost != "Stopped" and not _failed(cost):
+                    if cost and cost != "Stopped":
                         total_cost = cost
                     elif total_cost == "Fail":
                         total_cost = "Success"
@@ -2176,6 +2194,7 @@ class TranslationTask(TranslationTaskCore):
         for name in (
             "log", "progress", "item_progress", "file_error", "file_mismatch",
             "status", "finished", "batch_phase", "estimate_ready", "speaker_confirmation",
+            "receipt",
         ):
             setattr(self, name + "_signal", TaskSignal())
         self.initialize(*args, **kwargs)

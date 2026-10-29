@@ -73,13 +73,13 @@ def _paid_receipt(filename, result, start):
     translation = sys.modules.get("util.translation")
     if start is None or translation is None:
         return None
-    from util.translation_task import _result_figures, format_receipt
+    from util.translation_task import _result_figures, format_receipt, paid_for
 
     if _result_figures(result) is not None:
         return None
     paid, began = start
     spent = translation.paid_usage(paid)
-    if not (spent["input"] or spent["output"] or spent["cost"]):
+    if not paid_for(spent):
         return None
     spent["seconds"] = time.monotonic() - began
     receipt = format_receipt(filename, spent, "✗")

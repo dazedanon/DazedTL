@@ -2627,7 +2627,7 @@ try:
         # The run's TOTAL adds up each file's own total from every worker and
         # its names passes, starting from the receipts of the run's earlier
         # attempts; a file read back without usage keeps what the earlier
-        # attempt cost.
+        # attempt cost, and one that paid again adds to it.
         resumed = TranslationTask(
             live_root,
             ("RPG Maker MV/MZ", (".json",), None),
@@ -2642,7 +2642,7 @@ try:
         resumed._record_names_receipt(20, 4, 0.06121, 0.54)
         with patch.dict(os.environ, {"fileThreads": "3"}):
             total = resumed._run_total(resumed._run_files(many, False))
-        assert total == "TOTAL: [Input: 1266][Output: 26][Cost: $0.9612][10.5s] ✓", (
+        assert total == "TOTAL: [Input: 1273][Output: 33][Cost: $7.9612][17.5s] ✓", (
             total
         )
         handed = [name for names in worker_files() for name in names]
@@ -2654,11 +2654,13 @@ try:
         # nothing more is sent; a run frozen before keeps sending one refused
         # request per file. Real workers translate packed maps against a
         # stand-in provider that rejects every request.
-        from dazedtl.compatibility.run_stops import Record
+        # Each run has its own folder and runs beside the others: their
+        # workers, which start one after another within a run, took most of
+        # this probe's time when the runs did too.
+        from concurrent.futures import ThreadPoolExecutor
 
         stop_root = temporary / "run-stops"
-        (stop_root / "files").mkdir(parents=True)
-        (stop_root / "translated").mkdir()
+        stop_maps = {}
         for number in range(1, 5):
             commands = [
                 {"code": 101, "indent": 0, "parameters": ["", 0, 0, 2, ""]},
@@ -2677,16 +2679,65 @@ try:
                 "note": "",
                 "pages": [{"list": commands}],
             }
-            (stop_root / "files" / f"Map00{number}.json").write_text(
-                json.dumps(
-                    {"displayName": "", "events": [None, stop_event]},
-                    ensure_ascii=False,
-                ),
-                encoding="utf-8",
+            stop_maps[f"Map00{number}.json"] = json.dumps(
+                {"displayName": "", "events": [None, stop_event]},
+                ensure_ascii=False,
             )
+        texts = ["Text1.json", "Text2.json"]
+        stop_texts = {}
+        for number, text_file in enumerate(texts, 1):
+            stop_texts[text_file] = json.dumps(
+                {f"村人{number}の話を聞いてくれ。": "TODO"}, ensure_ascii=False
+            )
+        # The stand-in rejects requests as the provider's SDK does, without
+        # importing the SDK, which took most of each worker's start-up: the
+        # engine must read its error exactly as it reads the SDK's own.
+        from runpy import run_path
+
+        from dazedtl.compatibility.provider_responses import error_evidence
+
+        stop_root.mkdir()
+        (stop_root / "stand_in.py").write_text(
+            "class Rejected(Exception):\n"
+            "    status_code = 400\n"
+            "    def __init__(self, message):\n"
+            "        super().__init__(message)\n"
+            "        self.body = {'message': message, 'code': None}\n"
+            "def reject(error):\n"
+            "    '''Raises *error* as util/translation.py raises the SDK's again.'''\n"
+            "    try:\n"
+            "        raise error\n"
+            "    except Exception as provider_error:\n"
+            "        raise Exception(f'API status error (400): {provider_error}')\n",
+            encoding="utf-8",
+        )
+        rejecting = run_path(str(stop_root / "stand_in.py"))
+        stand_in_messages = {
+            "effort": "Unsupported value: 'reasoning_effort' does not support 'high'.",
+            "model": "The model `gone` does not exist.",
+        }
+        for message in stand_in_messages.values():
+            sdk_error = BadRequestError(
+                message,
+                response=httpx2.Response(
+                    400,
+                    request=httpx2.Request(
+                        "POST", "https://stand-in.test/v1/chat/completions"
+                    ),
+                ),
+                body={"message": message, "code": None},
+            )
+            raised = []
+            for error in (rejecting["Rejected"](message), sdk_error):
+                try:
+                    rejecting["reject"](error)
+                except Exception as engine_error:
+                    raised.append(engine_error)
+            assert str(raised[0]) == str(raised[1]), raised
+            assert error_evidence(raised[0]) == error_evidence(raised[1]), raised
         stop_runner = stop_root / "runner.py"
         stop_runner.write_text(
-            "import os, socket, sys, time\n"
+            "import json, socket, sys, time\n"
             f"sys.path[:0] = {json.dumps([str(ENGINE_ROOT), str(root / 'backend')])}\n"
             "def offline(*_args, **_kwargs):\n"
             "    raise RuntimeError('No network in the run-stop workers.')\n"
@@ -2694,26 +2745,25 @@ try:
             "time.sleep = lambda _seconds: None\n"
             "from functools import partial\n"
             "from pathlib import Path\n"
-            "import httpx2, openai\n"
+            "from runpy import run_path\n"
+            "rejecting = run_path(str(Path(__file__).with_name('stand_in.py')))\n"
             "from util import translation\n"
             "from dazedtl.compatibility import request_parameters, run_stops\n"
             "from dazedtl.settings.preferences import RUN_STOPS\n"
             "folder = Path(sys.argv[1])\n"
-            "refused = os.environ['STAND_IN_REFUSES']\n"
+            "stand_in = json.loads((folder / 'stand-in.json').read_text())\n"
+            "refused = stand_in['refuses']\n"
             "def provider(_native, *_args, **_kwargs):\n"
             "    with open(folder / 'sent.txt', 'a') as sent:\n"
             "        sent.write('sent\\n')\n"
-            "    if os.environ.get('STAND_IN_PAYS') and len((folder / 'sent.txt').read_text().split()) == 1:\n"
+            "    if stand_in['pays'] and len((folder / 'sent.txt').read_text().split()) == 1:\n"
+            "        import openai\n"
             "        return openai.types.chat.ChatCompletion.model_validate({'id': 'paid', 'object': 'chat.completion', 'created': 0, 'model': 'gpt-stand-in', 'choices': [{'index': 0, 'finish_reason': 'stop', 'message': {'role': 'assistant', 'content': '{}'}}], 'usage': {'prompt_tokens': 11, 'completion_tokens': 3, 'total_tokens': 14}})\n"
-            "    message = {'effort': \"Unsupported value: 'reasoning_effort' does not support 'high'.\", 'model': 'The model `gone` does not exist.'}[refused]\n"
-            "    request = httpx2.Request('POST', 'https://stand-in.test/v1/chat/completions')\n"
-            "    try:\n"
-            "        raise openai.BadRequestError(message, response=httpx2.Response(400, request=request), body={'message': message, 'code': None})\n"
-            "    except openai.APIStatusError as error:\n"
-            "        raise Exception(f'API status error (400): {error}')\n"
+            f"    message = {stand_in_messages!r}[refused]\n"
+            "    rejecting['reject'](rejecting['Rejected'](message))\n"
             "translation.translateText.layer('stand-in', provider)\n"
             "translation.translateText.layer('request-parameters', partial(request_parameters.refusal, translation, 'high'))\n"
-            "policy = {'runStops': RUN_STOPS} if os.environ['STAND_IN_POLICY'] == '1' else None\n"
+            "policy = {'runStops': RUN_STOPS} if stand_in['policy'] == '1' else None\n"
             "run_stops.configure(translation, policy, folder)\n"
             "from modules import rpgmakermvmz\n"
             "rpgmakermvmz.PAGE_PACKING = True\n"
@@ -2739,39 +2789,79 @@ try:
             "fileThreads": "1",
             "threads": "1",
         }
+
+        def stop_run(name, module, refusal, policy, selected, pays=False):
+            """One run's task and what it handed, sent, logged and wrote."""
+            folder = stop_root / name
+            (folder / "files").mkdir(parents=True)
+            (folder / "translated").mkdir()
+            game = stop_maps | (stop_texts if module == "JSON" else {})
+            for file_name, text in game.items():
+                (folder / "files" / file_name).write_text(text, encoding="utf-8")
+            (folder / "stand-in.json").write_text(
+                json.dumps({"refuses": refusal, "policy": policy, "pays": pays}),
+                encoding="utf-8",
+            )
+            task = TranslationTask(
+                folder, (module, (".json",), None), runner_script=stop_runner
+            )
+            errors, handed, logged = [], [], []
+            task.file_error_signal.connect(lambda *args: errors.append(args))
+            task.progress_signal.connect(lambda *args: handed.append(args[2]))
+            task.log_signal.connect(logged.append)
+            result = task._run_files(selected, False)
+            requests = (folder / "sent.txt").read_text(encoding="utf-8").split()
+            written = sorted(
+                path.name for path in (folder / "translated").glob("Text*.json")
+            )
+            return task, result, errors, handed, logged, requests, written
+
         maps = [f"Map00{number}.json" for number in range(1, 5)]
         from dazedtl.compatibility.process_view import file_receipt
 
-        for refusal, policy, selected, files, stopped in (
+        mvmz_runs = (
             ("effort", "1", maps[:2], maps[:1], refused_effort),
             ("effort", "0", maps[:2], maps[:2], None),
             ("model", "1", maps, maps[:3], True),
+        )
+        # Under the policy the stand-in answers the first request, which the
+        # file pays for before the stop leaves its handler: its receipt keeps
+        # it, read from its log line by the run's records and from its result
+        # by the run's TOTAL.
+        text_runs = (("1", 2), ("0", 2))
+        with (
+            patch.dict(os.environ, stop_environment),
+            ThreadPoolExecutor(len(mvmz_runs) + len(text_runs)) as runs,
         ):
-            Record(stop_root).reset()
-            (stop_root / "sent.txt").unlink(missing_ok=True)
-            stop_task = TranslationTask(
-                stop_root,
-                ("RPG Maker MV/MZ", (".json",), None),
-                runner_script=stop_runner,
-            )
-            errors, handed, logged = [], [], []
-            stop_task.file_error_signal.connect(lambda *args: errors.append(args))
-            stop_task.progress_signal.connect(lambda *args: handed.append(args[2]))
-            stop_task.log_signal.connect(logged.append)
-            with patch.dict(
-                os.environ,
-                {
-                    **stop_environment,
-                    "STAND_IN_REFUSES": refusal,
-                    "STAND_IN_POLICY": policy,
-                    "STAND_IN_PAYS": "1" if stopped is None else "",
-                },
-            ):
-                result = stop_task._run_files(selected, False)
+            mvmz_futures = [
+                runs.submit(
+                    stop_run,
+                    f"mvmz-{number}",
+                    "RPG Maker MV/MZ",
+                    *run[:3],
+                    run[4] is None,
+                )
+                for number, run in enumerate(mvmz_runs)
+            ]
+            text_futures = [
+                runs.submit(
+                    stop_run,
+                    f"text-{policy}",
+                    "JSON",
+                    "effort",
+                    policy,
+                    texts,
+                    policy == "1",
+                )
+                for policy, _ in text_runs
+            ]
+        for (refusal, policy, selected, files, stopped), future in zip(
+            mvmz_runs, mvmz_futures
+        ):
+            stop_task, result, errors, handed, logged, requests, _ = future.result()
             case = (refusal, policy, errors)
             assert result == "Fail", (case, result)
             assert handed == files, (case, handed)
-            requests = (stop_root / "sent.txt").read_text().split()
             # One request per file until the stop, and the paid one before.
             assert len(requests) == len(files) + (stopped is None), (case, requests)
             assert [name for name, _ in errors] == files, case
@@ -2788,7 +2878,7 @@ try:
                     receipt
                     for receipt in (file_receipt(line, files) for line in logged)
                     if receipt
-                ] == [("Map001.json", paid, True)], logged
+                ] == [("Map001.json", paid)], logged
             elif stopped is True:
                 # The two rejections before the stop failed their own files.
                 # They read as the provider's own error, which the run's
@@ -2817,47 +2907,13 @@ try:
         # out as finished; a run frozen before the policy still writes each
         # refused file untranslated and goes on, as when approved. A file the per-file executor started
         # before the stop meets it without sending.
-        texts = ["Text1.json", "Text2.json"]
-        for number, text_file in enumerate(texts, 1):
-            (stop_root / "files" / text_file).write_text(
-                json.dumps(
-                    {f"村人{number}の話を聞いてくれ。": "TODO"}, ensure_ascii=False
-                ),
-                encoding="utf-8",
+        for (policy, sends), future in zip(text_runs, text_futures):
+            stop_task, result, errors, handed, logged, requests, written = (
+                future.result()
             )
-        # Under the policy the stand-in answers the first request, which the
-        # file pays for before the stop leaves its handler: its receipt keeps
-        # it, read from its log line by the run's records and from its result
-        # by the run's TOTAL.
-        for policy, sends in (("1", 2), ("0", 2)):
-            Record(stop_root).reset()
-            (stop_root / "sent.txt").unlink(missing_ok=True)
-            for text_file in texts:
-                (stop_root / "translated" / text_file).unlink(missing_ok=True)
-            stop_task = TranslationTask(
-                stop_root, ("JSON", (".json",), None), runner_script=stop_runner
-            )
-            errors, handed, logged = [], [], []
-            stop_task.file_error_signal.connect(lambda *args: errors.append(args))
-            stop_task.progress_signal.connect(lambda *args: handed.append(args[2]))
-            stop_task.log_signal.connect(logged.append)
-            with patch.dict(
-                os.environ,
-                {
-                    **stop_environment,
-                    "STAND_IN_REFUSES": "effort",
-                    "STAND_IN_POLICY": policy,
-                    "STAND_IN_PAYS": "1" if policy == "1" else "",
-                },
-            ):
-                result = stop_task._run_files(texts, False)
             case = (policy, result, errors)
             assert handed == texts[: len(handed)], (case, handed)
-            requests = (stop_root / "sent.txt").read_text().split()
             assert len(requests) == sends, (case, requests)
-            written = sorted(
-                path.name for path in (stop_root / "translated").glob("Text*.json")
-            )
             if policy == "1":
                 assert result == "Fail", case
                 assert errors[0] == ("Text1.json", refused_effort), case
@@ -2870,7 +2926,7 @@ try:
                     receipt
                     for receipt in (file_receipt(line, texts) for line in logged)
                     if receipt
-                ] == [("Text1.json", paid, True)], logged
+                ] == [("Text1.json", paid)], logged
             else:
                 assert result != "Fail", case
                 assert handed == texts and errors == [], case

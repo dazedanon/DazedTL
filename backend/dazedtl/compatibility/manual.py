@@ -440,13 +440,13 @@ def manual_jobs(source, workspace, lock, allow_providers):
             with self.lock:
                 args = event.get("args", [])
                 if (
-                    event.get("event") == "log"
-                    and args
+                    event.get("event") == "receipt"
+                    and len(args) >= 2
                     and job.get("mode") in {"translate", "batch"}
                 ):
                     from .process_view import record_receipt
 
-                    record_receipt(job, args[0])
+                    record_receipt(job, args[0], args[1])
                 if (
                     event.get("event") == "finished"
                     and len(args) >= 2
