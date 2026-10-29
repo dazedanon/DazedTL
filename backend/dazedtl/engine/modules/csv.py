@@ -255,10 +255,12 @@ def translateCSV(data, pbar, filename, translatedList, process_indices=None):
 
     Pass 2 gets the rows pass 1 sent, since pass 1 can change a cell that
     decides which rows are sent, such as a speaker column that is also the
-    target.
+    target. Pass 1 translates each speaker and writes its name back, so pass
+    2 sends nothing.
     """
     global LOCK, ESTIMATE, PBAR
     PBAR = pbar
+    setData = bool(translatedList)
     translatedText = ""
     totalTokens = [0, 0]
     stringList = []
@@ -272,7 +274,7 @@ def translateCSV(data, pbar, filename, translatedList, process_indices=None):
         speaker = ""
         
         # Handle speaker column if configured
-        if SPEAKER_COLUMN >= 0 and len(data[i]) > SPEAKER_COLUMN and data[i][SPEAKER_COLUMN]:
+        if not setData and SPEAKER_COLUMN >= 0 and len(data[i]) > SPEAKER_COLUMN and data[i][SPEAKER_COLUMN]:
             speakerResponse = getSpeaker(data[i][SPEAKER_COLUMN])
             totalTokens[0] += speakerResponse[1][0]
             totalTokens[1] += speakerResponse[1][1]
@@ -284,12 +286,13 @@ def translateCSV(data, pbar, filename, translatedList, process_indices=None):
             match = re.search(r":name\[([^\]]+?)\]\n([\w\W]*)", jaString)
             if match:
                 # Translate speaker name
-                response = getSpeaker(match.group(1))
-                speaker = response[0]
-                totalTokens[0] += response[1][0]
-                totalTokens[1] += response[1][1]
-                data[i][SOURCE_COLUMN] = data[i][SOURCE_COLUMN].replace(match.group(1), speaker)
-                
+                if not setData:
+                    response = getSpeaker(match.group(1))
+                    speaker = response[0]
+                    totalTokens[0] += response[1][0]
+                    totalTokens[1] += response[1][1]
+                    data[i][SOURCE_COLUMN] = data[i][SOURCE_COLUMN].replace(match.group(1), speaker)
+
                 # Extract text portion
                 jaString = match.group(2)
                 # Remove voice markers
@@ -318,7 +321,7 @@ def translateCSV(data, pbar, filename, translatedList, process_indices=None):
         jaString = jaString.replace("\n", " ")
         
         # Pass 1: Collect strings
-        if not translatedList:
+        if not setData:
             if speaker:
                 stringList.append(f"[{speaker}]: {jaString}")
             else:

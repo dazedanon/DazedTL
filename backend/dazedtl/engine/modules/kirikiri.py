@@ -183,16 +183,17 @@ def translateKiriKiri(data, pbar, filename, jobList):
 
     while i < len(data):
         speaker = ""
-        # Speaker
+        # Speaker, translated in pass 1 only: pass 2 finds the name it wrote
         match = re.search(speakerRegex, data[i])
         if match and SPEAKERS:
-            speakerJA = match.group(1)
-            response = getSpeaker(speakerJA)
-            speaker = response[0]
-            tokens[0] += response[1][0]
-            tokens[1] += response[1][1]
-            data[i] = data[i].replace(speakerJA, speaker)
-            checkLine(data, i, filename)
+            if not setData:
+                speakerJA = match.group(1)
+                response = getSpeaker(speakerJA)
+                speaker = response[0]
+                tokens[0] += response[1][0]
+                tokens[1] += response[1][1]
+                data[i] = data[i].replace(speakerJA, speaker)
+                checkLine(data, i, filename)
             i += 1
 
         # Choices

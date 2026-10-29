@@ -105,17 +105,11 @@ def handleLune(filename, estimate):
 
 
 def openFiles(filename):
+    """Reads a Lune file, a JSON list of name and message entries, whatever
+    its name: the engine offers ``.l`` files (util/translation_task)."""
     with open("files/" + filename, "r", encoding="UTF-8-sig") as f:
         data = json.load(f)
-
-        # Map Files
-        if ".json" in filename:
-            translatedData = parseJSON(data, filename)
-
-        else:
-            raise NameError(filename + " Not Supported")
-
-    return translatedData
+    return parseJSON(data, filename)
 
 
 def parseJSON(data, filename):
@@ -149,11 +143,15 @@ def translateJSON(data, pbar):
     insertBool = False
     i = 0
     batchStartIndex = 0
+    # Entries whose name is translated: setting a batch's text walks its
+    # entries again, which then hold their translated names
+    named = set()
 
     while i < len(data):
         item = data[i]
         # Speaker
-        if "name" in item:
+        if "name" in item and i not in named:
+            named.add(i)
             if item["name"] not in [None, "-"]:
                 response = getSpeaker(item["name"])
                 speaker = response[0]

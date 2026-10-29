@@ -943,7 +943,10 @@ try:
         # failed a QuestName with no txtSubject, or one without a line break,
         # before it. CSV read its target column as the speaker by default, and
         # as the name it wrote there made the row look translated, wrote each
-        # row's translation to the next row.
+        # row's translation to the next row. CSV, Kirikiri, Regex, Lune, Tyrano
+        # and WOLF2 sent each speaker name again in the pass that writes the
+        # translations, as it then held its translation, and WOLF2 its
+        # choices too; Lune refused the .l files it is offered.
         shapes = temporary / "engine-shapes"
         for folder in ("files", "translated", "log"):
             (shapes / folder).mkdir(parents=True)
@@ -998,15 +1001,75 @@ try:
                         'またね,"EN ""またね"""\r\n'
                     ),
                 ),
+                (
+                    "modules.csv",
+                    "handleCSV",
+                    "Scene.csv",
+                    'Source,Target\n":name[アリス]\nやあ",\n',
+                    {"PARSE_NAME_TAGS": True},
+                    ["アリス", ["[Alice]: やあ"]],
+                    'Source,Target\r\n":name[Alice]\nやあ","EN ""[Alice]: やあ"""\r\n',
+                ),
+                (
+                    "modules.kirikiri",
+                    "handleKirikiri",
+                    "scene.ks",
+                    "【アリス】[CR]\n[text]やあ[KeyWait]\n",
+                    {},
+                    ["アリス", ["[Alice]: やあ"]],
+                    "【Alice】[CR]\n[text]EN '[Alice]: やあ'[KeyWait]\n",
+                ),
+                (
+                    "modules.regex",
+                    "handleRegex",
+                    "script.txt",
+                    '{\n    "name": "アリス",\n    "text": "やあ",\n},\n',
+                    {},
+                    ["アリス", ["[Alice]: やあ"]],
+                    '﻿{\n    "name": "Alice",\n    "text": "EN \\"[Alice]: やあ\\"",\n},\n',
+                ),
+                (
+                    "modules.lune",
+                    "handleLune",
+                    "scene.l",
+                    '[{"name": "アリス", "message": "やあ"}]',
+                    {},
+                    ["アリス", ["やあ"]],
+                    '[\n    {\n        "name": "Alice",\n        "message": "EN \\"やあ\\""\n    }\n]',
+                ),
+                (
+                    "modules.tyrano",
+                    "handleTyrano",
+                    "scene.ks",
+                    "#アリス\nやあ[p]\n",
+                    {},
+                    ["アリス", ["[Alice]: やあ"]],
+                    '#Alice\nEN "(Alice): やあ"[p]\n',
+                ),
+                (
+                    "modules.wolf2",
+                    "handleWOLF2",
+                    "Map001.txt",
+                    "アリス：\nやあ\n\n//選択肢\n//はい\n//いいえ\n//はいの場合\n",
+                    {},
+                    ["アリス", ["はい", "いいえ"], ["[Alice]: やあ "]],
+                    'Alice：\nEN "[Alice]: やあ "\n\n//選択肢\n//EN "はい"\n//EN "いいえ"\n//はいの場合\n',
+                ),
             ):
                 module = import_module(module_name)
-                encoding = "cp932" if scene == "0.txt" else "utf-8"
+                encoding = "utf-8"
+                if module_name in (
+                    "modules.nscript",
+                    "modules.kirikiri",
+                    "modules.wolf2",
+                ):
+                    encoding = "cp932"
                 (shapes / "files" / scene).write_bytes(source.encode(encoding))
                 sent = []
 
                 def shape_reply(text, *_args, **_kwargs):
                     if text:
-                        sent.append(text)
+                        sent.append(list(text) if isinstance(text, list) else text)
                     if isinstance(text, list):
                         return [[f'EN "{line}"' for line in text], [1, 1]]
                     return ["Alice", [1, 1]]
@@ -1014,9 +1077,7 @@ try:
                 its = {"translateAI": shape_reply, "NAMESLIST": [], **options}
                 with patch.multiple(module, **its), redirect_stdout(StringIO()):
                     getattr(module, handler)(scene, False)
-                # Only the requests this case is about: CSV's second pass asks
-                # for a speaker column's name again, which is not.
-                assert sent[: len(requests)] == requests, (module_name, sent)
+                assert sent == requests, (module_name, sent)
                 written = (shapes / "translated" / scene).read_bytes()
                 assert written.decode(encoding) == output, (module_name, written)
         finally:

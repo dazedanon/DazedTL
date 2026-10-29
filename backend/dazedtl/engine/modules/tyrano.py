@@ -162,9 +162,9 @@ def translateTyrano(data, filename, translatedList):
         furiganaRegex = r"(\[ruby\stext=(.*?)\])"
         choiceRegex = r'\[glink.+?text="(.*?)"'
 
-        # Speaker
+        # Speaker, translated in pass 1 only: pass 2 finds the name it wrote
         match = re.search(lineRegexSpeaker, data[i])
-        if match:
+        if match and not translatedList:
             if match.group(1):
                 response = getSpeaker(match.group(1))
                 speaker = response[0]

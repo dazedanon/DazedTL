@@ -197,9 +197,9 @@ def translateRegex(data, filename, translatedList):
                 title = re.sub(r"(?<!\\)'", r"\\'", title)
                 data[i] = data[i].replace(match.group(1), title)
 
-        # Speaker
+        # Speaker, translated in pass 1 only: pass 2 finds the name it wrote
         match = re.search(lineRegexSpeaker, data[i])
-        if match:
+        if match and not translatedList:
             response = getSpeaker(match.group(1))
             speaker = response[0]
             tokens[0] += response[1][0]
