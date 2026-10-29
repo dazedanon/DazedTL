@@ -152,7 +152,7 @@ def foreign_claude_name(model: str, address: str | None) -> bool:
     "us.anthropic.claude-...", for a request to Anthropic's own API, which
     takes only Claude's own IDs ("claude-...") and answers any other name
     with not found. Settings refuses it before any request is sent
-    (compatibility/dazedmtl validate_model_name)."""
+    (settings/providers validate_model_name)."""
     name = claude_model_name(model)
     return (
         name is not None

@@ -4035,8 +4035,10 @@ def _lookup_model_price(model: str):
 
 
 def _claude_pricing(model):
-    """getPricingConfig's table for a Claude model (is_claude_model), by its
-    family and version in any host's form, in lower case."""
+    """getPricingConfig's table for a Claude model (is_claude_model), in
+    lower case, by its family and version as Anthropic writes them
+    ("claude-opus-5-5"); another host's dotted form, such as OpenRouter's
+    "claude-opus-5.5", falls to an older version's or the default rates."""
     if "claude-fable" in model or "claude-mythos" in model:
         rates = (10.00, 50.00)
     elif "claude-opus-5-5" in model:
