@@ -1098,15 +1098,21 @@ def _effort_refusal(root):
     return message, lambda error: effort.rejected(error, level, rule)
 
 
-def refused_effort(root, errors):
-    """*errors* with each refusal of the run's thinking effort read as the
-    one message that says so (settings/effort), so a Batch whose requests
-    all failed this way reports it once."""
+def error_messages(root, errors):
+    """A run's *errors* as its messages show them, each once: a refusal of
+    the run's thinking effort as the one message that says so
+    (settings/effort), so a Batch whose requests all failed this way reports
+    it once, and a Batch request's stored provider error as it reads
+    (provider_responses stored_reason)."""
+    from .provider_responses import stored_reason
+
     refusal = _effort_refusal(root) if errors else None
-    if refusal is None:
-        return errors
-    message, refused = refusal
-    return [message if refused(error) else error for error in errors]
+    return list(
+        dict.fromkeys(
+            refusal[0] if refusal and refusal[1](error) else stored_reason(error)
+            for error in errors
+        )
+    )
 
 
 def batch_refusal(root):
@@ -1378,8 +1384,8 @@ def summary(root, job, view=None):
         "failed": failed,
         "batches": receipts,
         "noRequestFiles": no_request_files(root, job, items),
-        "errors": list(dict.fromkeys(refused_effort(root, errors))),
-        "runErrors": list(dict.fromkeys(refused_effort(root, run_errors))),
+        "errors": error_messages(root, errors),
+        "runErrors": error_messages(root, run_errors),
         "usage": usage,
         "fileMetrics": file_metrics(job),
         # Request rows stay out of observation; the inspector pages them.
@@ -1673,6 +1679,12 @@ def payload(root, index, job=None, prepared=False):
             ),
             None,
         )
+        if error is not None:
+            from .provider_responses import stored_reason
+
+            # The provider's reason as the run's messages read it, not the
+            # Python text of its error object.
+            error = {**error, "message": stored_reason(error.get("message"))}
         value = batch_payload(
             index,
             total,

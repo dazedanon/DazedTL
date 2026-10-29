@@ -2478,14 +2478,20 @@ class ProcessTests(unittest.TestCase):
             # A request error must stay beside its own response; a Batch-wide
             # error must not be assigned to an unsent request with no ID.
             history = process_view.saved(root, "batch_history.json")
+            # A fetch keeps the provider's error object as Python's text,
+            # which reads as its message, not as that text.
             history["batches"][0]["provider_errors"].append(
-                {"custom_id": "req-000000", "message": "Unsupported temperature"}
+                {
+                    "custom_id": "req-000000",
+                    "message": "{'code': 'invalid_request', "
+                    "'message': 'Unsupported temperature'}",
+                }
             )
             write_json(root / "log/batch_history.json", history)
             value = process_view.summary(root, {"mode": "batch"})
             self.assertEqual(value["runErrors"], ["Batch stopped"])
             self.assertEqual(
-                value["errors"], ["Batch stopped", "Unsupported temperature"]
+                value["errors"], ["Batch stopped", "Unsupported temperature."]
             )
             provider = SimpleNamespace(
                 _openai_batch_body=lambda _provider, params: params
@@ -2496,7 +2502,7 @@ class ProcessTests(unittest.TestCase):
                 )
                 self.assertEqual(
                     process_view.payload(root, 0)["error"]["message"],
-                    "Unsupported temperature",
+                    "Unsupported temperature.",
                 )
                 self.assertEqual(process_view.payload(root, 1)["state"], "queued")
                 self.assertIsNone(process_view.payload(root, 1)["error"])

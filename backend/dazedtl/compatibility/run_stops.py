@@ -10,7 +10,7 @@ from pathlib import Path
 from dazedtl import storage, system
 from dazedtl.settings.preferences import RUN_STOPS
 
-from .provider_responses import error_evidence
+from .provider_responses import error_evidence, provider_error
 
 # Statuses a provider answers the same request with again: bad request,
 # unauthorized, forbidden, not found and unprocessable. Timeouts, conflicts,
@@ -25,16 +25,6 @@ LAYER = "run-stops"
 FLAGGED = re.compile(
     r"flagged|content[ _-]?(?:filter|policy|management)|usage polic", re.IGNORECASE
 )
-
-
-def provider_error(detail):
-    """How the provider's error *detail* (provider_responses error_evidence)
-    reads in a run's messages: its status and its own message, without the
-    SDK's and the engine's wrapping."""
-    text = detail["message"].strip()
-    if not text.endswith((".", "!", "?")):
-        text += "."
-    return f"HTTP {detail['status']} - {text}"
 
 
 def stop_message(detail):

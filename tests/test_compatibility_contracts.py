@@ -942,6 +942,52 @@ class CompatibilityContracts(unittest.TestCase):
                 self.assertIs(caught.exception, rejected)
             self.assertEqual(older.translateText("s", "u"), "ok")
 
+    def test_a_provider_error_without_a_message_reads_as_its_code(self):
+        # A 400 whose body held no message read "HTTP 400 - Provider returned
+        # HTTP 400.", and a prompt flagged only by its code lost the code.
+        from dazedtl.compatibility.provider_responses import (
+            error_evidence,
+            provider_error,
+        )
+
+        class StatusError(Exception):
+            def __init__(self, body):
+                super().__init__("Error code: 400")
+                self.status_code = 400
+                self.body = body
+
+        def reads(body):
+            return provider_error(error_evidence(StatusError(body)))
+
+        self.assertEqual(
+            reads({"error": {"message": "The model `gone` does not exist"}}),
+            "HTTP 400 - The model `gone` does not exist.",
+        )
+        self.assertEqual(
+            reads({"error": {"code": "content_filter"}}), "HTTP 400 - content_filter."
+        )
+        self.assertEqual(reads({}), "HTTP 400 with no reason given.")
+        self.assertEqual(reads(None), "HTTP 400 with no reason given.")
+        # A Batch request's error as a fetch keeps it: the row's error object,
+        # or a row of OpenAI's error file whole; anything else stays as it is.
+        from dazedtl.compatibility.provider_responses import stored_reason
+
+        for stored, reason in (
+            ("{'code': 'invalid_request', 'message': 'Bad model'}", "Bad model."),
+            (
+                (
+                    "{'id': 'batch_req_1', 'custom_id': 'req-1', 'response': "
+                    "{'status_code': 400, 'request_id': 'r', 'body': {'error': "
+                    "{'message': 'Bad model', 'type': 'invalid_request_error'}}}, "
+                    "'error': None}"
+                ),
+                "HTTP 400 - Bad model.",
+            ),
+            ("{'code': 'invalid_request', 'mess", "{'code': 'invalid_request', 'mess"),
+            ("expired: ", "expired: "),
+        ):
+            self.assertEqual(stored_reason(stored), reason)
+
     def test_claude_estimates_scale_from_claudes_own_count_of_a_spread_sample(self):
         # Claude's estimates once counted only the shared instructions with
         # Claude's tokenizer and the rest approximately, understating input.
