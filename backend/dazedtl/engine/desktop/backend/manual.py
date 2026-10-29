@@ -89,7 +89,10 @@ ENGINE_VERSIONS = {
     "Text": 2,
     "RenPy": 2,
     "Unity": 2,
-    "RPG Maker Plugin": 2,
+    # 3: text inside a field its line already sends, such as a stat label
+    # inside a drawTextEx label or a txtSubject inside a disp_list string, is
+    # no longer sent again
+    "RPG Maker Plugin": 3,
     "SRPG Studio": 2,
 }
 STALE_QUEUE = (

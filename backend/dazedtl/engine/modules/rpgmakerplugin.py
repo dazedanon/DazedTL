@@ -1,8 +1,11 @@
 # Libraries
 import json
+from bisect import bisect_left, bisect_right
+from collections.abc import Callable, Iterator
+from dataclasses import dataclass
+from functools import lru_cache
 import os
 import re
-from util.speakers import translate_speaker
 import util.dazedwrap as dazedwrap
 import threading
 import time
@@ -33,7 +36,6 @@ NOTEWIDTH = 70
 MAXHISTORY = 10
 ESTIMATE = ""
 TOKENS = [0, 0]
-NAMESLIST = []
 NAMES = False  # Output a list of all the character names found
 BRFLAG = False  # If the game uses <br> instead
 FIXTEXTWRAP = True  # Overwrites textwrap
@@ -139,7 +141,7 @@ def parsePlugin(readFile, filename):
         PBAR = pbar
 
         try:
-            result = translatePlugin(data, pbar, filename, [])
+            result = translatePlugin(data, pbar, filename)
             totalTokens[0] += result[0]
             totalTokens[1] += result[1]
         except run_stop_errors():
@@ -230,815 +232,467 @@ def written(translation, source, depth=None, width=None):
     return text.replace("\n", newline or " ")
 
 
-# The quote that opens a drawTextEx call's text, with the backslashes before
-# it where the call is itself in a string.
-DRAW_TEXT_QUOTE = re.compile(r"drawTextEx\(\s*(\\*[\"'`])")
-
-
-def drawTextLabel(translation, line, position, depth):
-    """A drawTextEx label's *translation* as its string in *line* writes it.
-
-    Where the label at *position* is in the text of a drawTextEx call, each
-    of that string's own quotes in the translation, escaped by the reply or
-    not, is escaped at half the depth of the label's codes, *depth*, so it
-    does not end the string; a label elsewhere keeps the translation as it is.
-    """
-    opening = None
-    for opening in DRAW_TEXT_QUOTE.finditer(line, 0, position):
-        pass
-    if opening is None:
-        return translation
-    quote = opening.group(1)
-    closing = re.compile(r"(?<!\\)" + re.escape(quote)).search(line, opening.end())
-    if closing and closing.start() < position:
-        return translation
-    escaped = "\\" * max(1, len(depth) // 2) + quote
-    return re.sub(r"\\*" + re.escape(quote[-1]), lambda _found: escaped, translation)
-
-
-def translatePlugin(data, pbar, filename, translatedList):
-    if len(translatedList) > 0:
-        questList = translatedList[0]
-        custom = translatedList[1]
-        sceneMenuText = translatedList[2] if len(translatedList) > 2 else []
-        sceneMenuCommonHelpText = translatedList[3] if len(translatedList) > 3 else []
-        sceneMenuHelpText = translatedList[4] if len(translatedList) > 4 else []
-        # Each drawTextEx label's translation by its label, as a label is
-        # sent once however many times the file draws it
-        sceneMenuDrawText = translatedList[5] if len(translatedList) > 5 else {}
-        sceneMenuStatLabel = translatedList[6] if len(translatedList) > 6 else {}
-        saveParamName = translatedList[7] if len(translatedList) > 7 else []
-        setData = True
-    else:
-        questList = [[], [], [], [], [], []]
-        custom = []
-        sceneMenuText = []
-        sceneMenuCommonHelpText = []
-        sceneMenuHelpText = []
-        sceneMenuDrawText = []
-        sceneMenuStatLabel = []
-        saveParamName = []
-        setData = False
-    currentGroup = []
-    tokens = [0, 0]
-    speaker = ""
-    voice = False
-    global LOCK, ESTIMATE
-    i = 0
-    in_disp_list = False
-    brace_count = 0
-
-    # Category
-    with open("log/translations.txt", "a+", encoding="utf-8") as tlFile:
-                tlFile.write(f"\nCustom:\n")
-                tlFile.close()
-
-    while i < len(data):
-        voice = False
-        speaker = ""
-
-        # Track if we're inside CBR_travel_data block
-        if 'data_map_name_list' in data[i]:
-            in_disp_list = True
-            brace_count = 0
-        
-        if in_disp_list:
-            # Count braces to know when we exit the object
-            brace_count += data[i].count('{') - data[i].count('}')
-            if brace_count < 0:
-                in_disp_list = False
-
-        # Nested array strings (e.g., this.disp_list = { key: { subkey: ["string1", "string2"] } })
-        # Matches strings inside arrays within object literals
-        if in_disp_list:
-            regex_nested = source_pattern("disp_list")
-            matchList = re.findall(regex_nested, data[i])
-            if len(matchList) > 0:
-                for match in matchList:
-                    # Save Original String
-                    jaString = match
-                    originalString = jaString
-
-                    # Codes at depth one, line breaks as spaces
-                    jaStringClean = sent(jaString)
-
-                    if jaStringClean.strip():
-                        # Pass 1
-                        if setData == False:
-                            custom.append(jaStringClean.strip())
-
-                        # Pass 2
-                        else:
-                            if custom:
-                                # Grab and Pop
-                                translatedText = custom[0]
-                                custom.pop(0)
-
-                                # Set to None if empty list
-                                if len(custom) <= 0:
-                                    custom = []
-
-                                # Codes and line breaks as the source writes
-                                # them, wrapped where it has line breaks
-                                translatedText = written(
-                                    translatedText,
-                                    jaString,
-                                    stringDepth(""),
-                                    50 if escapedNewline(jaString) else None,
-                                )
-
-                                # Escape quotes in translation
-                                translatedText = translatedText.replace('"', '\\"')
-
-                                # Set Data
-                                data[i] = data[i].replace(f'"{originalString}"', f'"{translatedText}"')
-
-        # Custom
-        # Useful Regex's
-        # r'"Text[\\]+":[\\]+"(.+?)[\\]+",'
-        # r'"HelpText[\\]+":[\\]+"(.+?)[\\]+",'
-        # r"this.drawTextEx\(\\'(.+?)\',"
-        # r'txtSubject.+?"(.+)"'
-        regex = r'txtSubject.+?"(.+)"'
-        matchList = re.findall(regex, data[i])
-        if len(matchList) > 0:
-            for match in matchList:
-                # Save Original String
-                jaString = match
-                originalString = jaString
-
-                # Make sure it contains Japanese
-                if not re.search(LANGREGEX, jaString):
-                    continue
-
-                # Make sure didn't grab \\
-                if re.search(r"^[\\]+$", jaString):
-                    continue
-
-                # Codes at depth one, line breaks as spaces
-                jaString = sent(jaString)
-
-                if jaString.replace("\u3000", "") and jaString:
-                    # Pass 1
-                    if setData == False and jaString.strip():
-                        custom.append(jaString.strip())
-
-                    # Pass 2
-                    else:
-                        if custom:
-                            # Grab and Pop
-                            translatedText = custom[0]
-                            custom.pop(0)
-
-                            # Replace Single Quotes
-                            translatedText = re.sub(r"([^\\'])'", r"\1՚", translatedText)
-                            translatedText = re.sub(r"([^\\'])\"", r"\1՚", translatedText)
-
-                            # Codes and line breaks as the source writes them
-                            translatedText = written(translatedText, originalString, stringDepth(""))
-
-                            # Set Data
-                            with open("log/translations.txt", "a+", encoding="utf-8") as tlFile:
-                                tlFile.write(f"{originalString} ({translatedText})\n")
-                            data[i] = data[i].replace(originalString, translatedText)
-
-        # Quest Name
-        regex = r'[\\]+"QuestName[\\]+":([\\]+)"(.*?)[\\]+"'
-        matchList = re.findall(regex, data[i])
-        if len(matchList) > 0:
-            for quote, match in matchList:
-                if match:
-                    # Save Original String
-                    originalString = match
-
-                    # Codes at depth one, line breaks as spaces
-                    match = sent(match)
-
-                    # Pass 1
-                    if setData == False:
-                        # Add String
-                        if match != "\\\\\\\\":
-                            questList[0].append(match.strip())
-
-                    # Pass 2
-                    else:
-                        if questList[0]:
-                            # Grab and Pop
-                            translatedText = questList[0][0]
-                            questList[0].pop(0)
-
-                            # Codes and line breaks as the source writes them
-                            translatedText = written(translatedText, originalString, stringDepth(quote))
-
-                            # Replace Single Quotes
-                            translatedText = translatedText.replace('"', "'")
-                            translatedText = re.sub(r"([^\\'])'", r"\1\\'", translatedText)
-
-                            # Set Data
-                            data[i] = data[i].replace(originalString, translatedText)
-
-        # Quest Client
-        regex = r'QuestClientName[\\]+":([\\]+)"(.*?)[\\]+"'
-        matchList = re.findall(regex, data[i])
-        if len(matchList) > 0:
-            for quote, match in matchList:
-                if match:
-                    # Save Original String
-                    originalString = match
-
-                    # Codes at depth one, line breaks as spaces
-                    match = sent(match)
-
-                    # Pass 1
-                    if setData == False:
-                        # Add String
-                        if match != "\\\\\\\\":
-                            questList[1].append(match.strip())
-
-                    # Pass 2
-                    else:
-                        if questList[1]:
-                            # Grab and Pop
-                            translatedText = questList[1][0]
-                            questList[1].pop(0)
-
-                            # Codes and line breaks as the source writes them
-                            translatedText = written(translatedText, originalString, stringDepth(quote))
-
-                            # Replace Single Quotes
-                            translatedText = translatedText.replace('"', "'")
-                            translatedText = re.sub(r"([^\\'])'", r"\1\\'", translatedText)
-
-                            # Set Data
-                            data[i] = data[i].replace(originalString, translatedText)
-
-        # Quest Location
-        regex = r'QuestLocation[\\]+":([\\]+)"(.*?)[\\]+"'
-        matchList = re.findall(regex, data[i])
-        if len(matchList) > 0:
-            for quote, match in matchList:
-                if match:
-                    # Save Original String
-                    originalString = match
-
-                    # Codes at depth one, line breaks as spaces
-                    match = sent(match)
-
-                    # Pass 1
-                    if setData == False:
-                        # Add String
-                        if match != "\\\\\\\\":
-                            questList[2].append(match.strip())
-
-                    # Pass 2
-                    else:
-                        if questList[2]:
-                            # Grab and Pop
-                            translatedText = questList[2][0]
-                            questList[2].pop(0)
-
-                            # Codes and line breaks as the source writes them
-                            translatedText = written(translatedText, originalString, stringDepth(quote))
-
-                            # Replace Single Quotes
-                            translatedText = translatedText.replace('"', "'")
-                            translatedText = re.sub(r"([^\\'])'", r"\1\\'", translatedText)
-
-                            # Set Data
-                            data[i] = data[i].replace(originalString, translatedText)
-
-        # Quest Target
-        regex = r'PlaceInformation[\\]+":([\\]+)"(.*?)[\\]+"'
-        matchList = re.findall(regex, data[i])
-        if len(matchList) > 0:
-            for quote, match in matchList:
-                if match:
-                    # Save Original String
-                    originalString = match
-
-                    # Codes at depth one, line breaks as spaces
-                    match = sent(match)
-
-                    # Pass 1
-                    if setData == False:
-                        # Add String
-                        if match != "\\\\\\\\":
-                            questList[3].append(match.strip())
-
-                    # Pass 2
-                    else:
-                        if questList[3]:
-                            # Grab and Pop
-                            translatedText = questList[3][0]
-                            questList[3].pop(0)
-
-                            # Codes and line breaks as the source writes them
-                            translatedText = written(translatedText, originalString, stringDepth(quote))
-
-                            # Replace Single Quotes
-                            translatedText = translatedText.replace('"', "'")
-                            translatedText = re.sub(r"([^\\'])'", r"\1\\'", translatedText)
-
-                            # Set Data
-                            data[i] = data[i].replace(originalString, translatedText)
-
-        # Quest Summary
-        regex = r'[\\]+"QuestContent[\\]+":[\\]+"([\\]+)"(.*?)[\\]+"[\\]+"'
-        matchList = re.findall(regex, data[i])
-        if len(matchList) > 0:
-            for quote, match in matchList:
-                if match:
-                    # Save Original String
-                    originalString = match
-
-                    # Codes at depth one, line breaks as spaces
-                    match = sent(match)
-
-                    # Pass 1
-                    if setData == False:
-                        # Add String
-                        if match != "\\\\\\\\":
-                            questList[4].append(match.strip())
-
-                    # Pass 2
-                    else:
-                        if questList[4]:
-                            # Grab and Pop
-                            translatedText = questList[4][0]
-                            questList[4].pop(0)
-
-                            # Textwrap, codes and line breaks as the source writes them
-                            translatedText = written(
-                                translatedText, originalString, stringDepth(quote), WIDTH
-                            )
-
-                            # Replace Single Quotes
-                            translatedText = translatedText.replace('"', "'")
-                            translatedText = re.sub(r"([^\\'])'", r"\1\\'", translatedText)
-
-                            # Set Data
-                            data[i] = data[i].replace(originalString, translatedText)
-
-        # Quest Goal 1
-        regex = r'ObjectiveContent[\\]+":[\\]+"([\\]+)"(.*?)[\\]+"'
-        matchList = re.findall(regex, data[i])
-        if len(matchList) > 0:
-            for quote, match in matchList:
-                if match:
-                    # Save Original String
-                    originalString = match
-
-                    # Codes at depth one, line breaks as spaces
-                    match = sent(match)
-
-                    # Pass 1
-                    if setData == False:
-                        # Add String
-                        if match != "\\\\\\\\":
-                            questList[5].append(match.strip())
-
-                    # Pass 2
-                    else:
-                        if questList[5]:
-                            # Grab and Pop
-                            translatedText = questList[5][0]
-                            questList[5].pop(0)
-
-                            # Textwrap, codes and line breaks as the source writes them
-                            translatedText = written(
-                                translatedText, originalString, stringDepth(quote), WIDTH
-                            )
-
-                            # Replace Single Quotes
-                            translatedText = translatedText.replace('"', "'")
-                            translatedText = re.sub(r"([^\\'])'", r"\1\\'", translatedText)
-
-                            # Set Data
-                            data[i] = data[i].replace(originalString, translatedText)
-
-        # SceneCustomMenu - Text (Command Labels)
-        regex = r'[\\]+"Text[\\]+":([\\]+)"(.+?)[\\]+"'
-        matchList = re.findall(regex, data[i])
-        if len(matchList) > 0:
-            for quote, match in matchList:
-                if match:
-                    jaString = match
-                    originalString = jaString
-
-                    # Make sure it contains Japanese
-                    if not re.search(LANGREGEX, jaString):
-                        continue
-
-                    # Make sure didn't grab only backslashes
-                    if re.search(r"^[\\]+$", jaString):
-                        continue
-
-                    if jaString.replace("\u3000", "").strip():
-                        # Pass 1
-                        if setData == False:
-                            # Codes and line breaks at depth one
-                            sceneMenuText.append(sent(jaString, True).strip())
-
-                        # Pass 2
-                        else:
-                            if sceneMenuText:
-                                # Grab and Pop
-                                translatedText = sceneMenuText[0]
-                                sceneMenuText.pop(0)
-
-                                # Codes and line breaks as the source writes them
-                                translatedText = written(translatedText, originalString, stringDepth(quote))
-
-                                # Replace quotes
-                                translatedText = translatedText.replace('"', "'")
-                                translatedText = re.sub(r"([^\\'])'" , r"\1\\'", translatedText)
-
-                                # Set Data
-                                data[i] = data[i].replace(originalString, translatedText)
-
-        # SceneCustomMenu - CommonHelpText
-        regex = r'[\\]+"CommonHelpText[\\]+":([\\]+)"(.+?)[\\]+"'
-        matchList = re.findall(regex, data[i])
-        if len(matchList) > 0:
-            for quote, match in matchList:
-                if match:
-                    jaString = match
-                    originalString = jaString
-
-                    # Make sure it contains Japanese
-                    if not re.search(LANGREGEX, jaString):
-                        continue
-
-                    # Make sure didn't grab only backslashes
-                    if re.search(r"^[\\]+$", jaString):
-                        continue
-
-                    if jaString.replace("\u3000", "").strip():
-                        # Pass 1
-                        if setData == False:
-                            # Codes and line breaks at depth one
-                            sceneMenuCommonHelpText.append(sent(jaString, True).strip())
-
-                        # Pass 2
-                        else:
-                            if sceneMenuCommonHelpText:
-                                # Grab and Pop
-                                translatedText = sceneMenuCommonHelpText[0]
-                                sceneMenuCommonHelpText.pop(0)
-
-                                # Codes and line breaks as the source writes them
-                                translatedText = written(translatedText, originalString, stringDepth(quote))
-
-                                # Replace quotes
-                                translatedText = translatedText.replace('"', "'")
-                                translatedText = re.sub(r"([^\\'])'" , r"\1\\'", translatedText)
-
-                                # Set Data
-                                data[i] = data[i].replace(originalString, translatedText)
-
-        # SceneCustomMenu - HelpText (Command Help)
-        regex = r'[\\]+"HelpText[\\]+":([\\]+)"(.+?)[\\]+"'
-        matchList = re.findall(regex, data[i])
-        if len(matchList) > 0:
-            for quote, match in matchList:
-                if match:
-                    jaString = match
-                    originalString = jaString
-
-                    # Make sure it contains Japanese
-                    if not re.search(LANGREGEX, jaString):
-                        continue
-
-                    # Make sure didn't grab only backslashes
-                    if re.search(r"^[\\]+$", jaString):
-                        continue
-
-                    if jaString.replace("\u3000", "").strip():
-                        # Pass 1
-                        if setData == False:
-                            # Codes and line breaks at depth one
-                            sceneMenuHelpText.append(sent(jaString, True).strip())
-
-                        # Pass 2
-                        else:
-                            if sceneMenuHelpText:
-                                # Grab and Pop
-                                translatedText = sceneMenuHelpText[0]
-                                sceneMenuHelpText.pop(0)
-
-                                # Codes and line breaks as the source writes them
-                                translatedText = written(translatedText, originalString, stringDepth(quote))
-
-                                # Replace quotes
-                                translatedText = translatedText.replace('"', "'")
-                                translatedText = re.sub(r"([^\\'])'" , r"\1\\'", translatedText)
-
-                                # Set Data
-                                data[i] = data[i].replace(originalString, translatedText)
-
-        # NUUN_SaveScreen - ParamName (save screen labels like 現在地, プレイ時間, 所持金)
-        regex = r'[\\]+"ParamName[\\]+":([\\]+)"(.+?)[\\]+"'
-        matchList = re.findall(regex, data[i])
-        if len(matchList) > 0:
-            for quote, match in matchList:
-                if match:
-                    jaString = match
-                    originalString = jaString
-
-                    # Make sure it contains Japanese
-                    if not re.search(LANGREGEX, jaString):
-                        continue
-
-                    # Make sure didn't grab only backslashes
-                    if re.search(r"^[\\]+$", jaString):
-                        continue
-
-                    if jaString.replace("\u3000", "").strip():
-                        # Pass 1
-                        if setData == False:
-                            # Codes and line breaks at depth one
-                            saveParamName.append(sent(jaString, True).strip())
-
-                        # Pass 2
-                        else:
-                            if saveParamName:
-                                # Grab and Pop
-                                translatedText = saveParamName[0]
-                                saveParamName.pop(0)
-
-                                # Codes and line breaks as the source writes them
-                                translatedText = written(translatedText, originalString, stringDepth(quote))
-
-                                # Replace quotes
-                                translatedText = translatedText.replace('"', "'")
-                                translatedText = re.sub(r"([^\\'])'" , r"\1\\'", translatedText)
-
-                                # Set Data
-                                data[i] = data[i].replace(originalString, translatedText)
-
-        # DrawTextEx - Brace-delimited labels (e.g., \}【口づけ】\{, \}回数：\{)
-        # Only process lines containing drawTextEx calls
-        if 'drawTextEx' in data[i]:
-            pending = {}  # Each label's text on this line, by its source
-            regex = r'([\\]+)\}(.+?)[\\]+\{'
-            for found in re.finditer(regex, data[i]):
-                depth, jaString = found.groups()
-
-                # Skip game variable references (handled separately)
-                if '$gameVariables' in jaString:
-                    continue
-
-                # Make sure it contains Japanese
-                if not re.search(LANGREGEX, jaString):
-                    continue
-
-                if jaString.replace("\u3000", "").strip():
-                    # Codes and line breaks at depth one
-                    label = sent(jaString, True).strip()
-
-                    # Pass 1, each label once
-                    if setData == False:
-                        if label not in sceneMenuDrawText:
-                            sceneMenuDrawText.append(label)
-
-                    # Pass 2, the label's translation wherever it is drawn
-                    elif label in sceneMenuDrawText and jaString not in pending:
-                        # Codes and line breaks as the source writes them
-                        translatedText = written(sceneMenuDrawText[label], jaString, depth)
-
-                        # Replace quotes
-                        translatedText = translatedText.replace('"', "'")
-                        pending[jaString] = drawTextLabel(
-                            translatedText, data[i], found.start(), depth
-                        )
-
-            # Apply deferred replacements longest-first to avoid substring collisions
-            # (e.g., replacing 回数： before 使用回数： would corrupt the longer string)
-            for orig in sorted(pending, key=len, reverse=True):
-                data[i] = data[i].replace(orig, pending[orig])
-
-        # DrawTextEx - Stat labels (e.g., C[16]攻撃力\\...C[0])
-        if 'drawTextEx' in data[i]:
-            pending = {}  # Each label's text on this line, by its source
-            regex = r'C\[\d+\]([^C\\,`\[\]]+?)([\\]+)C\[0\]'
-            for found in re.finditer(regex, data[i]):
-                jaString, depth = found.groups()
-
-                # Make sure it contains Japanese
-                if not re.search(LANGREGEX, jaString):
-                    continue
-
-                if jaString.replace("\u3000", "").strip():
-                    label = jaString.strip()
-
-                    # Pass 1, each label once
-                    if setData == False:
-                        if label not in sceneMenuStatLabel:
-                            sceneMenuStatLabel.append(label)
-
-                    # Pass 2, the label's translation wherever it is drawn
-                    elif label in sceneMenuStatLabel and jaString not in pending:
-                        pending[jaString] = drawTextLabel(
-                            sceneMenuStatLabel[label], data[i], found.start(), depth
-                        )
-
-            # Apply deferred replacements longest-first to avoid substring collisions
-            for orig in sorted(pending, key=len, reverse=True):
-                data[i] = data[i].replace(orig, pending[orig])
-
-        # DrawTextEx - Game variable counter word (hardcoded: 回 → time(s))
-        if setData and 'drawTextEx' in data[i] and '$gameVariables' in data[i]:
-            data[i] = re.sub(
-                r'(\$\{\$gameVariables\.value\(\d+\)\}\s*)回',
-                r'\1x',
-                data[i]
-            )
-
-        # Next Line
-        i += 1
-
-    # Pass 2 only writes what pass 1 translated
-    if setData:
-        return tokens
-
-    # EOF
-    translate = False
-    questListTL = [[], [], [], [], [], []]
-    customTL = []
-
-    # Compute combined total for progress bar across all categories
-    combinedTotal = (
-        sum(len(quest) for quest in questList)
-        + len(custom)
-        + len(sceneMenuText)
-        + len(sceneMenuCommonHelpText)
-        + len(sceneMenuHelpText)
-        + len(sceneMenuDrawText)
-        + len(sceneMenuStatLabel)
-        + len(saveParamName)
+# The plugin fields. One walk over the file (fields) records each string the
+# module translates once: its kind, its span on its line, its escape depth and
+# the text its request sends. The requests are sent from those records and
+# each translation is written back to its own span, so the writing pass never
+# looks for a field again: it cannot take another field's translation, write
+# over the same text elsewhere on the line or find a field the requests left
+# out. Text two kinds match belongs to the field the walk reads first, so a
+# stat label inside a drawTextEx label is part of that label.
+
+
+@dataclass(frozen=True, eq=False)
+class Group:
+    """One request: its history label, and whether it sends each text once
+    however many fields hold it."""
+
+    history: str
+    once: bool = False
+
+
+def everywhere(line, region):
+    return True
+
+
+def inRegion(line, region):
+    return region
+
+
+def drawing(line, region):
+    return "drawTextEx" in line
+
+
+@dataclass(frozen=True, eq=False)
+class Kind:
+    """A kind of field: how the walk finds it on a line (its text in the
+    match's group "text", or its first group, and the backslashes it reads its
+    depth from in group "quote"), the request it joins, the text that request
+    sends, None for a match it leaves, how a translation is written, and
+    which lines it reads, by the line and whether it is in a disp_list region."""
+
+    find: Callable[[str], Iterator[re.Match]]
+    group: Group
+    request: Callable[[str], str | None]
+    write: Callable[[str, "Field", str], str]
+    reads: Callable[[str, bool], bool] = everywhere
+
+
+@dataclass(frozen=True, eq=False)
+class Field:
+    """One field: its kind, its line and span there, its text, the
+    backslashes before its string's quote or a label's codes, and the text its
+    request sends."""
+
+    kind: Kind
+    line: int
+    start: int
+    end: int
+    text: str
+    quote: str
+    request: str
+
+
+# JavaScript string literals. A label in a drawTextEx call can sit in any
+# string of its line, and in a plugin setting's script one string deeper for
+# each level, so its translation is written into each string around it.
+#
+# What can open a string, a comment or a regular expression, and each one's
+# text: a string runs to its unescaped quote or the line's end, a regular
+# expression to its unescaped slash outside a [class].
+JS_TOKEN = re.compile(r"//|/\*|[/'\"`]")
+JS_STRING = {
+    quote: re.compile(r"(?:[^\\%s]|\\.)*" % quote, re.S) for quote in "'\"`"
+}
+JS_REGEX = re.compile(r"(?:[^\\/\[\n]|\\.|\[(?:[^\\\]\n]|\\.)*\]?)*/?")
+# A slash after one of these, or first on its line, opens a regular
+# expression; after anything else it divides.
+REGEX_AFTER = set("(,=:[!&|?{};+-*%<>~^")
+
+
+@lru_cache(maxsize=16)
+def literals(text):
+    """Each string literal of a line of JavaScript, as the span of its text
+    and its quote, in line order; a comment ends the line."""
+    found, index = [], 0
+    while (token := JS_TOKEN.search(text, index)) is not None:
+        mark, index = token.group(), token.end()
+        if mark == "//":
+            break
+        if mark == "/*":
+            close = text.find("*/", index)
+            if close < 0:
+                break
+            index = close + 2
+        elif mark == "/":
+            before = token.start() - 1
+            while before >= 0 and text[before] in " \t":
+                before -= 1
+            if before < 0 or text[before] in REGEX_AFTER:
+                index = JS_REGEX.match(text, index).end()
+        else:
+            end = JS_STRING[mark].match(text, index).end()
+            found.append((index, end, mark))
+            index = end + 1
+    return tuple(found)
+
+
+@lru_cache(maxsize=16)
+def unescaped(text, start, end):
+    """The text of the string at *start* to *end* in *text*, each escape
+    read, and where in *text* each of its characters was."""
+    chars, places, index = [], [], start
+    while index < end:
+        if text[index] == "\\" and index + 1 < end:
+            index += 1
+        chars.append(text[index])
+        places.append(index)
+        index += 1
+    return "".join(chars), places
+
+
+def enclosing(line, position, depth):
+    """The quote of each string around *position* in *line*, outermost first,
+    for a code there with the backslashes *depth*: one string for each
+    doubling of them, as each string doubles the backslashes inside it."""
+    quotes, text = [], line
+    for _level in range(max(1, len(depth).bit_length() - 1)):
+        spans = literals(text)
+        # The last string starting at or before the position, if it holds it
+        index = bisect_right(spans, (position, len(text) + 1)) - 1
+        if index < 0 or not position < spans[index][1]:
+            break
+        start, end, quote = spans[index]
+        quotes.append(quote)
+        text, places = unescaped(text, start, end)
+        position = bisect_left(places, position)
+    return quotes
+
+
+def literalText(text, quotes):
+    """*text* written inside the strings of *quotes*, outermost first: each of
+    their quote characters, with any backslashes the reply put before it, is
+    escaped for every string around it, so none ends one."""
+    escapes = {}
+    for char in set(quotes):
+        escaped = char
+        for quote in reversed(quotes):
+            escaped = escaped.replace("\\", "\\\\").replace(quote, "\\" + quote)
+        escapes[char] = escaped
+    if not escapes:
+        return text
+    return re.sub(
+        r"\\*([" + re.escape("".join(escapes)) + "])",
+        lambda found: escapes[found.group(1)],
+        text,
     )
-    if combinedTotal > 0:
-        pbar.total = combinedTotal
+
+
+def jsonText(text):
+    """A translation as a plugin parameter's JSON string writes it: double
+    quotes as single ones, each escaped with one backslash for the JavaScript
+    string the parameter sits in, except one after a backslash or another."""
+    text = text.replace('"', "'")
+    return re.sub(r"([^\\'])'", r"\1\\'", text)
+
+
+def subjectText(text):
+    """A translation as a txtSubject string writes it: its quotes, except one
+    after a backslash or another, as the Armenian apostrophe."""
+    text = re.sub(r"([^\\'])'", r"\1՚", text)
+    return re.sub(r"([^\\'])\"", r"\1՚", text)
+
+
+def regionRequest(text):
+    return sent(text).strip() or None
+
+
+def regionWrite(translation, field, line):
+    # Wrapped where the source has line breaks, in its double-quoted string
+    text = written(
+        translation,
+        field.text,
+        stringDepth(""),
+        50 if escapedNewline(field.text) else None,
+    )
+    return literalText(text, ['"'])
+
+
+def subjectRequest(text):
+    if not re.search(LANGREGEX, text) or re.search(r"^[\\]+$", text):
+        return None
+    text = sent(text)
+    return text.strip() if text.replace("\u3000", "") and text.strip() else None
+
+
+def subjectWrite(translation, field, line):
+    text = written(subjectText(translation), field.text, stringDepth(""))
+    with open("log/translations.txt", "a+", encoding="utf-8") as tlFile:
+        tlFile.write(f"{field.text} ({text})\n")
+    return text
+
+
+def questRequest(text):
+    # Codes at depth one, line breaks as spaces
+    return sent(text).strip() if text else None
+
+
+def jsonWrite(translation, field, line):
+    return jsonText(written(translation, field.text, stringDepth(field.quote)))
+
+
+def jsonWrapped(translation, field, line):
+    return jsonText(written(translation, field.text, stringDepth(field.quote), WIDTH))
+
+
+def menuRequest(text):
+    if not re.search(LANGREGEX, text) or re.search(r"^[\\]+$", text):
+        return None
+    if not text.replace("\u3000", "").strip():
+        return None
+    # Codes and line breaks at depth one
+    return sent(text, True).strip()
+
+
+def labelRequest(text):
+    # Game variable references are counted words (COUNTER_WORD)
+    if "$gameVariables" in text or not re.search(LANGREGEX, text):
+        return None
+    if not text.replace("\u3000", "").strip():
+        return None
+    return sent(text, True).strip()
+
+
+def labelWrite(translation, field, line):
+    text = written(translation, field.text, field.quote).replace('"', "'")
+    return literalText(text, enclosing(line, field.start, field.quote))
+
+
+def statRequest(text):
+    if not re.search(LANGREGEX, text) or not text.replace("\u3000", "").strip():
+        return None
+    return text.strip()
+
+
+def statWrite(translation, field, line):
+    return literalText(translation, enclosing(line, field.start, field.quote))
+
+
+QUEST_GROUPS = (
+    Group("Quest Name"),
+    Group("Quest Client"),
+    Group("Quest Location"),
+    Group("Quest Location"),
+    Group("Quest Summary"),
+    Group("Quest Goal"),
+)
+CUSTOM = Group("Relic Name")
+MENU_TEXT = Group("Menu Item")
+MENU_COMMON_HELP = Group("Menu Help Text")
+MENU_HELP = Group("Menu Help Text")
+DRAWN_LABEL = Group("Status Tracker Label", once=True)
+STAT_LABEL = Group("Character Stat Name", once=True)
+SAVE_PARAM = Group("Save Screen Label")
+# The requests in the order they are sent
+GROUPS = (
+    *QUEST_GROUPS,
+    CUSTOM,
+    MENU_TEXT,
+    MENU_COMMON_HELP,
+    MENU_HELP,
+    DRAWN_LABEL,
+    STAT_LABEL,
+    SAVE_PARAM,
+)
+
+
+def finder(pattern):
+    return re.compile(pattern).finditer
+
+
+# The kinds in the order the walk reads them on a line
+KINDS = (
+    # A disp_list region's strings (e.g., this.disp_list = { key: { subkey:
+    # ["string1", "string2"] } })
+    Kind(
+        lambda line: re.finditer(source_pattern("disp_list"), line),
+        CUSTOM,
+        regionRequest,
+        regionWrite,
+        inRegion,
+    ),
+    Kind(finder(r'txtSubject.+?"(?P<text>.+)"'), CUSTOM, subjectRequest, subjectWrite),
+    Kind(
+        finder(r'[\\]+"QuestName[\\]+":(?P<quote>[\\]+)"(?P<text>.*?)[\\]+"'),
+        QUEST_GROUPS[0],
+        questRequest,
+        jsonWrite,
+    ),
+    Kind(
+        finder(r'QuestClientName[\\]+":(?P<quote>[\\]+)"(?P<text>.*?)[\\]+"'),
+        QUEST_GROUPS[1],
+        questRequest,
+        jsonWrite,
+    ),
+    Kind(
+        finder(r'QuestLocation[\\]+":(?P<quote>[\\]+)"(?P<text>.*?)[\\]+"'),
+        QUEST_GROUPS[2],
+        questRequest,
+        jsonWrite,
+    ),
+    Kind(
+        finder(r'PlaceInformation[\\]+":(?P<quote>[\\]+)"(?P<text>.*?)[\\]+"'),
+        QUEST_GROUPS[3],
+        questRequest,
+        jsonWrite,
+    ),
+    # Quest summary and goals, wrapped
+    Kind(
+        finder(r'[\\]+"QuestContent[\\]+":[\\]+"(?P<quote>[\\]+)"(?P<text>.*?)[\\]+"[\\]+"'),
+        QUEST_GROUPS[4],
+        questRequest,
+        jsonWrapped,
+    ),
+    Kind(
+        finder(r'ObjectiveContent[\\]+":[\\]+"(?P<quote>[\\]+)"(?P<text>.*?)[\\]+"'),
+        QUEST_GROUPS[5],
+        questRequest,
+        jsonWrapped,
+    ),
+    # SceneCustomMenu command labels and help
+    Kind(
+        finder(r'[\\]+"Text[\\]+":(?P<quote>[\\]+)"(?P<text>.+?)[\\]+"'),
+        MENU_TEXT,
+        menuRequest,
+        jsonWrite,
+    ),
+    Kind(
+        finder(r'[\\]+"CommonHelpText[\\]+":(?P<quote>[\\]+)"(?P<text>.+?)[\\]+"'),
+        MENU_COMMON_HELP,
+        menuRequest,
+        jsonWrite,
+    ),
+    Kind(
+        finder(r'[\\]+"HelpText[\\]+":(?P<quote>[\\]+)"(?P<text>.+?)[\\]+"'),
+        MENU_HELP,
+        menuRequest,
+        jsonWrite,
+    ),
+    # NUUN_SaveScreen labels (現在地, プレイ時間, 所持金)
+    Kind(
+        finder(r'[\\]+"ParamName[\\]+":(?P<quote>[\\]+)"(?P<text>.+?)[\\]+"'),
+        SAVE_PARAM,
+        menuRequest,
+        jsonWrite,
+    ),
+    # drawTextEx brace labels (\}【口づけ】\{, \}回数：\{)
+    Kind(
+        finder(r"(?P<quote>[\\]+)\}(?P<text>.+?)[\\]+\{"),
+        DRAWN_LABEL,
+        labelRequest,
+        labelWrite,
+        drawing,
+    ),
+    # drawTextEx stat labels (\C[16]攻撃力\C[0])
+    Kind(
+        finder(r"C\[\d+\](?P<text>[^C\\,`\[\]]+?)(?P<quote>[\\]+)C\[0\]"),
+        STAT_LABEL,
+        statRequest,
+        statWrite,
+        drawing,
+    ),
+)
+
+# A drawTextEx counter after a game variable, written as English counts
+COUNTER_WORD = re.compile(r"(\$\{\$gameVariables\.value\(\d+\)\}\s*)回")
+
+
+def fields(data):
+    """Every field of a plugin file's lines *data*, in file order."""
+    found, region, braces = [], False, 0
+    for index, line in enumerate(data):
+        # A disp_list region runs from its anchor to the brace that closes
+        # what it opened
+        if "data_map_name_list" in line:
+            region, braces = True, 0
+        if region:
+            braces += line.count("{") - line.count("}")
+            region = braces >= 0
+
+        taken = []
+        for kind in KINDS:
+            if not kind.reads(line, region):
+                continue
+            for match in kind.find(line):
+                start, end = match.span(match.re.groupindex.get("text", 1))
+                request = kind.request(line[start:end])
+                if request is None or any(start < last and first < end for first, last in taken):
+                    continue
+                taken.append((start, end))
+                quote = match.group("quote") if "quote" in match.re.groupindex else ""
+                found.append(Field(kind, index, start, end, line[start:end], quote, request))
+    return found
+
+
+def translatePlugin(data, pbar, filename):
+    tokens = [0, 0]
+    with open("log/translations.txt", "a+", encoding="utf-8") as tlFile:
+        tlFile.write("\nCustom:\n")
+
+    # Each group's request, and each field's line in it
+    requests = {group: [] for group in GROUPS}
+    sentOnce = {group: {} for group in GROUPS if group.once}
+    slots = []
+    for field in fields(data):
+        group = field.kind.group
+        lines, slot = requests[group], len(requests[group])
+        if group.once:
+            slot = sentOnce[group].setdefault(field.request, slot)
+        if slot == len(lines):
+            lines.append(field.request)
+        slots.append((field, slot))
+
+    total = sum(len(lines) for lines in requests.values())
+    if total > 0:
+        pbar.total = total
         pbar.refresh()
 
-    # Quest Name, Client, Location, Target, Summary and Goal 1
-    questHistories = ("Quest Name", "Quest Client", "Quest Location", "Quest Location", "Quest Summary", "Quest Goal")
-    for field, history in enumerate(questHistories):
-        response = translateAI(questList[field], history)
+    # Each group's translations, where its reply has a line for each request
+    # line. A quest group is sent even when empty and its empty reply taken:
+    # the file is written when any reply is.
+    replies = {}
+    for group in GROUPS:
+        lines = requests[group]
+        if not lines and group not in QUEST_GROUPS:
+            continue
+        response = translateAI(lines, group.history)
         tokens[0] += response[1][0]
         tokens[1] += response[1][1]
-
-        # Check Mismatch, each field on its own
-        if len(response[0]) == len(questList[field]):
-            questListTL[field] = response[0]
-            translate = True
-
-        # Mismatch
+        if len(response[0]) == len(lines):
+            replies[group] = response[0]
         else:
             with LOCK:
                 found_mismatch(MISMATCH, filename)
+    if not replies:
+        return tokens
 
-    # Custom
-    if custom:
-        # TL
-        response = translateAI(custom, "Relic Name")
-        tokens[0] += response[1][0]
-        tokens[1] += response[1][1]
-        customResponse = response[0]
+    # Each translation written to its field's span
+    edits = {}
+    for field, slot in slots:
+        if field.kind.group in replies:
+            edits.setdefault(field.line, []).append((field, replies[field.kind.group][slot]))
+    for index, lineEdits in edits.items():
+        line, parts, last = data[index], [], 0
+        for field, translation in sorted(lineEdits, key=lambda edit: edit[0].start):
+            parts += [line[last : field.start], field.kind.write(translation, field, line)]
+            last = field.end
+        data[index] = "".join(parts) + line[last:]
 
-        # Check Mismatch
-        if len(custom) == len(customResponse):
-            customTL = customResponse
-            translate = True
-
-        # Mismatch
-        else:
-            with LOCK:
-                found_mismatch(MISMATCH, filename)
-
-    # SceneCustomMenu Text
-    sceneMenuTextTL = []
-    sceneMenuCommonHelpTextTL = []
-    sceneMenuHelpTextTL = []
-    sceneMenuDrawTextTL = {}
-    sceneMenuStatLabelTL = {}
-    saveParamNameTL = []
-
-    if sceneMenuText:
-        # TL
-        response = translateAI(sceneMenuText, "Menu Item")
-        tokens[0] += response[1][0]
-        tokens[1] += response[1][1]
-        sceneMenuTextResponse = response[0]
-
-        # Check Mismatch
-        if len(sceneMenuText) == len(sceneMenuTextResponse):
-            sceneMenuTextTL = sceneMenuTextResponse
-            translate = True
-
-        # Mismatch
-        else:
-            with LOCK:
-                found_mismatch(MISMATCH, filename)
-
-    # SceneCustomMenu CommonHelpText
-    if sceneMenuCommonHelpText:
-        # TL
-        response = translateAI(sceneMenuCommonHelpText, "Menu Help Text")
-        tokens[0] += response[1][0]
-        tokens[1] += response[1][1]
-        sceneMenuCommonHelpTextResponse = response[0]
-
-        # Check Mismatch
-        if len(sceneMenuCommonHelpText) == len(sceneMenuCommonHelpTextResponse):
-            sceneMenuCommonHelpTextTL = sceneMenuCommonHelpTextResponse
-            translate = True
-
-        # Mismatch
-        else:
-            with LOCK:
-                found_mismatch(MISMATCH, filename)
-
-    # SceneCustomMenu HelpText
-    if sceneMenuHelpText:
-        # TL
-        response = translateAI(sceneMenuHelpText, "Menu Help Text")
-        tokens[0] += response[1][0]
-        tokens[1] += response[1][1]
-        sceneMenuHelpTextResponse = response[0]
-
-        # Check Mismatch
-        if len(sceneMenuHelpText) == len(sceneMenuHelpTextResponse):
-            sceneMenuHelpTextTL = sceneMenuHelpTextResponse
-            translate = True
-
-        # Mismatch
-        else:
-            with LOCK:
-                found_mismatch(MISMATCH, filename)
-
-    # DrawTextEx - Brace-delimited labels (tracker section headers and field labels)
-    if sceneMenuDrawText:
-        # TL
-        response = translateAI(sceneMenuDrawText, "Status Tracker Label")
-        tokens[0] += response[1][0]
-        tokens[1] += response[1][1]
-        sceneMenuDrawTextResponse = response[0]
-
-        # Check Mismatch
-        if len(sceneMenuDrawText) == len(sceneMenuDrawTextResponse):
-            sceneMenuDrawTextTL = dict(zip(sceneMenuDrawText, sceneMenuDrawTextResponse))
-            translate = True
-
-        # Mismatch
-        else:
-            with LOCK:
-                found_mismatch(MISMATCH, filename)
-
-    # DrawTextEx - Stat labels (e.g., 攻撃力, 魔力, etc.)
-    if sceneMenuStatLabel:
-        # TL
-        response = translateAI(sceneMenuStatLabel, "Character Stat Name")
-        tokens[0] += response[1][0]
-        tokens[1] += response[1][1]
-        sceneMenuStatLabelResponse = response[0]
-
-        # Check Mismatch
-        if len(sceneMenuStatLabel) == len(sceneMenuStatLabelResponse):
-            sceneMenuStatLabelTL = dict(zip(sceneMenuStatLabel, sceneMenuStatLabelResponse))
-            translate = True
-
-        # Mismatch
-        else:
-            with LOCK:
-                found_mismatch(MISMATCH, filename)
-
-    # NUUN_SaveScreen ParamName
-    if saveParamName:
-        # TL
-        response = translateAI(saveParamName, "Save Screen Label")
-        tokens[0] += response[1][0]
-        tokens[1] += response[1][1]
-        saveParamNameResponse = response[0]
-
-        # Check Mismatch
-        if len(saveParamName) == len(saveParamNameResponse):
-            saveParamNameTL = saveParamNameResponse
-            translate = True
-
-        # Mismatch
-        else:
-            with LOCK:
-                found_mismatch(MISMATCH, filename)
-
-    # Pass 2
-    if translate:
-        translatePlugin(data, pbar, filename, [questListTL, customTL, sceneMenuTextTL, sceneMenuCommonHelpTextTL, sceneMenuHelpTextTL, sceneMenuDrawTextTL, sceneMenuStatLabelTL, saveParamNameTL])
+    # Hardcoded counter word: 回 → x
+    for index, line in enumerate(data):
+        if "drawTextEx" in line and "$gameVariables" in line:
+            data[index] = COUNTER_WORD.sub(r"\1x", line)
     return tokens
-
-# Save some money and enter the character before translation
-def getSpeaker(speaker):
-    return translate_speaker(speaker, NAMESLIST, LANGUAGE, translateAI)
 
 
 def translateAI(text, history, history_ctx=None):
@@ -1047,10 +701,10 @@ def translateAI(text, history, history_ctx=None):
     This maintains compatibility with existing code while using the new shared implementation.
     """
     global PBAR, MISMATCH, FILENAME
-    
+
     # Update config estimate mode based on global ESTIMATE
     TRANSLATION_CONFIG.estimateMode = bool(ESTIMATE)
-    
+
     # Call the new shared translation function
     return sharedtranslateAI(
         text=text,

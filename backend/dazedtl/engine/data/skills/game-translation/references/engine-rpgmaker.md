@@ -1259,7 +1259,8 @@ translatedText = re.sub(r"([^\\'])'", r"\1\\'", translatedText)
 ```
 
 That `[^\\']` class is load-bearing: it leaves already-escaped `\'` and doubled `''` alone, so the pass is idempotent and safe to re-run over a partially processed file.
-A drawTextEx label sits in the call's own string, so its translation escapes that string's opening quote, whichever it is, at half the depth of the label's codes (`'\\}Kiss\'s\\{'`), as `drawTextLabel` in `modules/rpgmakerplugin.py` does.
+A drawTextEx label can sit in any string of its line, such as a later concatenated one or a variable's, and in a plugin setting's script it sits inside the setting's own string too.
+Its translation escapes the quote of every string around it (`'\\}Kiss\'s\\{'`, and `\"` as well inside a setting), as `literalText` in `modules/rpgmakerplugin.py` does.
 
 ### Scope a greedy scan to a brace-counted region
 
@@ -1267,19 +1268,16 @@ Free-floating Japanese arrays inside plugin JS (`this.disp_list = { key: { sub: 
 
 Open the region on a known anchor token (`if 'data_map_name_list' in line: in_region = True; brace_count = 0`), track `brace_count += line.count('{') - line.count('}')`, and close when `brace_count < 0`, which is exactly when the enclosing object's closing brace arrives.
 Inside the region use a **narrower** Japanese class than your global one - `r'"([^"]*[一-龠ぁ-ゔァ-ヴー]+[^"]*)"'`, no fullwidth alnum, no halfwidth katakana - so identifier-like fullwidth tokens are not swept up.
-Write back by re-quoting the whole literal, `line.replace(f'"{orig}"', f'"{tl}"')`, after escaping `"` in the translation, and rewrap only when the original contained `\n`. Region scoping is what makes the greedy pattern safe at all.
+Write back into the literal's own span, after escaping `"` in the translation, and rewrap only when the original contained `\n`.
+Region scoping is what makes the greedy pattern safe at all.
 
-### Collect, then replace longest-first
+### Write each translation back to the span it was collected from
 
-**Never replace as you match when several source strings share one physical line.** Accumulate `original -> translation` into a dict during the match loop, skipping any original already queued, then after the loop:
-
-```python
-for orig in sorted(pending, key=len, reverse=True):
-    line = line.replace(orig, pending[orig])
-```
-
-The concrete failure: replacing `回数：` before `使用回数：` corrupts the longer label into `使用<English>`, and the damage is invisible until that menu is opened in game.
-If the collection pass and the writeback pass both dedupe, **the dedupe must be symmetric on both sides** (`if s.strip() not in seen`) or a FIFO queue of translations desynchronizes and every later label receives the wrong text.
+**Never write back by searching the line for the source text.** `line.replace(orig, tl)` also rewrites the same text in every other string on the line, such as another plugin's setting on a packed `plugins.js` line or a sequel quest whose name holds the first one's, and replacing `回数：` before `使用回数：` corrupts the longer label into `使用<English>`, invisible until that menu is opened in game.
+Searching again after an earlier write can also find a different set of strings than the collection pass sent, so a FIFO queue of translations desynchronizes and every later string receives the wrong text.
+Record each match's span, kind and escape depth when you collect it, send from that record, and write each translation into its own span, rebuilding the line from the spans, as `fields` and `translatePlugin` in `modules/rpgmakerplugin.py` do.
+Give overlapping text one owner: when two patterns match it, such as a stat label inside a drawTextEx label, collect only the first and let its translation cover the other.
+Where repeated labels are sent once, map each span to its label's translation instead of popping a queue.
 Applies wherever one line carries several related labels: plugin source, CSV rows, script lines, concatenated UI expressions.
 
 ### Translatability gates

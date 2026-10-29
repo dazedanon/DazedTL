@@ -960,7 +960,12 @@ try:
         # quest field when any one field's reply had the right count, so a
         # short reply moved its translations onto other quests; gave a
         # drawTextEx label drawn on two lines the next label's translation;
-        # and ended a label's single-quoted string at an apostrophe. CSV read its
+        # and ended a label's single-quoted string at an apostrophe. It wrote a
+        # field's translation over the same text elsewhere on its line, such as
+        # another plugin's setting or a sequel quest's name; left a label's
+        # quote bare in a later string of its call, a variable's string or a
+        # setting's script; and sent a stat label inside a drawTextEx label,
+        # which it then wrote into that label's translation. CSV read its
         # target column as the speaker by default, and as the name it wrote
         # there made the row look translated, wrote each row's translation to
         # the next row. CSV, Kirikiri, Regex, Lune, Tyrano and WOLF2 sent each
@@ -1219,6 +1224,85 @@ try:
                         "\n"
                         "};\n"
                     ),
+                ),
+                (
+                    "modules.rpgmakerplugin",
+                    "handlePlugin",
+                    "plugins.js",
+                    (
+                        "var $plugins =\n[\n"
+                        r'{"name":"Menu","parameters":{"CommandList":"[\"{\\\"Text\\\":'
+                        r'\\\"はじめから\\\"}\"]","StartSymbol":"はじめから"}},'
+                        "\n"
+                        r'{"name":"Quest","parameters":{"QuestList":"[\"{\\\"QuestName\\\":'
+                        r'\\\"魔物退治\\\"}\",\"{\\\"QuestName\\\":\\\"魔物退治・続\\\"}\"]"}}'
+                        "\n];\n"
+                    ),
+                    {},
+                    [["魔物退治", "魔物退治・続"], ["はじめから"]],
+                    (
+                        "var $plugins =\n[\n"
+                        r'{"name":"Menu","parameters":{"CommandList":"[\"{\\\"Text\\\":'
+                        r'\\\"EN \'はじめから\'\\\"}\"]","StartSymbol":"はじめから"}},'
+                        "\n"
+                        r'{"name":"Quest","parameters":{"QuestList":"[\"{\\\"QuestName\\\":'
+                        r'\\\"EN \'魔物退治\'\\\"}\",\"{\\\"QuestName\\\":\\\"EN \'魔物退治・続\'\\\"}\"]"}}'
+                        "\n];\n"
+                    ),
+                ),
+                (
+                    "modules.rpgmakerplugin",
+                    "handlePlugin",
+                    "Tracker.js",
+                    (
+                        "var kiss = function() {\n"
+                        r"    this.drawTextEx('\\C[2]' + '\\}【口づけ】\\{', 0, 0);"
+                        "\n"
+                        r"    var label = n.replace(/'/g, '') + '\\}【愛撫】\\{'; this.drawTextEx(label, 0, 36);"
+                        "\n"
+                        r"    this.drawTextEx('\\}\\C[4]【膝枕】\\C[0]\\{', 0, 72);"
+                        "\n};\n"
+                    ),
+                    {"replies": {"【口づけ】": "Kiss's"}},
+                    [["【口づけ】", "【愛撫】", "\\C[4]【膝枕】\\C[0]"]],
+                    (
+                        "var kiss = function() {\n"
+                        r"    this.drawTextEx('\\C[2]' + '\\}Kiss\'s\\{', 0, 0);"
+                        "\n"
+                        r"    var label = n.replace(/'/g, '') + '\\}EN \'【愛撫】\'\\{'; this.drawTextEx(label, 0, 36);"
+                        "\n"
+                        r"    this.drawTextEx('\\}EN \'\\C[4]【膝枕】\\C[0]\'\\{', 0, 72);"
+                        "\n};\n"
+                    ),
+                ),
+                (
+                    "modules.rpgmakerplugin",
+                    "handlePlugin",
+                    "plugins.js",
+                    "var $plugins =\n[\n"
+                    + json.dumps(
+                        {
+                            "name": "Tracker",
+                            "parameters": {
+                                "Stats": "this.drawTextEx('\\\\C[16]攻撃力\\\\C[0] ' + a, 0, 0);"
+                            },
+                        },
+                        ensure_ascii=False,
+                    )
+                    + "\n];\n",
+                    {},
+                    [["攻撃力"]],
+                    "var $plugins =\n[\n"
+                    + json.dumps(
+                        {
+                            "name": "Tracker",
+                            "parameters": {
+                                "Stats": "this.drawTextEx('\\\\C[16]EN \"攻撃力\"\\\\C[0] ' + a, 0, 0);"
+                            },
+                        },
+                        ensure_ascii=False,
+                    )
+                    + "\n];\n",
                 ),
                 (
                     "modules.csv",
