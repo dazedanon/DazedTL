@@ -4,9 +4,11 @@ import importlib
 import importlib.util
 import json
 import os
+import shutil
 import stat
 import sys
 import threading
+import time
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -118,24 +120,51 @@ class SpawnTests(unittest.TestCase):
                 patch.object(sys, "dont_write_bytecode", False),
             ):
                 line = system.shell_command(system.python_command(script, "it's"))
-            shell = (
-                ["powershell", "-NoProfile", "-Command", line]
-                if os.name == "nt"
-                else ["sh", "-c", line]
-            )
             # An assistant's shell may say to write no bytecode at all.
             environment = dict(os.environ)
             environment.pop("PYTHONDONTWRITEBYTECODE", None)
-            result = system.run(
-                shell, capture_output=True, text=True, timeout=60, env=environment
-            )
-            self.assertEqual(result.stdout.strip(), "engine it's", result.stderr)
-            self.assertEqual(list(install.rglob("*.pyc")), [])
-            self.assertTrue(list(cache.rglob("engine_module.*.pyc")))
+            for name, shell in _assistant_shells(line).items():
+                with self.subTest(name):
+                    system.remove_tree(cache, missing_ok=True)
+                    result = system.run(
+                        shell,
+                        capture_output=True,
+                        text=True,
+                        timeout=60,
+                        env=environment,
+                    )
+                    self.assertEqual(
+                        result.stdout.strip(), "engine it's", result.stderr
+                    )
+                    self.assertEqual(list(install.rglob("*.pyc")), [])
+                    self.assertTrue(list(cache.rglob("engine_module.*.pyc")))
 
-    def test_the_cache_keeps_only_what_this_python_reads_again(self):
-        # A moved install or another Python left its compiled modules in the
-        # profile for good.
+    @unittest.skipIf(os.name == "nt", "the shells test above runs PowerShell itself")
+    def test_a_posix_shell_hands_powershell_the_command_as_written(self):
+        # Claude Code without its PowerShell tool runs commands in Git Bash,
+        # which cannot parse the PowerShell form an assistant is given.
+        line = (
+            "[Console]::OutputEncoding = [Text.Encoding]::UTF8; "
+            "& 'C:\\Users\\O''Neil (x)\\ゲーム\\python.exe' '$HOME' \"`a\" 'C:\\'"
+        )
+        # A stand-in powershell.exe prints each argument it gets.
+        stand_in = "powershell.exe() { printf '%s\\0' \"$@\"; }\n"
+        result = system.run(
+            ["bash", "-c", stand_in + system._through_powershell(line)],
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+        self.assertEqual(
+            result.stdout.split("\0"),
+            ["-NoProfile", "-NonInteractive", "-Command", line, ""],
+            result.stderr,
+        )
+
+    def test_the_cache_keeps_only_what_a_python_in_use_reads_again(self):
+        # A moved install or a replaced Python left its compiled modules in the
+        # profile for good, while two installs with Pythons of their own that
+        # share the profile dropped each other's at every start.
         with TemporaryDirectory() as folder:
             cache = Path(folder, "python-cache")
             with patch.object(sys, "pycache_prefix", str(cache)):
@@ -143,15 +172,52 @@ class SpawnTests(unittest.TestCase):
                 moved = Path(
                     importlib.util.cache_from_source(str(Path(folder, "old/a.py")))
                 )
-                other = current.with_name("system.cpython-30.pyc")
-                for path in (current, moved, other):
+                tag = sys.implementation.cache_tag
+                used = current.with_name(current.name.replace(tag, "cpython-31"))
+                replaced = current.with_name(current.name.replace(tag, "cpython-30"))
+                unknown = current.with_name(current.name.replace(tag, "cpython-29"))
+                for path in (current, moved, used, replaced, unknown):
                     path.parent.mkdir(parents=True, exist_ok=True)
                     path.write_bytes(b"")
+                Path(cache, "cpython-31.started").write_bytes(b"")
+                stale = Path(cache, "cpython-30.started")
+                stale.write_bytes(b"")
+                old = time.time() - (system.BYTECODE_KEPT_DAYS + 1) * 86400
+                os.utime(stale, (old, old))
                 system.prune_bytecode()
             self.assertTrue(current.exists())
-            self.assertFalse(other.exists())
+            self.assertTrue(used.exists())
+            self.assertFalse(replaced.exists())
+            self.assertFalse(stale.exists())
+            self.assertFalse(unknown.exists())
             self.assertFalse(moved.parent.exists())
-            self.assertTrue(cache.is_dir())
+            self.assertTrue(Path(cache, f"{tag}.started").is_file())
+
+
+def _assistant_shells(line):
+    """Each shell an assistant may run a handed command in, as it runs line:
+    on Windows PowerShell, and Git Bash handing it to PowerShell as the shell
+    note says, where Git for Windows is installed."""
+    if os.name != "nt":
+        return {"sh": ["sh", "-c", line]}
+    shells = {"PowerShell": ["powershell", "-NoProfile", "-Command", line]}
+    git = shutil.which("git")
+    folders = [Path(os.environ.get("ProgramFiles", "C:\\Program Files"), "Git")]
+    if git:
+        folders += Path(git).resolve().parents[1:3]
+    bash = next(
+        (
+            folder / "bin/bash.exe"
+            for folder in folders
+            if Path(folder, "bin/bash.exe").is_file()
+        ),
+        None,
+    )
+    if bash:
+        shells["Git Bash"] = [str(bash), "-c", system._through_powershell(line)]
+    elif os.environ.get("GITHUB_ACTIONS"):
+        raise AssertionError("CI's Windows runner has no Git Bash to test.")
+    return shells
 
 
 class WriteTests(unittest.TestCase):

@@ -474,6 +474,8 @@ class TranslationTaskCore:
             CONTEXT_SOURCE,
             _request_context_parts,
             buildClaudeRequest,
+            claude_cache_cost,
+            claude_prompt_cache,
             countClaudeTokens,
             countTokens,
             createContextParts,
@@ -481,7 +483,6 @@ class TranslationTaskCore:
             getPricingConfig,
             isClaudeNative,
         )
-        from util import claude_tokens
 
         names = [str(name).strip() for name in speakers if str(name).strip()]
         batch_size = max(1, int(getattr(config, "batchSize", 1) or 1))
@@ -497,7 +498,6 @@ class TranslationTaskCore:
         # English it also shows for those names isn't known yet.
         source, instructions = _request_context_parts(history)
         requests = []
-        prefixes = {}  # cache key -> its cached prompt's tokens
         regular_tokens = []  # each request's input after its cached prompt
         output_tokens = 0
         for offset in range(0, len(names), batch_size):
@@ -524,11 +524,6 @@ class TranslationTaskCore:
                     request_instructions=instructions,
                 )
                 requests.append(params)
-                key = claude_tokens.split(params)[0]
-                if key and key not in prefixes:
-                    prefixes[key] = countTokens(
-                        claude_tokens.cached_text(params), "", ""
-                    )[0]
             source = name_batch[-max_history:]
 
         regular_input = sum(regular_tokens)
@@ -536,14 +531,13 @@ class TranslationTaskCore:
         if requests:
             counted = countClaudeTokens(requests, regular_tokens, "📊 Speaker estimate:")
         if counted is not None:
-            prefixes = {key: counted.prefixes[key] for key in prefixes}
             regular_input = round(regular_input * counted.scale)
         # These Live requests go one after another, each after the previous
         # answer, so the first request for each reply schema writes the cached
         # prompt and every later one reads it.
-        cache = claude_tokens.cache(requests, prefixes, "anthropic", model_name)
-        estimated_cost = (
-            (regular_input + cache.reused) * input_rate + output_tokens * output_rate
+        cache = claude_prompt_cache(requests, "anthropic", model_name, counted)
+        estimated_cost = claude_cache_cost(
+            cache, cache.cached + regular_input, output_tokens, input_rate, output_rate
         )
 
         # The note on unpredicted thinking and the effort the run sends, as
@@ -1376,15 +1370,18 @@ class TranslationTaskCore:
         """Keep *figures*, this attempt's receipt for *name*, a file or the
         names passes, with the run's receipts, which its TOTAL adds up, and
         report the result to the run's records (receipt_signal, read by
-        compatibility/process_view record_receipt). Every attempt that paid
-        adds to what the earlier ones paid, as a file that failed and was
-        translated later paid for both; one that paid for nothing, as a retry
-        reading back the files an earlier attempt saved, keeps what they
-        cost."""
+        compatibility/process_view record_receipt). A names pass adds to the
+        earlier ones (_record_names_receipt). A file's attempt that paid
+        replaces what the earlier ones paid, since a later attempt can read
+        and count the same Batch results or failed replies again; one that
+        paid for nothing, as a retry reading back the files an earlier
+        attempt saved, keeps what they cost."""
+        from util.speakers import NAMES_FILE
+
         earlier = self.receipts.get(name)
-        if earlier is None:
+        if earlier is None or name != NAMES_FILE and paid_for(figures):
             self.receipts[name] = dict(figures)
-        elif paid_for(figures):
+        elif name == NAMES_FILE:
             self.receipts[name] = {
                 key: earlier[key] + figures[key]
                 for key in ("input", "output", "cost", "seconds")

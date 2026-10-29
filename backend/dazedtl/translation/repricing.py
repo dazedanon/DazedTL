@@ -10,15 +10,18 @@ each model's own tokenizer, so a Claude estimate is always estimated again.
 A pricing fix (provider_costs.PRICE_RULES_VERSION) keeps the counts too, so a
 figure priced under older rules than its route's (``route_rules``) is priced
 again under today's on its next view, or reads outdated when its counts
-can't be; a fix to another route's rules leaves it standing. ``read``
+can't be; a fix to another route's rules leaves it standing. A figure
+whose settings now send it on another route than the one that priced it
+(``rerouted``) is priced again on theirs the same way. ``read``
 decides this for every saved figure a user approves or reads: an
 Assistant-led quote waiting for approval, a Guided Translate estimate and a
 whole-game estimate.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from dazedtl.compatibility.request_text import request_text
+from dazedtl.freshness import Change
 from dazedtl.settings.execution import LOOKED_UP
 
 from .files import digest
@@ -104,11 +107,41 @@ def route_rules(*routes):
     its price, the newest at which any of their rules changed: a figure's
     route is the Batch provider that priced it, None for none
     (provider_costs.route_price_rules). A Guided estimate and each task of a
-    whole-game estimate record it as ``provider``; an Assistant-led quote's
-    is its settings' Batch provider."""
+    whole-game estimate record it as ``provider``, an Assistant-led quote as
+    ``route`` (``quote_route``)."""
     from util.provider_costs import route_price_rules
 
     return max(route_price_rules(route) for route in routes or (None,))
+
+
+def recorded_route(figure, key, provider):
+    """The route that priced a saved figure, the Batch provider it records
+    as ``key``; one saved before it recorded one reads as ``provider``, the
+    Batch provider of its current settings (``rerouted``)."""
+    return figure.get(key, provider)
+
+
+def quote_route(quote, provider):
+    """The route that priced an Assistant-led quote, recorded as ``route``
+    (``recorded_route``)."""
+    return recorded_route(quote, "route", provider)
+
+
+def estimate_route(counts, provider):
+    """The route that priced a Guided estimate's ``counts``, recorded as
+    ``provider`` (``recorded_route``)."""
+    return recorded_route(counts, "provider", provider)
+
+
+def rerouted(change, routes, provider):
+    """``change`` (freshness.compare) of a figure priced on ``routes``
+    (``quote_route``, ``estimate_route``) whose settings would now send it
+    on ``provider``: once any of them is another route, as after a DazedTL
+    update routes the same settings elsewhere, its price changed too, so
+    ``read`` prices its counts again on ``provider`` or outdates it."""
+    if all(route == provider for route in routes):
+        return change
+    return replace(change or Change(), prices=True)
 
 
 @dataclass(frozen=True)
@@ -147,10 +180,11 @@ def read(change, before, after, again):
     return OUTDATED if figure is None else Reading(True, settings, figure)
 
 
-def approval_token(token, configuration):
-    """The approval of a quote priced again with these settings under
-    today's price rules: it takes a new token, so approving binds to the
-    price shown."""
+def approval_token(token, configuration, route):
+    """The approval of a quote priced again with these settings on ``route``
+    under today's price rules: it takes a new token, so approving binds to
+    the price shown. The token follows only the rules of its own route
+    (``route_rules``), so a fix to another route's rules keeps it."""
     return digest(
-        {"token": token, "configuration": configuration, "rules": current_rules()}
+        {"token": token, "configuration": configuration, "rules": route_rules(route)}
     )[:32]

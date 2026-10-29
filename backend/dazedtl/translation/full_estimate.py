@@ -142,13 +142,16 @@ class FullEstimate:
             repricing.rules(result),
         )
 
-    def changed(self, result, tasks, *, reprice=True):
+    def changed(self, result, tasks, route, *, reprice=True):
         """What changed since ``result`` was estimated, or None while it is
-        current. With ``reprice``, settings that differ only in prices not
-        known yet count as the same."""
+        current; one with a task priced on another route than ``route``, the
+        Batch provider of the tasks' settings, changed its prices
+        (repricing.rerouted). With ``reprice``, settings that differ only in
+        prices not known yet count as the same."""
+        routes = self.routes(result, route)
         saved = self.basis(tasks, result)
-        current = self.basis(tasks, routes=self.routes(result))
-        return compare(
+        current = self.basis(tasks, routes=routes)
+        change = compare(
             saved,
             current,
             prices_unknown=reprice
@@ -157,13 +160,15 @@ class FullEstimate:
                 result["configuration"], self.configuration(tasks)
             ),
         )
+        return repricing.rerouted(change, routes, route)
 
     @staticmethod
-    def routes(result):
+    def routes(result, route):
         """The routes a saved estimate's tasks were priced on: the Batch
-        provider each task's counts record (repricing.route_rules)."""
+        provider each task's counts record (repricing.estimate_route), or
+        ``route`` for counts that record none."""
         measured = result.get("measured") or {}
-        return [counts.get("provider") for counts in measured.values()]
+        return [repricing.estimate_route(counts, route) for counts in measured.values()]
 
     @staticmethod
     def configuration(tasks):
@@ -172,17 +177,20 @@ class FullEstimate:
 
     def reading(self, result, tasks, *, reprice=True):
         """How a saved estimate reads for ``tasks`` (repricing.read): as
-        saved, priced again from each task's counts, or outdated."""
+        saved, priced again from each task's counts on the route their
+        settings take now, or outdated."""
+        configuration = self.configuration(tasks)
+        route = self.guided.runs.route(configuration)
         return repricing.read(
-            self.changed(result, tasks, reprice=reprice),
+            self.changed(result, tasks, route, reprice=reprice),
             result.get("configuration"),
-            self.configuration(tasks),
-            lambda configuration: self.priced(result, configuration),
+            configuration,
+            lambda settings: self.priced(result, settings, route),
         )
 
-    def priced(self, result, configuration):
+    def priced(self, result, configuration, route):
         """A saved estimate priced again from each task's counts at the
-        prices of ``configuration``, else None."""
+        prices of ``configuration`` on ``route``, else None."""
         from dazedtl.compatibility.estimate_prices import reprice
         from dazedtl.compatibility.full_estimate import prices
 
@@ -192,7 +200,7 @@ class FullEstimate:
             if counts is None:
                 rows.append(task)
                 continue
-            estimate = reprice(counts, configuration)
+            estimate = reprice(counts, configuration, route)
             if estimate is None:
                 return None
             rows.append({**task, **prices(estimate)})
