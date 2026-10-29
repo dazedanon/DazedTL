@@ -129,8 +129,8 @@ def configuration(settings, mode, *, cached_only=False, unpriced=False, pair=Non
     # Read with unknown rates, the settings leave the Batch policy out while
     # Batch availability isn't looked up, as after a failed check, so it reads
     # as not known rather than as no Batch (translation/repricing.priced).
-    if connection["provider"] == "openrouter" and not (
-        unpriced and not openrouter.batch_looked_up(connection, connection["model"])
+    if connection["provider"] == "openrouter" and (
+        not unpriced or openrouter.batch(connection, connection["model"]).looked_up
     ):
         policy = openrouter.policy(
             connection, connection["model"], selected, required=mode == "batch"

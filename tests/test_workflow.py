@@ -1370,6 +1370,64 @@ class WorkflowTests(unittest.TestCase):
                 (self.game / (WORK + "/progress.json")).read_bytes(), before
             )
 
+    def test_a_failed_openrouter_check_keeps_a_waiting_quote_and_says_so(self):
+        # With custom Live rates, a failed check left only whether the model
+        # runs Batch unknown, which read as none: the waiting quote was
+        # priced again as Live-only. It now stands, and approving it while
+        # that is unknown says why instead of calling the settings changed.
+        from dazedtl.compatibility.openrouter_batch import BASE_URL
+
+        selected = self.project.read()
+        self.service.save(
+            self.identity, selected["revision"], {**selected["options"], "mode": "live"}
+        )
+        row = {
+            "input": 1,
+            "output": 2,
+            "cache_read": None,
+            "cache_write": None,
+            "text": True,
+            "json": True,
+            "context": 32000,
+            "max_output": 4096,
+        }
+        connection = self.settings_data["connections"][0]
+        connection.update(
+            provider="openrouter",
+            endpoint=BASE_URL,
+            check={"status": "verified", "checkedAt": "2026-10-05T12:00:00+00:00"},
+            catalog={"fixture-model": row, "fixture-model:batch": row},
+            batch_endpoints={
+                "model": "fixture-model",
+                "host": "",
+                "providers": ["supported"],
+                "rates": {
+                    "input": 0.5,
+                    "output": 1,
+                    "cache_read": None,
+                    "cache_write": None,
+                },
+            },
+        )
+        run = self.prepared(self.service.compile(self.identity, self.plan_path))
+        _job, frozen = self.service.jobs.store.load(run["id"])
+        self.assertEqual(frozen["configuration"]["openrouterBatch"]["input"], 0.5)
+
+        def view():
+            jobs = self.service.state(self.identity)["jobs"]
+            return next(job for job in jobs if job["id"] == run["id"])
+
+        connection["check"] = {**connection["check"], "status": "failed"}
+        shown = view()
+        self.assertFalse(shown["settings_changed"])
+        self.assertEqual(shown["quote"], run["quote"])
+        self.assertEqual(shown["approval_token"], run["approval_token"])
+        with self.assertRaisesRegex(ValueError, "check failed"):
+            self.service.start(self.identity, run["id"], run["approval_token"])
+        connection["check"] = {**connection["check"], "status": "verified"}
+        with self.assertRaisesRegex(ValueError, "Provider execution is disabled"):
+            self.service.start(self.identity, run["id"], run["approval_token"])
+
     def test_a_model_switch_prices_a_waiting_estimate_again(self):
         selected = self.project.read()
         self.service.save(

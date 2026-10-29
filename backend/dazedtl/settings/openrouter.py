@@ -10,7 +10,7 @@ import math
 import time
 from datetime import UTC, datetime
 from decimal import Decimal, DecimalException
-from typing import cast
+from typing import NamedTuple, cast
 from urllib.parse import quote
 
 import httpx
@@ -133,23 +133,36 @@ def _catalog(connection):
     return connection.get("catalog", {}) if checked.get("status") == "verified" else {}
 
 
-def _batch(connection, model):
-    """Whether ``model`` runs Batch on this connection, its Batch rates when it
-    does, why not when it doesn't, and whether that answer was looked up: a
-    check that failed or hasn't run, or an endpoint read not made for this
-    model and host or that failed, leaves it unknown, unlike a model checked
+class Batch(NamedTuple):
+    """Whether a model runs Batch on a connection (``batch``): its Batch
+    rates when it does, why not when it doesn't, whether that answer was
+    looked up, and whether it waits on an endpoint read for its model and
+    host (settings/store.batch_lookup)."""
+
+    supported: bool
+    rates: dict
+    reason: str
+    looked_up: bool
+    endpoints_due: bool = False
+
+
+def batch(connection, model):
+    """Whether ``model`` runs Batch on this connection (``Batch``). A check
+    that failed or hasn't run, or an endpoint read not made for this model
+    and host or that failed, leaves it not looked up, unlike a model checked
     to have no Batch."""
     known = _catalog(connection)
-    batch = known.get(model + ":batch", {}) if ":" not in model else {}
-    supported = bool(batch.get("text") and batch.get("json"))
-    if not supported:
-        if not known:
-            return False, {}, "Check this connection to load Batch availability.", False
-        if ":" in model:
-            return False, {}, "Choose the base model ID for Batch.", True
-        return (
+    row = known.get(model + ":batch", {}) if ":" not in model else {}
+    if not known:
+        return Batch(
+            False, {}, "Check this connection to load Batch availability.", False
+        )
+    if ":" in model:
+        return Batch(False, {}, "Choose the base model ID for Batch.", True)
+    if not (row.get("text") and row.get("json")):
+        return Batch(
             False,
-            batch,
+            row,
             "This model has no compatible text Batch endpoint for this account.",
             True,
         )
@@ -159,34 +172,30 @@ def _batch(connection, model):
         or endpoints.get("host") != connection.get("openrouter_host", "")
         or "providers" not in endpoints
     ):
-        return (
+        return Batch(
             False,
             {},
             "Batch support has not been checked for this model and host. Save preferences to check automatically.",
             False,
+            True,
         )
+    if endpoints.get("error"):
+        return Batch(False, {}, endpoints["error"], False, True)
     if not endpoints.get("rates") or not endpoints.get("providers"):
-        return (
+        return Batch(
             False,
             {},
-            endpoints.get("error")
-            or "No selected Batch endpoint supports this model's required structured outputs.",
-            "error" not in endpoints,
+            "No selected Batch endpoint supports this model's required structured outputs.",
+            True,
         )
-    return True, {**batch, **endpoints["rates"]}, "", True
-
-
-def batch_looked_up(connection, model):
-    """Whether this connection knows if ``model`` runs Batch (``_batch``), so
-    a missing Batch policy means no Batch rather than not loaded yet."""
-    return _batch(connection, text(model, "model ID", required=True))[3]
+    return Batch(True, {**row, **endpoints["rates"]}, "", True)
 
 
 def describe(connection, model):
     model = text(model, "model ID", required=True)
     checked = connection.get("check", {})
     live = _catalog(connection).get(model, {})
-    supported, batch, reason, _looked_up = _batch(connection, model)
+    available = batch(connection, model)
     host = connection.get("openrouter_host", "")
     # Model-wide prices do not establish a selected host's Live rates. The
     # public resolver supplies those separately, without inferring eligibility.
@@ -209,10 +218,10 @@ def describe(connection, model):
         "source": "catalog" if live else "unavailable",
         "updatedAt": stamp,
         "stale": stale,
-        "batchSupported": supported,
-        "batchReason": reason,
-        "batchInputRate": batch.get("input"),
-        "batchOutputRate": batch.get("output"),
+        "batchSupported": available.supported,
+        "batchReason": available.reason,
+        "batchInputRate": available.rates.get("input"),
+        "batchOutputRate": available.rates.get("output"),
     }
 
 

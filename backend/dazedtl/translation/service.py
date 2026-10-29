@@ -1371,14 +1371,12 @@ Additional project instructions:
             # (job_views) has its own token, and its approval freezes the run
             # with the settings and price it was shown at.
             _record, project = self.project(project_id)
-            current, _provider = self.api_configuration(
-                priced_mode(
-                    plan.get("finishes"),
-                    plan["configuration"]["mode"],
-                    self.run_mode(project),
-                ),
-                project.root,
+            mode = priced_mode(
+                plan.get("finishes"),
+                plan["configuration"]["mode"],
+                self.run_mode(project),
             )
+            current, _provider = self.api_configuration(mode, project.root)
             change = changed_since(
                 current,
                 digest(plan["configuration"]),
@@ -1387,6 +1385,22 @@ Additional project instructions:
                 self.route,
                 reprice=False,
             )
+            if change is not None and change.settings:
+                # The quote was shown as saved because a price it needs isn't
+                # known, such as an OpenRouter Batch policy after a failed
+                # check (job_views), not because the settings changed.
+                try:
+                    shown, _provider = self.api_configuration(
+                        mode, project.root, cached_only=True, unpriced=True
+                    )
+                except ValueError:
+                    shown = None
+                if shown is not None and repricing.unknown_prices(
+                    plan["configuration"], shown
+                ):
+                    raise ValueError(
+                        "This estimate's prices can't be read right now, such as after its connection's check failed. Check the connection in Settings, then approve it."
+                    )
             if approval_token == job["approval_token"]:
                 if change is not None:
                     raise ValueError(
