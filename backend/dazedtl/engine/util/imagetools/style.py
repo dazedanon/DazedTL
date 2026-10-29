@@ -1151,10 +1151,10 @@ def _bands(profile: np.ndarray) -> list[tuple[int, int]]:
 def alignment_from_ink(mask: np.ndarray, vertical: bool = False) -> str:
     """Alignment read off the ink, for a block that has no line geometry.
 
-    Blocks arrive without line boxes more often than they should - rebuilt from
-    an exchange file, or drawn by hand around text the OCR missed - and
-    defaulting those to centred is visible: re-centring a left-aligned caption
-    is the most obvious sign that the text was replaced.
+    Blocks arrive without line boxes more often than they should - drawn by
+    hand around text the OCR missed - and defaulting those to centred is
+    visible: re-centring a left-aligned caption is the most obvious sign that
+    the text was replaced.
     """
     if vertical or not mask.any():
         return "center"
@@ -1233,9 +1233,9 @@ def measure(array: np.ndarray, block, others: list[Box] | None = None) -> Style:
             [line.box for line in block.lines], block.vertical
         )
     else:
-        # A block can reach here with no line geometry - rebuilt from an
-        # exchange file, or drawn by hand around text the OCR missed. The ink
-        # still knows where its lines start and end.
+        # A block can reach here with no line geometry - drawn by hand around
+        # text the OCR missed. The ink still knows where its lines start and
+        # end.
         style.align = alignment_from_ink(mask, block.vertical)
     return style
 
