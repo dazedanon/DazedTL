@@ -518,6 +518,11 @@ class CompatibilityContracts(unittest.TestCase):
             "thinkingEffortListed": listed,
         }
         counts = {"input_tokens": 1000, "output_tokens": 2500}
+
+        def route(_configuration):
+            # These settings send a run on no Batch.
+            return None
+
         for level, named, thinks in (
             (None, "Provider default (Low)", True),
             ("high", "High", True),
@@ -533,24 +538,91 @@ class CompatibilityContracts(unittest.TestCase):
         # again instead of counting its requests again.
         quote = {"price_rules": repricing.current_rules(), "output_rules": 1}
         current = {**frozen, "thinkingEffortListed": None}
-        change = changed_since(current, digest(frozen), frozen, quote, None)
+        change = changed_since(current, digest(frozen), frozen, quote, route)
         self.assertTrue(change.priced_only)
         self.assertFalse(corrected(change))
         # A quote counts its output by a versioned rule; one saved before
         # quotes named it stands, and raising it outdates the quote.
         old = {"price_rules": repricing.current_rules()}
-        self.assertIsNone(changed_since(frozen, digest(frozen), frozen, old, None))
+        self.assertIsNone(changed_since(frozen, digest(frozen), frozen, old, route))
         with patch.object(estimate_prices, "OUTPUT_RULES_VERSION", 2):
-            change = changed_since(frozen, digest(frozen), frozen, old, None)
+            change = changed_since(frozen, digest(frozen), frozen, old, route)
             self.assertFalse(change.priced_only)
             self.assertTrue(corrected(change))
             # The settings changing as well are still the settings' doing.
             moved = {**frozen, "endpoint": "https://elsewhere.test/v1"}
-            change = changed_since(moved, digest(frozen), frozen, old, None)
+            change = changed_since(moved, digest(frozen), frozen, old, route)
             self.assertTrue(change.version and change.reshaped)
             self.assertFalse(corrected(change))
             # A run without a quote has no counts to outdate.
-            self.assertIsNone(changed_since(frozen, digest(frozen), frozen, None, None))
+            self.assertIsNone(
+                changed_since(frozen, digest(frozen), frozen, None, route)
+            )
+
+    def test_a_waiting_quote_is_read_on_the_route_of_the_settings_it_is_read_at(self):
+        # A waiting quote's route was compared with the current settings'
+        # even while those differed from its own only in prices not known at
+        # the moment, as on an OpenRouter connection whose check failed: its
+        # OpenRouter quote read as moved, was priced again as a Live one and
+        # took a new approval token.
+        from dazedtl.compatibility.openrouter_batch import BASE_URL
+        from dazedtl.settings.openrouter import TRANSPORT
+        from dazedtl.translation.requests import price
+        from dazedtl.translation.service import Translation, changed_since
+
+        model = "author/model"
+        frozen = {
+            "mode": "live",
+            "provider": "openrouter",
+            "protocol": "openai",
+            "endpoint": BASE_URL,
+            "model": model,
+            "rates": {"input": 1, "output": 2},
+            "openrouterBatch": {
+                "transport": TRANSPORT,
+                "model": model,
+                "host": "",
+                "input": 0.5,
+                "output": 1,
+                "cache_read": None,
+                "cache_write": None,
+                "max_requests": 1000,
+                "max_bytes": 10_000_000,
+            },
+        }
+        # The one rule a run's worker records a quote's route by.
+        route = TranslationEngine.batch_supported
+        counts = {"input_tokens": 1000, "output_tokens": 2500, "output_rules": 1}
+        quote = price(counts, frozen, route(frozen))
+        self.assertEqual(quote["route"], "openrouter")
+        unknown = {
+            **frozen,
+            "rates": {"input": None, "output": None},
+            "openrouterBatch": None,
+        }
+        self.assertIsNone(changed_since(unknown, digest(frozen), frozen, quote, route))
+        # With custom Live rates, a failed check leaves only whether it runs
+        # Batch unknown, which read as none: the quote was priced again as a
+        # Live-only one. It stands too.
+        custom = {key: item for key, item in frozen.items() if key != "openrouterBatch"}
+        self.assertIsNone(changed_since(custom, digest(frozen), frozen, quote, route))
+        # Settings that send it on no Batch price it again on none.
+        live = {**frozen, "openrouterBatch": None}
+        change = changed_since(live, digest(frozen), frozen, quote, route)
+        reading = Translation.reading(
+            {"quote": quote, "configuration": frozen}, change, live, route
+        )
+        self.assertEqual((reading.route, reading.figure["route"]), (None, None))
+        self.assertEqual(reading.figure["cost"], quote["cost"])
+        # A quote saved before quotes named their route, by a run whose
+        # record kept no settings, reads the current settings' route, so an
+        # OpenAI one priced before OpenAI's rules last changed still reads
+        # changed.
+        legacy = {"price_rules": 3, "output_rules": 1}
+        change = changed_since(
+            live, digest(live), None, legacy, lambda _settings: "openai"
+        )
+        self.assertTrue(change.prices)
 
     def test_engine_extension_layers_reach_aliases_and_reconfigure_in_place(self):
         # Host wrappers used to reassign module attributes: aliases bound at
@@ -1881,7 +1953,8 @@ class CompatibilityContracts(unittest.TestCase):
             # A proxy path: sent Live natively, but Batches need Anthropic's
             # own API.
             "http://localhost:8080/anthropic",
-            # Another host whose name holds Anthropic's.
+            # Another host whose name holds Anthropic's, such as a Custom
+            # OpenAI-compatible gateway.
             "https://anthropic.company.example/v1",
             "https://openrouter.ai/api/v1",
             "https://proxy.example/v1",
@@ -1903,7 +1976,7 @@ class CompatibilityContracts(unittest.TestCase):
             (True, "anthropic", "anthropic", "anthropic"),
             (True, "anthropic", "anthropic", "anthropic"),
             (True, None, "anthropic", "anthropic"),
-            (True, None, "anthropic", "anthropic"),
+            (False, None, "anthropic", "openai"),
             (False, None, "anthropic", "openai"),
             (False, None, "anthropic", "openai"),
             (False, "openai", "anthropic", "openai"),
@@ -2029,6 +2102,13 @@ class CompatibilityContracts(unittest.TestCase):
                         ),
                         expected,
                     )
+                    # The views read the Batch route the worker records.
+                    self.assertEqual(
+                        TranslationEngine.batch_supported(
+                            {"model": model, "endpoint": address, "protocol": "openai"}
+                        ),
+                        expected[1],
+                    )
                     # The Live send and the estimate read the address from
                     # the engine's settings.
                     self.assertEqual(translation.isClaudeNative(model), expected[0])
@@ -2064,6 +2144,35 @@ class CompatibilityContracts(unittest.TestCase):
                         "deepseek-v4-flash",
                     },
                 )
+        # Under a frozen OpenRouter Batch policy, the worker that froze it
+        # and the views read OpenRouter's Batch alike.
+        from dazedtl.settings.openrouter import TRANSPORT
+
+        policy = {
+            "transport": TRANSPORT,
+            "model": "author/model",
+            "host": "",
+            "input": 0.5,
+            "output": 1,
+            "max_requests": 1000,
+            "max_bytes": 10_000_000,
+        }
+        settings = {
+            "model": "author/model",
+            "endpoint": openrouter_batch.BASE_URL,
+            "protocol": "openai",
+            "openrouterBatch": policy,
+        }
+        with patch.multiple(
+            openrouter_batch, _worker_policy=policy, _worker_configured=True
+        ):
+            self.assertEqual(
+                detect_batch_provider(
+                    settings["model"], settings["endpoint"], "openai"
+                ),
+                "openrouter",
+            )
+        self.assertEqual(TranslationEngine.batch_supported(settings), "openrouter")
         # A test scenario's stand-in for Anthropic's API counts as its API.
         stand_in = "http://127.0.0.1:9/api.anthropic.com"
         with patch.dict(os.environ, {"DAZEDTL_TEST_ANTHROPIC_ENDPOINT": stand_in}):
@@ -2303,12 +2412,278 @@ class CompatibilityContracts(unittest.TestCase):
             ):
                 with self.subTest(client=client):
                     self.assertEqual(reached(send), [url])
-        # A test scenario's Anthropic stand-in answers as Anthropic's own
-        # server, so its overloads read failed as Anthropic's do.
-        stand_in = "http://127.0.0.1:9/api.anthropic.com"
-        with patch.dict(os.environ, {"DAZEDTL_TEST_ANTHROPIC_ENDPOINT": stand_in}):
-            self.assertTrue(own_server(stand_in + "/v1"))
-            self.assertFalse(own_server("http://127.0.0.1:9/other"))
+        # A test scenario's stand-in for a preset's own API answers as that
+        # server, so its overloads read failed as the provider's do.
+        for variable, stand_in in (
+            ("DAZEDTL_TEST_ANTHROPIC_ENDPOINT", "http://127.0.0.1:9/api.anthropic.com"),
+            (
+                "DAZEDTL_TEST_OPENROUTER_ENDPOINT",
+                "http://127.0.0.1:9/openrouter.ai/api/v1",
+            ),
+        ):
+            with (
+                self.subTest(stand_in=variable),
+                patch.dict(os.environ, {variable: stand_in}),
+            ):
+                self.assertTrue(own_server(stand_in + "/chat/completions"))
+                self.assertFalse(own_server("http://127.0.0.1:9/other"))
+
+    def test_a_given_key_goes_only_to_the_address_saved_with_it(self):
+        # An OpenAI-compatible client given a key but no address sent it to
+        # the run's address, another connection's: a Batch history row with a
+        # key name and no endpoint, whose saved key has none either, reached
+        # the run's server with that key. A key with no address is refused
+        # before anything is sent; the run's own key still goes to the run's
+        # address.
+        import os
+        from unittest.mock import MagicMock
+
+        import httpx
+        import httpx2
+        from dazedtl.compatibility import refusal_retry
+        from util import api_keys, batch_history, translation
+        from util.batch_providers import get_client
+
+        sent = []
+
+        completion = {
+            "id": "chatcmpl-1",
+            "object": "chat.completion",
+            "created": 1,
+            "model": "gpt-5",
+            "choices": [
+                {
+                    "index": 0,
+                    "finish_reason": "stop",
+                    "message": {"role": "assistant", "content": "Potion"},
+                }
+            ],
+        }
+
+        def answering(module):
+            def handle(_transport, request):
+                url = str(request.url)
+                sent.append((url, request.headers.get("authorization")))
+                return module.Response(
+                    200,
+                    json=completion
+                    if url.endswith("/chat/completions")
+                    else {"object": "list", "data": []},
+                )
+
+            return handle
+
+        vault = Path(self.enterContext(TemporaryDirectory())) / "api_keys.json"
+        api_keys.save_vault(
+            {
+                "active": "",
+                "keys": {
+                    "Legacy": {"secret": "saved-key", "endpoint": "", "keyless": False}
+                },
+            },
+            vault,
+        )
+        with (
+            patch.object(httpx.HTTPTransport, "handle_request", answering(httpx)),
+            patch.object(httpx2.HTTPTransport, "handle_request", answering(httpx2)),
+            patch.object(api_keys, "API_KEYS_PATH", vault),
+            patch.dict(
+                os.environ,
+                {"api": "https://other.example/v1", "key": "run-key"},
+            ),
+        ):
+            os.environ.pop("OPENAI_BASE_URL", None)
+            for client, build in (
+                ("no address", lambda: get_client("openai", api_key="saved-key")),
+                (
+                    "empty address",
+                    lambda: get_client("openai", api_key="saved-key", api_url=" "),
+                ),
+                (
+                    "Batch history row",
+                    lambda: batch_history._client_for_entry(
+                        {"provider": "openai", "key_name": "Legacy"}
+                    ),
+                ),
+            ):
+                with self.subTest(client=client):
+                    sent.clear()
+                    with self.assertRaisesRegex(RuntimeError, "no server address"):
+                        build().models.list()
+                    self.assertEqual(sent, [])
+            for client, send, reached in (
+                (
+                    "run's key",
+                    lambda: get_client("openai").models.list(),
+                    ("https://other.example/v1/models", "Bearer run-key"),
+                ),
+                (
+                    "given key and address",
+                    lambda: get_client(
+                        "openai", api_key="saved-key", api_url="https://own.example/v1"
+                    ).models.list(),
+                    ("https://own.example/v1/models", "Bearer saved-key"),
+                ),
+                (
+                    # A Live send on OpenAI's own API, where the run set no
+                    # address, is clarified there too.
+                    "Guided Live clarification",
+                    lambda: refusal_retry.send_once(
+                        translation, MagicMock(), {"model": "gpt-5", "messages": []}
+                    ),
+                    ("https://api.openai.com/v1/chat/completions", "Bearer run-key"),
+                ),
+            ):
+                with (
+                    self.subTest(client=client),
+                    patch.multiple(
+                        translation.openai, base_url=None, api_key="run-key"
+                    ),
+                ):
+                    sent.clear()
+                    send()
+                    self.assertEqual(sent, [reached])
+        # Gemini and Kimi clients sent the run's key to their provider's own
+        # API whatever the run's address was, so a Custom Gemini-compatible
+        # connection's Batches went to Google while its Live requests went to
+        # its proxy. Gemini Batch files go through Google's own Files API,
+        # which a proxy's address does not name, so a Gemini Batch elsewhere
+        # is refused before its key is sent anywhere.
+        from util import batch_providers
+
+        proxy = "https://proxy.example/v1beta/openai"
+        google = "https://generativelanguage.googleapis.com/v1beta/openai"
+        with (
+            patch.object(httpx.HTTPTransport, "handle_request", answering(httpx)),
+            patch.object(httpx2.HTTPTransport, "handle_request", answering(httpx2)),
+            patch.dict(
+                os.environ, {"api": proxy, "key": "run-key", "API_PROVIDER": "gemini"}
+            ),
+        ):
+            for client, send, reached in (
+                *(
+                    (
+                        f"run's {provider} key",
+                        lambda provider=provider: get_client(provider).models.list(),
+                        (proxy + "/models", "Bearer run-key"),
+                    )
+                    for provider in ("gemini", "kimi")
+                ),
+                (
+                    "given Gemini key and address",
+                    lambda: get_client(
+                        "gemini", api_key="saved-key", api_url=proxy
+                    ).models.list(),
+                    (proxy + "/models", "Bearer saved-key"),
+                ),
+            ):
+                with self.subTest(client=client):
+                    sent.clear()
+                    send()
+                    self.assertEqual(sent, [reached])
+            for client, send in (
+                (
+                    "run's Gemini Batch",
+                    lambda: batch_providers.submit_batch(
+                        "gemini",
+                        [{"custom_id": "1", "params": {"model": "gemini-3-flash"}}],
+                    ),
+                ),
+                (
+                    "given Gemini Batch's results",
+                    lambda: batch_providers.read_openai_results(
+                        "gemini",
+                        "files/out",
+                        None,
+                        {},
+                        client=get_client("gemini", api_key="saved-key", api_url=proxy),
+                        google_client=batch_providers._google_client("saved-key"),
+                    ),
+                ),
+            ):
+                with self.subTest(client=client):
+                    sent.clear()
+                    with self.assertRaisesRegex(RuntimeError, "Google's own API"):
+                        send()
+                    self.assertEqual(sent, [])
+            # On Google's own API, Gemini Batch files still go to Google.
+            sent.clear()
+            batch_providers.read_openai_results(
+                "gemini",
+                "files/out",
+                None,
+                {},
+                client=get_client("gemini", api_key="saved-key", api_url=google),
+                google_client=batch_providers._google_client("saved-key"),
+            )
+            self.assertEqual(
+                [url.split("?")[0] for url, _key in sent],
+                ["https://generativelanguage.googleapis.com/v1beta/files/out:download"],
+            )
+
+    def test_a_failed_claude_count_is_asked_again(self):
+        # The estimate's instructions count saved the approximate count when
+        # Claude's count failed, such as at a proxy without count_tokens, so
+        # the run's later estimates never asked Claude again.
+        import os
+
+        import httpx
+        import httpx2
+        from util import translation
+
+        sent = []
+        answers = [404, 200]
+
+        def answering(module):
+            def handle(_transport, request):
+                sent.append(str(request.url))
+                status = answers.pop(0)
+                body = (
+                    {"input_tokens": 5}
+                    if status == 200
+                    else {
+                        "type": "error",
+                        "error": {"type": "not_found_error", "message": "none"},
+                    }
+                )
+                return module.Response(status, json=body)
+
+            return handle
+
+        folder = Path(self.enterContext(TemporaryDirectory()))
+        prompt = "Translate. " * 50
+        with (
+            patch.object(
+                translation, "_ESTIMATE_STATIC_TOKENS_FILE", folder / "static.json"
+            ),
+            patch.object(translation, "_ESTIMATE_STATE_LOCK_FILE", folder / "lock"),
+            patch.object(translation, "_ESTIMATE_SIZES_FILE", folder / "sizes.json"),
+            patch.object(translation, "_estimate_static_uncounted", set()),
+            patch.object(httpx.HTTPTransport, "handle_request", answering(httpx)),
+            patch.object(httpx2.HTTPTransport, "handle_request", answering(httpx2)),
+            patch.object(translation.openai, "api_key", "key"),
+            patch.dict(
+                os.environ,
+                {"DAZEDTL_TEST_OFFLINE": "0", "api": "https://proxy.example/v1"},
+            ),
+        ):
+            counts = []
+            # Two estimates of two files each.
+            for _estimate in range(2):
+                translation.clear_estimate_written_sizes()
+                counts += [
+                    translation._estimate_static_token_count(
+                        prompt, "claude-sonnet-5-5"
+                    )
+                    for _file in range(2)
+                ]
+        url = "https://proxy.example/v1/messages/count_tokens"
+        # The failed count gives the approximate one for the rest of its
+        # estimate, which asks no second time; Claude's count, once given,
+        # is kept.
+        approximate = translation.approximate_tokens(prompt)
+        self.assertEqual(counts, [approximate, approximate, 5, 5])
+        self.assertEqual([item.split("?")[0] for item in sent], [url, url])
 
     def test_mistral_follows_the_json_mode_strict_and_retry_rules(self):
         # The JSON-mode downgrade spent a retry attempt, so a format rejection

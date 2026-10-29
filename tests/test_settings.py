@@ -700,6 +700,30 @@ class SettingsTests(unittest.TestCase):
                     frozen["openrouterStructuredOutputs"], openrouter.STRUCTURED_OUTPUTS
                 )
                 self.assertNotIn("catalog", settings.describe()["connections"][0])
+                # A failed check leaves Batch availability unknown, which a
+                # comparison read as no Batch, so a waiting OpenRouter figure
+                # with custom Live rates was priced again as Live-only: it now
+                # leaves the policy out, while a run still can't start Batch.
+                failed = {
+                    "check": {**checked["check"], "status": "failed"},
+                    "models": None,
+                }
+                with patch.object(providers, "check", return_value=failed):
+                    view = settings.check_connection(view["revision"], identity)
+                unknown = configuration(
+                    settings, "batch", cached_only=True, unpriced=True
+                )
+                self.assertNotIn("openrouterBatch", unknown)
+                with self.assertRaises(ValueError):
+                    configuration(settings, "batch")
+                with patch.object(providers, "check", return_value=checked):
+                    view = settings.check_connection(view["revision"], identity)
+                self.assertEqual(
+                    configuration(settings, "batch", cached_only=True, unpriced=True)[
+                        "openrouterBatch"
+                    ],
+                    frozen["openrouterBatch"],
+                )
             original = deepcopy(frozen)
             endpoints = {
                 **checked["batch_endpoints"],

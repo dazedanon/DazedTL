@@ -26,10 +26,15 @@ PROVIDER_OPENAI = "openai"
 PROVIDER_GEMINI = "gemini"
 PROVIDER_KIMI = "kimi"
 
+# OpenAI's own API, where its SDK sends when no address is set.
+OPENAI_API_URL = "https://api.openai.com/v1"
 # Kimi's international platform (platform.kimi.ai) serves its
 # OpenAI-compatible API from Moonshot AI's host.
 # https://platform.kimi.ai/docs/api/overview
 KIMI_API_URL = "https://api.moonshot.ai/v1"
+# Gemini's OpenAI-compatible API on Google's own host.
+# https://ai.google.dev/gemini-api/docs/openai
+GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
 # Kimi K3 has no Batch API.
 # https://platform.kimi.ai/docs/guide/use-batch-api
 KIMI_BATCH_MODELS = frozenset({"kimi-k2.6", "kimi-k2.7-code"})
@@ -149,50 +154,60 @@ def get_client(provider: str, *, api_key: str | None = None,
     evaluations) use several providers without mutating the process-wide
     ``key`` / ``api`` environment selected by the normal Translation page.
     Existing callers keep the environment-backed behavior.
+
+    A key goes only to its own address: the run's key to the run's address,
+    and a key given here to the address given with it, never the run's.
+    With no address given, an Anthropic key goes to Anthropic's own API, and
+    an OpenAI-compatible key, which may belong to any host, is refused, and
+    a Gemini or Kimi key goes to its provider's own API. A Gemini Batch's
+    files go only to Google's own API (_gemini_files).
     """
     if api_key is None:
         key = _api_key()
+        address = os.getenv("api", "") if api_url is None else api_url
     else:
         key = str(api_key or "").strip()
-        if not key and provider == PROVIDER_OPENAI and (api_url or "").strip():
+        address = api_url or ""
+        if not key and provider == PROVIDER_OPENAI and address.strip():
             # OpenAI-compatible local servers commonly require the SDK's key
             # field but do not authenticate it.
             key = "not-needed"
         elif not key:
             raise RuntimeError(f"{batch_provider_label(provider)} requires an API key")
+    address = str(address or "").strip()
     # Each SDK loads with its first client; importing both took most of a
     # worker's startup, seconds on Windows.
     if provider == PROVIDER_ANTHROPIC:
-        # The run's key goes to the run's address; a key given here goes to
-        # the address given with it, Anthropic's own API when none is.
-        if api_url is None:
-            api_url = os.getenv("api", "") if api_key is None else ""
         options = {} if max_retries is None else {"max_retries": max_retries}
-        return anthropic_client(key, api_url, **options)
+        return anthropic_client(key, address, **options)
     import openai
 
     if provider in (PROVIDER_GEMINI, PROVIDER_KIMI):
+        from dazedtl.settings.providers import absolute
+
+        # Read as the provider's own API is (own_api), without a scheme as HTTPS.
         kwargs = dict(
             api_key=key,
-            base_url=(api_url or "").strip()
-            or (
-                KIMI_API_URL
-                if provider == PROVIDER_KIMI
-                else "https://generativelanguage.googleapis.com/v1beta/openai/"
-            ),
+            base_url=absolute(address)
+            if address
+            else KIMI_API_URL if provider == PROVIDER_KIMI else GEMINI_API_URL,
         )
         if max_retries is not None:
             kwargs["max_retries"] = max_retries
         return openai.OpenAI(**kwargs)
     if provider == PROVIDER_OPENAI:
+        if not address and api_key is not None:
+            raise RuntimeError(
+                "This OpenAI-compatible key has no server address saved with it. "
+                "Restore its connection in Settings."
+            )
         kwargs = {"api_key": key}
         if max_retries is not None:
             kwargs["max_retries"] = max_retries
-        # Without an address, the run's own route, as detect_batch_provider
-        # reads it, so a Batch goes where the run's other requests go.
-        url = str(api_url if api_url is not None else os.getenv("api", "")).strip()
-        if url:
-            kwargs["base_url"] = url
+        # The run's key with no address set is on OpenAI's own API
+        # (detect_batch_provider), the SDK's default.
+        if address:
+            kwargs["base_url"] = address
         return openai.OpenAI(**kwargs)
     raise ValueError(f"Unsupported batch provider: {provider}")
 
@@ -241,6 +256,25 @@ def _google_client(api_key: str | None = None):
             "Gemini batching requires google-genai. Install project requirements first."
         ) from exc
     return genai.Client(api_key=(api_key or "").strip() or _api_key())
+
+
+def _gemini_files(client, google_client=None):
+    """The Google Files client a Gemini Batch moves its JSONL files through,
+    with the key of *client*, the Batch's own OpenAI-compatible client, when
+    none is given. google-genai sends to Google's own API, never to the
+    Batch's address, so a Batch whose address is another server, such as a
+    Custom Gemini-compatible proxy, is refused before its key is sent: Google
+    is not where that key belongs, and the proxy's address names no Files
+    API."""
+    from dazedtl.settings.providers import own_api
+
+    if not own_api("gemini", str(getattr(client, "base_url", "") or "")):
+        raise RuntimeError(
+            "Gemini Batches move their files through Google's own API, and this "
+            "connection's server address is another server. Use Live for this "
+            "connection, or a Google Gemini connection for Batches."
+        )
+    return google_client or _google_client(getattr(client, "api_key", None))
 
 
 def _write_jsonl(requests: Iterable[dict]) -> Path:
@@ -333,7 +367,7 @@ def submit_batch(provider: str, requests: list[dict], *, client=None,
     path = _write_jsonl(rows)
     try:
         if provider == PROVIDER_GEMINI:
-            google_client = google_client or _google_client()
+            google_client = _gemini_files(client, google_client)
             try:
                 from google.genai import types
                 config = types.UploadFileConfig(
@@ -568,7 +602,7 @@ def _download_file_text(provider: str, file_id: str, *, client=None,
         # can therefore collect the temporary Client before ``download`` sends
         # the request, producing: "Cannot send a request, as the client has
         # been closed."
-        google_client = google_client or _google_client()
+        google_client = _gemini_files(client or get_client(provider), google_client)
         data = google_client.files.download(file=file_id)
         return data.decode("utf-8") if isinstance(data, bytes) else str(data)
     content = client.files.content(file_id)

@@ -2958,11 +2958,15 @@ try:
 
         with patch.dict(
             os.environ,
-            {"API_PROVIDER": "openai", "api": "https://openrouter.ai/api/v1"},
+            {
+                "API_PROVIDER": "openai",
+                "api": "https://openrouter.ai/api/v1",
+                "key": "fixture-key",
+            },
         ):
-            # A Batch client built without an address takes the run's route,
-            # never OpenAI's own address behind it.
-            client = get_client(PROVIDER_OPENAI, api_key="fixture-key")
+            # The run's Batch client takes the run's route, never OpenAI's
+            # own address behind it.
+            client = get_client(PROVIDER_OPENAI)
             assert str(client.base_url).startswith("https://openrouter.ai/api/v1")
             for _ in range(2):
                 translation.STRICT_STRUCTURED_OUTPUTS = True

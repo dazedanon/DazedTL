@@ -49,17 +49,22 @@ def restored(value, *, replay=False):
 def send_once(translation, evidence, params):
     """Send the extra paid call without native fallback or SDK retry loops."""
     evidence.record(params, clarification_of=evidence.local.current)
-    from util.batch_providers import create_anthropic_message, get_client
+    from util.batch_providers import (
+        OPENAI_API_URL,
+        create_anthropic_message,
+        get_client,
+    )
 
     provider = "anthropic" if "system" in params else "openai"
-    # The SDK client type depends on the provider chosen above; a Claude
-    # request goes to the run's address, as its Live send did.
+    # The SDK client type depends on the provider chosen above; the request
+    # goes to the run's address, as its Live send did, which went to OpenAI's
+    # own API when the run set none.
     client: Any = get_client(
         provider,
         api_key=translation.openai.api_key,
         api_url=os.getenv("api", "")
         if provider == "anthropic"
-        else str(translation.openai.base_url or ""),
+        else str(translation.openai.base_url or OPENAI_API_URL),
         max_retries=0,
     )
     options: dict[str, Any] = {"timeout": 45, "max_retries": 0}

@@ -55,7 +55,8 @@ def configuration(settings, mode, *, cached_only=False, unpriced=False, pair=Non
     """The settings a run freezes, translating between the game's language
     *pair* (settings/language_pair), Japanese into Settings' target when
     none is given. ``unpriced`` returns them with unknown rates instead of
-    refusing, for comparisons that read cached prices only."""
+    refusing, and leaves out an OpenRouter Batch policy not looked up yet,
+    for comparisons that read cached prices only."""
     state = settings._read()
     languages = language_pair.frozen({}, pair or language_pair.default(settings))
     if mode == "agent":
@@ -125,6 +126,12 @@ def configuration(settings, mode, *, cached_only=False, unpriced=False, pair=Non
     }
     if connection["provider"] == "openrouter":
         value["openrouterStructuredOutputs"] = openrouter.STRUCTURED_OUTPUTS
+    # Read with unknown rates, the settings leave the Batch policy out while
+    # Batch availability isn't looked up, as after a failed check, so it reads
+    # as not known rather than as no Batch (translation/repricing.priced).
+    if connection["provider"] == "openrouter" and (
+        not unpriced or openrouter.batch(connection, connection["model"]).looked_up
+    ):
         policy = openrouter.policy(
             connection, connection["model"], selected, required=mode == "batch"
         )

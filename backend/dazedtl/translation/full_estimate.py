@@ -144,11 +144,12 @@ class FullEstimate:
 
     def changed(self, result, tasks, route, *, reprice=True):
         """What changed since ``result`` was estimated, or None while it is
-        current; one with a task priced on another route than ``route``, the
-        Batch provider of the tasks' settings, changed its prices
-        (repricing.rerouted). With ``reprice``, settings that differ only in
-        prices not known yet count as the same."""
-        routes = self.routes(result, route)
+        current; one with a task priced on another route than its settings
+        take now, which ``route`` gives (repricing.route_of), changed its
+        prices (repricing.rerouted). With ``reprice``, settings that differ
+        only in prices not known yet count as the same."""
+        before, after = result.get("configuration"), self.configuration(tasks)
+        routes = self.routes(result, repricing.own_route(route, before, after))
         saved = self.basis(tasks, result)
         current = self.basis(tasks, routes=routes)
         change = compare(
@@ -156,19 +157,20 @@ class FullEstimate:
             current,
             prices_unknown=reprice
             and saved.settings != current.settings
-            and repricing.unknown_prices(
-                result["configuration"], self.configuration(tasks)
-            ),
+            and repricing.unknown_prices(result["configuration"], after),
         )
-        return repricing.rerouted(change, routes, route)
+        return repricing.rerouted(change, routes, before, after, route)
 
     @staticmethod
-    def routes(result, route):
+    def routes(result, fallback):
         """The routes a saved estimate's tasks were priced on: the Batch
         provider each task's counts record (repricing.estimate_route), or
-        ``route`` for counts that record none."""
+        ``fallback``, the route its own settings take
+        (repricing.own_route), for counts that record none."""
         measured = result.get("measured") or {}
-        return [repricing.estimate_route(counts, route) for counts in measured.values()]
+        return [
+            repricing.estimate_route(counts, fallback) for counts in measured.values()
+        ]
 
     @staticmethod
     def configuration(tasks):
@@ -177,15 +179,15 @@ class FullEstimate:
 
     def reading(self, result, tasks, *, reprice=True):
         """How a saved estimate reads for ``tasks`` (repricing.read): as
-        saved, priced again from each task's counts on the route their
-        settings take now, or outdated."""
-        configuration = self.configuration(tasks)
-        route = self.guided.runs.route(configuration)
+        saved, priced again from each task's counts on the route of the
+        settings it is read at, or outdated."""
+        route = self.guided.runs.route
         return repricing.read(
             self.changed(result, tasks, route, reprice=reprice),
             result.get("configuration"),
-            configuration,
-            lambda settings: self.priced(result, settings, route),
+            self.configuration(tasks),
+            route,
+            lambda settings, on: self.priced(result, settings, on),
         )
 
     def priced(self, result, configuration, route):

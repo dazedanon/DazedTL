@@ -377,6 +377,10 @@ _estimate_written_sizes: set = set()
 _ESTIMATE_SIZES_FILE = Path("log/estimate_written_sizes.json")
 _ESTIMATE_STATE_LOCK_FILE = Path("log/estimate_state.lock")
 _ESTIMATE_STATIC_TOKENS_FILE = Path("log/estimate_static_tokens.json")
+# The static prompts whose Claude count failed in this estimate: its other
+# files take the approximate count without asking again, the next estimate
+# asks again.
+_estimate_static_uncounted: set = set()
 
 
 @contextmanager
@@ -443,15 +447,19 @@ def _save_estimate_written_sizes():
         pass
 
 def clear_estimate_written_sizes():
-    """Reset the written-sizes file at the start of a new estimate run."""
+    """Reset the written-sizes file, and the prompts whose Claude count
+    failed, at the start of a new estimate run."""
     global _estimate_written_sizes
     with _estimate_state_lock():
         _estimate_written_sizes = set()
+        _estimate_static_uncounted.clear()
         system.unlink(_ESTIMATE_SIZES_FILE, ignore_errors=True)
 
 
 def _estimate_static_token_count(static_system, model):
-    """Count one static prompt once and reuse it across parallel workers/runs."""
+    """Count one static prompt with Claude once and reuse that count across
+    parallel workers/runs; the approximate count it falls back to lasts only
+    this estimate (clear_estimate_written_sizes)."""
     identity = hashlib.sha256(
         (str(model or "") + "\0" + str(static_system or "")).encode("utf-8")
     ).hexdigest()
@@ -472,7 +480,10 @@ def _estimate_static_token_count(static_system, model):
 
         token_count = None
         # A local run blocks the network, where the client would only retry.
-        if os.getenv("DAZEDTL_TEST_OFFLINE") != "1":
+        if (
+            os.getenv("DAZEDTL_TEST_OFFLINE") != "1"
+            and identity not in _estimate_static_uncounted
+        ):
             try:
                 from util.batch_providers import anthropic_client
 
@@ -491,9 +502,10 @@ def _estimate_static_token_count(static_system, model):
                 )
                 token_count = int(response.input_tokens)
             except Exception:
-                pass
+                _estimate_static_uncounted.add(identity)
         if token_count is None:
-            token_count = approximate_tokens(static_system)
+            # Only Claude's own count is saved, so a later estimate asks again.
+            return approximate_tokens(static_system)
 
         try:
             cache[identity] = token_count
