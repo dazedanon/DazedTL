@@ -168,11 +168,7 @@ class GuidedRuns:
         inputs = self.guided.inputs(native)
         record = inputs.record()
         sources = inputs.sources(names, record["inputs"], self.guided.observed_digest)
-        guard = (
-            guard
-            if guard is not None
-            else self.guided.backend.guided_guard(native, inputs.folder)
-        )
+        guard = self.guard(native) if guard is None else guard
         # Native guards include other phases' work. Their selections and outputs
         # are independent; only shared frozen context belongs in every quote.
         context = {
@@ -803,14 +799,19 @@ class GuidedRuns:
                 return identity, job, record
         return None
 
+    def guard(self, native):
+        """The game's guard, which a phase's inputs bind to and a reviewed
+        action freezes; a caller holding it passes it on instead of reading
+        it again."""
+        backend = self.guided.backend
+        return backend.guided_guard(native, backend.workflows.folder(native["id"]))
+
     def poll_guard(self, native):
         """The guard a quote binds to. Quotes read only its shared parts, so a
         poll hashes no game data or working copies for it."""
         observed = self.guided.observations.files()
         if observed is None:
-            return self.guided.backend.guided_guard(
-                native, self.guided.inputs(native).folder
-            )
+            return self.guard(native)
         return self.guided.observations.once(
             ("guard context", native["id"]),
             lambda: self.guided.backend.guided_guard_context(native, observed),

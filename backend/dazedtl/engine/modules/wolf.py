@@ -15,10 +15,9 @@ from dotenv import load_dotenv
 from retry import retry
 from tqdm import tqdm
 from util.languages import source_pattern
-from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost, found_mismatch, last_translation_had_mismatch, run_stop_errors
-from util.translation_task import fail_on_parser_error, module_receipt
+from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost, reply_to_write, run_stop_errors
+from util.translation_task import fail_on_parser_error, module_receipt, write_output
 from util.speakers import find_speaker, strip_speaker_prefix, to_prefixed
-from util import system
 
 # OpenAI initialization centralized in util/translation.py
 
@@ -116,15 +115,10 @@ def handleWOLF(filename, estimate):
 
     fail_on_parser_error(translatedData)
 
-    # The file is written once, whole, and only when it finished; a write
-    # that fails leaves an earlier translation as it was. Nothing read a
-    # page's progress back (a run translates files/ again, its finished lines
-    # from the translation cache), and a partial translated/ file replaced an
-    # earlier complete one or, after a stop, counted as finished
-    # (desktop/backend/manual.py).
+    # Written once, whole, and only when it finished (write_output)
     if not estimate:
         output = json.dumps(translatedData[0], ensure_ascii=False, indent=4)
-        system.write_bytes("translated/" + filename, output.encode("utf-8"), 0o644)
+        write_output(filename, output, newline="\n")
 
     # Print File
     end = time.time()
@@ -220,26 +214,19 @@ def parseMap(data, filename):
     return [data, totalTokens, None]
 
 
-def replyFits(translated, lines, filename):
-    """Whether the reply translateAI just returned has one translation per
-    line sent and no chunk of it kept its source text. One that does not is
-    never written, so its lines keep their source text exactly, line breaks
-    included, and the file joins MISMATCH, as RPG Maker's _reply_fits. A
-    chunk translateAI kept is already counted; a reply of the wrong length is
-    counted here."""
-    if len(translated) != len(lines):
-        with LOCK:
-            found_mismatch(MISMATCH, filename)
-        return False
-    return not last_translation_had_mismatch()
+def replyToWrite(translated, lines, filename):
+    """What the set-data pass writes of a reply to *lines* (reply_to_write):
+    None for a reply of the wrong length, else its translations, None for
+    each line left untranslated, which keeps its source text exactly."""
+    return reply_to_write(translated, lines, MISMATCH, LOCK, filename)
 
 
 def translateLists(lists, contexts, pbar, totalTokens, filename):
     """One DataBase category's *lists*, each sent with its context, adding
-    their tokens to *totalTokens*: their translations, or None when a reply
-    did not fit (replyFits), and then the set-data pass skips the category,
-    which keeps its source text, and its other lists are not sent. A
-    category without lines sends nothing."""
+    their tokens to *totalTokens*: what to write of their replies
+    (replyToWrite), or None when a reply had the wrong length, and then the
+    set-data pass skips the category, which keeps its source text, and its
+    other lists are not sent. A category without lines sends nothing."""
     if not any(lists):
         return [[] for _ in lists]
     pbar.total = sum(len(lines) for lines in lists)
@@ -249,9 +236,10 @@ def translateLists(lists, contexts, pbar, totalTokens, filename):
         response = translateAI(lines, context)
         totalTokens[0] += response[1][0]
         totalTokens[1] += response[1][1]
-        if not replyFits(response[0], lines, filename):
+        written = replyToWrite(response[0], lines, filename)
+        if written is None:
             return None
-        translated.append(response[0])
+        translated.append(written)
     return translated
 
 
@@ -262,8 +250,9 @@ def searchCodes(events, pbar, jobList, filename):
     rest into six lists, which are translated at the end of the page; the
     set-data pass (*jobList* holds those translations) only writes them, so
     it never sends what the first pass already translated. A list whose
-    reply did not fit (replyFits) reaches it as None and is not written, and
-    a page whose passes did not read the same lines fails."""
+    reply had the wrong length reaches it as None, and a line left
+    untranslated as a None in its list (replyToWrite); neither is written. A
+    page whose passes did not read the same lines fails."""
     # Lists, in the order they are sent
     if jobList:
         stringList, list210, list250, list300, list150, list122 = jobList
@@ -354,10 +343,7 @@ def searchCodes(events, pbar, jobList, filename):
                         stringList.append(to_prefixed(speaker, jaString))
 
                     # 2nd Pass (Set Text)
-                    elif stringList is not None:
-                        # Grab Translated String
-                        translatedText = stringList[0]
-
+                    elif stringList is not None and (translatedText := stringList.pop(0)) is not None:
                         # Remove speaker
                         translatedText = strip_speaker_prefix(translatedText, speaker)
 
@@ -367,9 +353,6 @@ def searchCodes(events, pbar, jobList, filename):
 
                         # Set Data
                         codeList[i]["stringArgs"][0] = codeList[i]["stringArgs"][0].replace(initialJAString, translatedText)
-
-                        # Reset Data and Pop Item
-                        stringList.pop(0)
 
             ### Event Code: 102 Choices
             if codeList[i]["code"] == 102 and CODE102 == True and not setData:
@@ -403,11 +386,11 @@ def searchCodes(events, pbar, jobList, filename):
                 totalTokens[1] += response[1][1]
 
                 # Validate and Set Data
-                if replyFits(translatedChoiceList, choiceList, filename):
+                translatedChoiceList = replyToWrite(translatedChoiceList, choiceList, filename)
+                if translatedChoiceList is not None:
                     for j in range(len(jaChoiceList)):
-                        if jaChoiceList[j]:
-                            codeList[i]["stringArgs"][j] = translatedChoiceList[0]
-                            translatedChoiceList.pop(0)
+                        if jaChoiceList[j] and (choice := translatedChoiceList.pop(0)) is not None:
+                            codeList[i]["stringArgs"][j] = choice
 
             ### Event Code: 210 Common Event
             if codeList[i]["code"] == 210 and CODE210 == True:
@@ -435,19 +418,13 @@ def searchCodes(events, pbar, jobList, filename):
                         list210.append(jaString)
 
                     # 2nd Pass (Set Text)
-                    elif list210 is not None:
-                        # Grab Translated String
-                        translatedText = list210[0]
-
+                    elif list210 is not None and (translatedText := list210.pop(0)) is not None:
                         # Textwrap
                         if FIXTEXTWRAP is True:
                             translatedText = dazedwrap.wrapText(translatedText, width=WIDTH)
 
                         # Set Data
                         codeList[i]["stringArgs"][1] = translatedText
-
-                        # Pop Item
-                        list210.pop(0)
 
             ### Event Code: 122 SetString
             if codeList[i]["code"] == 122 and CODE122 == True:
@@ -479,19 +456,13 @@ def searchCodes(events, pbar, jobList, filename):
                             list122.append(jaString)
 
                         # 2nd Pass (Set Text)
-                        elif list122 is not None:
-                            # Grab Translated String
-                            translatedText = list122[0]
-
+                        elif list122 is not None and (translatedText := list122.pop(0)) is not None:
                             # Textwrap
                             if FIXTEXTWRAP is True:
                                 translatedText = dazedwrap.wrapText(translatedText, width=WIDTH)
 
                             # Set Data
                             codeList[i]["stringArgs"][0] = codeList[i]["stringArgs"][0].replace(originalString, translatedText)
-
-                            # Pop Item
-                            list122.pop(0)
 
             ### Event Code: 150 Picture String
             if codeList[i]["code"] == 150 and CODE150 == True:
@@ -523,17 +494,12 @@ def searchCodes(events, pbar, jobList, filename):
                             list150.append(jaString)
 
                         # Pass 2 (Set Text)
-                        elif list150 is not None:
-                            translatedText = list150[0]
-
+                        elif list150 is not None and (translatedText := list150.pop(0)) is not None:
                             # Textwrap
                             # translatedText = dazedwrap.wrapText(translatedText, WIDTH)
 
                             # Set String with font formatting
                             codeList[i]["stringArgs"][0] = re.sub(r'\\f\[(\d+)\]', lambda x: f'\\f[{int(x.group(1))-2}]', translatedText)
-
-                            # Pop processed item
-                            list150.pop(0)
 
             ### Event Code: 300 Common Events
             if codeList[i]["code"] == 300 and CODE300 == True and "stringArgs" in codeList[i] and len(codeList[i]["stringArgs"]) > 1:
@@ -558,13 +524,18 @@ def searchCodes(events, pbar, jobList, filename):
                     totalTokens[0] += response[1][0]
                     totalTokens[1] += response[1][1]
 
-                    # The window is written whole, once its choices fit
-                    if replyFits(choiceListTL, choiceList, filename):
+                    # The window is written whole, once its choices fit; a
+                    # choice left untranslated keeps its source
+                    choiceListTL = replyToWrite(choiceListTL, choiceList, filename)
+                    if choiceListTL is not None:
                         if question:
                             codeList[i]["stringArgs"][2] = translatedQuestion
 
                         # Replace Commas, Convert to String and Set
-                        choiceListTL = [choice.replace(", ", "、") for choice in choiceListTL]
+                        choiceListTL = [
+                            source if choice is None else choice.replace(", ", "、")
+                            for source, choice in zip(choiceList, choiceListTL)
+                        ]
                         codeList[i]["stringArgs"][1] = ",".join(choiceListTL)
 
                 # Dialogue
@@ -581,10 +552,9 @@ def searchCodes(events, pbar, jobList, filename):
                         list300.append(jaString)
 
                     # Pass 2
-                    elif list300 is not None:
+                    elif list300 is not None and (translatedText := list300.pop(0)) is not None:
                         # Add Textwrap and Font
-                        translatedText = dazedwrap.wrapText(list300[0], WIDTH)
-                        list300.pop(0)
+                        translatedText = dazedwrap.wrapText(translatedText, WIDTH)
 
                         # Write to File
                         codeList[i]["stringArgs"][1] = translatedText
@@ -629,10 +599,7 @@ def searchCodes(events, pbar, jobList, filename):
                             list300.append(to_prefixed(speaker, jaString))
 
                         # 2nd Pass (Set Text)
-                        elif list300 is not None:
-                            # Grab Translated String
-                            translatedText = list300[0]
-
+                        elif list300 is not None and (translatedText := list300.pop(0)) is not None:
                             # Remove speaker
                             translatedText = strip_speaker_prefix(translatedText, speaker)
 
@@ -642,9 +609,6 @@ def searchCodes(events, pbar, jobList, filename):
 
                             # Set Data
                             codeList[i]["stringArgs"][1] = codeList[i]["stringArgs"][1].replace(initialJAString, translatedText)
-
-                            # Reset Data and Pop Item
-                            list300.pop(0)
 
             ### Event Code: 250 DB Read/Writes
             if codeList[i]["code"] == 250 and CODE250 == True:
@@ -668,10 +632,7 @@ def searchCodes(events, pbar, jobList, filename):
                             list250.append(jaString)
 
                         # Pass 2 (Set Text)
-                        elif list250 is not None:
-                            translatedText = list250[0]
-                            list250.pop(0)
-
+                        elif list250 is not None and (translatedText := list250.pop(0)) is not None:
                             # Textwrap
                             # translatedText = dazedwrap.wrapText(translatedText, WIDTH)
 
@@ -697,8 +658,8 @@ def searchCodes(events, pbar, jobList, filename):
                 raise ValueError("The set-data pass left translations unwritten. ")
             return totalTokens
 
-        # EOF: translate each list; the set-data pass writes each reply that
-        # fits and gets None for one that does not (replyFits)
+        # EOF: translate each list; the set-data pass writes what
+        # replyToWrite keeps of each reply
         jobList = []
         for lines in (stringList, list210, list250, list300, list150, list122):
             translated = []
@@ -708,7 +669,7 @@ def searchCodes(events, pbar, jobList, filename):
                 response = translateAI(lines, textHistory)
                 totalTokens[0] += response[1][0]
                 totalTokens[1] += response[1][1]
-                translated = response[0] if replyFits(response[0], lines, filename) else None
+                translated = replyToWrite(response[0], lines, filename)
             jobList.append(translated)
 
         # Set Data
@@ -831,6 +792,8 @@ def searchDB(events, pbar, jobList, filename):
         for table in tableList:
             # Grab NPCs
             if table["name"] == "アイドル" and NPCFLAG == True and npcList is not None:
+                # Its descriptions take no font, as the states' texts
+                font = ""
                 with open("log/translations.txt", "a", encoding="utf-8") as file:
                     if setData:
                         file.write(f"\n#Actors\n")
@@ -848,13 +811,12 @@ def searchDB(events, pbar, jobList, filename):
 
                                 # Pass 2 (Set Data)
                                 else:
-                                    if dataList[j].get("value") != "":
+                                    if dataList[j].get("value") != "" and (translatedText := npcList[0].pop(0)) is not None:
                                         # Write Name
-                                        file.write(f"{dataList[j].get('value')} ({npcList[0][0]})\n")
+                                        file.write(f"{dataList[j].get('value')} ({translatedText})\n")
 
                                         # Set Data
-                                        dataList[j].update({"value": npcList[0][0]})
-                                        npcList[0].pop(0)
+                                        dataList[j].update({"value": translatedText})
 
                             # Description
                             if dataList[j].get("name") == "説明":
@@ -871,15 +833,13 @@ def searchDB(events, pbar, jobList, filename):
                                         npcList[1].append(jaString)
                                 # Pass 2 (Set Data)
                                 else:
-                                    if dataList[j].get("value") != "":
+                                    if dataList[j].get("value") != "" and (translatedText := npcList[1].pop(0)) is not None:
                                         # Textwrap
-                                        translatedText = npcList[1][0]
                                         translatedText = dazedwrap.wrapText(translatedText, LISTWIDTH)
                                         translatedText = font + translatedText
 
                                         # Set Data
                                         dataList[j].update({"value": translatedText})
-                                        npcList[1].pop(0)
 
             # Grab Scenario
             if "デートキャラ" in table["name"] and SCENARIOFLAG == True and scenarioList is not None:
@@ -908,9 +868,7 @@ def searchDB(events, pbar, jobList, filename):
                                                 scenarioList[0].append(jaString)
                                         # Pass 2 (Set Data) - Simple name
                                         else:
-                                            if ogString.strip():
-                                                translatedText = scenarioList[0][0]
-                                                scenarioList[0].pop(0)
+                                            if ogString.strip() and (translatedText := scenarioList[0].pop(0)) is not None:
                                                 dataList[j].update({"value": dataList[j].get("value").replace(ogString, translatedText)})
                                         continue
                                         
@@ -933,9 +891,7 @@ def searchDB(events, pbar, jobList, filename):
                                         scenarioList[0].append(jaString)
 
                                     # Pass 2 (Set Data)
-                                    else:
-                                        translatedText = scenarioList[0][0]
-                                        scenarioList[0].pop(0)
+                                    elif (translatedText := scenarioList[0].pop(0)) is not None:
 
                                         # Remove Speaker before wrapping so WIDTH applies to dialogue only
                                         speakerMatch = re.search(r"\[(.+?)\]\s?[|:]\s?", translatedText)
@@ -983,9 +939,7 @@ def searchDB(events, pbar, jobList, filename):
                                                 scenarioList[1].append(jaString)
                                         # Pass 2 (Set Data) - Simple text
                                         else:
-                                            if ogString.strip():
-                                                translatedText = scenarioList[1][0]
-                                                scenarioList[1].pop(0)
+                                            if ogString.strip() and (translatedText := scenarioList[1].pop(0)) is not None:
                                                 translatedText = dazedwrap.wrapText(translatedText, WIDTH)
                                                 dataList[j].update({"value": dataList[j].get("value").replace(ogString, translatedText)})
                                         continue
@@ -1009,9 +963,7 @@ def searchDB(events, pbar, jobList, filename):
                                         scenarioList[1].append(jaString)
 
                                     # Pass 2 (Set Data)
-                                    else:
-                                        translatedText = scenarioList[1][0]
-                                        scenarioList[1].pop(0)
+                                    elif (translatedText := scenarioList[1].pop(0)) is not None:
 
                                         # Remove Speaker before wrapping so WIDTH applies to dialogue only
                                         speakerMatch = re.search(r"\[(.+?)\]\s?[|:]\s?", translatedText)
@@ -1060,9 +1012,7 @@ def searchDB(events, pbar, jobList, filename):
                                                 scenarioList[2].append(jaString)
                                         # Pass 2 (Set Data) - Simple text
                                         else:
-                                            if ogString.strip():
-                                                translatedText = scenarioList[2][0]
-                                                scenarioList[2].pop(0)
+                                            if ogString.strip() and (translatedText := scenarioList[2].pop(0)) is not None:
                                                 translatedText = dazedwrap.wrapText(translatedText, WIDTH)
                                                 dataList[j].update({"value": dataList[j].get("value").replace(ogString, translatedText)})
                                         continue
@@ -1085,9 +1035,7 @@ def searchDB(events, pbar, jobList, filename):
                                         scenarioList[2].append(jaString)
 
                                     # Pass 2 (Set Data)
-                                    else:
-                                        translatedText = scenarioList[2][0]
-                                        scenarioList[2].pop(0)
+                                    elif (translatedText := scenarioList[2].pop(0)) is not None:
 
                                         # Remove Speaker before wrapping so WIDTH applies to dialogue only
                                         speakerMatch = re.search(r"\[(.+?)\]\s?[|:]\s?", translatedText)
@@ -1132,9 +1080,7 @@ def searchDB(events, pbar, jobList, filename):
                                     optionsList[0].append(jaString)
 
                                 # Pass 2 (Set Data)
-                                else:
-                                    translatedText = optionsList[0][0]
-                                    optionsList[0].pop(0)
+                                elif (translatedText := optionsList[0].pop(0)) is not None:
                                     dataList[j].update({"value": dataList[j].get("value").replace(jaString, translatedText)})
 
                         # Description 1
@@ -1148,9 +1094,7 @@ def searchDB(events, pbar, jobList, filename):
                                     optionsList[1].append(jaString)
 
                                 # Pass 2 (Set Data)
-                                else:
-                                    translatedText = optionsList[1][0]
-                                    optionsList[1].pop(0)
+                                elif (translatedText := optionsList[1].pop(0)) is not None:
                                     translatedText = dazedwrap.wrapText(translatedText, LISTWIDTH)
                                     dataList[j].update({"value": dataList[j].get("value").replace(jaString, translatedText)})
 
@@ -1165,9 +1109,7 @@ def searchDB(events, pbar, jobList, filename):
                                     optionsList[2].append(jaString)
 
                                 # Pass 2 (Set Data)
-                                else:
-                                    translatedText = optionsList[2][0]
-                                    optionsList[2].pop(0)
+                                elif (translatedText := optionsList[2].pop(0)) is not None:
                                     translatedText = dazedwrap.wrapText(translatedText, LISTWIDTH)
                                     dataList[j].update({"value": dataList[j].get("value").replace(jaString, translatedText)})
 
@@ -1183,9 +1125,8 @@ def searchDB(events, pbar, jobList, filename):
 
                     # Pass 2 (Set Data)
                     else:
-                        if dbName[j].get("name") != "":
-                            dbName[j].update({"name": dbNameList[0][0]})
-                            dbNameList[0].pop(0)
+                        if dbName[j].get("name") != "" and (translatedText := dbNameList[0].pop(0)) is not None:
+                            dbName[j].update({"name": translatedText})
 
             # Grab DB Values
             if table["name"] == "近況文章" and DBVALUEFLAG == True and dbValueList is not None:
@@ -1215,8 +1156,7 @@ def searchDB(events, pbar, jobList, filename):
 
                                 # Pass 2 (Set Data)
                                 else:
-                                    if dbValue[j].get("value"):
-                                        translatedText = dbValueList[0][0]
+                                    if dbValue[j].get("value") and (translatedText := dbValueList[0].pop(0)) is not None:
 
                                         # Textwrap
                                         translatedText = dazedwrap.wrapText(translatedText, 30)
@@ -1228,7 +1168,6 @@ def searchDB(events, pbar, jobList, filename):
 
                                         # Set
                                         dbValue[j].update({"value": translatedText})
-                                        dbValueList[0].pop(0)
 
             # Grab Items
             if table["name"] == "道具" and ITEMFLAG == True and itemList is not None:
@@ -1254,13 +1193,12 @@ def searchDB(events, pbar, jobList, filename):
                                         itemList[0].append(jaString)
 
                                 # Pass 2 (Set Data)
-                                else:
+                                elif (translatedText := itemList[0].pop(0)) is not None:
                                     # Write to TL File
                                     with open("log/translations.txt", "a", encoding="utf-8") as file:
-                                        file.write(f"{jaString} ({itemList[0][0]})\n")
+                                        file.write(f"{jaString} ({translatedText})\n")
 
-                                    dataList[j].update({"value": itemList[0][0]})
-                                    itemList[0].pop(0)
+                                    dataList[j].update({"value": translatedText})
 
                         # Description
                         if dataList[j].get("name") == "説明":
@@ -1277,9 +1215,8 @@ def searchDB(events, pbar, jobList, filename):
                                     itemList[1].append(jaString)
                             # Pass 2 (Set Data)
                             else:
-                                if dataList[j].get("value") != "":
+                                if dataList[j].get("value") != "" and (translatedText := itemList[1].pop(0)) is not None:
                                     # Textwrap
-                                    translatedText = itemList[1][0]
                                     translatedText = dazedwrap.wrapText(translatedText, LISTWIDTH)
 
                                     # Font
@@ -1288,7 +1225,6 @@ def searchDB(events, pbar, jobList, filename):
 
                                     # Set Data
                                     dataList[j].update({"value": translatedText})
-                                    itemList[1].pop(0)
 
                         # Log
                         if dataList[j].get("name") == "使用時文章[戦](人名~":
@@ -1315,9 +1251,8 @@ def searchDB(events, pbar, jobList, filename):
                                     itemList[2].append(jaString)
                             # Pass 2 (Set Data)
                             else:
-                                if dataList[j].get("value") != "":
+                                if dataList[j].get("value") != "" and (translatedText := itemList[2].pop(0)) is not None:
                                     # Textwrap
-                                    translatedText = itemList[2][0]
                                     translatedText = dazedwrap.wrapText(translatedText, LISTWIDTH)
                                     # translatedText = font + translatedText
 
@@ -1326,7 +1261,6 @@ def searchDB(events, pbar, jobList, filename):
 
                                     # Set Data
                                     dataList[j].update({"value": translatedText})
-                                    itemList[2].pop(0)
 
                         # Description
                         if dataList[j].get("name") == "使用後文章[移動]":
@@ -1343,9 +1277,8 @@ def searchDB(events, pbar, jobList, filename):
                                     itemList[3].append(jaString)
                             # Pass 2 (Set Data)
                             else:
-                                if dataList[j].get("value") != "":
+                                if dataList[j].get("value") != "" and (translatedText := itemList[3].pop(0)) is not None:
                                     # Textwrap
-                                    translatedText = itemList[3][0]
                                     translatedText = dazedwrap.wrapText(translatedText, LISTWIDTH)
 
                                     # Font
@@ -1354,7 +1287,6 @@ def searchDB(events, pbar, jobList, filename):
 
                                     # Set Data
                                     dataList[j].update({"value": translatedText})
-                                    itemList[3].pop(0)
 
             # Grab Armors
             if table["name"] == "防具" and ARMORFLAG == True and armorList is not None:
@@ -1373,9 +1305,8 @@ def searchDB(events, pbar, jobList, filename):
 
                             # Pass 2 (Set Data)
                             else:
-                                if dataList[j].get("value") != "":
-                                    dataList[j].update({"value": armorList[0][0]})
-                                    armorList[0].pop(0)
+                                if dataList[j].get("value") != "" and (translatedText := armorList[0].pop(0)) is not None:
+                                    dataList[j].update({"value": translatedText})
 
                         # Description
                         if dataList[j].get("name") == "説明":
@@ -1392,9 +1323,8 @@ def searchDB(events, pbar, jobList, filename):
                                     armorList[1].append(jaString)
                             # Pass 2 (Set Data)
                             else:
-                                if dataList[j].get("value") != "":
+                                if dataList[j].get("value") != "" and (translatedText := armorList[1].pop(0)) is not None:
                                     # Textwrap
-                                    translatedText = armorList[1][0]
                                     translatedText = dazedwrap.wrapText(translatedText, LISTWIDTH)
 
                                     # Font
@@ -1403,7 +1333,6 @@ def searchDB(events, pbar, jobList, filename):
 
                                     # Set Data
                                     dataList[j].update({"value": translatedText})
-                                    armorList[1].pop(0)
 
             # Grab Enemies
             if table["name"] == "敵" and ENEMYFLAG == True and enemyList is not None:
@@ -1421,9 +1350,8 @@ def searchDB(events, pbar, jobList, filename):
 
                             # Pass 2 (Set Data)
                             else:
-                                if dataList[j].get("value") != "":
-                                    dataList[j].update({"value": enemyList[0][0]})
-                                    enemyList[0].pop(0)
+                                if dataList[j].get("value") != "" and (translatedText := enemyList[0].pop(0)) is not None:
+                                    dataList[j].update({"value": translatedText})
 
                         # Description
                         if dataList[j].get("name") == "NULL":
@@ -1440,9 +1368,8 @@ def searchDB(events, pbar, jobList, filename):
                                     enemyList[1].append(jaString)
                             # Pass 2 (Set Data)
                             else:
-                                if dataList[j].get("value") != "":
+                                if dataList[j].get("value") != "" and (translatedText := enemyList[1].pop(0)) is not None:
                                     # Textwrap
-                                    translatedText = enemyList[1][0]
                                     translatedText = dazedwrap.wrapText(translatedText, LISTWIDTH)
 
                                     # Font
@@ -1451,7 +1378,6 @@ def searchDB(events, pbar, jobList, filename):
 
                                     # Set Data
                                     dataList[j].update({"value": translatedText})
-                                    enemyList[1].pop(0)
 
             # Grab Weapons
             if table["name"] == "武器" and WEAPONFLAG == True and weaponsList is not None:
@@ -1470,9 +1396,8 @@ def searchDB(events, pbar, jobList, filename):
 
                             # Pass 2 (Set Data)
                             else:
-                                if dataList[j].get("value") != "":
-                                    dataList[j].update({"value": weaponsList[0][0]})
-                                    weaponsList[0].pop(0)
+                                if dataList[j].get("value") != "" and (translatedText := weaponsList[0].pop(0)) is not None:
+                                    dataList[j].update({"value": translatedText})
 
                         # Description
                         if dataList[j].get("name") == "説明":
@@ -1489,9 +1414,8 @@ def searchDB(events, pbar, jobList, filename):
                                     weaponsList[1].append(jaString)
                             # Pass 2 (Set Data)
                             else:
-                                if dataList[j].get("value") != "":
+                                if dataList[j].get("value") != "" and (translatedText := weaponsList[1].pop(0)) is not None:
                                     # Textwrap
-                                    translatedText = weaponsList[1][0]
                                     translatedText = dazedwrap.wrapText(translatedText, LISTWIDTH)
 
                                     # Font
@@ -1500,7 +1424,6 @@ def searchDB(events, pbar, jobList, filename):
 
                                     # Set Data
                                     dataList[j].update({"value": translatedText})
-                                    weaponsList[1].pop(0)
 
             # Grab Skills
             if table["name"] == "技能" and SKILLFLAG == True and skillList is not None:
@@ -1519,9 +1442,8 @@ def searchDB(events, pbar, jobList, filename):
 
                             # Pass 2 (Set Data)
                             else:
-                                if dataList[j].get("value") != "":
-                                    dataList[j].update({"value": skillList[0][0]})
-                                    skillList[0].pop(0)
+                                if dataList[j].get("value") != "" and (translatedText := skillList[0].pop(0)) is not None:
+                                    dataList[j].update({"value": translatedText})
 
                         # Description
                         if dataList[j].get("name") == "説明":
@@ -1539,9 +1461,8 @@ def searchDB(events, pbar, jobList, filename):
 
                             # Pass 2 (Set Data)
                             else:
-                                if dataList[j].get("value") != "":
+                                if dataList[j].get("value") != "" and (translatedText := skillList[1].pop(0)) is not None:
                                     # Textwrap
-                                    translatedText = skillList[1][0]
                                     translatedText = dazedwrap.wrapText(translatedText, LISTWIDTH)
 
                                     # Font
@@ -1550,7 +1471,6 @@ def searchDB(events, pbar, jobList, filename):
 
                                     # Set Data
                                     dataList[j].update({"value": translatedText})
-                                    skillList[1].pop(0)
 
                         # Log
                         if dataList[j].get("name") == "発動時文章":
@@ -1577,9 +1497,8 @@ def searchDB(events, pbar, jobList, filename):
                                     skillList[2].append(jaString)
                             # Pass 2 (Set Data)
                             else:
-                                if dataList[j].get("value") != "":
+                                if dataList[j].get("value") != "" and (translatedText := skillList[2].pop(0)) is not None:
                                     # Textwrap
-                                    translatedText = skillList[2][0]
                                     translatedText = dazedwrap.wrapText(translatedText, LISTWIDTH)
                                     translatedText = font + translatedText
 
@@ -1588,7 +1507,6 @@ def searchDB(events, pbar, jobList, filename):
 
                                     # Set Data
                                     dataList[j].update({"value": translatedText})
-                                    skillList[2].pop(0)
 
                         # Log
                         if dataList[j].get("name") == "使用時文章[戦闘](人名~":
@@ -1615,9 +1533,8 @@ def searchDB(events, pbar, jobList, filename):
                                     skillList[3].append(jaString)
                             # Pass 2 (Set Data)
                             else:
-                                if dataList[j].get("value") != "":
+                                if dataList[j].get("value") != "" and (translatedText := skillList[3].pop(0)) is not None:
                                     # Textwrap
-                                    translatedText = skillList[3][0]
                                     translatedText = dazedwrap.wrapText(translatedText, LISTWIDTH)
 
                                     # Remove Taro
@@ -1628,7 +1545,6 @@ def searchDB(events, pbar, jobList, filename):
 
                                     # Set Data
                                     dataList[j].update({"value": translatedText})
-                                    skillList[3].pop(0)
 
                         # Log
                         if dataList[j].get("name") == "失敗時文章[(対象)～]":
@@ -1655,9 +1571,8 @@ def searchDB(events, pbar, jobList, filename):
                                     skillList[4].append(jaString)
                             # Pass 2 (Set Data)
                             else:
-                                if dataList[j].get("value") != "":
+                                if dataList[j].get("value") != "" and (translatedText := skillList[4].pop(0)) is not None:
                                     # Textwrap
-                                    translatedText = skillList[4][0]
                                     translatedText = dazedwrap.wrapText(translatedText, LISTWIDTH)
                                     translatedText = font + translatedText
 
@@ -1666,10 +1581,12 @@ def searchDB(events, pbar, jobList, filename):
 
                                     # Set Data
                                     dataList[j].update({"value": translatedText})
-                                    skillList[4].pop(0)
 
             # Grab States
             if table["name"] == "ステート" and STATEFLAG == True and stateList is not None:
+                # Its texts take no font. Inherited from the table before,
+                # 道具's 18 failed every text and 技能's "24" headed each.
+                font = ""
                 for state in table["data"]:
                     dataList = state["data"]
 
@@ -1684,9 +1601,8 @@ def searchDB(events, pbar, jobList, filename):
 
                             # Pass 2 (Set Data)
                             else:
-                                if dataList[j].get("value") != "":
-                                    dataList[j].update({"value": stateList[0][0]})
-                                    stateList[0].pop(0)
+                                if dataList[j].get("value") != "" and (translatedText := stateList[0].pop(0)) is not None:
+                                    dataList[j].update({"value": translatedText})
 
                         # Description
                         if dataList[j].get("name") == "表示名":
@@ -1703,15 +1619,13 @@ def searchDB(events, pbar, jobList, filename):
                                     stateList[1].append(jaString)
                             # Pass 2 (Set Data)
                             else:
-                                if dataList[j].get("value") != "":
+                                if dataList[j].get("value") != "" and (translatedText := stateList[1].pop(0)) is not None:
                                     # Textwrap
-                                    translatedText = stateList[1][0]
                                     translatedText = dazedwrap.wrapText(translatedText, LISTWIDTH)
                                     translatedText = font + translatedText
 
                                     # Set Data
                                     dataList[j].update({"value": translatedText})
-                                    stateList[1].pop(0)
 
                         # Log
                         if dataList[j].get("name") == "付与時文章":
@@ -1738,9 +1652,8 @@ def searchDB(events, pbar, jobList, filename):
                                     stateList[2].append(jaString)
                             # Pass 2 (Set Data)
                             else:
-                                if dataList[j].get("value") != "":
+                                if dataList[j].get("value") != "" and (translatedText := stateList[2].pop(0)) is not None:
                                     # Textwrap
-                                    translatedText = stateList[2][0]
                                     translatedText = dazedwrap.wrapText(translatedText, LISTWIDTH)
                                     translatedText = font + translatedText
 
@@ -1749,7 +1662,6 @@ def searchDB(events, pbar, jobList, filename):
 
                                     # Set Data
                                     dataList[j].update({"value": translatedText})
-                                    stateList[2].pop(0)
 
                         # Log
                         if dataList[j].get("name") == "解除時文章":
@@ -1776,9 +1688,8 @@ def searchDB(events, pbar, jobList, filename):
                                     stateList[3].append(jaString)
                             # Pass 2 (Set Data)
                             else:
-                                if dataList[j].get("value") != "":
+                                if dataList[j].get("value") != "" and (translatedText := stateList[3].pop(0)) is not None:
                                     # Textwrap
-                                    translatedText = stateList[3][0]
                                     translatedText = dazedwrap.wrapText(translatedText, LISTWIDTH)
                                     translatedText = font + translatedText
 
@@ -1787,7 +1698,6 @@ def searchDB(events, pbar, jobList, filename):
 
                                     # Set Data
                                     dataList[j].update({"value": translatedText})
-                                    stateList[3].pop(0)
 
                         # Log
                         if dataList[j].get("name") == "回復時の文章[(人名)～]":
@@ -1814,9 +1724,8 @@ def searchDB(events, pbar, jobList, filename):
                                     stateList[4].append(jaString)
                             # Pass 2 (Set Data)
                             else:
-                                if dataList[j].get("value") != "":
+                                if dataList[j].get("value") != "" and (translatedText := stateList[4].pop(0)) is not None:
                                     # Textwrap
-                                    translatedText = stateList[4][0]
                                     translatedText = dazedwrap.wrapText(translatedText, LISTWIDTH)
                                     translatedText = font + translatedText
 
@@ -1825,7 +1734,6 @@ def searchDB(events, pbar, jobList, filename):
 
                                     # Set Data
                                     dataList[j].update({"value": translatedText})
-                                    stateList[4].pop(0)
                         # Log
                         if dataList[j].get("name") == "┣ ｶｳﾝﾀｰ発動文[対象～":
                             # Pass 1 (Grab Data)
@@ -1851,9 +1759,8 @@ def searchDB(events, pbar, jobList, filename):
                                     stateList[5].append(jaString)
                             # Pass 2 (Set Data)
                             else:
-                                if dataList[j].get("value") != "":
+                                if dataList[j].get("value") != "" and (translatedText := stateList[5].pop(0)) is not None:
                                     # Textwrap
-                                    translatedText = stateList[5][0]
                                     translatedText = dazedwrap.wrapText(translatedText, LISTWIDTH)
                                     translatedText = font + translatedText
 
@@ -1862,7 +1769,6 @@ def searchDB(events, pbar, jobList, filename):
 
                                     # Set Data
                                     dataList[j].update({"value": translatedText})
-                                    stateList[5].pop(0)
 
                         # Log
                         if dataList[j].get("name") == "尻もち　行動不能　持続3ターン":
@@ -1889,9 +1795,8 @@ def searchDB(events, pbar, jobList, filename):
                                     stateList[6].append(jaString)
                             # Pass 2 (Set Data)
                             else:
-                                if dataList[j].get("value") != "":
+                                if dataList[j].get("value") != "" and (translatedText := stateList[6].pop(0)) is not None:
                                     # Textwrap
-                                    translatedText = stateList[6][0]
                                     translatedText = dazedwrap.wrapText(translatedText, LISTWIDTH)
                                     translatedText = font + translatedText
 
@@ -1900,7 +1805,6 @@ def searchDB(events, pbar, jobList, filename):
 
                                     # Set Data
                                     dataList[j].update({"value": translatedText})
-                                    stateList[6].pop(0)
 
                         # Log
                         if dataList[j].get("name") == "状態異常の説明":
@@ -1927,9 +1831,8 @@ def searchDB(events, pbar, jobList, filename):
                                     stateList[7].append(jaString)
                             # Pass 2 (Set Data)
                             else:
-                                if dataList[j].get("value") != "":
+                                if dataList[j].get("value") != "" and (translatedText := stateList[7].pop(0)) is not None:
                                     # Textwrap
-                                    translatedText = stateList[7][0]
                                     translatedText = dazedwrap.wrapText(translatedText, LISTWIDTH)
                                     translatedText = font + translatedText
 
@@ -1938,7 +1841,6 @@ def searchDB(events, pbar, jobList, filename):
 
                                     # Set Data
                                     dataList[j].update({"value": translatedText})
-                                    stateList[7].pop(0)
 
         # EOF. The set-data pass ends here, having written every line it was
         # given; a line left over means the passes read the file differently,
@@ -1949,8 +1851,9 @@ def searchDB(events, pbar, jobList, filename):
             return totalTokens
 
         # Translate each category's lists, in this order, each with its
-        # context; the set-data pass writes a category whose replies all fit
-        # and gets None for one that does not (translateLists)
+        # context; the set-data pass writes what translateLists keeps of a
+        # category's replies and gets None for one whose reply had the wrong
+        # length
         only = "Reply with only the " + LANGUAGE + " translation"
         npcName = "reply with only the gender neutral " + LANGUAGE + " translation of the NPC name"
         actionLog = (
