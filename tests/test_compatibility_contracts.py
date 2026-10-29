@@ -1805,8 +1805,21 @@ class CompatibilityContracts(unittest.TestCase):
             ("claude-sonnet-5-5", claude),
             ("anthropic/claude-haiku-4-5", claude),
             ("Claude-Opus-5", claude),
-            # Any name holding a Claude family word counts as Claude.
-            ("sonnet-like", claude),
+            # Dated, versioned and other hosts' forms of Claude's names.
+            ("claude-3-5-sonnet-20241022", claude),
+            ("claude-3-5-sonnet-v2@20241022", claude),
+            ("anthropic/claude-sonnet-4.5:beta", claude),
+            ("~anthropic/claude-opus-latest", claude),
+            ("us.anthropic.claude-sonnet-4-5-20250929-v1:0", claude),
+            ("us-gov.anthropic.claude-3-5-sonnet-20240620-v1:0", claude),
+            ("bedrock/anthropic.claude-3-haiku", claude),
+            # Other models whose names hold a Claude family word are not
+            # Claude's.
+            ("magnum-opus-72b", other),
+            ("Helsinki-NLP/opus-mt-ja-en", other),
+            ("sonnet-like", other),
+            ("haiku-writer-8b", other),
+            ("someone/claude-style-7b", other),
             ("gpt-5.4", gpt),
             ("deepseek-v4-flash", other),
             ("", other),
@@ -1839,7 +1852,7 @@ class CompatibilityContracts(unittest.TestCase):
                     self.assertEqual(translation.isClaudeNative(model), expected[0])
                     self.assertEqual(translation.isClaudeModel(model), routes is claude)
 
-    def test_mistral_sends_its_json_mode_request_on_the_last_attempt(self):
+    def test_mistral_follows_the_json_mode_strict_and_retry_rules(self):
         # The JSON-mode downgrade spent a retry attempt, so a format rejection
         # on the last attempt, here after a rate limit, raised "failed after
         # N attempts" unsent.
@@ -1899,6 +1912,49 @@ class CompatibilityContracts(unittest.TestCase):
                 }
                 self.assertEqual(translation.callMistral(params, retries=1), "reply")
                 self.assertEqual(sent, ["json_schema", "json_schema", "json_object"])
+
+        # A strict structured run keeps the provider's error, as
+        # translateText's OpenAI path does, instead of sending JSON mode.
+        sent.clear()
+        with (
+            patch.object(translation, "openai", client),
+            patch.object(translation, "_get_mistral_limiter", return_value=limiter),
+            patch.object(translation, "RUN_STOPS", True),
+            patch.object(translation, "STRICT_STRUCTURED_OUTPUTS", True),
+            self.assertRaises(openai.UnprocessableEntityError),
+        ):
+            translation.callMistral(
+                {"messages": [], "response_format": {"type": "json_schema"}},
+                retries=1,
+            )
+        self.assertEqual(sent, ["json_schema", "json_schema"])
+
+        # A rate limit on the last attempt raises at once instead of first
+        # waiting out its Retry-After.
+        sent.clear()
+        with (
+            patch.object(translation, "openai", client),
+            patch.object(translation, "_get_mistral_limiter", return_value=limiter),
+            patch.object(translation.time, "sleep") as sleep,
+            self.assertRaisesRegex(Exception, "failed after 1 attempts"),
+        ):
+            translation.callMistral(
+                {"messages": [], "response_format": {"type": "json_schema"}},
+                retries=0,
+            )
+        sleep.assert_not_called()
+        # A strict run's last rate limit is the provider's own error too.
+        sent.clear()
+        with (
+            patch.object(translation, "openai", client),
+            patch.object(translation, "_get_mistral_limiter", return_value=limiter),
+            patch.object(translation, "STRICT_STRUCTURED_OUTPUTS", True),
+            self.assertRaises(openai.RateLimitError),
+        ):
+            translation.callMistral(
+                {"messages": [], "response_format": {"type": "json_schema"}},
+                retries=0,
+            )
 
     def test_an_openai_batch_estimate_prices_cache_reads_at_the_models_price(self):
         # Every OpenAI Batch estimate priced cache reads at a tenth of input,
