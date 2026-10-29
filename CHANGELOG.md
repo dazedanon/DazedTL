@@ -3,6 +3,12 @@
 Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 [release.mjs](scripts/release.mjs) writes each entry from [release/notes.md](release/notes.md).
 
+## [2.52.5] - 2026-10-29
+
+### Fixed
+
+- **Images:** an image the assistant skipped can be applied after you mark its edited copy reviewed in Compare images, which also shows why it was skipped, and Copy revision task works for it.
+
 ## [2.52.4] - 2026-10-29
 
 ### Fixed
@@ -1461,6 +1467,7 @@ Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachan
 - The first release of DazedTL as a desktop app, installed from a ZIP with a START launcher and updated from inside the app.
 - **Guided steps** for RPG Maker MV, MZ and VX Ace games, and **Assistant-led** for any game.
 
+[2.52.5]: https://github.com/dazedanon/DazedTL/compare/v2.52.4...v2.52.5
 [2.52.4]: https://github.com/dazedanon/DazedTL/compare/v2.52.3...v2.52.4
 [2.52.3]: https://github.com/dazedanon/DazedTL/compare/v2.52.2...v2.52.3
 [2.52.2]: https://github.com/dazedanon/DazedTL/compare/v2.52.1...v2.52.2
