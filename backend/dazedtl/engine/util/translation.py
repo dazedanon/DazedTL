@@ -2500,6 +2500,37 @@ def openai_prompt_cache(params):
     return openai_cache_counts(prompts())
 
 
+def approximate_tokens(text):
+    """The approximate encoder's count of ``text``, special-token text
+    counted as text: what an estimate counts where Claude's own count
+    isn't used."""
+    return len(
+        tiktoken.encoding_for_model("gpt-4").encode(text, disallowed_special=())
+    )
+
+
+def claude_prompt_cache(requests, provider, model, counted=None):
+    """claude_tokens.cache of Claude requests with these parameters, each
+    cached prefix counted by Claude when ``counted`` (claude_tokens.Count or
+    Inputs of the same requests) holds its count, else by the approximate
+    encoder. Guided's Batch estimate, Assistant-led's quote and the Live
+    speaker estimate key and count a request's cached prefixes here."""
+    return claude_tokens.cache(requests, provider, model, approximate_tokens, counted)
+
+
+def claude_cache_cost(cache, inputs, outputs, in_rate, out_rate, *, reused=True):
+    """What Claude requests cost at their Live rates with their cached
+    prefixes (claude_tokens.Cache), from token counts, ``inputs`` holding the
+    prefixes too, and per-token rates: each cache key written once and read
+    by every later request that shares it, or, without ``reused``, written by
+    every request. The input after the cached prefixes is priced as input.
+    A Batch takes its discount on top (claude_cache_prices)."""
+    # Approximate input leaves out the reply schema the cache key holds.
+    dynamic = max(0, inputs - cache.cached)
+    cached = cache.reused if reused else cache.unreused
+    return (cached + dynamic) * in_rate + outputs * out_rate
+
+
 def claude_cache_prices(cache, inputs, outputs, in_rate, out_rate):
     """A Claude Batch's cache figures and prices with its cached instructions
     (claude_tokens.Cache), from token counts and per-token rates, as
@@ -2515,18 +2546,19 @@ def claude_cache_prices(cache, inputs, outputs, in_rate, out_rate):
     if cache is None or not cache.writes:
         return None
     factor = batch_price_factor("anthropic")
-    # Approximate input leaves out the reply schema the cache key holds.
-    dynamic = max(0, inputs - cache.cached)
 
-    def priced(cached):
-        return ((cached + dynamic) * in_rate + outputs * out_rate) * factor
+    def priced(reused):
+        return (
+            claude_cache_cost(cache, inputs, outputs, in_rate, out_rate, reused=reused)
+            * factor
+        )
 
     return {
         "cache_write_tokens": cache.writes,
         "cache_read_tokens": cache.reads,
         "cache_max_write_tokens": cache.cached,
-        "batch_cached_cost": priced(cache.reused),
-        "batch_max_cost": priced(cache.unreused),
+        "batch_cached_cost": priced(True),
+        "batch_max_cost": priced(False),
         "uses_prompt_cache": True,
         "cache_kind": "explicit",
     }
@@ -2677,7 +2709,6 @@ def estimateBatchCost(model=None, *, queue_file=None, log_prefix="[BATCH]"):
         return None
 
     enc = tiktoken.encoding_for_model("gpt-4")
-    prefix_tokens = {}  # cache key -> token count of its cached prefix
     dynamic_tokens = 0
     request_params = []
     request_dynamic = []  # each request's approximate tokens after its prefix
@@ -2697,15 +2728,13 @@ def estimateBatchCost(model=None, *, queue_file=None, log_prefix="[BATCH]"):
         messages = enc.encode_batch([prompt_text(params) for params in chunk_params])
         dynamic = enc.encode_batch([dyn for _prefix, dyn in splits])
         payloads = enc.encode_batch([str(entry.get("payload", "")) for entry in chunk])
-        for entry, params, (prefix, _dyn), message_tokens, dyn_tokens, payload_tokens in zip(
-            chunk, chunk_params, splits, messages, dynamic, payloads
+        for entry, params, message_tokens, dyn_tokens, payload_tokens in zip(
+            chunk, chunk_params, messages, dynamic, payloads
         ):
             if params.get("model"):
                 models.add(params["model"])
             if entry.get("provider"):
                 providers.add(entry["provider"])
-            if prefix and prefix not in prefix_tokens:
-                prefix_tokens[prefix] = len(enc.encode(claude_tokens.cached_text(params)))
             prompt_token_sequences.append(message_tokens)
             request_params.append(params)
             request_dynamic.append(len(dyn_tokens) + len(message_tokens) + 8)
@@ -2718,7 +2747,6 @@ def estimateBatchCost(model=None, *, queue_file=None, log_prefix="[BATCH]"):
     if est_provider == "anthropic":
         counted = countClaudeTokens(request_params, request_dynamic, log_prefix)
         if counted is not None:
-            prefix_tokens = {p: counted.prefixes[p] for p in prefix_tokens}
             dynamic_tokens = round(dynamic_tokens * counted.scale)
             print(
                 f"{log_prefix} Claude token count: {counted.sampled:,} of "
@@ -2726,7 +2754,7 @@ def estimateBatchCost(model=None, *, queue_file=None, log_prefix="[BATCH]"):
                 flush=True,
             )
 
-    cache = claude_tokens.cache(request_params, prefix_tokens, est_provider, est_model)
+    cache = claude_prompt_cache(request_params, est_provider, est_model, counted)
     cache_write_tok, cache_read_tok = cache.writes, cache.reads
     cache_max_write_tok = cache.cached
     raw_input_tok = cache.cached + dynamic_tokens
@@ -2800,7 +2828,7 @@ def estimateBatchCost(model=None, *, queue_file=None, log_prefix="[BATCH]"):
     )
     if cache_kind == "explicit":
         print(
-            f"{log_prefix} cached prefixes: {len(prefix_tokens):,} "
+            f"{log_prefix} cached prefixes: {cache.keys:,} "
             f"({cache_write_tok:,} tokens), in {cache_max_write_tok:,} tokens "
             "of the requests",
             flush=True,
@@ -3661,13 +3689,25 @@ def _get_mistral_limiter():
         return _mistral_limiter
 
 
+def _keeps_provider_error(params):
+    """Whether a failed Mistral request raises the provider's own error: a
+    structured (json_schema) request in a strict structured run, which keeps
+    it for the evidence and retry guards instead of sending a weaker output
+    format, as translateText's OpenAI path does."""
+    return (
+        STRICT_STRUCTURED_OUTPUTS
+        and (params.get("response_format") or {}).get("type") == "json_schema"
+    )
+
+
 def callMistral(params, retries=6):
     """Call the Mistral chat completions endpoint with adaptive pacing.
 
     Acquires from the shared limiter before each attempt, syncs budgets from
     the live x-ratelimit headers after each response, honours Retry-After on
     429, backs off with jitter on 5xx/network errors, and downgrades
-    json_schema -> json_object for models without structured-output support.
+    json_schema -> json_object for models without structured-output support
+    except in strict structured runs (STRICT_STRUCTURED_OUTPUTS).
     """
     limiter = _get_mistral_limiter()
     est = sum(_estimate_mistral_tokens(m.get("content", "")) for m in params.get("messages", []))
@@ -3685,6 +3725,11 @@ def callMistral(params, retries=6):
             last_error = e
             resp = getattr(e, "response", None)
             limiter.update(getattr(resp, "headers", None))
+            # The last attempt raises at once, as the other errors do.
+            if attempt >= retries:
+                if _keeps_provider_error(params):
+                    raise
+                break
             retry_after = None
             try:
                 retry_after = float(resp.headers.get("retry-after"))
@@ -3693,11 +3738,14 @@ def callMistral(params, retries=6):
             time.sleep(retry_after if retry_after is not None else min(60, 2 ** attempt + random.random() * 2))
         except openai.APIStatusError as e:
             last_error = e
+            if _keeps_provider_error(params):
+                if e.status_code < 500 or attempt >= retries:
+                    raise
             # Mistral rejects unsupported params with 400/422 - downgrade the
             # structured-output format once and send it at once. The JSON-mode
             # request is a different request, not a retry, so it spends no
             # attempt: on the last attempt it is still sent.
-            if (
+            elif (
                 e.status_code in (400, 422)
                 and (params.get("response_format") or {}).get("type") == "json_schema"
                 and falls_back_to_json_mode(e)

@@ -311,6 +311,7 @@ class CompatibilityContracts(unittest.TestCase):
                     queue, {str(index): request(before, index) for index in range(3)}
                 )
                 expected = translation.estimateBatchCost(after, queue_file=queue)
+                assert expected is not None
                 configuration = {
                     "mode": "batch",
                     "model": after,
@@ -398,6 +399,7 @@ class CompatibilityContracts(unittest.TestCase):
                     queue = Path(temporary) / f"{cached}.json"
                     write_json(queue, {str(i): e for i, e in enumerate(entries)})
                     expected = translation.estimateBatchCost(model, queue_file=queue)
+                    assert expected is not None
                     # Assistant-led counts the cached prefixes with its own
                     # token count, here the same characters.
                     cache = TranslationEngine.claude_cache(
@@ -438,6 +440,53 @@ class CompatibilityContracts(unittest.TestCase):
                             expected["batch_cached_cost"],
                         ),
                     )
+            # The Live speaker estimate keys, counts and prices its requests'
+            # cached prefixes by the same rule, without the Batch discount;
+            # it once kept its own copy of each.
+            from util.translation_task import TranslationTaskCore
+
+            sent = []
+            build = translation.buildClaudeRequest
+
+            def recorded(*args, **kwargs):
+                sent.append(build(*args, **kwargs))
+                return sent[-1]
+
+            config = translation.TranslationConfig(
+                model=model,
+                prompt="Name the speakers. " * 40,
+                vocab="",
+                batchSize=2,
+                useSfxReference=False,
+            )
+            with (
+                patch.dict("os.environ", {"api": ""}),
+                patch.object(translation, "buildClaudeRequest", recorded),
+            ):
+                live = TranslationTaskCore._estimate_grouped_speakers(
+                    ["太郎", "花子", "長老", "村人", "兵士"],
+                    "Name each.",
+                    config,
+                    model,
+                )
+            entries = [{"params": params, "payload": "名前" * 5} for params in sent]
+            cache = TranslationEngine.claude_cache(None, entries, {"model": model})
+            # Two names a request, then one: two reply schemas, one read.
+            self.assertEqual((len(sent), cache.keys), (3, 2))
+            self.assertEqual(
+                live["estimated_cost"],
+                translation.claude_cache_cost(
+                    cache, live["input_tokens"], live["output_tokens"], 4e-6, 20e-6
+                ),
+            )
+            queue = Path(temporary) / "speakers.json"
+            write_json(queue, {str(i): e for i, e in enumerate(entries)})
+            expected = translation.estimateBatchCost(model, queue_file=queue)
+            assert expected is not None
+            self.assertEqual(
+                (expected["cache_write_tokens"], expected["cache_max_write_tokens"]),
+                (cache.writes, cache.cached),
+            )
 
     def test_a_quote_reads_the_runs_frozen_effort_record_and_counting_rule(self):
         # Assistant-led quotes and repriced estimates judged the effort from
@@ -1223,7 +1272,7 @@ class CompatibilityContracts(unittest.TestCase):
         prefix = 1000 + len(json.dumps({"format": {"lines": 1}})) + 3
         self.assertEqual(sorted(estimate.prefixes.values())[1:], [prefix, prefix])
         cache = claude_tokens.cache(
-            requests, estimate.prefixes, "anthropic", "claude-opus-5-5"
+            requests, "anthropic", "claude-opus-5-5", len, estimate
         )
         self.assertEqual((cache.cached, cache.writes), (100 * prefix, 2 * prefix))
         self.assertAlmostEqual(cache.reused, prefix * (2 * 1.25 + 98 * 0.05))
@@ -1767,6 +1816,7 @@ class CompatibilityContracts(unittest.TestCase):
         # Settings' route check; each copy must keep answering the same.
         import os
 
+        from dazedtl.compatibility import openrouter_batch
         from dazedtl.compatibility.dazedmtl import ExistingBackend
         from util import translation
         from util.batch_providers import detect_batch_provider, live_price_route
@@ -1804,8 +1854,21 @@ class CompatibilityContracts(unittest.TestCase):
             ("claude-sonnet-5-5", claude),
             ("anthropic/claude-haiku-4-5", claude),
             ("Claude-Opus-5", claude),
-            # Any name holding a Claude family word counts as Claude.
-            ("sonnet-like", claude),
+            # Dated, versioned and other hosts' forms of Claude's names.
+            ("claude-3-5-sonnet-20241022", claude),
+            ("claude-3-5-sonnet-v2@20241022", claude),
+            ("anthropic/claude-sonnet-4.5:beta", claude),
+            ("~anthropic/claude-opus-latest", claude),
+            ("us.anthropic.claude-sonnet-4-5-20250929-v1:0", claude),
+            ("us-gov.anthropic.claude-3-5-sonnet-20240620-v1:0", claude),
+            ("bedrock/anthropic.claude-3-haiku", claude),
+            # Other models whose names hold a Claude family word are not
+            # Claude's.
+            ("magnum-opus-72b", other),
+            ("Helsinki-NLP/opus-mt-ja-en", other),
+            ("sonnet-like", other),
+            ("haiku-writer-8b", other),
+            ("someone/claude-style-7b", other),
             ("gpt-5.4", gpt),
             ("deepseek-v4-flash", other),
             ("", other),
@@ -1814,6 +1877,14 @@ class CompatibilityContracts(unittest.TestCase):
                 with (
                     self.subTest(model=model, address=address),
                     patch.dict(os.environ, {"api": address}),
+                    # A run's worker without an OpenRouter Batch policy, which
+                    # an earlier test's worker left this process as or not;
+                    # an unconfigured one reads OpenRouter as its Batch.
+                    patch.multiple(
+                        openrouter_batch,
+                        _worker_policy=None,
+                        _worker_configured=True,
+                    ),
                 ):
                     os.environ.pop("DAZEDTL_TEST_OPENAI_ENDPOINT", None)
                     self.assertEqual(
@@ -1830,7 +1901,7 @@ class CompatibilityContracts(unittest.TestCase):
                     self.assertEqual(translation.isClaudeNative(model), expected[0])
                     self.assertEqual(translation.isClaudeModel(model), routes is claude)
 
-    def test_mistral_sends_its_json_mode_request_on_the_last_attempt(self):
+    def test_mistral_follows_the_json_mode_strict_and_retry_rules(self):
         # The JSON-mode downgrade spent a retry attempt, so a format rejection
         # on the last attempt, here after a rate limit, raised "failed after
         # N attempts" unsent.
@@ -1890,6 +1961,49 @@ class CompatibilityContracts(unittest.TestCase):
                 }
                 self.assertEqual(translation.callMistral(params, retries=1), "reply")
                 self.assertEqual(sent, ["json_schema", "json_schema", "json_object"])
+
+        # A strict structured run keeps the provider's error, as
+        # translateText's OpenAI path does, instead of sending JSON mode.
+        sent.clear()
+        with (
+            patch.object(translation, "openai", client),
+            patch.object(translation, "_get_mistral_limiter", return_value=limiter),
+            patch.object(translation, "RUN_STOPS", True),
+            patch.object(translation, "STRICT_STRUCTURED_OUTPUTS", True),
+            self.assertRaises(openai.UnprocessableEntityError),
+        ):
+            translation.callMistral(
+                {"messages": [], "response_format": {"type": "json_schema"}},
+                retries=1,
+            )
+        self.assertEqual(sent, ["json_schema", "json_schema"])
+
+        # A rate limit on the last attempt raises at once instead of first
+        # waiting out its Retry-After.
+        sent.clear()
+        with (
+            patch.object(translation, "openai", client),
+            patch.object(translation, "_get_mistral_limiter", return_value=limiter),
+            patch.object(translation.time, "sleep") as sleep,
+            self.assertRaisesRegex(Exception, "failed after 1 attempts"),
+        ):
+            translation.callMistral(
+                {"messages": [], "response_format": {"type": "json_schema"}},
+                retries=0,
+            )
+        sleep.assert_not_called()
+        # A strict run's last rate limit is the provider's own error too.
+        sent.clear()
+        with (
+            patch.object(translation, "openai", client),
+            patch.object(translation, "_get_mistral_limiter", return_value=limiter),
+            patch.object(translation, "STRICT_STRUCTURED_OUTPUTS", True),
+            self.assertRaises(openai.RateLimitError),
+        ):
+            translation.callMistral(
+                {"messages": [], "response_format": {"type": "json_schema"}},
+                retries=0,
+            )
 
     def test_an_openai_batch_estimate_prices_cache_reads_at_the_models_price(self):
         # Every OpenAI Batch estimate priced cache reads at a tenth of input,

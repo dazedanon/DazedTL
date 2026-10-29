@@ -101,10 +101,11 @@ def changed_since(current, frozen_sha256, frozen, quote, provider, *, reprice=Tr
     """What changed between the settings a run froze and those it would
     freeze now, or None; ``current`` is None when they can't form a run. The
     run's ``quote``, None for a run without one, priced under older price
-    rules than its route's changed too (repricing.route_rules). Its route is
-    ``provider``, the Batch provider of ``current``: the rules decide only
-    while the settings are those it was priced at. One counted by an older
-    output rule (estimate_prices.OUTPUT_RULES_VERSION) changed its version.
+    rules than ``provider``'s changed too (repricing.route_rules), as did
+    one priced on another route (repricing.quote_route): ``provider`` is the
+    Batch provider of ``current``, the route the run would be sent on. One
+    counted by an older output rule (estimate_prices.OUTPUT_RULES_VERSION)
+    changed its version.
     With ``reprice``, prices not looked up since DazedTL started read as
     unchanged while everything else matches, so a restart alone never
     outdates a quote; a run saved before its record kept its configuration
@@ -134,6 +135,8 @@ def changed_since(current, frozen_sha256, frozen, quote, provider, *, reprice=Tr
     )
     # Compared apart from the settings, which still say whether the user
     # changed them too.
+    if priced and repricing.quote_route(quote, provider) != provider:
+        change = replace(change or Change(), prices=True)
     if priced and estimate_prices.output_rules(quote) != (
         estimate_prices.OUTPUT_RULES_VERSION
     ):
@@ -756,7 +759,7 @@ Additional project instructions:
                         mode=reading.settings["mode"],
                         quote=reading.figure,
                         approval_token=repricing.approval_token(
-                            job["approval_token"], reading.settings
+                            job["approval_token"], reading.settings, provider
                         ),
                     )
                 # Outdated by a pricing or counting fix, or by the settings.
@@ -1389,7 +1392,7 @@ Additional project instructions:
                     else repricing.OUTDATED
                 )
                 if reading.figure is None or approval_token != repricing.approval_token(
-                    job["approval_token"], reading.settings
+                    job["approval_token"], reading.settings, provider
                 ):
                     raise ValueError(
                         "This estimate's price changed since it was shown. Review it again before approving."

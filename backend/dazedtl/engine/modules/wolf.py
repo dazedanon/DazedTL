@@ -15,7 +15,7 @@ from dotenv import load_dotenv
 from retry import retry
 from tqdm import tqdm
 from util.languages import source_pattern
-from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost, found_mismatch, run_stop_errors
+from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost, found_mismatch, last_translation_had_mismatch, run_stop_errors
 from util.translation_task import fail_on_parser_error, module_receipt
 from util.speakers import strip_speaker_prefix
 from util import system
@@ -221,14 +221,38 @@ def parseMap(data, filename):
 
 
 def replyFits(translated, lines, filename):
-    """Whether a reply has one translation per line sent. One that does not
-    is never written, since its lines cannot be placed: they keep their
-    source text and the file joins MISMATCH, as RPG Maker's _apply_choices."""
-    if len(translated) == len(lines):
-        return True
-    with LOCK:
-        found_mismatch(MISMATCH, filename)
-    return False
+    """Whether the reply translateAI just returned has one translation per
+    line sent and no chunk of it kept its source text. One that does not is
+    never written, so its lines keep their source text exactly, line breaks
+    included, and the file joins MISMATCH, as RPG Maker's _reply_fits. A
+    chunk translateAI kept is already counted; a reply of the wrong length is
+    counted here."""
+    if len(translated) != len(lines):
+        with LOCK:
+            found_mismatch(MISMATCH, filename)
+        return False
+    return not last_translation_had_mismatch()
+
+
+def translateLists(lists, contexts, pbar, totalTokens, filename):
+    """One DataBase category's *lists*, each sent with its context, adding
+    their tokens to *totalTokens*: their translations, or None when a reply
+    did not fit (replyFits), and then the set-data pass skips the category,
+    which keeps its source text, and its other lists are not sent. A
+    category without lines sends nothing."""
+    if not any(lists):
+        return [[] for _ in lists]
+    pbar.total = sum(len(lines) for lines in lists)
+    pbar.refresh()
+    translated = []
+    for lines, context in zip(lists, contexts, strict=True):
+        response = translateAI(lines, context)
+        totalTokens[0] += response[1][0]
+        totalTokens[1] += response[1][1]
+        if not replyFits(response[0], lines, filename):
+            return None
+        translated.append(response[0])
+    return translated
 
 
 def searchCodes(events, pbar, jobList, filename):
@@ -816,7 +840,7 @@ def searchDB(events, pbar, jobList, filename):
     try:
         for table in tableList:
             # Grab NPCs
-            if table["name"] == "アイドル" and NPCFLAG == True:
+            if table["name"] == "アイドル" and NPCFLAG == True and npcList is not None:
                 with open("log/translations.txt", "a", encoding="utf-8") as file:
                     if setData:
                         file.write(f"\n#Actors\n")
@@ -868,7 +892,7 @@ def searchDB(events, pbar, jobList, filename):
                                         npcList[1].pop(0)
 
             # Grab Scenario
-            if "デートキャラ" in table["name"] and SCENARIOFLAG == True:
+            if "デートキャラ" in table["name"] and SCENARIOFLAG == True and scenarioList is not None:
                 for scenario in table["data"]:
                     dataList = scenario["data"]
 
@@ -1103,7 +1127,7 @@ def searchDB(events, pbar, jobList, filename):
                                         dataList[j].update({"value": dataList[j].get("value").replace(ogString, translatedText)})
 
             # Grab Options
-            if table["name"] == "クイズ" and OPTIONSFLAG == True:
+            if table["name"] == "クイズ" and OPTIONSFLAG == True and optionsList is not None:
                 for option in table["data"]:
                     dataList = option["data"]
 
@@ -1158,7 +1182,7 @@ def searchDB(events, pbar, jobList, filename):
                                     dataList[j].update({"value": dataList[j].get("value").replace(jaString, translatedText)})
 
             # Grab DB Names
-            if table["name"] == "マップ設定" and DBNAMEFLAG == True:
+            if table["name"] == "マップ設定" and DBNAMEFLAG == True and dbNameList is not None:
                 font = None
                 dbName = table["data"]
                 for j in range(len(dbName)):
@@ -1174,7 +1198,7 @@ def searchDB(events, pbar, jobList, filename):
                             dbNameList[0].pop(0)
 
             # Grab DB Values
-            if table["name"] == "近況文章" and DBVALUEFLAG == True:
+            if table["name"] == "近況文章" and DBVALUEFLAG == True and dbValueList is not None:
                 font = 16
                 subject = ""
                 for entry in table["data"]:
@@ -1217,7 +1241,7 @@ def searchDB(events, pbar, jobList, filename):
                                         dbValueList[0].pop(0)
 
             # Grab Items
-            if table["name"] == "道具" and ITEMFLAG == True:
+            if table["name"] == "道具" and ITEMFLAG == True and itemList is not None:
                 # Write Category
                 if setData:
                     with open("log/translations.txt", "a", encoding="utf-8") as file:
@@ -1343,7 +1367,7 @@ def searchDB(events, pbar, jobList, filename):
                                     itemList[3].pop(0)
 
             # Grab Armors
-            if table["name"] == "防具" and ARMORFLAG == True:
+            if table["name"] == "防具" and ARMORFLAG == True and armorList is not None:
                 font = "24"
                 for armor in table["data"]:
                     dataList = armor["data"]
@@ -1392,7 +1416,7 @@ def searchDB(events, pbar, jobList, filename):
                                     armorList[1].pop(0)
 
             # Grab Enemies
-            if table["name"] == "敵" and ENEMYFLAG == True:
+            if table["name"] == "敵" and ENEMYFLAG == True and enemyList is not None:
                 for enemy in table["data"]:
                     dataList = enemy["data"]
 
@@ -1440,7 +1464,7 @@ def searchDB(events, pbar, jobList, filename):
                                     enemyList[1].pop(0)
 
             # Grab Weapons
-            if table["name"] == "武器" and WEAPONFLAG == True:
+            if table["name"] == "武器" and WEAPONFLAG == True and weaponsList is not None:
                 font = "24"
                 for weapon in table["data"]:
                     dataList = weapon["data"]
@@ -1489,7 +1513,7 @@ def searchDB(events, pbar, jobList, filename):
                                     weaponsList[1].pop(0)
 
             # Grab Skills
-            if table["name"] == "技能" and SKILLFLAG == True:
+            if table["name"] == "技能" and SKILLFLAG == True and skillList is not None:
                 font = "24"
                 for skill in table["data"]:
                     dataList = skill["data"]
@@ -1655,7 +1679,7 @@ def searchDB(events, pbar, jobList, filename):
                                     skillList[4].pop(0)
 
             # Grab States
-            if table["name"] == "ステート" and STATEFLAG == True:
+            if table["name"] == "ステート" and STATEFLAG == True and stateList is not None:
                 for state in table["data"]:
                     dataList = state["data"]
 
@@ -1926,562 +1950,76 @@ def searchDB(events, pbar, jobList, filename):
                                     dataList[j].update({"value": translatedText})
                                     stateList[7].pop(0)
 
-        # Translation
-        scenarioListTL = [[], [], []]
-        optionsListTL = [[], [], []]
-        npcListTL = [[], [], [], []]
-        itemListTL = [[], [], [], []]
-        stateListTL = [[], [], [], [], [], [], [], []]
-        armorListTL = [[], []]
-        enemyListTL = [[], []]
-        weaponsListTL = [[], [], []]
-        skillListTL = [[], [], [], [], []]
-        dbNameListTL = [[]]
-        dbValueListTL = [[]]
+        # EOF. The set-data pass ends here, having written every line it was
+        # given; a line left over means the passes read the file differently,
+        # and the file fails rather than write text out of its place.
+        if setData:
+            if any(lists and any(lists) for lists in jobList):
+                raise ValueError("The set-data pass left translations unwritten. ")
+            return totalTokens
 
-        translate = False
+        # Translate each category's lists, in this order, each with its
+        # context; the set-data pass writes a category whose replies all fit
+        # and gets None for one that does not (translateLists)
+        only = "Reply with only the " + LANGUAGE + " translation"
+        npcName = "reply with only the gender neutral " + LANGUAGE + " translation of the NPC name"
+        actionLog = (
+            "reply with only the gender neutral "
+            + LANGUAGE
+            + " translation of the action log. Always start the sentence with Taro. For example, Translate 'Taroを倒した！' as 'Taro was defeated!'"
+        )
+        statusEffect = f"Reply with the {LANGUAGE} translation of the status effect."
+        categories = {
+            "npc": (npcList, [only + " of the RPG enemy name", only, only, only]),
+            "scenario": (scenarioList, [only, npcName, npcName]),
+            "options": (optionsList, [only, npcName, npcName]),
+            "item": (itemList, [only, only, only, only]),
+            "armor": (armorList, [only + " of the NPC name", only]),
+            "enemy": (enemyList, [only + " of the enemy NPC name", only]),
+            "weapons": (weaponsList, [only + " of the RPG weapon name", "", "", ""]),
+            "skill": (
+                skillList,
+                [
+                    only + " of the RPG skill name",
+                    only + " of the RPG skill description",
+                    actionLog,
+                    actionLog,
+                    actionLog,
+                ],
+            ),
+            "state": (
+                stateList,
+                [statusEffect, "", statusEffect, actionLog, actionLog, actionLog, actionLog, actionLog],
+            ),
+            "dbName": (dbNameList, [only]),
+            "dbValue": (dbValueList, [only]),
+        }
+        translated = {
+            name: translateLists(lists, contexts, pbar, totalTokens, filename)
+            for name, (lists, contexts) in categories.items()
+        }
 
-        # NPCs
-        if len(npcList[0]) > 0:
-            # Progress Bar
-            total = 0
-            for itemArray in npcList:
-                total += len(itemArray)
-            pbar.total = total
-            pbar.refresh()
-
-            # Name
-            response = translateAI(
-                npcList[0],
-                "Reply with only the " + LANGUAGE + " translation of the RPG enemy name",
-                True,
-            )
-            nameListTL = response[0]
-            totalTokens[0] += response[1][0]
-            totalTokens[1] += response[1][1]
-            # Desc 1
-            response = translateAI(npcList[1], "Reply with only the " + LANGUAGE + " translation")
-            descListTL1 = response[0]
-            totalTokens[0] += response[1][0]
-            totalTokens[1] += response[1][1]
-            # Desc 2
-            response = translateAI(npcList[2], "Reply with only the " + LANGUAGE + " translation")
-            descListTL2 = response[0]
-            totalTokens[0] += response[1][0]
-            totalTokens[1] += response[1][1]
-            # Desc 3
-            response = translateAI(npcList[3], "Reply with only the " + LANGUAGE + " translation")
-            descListTL3 = response[0]
-            totalTokens[0] += response[1][0]
-            totalTokens[1] += response[1][1]
-
-            # Check Mismatch
-            if (
-                len(nameListTL) != len(npcList[0])
-                or len(descListTL1) != len(npcList[1])
-                or len(descListTL2) != len(npcList[2])
-                or len(descListTL3) != len(npcList[3])
-            ):
-                with LOCK:
-                    found_mismatch(MISMATCH, filename)
-            else:
-                npcListTL = [nameListTL, descListTL1, descListTL2, descListTL3]
-                translate = True
-
-        # SCENARIO
-        if scenarioList[0] or scenarioList[1]:
-            # Progress Bar
-            total = 0
-            for scenarioArray in scenarioList:
-                total += len(scenarioArray)
-            pbar.total = total
-            pbar.refresh()
-
-            # Name
-            response = translateAI(
-                scenarioList[0],
-                "Reply with only the " + LANGUAGE + " translation",
-                True,
-            )
-            nameListTL = response[0]
-            totalTokens[0] += response[1][0]
-            totalTokens[1] += response[1][1]
-            # Desc 1
-            response = translateAI(
-                scenarioList[1],
-                "reply with only the gender neutral " + LANGUAGE + " translation of the NPC name",
-                True,
-            )
-            descListTL1 = response[0]
-            totalTokens[0] += response[1][0]
-            totalTokens[1] += response[1][1]
-            # Desc 2
-            response = translateAI(
-                scenarioList[2],
-                "reply with only the gender neutral " + LANGUAGE + " translation of the NPC name",
-                True,
-            )
-            descListTL2 = response[0]
-            totalTokens[0] += response[1][0]
-            totalTokens[1] += response[1][1]
-
-            # Check Mismatch
-            if len(nameListTL) != len(scenarioList[0]) or len(descListTL1) != len(scenarioList[1]) or len(descListTL2) != len(scenarioList[2]):
-                with LOCK:
-                    found_mismatch(MISMATCH, filename)
-            else:
-                scenarioListTL = [nameListTL, descListTL1, descListTL2]
-                translate = True
-
-        # OPTIONS
-        if optionsList[0] or optionsList[1]:
-            # Progress Bar
-            total = 0
-            for optionsArray in optionsList:
-                total += len(optionsArray)
-            pbar.total = total
-            pbar.refresh()
-
-            # Name
-            response = translateAI(
-                optionsList[0],
-                "Reply with only the " + LANGUAGE + " translation",
-                True,
-            )
-            nameListTL = response[0]
-            totalTokens[0] += response[1][0]
-            totalTokens[1] += response[1][1]
-            # Desc 1
-            response = translateAI(
-                optionsList[1],
-                "reply with only the gender neutral " + LANGUAGE + " translation of the NPC name",
-                True,
-            )
-            descListTL1 = response[0]
-            totalTokens[0] += response[1][0]
-            totalTokens[1] += response[1][1]
-            # Desc 2
-            response = translateAI(
-                optionsList[2],
-                "reply with only the gender neutral " + LANGUAGE + " translation of the NPC name",
-                True,
-            )
-            descListTL2 = response[0]
-            totalTokens[0] += response[1][0]
-            totalTokens[1] += response[1][1]
-
-            # Check Mismatch
-            if len(nameListTL) != len(optionsList[0]) or len(descListTL1) != len(optionsList[1]) or len(descListTL2) != len(optionsList[2]):
-                with LOCK:
-                    found_mismatch(MISMATCH, filename)
-            else:
-                optionsListTL = [nameListTL, descListTL1, descListTL2]
-                translate = True
-
-        # ITEMS
-        if len(itemList[0]) > 0 or len(itemList[1]) > 0:
-            # Progress Bar
-            total = 0
-            for itemArray in itemList:
-                total += len(itemArray)
-            pbar.total = total
-            pbar.refresh()
-
-            # Name
-            response = translateAI(itemList[0], "Reply with only the " + LANGUAGE + " translation")
-            nameListTL = response[0]
-            totalTokens[0] += response[1][0]
-            totalTokens[1] += response[1][1]
-            # Desc 1
-            response = translateAI(itemList[1], "Reply with only the " + LANGUAGE + " translation")
-            descListTL1 = response[0]
-            totalTokens[0] += response[1][0]
-            totalTokens[1] += response[1][1]
-            # Desc 2
-            response = translateAI(itemList[2], "Reply with only the " + LANGUAGE + " translation")
-            descListTL2 = response[0]
-            totalTokens[0] += response[1][0]
-            totalTokens[1] += response[1][1]
-            # Desc 3
-            response = translateAI(itemList[3], "Reply with only the " + LANGUAGE + " translation")
-            descListTL3 = response[0]
-            totalTokens[0] += response[1][0]
-            totalTokens[1] += response[1][1]
-
-            # Check Mismatch
-            if (
-                len(nameListTL) != len(itemList[0])
-                or len(descListTL1) != len(itemList[1])
-                or len(descListTL2) != len(itemList[2])
-                or len(descListTL3) != len(itemList[3])
-            ):
-                with LOCK:
-                    found_mismatch(MISMATCH, filename)
-            else:
-                itemListTL = [nameListTL, descListTL1, descListTL2, descListTL3]
-                translate = True
-
-        # Armor
-        if len(armorList[0]) > 0:
-            # Progress Bar
-            total = 0
-            for armorArray in armorList:
-                total += len(armorArray)
-            pbar.total = total
-            pbar.refresh()
-
-            # Name
-            response = translateAI(
-                armorList[0],
-                "Reply with only the " + LANGUAGE + " translation of the NPC name",
-                True,
-            )
-            nameListTL = response[0]
-            totalTokens[0] += response[1][0]
-            totalTokens[1] += response[1][1]
-            # Desc 1
-            response = translateAI(armorList[1], "Reply with only the " + LANGUAGE + " translation")
-            descListTL1 = response[0]
-            totalTokens[0] += response[1][0]
-            totalTokens[1] += response[1][1]
-
-            # Check Mismatch
-            if len(nameListTL) != len(armorList[0]) or len(descListTL1) != len(armorList[1]):
-                with LOCK:
-                    found_mismatch(MISMATCH, filename)
-            else:
-                armorListTL = [nameListTL, descListTL1]
-                translate = True
-
-        # Enemies
-        if len(enemyList[0]) > 0:
-            # Progress Bar
-            total = 0
-            for enemyArray in enemyList:
-                total += len(enemyArray)
-            pbar.total = total
-            pbar.refresh()
-
-            # Name
-            response = translateAI(
-                enemyList[0],
-                "Reply with only the " + LANGUAGE + " translation of the enemy NPC name",
-                True,
-            )
-            nameListTL = response[0]
-            totalTokens[0] += response[1][0]
-            totalTokens[1] += response[1][1]
-            # Desc 1
-            response = translateAI(enemyList[1], "Reply with only the " + LANGUAGE + " translation")
-            descListTL1 = response[0]
-            totalTokens[0] += response[1][0]
-            totalTokens[1] += response[1][1]
-
-            # Check Mismatch
-            if len(nameListTL) != len(enemyList[0]) or len(descListTL1) != len(enemyList[1]):
-                with LOCK:
-                    found_mismatch(MISMATCH, filename)
-            else:
-                enemyListTL = [nameListTL, descListTL1]
-                translate = True
-
-        # Weapons
-        if len(weaponsList[0]) > 0:
-            # Progress Bar
-            total = 0
-            for weaponsArray in weaponsList:
-                total += len(weaponsArray)
-            pbar.total = total
-            pbar.refresh()
-
-            # Name
-            response = translateAI(
-                weaponsList[0],
-                "Reply with only the " + LANGUAGE + " translation of the RPG weapon name",
-                True,
-            )
-            nameListTL = response[0]
-            totalTokens[0] += response[1][0]
-            totalTokens[1] += response[1][1]
-            # Desc 1
-            response = translateAI(weaponsList[1], "")
-            descListTL1 = response[0]
-            totalTokens[0] += response[1][0]
-            totalTokens[1] += response[1][1]
-            # Desc 2
-            response = translateAI(weaponsList[2], "")
-            descListTL2 = response[0]
-            totalTokens[0] += response[1][0]
-            totalTokens[1] += response[1][1]
-
-            # Check Mismatch
-            if len(nameListTL) != len(weaponsList[0]) or len(descListTL1) != len(weaponsList[1]) or len(descListTL2) != len(weaponsList[2]):
-                with LOCK:
-                    found_mismatch(MISMATCH, filename)
-            else:
-                weaponsListTL = [nameListTL, descListTL1, descListTL2]
-                translate = True
-
-        # Skills
-        if len(skillList[0]) > 0:
-            # Progress Bar
-            total = 0
-            for skillArray in skillList:
-                total += len(skillArray)
-            pbar.total = total
-            pbar.refresh()
-
-            # Name
-            response = translateAI(
-                skillList[0],
-                "Reply with only the " + LANGUAGE + " translation of the RPG skill name",
-                True,
-            )
-            nameListTL = response[0]
-            totalTokens[0] += response[1][0]
-            totalTokens[1] += response[1][1]
-
-            # Desc
-            response = translateAI(
-                skillList[1],
-                "Reply with only the " + LANGUAGE + " translation of the RPG skill description",
-                True,
-            )
-            descListTL1 = response[0]
-            totalTokens[0] += response[1][0]
-            totalTokens[1] += response[1][1]
-
-            # Log 1
-            response = translateAI(
-                skillList[2],
-                "reply with only the gender neutral "
-                + LANGUAGE
-                + " translation of the action log. Always start the sentence with Taro. For example, Translate 'Taroを倒した！' as 'Taro was defeated!'",
-                True,
-            )
-            descListTL2 = response[0]
-            totalTokens[0] += response[1][0]
-            totalTokens[1] += response[1][1]
-
-            # Log 2
-            response = translateAI(
-                skillList[3],
-                "reply with only the gender neutral "
-                + LANGUAGE
-                + " translation of the action log. Always start the sentence with Taro. For example, Translate 'Taroを倒した！' as 'Taro was defeated!'",
-                True,
-            )
-            descListTL3 = response[0]
-            totalTokens[0] += response[1][0]
-            totalTokens[1] += response[1][1]
-
-            # Log 3
-            response = translateAI(
-                skillList[4],
-                "reply with only the gender neutral "
-                + LANGUAGE
-                + " translation of the action log. Always start the sentence with Taro. For example, Translate 'Taroを倒した！' as 'Taro was defeated!'",
-                True,
-            )
-            descListTL4 = response[0]
-            totalTokens[0] += response[1][0]
-            totalTokens[1] += response[1][1]
-
-            # Check Mismatch
-            if (
-                len(nameListTL) != len(skillList[0])
-                or len(descListTL1) != len(skillList[1])
-                or len(descListTL2) != len(skillList[2])
-                or len(descListTL3) != len(skillList[3])
-                or len(descListTL4) != len(skillList[4])
-            ):
-                with LOCK:
-                    found_mismatch(MISMATCH, filename)
-            else:
-                skillListTL = [nameListTL, descListTL1, descListTL2, descListTL3, descListTL4]
-                translate = True
-
-        # State
-        for list in stateList:
-            if len(list) > 0:
-                # Progress Bar
-                total = 0
-                for stateArray in stateList:
-                    total += len(stateArray)
-                pbar.total = total
-                pbar.refresh()
-
-                # Name
-                response = translateAI(
-                    stateList[0],
-                    f"Reply with the {LANGUAGE} translation of the status effect.",
-                    True,
+        # Set Data, in the order searchDB reads jobList
+        if any(lists and any(lists) for lists in translated.values()):
+            jobList = [
+                translated[name]
+                for name in (
+                    "scenario",
+                    "npc",
+                    "item",
+                    "state",
+                    "armor",
+                    "enemy",
+                    "weapons",
+                    "skill",
+                    "options",
+                    "dbName",
+                    "dbValue",
                 )
-                nameListTL = response[0]
-                totalTokens[0] += response[1][0]
-                totalTokens[1] += response[1][1]
-
-                # Desc 1
-                response = translateAI(stateList[1], "")
-                descListTL1 = response[0]
-                totalTokens[0] += response[1][0]
-                totalTokens[1] += response[1][1]
-
-                # Log 1
-                response = translateAI(
-                    stateList[2],
-                    f"Reply with the {LANGUAGE} translation of the status effect.",
-                    True,
-                )
-                descListTL2 = response[0]
-                totalTokens[0] += response[1][0]
-                totalTokens[1] += response[1][1]
-
-                # Log 2
-                response = translateAI(
-                    stateList[3],
-                    "reply with only the gender neutral "
-                    + LANGUAGE
-                    + " translation of the action log. Always start the sentence with Taro. For example, Translate 'Taroを倒した！' as 'Taro was defeated!'",
-                    True,
-                )
-                descListTL3 = response[0]
-                totalTokens[0] += response[1][0]
-                totalTokens[1] += response[1][1]
-
-                # Log 3
-                response = translateAI(
-                    stateList[4],
-                    "reply with only the gender neutral "
-                    + LANGUAGE
-                    + " translation of the action log. Always start the sentence with Taro. For example, Translate 'Taroを倒した！' as 'Taro was defeated!'",
-                    True,
-                )
-                descListTL4 = response[0]
-                totalTokens[0] += response[1][0]
-                totalTokens[1] += response[1][1]
-
-                # Log 4
-                response = translateAI(
-                    stateList[5],
-                    "reply with only the gender neutral "
-                    + LANGUAGE
-                    + " translation of the action log. Always start the sentence with Taro. For example, Translate 'Taroを倒した！' as 'Taro was defeated!'",
-                    True,
-                )
-                descListTL5 = response[0]
-                totalTokens[0] += response[1][0]
-                totalTokens[1] += response[1][1]
-
-                # Log 1
-                response = translateAI(
-                    stateList[6],
-                    "reply with only the gender neutral "
-                    + LANGUAGE
-                    + " translation of the action log. Always start the sentence with Taro. For example, Translate 'Taroを倒した！' as 'Taro was defeated!'",
-                    True,
-                )
-                descListTL6 = response[0]
-                totalTokens[0] += response[1][0]
-                totalTokens[1] += response[1][1]
-
-                # Log 1
-                response = translateAI(
-                    stateList[7],
-                    "reply with only the gender neutral "
-                    + LANGUAGE
-                    + " translation of the action log. Always start the sentence with Taro. For example, Translate 'Taroを倒した！' as 'Taro was defeated!'",
-                    True,
-                )
-                descListTL7 = response[0]
-                totalTokens[0] += response[1][0]
-                totalTokens[1] += response[1][1]
-
-                # Check Mismatch
-                if (
-                    len(nameListTL) != len(stateList[0])
-                    or len(descListTL1) != len(stateList[1])
-                    or len(descListTL2) != len(stateList[2])
-                    or len(descListTL3) != len(stateList[3])
-                    or len(descListTL4) != len(stateList[4])
-                    or len(descListTL5) != len(stateList[5])
-                    or len(descListTL6) != len(stateList[6])
-                ):
-                    with LOCK:
-                        found_mismatch(MISMATCH, filename)
-                else:
-                    stateListTL = [
-                        nameListTL,
-                        descListTL1,
-                        descListTL2,
-                        descListTL3,
-                        descListTL4,
-                        descListTL5,
-                        descListTL6,
-                        descListTL7,
-                    ]
-                    translate = True
-
-        # DB Names
-        if len(dbNameList[0]) > 0:
-            # Progress Bar
-            total = 0
-            for dbNameArray in dbNameList:
-                total += len(dbNameArray)
-            pbar.total = total
-            pbar.refresh()
-
-            # Name
-            response = translateAI(dbNameList[0], "Reply with only the " + LANGUAGE + " translation")
-            nameListTL = response[0]
-            totalTokens[0] += response[1][0]
-            totalTokens[1] += response[1][1]
-
-            # Check Mismatch
-            if len(nameListTL) != len(dbNameList[0]):
-                with LOCK:
-                    found_mismatch(MISMATCH, filename)
-            else:
-                dbNameListTL = [nameListTL]
-                translate = True
-
-        # DB Values
-        if len(dbValueList[0]) > 0:
-            # Progress Bar
-            total = 0
-            for dbValueArray in dbValueList:
-                total += len(dbValueArray)
-            pbar.total = total
-            pbar.refresh()
-
-            # Name
-            response = translateAI(dbValueList[0], "Reply with only the " + LANGUAGE + " translation")
-            valueListTL = response[0]
-            totalTokens[0] += response[1][0]
-            totalTokens[1] += response[1][1]
-
-            # Check Mismatch
-            if len(valueListTL) != len(dbValueList[0]):
-                with LOCK:
-                    found_mismatch(MISMATCH, filename)
-            else:
-                dbValueListTL = [valueListTL]
-                translate = True
-
-        # Start Pass 2
-        if translate == True:
-            jobList.append(scenarioListTL)
-            jobList.append(npcListTL)
-            jobList.append(itemListTL)
-            jobList.append(stateListTL)
-            jobList.append(armorListTL)
-            jobList.append(enemyListTL)
-            jobList.append(weaponsListTL)
-            jobList.append(skillListTL)
-            jobList.append(optionsListTL)
-            jobList.append(dbNameListTL)
-            jobList.append(dbValueListTL)
-            searchDB(events, pbar, jobList, filename)
+            ]
+            tokens = searchDB(events, pbar, jobList, filename)
+            totalTokens[0] += tokens[0]
+            totalTokens[1] += tokens[1]
 
     except run_stop_errors():
         raise
