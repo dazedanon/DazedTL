@@ -10,3 +10,7 @@
 - **Settings:** a thinking effort that **Check an effort** accepted now reads refused after a Guided Batch the server refused it in, and after an Assistant-led run that it refused while DazedTL was closed, not only after a Live run.
 - **Translate:** a WOLF map whose request fails partway now shows as failed with what it paid for and keeps the map's earlier translation as it was, instead of being written with the failing page's lines half translated and counted as complete, or replacing a complete earlier translation with the pages that finished.
 - **Translate:** a WOLF choice window's question is now asked for in the target language, where its request read "{LANGUAGE}", and a 選択肢/確認 window without a question, or a common event or database whose text holds `'events':` or `'types':`, no longer fails its file.
+- **Translate:** a file of a game other than RPG Maker or WOLF, such as CSV, JSON, Kirikiri, Tyrano, Ren'Py or Unity, whose translation fails partway now shows as failed with its error and what it paid for, instead of counting as translated with part of it written and showing its cost twice.
+- **Translate:** a file stopped partway in a Translation run is now translated again on Resume, which skipped it as finished when its engine had saved part of it.
+- **Translate:** a reply with the wrong number of lines that an engine kept in its original text now counts toward the run's mismatches, which read the file as fully translated.
+- **Translate:** an Image Text file's cost and time now show with the file, which left them out.
