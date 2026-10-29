@@ -3790,12 +3790,12 @@ def callMistral(params, retries=6):
                 params["response_format"] = {"type": "json_object"}
                 continue
             if e.status_code < 500 or attempt >= retries:
-                raise Exception(f"Mistral API error ({e.status_code}): {e}")
+                raise Exception(f"Mistral API error ({e.status_code}): {e}") from e
             time.sleep(min(45, 2 ** attempt + random.random()))
         except openai.APIConnectionError as e:
             last_error = e
             if attempt >= retries:
-                raise Exception(f"Mistral connection error: {e}")
+                raise Exception(f"Mistral connection error: {e}") from e
             time.sleep(min(45, 2 ** attempt + random.random()))
         attempt += 1
     # Over the provider's error, whose status the run reports (run_stops).

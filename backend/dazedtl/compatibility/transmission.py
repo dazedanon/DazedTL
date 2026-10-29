@@ -43,6 +43,7 @@ STREAMED = {"overloaded_error": 529}
 
 _local = threading.local()
 _installed = False
+_installing = threading.Lock()
 
 
 def answer(status, url):
@@ -99,16 +100,17 @@ def settled(tries, error):
     final *error* when that try answered HTTP 200 and the provider then
     streamed its own failure (STREAMED); the transport sees only the 200."""
     tries = list(tries)
+    if not tries or tries[-1][1] != 200:
+        return tries
+    # Only the first error with a status, the one raised with that 200,
+    # speaks for it, not one an earlier try raised under it.
     seen = set()
-    # Only the error raised with that 200 speaks for it, not one an earlier
-    # try raised under it.
-    while tries and tries[-1][1] == 200 and error is not None:
-        if id(error) in seen:
-            break
+    while error is not None and id(error) not in seen:
         seen.add(id(error))
         status = _status(error)
-        if getattr(error, "status_code", None) == 200 and status != 200:
-            tries[-1] = (answer(status, _request_url(error)), status)
+        if status is not None:
+            if status != 200:
+                tries[-1] = (answer(status, _request_url(error)), status)
             break
         error = error.__cause__
     return tries
@@ -137,11 +139,12 @@ def resendable(tries, error):
     other refusal comes back alike. A connection lost after the request was
     sent may follow processing: only a connection never made proves nothing
     reached the provider."""
-    tries = settled(tries, error)
-    if not unbilled(tries):
+    if not tries:
         return False
-    outcome, status = tries[-1]
-    return outcome in {"unreached", "failed"} or status == RATE_LIMITED
+    status, outcome = ended(tries, error)
+    return outcome in {"unreached", "failed"} or (
+        outcome == "refused" and status == RATE_LIMITED
+    )
 
 
 def answered(error):
@@ -199,15 +202,18 @@ def install():
     Current OpenAI and Anthropic SDKs send through httpx2; others use httpx.
     """
     global _installed
-    if _installed:
-        return
-    _installed = True
-    for name in ("httpx", "httpx2"):
-        try:
-            library = importlib.import_module(name)
-        except ImportError:
-            continue
-        library.HTTPTransport.handle_request = _observing(library)
+    # Every Assistant-led Live send asks, so no thread sends unobserved
+    # while another installs.
+    with _installing:
+        if _installed:
+            return
+        for name in ("httpx", "httpx2"):
+            try:
+                library = importlib.import_module(name)
+            except ImportError:
+                continue
+            library.HTTPTransport.handle_request = _observing(library)
+        _installed = True
 
 
 def _observing(library):
