@@ -103,8 +103,7 @@ async function startProvider(state) {
  */
 async function startScreen(state) {
   if (process.platform !== "linux") return {};
-  if (groupRuns(state.display?.group))
-    return state.display.env;
+  if (groupRuns(state.display?.group)) return state.display.env;
   try {
     state.display = await startDisplay({
       name: displayName(state.work),
