@@ -3615,14 +3615,14 @@ try:
                         raise AssertionError(f"No Batch result for {source}.")
             # A request the provider ended with an error says why, not that
             # it may have been canceled, as the fetch kept the error.
-            sent = batch_history.submitted_results()
+            submitted = batch_history.submitted_results()
             stored = "{'code': 'invalid_request', 'message': 'Model is gone'}"
             with (
                 patch.object(translation, "_batch_results", {}),
                 patch.object(
                     batch_history,
                     "submitted_results",
-                    lambda: dict.fromkeys(sent, stored),
+                    lambda: {key: stored for key in submitted},
                 ),
             ):
                 try:
