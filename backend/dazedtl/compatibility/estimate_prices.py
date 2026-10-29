@@ -109,19 +109,13 @@ def prices(counts, configuration, provider, cache=None):
             listed,
         ),
     }
-    if provider == "anthropic" and cache is not None and cache.writes:
-        # Approximate input leaves out the reply schema the cache key holds.
-        dynamic = max(0, inputs - cache.cached)
-        cached, most = claude_cache_prices(cache, dynamic, outputs, in_rate, out_rate)
-        value.update(
-            cache_write_tokens=cache.writes,
-            cache_read_tokens=cache.reads,
-            cache_max_write_tokens=cache.cached,
-            batch_cached_cost=cached,
-            batch_max_cost=most,
-            uses_prompt_cache=True,
-            cache_kind="explicit",
-        )
+    claude = (
+        claude_cache_prices(cache, inputs, outputs, in_rate, out_rate)
+        if provider == "anthropic"
+        else None
+    )
+    if claude is not None:
+        value.update(claude)
     elif provider == "openai":
         # The reads stay as counted, so the estimate is priced again for
         # another model from them; the hits are what this model's Batch reads.

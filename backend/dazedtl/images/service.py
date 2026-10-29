@@ -4,7 +4,6 @@ import base64
 import hashlib
 import json
 import sqlite3
-import sys
 import threading
 import time
 import uuid
@@ -2058,10 +2057,8 @@ class ImageService:
     def _validator(self, request_path):
         """The validator command for a request, with the app's own Python."""
         script = Path(self.backend.source) / "scripts/image_validate.py"
-        return (
-            f'"{Path(sys.executable).absolute()}" "{script}" request "{request_path}" --reproduce'
-            " (adapt the quoting to your shell)."
-        )
+        command = system.python_command(script, "request", request_path, "--reproduce")
+        return f"`{system.shell_command(command)}`."
 
     def _request(self, project_id, kind):
         value = self._load(project_id)

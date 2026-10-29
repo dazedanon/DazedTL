@@ -236,6 +236,16 @@ def checkout(game, *pending):
     )
 
 
+class Characters:
+    """A hermetic stand-in for tiktoken's encoding."""
+
+    def encode(self, text, **_kwargs):
+        return [ord(character) for character in str(text)]
+
+    def encode_batch(self, texts, **_kwargs):
+        return [self.encode(text) for text in texts]
+
+
 class CompatibilityContracts(unittest.TestCase):
     def test_an_estimate_priced_for_another_model_matches_that_models_estimate(self):
         # A switch that keeps the requests' text prices an estimate's counts
@@ -247,15 +257,6 @@ class CompatibilityContracts(unittest.TestCase):
         from dazedtl.compatibility.estimate_prices import reprice
         from dazedtl.translation.requests import CACHE_COUNTS, price
         from util import translation
-
-        class Characters:
-            """A hermetic stand-in for tiktoken's encoding."""
-
-            def encode(self, text, **_kwargs):
-                return [ord(character) for character in str(text)]
-
-            def encode_batch(self, texts, **_kwargs):
-                return [self.encode(text) for text in texts]
 
         rates = {
             "gpt-5.6-sol": (4, 20),
@@ -351,6 +352,92 @@ class CompatibilityContracts(unittest.TestCase):
                         expected["batch_cached_cost"],
                     ),
                 )
+
+    def test_a_claude_batch_estimate_and_quote_give_the_same_figures(self):
+        # Guided's estimate and Assistant-led's quote decide a Claude Batch's
+        # cache by one rule (claude_cache_prices), with and without cached
+        # instructions, so the same requests give the same figures.
+        from dazedtl.compatibility.estimate_prices import prices
+        from dazedtl.translation.requests import price
+        from util import translation
+
+        model = "claude-opus-5-5"
+
+        def request(index, cached):
+            system = [{"type": "text", "text": "System " * 300}]
+            if cached:
+                system[0]["cache_control"] = {"type": "ephemeral"}
+            params = {
+                "model": model,
+                "system": [*system, {"type": "text", "text": f"Context {index % 2}"}],
+                "messages": [{"role": "user", "content": f"Line {index} " * 50}],
+            }
+            return {"params": params, "payload": "台詞" * 40, "provider": "anthropic"}
+
+        with (
+            TemporaryDirectory() as temporary,
+            patch.object(
+                translation,
+                "tiktoken",
+                SimpleNamespace(encoding_for_model=lambda _model: Characters()),
+            ),
+            patch.object(
+                translation,
+                "getPricingConfig",
+                lambda _model: {"inputAPICost": 4, "outputAPICost": 20},
+            ),
+            patch.object(translation, "countClaudeTokens", lambda *_args: None),
+            patch.object(
+                translation, "BATCH_LOCK_FILE", Path(temporary) / "batch.lock"
+            ),
+            redirect_stdout(StringIO()),
+        ):
+            for cached in (True, False):
+                with self.subTest(cached=cached):
+                    entries = [request(index, cached) for index in range(4)]
+                    queue = Path(temporary) / f"{cached}.json"
+                    write_json(queue, {str(i): e for i, e in enumerate(entries)})
+                    expected = translation.estimateBatchCost(model, queue_file=queue)
+                    # Assistant-led counts the cached prefixes with its own
+                    # token count, here the same characters.
+                    cache = TranslationEngine.claude_cache(
+                        SimpleNamespace(token_count=len), entries, {"model": model}
+                    )
+                    counts = {
+                        key: expected[key] for key in ("input_tokens", "output_tokens")
+                    }
+                    configuration = {
+                        "mode": "batch",
+                        "model": model,
+                        "provider": "anthropic",
+                        "rates": {"input": 4, "output": 20},
+                    }
+                    value = prices(counts, configuration, "anthropic", cache)
+                    self.assertEqual(
+                        expected["cache_kind"], "explicit" if cached else None
+                    )
+                    self.assertEqual(
+                        {key: value[key] for key in value if key in expected},
+                        {key: expected[key] for key in value if key in expected},
+                    )
+                    quoted = price(
+                        {"requests": 4, "units": 4, **counts},
+                        configuration,
+                        "anthropic",
+                        cache,
+                    )
+                    self.assertEqual(
+                        (
+                            quoted["live_cost"],
+                            quoted["cost"],
+                            quoted.get("batch_cost_reused", quoted["cost"]),
+                        ),
+                        (
+                            expected["live_cost"],
+                            expected["batch_max_cost"],
+                            expected["batch_cached_cost"],
+                        ),
+                    )
 
     def test_a_quote_reads_the_runs_frozen_effort_record_and_counting_rule(self):
         # Assistant-led quotes and repriced estimates judged the effort from

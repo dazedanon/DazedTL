@@ -41,9 +41,18 @@ Processes
   install, whose files must match the release's signed manifest, and without a
   cache every worker compiled DazedTL and the engine again, about half of a
   translation worker's start on Linux. No launch passes -B or
-  PYTHONDONTWRITEBYTECODE itself, which would stop its child caching; only
-  the project helper command, which an assistant runs outside the app, keeps
-  -B.
+  PYTHONDONTWRITEBYTECODE itself, which would stop its child caching. A
+  command handed to an assistant, which runs it outside the app, carries the
+  same options (python_command), quoted for its shell (shell_command).
+  prune_bytecode drops what a moved install or another Python left in the
+  cache. On Windows without long paths, Python skips a compiled file whose
+  path passes 260 characters and compiles that module in memory each time;
+  DazedTL's own modules stay within it for an install folder of up to about
+  120 characters, so only the deepest package modules of a deep install
+  lose the cache.
+- An assistant's shell on Windows is PowerShell, which decodes a command's
+  output in the console's ANSI code page, which cannot hold Japanese game
+  text, so shell_command's form has it decode UTF-8.
 - Console children open no window on Windows.
 - Stopping a worker stops everything it started (stop_tree), or a Git command
   it waits on outlives it.
@@ -52,8 +61,10 @@ Processes
   SDK cannot find a home folder on Windows.
 """
 
+import importlib.util
 import os
 import secrets
+import shlex
 import shutil
 import signal
 import stat
@@ -74,6 +85,8 @@ __all__ = [
     "popen",
     "private_stdin",
     "project_relative",
+    "prune_bytecode",
+    "python_command",
     "read_bytes",
     "read_text",
     "remove_tree",
@@ -81,6 +94,8 @@ __all__ = [
     "replace",
     "rmdir",
     "run",
+    "shell_argument",
+    "shell_command",
     "staging_folder",
     "stop_tree",
     "system_environment",
@@ -384,6 +399,70 @@ def _python_command(arguments):
     if sys.dont_write_bytecode and "-B" not in flags:
         added.append("-B")
     return [arguments[0], *added, *arguments[1:]]
+
+
+def python_command(*arguments):
+    """A command that starts this Python with arguments by the rules above,
+    for a program other than this one, such as an assistant, to run."""
+    return _python_command([sys.executable, *map(os.fspath, arguments)])
+
+
+def shell_argument(value):
+    """Quotes one argument for an assistant's shell: PowerShell on Windows,
+    sh elsewhere."""
+    text = os.fspath(value)
+    if os.name != "nt":
+        return shlex.quote(text)
+    return "'" + text.replace("'", "''") + "'"
+
+
+def shell_command(arguments):
+    """A command line for an assistant's shell that runs arguments and, on
+    Windows, decodes its UTF-8 output."""
+    line = " ".join(map(shell_argument, arguments))
+    if os.name != "nt":
+        return line
+    return "[Console]::OutputEncoding = [Text.Encoding]::UTF8; & " + line
+
+
+def prune_bytecode():
+    """Drops what no Python of this install reads again from this process's
+    pycache_prefix: another Python version's compiled modules, and those
+    whose source is gone, such as a moved install's or a removed runtime's."""
+    if not sys.pycache_prefix:
+        return
+    tag = "." + sys.implementation.cache_tag + "."
+    # The cache leaves out a Windows path's drive letter, and a network path's
+    # first separator; any drive this Python and DazedTL run from may hold
+    # the source.
+    drives = {
+        "\\" if drive.startswith("\\\\") else drive
+        for drive in (
+            os.path.splitdrive(path)[0]
+            for path in (sys.prefix, sys.base_prefix, __file__)
+        )
+    }
+    for folder, _folders, names in os.walk(sys.pycache_prefix, topdown=False):
+        for name in names:
+            if name.endswith(".pyc") and not _compiled_current(
+                os.path.join(folder, name), tag, drives
+            ):
+                unlink(os.path.join(folder, name), missing_ok=True, ignore_errors=True)
+        if os.path.normpath(folder) != os.path.normpath(sys.pycache_prefix):
+            try:
+                os.rmdir(folder)
+            except OSError:
+                pass  # It still holds files.
+
+
+def _compiled_current(path, tag, drives):
+    if tag not in os.path.basename(path):
+        return False
+    try:
+        source = importlib.util.source_from_cache(path)
+    except ValueError:
+        return False
+    return any(os.path.isfile(drive + source) for drive in drives)
 
 
 def _interpreter_options(arguments):

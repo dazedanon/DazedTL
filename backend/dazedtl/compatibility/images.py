@@ -2,7 +2,6 @@
 
 import hashlib
 import os
-import sys
 from contextlib import nullcontext
 from dataclasses import asdict
 from pathlib import Path
@@ -332,12 +331,13 @@ class ImageCompatibility:
     def skill(self, root, profile):
         """Read skill templates without context migration or other game writes."""
         source = Path(self.backend.source)
+        from util.image_manager import legacy_tool_python, tool_placeholders
         from util.paths import SKILLS_DIR, runtime_data_file
 
         path = runtime_data_file(
             SKILLS_DIR / "image_translation.md", self.backend.workspace
         )
-        value = path.read_text(encoding="utf-8")
+        value = legacy_tool_python(path.read_text(encoding="utf-8"))
         folder = root / ".dazedtl/images"
         from desktop.backend.guidance import documents
 
@@ -348,13 +348,7 @@ class ImageCompatibility:
             "{{GAME_ROOT}}": str(root),
             "{{EDITABLE_IMAGES_FOLDER}}": str(folder),
             "{{VOCAB_FILE}}": glossary,
-            # Keep a venv interpreter's own path: resolving its symlink selects the
-            # base Python, which lacks the packages installed in the venv.
-            "{{IMAGE_TOOL_PYTHON}}": str(Path(sys.executable).absolute()),
-            "{{IMAGE_INPAINT_CLI}}": str(source / "scripts/image_inpaint.py"),
-            "{{IMAGE_VALIDATE_CLI}}": str(source / "scripts/image_validate.py"),
-            "{{IMAGE_RECIPE_CLI}}": str(source / "scripts/image_recipe.py"),
-            "{{IMAGE_FAMILY_CLI}}": str(source / "scripts/image_family.py"),
+            **tool_placeholders(source / "scripts"),
             "{{SOURCE_LANGUAGE}}": read_source(root),
         }
         for name, replacement in replacements.items():

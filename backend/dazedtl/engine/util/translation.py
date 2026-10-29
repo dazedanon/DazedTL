@@ -2500,17 +2500,36 @@ def openai_prompt_cache(params):
     return openai_cache_counts(prompts())
 
 
-def claude_cache_prices(cache, dynamic, outputs, in_rate, out_rate):
-    """A Claude Batch's prices with its cached instructions
-    (claude_tokens.Cache), from per-token rates: each cache key written once
-    and read by every later request that shares it, then every request
-    writing its own, with ``dynamic`` input tokens after them."""
+def claude_cache_prices(cache, inputs, outputs, in_rate, out_rate):
+    """A Claude Batch's cache figures and prices with its cached instructions
+    (claude_tokens.Cache), from token counts and per-token rates, as
+    estimateBatchCost and estimate_prices.prices both report them; None when
+    it writes no cache (or ``cache`` is None), so it is priced without one.
+
+    ``batch_cached_cost`` writes each cache key once and every later request
+    that shares it reads it, ``batch_max_cost`` has every request write its
+    own; the input after the cached prefixes is priced as input. The
+    estimate then expects the explicit cache and shows its cached price
+    (shown_batch_price).
+    """
+    if cache is None or not cache.writes:
+        return None
     factor = batch_price_factor("anthropic")
+    # Approximate input leaves out the reply schema the cache key holds.
+    dynamic = max(0, inputs - cache.cached)
 
     def priced(cached):
         return ((cached + dynamic) * in_rate + outputs * out_rate) * factor
 
-    return priced(cache.reused), priced(cache.unreused)
+    return {
+        "cache_write_tokens": cache.writes,
+        "cache_read_tokens": cache.reads,
+        "cache_max_write_tokens": cache.cached,
+        "batch_cached_cost": priced(cache.reused),
+        "batch_max_cost": priced(cache.unreused),
+        "uses_prompt_cache": True,
+        "cache_kind": "explicit",
+    }
 
 
 @extensions.point
@@ -2730,11 +2749,18 @@ def estimateBatchCost(model=None, *, queue_file=None, log_prefix="[BATCH]"):
     live_cost = comparison["live_cost"]
     batch_max = batch_nocache
     cache_kind = None
-    if est_provider == "anthropic" and cache_write_tok > 0:
-        batch_cached, batch_max = claude_cache_prices(
-            cache, dynamic_tokens, output_tokens, in_rate, out_rate
-        )
-        cache_kind = "explicit"
+    claude_cache = (
+        claude_cache_prices(cache, raw_input_tok, output_tokens, in_rate, out_rate)
+        if est_provider == "anthropic"
+        else None
+    )
+    if claude_cache is not None:
+        cache_write_tok = claude_cache["cache_write_tokens"]
+        cache_read_tok = claude_cache["cache_read_tokens"]
+        cache_max_write_tok = claude_cache["cache_max_write_tokens"]
+        batch_cached = claude_cache["batch_cached_cost"]
+        batch_max = claude_cache["batch_max_cost"]
+        cache_kind = claude_cache["cache_kind"]
     elif est_provider == "openai":
         cache_read_tok, cacheable_tokens, _ = openai_cache_counts(
             prompt_token_sequences

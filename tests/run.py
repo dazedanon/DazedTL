@@ -15,7 +15,6 @@ import io
 import json
 import math
 import os
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -149,27 +148,13 @@ def plan(modules, times, workers):
     return [unit for _, unit in sorted(units, key=lambda item: -item[0])]
 
 
-def forget_temporary_modules():
-    """Drops what earlier runs compiled from modules tests wrote into
-    temporary folders, such as a fake engine's manual.py: the suite keeps its
-    compiled modules between runs (scripts/test.mjs), and those folders never
-    come back. The checkout's own stay, even in a temporary folder."""
-    if not sys.pycache_prefix:
-        return
-
-    def mirror(folder):
-        return Path(importlib.util.cache_from_source(str(folder / "_.py"))).parent
-
-    own = mirror(ROOT)
-    temporary = mirror(Path(tempfile.gettempdir()).resolve())
-    for folder in temporary.iterdir() if temporary.is_dir() else ():
-        if folder != own and folder not in own.parents:
-            shutil.rmtree(folder, ignore_errors=True)
-
-
 def main():
     started = time.perf_counter()
-    forget_temporary_modules()
+    # The suite keeps its compiled modules between runs (scripts/test.mjs);
+    # the app's rule drops those of modules tests wrote into temporary
+    # folders, which never come back.
+    sys.path.insert(0, str(ROOT / "backend"))
+    importlib.import_module("dazedtl.system").prune_bytecode()
     store = Path(sys.argv[sys.argv.index("--times") + 1])
     modules = sorted(
         f"tests.{path.stem}" for path in (ROOT / "tests").glob("test_*.py")

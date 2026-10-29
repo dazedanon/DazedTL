@@ -56,6 +56,7 @@ from dazedtl.translation.run_compiler import (
 )
 from dazedtl.translation.service import IMAGE_UNITS, Translation
 from dazedtl.translation.skill_users import for_batch
+from util import provider_costs
 
 from tests.fixtures import old_backup
 
@@ -1466,6 +1467,25 @@ class WorkflowTests(unittest.TestCase):
         shown = view(run["id"])
         self.assertFalse(shown["settings_changed"] or shown["pricing_changed"])
         self.assertEqual(shown["quote"], run["quote"])
+
+        # The shown price's token follows only its own route's rules: a fix
+        # to Claude's keeps it, one to OpenAI's Batch changes it.
+        def fix(route):
+            # A pricing fix to ``route``'s rules, as provider_costs records it.
+            version = provider_costs.PRICE_RULES_VERSION + 1
+            return patch.multiple(
+                provider_costs,
+                ROUTE_PRICE_RULES={**provider_costs.ROUTE_PRICE_RULES, route: version},
+                PRICE_RULES_VERSION=version,
+            )
+
+        with fix("anthropic"):
+            self.assertEqual(view(run["id"])["approval_token"], shown["approval_token"])
+        with fix("openai"):
+            raised = view(run["id"])
+            self.assertNotEqual(raised["approval_token"], shown["approval_token"])
+            with self.assertRaisesRegex(ValueError, "price changed"):
+                self.service.start(self.identity, run["id"], shown["approval_token"])
         # The quote's own token approved the older price; only the shown
         # price's token approves, and freezes the run at it.
         with self.assertRaisesRegex(ValueError, "price changed"):
@@ -1500,6 +1520,22 @@ class WorkflowTests(unittest.TestCase):
             self.assertFalse(kept["settings_changed"] or kept["pricing_changed"])
             self.assertEqual(kept["quote"]["cost"], 9.0)
             self.assertEqual(kept["approval_token"], claude["approval_token"])
+        # Under today's rules on every route, it still reads changed once
+        # its settings send it on another route than the one that priced
+        # it, which can't price its counts; one saved before quotes recorded
+        # their route reads its settings' route.
+        self.assertEqual(claude["quote"]["route"], "anthropic")
+        older(claude["id"], cost=9.0, price_rules=provider_costs.PRICE_RULES_VERSION)
+        with patch.object(self.engine, "batch_supported", return_value="openai"):
+            self.assertTrue(view(claude["id"])["pricing_changed"])
+            with self.assertRaisesRegex(ValueError, "price changed"):
+                self.service.start(
+                    self.identity, claude["id"], claude["approval_token"]
+                )
+            job, _plan = store.load(claude["id"])
+            del job["quote"]["route"]
+            store.save(job)
+            self.assertFalse(view(claude["id"])["pricing_changed"])
         with self.assertRaisesRegex(ValueError, "Provider execution is disabled"):
             self.service.start(self.identity, claude["id"], claude["approval_token"])
 

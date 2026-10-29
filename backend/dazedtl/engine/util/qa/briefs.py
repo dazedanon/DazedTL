@@ -4,10 +4,7 @@ context view."""
 from __future__ import annotations
 
 import json
-import os
 import re
-import shlex
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -47,22 +44,14 @@ from util.qa.storage import (
 )
 from util.skills import rpgmaker_qa_skill_parts
 
-
-def shell_argument(value: str | Path) -> str:
-    """Quote a handoff argument for PowerShell on Windows, sh elsewhere."""
-    text = str(value)
-    return "'" + text.replace("'", "''") + "'" if os.name == 'nt' else shlex.quote(text)
+# A handoff argument, quoted for the assistant's shell.
+shell_argument = system.shell_argument
 
 
 def runtime_command(script: str | Path) -> str:
-    """Use the running managed interpreter, even with no Python on PATH.
-
-    Windows pipes use the ANSI code page, which cannot hold Japanese game text,
-    so Python writes UTF-8 and PowerShell decodes it; the app's
-    dazedtl.translation.helper_command follows the same form.
-    """
-    prefix = '[Console]::OutputEncoding = [Text.Encoding]::UTF8; & ' if os.name == 'nt' else ''
-    return prefix + shell_argument(sys.executable) + ' -X utf8 ' + shell_argument(script)
+    """Runs script with the running managed interpreter, even with no Python
+    on PATH, by the app's rules for a command an assistant runs."""
+    return system.shell_command(system.python_command(script))
 
 
 # Each brief's sections besides the policy, commands and result formats; a

@@ -13,6 +13,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from dazedtl import system
 from dazedtl.api.contracts.methods import METHODS
 from dazedtl.api.local import LocalAPI
 from dazedtl.compatibility import game_write, original_files, original_record
@@ -1370,6 +1371,10 @@ def main():
         if platform.python_version() != (root / ".python-version").read_text().strip():
             print("DAZEDTL_ERROR runtime_version", file=sys.stderr, flush=True)
             return 1
+        # Off the way of the first request; nothing waits for it.
+        threading.Thread(
+            target=system.prune_bytecode, name="prune-bytecode", daemon=True
+        ).start()
         serve(args, diagnostics)
         return 0
     except Exception as exc:  # noqa: BLE001
