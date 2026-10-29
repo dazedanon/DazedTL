@@ -5,9 +5,10 @@
 // socket.
 import fs from "node:fs";
 import path from "node:path";
-import { spawn, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import crypto from "node:crypto";
 import { until } from "./cdp.mjs";
+import { groupOf, spawnGroup, stopGroup } from "./group.mjs";
 
 const sockets = "/tmp/.X11-unix";
 const displays = () =>
@@ -18,12 +19,6 @@ const displays = () =>
           .filter((name) => /^X\d+$/.test(name))
           .map((name) => name.slice(1))
       : [],
-  );
-
-/** The process group of process `pid`; throws once it has exited. */
-const groupOf = (pid) =>
-  Number(
-    fs.readFileSync(`/proc/${pid}/stat`, "utf8").split(") ")[1].split(" ")[2],
   );
 
 /** Process groups of every X server run by `program`, by display number. */
@@ -76,69 +71,6 @@ export function displayName(/** @type {string} */ work) {
     .replace(/[^\w.-]+/g, "_")
     .slice(0, 24);
   return `dazedtl-${part}-${crypto.randomBytes(3).toString("hex")}`;
-}
-
-// How long, in tenths of a second, a group's members get to end at SIGTERM
-// before SIGKILL ends them, however the group is ended.
-const graceTenths = 30;
-
-// The first process of a group `spawnGroup` binds: once the process that
-// started it has gone, the whole group ends.
-const boundGroup = [
-  // A member that ignores SIGTERM, such as a hung KWin, is ended by SIGKILL
-  // from a process in a session of its own, which outlives this one and so
-  // sees when the group is empty.
-  `escalate() { setsid sh -c 'i=0; while kill -s 0 -- "-$1" 2>/dev/null; do [ $i -lt ${graceTenths} ] || { kill -s KILL -- "-$1"; exit; }; i=$((i + 1)); sleep 0.1; done' sh "$$" </dev/null >/dev/null 2>&1 & }`,
-  // As the starter ends, this process passes to its other threads in turn,
-  // and the kernel signals it again each time one of them ends first, so a
-  // SIGTERM can come again while the first is handled. It is ignored until
-  // the group has been signalled: one that ended this process before its
-  // `kill` would leave the rest of the group running.
-  "trap 'trap \"\" TERM; kill -TERM 0; escalate; trap - TERM; kill -TERM $$' TERM",
-  // A starter that died before the kernel was asked to signal it never will.
-  '[ "$PPID" = "$1" ] || exit 1',
-  "shift",
-  '"$@" &',
-  "wait $!",
-].join("\n");
-
-/**
- * Spawns `command` in a process group of its own, which `stopGroup` ends,
- * and which on Linux ends with this process however it ends, a SIGKILL
- * included: the kernel sends SIGTERM to the group's first process when this
- * one dies (`setpriv --pdeathsig`), and that ends the whole group, which
- * dbus-run-session would not, since it exits at SIGTERM without passing it
- * on; members still running after a short grace get SIGKILL. Call it from
- * the main thread, whose end the kernel signals. A group meant to outlive
- * this process, such as the display a scenario leaves its app running in, is
- * spawned with `outlive`.
- * @param {string} command
- * @param {string[]} args
- * @param {{ stdio?: import("node:child_process").StdioOptions, outlive?: boolean }} [options]
- */
-export function spawnGroup(command, args, { stdio, outlive = false } = {}) {
-  const bound = !outlive && process.platform === "linux";
-  if (bound && spawnSync("which", ["setpriv", "setsid"]).status !== 0)
-    throw new Error(
-      "A test process group needs setpriv and setsid, from util-linux, to end with what started it.",
-    );
-  return spawn(
-    bound ? "setpriv" : command,
-    bound
-      ? [
-          "--pdeathsig",
-          "TERM",
-          "sh",
-          "-c",
-          boundGroup,
-          "sh",
-          String(process.pid),
-          command,
-          ...args,
-        ]
-      : args,
-    { detached: true, stdio },
-  );
 }
 
 /**
@@ -243,31 +175,6 @@ export async function startDisplay({
   } catch (error) {
     await stopGroup(group);
     throw error;
-  }
-}
-
-/**
- * Ends a process group, such as a display or an app started detached, and
- * waits until it has, so a display started next can take its socket name.
- */
-export async function stopGroup(group) {
-  if (!group) return;
-  const signal = (name) => {
-    try {
-      process.kill(-group, name);
-      return true;
-    } catch {
-      return false; // Already gone.
-    }
-  };
-  if (!signal("SIGTERM")) return;
-  const ended = (timeout) =>
-    until("the process group to end", () => !signal(0), timeout);
-  try {
-    await ended(graceTenths * 100);
-  } catch {
-    signal("SIGKILL");
-    await ended(5_000);
   }
 }
 

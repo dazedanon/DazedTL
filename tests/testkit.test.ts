@@ -234,10 +234,10 @@ test(
 );
 
 test(
-  "a display's process group ends with the process that started it, even at SIGKILL and with a member that ignores SIGTERM, unless it is to outlive it",
+  "a test process group ends when its command exits and with the process that started it, even at SIGKILL and with a member that ignores SIGTERM, unless it is to outlive that process",
   { skip: process.platform !== "linux" },
   async () => {
-    // Each group's first process exits at SIGTERM and leaves its child, as
+    // Each group's command exits at SIGTERM and leaves its child, as
     // dbus-run-session does with KWin; in two of them the child ignores
     // SIGTERM, as a hung KWin would.
     const owner = spawn(
@@ -245,44 +245,72 @@ test(
       [
         "--input-type=module",
         "-e",
-        `const { spawnGroup } = await import(${JSON.stringify(new URL("../scripts/testkit/display.mjs", import.meta.url).href)});
+        `const { spawnGroup } = await import(${JSON.stringify(new URL("../scripts/testkit/group.mjs", import.meta.url).href)});
         const group = (child, outlive) =>
           spawnGroup("sh", ["-c", child + " & wait"], { stdio: "ignore", outlive }).pid;
         const hung = "(trap '' TERM; exec sleep 30)";
-        console.log(JSON.stringify([group("sleep 30", false), group(hung, false), group(hung, true)]));
+        console.log(JSON.stringify([group("sleep 30", false), group(hung, false), group(hung, true), group("sleep 30", false)]));
         setInterval(() => {}, 1000);`,
       ],
       { stdio: ["ignore", "pipe", "inherit"] },
     );
     let groups: number[] = [];
-    // A live member of `group`; an exited one waits as a zombie to be reaped.
+    // The live members of `group`, read apart from group.mjs's own rule; an
+    // exited one waits as a zombie to be reaped.
     const members = (group: number) =>
-      fs.readdirSync("/proc").filter((pid) => {
+      fs.readdirSync("/proc").flatMap((pid) => {
         try {
-          const [state, , , pgrp] = fs
-            .readFileSync(`/proc/${pid}/stat`, "utf8")
-            .split(") ")[1]
-            .split(" ");
-          return state !== "Z" && Number(pgrp) === group;
+          const stat = fs.readFileSync(`/proc/${pid}/stat`, "utf8");
+          const named = stat.lastIndexOf(") ");
+          const [state, parent, pgrp] = stat.slice(named + 2).split(" ");
+          return state !== "Z" && Number(pgrp) === group
+            ? [
+                {
+                  pid: Number(pid),
+                  parent: Number(parent),
+                  name: stat.slice(stat.indexOf("(") + 1, named),
+                },
+              ]
+            : [];
         } catch {
-          return false; // Not a process, or exited.
+          return []; // Not a process, or exited.
         }
-      }).length;
+      });
     try {
       const [line] = await once(readline.createInterface(owner.stdout), "line");
       groups = JSON.parse(line);
-      const [bound, hung, kept] = groups;
+      const [bound, hung, kept, crashed] = groups;
       await until(
         "every group's children",
-        () => groups.every((group) => members(group) >= 2),
+        () =>
+          groups.every((group) =>
+            members(group).some(({ name }) => name === "sleep"),
+          ),
         5_000,
       );
+      // A command that exits on its own, as dbus-run-session does after a
+      // bus error, ends the rest of its group while its starter runs.
+      const command = members(crashed).find(({ parent }) => parent === crashed);
+      process.kill(command!.pid, "SIGKILL");
+      await until(
+        "the group whose command exited to end",
+        () => !members(crashed).length,
+        5_000,
+      );
+      const running = members(kept).map(({ pid }) => pid);
       owner.kill("SIGKILL");
       // SIGTERM ends a group that obeys it, before any SIGKILL.
-      await until("the bound group to end", () => !members(bound), 10_000);
-      assert.ok(members(hung));
-      await until("the hung group to end", () => !members(hung), 10_000);
-      assert.equal(members(kept), 2);
+      await until(
+        "the bound group to end",
+        () => !members(bound).length,
+        10_000,
+      );
+      assert.ok(members(hung).length);
+      await until("the hung group to end", () => !members(hung).length, 10_000);
+      assert.deepEqual(
+        members(kept).map(({ pid }) => pid),
+        running,
+      );
     } finally {
       owner.kill("SIGKILL");
       for (const group of groups)
