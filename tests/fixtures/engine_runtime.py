@@ -675,6 +675,7 @@ try:
         ):
             got = wolf_misfit(*commands)
             assert got == (written, ["M.json"], marked), (commands, got)
+
         # A line translateAI kept in its source text, a whole chunk after
         # failed validation or one line of a reply it otherwise kept, comes
         # back as it was sent, and was written back with its line breaks
@@ -3255,7 +3256,9 @@ try:
             assert got == (written, mismatched, marked), (commands, got)
         got = mv_page(
             [name("アリス"), command(401, ["やあ"])],
-            mv_reply(lambda _reply, sent: [line.replace("やあ", "Hi") for line in sent]),
+            mv_reply(
+                lambda _reply, sent: [line.replace("やあ", "Hi") for line in sent]
+            ),
             SPEAKER_CONTEXT=True,
             getSpeaker=lambda _name: ["Al]Ice", [0, 0]],
         )
