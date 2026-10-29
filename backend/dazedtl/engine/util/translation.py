@@ -34,6 +34,7 @@ from util.provider_costs import (
     batch_price_factor,
     cache_read_multiplier,
     cache_write_multiplier,
+    claude_version_name,
     has_billed_cache_writes,
     is_claude_model,
     is_claude_native,
@@ -4035,10 +4036,10 @@ def _lookup_model_price(model: str):
 
 
 def _claude_pricing(model):
-    """getPricingConfig's table for a Claude model (is_claude_model), in
-    lower case, by its family and version as Anthropic writes them
-    ("claude-opus-5-5"); another host's dotted form, such as OpenRouter's
-    "claude-opus-5.5", falls to an older version's or the default rates."""
+    """getPricingConfig's table for a Claude model (is_claude_model), by its
+    family and version as Anthropic writes them (claude_version_name), so
+    OpenRouter's "claude-opus-4.5" reads as "claude-opus-4-5"."""
+    model = claude_version_name(model)
     if "claude-fable" in model or "claude-mythos" in model:
         rates = (10.00, 50.00)
     elif "claude-opus-5-5" in model:
@@ -4049,12 +4050,12 @@ def _claude_pricing(model):
         or "claude-opus-5" in model
     ):
         rates = (5.00, 25.00)
-    elif "claude-opus" in model or model == "claude-3-opus":
+    elif "claude-opus" in model or "claude-3-opus" in model:
         # Opus 4, 4.1, 3
         rates = (15.00, 75.00)
     elif "claude-haiku-4-5" in model or "claude-haiku-4-6" in model:
         rates = (1.00, 5.00)
-    elif "claude-haiku-3-5" in model:
+    elif "claude-3-5-haiku" in model or "claude-haiku-3-5" in model:
         rates = (0.80, 4.00)
     elif "claude-3-haiku" in model:
         rates = (0.25, 1.25)
@@ -4140,7 +4141,7 @@ def getPricingConfig(model):
         # Only a Claude name, by the one rule, takes Claude's rates; another
         # model whose name holds a family word, such as "sonnet-like", takes
         # the unknown model's below.
-        cfg = _claude_pricing(str(model).lower())
+        cfg = _claude_pricing(model)
     elif "gemini-3.6-flash" in model:
         # Google AI Developer API standard rates. Batch is applied separately
         # by estimateBatchCost/_price_usage at the provider's 50% discount.

@@ -219,6 +219,21 @@ class SettingsTests(unittest.TestCase):
                     },
                     options,
                 )
+            # Its model list writes Claude's IDs in lower case only, so a
+            # capitalized ID is refused with the lowercase one named.
+            with self.assertRaisesRegex(
+                ValueError, "enter claude-opus-5 instead of Claude-Opus-5"
+            ):
+                reloaded.save(
+                    view["revision"],
+                    identity,
+                    {
+                        "language": "English",
+                        "model": "Claude-Opus-5",
+                        "sourceLanguage": "Japanese",
+                    },
+                    options,
+                )
             path = Path(temporary) / "settings/settings.json"
             saved = json.loads(path.read_text(encoding="utf-8"))
             saved["connections"][0]["model"] = model

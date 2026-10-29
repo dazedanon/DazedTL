@@ -106,11 +106,18 @@ def is_openai_model(model: str) -> bool:
 # A Claude model by its name, on Anthropic's API or any other host: a name
 # starting "claude-", in any dated or versioned form, alone or as another host
 # names it: OpenRouter's "anthropic/" (or "~anthropic/" for its latest
-# aliases) and Bedrock's "anthropic." with or without a region, behind a
-# gateway's own prefix such as "bedrock/". Another model's name holding a
-# Claude family word, such as "magnum-opus-72b", is not Claude's.
+# aliases), Bedrock's "anthropic." with or without a region, also inside an
+# ARN, Vertex AI's "publishers/anthropic/models/" and LiteLLM's "vertex_ai/",
+# behind a gateway's own prefix such as "bedrock/", or a Databricks
+# endpoint's "databricks-", alone or behind LiteLLM's "databricks/". Another
+# model's name holding a Claude family word, such as "magnum-opus-72b", or
+# another owner's "claude-" model, such as "someone/claude-style-7b", is not
+# Claude's.
 _CLAUDE_MODEL = re.compile(
-    r"(?:(?:[\w.~-]+/)*~?(?:[a-z-]+\.)?anthropic[./])?(claude-[a-z0-9].*)", re.DOTALL
+    r"(?:(?:[\w.:~-]+/)*(?:~?(?:[a-z-]+\.)?anthropic[./](?:models/)?|vertex_ai(?:_beta)?/)"
+    r"|(?:databricks/)?databricks-)?"
+    r"(claude-[a-z0-9].*)",
+    re.DOTALL,
 )
 
 
@@ -120,6 +127,15 @@ def claude_model_name(model: str) -> str | None:
     names no Claude model."""
     match = _CLAUDE_MODEL.fullmatch(str(model or "").strip().lower())
     return match.group(1) if match else None
+
+
+def claude_version_name(model: str) -> str | None:
+    """The Claude name in ``model`` (claude_model_name) with its version
+    written as Anthropic writes it, hyphens between the numbers, so
+    OpenRouter's "anthropic/claude-opus-4.5" reads "claude-opus-4-5": the
+    name a Claude model's per-token rates are found by."""
+    name = claude_model_name(model)
+    return None if name is None else re.sub(r"(?<=\d)\.(?=\d)", "-", name)
 
 
 def is_claude_model(model: str) -> bool:
@@ -140,24 +156,27 @@ def is_claude_native(model: str, address: str | None) -> bool:
 
 def on_anthropic_api(address: str | None) -> bool:
     """Whether a native Claude request to ``address`` reaches Anthropic's own
-    API: no address set, or one at anthropic.com. A proxy path holding
-    "anthropic" is sent Live natively but is not Anthropic's API."""
-    address = str(address or "").strip().lower()
-    return not address or "anthropic.com" in address
+    API: no address set, or one at its host (settings/providers own_api). A
+    proxy path holding "anthropic", or another host whose name holds it, is
+    sent Live natively but is not Anthropic's API."""
+    from dazedtl.settings.providers import own_api
+
+    return not str(address or "").strip() or own_api("anthropic", address)
 
 
 def foreign_claude_name(model: str, address: str | None) -> bool:
-    """Whether ``model`` names Claude as another host does, such as
-    OpenRouter's "anthropic/claude-opus-5.5" or Bedrock's
-    "us.anthropic.claude-...", for a request to Anthropic's own API, which
-    takes only Claude's own IDs ("claude-...") and answers any other name
-    with not found. Settings refuses it before any request is sent
-    (settings/providers validate_model_name)."""
+    """Whether ``model`` names Claude other than by its own ID for a request
+    to Anthropic's own API, which takes only Claude's own IDs ("claude-...",
+    in lower case as its model list writes them) and answers any other name
+    with not found: another host's form, such as OpenRouter's
+    "anthropic/claude-opus-5.5" or Bedrock's "us.anthropic.claude-...", or
+    the ID in capitals, such as "Claude-Opus-5". Settings refuses it before
+    any request is sent (settings/providers validate_model_name)."""
     name = claude_model_name(model)
     return (
         name is not None
         and on_anthropic_api(address)
-        and name != str(model).strip().lower()
+        and name != str(model).strip()
     )
 
 
