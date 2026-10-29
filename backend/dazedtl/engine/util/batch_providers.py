@@ -32,6 +32,9 @@ OPENAI_API_URL = "https://api.openai.com/v1"
 # OpenAI-compatible API from Moonshot AI's host.
 # https://platform.kimi.ai/docs/api/overview
 KIMI_API_URL = "https://api.moonshot.ai/v1"
+# Gemini's OpenAI-compatible API on Google's own host.
+# https://ai.google.dev/gemini-api/docs/openai
+GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
 # Kimi K3 has no Batch API.
 # https://platform.kimi.ai/docs/guide/use-batch-api
 KIMI_BATCH_MODELS = frozenset({"kimi-k2.6", "kimi-k2.7-code"})
@@ -155,9 +158,9 @@ def get_client(provider: str, *, api_key: str | None = None,
     A key goes only to its own address: the run's key to the run's address,
     and a key given here to the address given with it, never the run's.
     With no address given, an Anthropic key goes to Anthropic's own API, and
-    an OpenAI-compatible key, which may belong to any host, is refused.
-    Gemini and Kimi Batches, the run's included, go to the address given,
-    else their provider's own API.
+    an OpenAI-compatible key, which may belong to any host, is refused, and
+    a Gemini or Kimi key goes to its provider's own API. A Gemini Batch's
+    files go only to Google's own API (_gemini_files).
     """
     if api_key is None:
         key = _api_key()
@@ -180,14 +183,14 @@ def get_client(provider: str, *, api_key: str | None = None,
     import openai
 
     if provider in (PROVIDER_GEMINI, PROVIDER_KIMI):
+        from dazedtl.settings.providers import absolute
+
+        # Read as the provider's own API is (own_api), without a scheme as HTTPS.
         kwargs = dict(
             api_key=key,
-            base_url=(api_url or "").strip()
-            or (
-                KIMI_API_URL
-                if provider == PROVIDER_KIMI
-                else "https://generativelanguage.googleapis.com/v1beta/openai/"
-            ),
+            base_url=absolute(address)
+            if address
+            else KIMI_API_URL if provider == PROVIDER_KIMI else GEMINI_API_URL,
         )
         if max_retries is not None:
             kwargs["max_retries"] = max_retries
@@ -253,6 +256,25 @@ def _google_client(api_key: str | None = None):
             "Gemini batching requires google-genai. Install project requirements first."
         ) from exc
     return genai.Client(api_key=(api_key or "").strip() or _api_key())
+
+
+def _gemini_files(client, google_client=None):
+    """The Google Files client a Gemini Batch moves its JSONL files through,
+    with the key of *client*, the Batch's own OpenAI-compatible client, when
+    none is given. google-genai sends to Google's own API, never to the
+    Batch's address, so a Batch whose address is another server, such as a
+    Custom Gemini-compatible proxy, is refused before its key is sent: Google
+    is not where that key belongs, and the proxy's address names no Files
+    API."""
+    from dazedtl.settings.providers import own_api
+
+    if not own_api("gemini", str(getattr(client, "base_url", "") or "")):
+        raise RuntimeError(
+            "Gemini Batches move their files through Google's own API, and this "
+            "connection's server address is another server. Use Live for this "
+            "connection, or a Google Gemini connection for Batches."
+        )
+    return google_client or _google_client(getattr(client, "api_key", None))
 
 
 def _write_jsonl(requests: Iterable[dict]) -> Path:
@@ -345,7 +367,7 @@ def submit_batch(provider: str, requests: list[dict], *, client=None,
     path = _write_jsonl(rows)
     try:
         if provider == PROVIDER_GEMINI:
-            google_client = google_client or _google_client()
+            google_client = _gemini_files(client, google_client)
             try:
                 from google.genai import types
                 config = types.UploadFileConfig(
@@ -580,7 +602,7 @@ def _download_file_text(provider: str, file_id: str, *, client=None,
         # can therefore collect the temporary Client before ``download`` sends
         # the request, producing: "Cannot send a request, as the client has
         # been closed."
-        google_client = google_client or _google_client()
+        google_client = _gemini_files(client or get_client(provider), google_client)
         data = google_client.files.download(file=file_id)
         return data.decode("utf-8") if isinstance(data, bytes) else str(data)
     content = client.files.content(file_id)
