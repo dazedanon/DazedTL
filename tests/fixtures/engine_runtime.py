@@ -459,7 +459,7 @@ try:
         # failing later page saved progress with the page before's tokens.
         # handleWOLF then wrote the map with the lines the failing page had
         # set and reported it complete; it now fails the file, as the run's
-        # other file errors do, keeping only the pages that finished.
+        # other file errors do.
         from modules import wolf
         from util import translation as stops
 
@@ -480,14 +480,14 @@ try:
             ]
             return {"events": [None, {"pages": pages}]}
 
-        def wolf_file(name, document):
+        def wolf_file(name, document, error=None):
             (wolf_root / "files" / name).write_text(json.dumps(document), "utf-8")
             try:
                 wolf.handleWOLF(name, False)
-            except ValueError as error:
-                assert error is failure, error
+            except ValueError as raised:
+                assert raised is error, raised
             else:
-                raise AssertionError(f"A WOLF file whose page failed passed: {name}")
+                assert error is None, f"A WOLF file whose page failed passed: {name}"
 
         wolf_root = temporary / "wolf-pages"
         (wolf_root / "files").mkdir(parents=True)
@@ -510,18 +510,33 @@ try:
                 failure = ValueError("Refused.")
                 result = wolf.parseMap(wolf_map(failure, None), "Map001.json")
                 assert result[1:] == [[0, 0], failure], result
-                assert not saved.exists(), saved.read_text("utf-8")
-                wolf_file("Map001.json", wolf_map(None, failure))
-                pages = json.loads(saved.read_text("utf-8"))["events"][1]["pages"]
-                assert [page["list"][0]["stringArgs"][0] for page in pages] == [
-                    "EN:一頁",
-                    "二頁",
-                ], pages
+                # Each finished page was saved over translated/, so a file
+                # failing again replaced an earlier run's complete output
+                # with a partial one; a WOLF file is now written once, whole.
+                saved.parent.mkdir()
+                saved.write_text("complete", "utf-8")
+                wolf_file("Map001.json", wolf_map(None, failure), failure)
+                assert saved.read_text("utf-8") == "complete"
                 # A CommonEvent or DataBase file is one page.
                 wolf_fails["一頁"] = failure
-                wolf_file("CommonEvent.json", {"commands": [{"stringArgs": ["一頁"]}]})
-                wolf_file("DataBase.json", {"types": [{"stringArgs": ["一頁"]}]})
+                wolf_file(
+                    "CommonEvent.json",
+                    {"commands": [{"stringArgs": ["一頁"]}]},
+                    failure,
+                )
+                wolf_file(
+                    "DataBase.json", {"types": [{"stringArgs": ["一頁"]}]}, failure
+                )
                 assert sorted(os.listdir("translated")) == ["Map001.json"]
+                # A file's kind was searched for in its whole text, so a
+                # CommonEvent line holding "'events':" was parsed as a map.
+                wolf_fails.clear()
+                wolf_file(
+                    "CommonEvent.json", {"commands": [{"stringArgs": ["'events':"]}]}
+                )
+                assert json.loads(
+                    Path("translated/CommonEvent.json").read_text("utf-8")
+                ) == {"commands": [{"stringArgs": ["EN:'events':"]}]}
         finally:
             os.chdir(directory)
         # A WOLF page's set-data pass translated its choices, choice window
@@ -529,9 +544,11 @@ try:
         # was translated again ("EN EN はい"); its tokens were dropped, and a
         # 210 speaker's input tokens counted as output.
         wolf_sent = []
+        wolf_contexts = []
 
         def wolf_answer(text, history, *_args):
             wolf_sent.append(text)
+            wolf_contexts.append(history)
             if isinstance(text, list):
                 return [[f"EN {line}" for line in text], [3, 1]]
             return ["Rin" if "NPC name" in str(history) else f"EN {text}", [3, 1]]
@@ -574,6 +591,61 @@ try:
         assert wolf_window["stringArgs"][1:] == ["EN 行く,EN 残る", "EN 宿屋"], (
             wolf_window
         )
+        # The window's question asked for the "{LANGUAGE}" translation.
+        assert "{LANGUAGE}" not in str(wolf_contexts), wolf_contexts
+        # The set-data pass ran once any one list of the page came back
+        # whole, then wrote a list that came back short (an IndexError failed
+        # the page) or long (its extra line was sent again and written over a
+        # later command). A list, choices or window reply of the wrong length
+        # is now left in its source text, a window's question with it, and
+        # the file joins MISMATCH; a 選択肢/確認 without a question failed on
+        # its missing argument.
+
+        def wolf_odd(text, *_args):
+            if isinstance(text, str):
+                return [f"EN {text}", [3, 1]]
+            reply = [f"EN {line}" for line in text]
+            if "攻撃" in text:
+                reply.append("EN extra")
+            elif "薬草" not in text:
+                reply.pop()
+            return [reply, [3, 1]]
+
+        def wolf_misfit(*commands):
+            page = deepcopy(list(commands))
+            with patch.multiple(
+                wolf,
+                CODE101=True,
+                CODE102=True,
+                CODE122=True,
+                CODE300=True,
+                MISMATCH=[],
+                translateAI=wolf_odd,
+            ):
+                wolf.searchCodes(
+                    page, SimpleNamespace(refresh=lambda: None), [], "M.json"
+                )
+                return page, wolf.MISMATCH
+
+        choices = {"code": 102, "stringArgs": ["はい", "いいえ"]}
+        window = {"code": 300, "stringArgs": ["選択肢/確認", "行く,残る"]}
+        asking = {
+            "code": 300,
+            "stringArgs": ["[共]汎用ウィンドウ生成", "行く,残る", "宿屋"],
+        }
+        dialogue = {"code": 101, "stringArgs": ["こんにちは"]}
+        script = {"code": 122, "stringArgs": ["薬草"]}
+        battle = {"code": 300, "stringArgs": ["BTLメッセージ", "攻撃"]}
+        for commands, written in (
+            ([choices], [choices]),
+            ([window], [window]),
+            ([asking], [asking]),
+            (
+                [dialogue, script, battle],
+                [dialogue, {**script, "stringArgs": ["EN 薬草"]}, battle],
+            ),
+        ):
+            assert wolf_misfit(*commands) == (written, ["M.json"]), commands
         # A name a registered reference game already translated is reused
         # instead of guessed: that game read 存子 as Aruko.
         from util import reference_games
