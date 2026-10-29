@@ -184,6 +184,10 @@ def checkLine(data, i, filename):
 
 
 def translateWOLF(data, translatedList, pbar, filename):
+    """Pass 1 (*translatedList* empty) translates speakers and choices on the
+    spot and gathers the lines; pass 2 writes the lines' translations and
+    sends nothing, since speakers and choices then hold their translations."""
+    setData = translatedList != []
     stringList = []
     currentGroup = []
     tokens = [0, 0]
@@ -196,12 +200,13 @@ def translateWOLF(data, translatedList, pbar, filename):
         # Speaker
         matchList = re.findall(r"^([^/]*)：", data[i])
         if len(matchList) != 0:
-            response = getSpeaker(matchList[0])
-            speaker = response[0]
-            tokens[0] += response[1][0]
-            tokens[1] += response[1][1]
-            data[i] = data[i].replace(matchList[0], f"{speaker}")
-            checkLine(data, i, filename)
+            if not setData:
+                response = getSpeaker(matchList[0])
+                speaker = response[0]
+                tokens[0] += response[1][0]
+                tokens[1] += response[1][1]
+                data[i] = data[i].replace(matchList[0], f"{speaker}")
+                checkLine(data, i, filename)
             i += 1
         else:
             speaker = ""
@@ -216,31 +221,32 @@ def translateWOLF(data, translatedList, pbar, filename):
                 i += 1
 
             # Translate
-            response = translateAI(choiceList, "This will be a dialogue option")
-            tokens[0] += response[1][0]
-            tokens[1] += response[1][1]
-            choiceListTL = response[0]
+            if not setData:
+                response = translateAI(choiceList, "This will be a dialogue option")
+                tokens[0] += response[1][0]
+                tokens[1] += response[1][1]
+                choiceListTL = response[0]
 
-            # Set Data
-            if len(choiceList) == len(choiceListTL):
                 # Set Data
-                i = initialIndex
-                while "//" in data[i] and "の場合" not in data[i]:
-                    choiceListTL[0] = choiceListTL[0].replace(", ", "、")
-                    data[i] = f"//{choiceListTL[0]}\n"
-                    checkLine(data, i, filename)
-                    choiceListTL.pop(0)
-                    i += 1
+                if len(choiceList) == len(choiceListTL):
+                    # Set Data
+                    i = initialIndex
+                    while "//" in data[i] and "の場合" not in data[i]:
+                        choiceListTL[0] = choiceListTL[0].replace(", ", "、")
+                        data[i] = f"//{choiceListTL[0]}\n"
+                        checkLine(data, i, filename)
+                        choiceListTL.pop(0)
+                        i += 1
 
-            # Mismatch
-            else:
-                with LOCK:
-                    found_mismatch(MISMATCH, filename)
+                # Mismatch
+                else:
+                    with LOCK:
+                        found_mismatch(MISMATCH, filename)
 
         # Lines
         if r"/" not in data[i] and "@" not in data[i] and data[i] != "\n":
             # Pass 1
-            if translatedList == []:
+            if not setData:
                 # Grab Consecutive Strings
                 currentGroup.append(data[i])
                 i += 1
