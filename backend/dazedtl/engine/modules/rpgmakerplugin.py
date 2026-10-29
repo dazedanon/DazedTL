@@ -149,6 +149,13 @@ def parsePlugin(readFile, filename):
     return [data, totalTokens, None]
 
 
+def escapedNewline(text):
+    """The escaped line break a plugin string uses, as its backslashes and n
+    (one more level of escaping per level of nesting), or None."""
+    found = re.search(r"\\+n", text)
+    return found.group(0) if found else None
+
+
 def translatePlugin(data, pbar, filename, translatedList):
     if len(translatedList) > 0:
         questList = translatedList[0]
@@ -270,8 +277,8 @@ def translatePlugin(data, pbar, filename, translatedList):
                     continue
 
                 # Replace \n and \c
-                if re.search(r"\\+n", jaString):
-                    newline = re.search(r"\\+n", jaString).group(0)
+                newline = escapedNewline(jaString)
+                if newline:
                     jaString = re.sub(r"\\+n", r"\\n", jaString)
                 if re.search(r"\\+C", jaString):
                     colorCode = re.search(r"\\+C", jaString).group(0)
@@ -323,7 +330,9 @@ def translatePlugin(data, pbar, filename, translatedList):
                     originalString = match
 
                     # Remove any textwrap
-                    match = match.replace(newline, " ")
+                    newline = escapedNewline(match)
+                    if newline:
+                        match = match.replace(newline, " ")
 
                     # Pass 1
                     if setData == False:

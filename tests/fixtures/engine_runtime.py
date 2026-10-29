@@ -824,24 +824,27 @@ try:
             (progress / folder).mkdir(parents=True)
         os.chdir(progress)
         try:
-            for module_name, handler, scene, source in (
+            for module_name, handler, scene, source, options in (
                 (
                     "modules.lune",
                     "handleLune",
                     "Scene.json",
                     '[{"name": "アリス", "message": "やあ"}]',
+                    {},
                 ),
                 (
                     "modules.kirikiri",
                     "handleKirikiri",
                     "Scene.ks",
                     "【アリス】[CR]\n[text]やあ[KeyWait]\n",
+                    {},
                 ),
                 (
                     "modules.csv",
                     "handleCSV",
                     "Scene.csv",
-                    "Source,Target\nやあ,アリス\n",
+                    "Source,Target,Speaker\nやあ,,アリス\n",
+                    {"SPEAKER_COLUMN": 2},
                 ),
             ):
                 module = import_module(module_name)
@@ -857,10 +860,8 @@ try:
                         raise refused
                     return ["Alice", [1, 1]]
 
-                with (
-                    patch.multiple(module, translateAI=speaker_only, NAMESLIST=[]),
-                    redirect_stdout(StringIO()),
-                ):
+                its = {"translateAI": speaker_only, "NAMESLIST": [], **options}
+                with patch.multiple(module, **its), redirect_stdout(StringIO()):
                     try:
                         getattr(module, handler)(scene, False)
                     except ValueError as error:
@@ -936,6 +937,90 @@ try:
         assert frozen.read_bytes() == exported, frozen.read_text("utf-8")
         assert (image_run / "files/image_text.json").read_bytes() == exported
         prepare_inputs(image_run, image_plan)  # The run can still resume.
+        # NScripter wrote each csel choice with the dialogue line translated
+        # before it, and failed a csel before any dialogue. The plugin module
+        # took a QuestName's line break from the txtSubject before it, so it
+        # failed a QuestName with no txtSubject, or one without a line break,
+        # before it. CSV read its target column as the speaker by default, and
+        # as the name it wrote there made the row look translated, wrote each
+        # row's translation to the next row.
+        shapes = temporary / "engine-shapes"
+        for folder in ("files", "translated", "log"):
+            (shapes / folder).mkdir(parents=True)
+        os.chdir(shapes)
+        try:
+            for module_name, handler, scene, source, options, requests, output in (
+                (
+                    "modules.nscript",
+                    "handleOnscripter",
+                    "0.txt",
+                    '*start\ncsel "はい",*yes,"いいえ",*no\n「やあ」\n',
+                    {},
+                    [["「やあ」"], ["はい", "いいえ"]],
+                    (
+                        "*start\ncsel \"EN 'はい'\",*yes,\"EN 'いいえ'\",*no\n"
+                        "　EN '「やあ」'\\\n"
+                    ),
+                ),
+                (
+                    "modules.rpgmakerplugin",
+                    "handlePlugin",
+                    "plugins.js",
+                    (
+                        r"var q = [\"{\\\"QuestName\\\":\\\"最初の\\\\n依頼\\\"}\"];"
+                        '\nvar txtSubject = "クエスト";\n'
+                    ),
+                    {},
+                    [["最初の 依頼"], ["クエスト"]],
+                    (
+                        r"var q = [\"{\\\"QuestName\\\":\\\"EN \'最初の 依頼\'\\\"}\"];"
+                        '\nvar txtSubject = "EN ՚クエスト՚";\n'
+                    ),
+                ),
+                (
+                    "modules.csv",
+                    "handleCSV",
+                    "Scene.csv",
+                    "Source,Target\nやあ,アリス\nまたね,\n",
+                    {},
+                    [["やあ", "またね"]],
+                    'Source,Target\r\nやあ,"EN ""やあ"""\r\nまたね,"EN ""またね"""\r\n',
+                ),
+                (
+                    "modules.csv",
+                    "handleCSV",
+                    "Scene.csv",
+                    "Source,Target\nやあ,アリス\nまたね,\n",
+                    {"SPEAKER_COLUMN": 1},
+                    ["アリス", ["[Alice]: やあ", "またね"]],
+                    (
+                        'Source,Target\r\nやあ,"EN ""[Alice]: やあ"""\r\n'
+                        'またね,"EN ""またね"""\r\n'
+                    ),
+                ),
+            ):
+                module = import_module(module_name)
+                encoding = "cp932" if scene == "0.txt" else "utf-8"
+                (shapes / "files" / scene).write_bytes(source.encode(encoding))
+                sent = []
+
+                def shape_reply(text, *_args, **_kwargs):
+                    if text:
+                        sent.append(text)
+                    if isinstance(text, list):
+                        return [[f'EN "{line}"' for line in text], [1, 1]]
+                    return ["Alice", [1, 1]]
+
+                its = {"translateAI": shape_reply, "NAMESLIST": [], **options}
+                with patch.multiple(module, **its), redirect_stdout(StringIO()):
+                    getattr(module, handler)(scene, False)
+                # Only the requests this case is about: CSV's second pass asks
+                # for a speaker column's name again, which is not.
+                assert sent[: len(requests)] == requests, (module_name, sent)
+                written = (shapes / "translated" / scene).read_bytes()
+                assert written.decode(encoding) == output, (module_name, written)
+        finally:
+            os.chdir(directory)
         # A name a registered reference game already translated is reused
         # instead of guessed: that game read 存子 as Aruko.
         from util import reference_games
