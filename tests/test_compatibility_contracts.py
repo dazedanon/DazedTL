@@ -237,13 +237,16 @@ def checkout(game, *pending):
 
 
 class Characters:
-    """A hermetic stand-in for tiktoken's encoding."""
+    """A hermetic stand-in for tiktoken's encoding, which refuses text
+    reading as its special token unless told to count it as text."""
 
-    def encode(self, text, **_kwargs):
+    def encode(self, text, *, disallowed_special="all"):
+        if disallowed_special and "<|endoftext|>" in str(text):
+            raise ValueError("Encountered text corresponding to disallowed special token")
         return [ord(character) for character in str(text)]
 
-    def encode_batch(self, texts, **_kwargs):
-        return [self.encode(text) for text in texts]
+    def encode_batch(self, texts, *, disallowed_special="all"):
+        return [self.encode(text, disallowed_special=disallowed_special) for text in texts]
 
 
 class CompatibilityContracts(unittest.TestCase):
@@ -464,12 +467,16 @@ class CompatibilityContracts(unittest.TestCase):
                 patch.object(translation, "buildClaudeRequest", recorded),
             ):
                 live = TranslationTaskCore._estimate_grouped_speakers(
-                    ["太郎", "花子", "長老", "村人", "兵士"],
+                    # A name reading as the encoder's special token is counted
+                    # as text, which failed the estimate.
+                    ["太郎", "花子", "長老", "<|endoftext|>", "兵士"],
                     "Name each.",
                     config,
                     model,
                 )
-            entries = [{"params": params, "payload": "名前" * 5} for params in sent]
+            entries = [
+                {"params": params, "payload": "名前<|endoftext|>"} for params in sent
+            ]
             cache = TranslationEngine.claude_cache(None, entries, {"model": model})
             # Two names a request, then one: two reply schemas, one read.
             self.assertEqual((len(sent), cache.keys), (3, 2))
