@@ -2438,15 +2438,17 @@ def _provider_params(candidate: dict, request: dict) -> dict:
         apply_reasoning(params, provider, effort)
         params["max_tokens"] = output_limit
     else:
+        from dazedtl.settings.providers import completion_field
+
         apply_reasoning(params, provider, effort)
-        params["max_completion_tokens"] = output_limit
-        if (
-            candidate.get("execution") == "live"
-            and "api.openai.com" not in str(candidate.get("endpoint") or "").lower()
-        ):
-            # Most local/OpenAI-compatible chat servers implement max_tokens,
-            # while current official OpenAI models use max_completion_tokens.
-            params["max_tokens"] = params.pop("max_completion_tokens")
+        params.pop("max_tokens", None)
+        params.pop("max_completion_tokens", None)
+        field = (
+            "max_completion_tokens"
+            if completion_field(provider, candidate.get("endpoint"))
+            else "max_tokens"
+        )
+        params[field] = output_limit
     return params
 
 
