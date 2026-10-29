@@ -833,6 +833,8 @@ class CompatibilityContracts(unittest.TestCase):
         def worker(policy, root, coordinator=False):
             translation = SimpleNamespace(
                 translateText=point(provider),
+                translateAI=point(provider),
+                get_batch_phase=lambda: None,
                 RunStoppingError=Stopping,
                 RequestRejectedError=Rejected,
             )
@@ -941,6 +943,104 @@ class CompatibilityContracts(unittest.TestCase):
                     older.translateText("s", "u")
                 self.assertIs(caught.exception, rejected)
             self.assertEqual(older.translateText("s", "u"), "ok")
+
+    def test_a_live_call_the_engine_gave_up_on_fails_with_the_providers_error(self):
+        # A file failing with an error the run-stop rule does not count, such
+        # as an HTTP 500 after the engine's tries, or any error in a run frozen
+        # before the rule, failed with the engine's wrapped text: "API server
+        # error (500) - retrying... Error: Error code: 500 - {...}". Requests
+        # and retries stay as the run sends them.
+        from dazedtl.compatibility import run_stops
+        from dazedtl.settings.preferences import RUN_STOPS
+
+        class Stopping(RuntimeError):
+            pass
+
+        class Rejected(Exception):
+            pass
+
+        class StatusError(Exception):
+            def __init__(self, status):
+                super().__init__(f"Error code: {status}")
+                self.status_code = status
+                self.body = {"error": {"message": "The server failed"}}
+
+        class APIConnectionError(Exception):
+            pass
+
+        class APITimeoutError(APIConnectionError):
+            pass
+
+        class Wrapped(Exception):
+            """The engine's own error, raised inside its handler."""
+
+        def wrapped(sdk, text):
+            try:
+                raise sdk
+            except Exception as error:
+                try:
+                    raise Wrapped(f"{text} - retrying... Error: {error}")
+                except Wrapped as outer:
+                    return outer
+
+        calls, replies, phase = [], [], None
+
+        def engine(*_args, **_kwargs):
+            calls.append(1)
+            raise replies.pop(0)
+
+        with TemporaryDirectory() as temporary:
+            for policy in ({"runStops": RUN_STOPS}, None):
+                translation = SimpleNamespace(
+                    translateText=point(lambda *_args: "ok"),
+                    translateAI=point(engine),
+                    get_batch_phase=lambda: phase,
+                    RunStoppingError=Stopping,
+                    RequestRejectedError=Rejected,
+                )
+                run_stops.configure(translation, policy, temporary)
+                for sdk, text, message in (
+                    (
+                        StatusError(500),
+                        "API server error (500)",
+                        (
+                            "The provider failed the request: HTTP 500 - The "
+                            "server failed."
+                        ),
+                    ),
+                    (
+                        StatusError(400),
+                        "API status error (400)",
+                        (
+                            "The provider rejected the request: HTTP 400 - The "
+                            "server failed."
+                        ),
+                    ),
+                    (
+                        APITimeoutError("Request timed out."),
+                        "API connection/rate limit error",
+                        "The provider could not be reached: Request timed out.",
+                    ),
+                ):
+                    replies[:] = [wrapped(sdk, text)]
+                    with self.assertRaises(Exception) as caught:
+                        translation.translateAI("s", "u")
+                    self.assertEqual(str(caught.exception), message, policy)
+                # A stop, a rejection and an error from no provider pass as
+                # they are.
+                for error in (Stopping("Stop."), Rejected("No."), ValueError("x")):
+                    replies[:] = [error]
+                    with self.assertRaises(Exception) as caught:
+                        translation.translateAI("s", "u")
+                    self.assertIs(caught.exception, error)
+                # A Batch phase sends nothing Live.
+                phase = "consume"
+                replies[:] = [wrapped(StatusError(500), "API server error (500)")]
+                with self.assertRaises(Exception) as caught:
+                    translation.translateAI("s", "u")
+                self.assertIsInstance(caught.exception, Wrapped)
+                phase = None
+        self.assertEqual(len(calls), 14)
 
     def test_a_provider_error_without_a_message_reads_as_its_code(self):
         # A 400 whose body held no message read "HTTP 400 - Provider returned
