@@ -26,28 +26,46 @@ import {
 } from "./journey.mjs";
 import { entries } from "../zip.mjs";
 
+/**
+ * The scenario's Python running `args` with the options the app hands an
+ * assistant: UTF-8 mode and the profile's bytecode cache, so nothing compiles
+ * into the checkout (backend/dazedtl/system.py).
+ */
+export const pythonCommand = (state, ...args) => [
+  state.env?.DAZEDTL_PYTHON || python,
+  "-X",
+  "utf8",
+  "-X",
+  `pycache_prefix=${path.join(state.profile, "python-cache")}`,
+  ...args,
+];
+
+/** Runs a pythonCommand and returns its output. */
+const runPython = ([file, ...args]) =>
+  execFileSync(file, args, {
+    encoding: "utf8",
+    maxBuffer: 64 * 1024 * 1024,
+  });
+
 /** Runs a Python script of the scenario's checkout, as an assistant's shell does. */
 const run = (state, script, ...args) =>
-  execFileSync(
-    state.env?.DAZEDTL_PYTHON || python,
-    ["-X", "utf8", path.join(state.root, script), ...args],
-    { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 },
+  runPython(pythonCommand(state, path.join(state.root, script), ...args));
+
+/** The project helper command for `project`, as an assistant's task runs it. */
+export const helperCommand = (state, project) =>
+  pythonCommand(
+    state,
+    path.join(state.root, "scripts/project.py"),
+    "--workspace",
+    path.join(state.profile, "workspace"),
+    "--project",
+    project,
   );
 
 /** Runs the project helper with `args` and reads its JSON reply. */
 async function helper(page, state, ...args) {
   const project = (await page.call("workspace_snapshot")).application.project;
-  return JSON.parse(
-    run(
-      state,
-      "scripts/project.py",
-      "--workspace",
-      path.join(state.profile, "workspace"),
-      "--project",
-      project.id,
-      ...args,
-    ),
-  );
+  return JSON.parse(runPython([...helperCommand(state, project.id), ...args]));
 }
 
 const open = [
@@ -139,19 +157,16 @@ const narrowWidths = [
  * kana, kanji or 。, takes two. */
 const cells = (state, rows) =>
   JSON.parse(
-    execFileSync(
-      state.env?.DAZEDTL_PYTHON || python,
-      [
-        "-X",
-        "utf8",
+    runPython(
+      pythonCommand(
+        state,
         "-c",
         "import json, sys; sys.path.insert(0, sys.argv[1]); " +
           "from util.rpgmaker_rewrap import visible_width; " +
           "print(json.dumps([visible_width(row) for row in json.loads(sys.argv[2])]))",
         path.join(state.root, "backend/dazedtl/engine"),
         JSON.stringify(rows),
-      ],
-      { encoding: "utf8" },
+      ),
     ),
   );
 
@@ -228,28 +243,16 @@ const plugins = [
     });
     if (!task.request)
       throw new Error(`Plugin files has no task: ${task.message}`);
-    execFileSync(
-      state.env?.DAZEDTL_PYTHON || python,
-      [
-        "-X",
-        "utf8",
+    runPython(
+      pythonCommand(
+        state,
         path.join(import.meta.dirname, "plugin_assistant.py"),
         task.request,
         "--game",
         state.game,
         "--helper-json",
-        JSON.stringify([
-          state.env?.DAZEDTL_PYTHON || python,
-          "-X",
-          "utf8",
-          path.join(state.root, "scripts/project.py"),
-          "--workspace",
-          path.join(state.profile, "workspace"),
-          "--project",
-          project.id,
-        ]),
-      ],
-      { encoding: "utf8" },
+        JSON.stringify(helperCommand(state, project.id)),
+      ),
     );
     const applied = await page.call("plugins_action", {
       project_id: project.id,
@@ -547,30 +550,17 @@ const batch = [
 /** Runs the scripted Assistant-led assistant's `step`. */
 async function assistant(page, state, step, ...args) {
   const project = (await page.call("workspace_snapshot")).application.project;
-  const command = [
-    state.env?.DAZEDTL_PYTHON || python,
-    "-X",
-    "utf8",
-    path.join(state.root, "scripts/project.py"),
-    "--workspace",
-    path.join(state.profile, "workspace"),
-    "--project",
-    project.id,
-  ];
-  return execFileSync(
-    state.env?.DAZEDTL_PYTHON || python,
-    [
-      "-X",
-      "utf8",
+  return runPython(
+    pythonCommand(
+      state,
       path.join(import.meta.dirname, "assistant.py"),
       step,
       "--helper-json",
-      JSON.stringify(command),
+      JSON.stringify(helperCommand(state, project.id)),
       "--game",
       state.game,
       ...args,
-    ],
-    { encoding: "utf8" },
+    ),
   );
 }
 
@@ -1428,17 +1418,14 @@ const stoppedUpdate = [
       );
       // The app's Apply resolves conflicts at once; stopping before that is
       // what an update interrupted mid-apply leaves for Checkpoints.
-      execFileSync(
-        state.env?.DAZEDTL_PYTHON || python,
-        [
-          "-X",
-          "utf8",
+      runPython(
+        pythonCommand(
+          state,
           path.join(import.meta.dirname, "stopped_update.py"),
           state.root,
           path.join(state.profile, "workspace"),
           preview.id,
-        ],
-        { encoding: "utf8" },
+        ),
       );
       await page.waitText("Finish the interrupted update");
       await until("Checkpoints to offer to cancel the update", () =>

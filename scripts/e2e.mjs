@@ -420,24 +420,43 @@ function compiledPython(folder, skipped = new Set()) {
  * runtimes and packages keep their own.
  */
 function bytecodeInProfile() {
+  // The Text QA CLI an assistant runs, which imports the engine, compiles
+  // where the app does.
+  const status = JSON.parse(helper(qaStatus, 2 * 60_000));
+  if (!status.stage)
+    throw new Error(`QA status read ${JSON.stringify(status)}.`);
   const strays = compiledPython(
     install,
     new Set([".venv", ".runtime", "node_modules"]),
   );
   if (strays.length)
     throw new Error(
-      `The app compiled Python inside its install:\n${strays.slice(0, 10).join("\n")}`,
+      `The app or an assistant's command compiled Python inside the install:\n${strays.slice(0, 10).join("\n")}`,
     );
-  // The engine module the translation workers import.
-  const cache = path.join(profile, "python-cache");
-  const engine = path.join("engine", "modules", "rpgmakermvmz.");
-  if (
-    !fs.existsSync(cache) ||
-    !compiledPython(cache).some((file) => file.includes(engine))
-  )
+  const engine = compiledEngine();
+  if (!engine)
     throw new Error(
       "The translation workers kept no compiled engine in the profile.",
     );
+  // What a moved install leaves, under this Python's own tag.
+  staleBytecode = path.join(
+    profile,
+    "python-cache",
+    "moved-install",
+    path.basename(engine).replace(/^rpgmakermvmz/, "gone"),
+  );
+  fs.mkdirSync(path.dirname(staleBytecode), { recursive: true });
+  fs.writeFileSync(staleBytecode, "");
+}
+
+/** The profile's compiled copy of the engine module the translation workers
+ * import, if any. */
+function compiledEngine() {
+  const cache = path.join(profile, "python-cache");
+  const engine = path.join("engine", "modules", "rpgmakermvmz.");
+  return fs.existsSync(cache)
+    ? compiledPython(cache).find((file) => file.includes(engine))
+    : undefined;
 }
 
 /** The menu shortcut setup adds for a downloaded install. */
@@ -472,6 +491,10 @@ let inspect = 0;
 let page;
 // The project helper an assistant's copied task runs, without its command.
 let projectHelper = "";
+// The Text QA task's status command, which runs its engine CLI.
+let qaStatus = "";
+// A compiled module of a moved install, which the next start drops.
+let staleBytecode = "";
 
 /** Saves and checks a connection to the stand-in provider. */
 const connectStandIn = () => connect(page, stand_in.url);
@@ -697,6 +720,17 @@ async function liveJourney() {
     },
   );
 
+  await step("The assistant prepares the Text QA task", async () => {
+    const { task } = JSON.parse(
+      helper(`${projectHelper} qa --prepare`, 5 * 60_000),
+    );
+    // The command the task's README gives its coordinator first.
+    qaStatus = /Run `([^`]+ status --task [^`]+)`/.exec(
+      fs.readFileSync(path.join(task, "README.md"), "utf8"),
+    )?.[1];
+    if (!qaStatus) throw new Error("The QA task names no status command.");
+  });
+
   await step("Build a patch ZIP", async () => {
     const actors = (await buildPatch(page)).get("data/Actors.json");
     if (!actors || !translated(JSON.parse(actors.toString("utf8"))[1].name))
@@ -776,10 +810,20 @@ async function liveJourney() {
     await page.waitText(path.basename(game));
     await page.settle({ root: install, inspect });
     await shot("restarted");
+    // The backend's start drops what no Python of this install reads again,
+    // beside its first requests, and keeps what it does, wherever the
+    // install's drive is.
+    await until(
+      "the start to drop a moved install's compiled module",
+      () => !fs.existsSync(path.dirname(staleBytecode)),
+      60_000,
+    );
     page.close();
     page = undefined;
     await closeApp();
     diagnostics();
+    if (!compiledEngine())
+      throw new Error("The start dropped the engine's compiled modules.");
   });
 }
 
