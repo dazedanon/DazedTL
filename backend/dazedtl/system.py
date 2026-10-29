@@ -44,15 +44,21 @@ Processes
   PYTHONDONTWRITEBYTECODE itself, which would stop its child caching. A
   command handed to an assistant, which runs it outside the app, carries the
   same options (python_command), quoted for its shell (shell_command).
-  prune_bytecode drops what a moved install or another Python left in the
-  cache. On Windows without long paths, Python skips a compiled file whose
-  path passes 260 characters and compiles that module in memory each time;
+  prune_bytecode drops what a moved install left in the cache, and what a
+  Python that has not started for a month did, keeping the cache of another
+  install with its own Python that shares the profile. On Windows without
+  long paths, Python skips a compiled file whose path passes 260 characters
+  and compiles that module in memory each time;
   DazedTL's own modules stay within it for an install folder of up to about
   120 characters, so only the deepest package modules of a deep install
   lose the cache.
-- An assistant's shell on Windows is PowerShell, which decodes a command's
-  output in the console's ANSI code page, which cannot hold Japanese game
-  text, so shell_command's form has it decode UTF-8.
+- An assistant's shell on Windows is PowerShell: Codex runs commands only
+  there, and Claude Code's PowerShell tool, on by default, is its main shell.
+  PowerShell decodes a command's output in the console's ANSI code page,
+  which cannot hold Japanese game text, so shell_command's form has it decode
+  UTF-8. No form runs unchanged in both PowerShell and Git Bash, the shell
+  Claude Code falls back on without that tool, so shell_note tells an
+  assistant in Git Bash or WSL how to hand a command to PowerShell as it is.
 - Console children open no window on Windows.
 - Stopping a worker stops everything it started (stop_tree), or a Git command
   it waits on outlives it.
@@ -96,6 +102,7 @@ __all__ = [
     "run",
     "shell_argument",
     "shell_command",
+    "shell_note",
     "staging_folder",
     "stop_tree",
     "system_environment",
@@ -425,16 +432,48 @@ def shell_command(arguments):
     return "[Console]::OutputEncoding = [Text.Encoding]::UTF8; & " + line
 
 
+def shell_note():
+    """What an assistant on Windows reads before shell_command's commands:
+    they are PowerShell, and how to run one from a POSIX shell. Empty
+    elsewhere."""
+    if os.name != "nt":
+        return ""
+    return (
+        "On Windows, every command DazedTL gives here is for PowerShell: run it in PowerShell,"
+        " such as Claude Code's PowerShell tool. Where your shell is Git Bash, WSL"
+        " or another POSIX shell, hand the command to PowerShell exactly as written:\n"
+        f"```\n{_through_powershell('<command>')}\n```\n\n"
+    )
+
+
+def _through_powershell(line):
+    """A POSIX shell command that has PowerShell run line. The quoted here
+    document passes line as one argument with no character changed, so its
+    quotes, $ and Japanese reach PowerShell as written, and Git Bash leaves
+    its paths alone. Its end marker is a word no command holds as a line."""
+    return (
+        "MSYS_NO_PATHCONV=1 powershell.exe -NoProfile -NonInteractive"
+        f" -Command \"$(cat <<'END_POWERSHELL'\n{line}\nEND_POWERSHELL\n)\""
+    )
+
+
+# How long another Python's compiled modules stay in the cache after it last
+# started: another install sharing the profile with a Python of its own keeps
+# them while it is in use, and a replaced Python's leave.
+BYTECODE_KEPT_DAYS = 30
+
+
 def prune_bytecode():
-    """Drops what no Python of this install reads again from this process's
-    pycache_prefix: another Python version's compiled modules, and those
-    whose source is gone, such as a moved install's or a removed runtime's."""
+    """Records that this Python started, then drops what no Python reads
+    again from this process's pycache_prefix: compiled modules whose source
+    is gone, such as a moved install's or a removed runtime's, and those of a
+    Python that has not started for BYTECODE_KEPT_DAYS."""
     if not sys.pycache_prefix:
         return
-    tag = "." + sys.implementation.cache_tag + "."
+    cache = Path(sys.pycache_prefix)
     # The cache leaves out a Windows path's drive letter, and a network path's
-    # first separator; any drive this Python and DazedTL run from may hold
-    # the source.
+    # first separator, so each Python records the drives its installs and
+    # their DazedTL run from, where a source may be.
     drives = {
         "\\" if drive.startswith("\\\\") else drive
         for drive in (
@@ -442,10 +481,27 @@ def prune_bytecode():
             for path in (sys.prefix, sys.base_prefix, __file__)
         )
     }
+    started = cache / _started_name(sys.implementation.cache_tag)
+    try:
+        write_json(started, sorted(drives | _started_drives(started)))
+    except OSError:
+        return  # Pruning waits for a start that can record itself.
+    since = time.time() - BYTECODE_KEPT_DAYS * 86400
+    tags = set()
+    for marker in cache.glob(_started_name("*")):
+        try:
+            current = marker.stat().st_mtime >= since
+        except OSError:
+            continue
+        if current:
+            tags.add("." + marker.name.removesuffix(_STARTED) + ".")
+            drives |= _started_drives(marker)
+        else:
+            unlink(marker, missing_ok=True, ignore_errors=True)
     for folder, _folders, names in os.walk(sys.pycache_prefix, topdown=False):
         for name in names:
             if name.endswith(".pyc") and not _compiled_current(
-                os.path.join(folder, name), tag, drives
+                os.path.join(folder, name), tags, drives
             ):
                 unlink(os.path.join(folder, name), missing_ok=True, ignore_errors=True)
         if os.path.normpath(folder) != os.path.normpath(sys.pycache_prefix):
@@ -455,8 +511,30 @@ def prune_bytecode():
                 pass  # It still holds files.
 
 
-def _compiled_current(path, tag, drives):
-    if tag not in os.path.basename(path):
+_STARTED = ".started"
+
+
+def _started_name(tag):
+    """The file at the cache's top whose time says when a Python with the
+    cache tag tag last started, holding the drives its installs run from."""
+    return tag + _STARTED
+
+
+def _started_drives(path):
+    import json
+
+    try:
+        drives = json.loads(read_text(path))
+    except OSError, ValueError:
+        return set()
+    if not isinstance(drives, list):
+        return set()
+    return {drive for drive in drives if isinstance(drive, str)}
+
+
+def _compiled_current(path, tags, drives):
+    name = os.path.basename(path)
+    if not any(tag in name for tag in tags):
         return False
     try:
         source = importlib.util.source_from_cache(path)
