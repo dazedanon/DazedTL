@@ -946,13 +946,16 @@ try:
         # empty one, over the whole csel line. The plugin module read an actor
         # code \n[1] as a line break, and sent a quest client's line break
         # as text, and wrote a txtSubject's or QuestContent's color code \c[2]
-        # with one backslash. CSV read its target column as the speaker by
-        # default, and as the name it wrote there made the row look
-        # translated, wrote each row's translation to the next row. CSV,
-        # Kirikiri, Regex, Lune, Tyrano and WOLF2 sent each speaker name again
-        # in the pass that writes the translations, as it then held its
-        # translation, and WOLF2 its choices too; Lune refused the .l files it
-        # is offered.
+        # with one backslash. It sent other codes, such as \I[5], and a help
+        # text's line break as nested as their field and wrote back the
+        # reply's, and wrapped a QuestContent nested deeper than one game's
+        # with that game's line break, which ended its string. CSV read its
+        # target column as the speaker by default, and as the name it wrote
+        # there made the row look translated, wrote each row's translation to
+        # the next row. CSV, Kirikiri, Regex, Lune, Tyrano and WOLF2 sent each
+        # speaker name again in the pass that writes the translations, as it
+        # then held its translation, and WOLF2 its choices too; Lune refused
+        # the .l files it is offered.
         shapes = temporary / "engine-shapes"
         for folder in ("files", "translated", "log"):
             (shapes / folder).mkdir(parents=True)
@@ -990,7 +993,7 @@ try:
                         '\nvar txtSubject = "\\\\n[1]の\\\\nクエスト";\n'
                     ),
                     {},
-                    [["村の 村長"], ["\\\\n[1]の クエスト"]],
+                    [["村の 村長"], ["\\n[1]の クエスト"]],
                     (
                         r"var q = [\"{\\\"QuestClientName\\\":\\\"EN \'村の 村長\'\\\"}\"];"
                         '\nvar txtSubject = "EN ՚\\\\n[1]の クエスト՚";\n'
@@ -1017,6 +1020,88 @@ try:
                         + "\\" * 16
                         + r"c[0]で\'\\\"\\\"}\"];"
                         '\nvar txtSubject = "EN ՚\\\\C[2]クエスト\\\\C[0]՚";\n'
+                    ),
+                ),
+                (
+                    "modules.rpgmakerplugin",
+                    "handlePlugin",
+                    "plugins.js",
+                    (
+                        r"var q = [\"{\\\"QuestName\\\":\\\""
+                        + "\\" * 8
+                        + r"I[5]村長\\\",\\\"PlaceInformation\\\":\\\""
+                        + "\\" * 8
+                        + r"V[1]番地\\\",\\\"ObjectiveContent\\\":\\\""
+                        + "\\" * 7
+                        + '"'
+                        + "\\" * 16
+                        + "C[2]薬草"
+                        + "\\" * 16
+                        + "C[0]"
+                        + "\\" * 7
+                        + r'"\\\"}\"];'
+                        "\n"
+                        r"var p = {\"HelpText\":\"最初から\\n\\\\I[3]始めます\\n<注意>\"};"
+                        "\n"
+                    ),
+                    {},
+                    [
+                        ["\\I[5]村長"],
+                        ["\\V[1]番地"],
+                        ["\\C[2]薬草\\C[0]"],
+                        ["最初から\\n\\I[3]始めます\\n<注意>"],
+                    ],
+                    (
+                        r"var q = [\"{\\\"QuestName\\\":\\\"EN \'"
+                        + "\\" * 8
+                        + r"I[5]村長\'\\\",\\\"PlaceInformation\\\":\\\"EN \'"
+                        + "\\" * 8
+                        + r"V[1]番地\'\\\",\\\"ObjectiveContent\\\":\\\""
+                        + "\\" * 7
+                        + r'"EN \''
+                        + "\\" * 16
+                        + "C[2]薬草"
+                        + "\\" * 16
+                        + r"C[0]\'"
+                        + "\\" * 7
+                        + r'"\\\"}\"];'
+                        "\n"
+                        r"var p = {\"HelpText\":\"EN \'最初から\\n\\\\I[3]始めます\\n<注意>\'\"};"
+                        "\n"
+                    ),
+                ),
+                (
+                    "modules.rpgmakerplugin",
+                    "handlePlugin",
+                    "plugins.js",
+                    (
+                        r"var q = [\\\"{\\\\\\\"QuestContent\\\\\\\":\\\\\\\""
+                        + "\\" * 15
+                        + '"森で 薬草を 集めて 村長の 家まで 届けて ほしい。 '
+                        + "報酬は 百ゴールドだ。 急いで くれ。 森には 魔物が 出る。"
+                        + "\\" * 15
+                        + r'"\\\\\\\"}\\\"];'
+                        "\n"
+                    ),
+                    {},
+                    [
+                        [
+                            (
+                                "森で 薬草を 集めて 村長の 家まで 届けて ほしい。 "
+                                "報酬は 百ゴールドだ。 急いで くれ。 森には 魔物が 出る。"
+                            )
+                        ]
+                    ],
+                    (
+                        r"var q = [\\\"{\\\\\\\"QuestContent\\\\\\\":\\\\\\\""
+                        + "\\" * 15
+                        + "\"EN \\'森で 薬草を 集めて 村長の 家まで 届けて ほしい。 "
+                        + "報酬は 百ゴールドだ。 急いで くれ。 森には 魔物が"
+                        + "\\" * 16
+                        + "n出る。\\'"
+                        + "\\" * 15
+                        + r'"\\\\\\\"}\\\"];'
+                        "\n"
                     ),
                 ),
                 (
