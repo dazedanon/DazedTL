@@ -270,12 +270,14 @@ def translateOnscripter(data, pbar, filename, translatedList):
 
                 # Set Data
                 for j in range(len(translatedTextList)):
+                    choiceText = translatedTextList[j]
+
                     # Convert to Wide
                     if CONVERTTOWIDE:
-                        translatedText = translatedTextList[j].translate(ascii_to_wide)
+                        choiceText = choiceText.translate(ascii_to_wide)
 
                     # Set
-                    data[i] = data[i].replace(choiceList[j], translatedText)
+                    data[i] = data[i].replace(choiceList[j], singleQuotes(choiceText))
                 checkLine(data, i, filename)
             i += 1
 
@@ -306,9 +308,15 @@ def translateOnscripter(data, pbar, filename, translatedList):
     return tokens
 
 
+def singleQuotes(text):
+    """NScripter reads a double quote as the start or end of a string, so
+    translated text uses single quotes."""
+    return text.replace('"', "'")
+
+
 def fixText(translatedText):
     # Add Break
-    translatedText = translatedText.replace('"', "'")
+    translatedText = singleQuotes(translatedText)
     translatedText = f"\u3000{translatedText}\\"
 
     # Unconvert Codes
