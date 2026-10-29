@@ -8,9 +8,6 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
-# The app activates its bundled engine at startup; code that reads engine
-# helpers, such as glossary rows, needs it in every test module too.
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend/dazedtl/engine"))
 # Windows may name the temporary folder by its 8.3 short name, such as
 # RUNNER~1, while the app resolves the game folders it opens to long names.
 tempfile.tempdir = str(Path(tempfile.gettempdir()).resolve())
@@ -18,6 +15,13 @@ tempfile.tempdir = str(Path(tempfile.gettempdir()).resolve())
 from tests import game_writes
 
 game_writes.install()
+# The app activates its bundled engine at startup, which puts it on the path
+# and adds the host's layers, such as OpenRouter Batch, to the engine. Every
+# test process starts as the app does, so a test never answers by whether an
+# earlier one in its process reached app code that activates.
+from dazedtl.compatibility.runtime import activate
+
+activate()
 # The suite does not check what survives a power loss, and Windows takes
 # about 2 ms per fsync: the app's durable saves made seconds of its runtime.
 os.fsync = lambda _descriptor: None
