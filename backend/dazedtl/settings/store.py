@@ -804,20 +804,7 @@ class Settings:
             if model is None
             else preferences.text(model, "model ID", required=True)
         )
-        row = (
-            active.get("catalog", {}).get(model + ":batch", {})
-            if ":" not in model
-            else {}
-        )
-        if not model or not row.get("text") or not row.get("json"):
-            return None
-        endpoints = active.get("batch_endpoints", {})
-        if (
-            endpoints.get("model") == model
-            and endpoints.get("host") == active.get("openrouter_host", "")
-            and "providers" in endpoints
-            and not endpoints.get("error")
-        ):
+        if not model or not openrouter.batch(active, model).endpoints_due:
             return None
         return {"connection": active, "model": model}
 

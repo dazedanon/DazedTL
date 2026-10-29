@@ -16,7 +16,7 @@ from tqdm import tqdm
 from util.languages import source_pattern
 from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost, getPricingConfig, calculateCost, found_mismatch, run_stop_errors
 from util.translation_task import fail_on_parser_error, module_receipt, write_output
-from util.speakers import strip_speaker_prefix
+from util.speakers import find_speaker, strip_speaker_prefix, to_prefixed
 from util.game_encoding import check_line, writable
 
 # Globals
@@ -183,20 +183,18 @@ def translateKiriKiri(data, pbar, filename, jobList):
 
     while i < len(data):
         speaker = ""
-        # Speaker, translated in pass 1 only: pass 2 finds the name it wrote
-        match = re.search(speakerRegex, data[i])
-        if match and SPEAKERS:
-            if not setData:
-                speakerJA = match.group(1)
-                response = getSpeaker(speakerJA)
-                speaker = response[0]
-                tokens[0] += response[1][0]
-                tokens[1] += response[1][1]
-                # Only the name between the brackets: the rest of the line,
-                # such as a voice file named after the speaker, stays
-                data[i] = data[i][: match.start(1)] + speaker + data[i][match.end(1) :]
-                checkLine(data, i, filename)
+        # Speaker (util/speakers), saying the line after it
+        found = find_speaker(speakerRegex, data[i]) if SPEAKERS else None
+        if found:
+            response = getSpeaker(found.name)
+            speaker = response[0]
+            tokens[0] += response[1][0]
+            tokens[1] += response[1][1]
+            data[i] = found.written(speaker)
+            checkLine(data, i, filename)
             i += 1
+            if i == len(data):
+                break
 
         # Choices
         match = re.search(choicesRegex, data[i])
@@ -225,6 +223,12 @@ def translateKiriKiri(data, pbar, filename, jobList):
             tag_name = tagged.group('tag')
             jaString = tagged.group('text')
 
+            # The tag names the speaker; the tag itself stays
+            resolved = getSpeaker(tag_name)
+            tag_speaker = resolved[0]
+            tokens[0] += resolved[1][0]
+            tokens[1] += resolved[1][1]
+
             # Pass 1: enqueue with speaker from closing tag
             if not setData:
                 # Remove inline wrapping
@@ -235,16 +239,7 @@ def translateKiriKiri(data, pbar, filename, jobList):
                     for fm in matchList:
                         jaString_clean = jaString_clean.replace(fm[0], fm[1])
 
-                # Resolve speaker via getSpeaker
-                resolved = getSpeaker(tag_name)
-                tag_speaker = resolved[0]
-                tokens[0] += resolved[1][0]
-                tokens[1] += resolved[1][1]
-
-                if tag_speaker:
-                    stringList.append(f"[{tag_speaker}]: {jaString_clean.strip()}")
-                else:
-                    stringList.append(jaString_clean.strip())
+                stringList.append(to_prefixed(tag_speaker, jaString_clean.strip()))
 
             # Pass 2: apply translated text back between tags
             else:
@@ -252,7 +247,7 @@ def translateKiriKiri(data, pbar, filename, jobList):
                     translatedText = stringList[0]
                     stringList.pop(0)
                     # Remove Speaker label if present
-                    translatedText = strip_speaker_prefix(translatedText)
+                    translatedText = strip_speaker_prefix(translatedText, tag_speaker)
                     # Wrap and convert newlines to [r]
                     translatedText = dazedwrap.wrapText(translatedText, width=WIDTH)
                     translatedText = translatedText.replace("\n", "[r]")
@@ -317,10 +312,7 @@ def translateKiriKiri(data, pbar, filename, jobList):
                         jaString = jaString.replace(match[0], match[1])
 
                 # Add String
-                if speaker:
-                    stringList.append(f"[{speaker}]: {jaString.strip()}")
-                else:
-                    stringList.append(f"{jaString.strip()}")
+                stringList.append(to_prefixed(speaker, jaString.strip()))
 
             # Pass 2
             else:
@@ -330,7 +322,7 @@ def translateKiriKiri(data, pbar, filename, jobList):
                     stringList.pop(0)
 
                     # Remove Speaker
-                    translatedText = strip_speaker_prefix(translatedText)
+                    translatedText = strip_speaker_prefix(translatedText, speaker)
 
                     # Textwrap
                     translatedText = dazedwrap.wrapText(translatedText, width=WIDTH)

@@ -16,7 +16,7 @@ from tqdm import tqdm
 from util.languages import source_pattern
 from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost, found_mismatch, run_stop_errors
 from util.translation_task import fail_on_parser_error, module_receipt, write_output
-from util.speakers import strip_speaker_prefix
+from util.speakers import find_speaker, strip_speaker_prefix, to_prefixed
 
 # OpenAI initialization centralized in util/translation.py
 
@@ -162,17 +162,14 @@ def translateTyrano(data, filename, translatedList):
         furiganaRegex = r"(\[ruby\stext=(.*?)\])"
         choiceRegex = r'\[glink.+?text="(.*?)"'
 
-        # Speaker, translated in pass 1 only: pass 2 finds the name it wrote
-        match = re.search(lineRegexSpeaker, data[i])
-        if match and not translatedList:
-            if match.group(1):
-                response = getSpeaker(match.group(1))
-                speaker = response[0]
-                tokens[0] += response[1][0]
-                tokens[1] += response[1][1]
-                data[i] = data[i].replace(match.group(1), speaker)
-            else:
-                speaker = None
+        # Speaker (util/speakers): "#" alone ends one
+        found = find_speaker(lineRegexSpeaker, data[i])
+        if found:
+            response = getSpeaker(found.name)
+            speaker = response[0]
+            tokens[0] += response[1][0]
+            tokens[1] += response[1][1]
+            data[i] = found.written(speaker)
 
         # Furigana
         match = re.search(r"^\[ruby\stext", data[i])
@@ -244,10 +241,7 @@ def translateTyrano(data, filename, translatedList):
                 jaString = jaString.strip()
 
                 if jaString:
-                    if speaker:
-                        stringList.append(f"[{speaker}]: {jaString}")
-                    else:
-                        stringList.append(jaString)
+                    stringList.append(to_prefixed(speaker, jaString))
 
             # Pass 2
             else:
@@ -262,7 +256,7 @@ def translateTyrano(data, filename, translatedList):
                         stringList = None
 
                     # Remove speaker
-                    translatedText = strip_speaker_prefix(translatedText)
+                    translatedText = strip_speaker_prefix(translatedText, speaker)
 
                     # Avoid Crashes
                     translatedText = translatedText.replace("[", "(")

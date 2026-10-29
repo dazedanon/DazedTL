@@ -1,8 +1,7 @@
 # Libraries
 import json
 import os
-import re
-from util.speakers import translate_speaker
+from util.speakers import strip_speaker_prefix, translate_speaker
 import util.dazedwrap as dazedwrap
 import threading
 import time
@@ -157,8 +156,8 @@ def translateJSON(data, pbar):
 
         if len(batch) == len(translatedBatch):
             for (index, field), translatedText in zip(slots, translatedBatch):
-                # Remove added speaker
-                translatedText = re.sub(r"^.+?:\s", "", translatedText)
+                # A speaker the model added (util/speakers)
+                translatedText = strip_speaker_prefix(translatedText)
                 data[index][field] = dazedwrap.wrapText(translatedText, width=WIDTH)
 
         # Mismatch: the batch keeps its source text

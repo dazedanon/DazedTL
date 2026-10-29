@@ -16,7 +16,7 @@ from tqdm import tqdm
 from util.languages import source_pattern
 from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost, getPricingConfig, calculateCost, found_mismatch, run_stop_errors
 from util.translation_task import fail_on_parser_error, module_receipt, write_output
-from util.speakers import SPEAKER_TAG_RE, extract_dialogue_after_speaker, strip_speaker_prefix
+from util.speakers import SPEAKER_TAG_RE, extract_dialogue_after_speaker, find_speaker, strip_speaker_prefix, to_prefixed
 
 # Globals
 MODEL = os.getenv("model")
@@ -152,15 +152,14 @@ def translateTxt(data, filename, translatedList):
     i = 0
 
     while i < len(data):
-        # Speaker
-        match = SPEAKER_TAG_RE.match(data[i])
-        if match:
-            # Get Speaker
-            speakerData = getSpeaker(match.group(1))
+        # Speaker: the line is written whole from its reply, so the name is
+        # not written back (util/speakers)
+        found = find_speaker(SPEAKER_TAG_RE, data[i])
+        if found:
+            speakerData = getSpeaker(found.name)
             speaker = speakerData[0]
             tokens[0] += speakerData[1][0]
             tokens[1] += speakerData[1][1]
-            data[i] = data[i].replace(match.group(1), speaker, 1)
 
         # Dialogue
         jaString = extract_dialogue_after_speaker(data[i])
@@ -172,10 +171,7 @@ def translateTxt(data, filename, translatedList):
                 jaString = jaString.strip()
 
                 if jaString:
-                    if speaker:
-                        stringList.append(f"[{speaker}]: {jaString}")
-                    else:
-                        stringList.append(jaString)
+                    stringList.append(to_prefixed(speaker, jaString))
 
             # Pass 2
             else:
@@ -190,7 +186,7 @@ def translateTxt(data, filename, translatedList):
                         stringList = None
 
                     # Remove speaker
-                    translatedText = strip_speaker_prefix(translatedText)
+                    translatedText = strip_speaker_prefix(translatedText, speaker)
 
                     # # Textwrap
                     # translatedText = dazedwrap.wrapText(translatedText, width=WIDTH)

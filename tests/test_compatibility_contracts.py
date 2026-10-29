@@ -601,6 +601,11 @@ class CompatibilityContracts(unittest.TestCase):
             "openrouterBatch": None,
         }
         self.assertIsNone(changed_since(unknown, digest(frozen), frozen, quote, route))
+        # With custom Live rates, a failed check leaves only whether it runs
+        # Batch unknown, which read as none: the quote was priced again as a
+        # Live-only one. It stands too.
+        custom = {key: item for key, item in frozen.items() if key != "openrouterBatch"}
+        self.assertIsNone(changed_since(custom, digest(frozen), frozen, quote, route))
         # Settings that send it on no Batch price it again on none.
         live = {**frozen, "openrouterBatch": None}
         change = changed_since(live, digest(frozen), frozen, quote, route)

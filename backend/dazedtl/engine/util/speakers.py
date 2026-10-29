@@ -3,12 +3,15 @@
 One home for everything speaker-related so ``util/`` does not sprawl:
 
 * **Prefix parsing** - the ``[Speaker]: line`` convention the shared prompt uses.
-  Widely imported by the engine modules to strip the tag off translated text.
+  Widely imported by the engine modules to add the tag to a request's line and
+  strip it off translated text.
 * **Inline speakers** - a dialogue line that starts with its speaker's name,
   which the RPG Maker MV/MZ parser reads with INLINE401SPEAKERS.
 * **WOLF first-line reshaping** - WolfDawn bakes some speaker names into line 1
   of the source; these helpers reshape those lines into ``[Speaker]: line`` for
   translation and restore WOLF's native ``Speaker\nline`` layout afterwards.
+* **Speakers in the plain engine modules** - finding a speaker by an engine's
+  own syntax, translating its name once, and writing back only the name.
 """
 
 from __future__ import annotations
@@ -87,10 +90,29 @@ def speaker_translated(
     )
 
 
-def strip_speaker_prefix(text: str) -> str:
-    """Remove a leading ``[Speaker]:`` / ``[Speaker]|`` / ``[Speaker]：`` prefix."""
+def to_prefixed(speaker: str, body: str) -> str:
+    """The ``[Speaker]: body`` line a request sends, or *body* alone when
+    there is no *speaker*."""
+    return f"[{speaker}]: {body}" if speaker else body
+
+
+# What follows the bracketed name in a prefix
+_PREFIX_SEPARATOR_RE = re.compile(r"\s*[|:：]\s*")
+
+
+def strip_speaker_prefix(text: str, speaker: str = "") -> str:
+    """Remove a leading ``[Speaker]:`` / ``[Speaker]|`` / ``[Speaker]：`` prefix.
+
+    *speaker*, the name the request's line was sent with (to_prefixed), is
+    removed whatever it holds, such as a ``]`` that ends a name for the
+    pattern; any other bracketed name as the pattern reads it."""
     if not text:
         return text
+    sent = f"[{speaker}]"
+    if speaker and text.startswith(sent):
+        separator = _PREFIX_SEPARATOR_RE.match(text, len(sent))
+        if separator:
+            return text[separator.end() :]
     return SPEAKER_PREFIX_RE.sub("", text, count=1)
 
 
@@ -297,11 +319,6 @@ def split_source(source: str, speaker_src: str, config: dict | None = None):
     return prefix, line1, body
 
 
-def to_prefixed(speaker: str, body: str) -> str:
-    """Build the ``[Speaker]: body`` transport string sent to the model."""
-    return f"[{speaker}]: {body}"
-
-
 def parse_prefixed(text: str):
     """Parse a translated ``[Speaker]: body`` string.
 
@@ -322,27 +339,69 @@ def restore_source(prefix: str, speaker: str, body: str) -> str:
 
 
 # ============================================================================
-# Speaker name translation for the plain engine modules
+# Speakers in the plain engine modules
+# ----------------------------------------------------------------------------
+# A plain engine module (Text, Regex, Tyrano, Kirikiri, WOLF2, CSV, Lune and
+# WOLF's wolf.py) finds a speaker by its engine's own syntax (find_speaker),
+# translates the name through translate_speaker, writes back only the name
+# (FoundSpeaker.written), sends the lines the speaker says as
+# ``[Speaker]: line`` (to_prefixed) and takes that prefix off each reply line
+# (strip_speaker_prefix with the speaker). translate_speaker answers a name it
+# translated, or a translation it gave, from its cache at no cost, so a module
+# that walks its lines again to write the replies finds the names its first
+# walk wrote for free and needs no rule of its own for which walk translates.
 # ============================================================================
+
+
+class FoundSpeaker(NamedTuple):
+    """A speaker's *name* in *line*, from *start* to *end*."""
+
+    name: str
+    line: str
+    start: int
+    end: int
+
+    def written(self, translated: str) -> str:
+        """The line with only the name replaced by *translated*: the rest of
+        the line, such as a voice file named after the speaker, stays."""
+        return self.line[: self.start] + translated + self.line[self.end :]
+
+
+def find_speaker(syntax, line: str) -> FoundSpeaker | None:
+    """The speaker *line* names in an engine's *syntax*, a pattern whose first
+    group is the name, or None."""
+    match = re.search(syntax, line)
+    if match is None or match.group(1) is None:
+        return None
+    return FoundSpeaker(match.group(1), line, match.start(1), match.end(1))
+
+
+# Names every engine writes alike, and the target language each needs (None:
+# any)
+_FIXED_NAMES = {"？？？": ("???", None), "ファイン": ("Fine", ENGLISH)}
 
 
 def translate_speaker(speaker, names, language, translate):
     """A speaker name translated once per run: ``[translated, [in, out tokens]]``.
 
     *names* is the module's ``[original, translated]`` cache and gains each new
-    name; *translate* is its ``translateAI``. A reply is title-cased for a Latin
-    target, loses a stray ``Speaker: `` echo and is asked for once more when it
-    does not read as a translation.
+    name; *translate* is its ``translateAI``. A name the cache gave as a
+    translation is answered as it is, at no cost, as a module finds it again
+    where it wrote it. A reply is title-cased for a Latin target, loses a stray
+    ``Speaker: `` echo and is asked for once more when it does not read as a
+    translation.
     """
     if not speaker:
         return ["", [0, 0]]
-    if speaker == "ファイン" and language == ENGLISH:
-        return ["Fine", [0, 0]]
     for original, translated in names:
         if speaker == original:
             return [translated, [0, 0]]
-    if speaker == "？？？":
-        return ["???", [0, 0]]
+    if any(speaker == translated for _original, translated in names):
+        return [speaker, [0, 0]]
+    fixed, fixed_language = _FIXED_NAMES.get(speaker, (None, None))
+    if fixed is not None and fixed_language in (None, language):
+        names.append([speaker, fixed])
+        return [fixed, [0, 0]]
 
     prompt = "Reply with the " + language + " translation of the NPC name."
     for _ in range(2):
