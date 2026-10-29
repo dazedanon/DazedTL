@@ -192,7 +192,9 @@ def translateKiriKiri(data, pbar, filename, jobList):
                 speaker = response[0]
                 tokens[0] += response[1][0]
                 tokens[1] += response[1][1]
-                data[i] = data[i].replace(speakerJA, speaker)
+                # Only the name between the brackets: the rest of the line,
+                # such as a voice file named after the speaker, stays
+                data[i] = data[i][: match.start(1)] + speaker + data[i][match.end(1) :]
                 checkLine(data, i, filename)
             i += 1
 
