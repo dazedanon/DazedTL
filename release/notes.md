@@ -27,3 +27,4 @@
 - **Translate:** a file stopped partway in a Translation run is now translated again on Resume, which skipped it as finished when its engine had saved part of it.
 - **Translate:** a reply with the wrong number of lines that an engine kept in its original text now counts toward the run's mismatches, which read the file as fully translated.
 - **Translate:** an Image Text file's cost and time now show with the file, which left them out.
+- **Windows:** an assistant whose shell is Git Bash, such as Claude Code without its PowerShell tool, now reads how to run the commands DazedTL gives it, such as the project helper's and Text QA's, which are written for PowerShell and failed there as pasted.
