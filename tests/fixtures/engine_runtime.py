@@ -2955,7 +2955,7 @@ try:
         # The run's TOTAL adds up each file's own total from every worker and
         # its names passes, starting from the receipts of the run's earlier
         # attempts; a file read back without usage keeps what the earlier
-        # attempt cost, and one that paid again adds to it.
+        # attempt cost, and one that paid again replaces it.
         resumed = TranslationTask(
             live_root,
             ("RPG Maker MV/MZ", (".json",), None),
@@ -2970,7 +2970,7 @@ try:
         resumed._record_names_receipt(20, 4, 0.06121, 0.54)
         with patch.dict(os.environ, {"fileThreads": "3"}):
             total = resumed._run_total(resumed._run_files(many, False))
-        assert total == "TOTAL: [Input: 1273][Output: 33][Cost: $7.9612][17.5s] ✓", (
+        assert total == "TOTAL: [Input: 1266][Output: 26][Cost: $0.9612][10.5s] ✓", (
             total
         )
         handed = [name for names in worker_files() for name in names]

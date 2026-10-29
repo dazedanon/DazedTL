@@ -2243,12 +2243,13 @@ class CompatibilityContracts(unittest.TestCase):
                 )
             client.request.assert_not_called()
 
-    def test_a_files_receipt_adds_every_paid_attempt_and_a_failed_save_fails(self):
-        # A file that failed in an earlier attempt and was saved in a later
-        # one paid for both, but the later receipt replaced the earlier, so
-        # the run's TOTAL dropped what the failed attempt paid. An RPG Maker
-        # file whose save failed after validation mismatches read as a soft
-        # success, so the run did not show it failed.
+    def test_a_paid_attempt_replaces_a_files_receipt_and_a_failed_save_fails(self):
+        # A later attempt can read and count the same Batch results again, as
+        # after a Stop and resume, so an attempt that paid replaces the file's
+        # receipt instead of adding to it; one that paid nothing, reading back
+        # what an earlier attempt saved, keeps it. An RPG Maker file whose
+        # save failed after validation mismatches read as a soft success, so
+        # the run did not show it failed.
         from util.translation_task import TranslationTask, file_marker_result
 
         def worker(task, files, estimate_only, batch_phase, file_result_callback):
@@ -2275,6 +2276,12 @@ class CompatibilityContracts(unittest.TestCase):
             }
 
         files = ["Map001.json", "Map002.json", "Map003.json"]
+        expected = [
+            ("Map001.json", figures(70, 9, 0.5, 4.0)),
+            ("Map002.json", figures(30, 3, 0.25, 2.0)),
+            ("Map003.json", figures(10, 1, 0.25, 1.0)),
+        ]
+        total = "TOTAL: [Input: 110][Output: 13][Cost: $1.0000][7.0s] ✓"
         with TemporaryDirectory() as directory:
             task = TranslationTask(
                 Path(directory),
@@ -2293,22 +2300,18 @@ class CompatibilityContracts(unittest.TestCase):
                 task.file_error_signal.connect(lambda *args: errors.append(args))
                 task.file_mismatch_signal.connect(lambda *args: mismatched.append(args))
                 result = task._run_files(files, False, "consume")
-        self.assertEqual(result, "Fail")
-        self.assertEqual([name for name, _ in errors], ["Map002.json"])
-        self.assertEqual(mismatched, [])
-        # The run's records keep what its TOTAL adds up.
-        self.assertEqual(
-            receipts,
-            [
-                ("Map001.json", figures(120, 14, 0.75, 7.0)),
-                ("Map002.json", figures(30, 3, 0.25, 2.0)),
-                ("Map003.json", figures(10, 1, 0.25, 1.0)),
-            ],
-        )
-        self.assertEqual(
-            task._run_total(result),
-            "TOTAL: [Input: 160][Output: 18][Cost: $1.2500][10.0s] ✓",
-        )
+                self.assertEqual(result, "Fail")
+                self.assertEqual([name for name, _ in errors], ["Map002.json"])
+                self.assertEqual(mismatched, [])
+                # The run's records keep what its TOTAL adds up.
+                self.assertEqual(receipts, expected)
+                self.assertEqual(task._run_total(result), total)
+                # Stop lost the consume worker's cache writes, so the resumed
+                # attempt reads the same Batch result and failed reply again:
+                # each counts once.
+                result = task._run_files(files, False, "consume")
+        self.assertEqual(receipts, expected * 2)
+        self.assertEqual(task._run_total(result), total)
 
     def test_declined_speaker_preflight_retains_provider_work_and_resets_retry_phase(
         self,
