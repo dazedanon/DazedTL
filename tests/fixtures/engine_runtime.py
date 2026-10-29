@@ -955,6 +955,7 @@ try:
         for folder in ("files", "translated", "log"):
             (shapes / folder).mkdir(parents=True)
         os.chdir(shapes)
+        platform_line_ends = {"modules.nscript", "modules.regex", "modules.wolf2"}
         try:
             for module_name, handler, scene, source, options, requests, output in (
                 (
@@ -1106,6 +1107,10 @@ try:
                 with patch.multiple(module, **its), redirect_stdout(StringIO()):
                     getattr(module, handler)(scene, False)
                 assert sent == requests, (module_name, sent)
+                # These modules write the platform's line ends (write_output's
+                # newline=None); the expected text spells them "\n".
+                if module_name in platform_line_ends:
+                    output = output.replace("\n", os.linesep)
                 written = (shapes / "translated" / scene).read_bytes()
                 assert written.decode(encoding) == output, (module_name, written)
         finally:

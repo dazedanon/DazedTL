@@ -34,9 +34,16 @@ RATE_LIMITED = 429
 # A Batch create is not a Live request: its server error may follow a created
 # Batch, so a create reads as never made only when "refused".
 FAILED = frozenset({500, 503, 529})
+# Anthropic streams an overload after its HTTP 200 as an `overloaded_error`
+# event, "which would normally correspond to an HTTP 529 in a non-streaming
+# context" (https://platform.claude.com/docs/en/build-with-claude/streaming),
+# and its SDK raises it with the stream's 200. It reads as that 529, a failed
+# request Anthropic does not charge for (the support article above).
+STREAMED = {"overloaded_error": 529}
 
 _local = threading.local()
 _installed = False
+_installing = threading.Lock()
 
 
 def answer(status, url):
@@ -60,7 +67,8 @@ def end():
 
 
 def observed():
-    """How each try of the current request ended, oldest first."""
+    """Each try of the current request, oldest first, as (how it ended, its
+    HTTP status or None) pairs."""
     return list(getattr(_local, "tries", None) or [])
 
 
@@ -68,7 +76,7 @@ def unbilled(tries):
     """Only observed tries that never connected, were refused or failed by
     the model server itself prove that sending the request again cannot be
     charged twice."""
-    return bool(tries) and all(outcome != "maybe" for outcome in tries)
+    return bool(tries) and all(outcome != "maybe" for outcome, _status in tries)
 
 
 @contextmanager
@@ -87,17 +95,56 @@ def watching():
         )
 
 
-def resendable(tries):
-    """Whether a Live request that failed after *tries* (watching) may be
-    sent again: no try may have been processed and billed (unbilled), and the
-    last could pass on another, since it never connected, met a rate limit
-    or failed by the model server itself. Any other refusal comes back alike.
-    A connection lost after the request was sent may follow processing: only
-    a connection never made proves nothing reached the provider."""
-    if not unbilled([outcome for outcome, _status in tries]):
-        return False
+def settled(tries, error):
+    """A failed request's observed *tries*, with its last one read from its
+    final *error* when that try answered HTTP 200 and the provider then
+    streamed its own failure (STREAMED); the transport sees only the 200."""
+    tries = list(tries)
+    if not tries or tries[-1][1] != 200:
+        return tries
+    # Only the first error with a status, the one raised with that 200,
+    # speaks for it, not one an earlier try raised under it.
+    seen = set()
+    while error is not None and id(error) not in seen:
+        seen.add(id(error))
+        status = _status(error)
+        if status is not None:
+            if status != 200:
+                tries[-1] = (answer(status, _request_url(error)), status)
+            break
+        error = error.__cause__
+    return tries
+
+
+def ended(tries, error):
+    """How a Live request that failed with *error* ended, as (its HTTP status
+    or None, how it ended), the one reading of every route that records it:
+    from its observed *tries* (watching, observed) when there are any, since
+    a final error alone cannot show that an earlier try was unbilled, nor
+    that a connection was never made; any try that may have been billed
+    leaves the request "maybe", and otherwise the last says how it ended.
+    Without tries, from *error* alone (answered)."""
+    tries = settled(tries, error)
+    if not tries:
+        return answered(error)
     outcome, status = tries[-1]
-    return outcome in {"unreached", "failed"} or status == RATE_LIMITED
+    return status, outcome if unbilled(tries) else "maybe"
+
+
+def resendable(tries, error):
+    """Whether a Live request that failed with *error* after *tries*
+    (watching) may be sent again: no try may have been processed and billed
+    (unbilled), and the last could pass on another, since it never
+    connected, met a rate limit or failed by the model server itself. Any
+    other refusal comes back alike. A connection lost after the request was
+    sent may follow processing: only a connection never made proves nothing
+    reached the provider."""
+    if not tries:
+        return False
+    status, outcome = ended(tries, error)
+    return outcome in {"unreached", "failed"} or (
+        outcome == "refused" and status == RATE_LIMITED
+    )
 
 
 def answered(error):
@@ -110,12 +157,27 @@ def answered(error):
     status, url, seen = None, None, set()
     while error is not None and id(error) not in seen:
         seen.add(id(error))
-        code = getattr(error, "status_code", None)
-        if status is None and type(code) is int:
+        code = _status(error)
+        if status is None and code is not None:
             status = code
         url = url or _request_url(error)
         error = error.__cause__
     return status, "maybe" if status is None else answer(status, url)
+
+
+def _status(error):
+    """*error*'s own HTTP status, or None; an error event streamed after a
+    200 reads as the status it stands for (STREAMED)."""
+    code = getattr(error, "status_code", None)
+    if type(code) is not int:
+        return None
+    body = getattr(error, "body", None)
+    if code == 200 and isinstance(body, dict) and body.get("type") == "error":
+        kind = body.get("error")
+        return STREAMED.get(
+            str(kind.get("type")) if isinstance(kind, dict) else "", code
+        )
+    return code
 
 
 def _request_url(error):
@@ -140,15 +202,18 @@ def install():
     Current OpenAI and Anthropic SDKs send through httpx2; others use httpx.
     """
     global _installed
-    if _installed:
-        return
-    _installed = True
-    for name in ("httpx", "httpx2"):
-        try:
-            library = importlib.import_module(name)
-        except ImportError:
-            continue
-        library.HTTPTransport.handle_request = _observing(library)
+    # Every Assistant-led Live send asks, so no thread sends unobserved
+    # while another installs.
+    with _installing:
+        if _installed:
+            return
+        for name in ("httpx", "httpx2"):
+            try:
+                library = importlib.import_module(name)
+            except ImportError:
+                continue
+            library.HTTPTransport.handle_request = _observing(library)
+        _installed = True
 
 
 def _observing(library):
@@ -173,6 +238,6 @@ def _observing(library):
 def _observe(outcome, status):
     tries = getattr(_local, "tries", None)
     if tries is not None:
-        tries.append(outcome)
+        tries.append((outcome, status))
     for watched in getattr(_local, "watchers", ()):
         watched.append((outcome, status))

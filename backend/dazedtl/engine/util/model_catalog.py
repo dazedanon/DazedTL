@@ -1,6 +1,5 @@
 """Provider model discovery shared by Qt and desktop jobs."""
 
-from urllib.parse import urlsplit
 from util.api_errors import concise_api_error
 from util.translation_task import TaskSignal
 
@@ -14,6 +13,18 @@ API_URL_PRESETS = (
     ("Nvidia", "https://integrate.api.nvidia.com/v1/"),
     ("OpenRouter", "https://openrouter.ai/api/v1"),
 )
+
+
+def list_provider(address):
+    """The provider whose model list a fetch with no provider set asks
+    *address* for: Anthropic's or Gemini's on their own APIs, otherwise an
+    OpenAI-compatible list (settings/providers own_api)."""
+    from dazedtl.settings.providers import own_api
+
+    for identity in ("anthropic", "gemini"):
+        if own_api(identity, address):
+            return identity
+    return "openai"
 
 
 class ModelCatalogCore:
@@ -55,9 +66,7 @@ class ModelCatalogCore:
                 return
             fetchers = [fetcher]
         else:
-            hostname = (urlsplit(self.api_url).hostname or "").lower()
-            provider = "anthropic" if hostname == "api.anthropic.com" else "gemini" if hostname == "generativelanguage.googleapis.com" else "openai"
-            fetchers = [provider_fetchers[provider]]
+            fetchers = [provider_fetchers[list_provider(self.api_url)]]
         for fetcher in fetchers:
             try:
                 models.extend(fetcher())
@@ -70,6 +79,9 @@ class ModelCatalogCore:
 
     def _fetch_openai(self):
         import openai
+
+        from dazedtl.settings.providers import own_api
+
         # The SDK requires a non-empty value even when a local server ignores
         # authentication entirely.
         kwargs = {"api_key": self.api_key or "not-needed", "timeout": 15, "max_retries": 0}
@@ -80,20 +92,19 @@ class ModelCatalogCore:
         # When using a custom URL (non-OpenAI provider like DeepSeek), return all
         # model IDs unfiltered. An explicitly configured official OpenAI URL is
         # still OpenAI and must retain the chat-model filter.
-        hostname = urlsplit(self.api_url).hostname if self.api_url else ""
-        if hostname and hostname.lower() != "api.openai.com":
+        if self.api_url and not own_api("openai", self.api_url):
             return sorted(all_models)
         prefixes = ("gpt-", "o1", "o2", "o3", "o4", "chatgpt")
         return sorted(m for m in all_models if any(m.lower().startswith(p) for p in prefixes))
 
     def _fetch_anthropic(self):
         import anthropic
+
+        from util.batch_providers import anthropic_base_url
+
         kwargs = {"api_key": self.api_key, "timeout": 15, "max_retries": 0}
         if self.api_url:
-            base_url = self.api_url.rstrip("/")
-            if "api.anthropic.com" in base_url.lower() and base_url.endswith("/v1"):
-                base_url = base_url[:-3]
-            kwargs["base_url"] = base_url
+            kwargs["base_url"] = anthropic_base_url(self.api_url)
         client = anthropic.Anthropic(**kwargs)
         return sorted(m.id for m in client.models.list(limit=100))
 
