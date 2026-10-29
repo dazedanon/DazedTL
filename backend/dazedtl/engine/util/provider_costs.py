@@ -149,19 +149,24 @@ def is_claude_model(model: str) -> bool:
 
 def is_claude_native(model: str, address: str | None) -> bool:
     """Whether a Live request for ``model`` to ``address`` goes through
-    Anthropic's own SDK: a Claude model with no address set, or one holding
-    "anthropic", such as a proxy path. Any other address, OpenRouter's or a
-    Custom host's, takes the OpenAI-compatible path even for Claude models.
-    Batches need Anthropic's own API (batch_providers.detect_batch_provider)."""
-    address = str(address or "").strip().lower()
-    return is_claude_model(model) and (not address or "anthropic" in address)
+    Anthropic's own SDK: a Claude model on Anthropic's own API
+    (on_anthropic_api) or under a proxy path holding "anthropic". Any other
+    address, OpenRouter's or a Custom host's, one whose host name holds
+    "anthropic" included, takes the OpenAI-compatible path even for Claude
+    models. Batches need Anthropic's own API
+    (batch_providers.detect_batch_provider)."""
+    from dazedtl.settings.providers import address_path
+
+    return is_claude_model(model) and (
+        on_anthropic_api(address) or "anthropic" in address_path(address)
+    )
 
 
 def on_anthropic_api(address: str | None) -> bool:
     """Whether a native Claude request to ``address`` reaches Anthropic's own
     API: no address set, or one at its host (settings/providers own_api). A
-    proxy path holding "anthropic", or another host whose name holds it, is
-    sent Live natively but is not Anthropic's API."""
+    proxy path holding "anthropic" is sent Live natively but is not
+    Anthropic's API."""
     from dazedtl.settings.providers import own_api
 
     return not str(address or "").strip() or own_api("anthropic", address)

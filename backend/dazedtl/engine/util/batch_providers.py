@@ -26,6 +26,8 @@ PROVIDER_OPENAI = "openai"
 PROVIDER_GEMINI = "gemini"
 PROVIDER_KIMI = "kimi"
 
+# OpenAI's own API, where its SDK sends when no address is set.
+OPENAI_API_URL = "https://api.openai.com/v1"
 # Kimi's international platform (platform.kimi.ai) serves its
 # OpenAI-compatible API from Moonshot AI's host.
 # https://platform.kimi.ai/docs/api/overview
@@ -149,26 +151,32 @@ def get_client(provider: str, *, api_key: str | None = None,
     evaluations) use several providers without mutating the process-wide
     ``key`` / ``api`` environment selected by the normal Translation page.
     Existing callers keep the environment-backed behavior.
+
+    A key goes only to its own address: the run's key to the run's address,
+    and a key given here to the address given with it, never the run's.
+    With no address given, an Anthropic key goes to Anthropic's own API, and
+    an OpenAI-compatible key, which may belong to any host, is refused.
+    Gemini and Kimi Batches, the run's included, go to the address given,
+    else their provider's own API.
     """
     if api_key is None:
         key = _api_key()
+        address = os.getenv("api", "") if api_url is None else api_url
     else:
         key = str(api_key or "").strip()
-        if not key and provider == PROVIDER_OPENAI and (api_url or "").strip():
+        address = api_url or ""
+        if not key and provider == PROVIDER_OPENAI and address.strip():
             # OpenAI-compatible local servers commonly require the SDK's key
             # field but do not authenticate it.
             key = "not-needed"
         elif not key:
             raise RuntimeError(f"{batch_provider_label(provider)} requires an API key")
+    address = str(address or "").strip()
     # Each SDK loads with its first client; importing both took most of a
     # worker's startup, seconds on Windows.
     if provider == PROVIDER_ANTHROPIC:
-        # The run's key goes to the run's address; a key given here goes to
-        # the address given with it, Anthropic's own API when none is.
-        if api_url is None:
-            api_url = os.getenv("api", "") if api_key is None else ""
         options = {} if max_retries is None else {"max_retries": max_retries}
-        return anthropic_client(key, api_url, **options)
+        return anthropic_client(key, address, **options)
     import openai
 
     if provider in (PROVIDER_GEMINI, PROVIDER_KIMI):
@@ -185,14 +193,18 @@ def get_client(provider: str, *, api_key: str | None = None,
             kwargs["max_retries"] = max_retries
         return openai.OpenAI(**kwargs)
     if provider == PROVIDER_OPENAI:
+        if not address and api_key is not None:
+            raise RuntimeError(
+                "This OpenAI-compatible key has no server address saved with it. "
+                "Restore its connection in Settings."
+            )
         kwargs = {"api_key": key}
         if max_retries is not None:
             kwargs["max_retries"] = max_retries
-        # Without an address, the run's own route, as detect_batch_provider
-        # reads it, so a Batch goes where the run's other requests go.
-        url = str(api_url if api_url is not None else os.getenv("api", "")).strip()
-        if url:
-            kwargs["base_url"] = url
+        # The run's key with no address set is on OpenAI's own API
+        # (detect_batch_provider), the SDK's default.
+        if address:
+            kwargs["base_url"] = address
         return openai.OpenAI(**kwargs)
     raise ValueError(f"Unsupported batch provider: {provider}")
 
