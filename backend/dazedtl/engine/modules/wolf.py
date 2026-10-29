@@ -113,6 +113,13 @@ def handleWOLF(filename, estimate):
     start = time.time()
     translatedData = openFiles(filename)
 
+    # Parsers return the error of the page that failed, after saving each
+    # page that finished. Fail the file so partial output is never written or
+    # reported as complete; the run logs what it paid for
+    # (util/subprocess_runner _paid_receipt).
+    if translatedData[2] is not None:
+        raise translatedData[2]
+
     # Translate
     if not estimate:
         try:
@@ -215,46 +222,44 @@ def maybe_save_progress_json(data, filename, tokens):
         traceback.print_exc()
 
 
+def translatePage(search, data, page, pbar, filename, totalTokens):
+    """Translate one *page* of *data* with *search* (searchCodes or searchDB);
+    None when it finished, else its error, which a run's stop is not: that
+    goes through unchanged. A finished page adds its tokens to *totalTokens*
+    and saves the file's progress; a failing page does neither, and the
+    caller ends the file with its error."""
+    try:
+        tokens = search(page, pbar, [], filename)
+    except run_stop_errors():
+        raise
+    except Exception as e:
+        return e
+    totalTokens[0] += tokens[0]
+    totalTokens[1] += tokens[1]
+    maybe_save_progress_json(data, filename, tokens)
+    return None
+
+
 def parseOther(data, filename):
     totalTokens = [0, 0]
-    totalLines = 0
-    events = data["commands"]
-    global LOCK
 
-    # Thread for each page in file
+    # The whole file is one page
     with tqdm(bar_format=BAR_FORMAT, position=POSITION, leave=LEAVE) as pbar:
         pbar.desc = filename
-        pbar.total = totalLines
-        translationData = searchCodes(events, pbar, [], filename)
-        try:
-            totalTokens[0] += translationData[0]
-            totalTokens[1] += translationData[1]
-        except Exception as e:
-            return [data, totalTokens, e]
-        finally:
-            maybe_save_progress_json(data, filename, translationData)
-    return [data, totalTokens, None]
+        pbar.total = 0
+        error = translatePage(searchCodes, data, data["commands"], pbar, filename, totalTokens)
+    return [data, totalTokens, error]
 
 
 def parseDB(data, filename):
     totalTokens = [0, 0]
-    totalLines = 0
-    events = data["types"]
-    global LOCK
 
-    # Thread for each page in file
+    # The whole file is one page
     with tqdm(bar_format=BAR_FORMAT, position=POSITION, leave=LEAVE) as pbar:
         pbar.desc = filename
-        pbar.total = totalLines
-        translationData = searchDB(events, pbar, [], filename)
-        try:
-            totalTokens[0] += translationData[0]
-            totalTokens[1] += translationData[1]
-        except Exception as e:
-            return [data, totalTokens, e]
-        finally:
-            maybe_save_progress_json(data, filename, translationData)
-    return [data, totalTokens, None]
+        pbar.total = 0
+        error = translatePage(searchDB, data, data["types"], pbar, filename, totalTokens)
+    return [data, totalTokens, error]
 
 
 def parseMap(data, filename):
@@ -269,9 +274,7 @@ def parseMap(data, filename):
             for page in event["pages"]:
                 totalLines += len(page["list"])
 
-    # Process pages synchronously and save progress after each that finishes,
-    # with its own tokens; a failing page saves no progress, and its error
-    # reaches the caller unchanged.
+    # Process pages synchronously; the first page that fails ends the file.
     with tqdm(bar_format=BAR_FORMAT, position=POSITION, total=totalLines, leave=LEAVE) as pbar:
         pbar.desc = filename
         pbar.total = totalLines
@@ -279,15 +282,9 @@ def parseMap(data, filename):
             if event is not None:
                 for page in event["pages"]:
                     if page is not None:
-                        try:
-                            tt = searchCodes(page["list"], pbar, None, filename)
-                        except run_stop_errors():
-                            raise
-                        except Exception as e:
-                            return [data, totalTokens, e]
-                        totalTokens[0] += tt[0]
-                        totalTokens[1] += tt[1]
-                        maybe_save_progress_json(data, filename, tt)
+                        error = translatePage(searchCodes, data, page["list"], pbar, filename, totalTokens)
+                        if error is not None:
+                            return [data, totalTokens, error]
     return [data, totalTokens, None]
 
 
