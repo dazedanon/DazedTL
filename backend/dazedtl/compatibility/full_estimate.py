@@ -221,7 +221,7 @@ def launch(directory, env, label, phase, log):
         process = system.popen(
             [sys.executable, "-u", str(WORKER), str(directory)],
             cwd=directory,
-            env={**env, "PYTHONDONTWRITEBYTECODE": "1"},
+            env=env,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=errors,

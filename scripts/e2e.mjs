@@ -402,6 +402,44 @@ function diagnostics() {
     throw new Error(`The app recorded failures:\n${records.join("\n")}`);
 }
 
+/** Compiled Python files under `folder`, leaving out `skipped` folders. */
+function compiledPython(folder, skipped = new Set()) {
+  const found = [];
+  for (const entry of fs.readdirSync(folder, { withFileTypes: true })) {
+    const name = path.join(folder, entry.name);
+    if (entry.isDirectory() && !skipped.has(entry.name))
+      found.push(...compiledPython(name, skipped));
+    else if (entry.isFile() && entry.name.endsWith(".pyc")) found.push(name);
+  }
+  return found;
+}
+
+/**
+ * The app compiles Python into its profile, never beside the install's files,
+ * which an update checks against the release's signed manifest; setup's
+ * runtimes and packages keep their own.
+ */
+function bytecodeInProfile() {
+  const strays = compiledPython(
+    install,
+    new Set([".venv", ".runtime", "node_modules"]),
+  );
+  if (strays.length)
+    throw new Error(
+      `The app compiled Python inside its install:\n${strays.slice(0, 10).join("\n")}`,
+    );
+  // The engine module the translation workers import.
+  const cache = path.join(profile, "python-cache");
+  const engine = path.join("engine", "modules", "rpgmakermvmz.");
+  if (
+    !fs.existsSync(cache) ||
+    !compiledPython(cache).some((file) => file.includes(engine))
+  )
+    throw new Error(
+      "The translation workers kept no compiled engine in the profile.",
+    );
+}
+
 /** The menu shortcut setup adds for a downloaded install. */
 const shortcut = windows
   ? path.join(
@@ -724,6 +762,8 @@ async function liveJourney() {
         );
     },
   );
+
+  await step("Compiled Python stays out of the install", bytecodeInProfile);
 
   await step("Second START opens the same project without setup", async () => {
     const result = await runStart("start-2", 5 * 60_000);

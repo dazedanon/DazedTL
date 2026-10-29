@@ -38,7 +38,7 @@ from dazedtl.translation.compilation import compile_requests
 from dazedtl.translation.files import digest
 
 from tests.engine import ENGINE, engine_module, point, replaced_modules
-from tests.probe import Background, bytecode
+from tests.probe import Background
 
 # Engine scripts for the tests of the same names below. Each runs in an
 # interpreter of its own, where only the engine is importable, and starts
@@ -194,7 +194,6 @@ def script(source, *paths):
             "-I",
             "-X",
             "utf8",
-            *bytecode(),
             "-c",
             source,
             *paths,
@@ -2509,7 +2508,6 @@ class ManualJobs:
                     (kwargs["stdin"], kwargs["stdout"]),
                     (subprocess.PIPE, subprocess.PIPE),
                 )
-                self.assertEqual(kwargs["env"]["PYTHONDONTWRITEBYTECODE"], "1")
                 # A collected-only worker must never fall back to queued or
                 # partially submitted work, even if state changed before launch.
                 write_json(

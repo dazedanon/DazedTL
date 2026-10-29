@@ -9,6 +9,7 @@ import threading
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 from dazedtl import storage, system
 from dazedtl.translation.files import read_json
@@ -63,6 +64,37 @@ class SpawnTests(unittest.TestCase):
             timeout=20,
         )
         self.assertEqual(result.stdout.strip(), "1 '' ゲーム")
+
+    def test_python_children_compile_where_this_process_does(self):
+        # Workers ran with -B, so each compiled DazedTL and the engine again;
+        # they must cache in the app's folder, never beside a release's files.
+        report = "import sys; print(sys.pycache_prefix, sys.flags.dont_write_bytecode)"
+        with TemporaryDirectory() as folder:
+            cache = str(Path(folder, "python-cache"))
+            for prefix, quiet, expected in (
+                (cache, False, f"{cache} 0"),
+                (None, True, "None 1"),
+            ):
+                with (
+                    patch.object(sys, "pycache_prefix", prefix),
+                    patch.object(sys, "dont_write_bytecode", quiet),
+                ):
+                    # The script's own arguments are not the interpreter's.
+                    result = system.run(
+                        [
+                            sys.executable,
+                            "-I",
+                            "-c",
+                            report,
+                            "-X",
+                            "pycache_prefix=x",
+                            "-B",
+                        ],
+                        capture_output=True,
+                        text=True,
+                        timeout=20,
+                    )
+                self.assertEqual(result.stdout.strip(), expected)
 
 
 class WriteTests(unittest.TestCase):
