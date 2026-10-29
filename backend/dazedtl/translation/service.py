@@ -17,7 +17,7 @@ from dazedtl.freshness import Basis, Change, compare
 from dazedtl.languages import pair_note
 from dazedtl.settings import language_pair
 from dazedtl.settings.execution import (
-    batch_unavailable,
+    batch_reasons,
     configuration,
     connection_summary,
     entries_per_request,
@@ -481,6 +481,7 @@ class Translation:
                     "The reported engine evidence changed. Recheck the engine before adapting its tools."
                 )
         legacy = self.legacy_record(project_id)
+        unavailable, unread = batch_reasons(self.settings)
         return {
             "projectId": project_id,
             **selected,
@@ -510,7 +511,8 @@ class Translation:
             else "",
             "providerEnabled": self.settings.adapter.allow_providers,
             "connection": connection_summary(self.settings),
-            "batchUnavailable": batch_unavailable(self.settings),
+            "batchUnavailable": unavailable,
+            "batchUnread": unread,
             "legacyRun": (
                 {
                     key: value
@@ -783,12 +785,15 @@ Additional project instructions:
         """How a run's quote waiting for approval reads (repricing.read)
         under ``change``: priced again from its counts at the settings it is
         read at, on their route by ``route`` (repricing.route_of), when they
-        keep its requests; a Batch also needs a route that runs one."""
+        keep its requests; a Batch also needs a route that runs one.
+        Approving it reads it so at the full settings the run would freeze."""
         quote = job["quote"]
 
         def again(configuration, provider):
-            if (configuration["mode"] == "batch" and not provider) or not repriceable(
-                quote, provider
+            if (
+                quote is None
+                or (configuration["mode"] == "batch" and not provider)
+                or not repriceable(quote, provider)
             ):
                 return None
             return price(counted(quote), configuration, provider)
@@ -1369,7 +1374,9 @@ Additional project instructions:
             # rules of its day; approving it after either changed would
             # approve a cost the user no longer sees. A quote priced again
             # (job_views) has its own token, and its approval freezes the run
-            # with the settings and price it was shown at.
+            # with the settings and price it was shown at. Those settings
+            # wait for a price no lookup could read yet, such as after a
+            # failed check, which the view shows as saved (openrouter.Unread).
             _record, project = self.project(project_id)
             mode = priced_mode(
                 plan.get("finishes"),
@@ -1385,22 +1392,6 @@ Additional project instructions:
                 self.route,
                 reprice=False,
             )
-            if change is not None and change.settings:
-                # The quote was shown as saved because a price it needs isn't
-                # known, such as an OpenRouter Batch policy after a failed
-                # check (job_views), not because the settings changed.
-                try:
-                    shown, _provider = self.api_configuration(
-                        mode, project.root, cached_only=True, unpriced=True
-                    )
-                except ValueError:
-                    shown = None
-                if shown is not None and repricing.unknown_prices(
-                    plan["configuration"], shown
-                ):
-                    raise ValueError(
-                        "This estimate's prices can't be read right now, such as after its connection's check failed. Check the connection in Settings, then approve it."
-                    )
             if approval_token == job["approval_token"]:
                 if change is not None:
                     raise ValueError(
@@ -1409,11 +1400,7 @@ Additional project instructions:
                         else "API settings or the translation mode changed after this estimate. Compile and review a new plan."
                     )
             else:
-                reading = (
-                    self.reading(job, change, current, self.route)
-                    if job["quote"] is not None
-                    else repricing.OUTDATED
-                )
+                reading = self.reading(job, change, current, self.route)
                 if reading.figure is None or approval_token != repricing.approval_token(
                     job["approval_token"], reading.settings, reading.route
                 ):

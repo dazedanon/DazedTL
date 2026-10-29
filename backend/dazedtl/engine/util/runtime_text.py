@@ -6,10 +6,13 @@ from collections import Counter
 
 # ===== Placeholder Protection System =====
 # Patterns to protect from translation (sound effects, control codes, etc.)
-_GENERAL_CONTROL_PATTERN = (
-    r'[\\]+(?:[A-Za-z_][A-Za-z0-9_]*(?:\[(?:[^\[\]]|\[[^\]]*\])*\])?'
+# A control code after its backslash run: a word with an optional [parameter],
+# such as \C[2], \I[5] or \G, or one of the symbol codes, such as \{ or \!.
+CONTROL_CODE = (
+    r'(?:[A-Za-z_][A-Za-z0-9_]*(?:\[(?:[^\[\]]|\[[^\]]*\])*\])?'
     r'|[{}.!|^><#$@,\-])'
 )
+_GENERAL_CONTROL_PATTERN = r'[\\]+' + CONTROL_CODE
 _ORPHAN_BACKSLASH_PATTERN = r'[\\]+(?=[^\W\d_])'
 
 # Codes that name a game asset, such as a sound file, which the game finds

@@ -15,7 +15,12 @@ import httpx
 from dazedtl.compatibility.dazedmtl import ExistingBackend
 from dazedtl.compatibility.translation import TranslationEngine
 from dazedtl.settings import openrouter, preferences, providers
-from dazedtl.settings.execution import configuration, worker_secret
+from dazedtl.settings.execution import (
+    batch_reasons,
+    configuration,
+    runnable_mode,
+    worker_secret,
+)
 from dazedtl.settings.store import Settings
 from dazedtl.storage import write_json
 from dazedtl.translation.requests import LINE_KEYS, logical_request
@@ -103,7 +108,36 @@ class SettingsTests(unittest.TestCase):
                 {"language": "English", "model": model, "sourceLanguage": "Japanese"},
                 options,
             )
+            # Unchecked, it can't say whether the model runs Batch, so even
+            # a Live estimate waits for a check that says it runs none.
+            with self.assertRaisesRegex(ValueError, "check failed"):
+                configuration(settings, "live")
+            row = {
+                "input": 3,
+                "output": 15,
+                "cache_read": None,
+                "cache_write": None,
+                "text": True,
+                "json": True,
+                "context": 32000,
+                "max_output": 4096,
+            }
+            with patch.object(
+                providers,
+                "check",
+                return_value={
+                    "check": {
+                        "status": "verified",
+                        "message": "Checked",
+                        "checkedAt": "now",
+                    },
+                    "models": [model],
+                    "catalog": {model: row},
+                },
+            ):
+                view = settings.check_connection(view["revision"], identity)
             automatic = configuration(settings, "live")
+            self.assertIsNone(automatic["openrouterBatch"])
             self.assertNotIn("openrouterHost", automatic)
             view = settings.save_connection(
                 view["revision"],
@@ -604,7 +638,10 @@ class SettingsTests(unittest.TestCase):
             settings_metadata=lambda: metadata,
             allow_providers=True,
             validate_route=lambda _: None,
-            provider_defaults=lambda _: {"batch_supported": False},
+            provider_defaults=lambda values: {
+                "model": values["model"],
+                "batch_supported": False,
+            },
             manual=SimpleNamespace(request_policy=None),
             install_settings=Mock(),
         )
@@ -714,10 +751,34 @@ class SettingsTests(unittest.TestCase):
                     settings, "batch", cached_only=True, unpriced=True
                 )
                 self.assertNotIn("openrouterBatch", unknown)
-                with self.assertRaises(ValueError):
-                    configuration(settings, "batch")
+                # With the model's public Live prices, a Guided or whole-game
+                # estimate froze that policy as none, so it was priced on no
+                # Batch route at half its Live price: every read a run or an
+                # estimate freezes now waits for the check, as a Batch one
+                # did, and a saved Batch choice stays Batch meanwhile.
+                settings.retain_prices(
+                    settings.pricing_lookup(),
+                    {
+                        "model": model,
+                        "host": "",
+                        "inputRate": 2,
+                        "outputRate": 8,
+                        "source": "catalog",
+                        "updatedAt": checked["check"]["checkedAt"],
+                        "stale": False,
+                    },
+                )
+                for mode in ("translate", "batch"):
+                    with self.assertRaisesRegex(ValueError, "check failed"):
+                        settings.guided_configuration(mode)
+                with self.assertRaisesRegex(ValueError, "check failed"):
+                    settings.prepare_engine("estimate")
+                self.assertEqual(runnable_mode(settings, "batch", "live"), "batch")
+                self.assertEqual(batch_reasons(settings)[0], "")
+                self.assertTrue(batch_reasons(settings)[1])
                 with patch.object(providers, "check", return_value=checked):
                     view = settings.check_connection(view["revision"], identity)
+                self.assertEqual(batch_reasons(settings), ("", ""))
                 self.assertEqual(
                     configuration(settings, "batch", cached_only=True, unpriced=True)[
                         "openrouterBatch"
@@ -1132,6 +1193,34 @@ class SettingsTests(unittest.TestCase):
             self.assertEqual(len(failures), 1)
             self.assertIn("changed while reading prices", str(failures[0]))
             self.assertIsNone(settings.model_defaults(identity, model)["inputRate"])
+            # Without the catalog, whether the model runs Batch isn't read
+            # either, so estimates wait for a check, which loads it.
+            with self.assertRaisesRegex(ValueError, "check failed"):
+                configuration(settings, "live")
+            row = {
+                "input": 0.1,
+                "output": 0.28,
+                "cache_read": None,
+                "cache_write": None,
+                "text": True,
+                "json": True,
+                "context": 32000,
+                "max_output": 4096,
+            }
+            with patch.object(
+                providers,
+                "check",
+                return_value={
+                    "check": {
+                        "status": "verified",
+                        "message": "Checked",
+                        "checkedAt": "now",
+                    },
+                    "models": [model],
+                    "catalog": {model: row},
+                },
+            ):
+                view = settings.check_connection(view["revision"], identity)
             with patch.object(
                 openrouter,
                 "live_prices",
@@ -2351,6 +2440,53 @@ class SettingsTests(unittest.TestCase):
                 Refusal(400, "Unsupported value: 'reasoning_effort'"), "low"
             )
         )
+
+    def test_a_check_that_reaches_its_token_cap_reads_the_level_as_accepted(self):
+        # OpenAI answers a check whose reasoning outruns its 16 tokens with an
+        # HTTP 400 (GPT-5.1 Medium and High, GPT-5 Minimal, 2026-10-28). The
+        # server took the level, but Check an effort read it as failed on
+        # every key, so those levels could never pass.
+        from dazedtl.settings import effort
+
+        reason = (
+            "Could not finish the message because max_tokens or model output "
+            "limit was reached. Please try again with higher max_tokens."
+        )
+
+        def respond(request):
+            return httpx.Response(
+                400,
+                json={
+                    "error": {
+                        "message": reason,
+                        "type": "invalid_request_error",
+                        "param": None,
+                        "code": None,
+                    }
+                },
+            )
+
+        client = httpx.Client
+        connection = {
+            "provider": "openai",
+            "protocol": "openai",
+            "endpoint": "",
+            "secret": "fixture-openai-key",
+            "keyless": False,
+            "organization": "",
+        }
+        with patch.object(
+            providers.httpx,
+            "Client",
+            side_effect=lambda **kwargs: client(
+                transport=httpx.MockTransport(respond), **kwargs
+            ),
+        ):
+            result = providers.check_effort(connection, "gpt-5.1", "medium")
+        self.assertEqual(result["status"], "accepted")
+        self.assertIn("token cap", result["message"])
+        # A run never reads it as a refusal of its effort.
+        self.assertFalse(effort.refuses(400, reason))
 
     def test_the_effort_table_check_plans_before_it_sends(self):
         # The maintainer's check of the effort table spends money on real

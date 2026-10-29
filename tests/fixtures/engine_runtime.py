@@ -956,7 +956,11 @@ try:
         # with one backslash. It sent other codes, such as \I[5], and a help
         # text's line break as nested as their field and wrote back the
         # reply's, and wrapped a QuestContent nested deeper than one game's
-        # with that game's line break, which ended its string. CSV read its
+        # with that game's line break, which ended its string. It wrote every
+        # quest field when any one field's reply had the right count, so a
+        # short reply moved its translations onto other quests; gave a
+        # drawTextEx label drawn on two lines the next label's translation;
+        # and ended a label's single-quoted string at an apostrophe. CSV read its
         # target column as the speaker by default, and as the name it wrote
         # there made the row look translated, wrote each row's translation to
         # the next row. CSV, Kirikiri, Regex, Lune, Tyrano and WOLF2 sent each
@@ -978,7 +982,16 @@ try:
         # after a line of text, and failed a file ending on a speaker or a
         # choice. CSV kept a target's :name[] tag in Japanese, and wrote the
         # reply to a tag with no line after it between every letter of a
-        # filled target.
+        # filled target. Text, Tyrano and Kirikiri's narration took a reply
+        # for a line of spaces they sent nothing for, moving each later
+        # translation up a line, and Text and JSON's list format sent the
+        # lines after a speaker's as said by it. WOLF2 joined a speaker right
+        # after a run of text to that run, and WOLF2 and Kirikiri left the
+        # second of two speakers in a row untranslated. Tyrano translated
+        # "#name:face" whole, face included, and a name reply on two lines
+        # added a line to the file. CSV wrote an empty target without its
+        # source's :name[] tag or \M marker, and JSON, Yuris and WolfDawn kept
+        # the label of a name holding "]".
         shapes = temporary / "engine-shapes"
         for folder in ("files", "translated", "log"):
             (shapes / folder).mkdir(parents=True)
@@ -1148,6 +1161,66 @@ try:
                     ),
                 ),
                 (
+                    "modules.rpgmakerplugin",
+                    "handlePlugin",
+                    "plugins.js",
+                    (
+                        r"var q = [\"{\\\"QuestName\\\":\\\"薬草集め\\\",\\\"QuestClientName\\\":"
+                        r"\\\"村長\\\"}\",\"{\\\"QuestName\\\":\\\"魔物退治\\\",\\\"QuestClientName\\\":"
+                        r"\\\"騎士団長\\\"}\"];"
+                        "\n"
+                    ),
+                    {"short": 2},
+                    [["薬草集め", "魔物退治"], ["村長", "騎士団長"]],
+                    (
+                        r"var q = [\"{\\\"QuestName\\\":\\\"EN \'薬草集め\'\\\",\\\"QuestClientName\\\":"
+                        r"\\\"村長\\\"}\",\"{\\\"QuestName\\\":\\\"EN \'魔物退治\'\\\",\\\"QuestClientName\\\":"
+                        r"\\\"騎士団長\\\"}\"];"
+                        "\n"
+                    ),
+                ),
+                (
+                    "modules.rpgmakerplugin",
+                    "handlePlugin",
+                    "plugins.js",
+                    (
+                        "var kiss = function() {\n"
+                        r"    this.drawTextEx('\\}【口づけ】\\{', 0, 0);"
+                        "\n"
+                        r"    this.drawTextEx('\\C[16]攻撃力\\C[0] ' + n, 0, 36);"
+                        "\n"
+                        "};\nvar touch = function() {\n"
+                        r"    this.drawTextEx('\\}【口づけ】\\{', 0, 72);"
+                        "\n"
+                        r"    this.drawTextEx('\\}【愛撫】\\{', 0, 108);"
+                        "\n"
+                        r"    this.drawTextEx('\\C[16]攻撃力\\C[0] ' + n, 0, 144);"
+                        "\n"
+                        r"    this.drawTextEx('\\C[16]魔力\\C[0] ' + n, 0, 180);"
+                        "\n"
+                        "};\n"
+                    ),
+                    {"replies": {"【口づけ】": "Kiss's", "攻撃力": "Hero's attack"}},
+                    [["【口づけ】", "【愛撫】"], ["攻撃力", "魔力"]],
+                    (
+                        "var kiss = function() {\n"
+                        r"    this.drawTextEx('\\}Kiss\'s\\{', 0, 0);"
+                        "\n"
+                        r"    this.drawTextEx('\\C[16]Hero\'s attack\\C[0] ' + n, 0, 36);"
+                        "\n"
+                        "};\nvar touch = function() {\n"
+                        r"    this.drawTextEx('\\}Kiss\'s\\{', 0, 72);"
+                        "\n"
+                        r"    this.drawTextEx('\\}EN \'【愛撫】\'\\{', 0, 108);"
+                        "\n"
+                        r"    this.drawTextEx('\\C[16]Hero\'s attack\\C[0] ' + n, 0, 144);"
+                        "\n"
+                        r"""    this.drawTextEx('\\C[16]EN "魔力"\\C[0] ' + n, 0, 180);"""
+                        "\n"
+                        "};\n"
+                    ),
+                ),
+                (
                     "modules.csv",
                     "handleCSV",
                     "Scene.csv",
@@ -1186,7 +1259,7 @@ try:
                     (
                         'Source,Target\r\n":name[Al]Ice]\nアリスだよ",'
                         '":name[Al]Ice]\nEN ""[Al]Ice]: アリスだよ"""\r\n'
-                        '":name[Al]Ice]\nやあ",Hi\r\n'
+                        '":name[Al]Ice]\nやあ",":name[Al]Ice]\nHi"\r\n'
                         '":name[Al]Ice]\n",":name[Al]Ice]\n"\r\n'
                     ),
                 ),
@@ -1375,6 +1448,91 @@ try:
                     [["はい", "いいえ"], ["やあ "]],
                     'EN "やあ "\n\n//選択肢\n//EN "はい"\n//EN "いいえ"\n',
                 ),
+                (
+                    "modules.text",
+                    "handleText",
+                    "dialogue.txt",
+                    "[アリス]: やあ\n\u3000\n静かだ\n",
+                    {},
+                    ["アリス", ["[Alice]: やあ", "静かだ"]],
+                    'EN "[Alice]: やあ"\n\u3000\nEN "静かだ"\n',
+                ),
+                (
+                    "modules.tyrano",
+                    "handleTyrano",
+                    "scene.ks",
+                    "#アリス:smile\nやあ[p]\n\u3000[p]\nまたね[p]\n",
+                    {"name": "Alice\n(a name)"},
+                    ["アリス", ["[Alice]: やあ", "[Alice]: またね"]],
+                    (
+                        '#Alice:smile\nEN "(Alice): やあ"[p]\n\u3000[p]\n'
+                        'EN "(Alice): またね"[p]\n'
+                    ),
+                ),
+                (
+                    "modules.kirikiri",
+                    "handleKirikiri",
+                    "scene.ks",
+                    "【アリス】[CR]\n【ボブ】[CR]\n[text]やあ[KeyWait]\n\u3000一\n\u3000\n\u3000二\n",
+                    {},
+                    ["アリス", "ボブ", ["[Alice]: やあ", "一", "二"]],
+                    (
+                        "【Alice】[CR]\n【Alice】[CR]\n[text]EN '[Alice]: やあ'[KeyWait]\n"
+                        '\u3000EN "一"\n\u3000\n\u3000EN "二"\n'
+                    ),
+                ),
+                (
+                    "modules.wolf2",
+                    "handleWOLF2",
+                    "Map001.txt",
+                    "アリス：\nやあ\nボブ：\nアリス：\nまたね\n",
+                    {},
+                    ["アリス", "ボブ", ["[Alice]: やあ ", "[Alice]: またね "]],
+                    'Alice：\nEN "[Alice]: やあ "\nAlice：\nAlice：\nEN "[Alice]: またね "\n',
+                ),
+                (
+                    "modules.csv",
+                    "handleCSV",
+                    "Scene.csv",
+                    'Source,Target\n"\\M[やあ]\nやあ",\n',
+                    {"PARSE_M_MARKERS": True},
+                    [["やあ"]],
+                    'Source,Target\r\n"\\M[やあ]\nやあ","\\M[やあ]\nEN ""やあ"""\r\n',
+                ),
+                (
+                    "modules.json",
+                    "handleJSON",
+                    "Talk.json",
+                    json.dumps(
+                        [
+                            {"character_nameText": "アリス", "m_text": "やあ"},
+                            {"m_text": "静かだ"},
+                        ]
+                    ),
+                    {"name": "Al]Ice", "replies": {"[Al]Ice]: やあ": "[Al]Ice]: Hi"}},
+                    ["アリス", ["[Al]Ice]: やあ", "静かだ"]],
+                    json.dumps(
+                        [
+                            {"character_nameText": "Al]Ice", "m_text": "Hi"},
+                            {"m_text": "EN 静かだ"},
+                        ],
+                        ensure_ascii=False,
+                        indent=4,
+                    ),
+                ),
+                (
+                    "modules.yuris",
+                    "handleYuris",
+                    "yuris.json",
+                    json.dumps([{"name": "アリス", "message": "やあ"}]),
+                    {"name": "Al]Ice", "replies": {"[Al]Ice]: やあ": "[Al]Ice]: Hi"}},
+                    ["アリス", ["[Al]Ice]: やあ"]],
+                    json.dumps(
+                        [{"name": "Al]Ice", "message": "Hi"}],
+                        ensure_ascii=False,
+                        indent=4,
+                    ),
+                ),
             ):
                 module = import_module(module_name)
                 encoding = "utf-8"
@@ -1423,6 +1581,44 @@ try:
                     output = output.replace("\n", os.linesep)
                 written = (shapes / "translated" / scene).read_bytes()
                 assert written.decode(encoding) == output, (module_name, written)
+
+            # WolfDawn sends a first-line nameplate as the line's speaker
+            wolfdawn = import_module("modules.wolfdawn")
+            dawn = {
+                "kind": "map",
+                "scenes": [
+                    {
+                        "lines": [
+                            {
+                                "source": "アリス\nやあ",
+                                "text": "アリス\nやあ",
+                                "speaker": "アリス",
+                                "speaker_src": "literal_line1",
+                            }
+                        ]
+                    }
+                ],
+            }
+
+            def dawn_reply(text, *_args, **_kwargs):
+                if isinstance(text, list):
+                    assert text == ["[Al]Ice]: やあ"], text
+                    return [["[Al]Ice]: Hi"], [1, 1]]
+                return ["Al]Ice", [1, 1]]
+
+            with (
+                patch.multiple(
+                    wolfdawn,
+                    translateAI=dawn_reply,
+                    NAMESLIST=[],
+                    VOCAB="",
+                    _speakerCache={},
+                ),
+                redirect_stdout(StringIO()),
+            ):
+                wolfdawn.parseDocument(dawn, "Map001.json")
+            written = dawn["scenes"][0]["lines"][0]["text"]
+            assert written == "Al]Ice\nHi", written
         finally:
             os.chdir(directory)
         # A name a registered reference game already translated is reused
@@ -4414,6 +4610,17 @@ try:
                 assert abs(priced - (8 * 0.8 + 2 * 0.2 + 4 * 3) / 1_000_000) < 1e-12, (
                     priced
                 )
+            # Settings that no longer offer the Batch, as a Custom
+            # Gemini-compatible proxy's no longer do, still apply its saved
+            # results, priced on the Batch they came from; a consume pass
+            # never sends.
+            with patch.object(openrouter_batch, "_worker_policy", None):
+                assert translation.getBatchProvider(config.model) is None
+                assert translation.appliedBatchProvider(config.model) == "openrouter"
+                translated = translation.translateAI(
+                    ["薬"], [], config, filename="Items.json"
+                )
+                assert translated[0] == ["Potion"], translated
             # Schema-shaped responses can fail native content validation without
             # being refusals; here every line comes back empty. Retain the failed body and generic outcome before
             # the file finishes, even when human-readable logs are unavailable.

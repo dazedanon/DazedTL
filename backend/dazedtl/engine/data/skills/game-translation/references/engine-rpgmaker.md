@@ -1258,7 +1258,8 @@ translatedText = re.sub(r"([^\\'])'", r"\1\\'", translatedText)
 # -> replace BOTH ' and " with U+055A ARMENIAN APOSTROPHE (՚), same negative class
 ```
 
-That `[^\\']` class is load-bearing: it leaves already-escaped `\'` and doubled `''` alone, so the pass is idempotent and safe to re-run over a partially processed file. Labels landing inside single-quoted template segments (drawTextEx text) only need `"` -> `'` with no escaping.
+That `[^\\']` class is load-bearing: it leaves already-escaped `\'` and doubled `''` alone, so the pass is idempotent and safe to re-run over a partially processed file.
+A drawTextEx label sits in the call's own string, so its translation escapes that string's opening quote, whichever it is, at half the depth of the label's codes (`'\\}Kiss\'s\\{'`), as `drawTextLabel` in `modules/rpgmakerplugin.py` does.
 
 ### Scope a greedy scan to a brace-counted region
 

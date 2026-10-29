@@ -17,7 +17,10 @@ of the settings it is read at (``read_at``): one whose settings now send it
 on another route than the one that priced it (``rerouted``) is priced again
 on theirs the same way. ``read`` decides this for every saved figure a user
 approves or reads: an Assistant-led quote waiting for approval, a Guided
-Translate estimate and a whole-game estimate.
+Translate estimate and a whole-game estimate. Work starts from one by the
+same reading at the full settings it would freeze, which refuse a price no
+lookup could read yet (settings/openrouter.Unread), so nothing starts, or is
+estimated, at a price that can't be read.
 """
 
 from dataclasses import dataclass, replace
@@ -63,8 +66,8 @@ def unpriced(configuration):
 
 def priced(configuration):
     """Whether these settings know their model's prices: its rates and, on
-    OpenRouter, whether it runs Batch, a policy left out while that isn't
-    looked up (settings/execution.configuration)."""
+    OpenRouter, whether it runs Batch, a policy a read with unknown prices
+    leaves out while no lookup could read it (settings/openrouter.Unread)."""
     rates = configuration.get("rates") or {}
     return (
         rates.get("input") is not None
@@ -129,7 +132,9 @@ def route_of(engine, configuration):
     """The Batch provider a run on ``configuration`` is sent on, so the route
     a figure priced with it takes, by the rule its worker records a figure's
     by (TranslationEngine.batch_supported); None for none, for no settings,
-    or for a frozen OpenRouter policy this version refuses."""
+    or for a frozen OpenRouter policy this version refuses. No figure is
+    read on the route of settings whose prices aren't known (``priced``):
+    ``rerouted`` and ``read`` leave them out."""
     if not configuration:
         return None
     try:
@@ -180,8 +185,13 @@ def rerouted(change, routes, before, after, route):
     one ``route`` (``route_of``) gives the settings it is read at
     (``read_at``), as after a DazedTL update routes the same settings
     elsewhere, its price changed too, so ``read`` prices its counts again on
-    that route or outdates it."""
-    on = route(read_at(change, before, after))
+    that route or outdates it. Settings whose prices aren't known yet
+    (``priced``), such as an OpenRouter Batch policy no lookup could read,
+    have no route to compare with, and ``read`` outdates the figure there."""
+    settings = read_at(change, before, after)
+    if settings and not priced(settings):
+        return change
+    on = route(settings)
     if all(item == on for item in routes):
         return change
     return replace(change or Change(), prices=True)

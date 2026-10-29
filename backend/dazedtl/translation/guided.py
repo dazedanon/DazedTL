@@ -5,7 +5,7 @@ from copy import deepcopy
 from pathlib import Path
 
 from dazedtl.freshness import Digests
-from dazedtl.settings.execution import batch_unavailable, runnable_mode
+from dazedtl.settings.execution import batch_reasons, runnable_mode
 from dazedtl.storage import write_json
 
 from . import (
@@ -832,6 +832,7 @@ class Guided:
         rebased = context_setup.rebase_layout_draft(native, recovered)
         if recovered != rebased:
             write_json(draft, rebased)
+        unavailable, unread = batch_reasons(self.settings)
         return {
             **value,
             **self.runs.snapshot(project_id, native, source_status, run_view=run_view),
@@ -879,7 +880,8 @@ class Guided:
             ],
             "provider": {
                 **self.settings.translation_defaults(),
-                "batch_unavailable": batch_unavailable(self.settings),
+                "batch_unavailable": unavailable,
+                "batch_unread": unread,
                 "credential_ready": self.settings.ready(),
                 "connection": (self.settings.connection_summary() or {}).get(
                     "name", "No connection selected"

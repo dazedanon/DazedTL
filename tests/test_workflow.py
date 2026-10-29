@@ -1424,6 +1424,14 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(shown["approval_token"], run["approval_token"])
         with self.assertRaisesRegex(ValueError, "check failed"):
             self.service.start(self.identity, run["id"], run["approval_token"])
+        # Estimate again says so too, as the whole game's does, where it
+        # found the quote current by pricing it as Live-only.
+        with self.assertRaisesRegex(ValueError, "check failed"):
+            self.service.reestimate(self.identity, run["id"])
+        # A new estimate froze the policy as none, priced on no Batch route
+        # at half its Live price; it waits for the check as Guided's does.
+        with self.assertRaisesRegex(ValueError, "check failed"):
+            self.service.compile(self.identity, self.plan_path)
         connection["check"] = {**connection["check"], "status": "verified"}
         with self.assertRaisesRegex(ValueError, "Provider execution is disabled"):
             self.service.start(self.identity, run["id"], run["approval_token"])

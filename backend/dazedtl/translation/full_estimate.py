@@ -142,12 +142,12 @@ class FullEstimate:
             repricing.rules(result),
         )
 
-    def changed(self, result, tasks, route, *, reprice=True):
+    def changed(self, result, tasks, route):
         """What changed since ``result`` was estimated, or None while it is
         current; one with a task priced on another route than its settings
         take now, which ``route`` gives (repricing.route_of), changed its
-        prices (repricing.rerouted). With ``reprice``, settings that differ
-        only in prices not known yet count as the same."""
+        prices (repricing.rerouted). Settings that differ only in prices not
+        known yet count as the same."""
         before, after = result.get("configuration"), self.configuration(tasks)
         routes = self.routes(result, repricing.own_route(route, before, after))
         saved = self.basis(tasks, result)
@@ -155,8 +155,7 @@ class FullEstimate:
         change = compare(
             saved,
             current,
-            prices_unknown=reprice
-            and saved.settings != current.settings
+            prices_unknown=saved.settings != current.settings
             and repricing.unknown_prices(result["configuration"], after),
         )
         return repricing.rerouted(change, routes, before, after, route)
@@ -177,13 +176,14 @@ class FullEstimate:
         """The settings the tasks are priced with, the same for every task."""
         return next(task["configuration"] for task in tasks if task["fingerprint"])
 
-    def reading(self, result, tasks, *, reprice=True):
+    def reading(self, result, tasks):
         """How a saved estimate reads for ``tasks`` (repricing.read): as
         saved, priced again from each task's counts on the route of the
-        settings it is read at, or outdated."""
+        settings it is read at, or outdated. Estimate again reads it so at
+        the full settings it would freeze."""
         route = self.guided.runs.route
         return repricing.read(
-            self.changed(result, tasks, route, reprice=reprice),
+            self.changed(result, tasks, route),
             result.get("configuration"),
             self.configuration(tasks),
             route,
@@ -192,7 +192,10 @@ class FullEstimate:
 
     def priced(self, result, configuration, route):
         """A saved estimate priced again from each task's counts at the
-        prices of ``configuration`` on ``route``, else None."""
+        prices of ``configuration`` on ``route``, else None. It shows a
+        Batch price while that route runs one, as a new estimate does,
+        whatever Settings reads at the moment, such as after a failed
+        check."""
         from dazedtl.compatibility.estimate_prices import reprice
         from dazedtl.compatibility.full_estimate import prices
 
@@ -206,11 +209,10 @@ class FullEstimate:
             if estimate is None:
                 return None
             rows.append({**task, **prices(estimate)})
-        defaults = self.guided.settings.translation_defaults()
         return {
             **result,
             "model": configuration["model"],
-            "batchSupported": defaults["batch_supported"],
+            "batchSupported": route is not None,
             "price_rules": repricing.current_rules(),
             "tasks": rows,
         }
@@ -248,7 +250,7 @@ class FullEstimate:
         if saved and not any(
             task.get("approximateInput") for task in saved["result"]["tasks"]
         ):
-            reading = self.reading(saved["result"], tasks, reprice=False)
+            reading = self.reading(saved["result"], tasks)
             if reading.current and reading.figure is None:
                 raise ValueError(
                     "Nothing changed since the last estimate, so it is still current."
@@ -272,7 +274,9 @@ class FullEstimate:
                     "shape": self.fingerprint(tasks, "shape"),
                     "configuration": self.configuration(tasks),
                     "model": defaults["model"],
-                    "batchSupported": defaults["batch_supported"],
+                    # Whether its route runs Batch, as a priced-again one reads.
+                    "batchSupported": self.guided.runs.route(self.configuration(tasks))
+                    is not None,
                     "policy": policy,
                     # A launch with providers disabled keeps Claude's
                     # approximate count rather than reach Anthropic.

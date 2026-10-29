@@ -170,6 +170,7 @@ def guided(value, project_id):
             "connection": value["provider"]["connection"],
             "defaultMode": value["provider"]["default_mode"],
             "batchUnavailable": value["provider"]["batch_unavailable"],
+            "batchUnread": value["provider"]["batch_unread"],
             "ready": value["provider"]["credential_ready"],
             "enabled": value["allow_providers"],
         },

@@ -406,6 +406,7 @@ Removing a connection stops its unfinished runs from resuming, so DazedTL tells 
 ### OpenRouter
 
 Save the key, then choose or type the full model ID, such as `anthropic/claude-sonnet-4.5`.
+Estimates wait until a connection check has read whether the model runs Batch, so after a failed check click **Check again** first.
 To use one hosting provider, edit the connection and choose **Host**; a chosen host never falls back to another, and **Automatic** lets OpenRouter choose.
 OpenRouter Batches can take up to 24 hours and can't be cancelled once sent.
 **Stop queued work** holds back what hasn't been sent, and **Continue queued work** resumes it.

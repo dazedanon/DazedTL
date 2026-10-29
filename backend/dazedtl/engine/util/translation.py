@@ -48,10 +48,12 @@ from util.provider_costs import (
 )
 from util import claude_tokens, request_debug
 from util.batch_providers import (
-    KIMI_API_URL,
+    GEMINI_API_URL,
+    OWN_API_URLS,
     live_price_route,
     openai_usage,
     rejects_response_format,
+    require_gemini_api,
     requires_json_schema,
 )
 from util import extensions
@@ -724,7 +726,7 @@ api_provider = os.getenv("API_PROVIDER", "openai").lower()
 env_api = os.getenv("api", "").strip()
 if api_provider == "gemini" and not env_api:
     # Use Google Generative Language compatibility endpoint only as fallback.
-    openai.base_url = "https://generativelanguage.googleapis.com/v1beta/openai/"
+    openai.base_url = GEMINI_API_URL
     openai.organization = None
 elif api_provider == "mistral" and not env_api:
     openai.base_url = "https://api.mistral.ai/v1/"
@@ -1534,17 +1536,38 @@ BATCH_QUEUE_BUFFER_MAX_SECONDS = 15.0
 _batch_phase = None
 _batch_results = None      # in-memory copy of BATCH_RESULTS_FILE (read-only during consume)
 _batch_queue_pending = {}  # process-local queue entries not yet flushed to disk
+_batch_sent_provider = None  # the saved Batch's provider, read once a phase
 
 
 def set_batch_phase(phase):
     """Set the batch phase for this process and any subprocesses it spawns."""
-    global _batch_phase, _batch_results
+    global _batch_phase, _batch_results, _batch_sent_provider
     _batch_phase = phase if phase in ("collect", "consume", "estimate") else None
     if _batch_phase:
         os.environ["BATCH_PHASE"] = _batch_phase
     else:
         os.environ.pop("BATCH_PHASE", None)
     _batch_results = None  # phase change invalidates the in-memory results copy
+    _batch_sent_provider = None
+
+
+def appliedBatchProvider(model=None):
+    """The Batch provider whose results a consume pass applies and prices:
+    the one the settings send a Batch to (getBatchProvider), else the one
+    the run's saved Batch was sent to, so settings that no longer offer it,
+    as a Custom Gemini-compatible proxy's no longer offer Gemini's, still
+    apply its results, which never sends (translateAI); None for neither,
+    and outside a consume pass the settings' alone."""
+    global _batch_sent_provider
+    provider = getBatchProvider(model)
+    if provider or get_batch_phase() != "consume":
+        return provider
+    if _batch_sent_provider is None:
+        # Written atomically (_write_batch_file), so it is read without the
+        # batch file lock, which a caller pricing a result could be holding.
+        state = _read_batch_file(BATCH_STATE_FILE)
+        _batch_sent_provider = str(state.get("provider") or "")
+    return _batch_sent_provider or None
 
 
 def get_batch_phase():
@@ -2795,6 +2818,11 @@ def estimateBatchCost(model=None, *, queue_file=None, log_prefix="[BATCH]"):
 
     est_model = model or next(iter(models), None) or os.getenv("model", "")
     est_provider = next(iter(providers), getBatchProvider(est_model))
+    if est_provider == "gemini":
+        # Requests queued for a Gemini Batch on another server, such as a
+        # Custom Gemini-compatible proxy before it ran Live only, would be
+        # refused when submitted, so no price is shown to approve them.
+        require_gemini_api(os.getenv("api", ""))
     counted = None
     if est_provider == "anthropic":
         counted = countClaudeTokens(request_params, request_dynamic, log_prefix)
@@ -3056,12 +3084,7 @@ def _submit_translation_batches_unlocked(file_set=None, cost_estimate=None):
     )
 
     current_key_name = active_key_name_for_environment()
-    current_endpoint = os.getenv("api", "").strip() or {
-        "anthropic": "https://api.anthropic.com",
-        "gemini": "https://generativelanguage.googleapis.com/v1beta/openai/",
-        "openai": "https://api.openai.com/v1",
-        "kimi": KIMI_API_URL,
-    }.get(provider, "")
+    current_endpoint = os.getenv("api", "").strip() or OWN_API_URLS.get(provider, "")
     existing_key_names = {
         str(info.get("key_name") or key_name_for_batch(info.get("id", "")))
         for info in batches
@@ -3422,13 +3445,11 @@ def fetchTranslationBatches(batches=None):
             _price_usage,
             client_for_batch,
             download_batch_results,
-            google_client_for_batch,
             record_fetch,
         )
     except Exception:
         client_for_batch = None
         download_batch_results = None
-        google_client_for_batch = None
         record_fetch = None
         _price_usage = None
 
@@ -3459,16 +3480,10 @@ def fetchTranslationBatches(batches=None):
             else None
         )
         if download_batch_results is not None:
-            google_client = (
-                google_client_for_batch(
-                    bid, str(info.get("key_name") or "")
-                )
-                if provider == "gemini" and google_client_for_batch
-                else None
-            )
+            # A Gemini Batch's files move with its client's key
+            # (batch_providers._gemini_files).
             part, err_part, usage_part = download_batch_results(
                 bid, id_map, client=client, provider=provider,
-                google_client=google_client,
             )
         else:
             from util.batch_providers import download_results
@@ -5390,7 +5405,7 @@ def translateText(system, user, history, penalty, formatType, model, numLines=No
     _live_key = os.getenv("key", "").strip()
     _live_provider = os.getenv("API_PROVIDER", "openai").lower()
     if _live_provider == "gemini" and not _live_api:
-        openai.base_url = "https://generativelanguage.googleapis.com/v1beta/openai/"
+        openai.base_url = GEMINI_API_URL
     elif _live_provider == "mistral" and not _live_api:
         openai.base_url = "https://api.mistral.ai/v1/"
     elif _live_api:
@@ -5754,7 +5769,7 @@ def batch_usage_cost(usage, model, provider):
 def _batch_results_cost(usage, model):
     """What fetched Batch results with ``usage`` cost on the run's Batch,
     for a file line and the run's TOTAL alike."""
-    return batch_usage_cost(usage, model, getBatchProvider(model) or "anthropic")
+    return batch_usage_cost(usage, model, appliedBatchProvider(model) or "anthropic")
 
 
 def batch_result_paid(result, model):
@@ -6159,7 +6174,11 @@ def translateAI(text, history, config, filename=None, pbar=None, lock=None,
     # Provider batch phase; Estimate uses the collect request builder with a
     # disposable queue and never reaches a provider call.
     batch_phase = get_batch_phase()
-    batch_provider = getBatchProvider(config.model)
+    batch_provider = (
+        appliedBatchProvider(config.model)
+        if batch_phase == "consume"
+        else getBatchProvider(config.model)
+    )
     if batch_phase and not batch_provider:
         raise ValueError("This endpoint does not support provider Batch jobs. The batch phase was stopped; no live request was made.")
     if batch_phase and config.estimateMode and batch_phase != "estimate":

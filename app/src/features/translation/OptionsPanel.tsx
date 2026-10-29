@@ -43,7 +43,8 @@ export function OptionsPanel({
 }) {
   // Batch unless the connection cannot run it, the default new projects get.
   // `options` reads such a Batch as Live already (runnableMode), so the
-  // card says why beside the choice instead.
+  // card says why beside the choice instead; while whether it can isn't read
+  // yet, Batch stays and the card says why estimates wait.
   const unavailable = state.batchUnavailable;
   const recommended: Mode = unavailable ? "live" : "batch";
   const cards: OptionCard<Mode>[] = [
@@ -54,6 +55,7 @@ export function OptionsPanel({
       disabled: !!unavailable,
       description:
         unavailable ||
+        state.batchUnread ||
         "Your API key translates in one provider job, usually at half the Live price where the provider offers it. The job finishes on the provider's schedule, sometimes within minutes and at most within a day.",
     },
     {

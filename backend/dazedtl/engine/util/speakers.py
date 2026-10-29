@@ -100,6 +100,16 @@ def to_prefixed(speaker: str, body: str) -> str:
 _PREFIX_SEPARATOR_RE = re.compile(r"\s*[|:：]\s*")
 
 
+def _sent_label_end(text: str, speaker: str) -> int | None:
+    """Where the ``[speaker]:`` label to_prefixed sent *speaker* with ends in
+    *text*, or None when *text* does not start with it."""
+    sent = f"[{speaker}]"
+    if not speaker or not text.startswith(sent):
+        return None
+    separator = _PREFIX_SEPARATOR_RE.match(text, len(sent))
+    return separator.end() if separator else None
+
+
 def strip_speaker_prefix(text: str, speaker: str = "") -> str:
     """Remove a leading ``[Speaker]:`` / ``[Speaker]|`` / ``[Speaker]：`` prefix.
 
@@ -108,11 +118,9 @@ def strip_speaker_prefix(text: str, speaker: str = "") -> str:
     pattern; any other bracketed name as the pattern reads it."""
     if not text:
         return text
-    sent = f"[{speaker}]"
-    if speaker and text.startswith(sent):
-        separator = _PREFIX_SEPARATOR_RE.match(text, len(sent))
-        if separator:
-            return text[separator.end() :]
+    end = _sent_label_end(text, speaker)
+    if end is not None:
+        return text[end:]
     return SPEAKER_PREFIX_RE.sub("", text, count=1)
 
 
@@ -122,14 +130,15 @@ _ECHOED_NAME_RE = re.compile(r"^[一-龠ぁ-ゔァ-ヴーａ-ｚＡ-Ｚ０-９\u
 _ECHOED_CLOSE_RE = re.compile(r"\s*[)）]\s*$")
 
 
-def strip_echoed_speaker(text: str, language) -> str:
+def strip_echoed_speaker(text: str, language, speaker: str = "") -> str:
     """A translated line without the speaker a model echoed: a
-    ``[Speaker]:`` prefix, or else, for a target written in another script
-    than Japanese, a leading Japanese name with ``(`` or ``:``. A Chinese or
+    ``[Speaker]:`` prefix (strip_speaker_prefix, with the *speaker* the line
+    was sent with), or else, for a target written in another script than
+    Japanese, a leading Japanese name with ``(`` or ``:``. A Chinese or
     Japanese target writes such a word as text (util/target_text)."""
     from util.target_text import full_width
 
-    stripped = strip_speaker_prefix(text)
+    stripped = strip_speaker_prefix(text, speaker)
     if stripped != text or full_width(language):
         return stripped
     echoed = _ECHOED_NAME_RE.match(text)
@@ -319,14 +328,19 @@ def split_source(source: str, speaker_src: str, config: dict | None = None):
     return prefix, line1, body
 
 
-def parse_prefixed(text: str):
+def parse_prefixed(text: str, speaker: str = ""):
     """Parse a translated ``[Speaker]: body`` string.
 
     Returns (speaker, body). ``speaker`` is ``None`` when the model did not emit a
-    ``[Speaker]:`` prefix, in which case ``body`` is the whole string.
+    ``[Speaker]:`` prefix, in which case ``body`` is the whole string. The
+    *speaker* the line was sent with is read whatever it holds, as
+    strip_speaker_prefix reads it.
     """
     if not isinstance(text, str):
         return None, text
+    end = _sent_label_end(text, speaker)
+    if end is not None:
+        return speaker, text[end:]
     m = SPEAKER_TAG_RE.match(text)
     if not m:
         return None, text
@@ -376,6 +390,17 @@ def find_speaker(syntax, line: str) -> FoundSpeaker | None:
     return FoundSpeaker(match.group(1), line, match.start(1), match.end(1))
 
 
+def name_reply(reply: str, language) -> str:
+    """A model's reply for a speaker name, as an engine writes it: its first
+    line that holds anything, as the name is written on its own line or
+    inside a tag, where more lines would add lines to the file and a model's
+    later lines are a note or the name again; title-cased for a Latin target
+    and without a stray ``Speaker: `` echo."""
+    if "\n" in reply or "\r" in reply:
+        reply = next((line.strip() for line in reply.splitlines() if line.strip()), "")
+    return title_case(reply, language).replace("'S", "'s").replace("Speaker: ", "")
+
+
 # Names every engine writes alike, and the target language each needs (None:
 # any)
 _FIXED_NAMES = {"？？？": ("???", None), "ファイン": ("Fine", ENGLISH)}
@@ -387,9 +412,8 @@ def translate_speaker(speaker, names, language, translate):
     *names* is the module's ``[original, translated]`` cache and gains each new
     name; *translate* is its ``translateAI``. A name the cache gave as a
     translation is answered as it is, at no cost, as a module finds it again
-    where it wrote it. A reply is title-cased for a Latin target, loses a stray
-    ``Speaker: `` echo and is asked for once more when it does not read as a
-    translation.
+    where it wrote it. A reply is read by name_reply and asked for once more
+    when it does not read as a translation.
     """
     if not speaker:
         return ["", [0, 0]]
@@ -406,7 +430,7 @@ def translate_speaker(speaker, names, language, translate):
     prompt = "Reply with the " + language + " translation of the NPC name."
     for _ in range(2):
         response = translate(speaker, prompt, False)
-        response[0] = title_case(response[0], language).replace("'S", "'s").replace("Speaker: ", "")
+        response[0] = name_reply(response[0], language)
         if name_translated(response[0], language):
             break
     names.append([speaker, response[0]])
