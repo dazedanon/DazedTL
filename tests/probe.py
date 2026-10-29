@@ -9,6 +9,8 @@ from contextlib import ExitStack
 from pathlib import Path
 from tempfile import TemporaryDirectory, mkstemp
 
+from dazedtl import system
+
 # Runs a fixture script as its own program after the setup every test
 # module has, which includes the write check (tests/game_writes.py).
 LAUNCH = """
@@ -18,14 +20,6 @@ sys.path.insert(0, sys.argv[1])
 import tests
 runpy.run_path(sys.argv[0], run_name="__main__")
 """
-
-
-def bytecode():
-    """Interpreter options that share the suite's compiled modules
-    (scripts/test.mjs), or write none."""
-    if sys.pycache_prefix:
-        return ["-X", "pycache_prefix=" + sys.pycache_prefix]
-    return ["-B"]
 
 
 class Background:
@@ -42,7 +36,8 @@ class Background:
 
     def start(self, command, *, merge=True, **options):
         """Starts `command`; its standard error joins its output unless
-        `merge` is false. `options` go to subprocess.Popen."""
+        `merge` is false. `options` go to dazedtl.system.popen, which shares
+        the suite's compiled modules (scripts/test.mjs) with a Python command."""
         # Within the suite's budget (scripts/test.mjs), leaving room to report.
         budget = float(os.environ.get("DAZEDTL_TEST_BUDGET") or 10)
         self.deadline = time.monotonic() + budget * 0.8
@@ -58,7 +53,7 @@ class Background:
             output, *errors = [
                 stack.enter_context(open(log, "wb")) for log in self.logs
             ]
-            self.process = subprocess.Popen(
+            self.process = system.popen(
                 command,
                 stdin=subprocess.DEVNULL,
                 stdout=output,
@@ -125,17 +120,12 @@ class Probe(Background):
             DAZEDTL_LEGACY_ROOT=str(Path(temporary) / "missing-engine"),
             DAZEDTL_ENGINE_SOURCE=str(Path(temporary) / "missing-engine"),
         )
-        # The workers the fixture starts share the suite's compiled modules
-        # too, instead of compiling theirs into the checkout.
-        if sys.pycache_prefix:
-            environment["PYTHONPYCACHEPREFIX"] = sys.pycache_prefix
         self.start(
             [
                 sys.executable,
                 "-I",
                 "-X",
                 "utf8",
-                *bytecode(),
                 "-c",
                 LAUNCH,
                 str(root / "tests/fixtures" / script),

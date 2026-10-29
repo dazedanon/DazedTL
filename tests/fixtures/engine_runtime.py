@@ -2299,7 +2299,7 @@ try:
         import httpx
         from dazedtl.compatibility.request_parameters import configure_builders
         from dazedtl.settings.preferences import GENERATION_PARAMETERS
-        from openai import BadRequestError
+        from openai import BadRequestError, UnprocessableEntityError
         from util import translation
         from util.batch_providers import (
             PROVIDER_OPENAI,
@@ -2390,6 +2390,105 @@ try:
             )
             assert legacy["response_format"] == {"type": "json_object"}
             assert "provider" not in legacy.get("extra_body", {})
+
+            # A json_schema request's 400 was sent again in JSON mode whatever
+            # it said, so under the run-stop policy each rejected request
+            # reached the provider twice. There only an error saying the
+            # response format falls back, never one echoing the request back;
+            # a run frozen before falls back at every 400. A validating
+            # server's 422 failed every request instead of using JSON mode.
+            def status_error(status, body):
+                error = BadRequestError if status == 400 else UnprocessableEntityError
+                return error(
+                    f"Error code: {status} - {body}",
+                    response=httpx.Response(
+                        status,
+                        request=httpx.Request(
+                            "POST", "https://provider.invalid/v1/chat/completions"
+                        ),
+                    ),
+                    body=body,
+                )
+
+            unrelated = {"message": "The model `gone` does not exist."}
+            unsupported = {
+                "message": "Invalid parameter: 'response_format' of type "
+                "'json_schema' is not supported with this model."
+            }
+            echoed = {
+                "object": "error",
+                "message": "1 validation error for ChatCompletionRequest\n"
+                "model\n  Field required [type=missing, input_value={'messages':"
+                " [], 'response_format': {'type': 'json_schema'}}, input_type=dict]",
+            }
+            literal = {
+                "detail": [
+                    {
+                        "type": "literal_error",
+                        "loc": ["body", "response_format", "type"],
+                        "msg": "Input should be 'text' or 'json_object'",
+                        "input": "json_schema",
+                    }
+                ]
+            }
+            missing = {
+                "detail": [
+                    {
+                        "type": "missing",
+                        "loc": ["body", "model"],
+                        "msg": "Field required",
+                        "input": {"response_format": {"type": "json_schema"}},
+                    }
+                ]
+            }
+            for run_stops, status, body, sent in (
+                (True, 400, unrelated, 1),
+                (True, 400, unsupported, 2),
+                (True, 400, echoed, 1),
+                # JSON mode, or no format at all, would be rejected too.
+                (True, 400, {"message": "Input should be 'json_schema'"}, 1),
+                (False, 400, unrelated, 2),
+                (True, 422, literal, 2),
+                (False, 422, literal, 2),
+                (False, 422, missing, 1),
+                # OpenRouter passes on the upstream server's body as text.
+                (
+                    True,
+                    400,
+                    {
+                        "message": "Provider returned error",
+                        "metadata": {"raw": json.dumps(missing)},
+                    },
+                    1,
+                ),
+            ):
+                send = Mock(side_effect=[status_error(status, body), good])
+                with (
+                    patch.object(translation, "RUN_STOPS", run_stops),
+                    patch.object(
+                        translation.openai,
+                        "chat",
+                        SimpleNamespace(completions=SimpleNamespace(create=send)),
+                    ),
+                ):
+                    try:
+                        translation.translateText(
+                            "Translate.",
+                            '{"Line1":"薬"}',
+                            [],
+                            0,
+                            "json",
+                            "openai/gpt-4.1",
+                            numLines=1,
+                        )
+                    except Exception as error:
+                        assert sent == 1 and f"({status})" in str(error), error
+                    else:
+                        assert sent == 2, (run_stops, body)
+                assert send.call_count == sent, (run_stops, body, send.call_count)
+                assert send.call_args.kwargs["response_format"]["type"] == (
+                    "json_object" if sent == 2 else "json_schema"
+                )
             # DeepSeek's own models think within max_tokens by default, so a
             # long request gets the full ceiling there and the cap elsewhere.
             for model, endpoint, ceiling in (
@@ -3584,6 +3683,32 @@ try:
                         assert error.cause == cause, (source, error.cause)
                     else:
                         raise AssertionError(f"No Batch result for {source}.")
+            # A request the provider ended with an error says why, not that
+            # it may have been canceled, as the fetch kept the error.
+            submitted = batch_history.submitted_results()
+            stored = "{'code': 'invalid_request', 'message': 'Model is gone'}"
+            with (
+                patch.object(translation, "_batch_results", {}),
+                patch.object(
+                    batch_history,
+                    "submitted_results",
+                    lambda: {key: stored for key in submitted},
+                ),
+            ):
+                try:
+                    translation.translateAI(
+                        ["回復", "毒"], [], config, filename="Items.json"
+                    )
+                except translation.BatchResultUnavailableError as error:
+                    assert (error.cause, str(error).split(" No full-price")[0]) == (
+                        "unreturned",
+                        (
+                            "The provider ended the Batch request for some of "
+                            "this file's lines with an error: Model is gone."
+                        ),
+                    ), str(error)
+                else:
+                    raise AssertionError("No Batch result for the ended request.")
             assert len(sent_batches) == 2
             translation.set_batch_phase(None)
             # The run's new speaker names go out Live before any Batch phase;

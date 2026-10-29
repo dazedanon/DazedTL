@@ -38,7 +38,7 @@ from dazedtl.translation.compilation import compile_requests
 from dazedtl.translation.files import digest
 
 from tests.engine import ENGINE, engine_module, point, replaced_modules
-from tests.probe import Background, bytecode
+from tests.probe import Background
 
 # Engine scripts for the tests of the same names below. Each runs in an
 # interpreter of its own, where only the engine is importable, and starts
@@ -194,7 +194,6 @@ def script(source, *paths):
             "-I",
             "-X",
             "utf8",
-            *bytecode(),
             "-c",
             source,
             *paths,
@@ -833,6 +832,8 @@ class CompatibilityContracts(unittest.TestCase):
         def worker(policy, root, coordinator=False):
             translation = SimpleNamespace(
                 translateText=point(provider),
+                translateAI=point(provider),
+                get_batch_phase=lambda: None,
                 RunStoppingError=Stopping,
                 RequestRejectedError=Rejected,
             )
@@ -941,6 +942,150 @@ class CompatibilityContracts(unittest.TestCase):
                     older.translateText("s", "u")
                 self.assertIs(caught.exception, rejected)
             self.assertEqual(older.translateText("s", "u"), "ok")
+
+    def test_a_live_call_the_engine_gave_up_on_fails_with_the_providers_error(self):
+        # A file failing with an error the run-stop rule does not count, such
+        # as an HTTP 500 after the engine's tries, or any error in a run frozen
+        # before the rule, failed with the engine's wrapped text: "API server
+        # error (500) - retrying... Error: Error code: 500 - {...}". Requests
+        # and retries stay as the run sends them.
+        from dazedtl.compatibility import run_stops
+        from dazedtl.settings.preferences import RUN_STOPS
+
+        class Stopping(RuntimeError):
+            pass
+
+        class Rejected(Exception):
+            pass
+
+        class StatusError(Exception):
+            def __init__(self, status):
+                super().__init__(f"Error code: {status}")
+                self.status_code = status
+                self.body = {"error": {"message": "The server failed"}}
+
+        class APIConnectionError(Exception):
+            pass
+
+        class APITimeoutError(APIConnectionError):
+            pass
+
+        class Wrapped(Exception):
+            """The engine's own error, raised inside its handler."""
+
+        def wrapped(sdk, text):
+            try:
+                raise sdk
+            except Exception as error:
+                try:
+                    raise Wrapped(f"{text} - retrying... Error: {error}")
+                except Wrapped as outer:
+                    return outer
+
+        calls, replies, phase = [], [], None
+
+        def engine(*_args, **_kwargs):
+            calls.append(1)
+            raise replies.pop(0)
+
+        with TemporaryDirectory() as temporary:
+            for policy in ({"runStops": RUN_STOPS}, None):
+                translation = SimpleNamespace(
+                    translateText=point(lambda *_args: "ok"),
+                    translateAI=point(engine),
+                    get_batch_phase=lambda: phase,
+                    RunStoppingError=Stopping,
+                    RequestRejectedError=Rejected,
+                )
+                run_stops.configure(translation, policy, temporary)
+                for sdk, text, message in (
+                    (
+                        StatusError(500),
+                        "API server error (500)",
+                        (
+                            "The provider failed the request: HTTP 500 - The "
+                            "server failed."
+                        ),
+                    ),
+                    (
+                        StatusError(400),
+                        "API status error (400)",
+                        (
+                            "The provider rejected the request: HTTP 400 - The "
+                            "server failed."
+                        ),
+                    ),
+                    (
+                        APITimeoutError("Request timed out."),
+                        "API connection/rate limit error",
+                        "The provider could not be reached: Request timed out.",
+                    ),
+                ):
+                    replies[:] = [wrapped(sdk, text)]
+                    with self.assertRaises(Exception) as caught:
+                        translation.translateAI("s", "u")
+                    self.assertEqual(str(caught.exception), message, policy)
+                # A stop, a rejection and an error from no provider pass as
+                # they are.
+                for error in (Stopping("Stop."), Rejected("No."), ValueError("x")):
+                    replies[:] = [error]
+                    with self.assertRaises(Exception) as caught:
+                        translation.translateAI("s", "u")
+                    self.assertIs(caught.exception, error)
+                # A Batch phase sends nothing Live.
+                phase = "consume"
+                replies[:] = [wrapped(StatusError(500), "API server error (500)")]
+                with self.assertRaises(Exception) as caught:
+                    translation.translateAI("s", "u")
+                self.assertIsInstance(caught.exception, Wrapped)
+                phase = None
+        self.assertEqual(len(calls), 14)
+
+    def test_a_provider_error_without_a_message_reads_as_its_code(self):
+        # A 400 whose body held no message read "HTTP 400 - Provider returned
+        # HTTP 400.", and a prompt flagged only by its code lost the code.
+        from dazedtl.compatibility.provider_responses import (
+            error_evidence,
+            provider_error,
+        )
+
+        class StatusError(Exception):
+            def __init__(self, body):
+                super().__init__("Error code: 400")
+                self.status_code = 400
+                self.body = body
+
+        def reads(body):
+            return provider_error(error_evidence(StatusError(body)))
+
+        self.assertEqual(
+            reads({"error": {"message": "The model `gone` does not exist"}}),
+            "HTTP 400 - The model `gone` does not exist.",
+        )
+        self.assertEqual(
+            reads({"error": {"code": "content_filter"}}), "HTTP 400 - content_filter."
+        )
+        self.assertEqual(reads({}), "HTTP 400 with no reason given.")
+        self.assertEqual(reads(None), "HTTP 400 with no reason given.")
+        # A Batch request's error as a fetch keeps it: the row's error object,
+        # or a row of OpenAI's error file whole; anything else stays as it is.
+        from dazedtl.compatibility.provider_responses import stored_reason
+
+        for stored, reason in (
+            ("{'code': 'invalid_request', 'message': 'Bad model'}", "Bad model."),
+            (
+                (
+                    "{'id': 'batch_req_1', 'custom_id': 'req-1', 'response': "
+                    "{'status_code': 400, 'request_id': 'r', 'body': {'error': "
+                    "{'message': 'Bad model', 'type': 'invalid_request_error'}}}, "
+                    "'error': None}"
+                ),
+                "HTTP 400 - Bad model.",
+            ),
+            ("{'code': 'invalid_request', 'mess", "{'code': 'invalid_request', 'mess"),
+            ("expired: ", "expired: "),
+        ):
+            self.assertEqual(stored_reason(stored), reason)
 
     def test_claude_estimates_scale_from_claudes_own_count_of_a_spread_sample(self):
         # Claude's estimates once counted only the shared instructions with
@@ -1528,6 +1673,136 @@ class CompatibilityContracts(unittest.TestCase):
                 self.assertAlmostEqual(
                     spent(model, provider, endpoint, protocol, batch) or 0, cost
                 )
+
+    def test_each_claude_route_rule_routes_a_model_and_address_alike(self):
+        # The Claude name test and the native-Anthropic route test were copied
+        # into the Live send, the estimate, Batch detection, Live pricing and
+        # Settings' route check; each copy must keep answering the same.
+        import os
+
+        from dazedtl.compatibility.dazedmtl import ExistingBackend
+        from util import translation
+        from util.batch_providers import detect_batch_provider, live_price_route
+
+        addresses = (
+            "",
+            "https://api.anthropic.com",
+            # A proxy path: sent Live natively, but Batches need Anthropic's
+            # own API.
+            "http://localhost:8080/anthropic",
+            "https://openrouter.ai/api/v1",
+            "https://proxy.example/v1",
+            "https://api.openai.com/v1",
+        )
+        # Per address: native Live send, Batch provider, Live price route,
+        # Settings' engine route.
+        claude = (
+            (True, "anthropic", "anthropic", "anthropic"),
+            (True, "anthropic", "anthropic", "anthropic"),
+            (True, None, "anthropic", "anthropic"),
+            (False, None, "anthropic", "openai"),
+            (False, None, "anthropic", "openai"),
+            (False, "openai", "anthropic", "openai"),
+        )
+        other = (
+            (False, "openai", "openai", "openai"),
+            (False, None, "", "openai"),
+            (False, None, "", "openai"),
+            (False, None, "", "openai"),
+            (False, None, "", "openai"),
+            (False, "openai", "openai", "openai"),
+        )
+        gpt = tuple((False, batch, "openai", "openai") for _n, batch, *_r in other)
+        for model, routes in (
+            ("claude-sonnet-5-5", claude),
+            ("anthropic/claude-haiku-4-5", claude),
+            ("Claude-Opus-5", claude),
+            # Any name holding a Claude family word counts as Claude.
+            ("sonnet-like", claude),
+            ("gpt-5.4", gpt),
+            ("deepseek-v4-flash", other),
+            ("", other),
+        ):
+            for address, expected in zip(addresses, routes, strict=True):
+                with (
+                    self.subTest(model=model, address=address),
+                    patch.dict(os.environ, {"api": address}),
+                ):
+                    os.environ.pop("DAZEDTL_TEST_OPENAI_ENDPOINT", None)
+                    self.assertEqual(
+                        (
+                            translation.isClaudeNative(model, address),
+                            detect_batch_provider(model, address, "openai"),
+                            live_price_route(model, address, "openai"),
+                            ExistingBackend.engine_route(model, "openai", address)[0],
+                        ),
+                        expected,
+                    )
+                    # The Live send and the estimate read the address from
+                    # the engine's settings.
+                    self.assertEqual(translation.isClaudeNative(model), expected[0])
+                    self.assertEqual(translation.isClaudeModel(model), routes is claude)
+
+    def test_mistral_sends_its_json_mode_request_on_the_last_attempt(self):
+        # The JSON-mode downgrade spent a retry attempt, so a format rejection
+        # on the last attempt, here after a rate limit, raised "failed after
+        # N attempts" unsent.
+        import httpx
+        import openai
+        from util import translation
+
+        sent = []
+        body = {"message": "response_format json_schema is not supported"}
+
+        def create(**params):
+            sent.append(params["response_format"]["type"])
+            if len(sent) == 1:
+                raise openai.RateLimitError(
+                    "slow down",
+                    response=httpx.Response(
+                        429,
+                        headers={"retry-after": "0"},
+                        request=httpx.Request("POST", "https://api.mistral.ai"),
+                    ),
+                    body=None,
+                )
+            if params["response_format"]["type"] == "json_schema":
+                raise openai.UnprocessableEntityError(
+                    "rejected",
+                    response=httpx.Response(
+                        422, request=httpx.Request("POST", "https://api.mistral.ai")
+                    ),
+                    body=body,
+                )
+            return SimpleNamespace(
+                parse=lambda: "reply", headers={"x-ratelimit-remaining-tokens": "9"}
+            )
+
+        client = SimpleNamespace(
+            chat=SimpleNamespace(
+                completions=SimpleNamespace(
+                    with_raw_response=SimpleNamespace(create=create)
+                )
+            ),
+            RateLimitError=openai.RateLimitError,
+            APIStatusError=openai.APIStatusError,
+            APIConnectionError=openai.APIConnectionError,
+        )
+        limiter = SimpleNamespace(acquire=lambda _tokens: None, update=lambda _h: None)
+        for run_stops in (False, True):
+            sent.clear()
+            with (
+                self.subTest(run_stops=run_stops),
+                patch.object(translation, "openai", client),
+                patch.object(translation, "_get_mistral_limiter", return_value=limiter),
+                patch.object(translation, "RUN_STOPS", run_stops),
+            ):
+                params = {
+                    "messages": [{"role": "user", "content": "薬"}],
+                    "response_format": {"type": "json_schema"},
+                }
+                self.assertEqual(translation.callMistral(params, retries=1), "reply")
+                self.assertEqual(sent, ["json_schema", "json_schema", "json_object"])
 
     def test_an_openai_batch_estimate_prices_cache_reads_at_the_models_price(self):
         # Every OpenAI Batch estimate priced cache reads at a tenth of input,
@@ -2509,7 +2784,6 @@ class ManualJobs:
                     (kwargs["stdin"], kwargs["stdout"]),
                     (subprocess.PIPE, subprocess.PIPE),
                 )
-                self.assertEqual(kwargs["env"]["PYTHONDONTWRITEBYTECODE"], "1")
                 # A collected-only worker must never fall back to queued or
                 # partially submitted work, even if state changed before launch.
                 write_json(

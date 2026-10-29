@@ -1112,17 +1112,25 @@ def missing_result_count() -> tuple[int, int]:
     return present, expected
 
 
-def submitted_result_keys() -> set[str]:
-    """Result keys of every request the active run's Batches sent."""
+def submitted_results() -> dict[str, Optional[str]]:
+    """Every request the active run's Batches sent, by result key, with the
+    error its provider ended its latest sending with as the fetch kept it
+    (``provider_errors``), else None."""
     with _batch_file_lock():
         state = _read_batch_file(BATCH_STATE_FILE)
         history = _read_history_unlocked()
-    keys = set()
+    results: dict[str, Optional[str]] = {}
     for batch_id in _active_batch_ids(state):
         entry = _find_entry(history, batch_id)
         if entry:
-            keys.update((entry.get("custom_ids") or {}).values())
-    return keys
+            reasons = {
+                error.get("custom_id"): error.get("message")
+                for error in entry.get("provider_errors") or []
+                if isinstance(error, dict)
+            }
+            for custom, key in (entry.get("custom_ids") or {}).items():
+                results[key] = reasons.get(custom)
+    return results
 
 
 def active_fetched_batch_ids() -> list[str]:

@@ -11,13 +11,14 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import tempfile
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
 from util import system
 from util import extensions
-from util.provider_costs import is_openai_model
+from util.provider_costs import is_claude_model, is_openai_model
 
 
 PROVIDER_ANTHROPIC = "anthropic"
@@ -68,8 +69,11 @@ def detect_batch_provider(model: str = "", api_url: str | None = None,
     provider = (os.getenv("API_PROVIDER", "openai") if api_provider is None
                 else str(api_provider or "openai")).strip().lower()
 
-    is_claude = any(part in model_l for part in ("claude", "sonnet", "haiku", "opus"))
-    if is_claude and (not url or "anthropic.com" in url):
+    # Stricter than a Live send's native route (provider_costs.is_claude_native),
+    # which also takes a proxy path holding "anthropic": Message Batches need
+    # Anthropic's own API.
+    on_anthropic_api = not url or "anthropic.com" in url
+    if is_claude_model(model) and on_anthropic_api:
         return PROVIDER_ANTHROPIC
     if provider == "gemini" or "generativelanguage.googleapis.com" in url:
         return PROVIDER_GEMINI
@@ -90,8 +94,7 @@ def live_price_route(model: str = "", api_url: str | None = None,
     route is the engine's settings."""
     from dazedtl.settings.providers import own_api
 
-    if any(part in str(model or "").lower()
-           for part in ("claude", "sonnet", "haiku", "opus")):
+    if is_claude_model(model):
         return PROVIDER_ANTHROPIC
     if is_openai_model(model):
         return PROVIDER_OPENAI
@@ -679,6 +682,81 @@ def create_anthropic_message(client, params: dict):
         return stream.get_final_message()
 
 
+# A provider without structured outputs names the response format when it
+# rejects a json_schema request with a 400 or, from a validating (FastAPI)
+# server, a 422: OpenAI's "'response_format' of type 'json_schema' is not
+# supported", DeepSeek's "This response_format type is unavailable", a
+# validating server's "Input should be 'text' or 'json_object'" at
+# ["body", "response_format", "type"], Gemini's "response_schema".
+_RESPONSE_FORMAT_ERROR = re.compile(
+    r"json[ _-]?schema|response[ _-]?(?:format|schema)|structured[ _-]outputs?",
+    re.IGNORECASE,
+)
+# "Input should be 'json_schema'", with no other choice after it, says the
+# server takes nothing else, so JSON mode would be rejected too.
+_JSON_SCHEMA_REQUIRED = re.compile(
+    r"input should be ['\"]json_schema['\"](?!,|\s+or\s)", re.IGNORECASE
+)
+# A validating server's error repeats the request it rejected, response_format
+# included, whatever the error is about: a field's "input" in its JSON body,
+# pydantic's input_value in its text.
+_ECHOED_FIELDS = frozenset({"input", "input_value"})
+_ECHOED_INPUT = re.compile(r"input_value=.*?, input_type=\w+\]", re.DOTALL)
+
+
+def _error_says(value, said: list[str]) -> None:
+    if isinstance(value, str):
+        # OpenRouter's metadata.raw is the upstream provider's body as text.
+        if value.lstrip().startswith(("{", "[")):
+            try:
+                value = json.loads(value)
+            except ValueError:
+                pass
+            else:
+                _error_says(value, said)
+                return
+        said.append(_ECHOED_INPUT.sub("", value))
+    elif isinstance(value, Mapping):
+        for key, item in value.items():
+            if key not in _ECHOED_FIELDS:
+                _error_says(item, said)
+    elif isinstance(value, (list, tuple)):
+        for item in value:
+            _error_says(item, said)
+    elif value is not None:
+        said.append(str(value))
+
+
+def _error_text(error: BaseException) -> str:
+    """What a provider's *error* says, without the request it echoes back.
+    The SDK's own message repeats the whole body, so the body is read when
+    there is one."""
+    body = getattr(error, "body", None)
+    said: list[str] = []
+    _error_says(str(error) if body is None else body, said)
+    return " ".join(said)
+
+
+def requires_json_schema(error: BaseException) -> bool:
+    """Whether *error* says the server takes only a json_schema response
+    format, so neither JSON mode nor no format would be accepted."""
+    return bool(_JSON_SCHEMA_REQUIRED.search(_error_text(error)))
+
+
+def rejects_response_format(error: BaseException) -> bool:
+    """Whether a json_schema request's *error* is a rejection of its response
+    format, so the request may be sent again in JSON mode (json_object): a 400
+    or 422 whose message, not the request it echoes, names the response
+    format without saying json_schema is required."""
+    if getattr(error, "status_code", None) not in (400, 422):
+        return False
+    text = _error_text(error)
+    return bool(
+        _RESPONSE_FORMAT_ERROR.search(text)
+        and not _JSON_SCHEMA_REQUIRED.search(text)
+    )
+
+
 def execute_live_request(provider: str, params: dict, *, client=None) -> dict:
     """Execute one evaluator request immediately and normalize text/usage.
 
@@ -718,24 +796,9 @@ def execute_live_request(provider: str, params: dict, *, client=None) -> dict:
         response = client.chat.completions.create(**body)
     except Exception as exc:
         response_format = body.get("response_format") or {}
-        status_code = getattr(exc, "status_code", None)
-        error_text = str(exc).lower()
-        schema_rejected = (
-            status_code in (400, 422)
-            and any(
-                marker in error_text
-                for marker in (
-                    "json_schema",
-                    "json schema",
-                    "response_format",
-                    "response format",
-                    "structured output",
-                )
-            )
-        )
         if (
             response_format.get("type") != "json_schema"
-            or not schema_rejected
+            or not rejects_response_format(exc)
         ):
             raise
         # Many OpenAI-compatible local servers implement JSON mode but not

@@ -8,6 +8,7 @@ import threading
 from collections import OrderedDict
 from contextlib import closing
 from functools import lru_cache
+from itertools import chain
 from pathlib import Path
 from typing import Any
 
@@ -1035,11 +1036,31 @@ def request_view(root, job):
     }
 
 
-def request_page(view, group=None, index=None):
+def issue(row, unconfirmed=False):
+    """Whether a request is one Inspect run's Review issues opens: a failed,
+    rejected or uncertain one, and with *unconfirmed*, which the inspector
+    decides for its run as it labels its requests, one still marked at the
+    provider."""
+    return row.get("state") in {"failed", "rejected", "uncertain"} or (
+        unconfirmed
+        and row.get("state") == "submitted"
+        and not row.get("providerFinished")
+    )
+
+
+def request_page(view, group=None, index=None, unconfirmed=False):
     """One page of a request group: the group's page holding `index`, else
     the first page of `group` (a Batch or clarification ID), else of the
-    first group."""
+    first group. For Review issues, which steps through the issues (issue)
+    in the order the groups list them: ``issues``, the page's own,
+    ``nextIssue``, the first after the page, and ``firstIssue``, the first
+    of all."""
     groups = view["groups"]
+
+    def issues(rows):
+        return (row["index"] for row in rows if issue(row, unconfirmed))
+
+    every = chain.from_iterable(item["rows"] for item in groups)
 
     def named(row):
         return group in {row["id"], *row["batches"]}
@@ -1062,21 +1083,32 @@ def request_page(view, group=None, index=None):
             "total": 0,
             "previous": None,
             "next": None,
+            "issues": [],
+            "nextIssue": None,
+            "firstIssue": None,
         }
     rows = chosen["rows"]
     position = next(
         (number for number, row in enumerate(rows) if index in row["indices"]), 0
     )
     offset = position - position % REQUEST_PAGE
+    page = rows[offset : offset + REQUEST_PAGE]
+    later = chain(
+        rows[offset + REQUEST_PAGE :],
+        *(item["rows"] for item in groups[groups.index(chosen) + 1 :]),
+    )
     return {
         "group": chosen["id"],
-        "rows": rows[offset : offset + REQUEST_PAGE],
+        "rows": page,
         "offset": offset,
         "total": len(rows),
         "previous": rows[offset - REQUEST_PAGE]["index"] if offset else None,
         "next": rows[offset + REQUEST_PAGE]["index"]
         if offset + REQUEST_PAGE < len(rows)
         else None,
+        "issues": list(issues(page)),
+        "nextIssue": next(issues(later), None),
+        "firstIssue": next(issues(every), None),
     }
 
 
@@ -1098,39 +1130,63 @@ def _effort_refusal(root):
     return message, lambda error: effort.rejected(error, level, rule)
 
 
-def refused_effort(root, errors):
-    """*errors* with each refusal of the run's thinking effort read as the
-    one message that says so (settings/effort), so a Batch whose requests
-    all failed this way reports it once."""
+def error_messages(root, errors):
+    """A run's *errors* as its messages show them, each once: a refusal of
+    the run's thinking effort as the one message that says so
+    (settings/effort), so a Batch whose requests all failed this way reports
+    it once, and a Batch request's stored provider error as it reads
+    (provider_responses stored_reason)."""
+    from .provider_responses import stored_reason
+
     refusal = _effort_refusal(root) if errors else None
-    if refusal is None:
-        return errors
-    message, refused = refusal
-    return [message if refused(error) else error for error in errors]
+    return list(
+        dict.fromkeys(
+            refusal[0] if refusal and refusal[1](error) else stored_reason(error)
+            for error in errors
+        )
+    )
 
 
-def batch_refusal(root):
-    """The one message a Guided Batch run ends with when its provider refused
-    the run's thinking effort: it answered none of the run's requests, and
-    refused one for the effort (each Batch's ``provider_errors``); else
-    None, also when its records can't be read."""
+# How a Guided Batch the provider answered no request of ends without a
+# reason from its provider.
+NO_SUCCESSFUL_RESPONSES = (
+    "No successful Batch responses. Use Translate for a fresh estimate of "
+    "remaining work."
+)
+
+
+def empty_batch(root):
+    """The one message a Guided Batch run ends with when its provider
+    answered none of its requests (batch_control no_successful_results),
+    whether its worker or the app's monitor ends it: a refusal of the run's
+    thinking effort as the one message that says so, as a Live run stops,
+    else the provider's reason when it ended every request with the same,
+    else that none succeeded. None while some request succeeded, or
+    when the run's records can't be read."""
     from .batch_control import no_successful_results
+    from .provider_responses import provider_reason
 
     try:
-        refusal = _effort_refusal(root)
-        if refusal is None or not no_successful_results(root):
+        if not no_successful_results(root):
             return None
-        message, refused = refusal
         batches = saved(evidence_root(root), "batch_history.json").get("batches", [])
-        return (
-            message
-            if any(
-                refused(str(error.get("message") or ""))
-                for batch in batches
-                for error in batch.get("provider_errors") or []
+        errors = [
+            str(error.get("message") or "")
+            for batch in batches
+            for error in batch.get("provider_errors") or []
+        ]
+        refusal = _effort_refusal(root)
+        if refusal is not None and any(refusal[1](error) for error in errors):
+            return refusal[0]
+        reasons = {provider_reason(error) for error in errors}
+        sent = sum(len(batch.get("custom_ids") or {}) for batch in batches)
+        if len(errors) == sent and len(reasons) == 1 and None not in reasons:
+            return (
+                f"The provider ended every request of the Batch with an error: "
+                f"{reasons.pop()} Use Translate for a fresh estimate of remaining "
+                "work."
             )
-            else None
-        )
+        return NO_SUCCESSFUL_RESPONSES
     except OSError, ValueError, TypeError, AttributeError:
         return None
 
@@ -1378,8 +1434,8 @@ def summary(root, job, view=None):
         "failed": failed,
         "batches": receipts,
         "noRequestFiles": no_request_files(root, job, items),
-        "errors": list(dict.fromkeys(refused_effort(root, errors))),
-        "runErrors": list(dict.fromkeys(refused_effort(root, run_errors))),
+        "errors": error_messages(root, errors),
+        "runErrors": error_messages(root, run_errors),
         "usage": usage,
         "fileMetrics": file_metrics(job),
         # Request rows stay out of observation; the inspector pages them.
@@ -1673,6 +1729,12 @@ def payload(root, index, job=None, prepared=False):
             ),
             None,
         )
+        if error is not None:
+            from .provider_responses import stored_reason
+
+            # The provider's reason as the run's messages read it, not the
+            # Python text of its error object.
+            error = {**error, "message": stored_reason(error.get("message"))}
         value = batch_payload(
             index,
             total,

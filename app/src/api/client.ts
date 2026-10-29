@@ -310,7 +310,15 @@ export const api = {
       run_id: string,
       group: string | null,
       index: number | null,
-    ) => request("guided_requests", { project_id, run_id, group, index }),
+      unconfirmed: boolean,
+    ) =>
+      request("guided_requests", {
+        project_id,
+        run_id,
+        group,
+        index,
+        unconfirmed,
+      }),
     nameResults: (project_id: string, run_id: string, offset = 0) =>
       request("guided_name_results", { project_id, run_id, offset }),
     filePreview: (

@@ -39,6 +39,7 @@ Run the full behavior suite with `node scripts/test.mjs` (or `npm test` from `ap
 It uses the local Python environment and Node's built-in test runner, with one enforced wall-clock budget including startup, fixtures, and teardown.
 The budget is 10 seconds; `DAZEDTL_TEST_BUDGET` sets another in seconds, which [CI](#live-test) does for its slower runners.
 The Python and Node suites run at the same time, and Python keeps its compiled modules in `.runtime/test-bytecode` between runs, so a first run after a change compiles again.
+Each run drops what the last compiled from modules tests wrote into temporary folders.
 [tests/run.py](../tests/run.py) runs the Python tests in up to eight worker interpreters at once: each test module is one unit, a slow one split into parts, and the slowest start first, by the times the last passing run saved in `.runtime/test-times.json`.
 Tests that start a process of their own, such as the [probes](../tests/probe.py), start it while their module is imported, so their module stays whole and the other workers overlap it.
 A module's tests run after whatever other modules its worker ran before, so a test that puts stand-ins in `sys.modules` uses `replaced_modules` from [tests/engine.py](../tests/engine.py), which stands in only the modules it names and leaves every module as it was.
@@ -71,7 +72,7 @@ It copies the files Git would commit, including uncommitted changes, into a doub
 The profile and a copy of the [fixture game](../tests/fixtures/mz-game) sit in folders with spaces and Japanese names; the copy takes the `event-text` and `choice-help` [game variants](#test-scenarios), so Comment text comes on for the menu's choice help.
 Through the window it opens the game, runs Set up, translates and applies the database and the maps with Live translation against a local stand-in provider, stands in for the assistant's Event text sources investigation and translates and applies Other event text, opens Check and runs the Text QA assistant's playtest through the project helper, which checks the files and reports that the fixture game has no engine to play, and builds a patch ZIP, which must hold the translated database and none of DazedTL's own files.
 It then builds a clean game ZIP and checks that its one top folder takes the archive's name, that it holds the translated game and that notes and a spellcheck folder added beside the game stay out.
-Finally it closes the window and expects every app process to exit with no failures in the app's diagnostics, and starts again to check that setup does not repeat.
+Finally it closes the window and expects every app process to exit with no failures in the app's diagnostics and no compiled Python inside the install, and starts again to check that setup does not repeat.
 Logs, screenshots and the app's diagnostics land in `logs` inside the work folder; `--work <empty folder>` chooses it.
 
 `--upgrade-from <tag>` runs the upgrade test instead, and `--upgrade-from previous` takes the latest earlier stable release: the release at that tag runs its own live test on the same game in `previous` inside the work folder, then this checkout is left for that install's launcher as a signed update, under a key made for the test that the install trusts.

@@ -745,14 +745,12 @@ class Jobs:
             PYTHON_DOTENV_DISABLED="1",
             PYTHONNOUSERSITE="1",
             PYTHONUTF8="1",
-            PYTHONDONTWRITEBYTECODE="1",
         )
         arguments = [
             sys.executable,
             "-I",
             "-X",
             "utf8",
-            "-B",
             str(Path(__file__).with_name("worker.py")),
             "--workspace",
             str(self.store.workspace),

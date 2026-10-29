@@ -1,5 +1,9 @@
 <!-- The next release's notes; see docs/development.md#release-notes. -->
 
+### Changed
+
+- **Translate:** each file's translation, each estimate and each background task starts about twice as fast, because DazedTL now keeps its compiled Python in its profile folder instead of compiling it again every time; the first start after an update compiles it once.
+
 ### Fixed
 
 - **Translate:** a file that fails after some of its requests were answered, such as on a later request's error or a missing Batch result, now keeps what those requests cost in its cost and the run's total, which left them out.
@@ -7,9 +11,17 @@
 - **Translate:** an RPG Maker file that could not be saved after some lines kept their original text now reads as failed, which counted it as finished with mismatches.
 - **Translate:** a WOLF map or common event file now asks once for each choice, choice window and speaker name, instead of paying again to translate its own translation when the text still read as Japanese, such as Chinese; its line now shows the tokens it used, which counted a speaker's input as output and left out those second requests.
 - **Translate:** a server that refuses the run's thinking effort with HTTP 422, or by saying the model takes no reasoning or thinking, now stops a Guided Live run at the first refused request with "refused thinking effort", as **Check an effort** reads such a reply, instead of after three requests with "The provider rejected 3 requests in a row"; a Guided Batch the provider refused for its effort ends with the same message instead of "No successful Batch responses".
+- **Translate:** a request a Guided Live run's provider rejects, such as with HTTP 400, is now sent once, instead of a second time in JSON mode, unless the error says the provider does not take the run's response format.
 - **Settings:** a thinking effort that **Check an effort** accepted now reads refused after a Guided Batch the server refused it in, and after an Assistant-led run that it refused while DazedTL was closed, not only after a Live run.
 - **Translate:** a WOLF map whose request fails partway now shows as failed with what it paid for and keeps the map's earlier translation as it was, instead of being written with the failing page's lines half translated and counted as complete, or replacing a complete earlier translation with the pages that finished.
 - **Translate:** a WOLF choice window's question is now asked for in the target language, where its request read "{LANGUAGE}", and a 選択肢/確認 window without a question, or a common event or database whose text holds `'events':` or `'types':`, no longer fails its file.
+- **Translate:** a custom server that answers the run's structured output with HTTP 422, such as "Input should be 'text' or 'json_object'", now gets a Guided Live request again in JSON mode, as Assistant-led sends it, instead of failing every request; and an error that only repeats the request back, such as a validation error about another field, no longer counts as one about the response format.
+- **Translate:** Run history and Inspect run no longer count a file a failed run left as it was, such as one with nothing to translate, as saved, so a Database run that translated nothing reads "3 failed" instead of "2 files saved · 3 failed".
+- **Translate:** a Database files or Maps & events file whose Live request may still be at the provider now reads Needs review with "Its submission could not be confirmed", as Other event text reads it, instead of Not started.
+- **Translate:** a Guided file that fails on a server error, an unreachable provider or any error in a run started with an earlier version now names the provider's own status and message, such as "The provider failed the request: HTTP 500 - ...", instead of "API server error (500) - retrying... Error: Error code: 500 - {...}"; an error without a message reads its code, such as content_filter, or "HTTP 400 with no reason given." instead of "HTTP 400 - Provider returned HTTP 400.".
+- **Translate:** Inspect run shows a failed Batch request's provider reason as its message instead of the raw `{'code': 'invalid_request', ...}`, each file of a Batch the provider ended with an error names that reason instead of "for example because it was canceled", and a Batch with no successful responses ends with one message, naming the provider's reason when every request got the same, instead of changing its message a moment after it ended.
+- **Translate:** **Review issues** in Inspect run now steps to the next failed or unconfirmed request, where it did nothing once it showed the first.
+- **Translate:** a Guided Live request to Mistral that is refused for its structured output on its last retry, such as after six rate limits, is now sent again in JSON mode, instead of failing with "Mistral API failed after 7 attempts" without sending it.
 - **Translate:** a file of a game other than RPG Maker or WOLF, such as CSV, JSON, Kirikiri, Tyrano, Ren'Py or Unity, whose translation fails partway now shows as failed with its error and what it paid for, instead of counting as translated with part of it written and showing its cost twice.
 - **Translate:** a file stopped partway in a Translation run is now translated again on Resume, which skipped it as finished when its engine had saved part of it.
 - **Translate:** a reply with the wrong number of lines that an engine kept in its original text now counts toward the run's mismatches, which read the file as fully translated.

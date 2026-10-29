@@ -549,6 +549,21 @@ class ProcessTests(unittest.TestCase):
         self.assertEqual(page("batch", 251), ("unsent", 0, None, None))
         self.assertEqual(page("missing", 999), ("batch", 0, None, 100))
         self.assertIsNone(process_view.request_page({"groups": []})["group"])
+        # Review issues did nothing on the first failed request's Response; it
+        # steps to the next issue, which may lie past the page or its group.
+        rows = view["groups"][0]["rows"]
+        rows[150]["state"] = "submitted"
+        rows[230]["state"] = "failed"
+        view["groups"][1]["rows"][0]["state"] = "rejected"
+
+        def issues(index, unconfirmed=False):
+            value = process_view.request_page(view, None, index, unconfirmed)
+            return value["issues"], value["nextIssue"], value["firstIssue"]
+
+        self.assertEqual(issues(5, unconfirmed=True), ([], 150, 150))
+        self.assertEqual(issues(5), ([], 230, 230))
+        self.assertEqual(issues(201), ([230], 250, 230))
+        self.assertEqual(issues(251), ([250], None, 230))
 
     def test_older_live_retries_count_once_only_after_a_replaced_attempt(self):
         # Runs saved before retries recorded their first attempt showed a
@@ -2087,6 +2102,7 @@ class ProcessTests(unittest.TestCase):
                 _clear_run_batch_queue=point(
                     lambda **_: queue_file.unlink(missing_ok=True)
                 ),
+                batch_failure_reason=point(lambda _error: None),
             )
             batch_evidence.install(native, root, {"mode": "translate"})
             with patch.object(batch_evidence, "preserve") as preserve:
@@ -2478,14 +2494,20 @@ class ProcessTests(unittest.TestCase):
             # A request error must stay beside its own response; a Batch-wide
             # error must not be assigned to an unsent request with no ID.
             history = process_view.saved(root, "batch_history.json")
+            # A fetch keeps the provider's error object as Python's text,
+            # which reads as its message, not as that text.
             history["batches"][0]["provider_errors"].append(
-                {"custom_id": "req-000000", "message": "Unsupported temperature"}
+                {
+                    "custom_id": "req-000000",
+                    "message": "{'code': 'invalid_request', "
+                    "'message': 'Unsupported temperature'}",
+                }
             )
             write_json(root / "log/batch_history.json", history)
             value = process_view.summary(root, {"mode": "batch"})
             self.assertEqual(value["runErrors"], ["Batch stopped"])
             self.assertEqual(
-                value["errors"], ["Batch stopped", "Unsupported temperature"]
+                value["errors"], ["Batch stopped", "Unsupported temperature."]
             )
             provider = SimpleNamespace(
                 _openai_batch_body=lambda _provider, params: params
@@ -2496,7 +2518,7 @@ class ProcessTests(unittest.TestCase):
                 )
                 self.assertEqual(
                     process_view.payload(root, 0)["error"]["message"],
-                    "Unsupported temperature",
+                    "Unsupported temperature.",
                 )
                 self.assertEqual(process_view.payload(root, 1)["state"], "queued")
                 self.assertIsNone(process_view.payload(root, 1)["error"])

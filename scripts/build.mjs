@@ -42,7 +42,7 @@ const checks = [
     args: ["check", "--quiet", "--preview", "--select", "PLW1514", "."],
   },
   // Path.replace and Path.rename, which TID251 cannot see.
-  { command: python, args: ["-I", "scripts/platform_calls.py", ruff] },
+  { command: python, args: ["-I", "-B", "scripts/platform_calls.py", ruff] },
   node("pyright/index.js", []),
   node("typescript/bin/tsc", ["-p", "app/electron"]),
   node("typescript/bin/tsc", ["--noEmit"], { cwd: app }),
