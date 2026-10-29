@@ -138,16 +138,24 @@ PRESET_HOSTS = frozenset(
 )
 
 
+def absolute(address):
+    """A server *address* as a URL: one typed without a scheme, such as
+    "api.anthropic.com/v1", reads as HTTPS. hostname and the Claude
+    clients' address (engine batch_providers.anthropic_base_url) read
+    addresses through it."""
+    value = str(address or "").strip()
+    if re.match(r"[a-z][a-z0-9+.-]*://", value, re.IGNORECASE):
+        return value
+    return "https://" + value.removeprefix("//")
+
+
 def hostname(address):
     """The host of a server *address* in lower case, such as "api.anthropic.com"
     in "https://api.anthropic.com/v1", with or without a scheme, so a bare
     "api.anthropic.com" names it too; None when it names none. The one host
     parser the provider rules here read an address with."""
-    value = str(address or "").strip()
-    if not re.match(r"(?:[a-z][a-z0-9+.-]*:)?//", value, re.IGNORECASE):
-        value = "//" + value
     try:
-        return urlsplit(value).hostname
+        return urlsplit(absolute(address)).hostname
     except ValueError:
         return None
 

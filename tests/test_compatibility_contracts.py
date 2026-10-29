@@ -2195,7 +2195,13 @@ class CompatibilityContracts(unittest.TestCase):
         proxy = "https://proxy.example/anthropic/v1"
         # Each request's path holds the address's "/v1" once.
         root = proxy
+        folder = Path(self.enterContext(TemporaryDirectory()))
         with (
+            # The estimate's instructions count keeps its count in the run.
+            patch.object(
+                translation, "_ESTIMATE_STATIC_TOKENS_FILE", folder / "static.json"
+            ),
+            patch.object(translation, "_ESTIMATE_STATE_LOCK_FILE", folder / "lock"),
             patch.object(httpx.HTTPTransport, "handle_request", answering(httpx)),
             patch.object(httpx2.HTTPTransport, "handle_request", answering(httpx2)),
             # translateText configures the shared OpenAI module for every
@@ -2209,6 +2215,8 @@ class CompatibilityContracts(unittest.TestCase):
                 os.environ,
                 {
                     "ANTHROPIC_BASE_URL": "https://elsewhere.example",
+                    # Counts are sent only outside the suite's offline runs.
+                    "DAZEDTL_TEST_OFFLINE": "0",
                     "api": proxy,
                     "key": "run-key",
                     "API_PROVIDER": "anthropic",
@@ -2251,6 +2259,23 @@ class CompatibilityContracts(unittest.TestCase):
                         1,
                     ),
                     root + "/messages",
+                ),
+                (
+                    "Assistant-led token count",
+                    lambda: TranslationEngine.claude_input_tokens(
+                        SimpleNamespace(token_count=len),
+                        [{"params": {"model": "claude-sonnet-5-5", "messages": []}}],
+                        {"endpoint": proxy},
+                        "key",
+                    ),
+                    root + "/messages/count_tokens",
+                ),
+                (
+                    "Guided estimate's instructions count",
+                    lambda: translation._estimate_static_token_count(
+                        "Translate.", "claude-sonnet-5-5"
+                    ),
+                    root + "/messages/count_tokens",
                 ),
                 (
                     "Guided Live clarification",

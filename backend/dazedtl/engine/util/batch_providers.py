@@ -208,20 +208,18 @@ def anthropic_base_url(address: str | None) -> str:
     on any host: a proxy serves Anthropic's Messages API at "/v1/messages"
     under its root as Anthropic does, so "https://proxy.example/v1" names
     that root and no server answers "/v1/v1/...". An address without a
-    scheme reads as HTTPS, as settings/providers hostname reads it.
+    scheme reads as HTTPS (settings/providers absolute).
 
     The one address rule of every Claude client, the SDK's
     (anthropic_client) and the token count's (claude_tokens.CountClient),
     so none sends where ANTHROPIC_BASE_URL in the environment says instead
     of where its key's address does."""
+    from dazedtl.settings.providers import absolute
+
     base_url = str(address or "").strip().rstrip("/")
     if base_url[-3:].lower() == "/v1":
         base_url = base_url[:-3].rstrip("/")
-    if not base_url:
-        return ANTHROPIC_API_URL
-    if not re.match(r"[a-z][a-z0-9+.-]*://", base_url, re.IGNORECASE):
-        base_url = "https://" + base_url.lstrip("/")
-    return base_url
+    return absolute(base_url) if base_url else ANTHROPIC_API_URL
 
 
 def anthropic_client(api_key: str, address: str | None, **options):
