@@ -147,13 +147,14 @@ def translateTxt(data, filename, translatedList):
         stringList = []
         choiceList = []
     tokens = [0, 0]
-    speaker = ""
     global LOCK, ESTIMATE, FILENAME, PBAR, MISMATCH
     i = 0
 
     while i < len(data):
-        # Speaker: the line is written whole from its reply, so the name is
-        # not written back (util/speakers)
+        # Speaker: the line's own label, so a line without one has none. The
+        # line is written whole from its reply, so the name is not written
+        # back (util/speakers)
+        speaker = ""
         found = find_speaker(SPEAKER_TAG_RE, data[i])
         if found:
             speakerData = getSpeaker(found.name)
@@ -161,17 +162,13 @@ def translateTxt(data, filename, translatedList):
             tokens[0] += speakerData[1][0]
             tokens[1] += speakerData[1][1]
 
-        # Dialogue
+        # Dialogue: a line of spaces alone sends nothing, so it takes no reply
         jaString = extract_dialogue_after_speaker(data[i])
-        if jaString is not None:
+        if jaString is not None and jaString.strip():
 
             # Pass 1
             if not translatedList:
-                # Strip Spaces
-                jaString = jaString.strip()
-
-                if jaString:
-                    stringList.append(to_prefixed(speaker, jaString))
+                stringList.append(to_prefixed(speaker, jaString.strip()))
 
             # Pass 2
             else:

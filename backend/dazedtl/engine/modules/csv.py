@@ -386,8 +386,18 @@ def _set_translation(row, ojaString, translatedText, speaker):
 
     # Set data
     if PARSE_NAME_TAGS or PARSE_M_MARKERS:
-        # Replace original text portion
-        row[actual_target] = row[actual_target].replace(ojaString, translatedText) if row[actual_target] else translatedText
+        # Replace the text the row sent, which ends the cell after its
+        # :name[] tag or \M marker, so the tag or marker stays even when it
+        # holds the same text; an empty target takes them from the cell the
+        # text came from
+        cell = row[actual_target]
+        if not cell and ojaString in _row_source_text(row):
+            cell = _row_source_text(row)
+        if cell:
+            head, sent, tail = cell.rpartition(ojaString)
+            row[actual_target] = head + translatedText + tail if sent else cell
+        else:
+            row[actual_target] = translatedText
     else:
         row[actual_target] = translatedText
 
