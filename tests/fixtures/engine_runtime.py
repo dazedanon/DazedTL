@@ -457,6 +457,9 @@ try:
         # tokens, read in a `finally`: a failing first page had none yet, so
         # an UnboundLocalError hid its error, a run's stop included, and a
         # failing later page saved progress with the page before's tokens.
+        # handleWOLF then wrote the map with the lines the failing page had
+        # set and reported it complete; it now fails the file, as the run's
+        # other file errors do, keeping only the pages that finished.
         from modules import wolf
         from util import translation as stops
 
@@ -472,18 +475,29 @@ try:
         def wolf_map(*fails):
             wolf_fails.update(zip(("一頁", "二頁"), fails))
             pages = [
-                {"list": [{"code": 101, "stringArgs": [text]}]} for text in wolf_fails
+                {"list": [{"code": 101, "stringArgs": [text]}]}
+                for text in ("一頁", "二頁")
             ]
             return {"events": [None, {"pages": pages}]}
 
+        def wolf_file(name, document):
+            (wolf_root / "files" / name).write_text(json.dumps(document), "utf-8")
+            try:
+                wolf.handleWOLF(name, False)
+            except ValueError as error:
+                assert error is failure, error
+            else:
+                raise AssertionError(f"A WOLF file whose page failed passed: {name}")
+
         wolf_root = temporary / "wolf-pages"
-        wolf_root.mkdir()
+        (wolf_root / "files").mkdir(parents=True)
         saved = wolf_root / "translated/Map001.json"
         directory = os.getcwd()
         os.chdir(wolf_root)
         try:
             with (
                 patch.object(wolf, "searchCodes", wolf_page),
+                patch.object(wolf, "searchDB", wolf_page),
                 patch.object(stops, "RUN_STOPS", True),
             ):
                 stop = stops.RunStoppingError("Stopped.")
@@ -497,13 +511,17 @@ try:
                 result = wolf.parseMap(wolf_map(failure, None), "Map001.json")
                 assert result[1:] == [[0, 0], failure], result
                 assert not saved.exists(), saved.read_text("utf-8")
-                result = wolf.parseMap(wolf_map(None, failure), "Map001.json")
-                assert result[1:] == [[3, 1], failure], result
+                wolf_file("Map001.json", wolf_map(None, failure))
                 pages = json.loads(saved.read_text("utf-8"))["events"][1]["pages"]
                 assert [page["list"][0]["stringArgs"][0] for page in pages] == [
                     "EN:一頁",
                     "二頁",
                 ], pages
+                # A CommonEvent or DataBase file is one page.
+                wolf_fails["一頁"] = failure
+                wolf_file("CommonEvent.json", {"commands": [{"stringArgs": ["一頁"]}]})
+                wolf_file("DataBase.json", {"types": [{"stringArgs": ["一頁"]}]})
+                assert sorted(os.listdir("translated")) == ["Map001.json"]
         finally:
             os.chdir(directory)
         # A name a registered reference game already translated is reused
