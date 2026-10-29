@@ -21,6 +21,18 @@ from .request_scope import columns, identities, source_locations
 LAYER = "evidence"
 
 
+@contextmanager
+def connected(path):
+    """A connection of its own to the evidence ledger at *path*, for one
+    transaction committed as the block ends."""
+    connection = sqlite3.connect(path, timeout=10)
+    try:
+        with connection:
+            yield connection
+    finally:
+        connection.close()
+
+
 def keep_aligned_partial_results(module):
     """Keep valid comment chunks instead of discarding the whole 408 group.
 
@@ -257,13 +269,12 @@ class Evidence:
     @contextmanager
     def connect(self):
         shared = getattr(self.local, "connection", None)
-        connection = shared or sqlite3.connect(self.path, timeout=10)
-        try:
-            with connection:
+        if shared is None:
+            with connected(self.path) as connection:
                 yield connection
-        finally:
-            if shared is None:
-                connection.close()
+            return
+        with shared:
+            yield shared
 
     def file_locations(self, filename):
         """Each string's paths in a file of the run, read once."""

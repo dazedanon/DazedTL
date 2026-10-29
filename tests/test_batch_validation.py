@@ -4,7 +4,8 @@ import json
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
+from unittest.mock import Mock, patch
 
 from dazedtl.compatibility import process_view, request_scope
 from dazedtl.compatibility.batch_validation import install, recorded_outcomes
@@ -12,7 +13,7 @@ from dazedtl.compatibility.run_evidence import Evidence
 from dazedtl.storage import write_json
 from dazedtl.translation.files import digest
 
-from tests.engine import point
+from tests.engine import point, replaced_modules
 
 
 class BatchValidationTests(unittest.TestCase):
@@ -164,6 +165,117 @@ class BatchValidationTests(unittest.TestCase):
                 process_view.paid_receipts(root),
                 {"Items.json": {"input": 30, "output": 6, "cost": 1.5}},
             )
+
+    def test_a_recovered_run_without_a_request_policy_counts_its_batch_results(self):
+        # A Batch recovery imported from the original tool freezes no request
+        # policy, so its workers kept no evidence ledger and, once results
+        # were counted there, its files' cost and TOTAL showed only time. Its
+        # workers keep the results they read in the ledger's batch_validation
+        # part; a run whose attempts saved receipts without one keeps those,
+        # since its results read again would count twice.
+        from dazedtl.compatibility import openrouter_batch
+        from dazedtl.compatibility.worker_policy import install as install_policy
+        from util import extensions, translation_task
+
+        responses = {"potion": {"text": '{"Line1":"Potion"}'}}
+
+        def native(text, config, filename=None):
+            for key in text:
+                translation.require_batch_result(json.dumps({"Line1": key}), "en")
+            return text
+
+        environment = ModuleType("desktop.backend.manual_environment")
+        environment.prepare = point(Mock(return_value="prepared"))
+        translation = ModuleType("util.translation")
+        for name in (
+            "estimateCostComparison",
+            "estimateBatchCost",
+            "unestimatedThinking",
+            "translateText",
+            "buildOpenAIRequest",
+            "buildClaudeRequest",
+            "_translation_completion_limit",
+            "_openai_batch_token_limit",
+            "_load_litellm_pricing",
+            "batch_usage_cost",
+            "_clear_run_batch_queue",
+            "batch_failure_reason",
+        ):
+            setattr(translation, name, point(Mock()))
+        vars(translation).update(
+            translateAI=point(native),
+            _batch_results=responses,
+            get_cache_key=lambda payload, *_: json.loads(payload)["Line1"],
+            require_batch_result=point(
+                lambda payload, *_: responses[json.loads(payload)["Line1"]]
+            ),
+            batch_result_paid=lambda _result, _model: {
+                "input": 10,
+                "output": 2,
+                "cost": 0.5,
+                "usage": {},
+            },
+            cache_translation=point(lambda *_: None),
+            get_batch_phase=lambda: "consume",
+        )
+        config = SimpleNamespace(model="claude-fixture")
+        with (
+            TemporaryDirectory() as directory,
+            replaced_modules(
+                {module.__name__: module for module in (environment, translation)}
+            ),
+            patch.multiple(
+                openrouter_batch,
+                _worker_policy=None,
+                _worker_root=None,
+                _worker_configured=False,
+            ),
+            patch.dict(extensions._layers),
+        ):
+            install_policy()
+            for earlier, expected in (
+                (
+                    {"Items.json": {"cost": 0.25, "seconds": 1.0}},
+                    {"cost": 0.25, "seconds": 1.0},
+                ),
+                ({}, {"cost": 0.5, "seconds": 3.0}),
+            ):
+                root = Path(directory) / str(len(earlier))
+                write_json(
+                    root / "plan.json",
+                    {
+                        "mode": "batch",
+                        "engine": "JSON",
+                        "settings": {"model": config.model, "batchsize": 20},
+                        "legacy_origin": {"root": "original", "batch_id": "b1"},
+                    },
+                )
+                write_json(
+                    root / "attempt.json",
+                    {"files": ["Items.json"], "receipts": earlier},
+                )
+                job = {
+                    "mode": "batch",
+                    "files": ["Items.json"],
+                    "file_metrics": earlier,
+                    "file_seconds": {"Items.json": 3.0},
+                }
+                with self.subTest(earlier=earlier):
+                    for _attempt in range(2):
+                        environment.prepare(root)
+                        translation.translateAI(
+                            ["potion"], config, filename="Items.json"
+                        )
+                    self.assertEqual(
+                        process_view.file_metrics(root, job), {"Items.json": expected}
+                    )
+                    # The run's TOTAL reads its receipts by the same rule.
+                    self.assertEqual(
+                        translation_task.run_receipts(
+                            earlier, translation_task.paid_receipts(root), {}
+                        )["Items.json"]["cost"],
+                        expected["cost"],
+                    )
 
     def choice_fixture(self, root):
         source = ["特別な品", "やめる"]

@@ -110,6 +110,14 @@ def approved_binding(root, job, plan):
             "The approved Batch preparation receipts are unavailable."
         )
     with closing(connection):
+        # A run without evidence keeps only its Batch results' part of the
+        # ledger (worker_policy keep_paid_items).
+        if not connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE name='requests'"
+        ).fetchone():
+            raise BatchContinuationError(
+                "The approved Batch preparation receipts are unavailable."
+            )
         prepared = {
             digest(json.loads(row[0]))
             for row in connection.execute("SELECT params FROM requests")
