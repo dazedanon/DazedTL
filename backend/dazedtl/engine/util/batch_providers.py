@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import tempfile
 from pathlib import Path
 from typing import Any, Iterable, Mapping
@@ -679,6 +680,29 @@ def create_anthropic_message(client, params: dict):
         return stream.get_final_message()
 
 
+# A provider without structured outputs names the response format when it
+# rejects a json_schema request: OpenAI's "'response_format' of type
+# 'json_schema' is not supported", DeepSeek's "This response_format type is
+# unavailable", a validating server's "response_format.type: Input should be
+# 'text' or 'json_object'", Gemini's "response_schema". OpenRouter puts the
+# upstream provider's reason in the body's metadata.raw, so the whole error
+# is read.
+_RESPONSE_FORMAT_ERROR = re.compile(
+    r"json[ _-]?schema|response[ _-]?(?:format|schema)|structured[ _-]outputs?",
+    re.IGNORECASE,
+)
+
+
+def names_response_format(error: BaseException) -> bool:
+    """Whether a provider's *error* says it does not take the request's
+    response format, so the request may be sent again in JSON mode."""
+    text = str(error)
+    body = getattr(error, "body", None)
+    if body is not None and str(body) not in text:
+        text += f" {body}"
+    return bool(_RESPONSE_FORMAT_ERROR.search(text))
+
+
 def execute_live_request(provider: str, params: dict, *, client=None) -> dict:
     """Execute one evaluator request immediately and normalize text/usage.
 
@@ -718,24 +742,10 @@ def execute_live_request(provider: str, params: dict, *, client=None) -> dict:
         response = client.chat.completions.create(**body)
     except Exception as exc:
         response_format = body.get("response_format") or {}
-        status_code = getattr(exc, "status_code", None)
-        error_text = str(exc).lower()
-        schema_rejected = (
-            status_code in (400, 422)
-            and any(
-                marker in error_text
-                for marker in (
-                    "json_schema",
-                    "json schema",
-                    "response_format",
-                    "response format",
-                    "structured output",
-                )
-            )
-        )
         if (
             response_format.get("type") != "json_schema"
-            or not schema_rejected
+            or getattr(exc, "status_code", None) not in (400, 422)
+            or not names_response_format(exc)
         ):
             raise
         # Many OpenAI-compatible local servers implement JSON mode but not

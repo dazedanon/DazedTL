@@ -44,7 +44,12 @@ from util.provider_costs import (
     usage_cost,
 )
 from util import claude_tokens, request_debug
-from util.batch_providers import KIMI_API_URL, live_price_route, openai_usage
+from util.batch_providers import (
+    KIMI_API_URL,
+    live_price_route,
+    names_response_format,
+    openai_usage,
+)
 from util import extensions
 from util.sfx_reference import build_sfx_reference_text
 from util.vocab import (
@@ -2087,6 +2092,16 @@ def run_stop_errors():
     return (RunStoppingError,) if RUN_STOPS else ()
 
 
+def falls_back_to_json_mode(error):
+    """Whether a json_schema request that failed with *error* is sent again
+    in JSON mode (json_object). A run frozen with the run-stop policy sends
+    it again only when the error names the response format
+    (batch_providers names_response_format): any other rejection would come
+    back alike, and counts once toward the run's stop. Runs frozen without
+    it send it again, as when approved."""
+    return not RUN_STOPS or names_response_format(error)
+
+
 # A consume miss is the file's failure reason beside its name in the run's
 # banner, so it says what happened and what to do in plain words.
 MISSING_BATCH_RESULT = {
@@ -3629,7 +3644,11 @@ def callMistral(params, retries=6):
             last_error = e
             # Mistral rejects unsupported params with 400/422 — downgrade the
             # structured-output format once and retry immediately.
-            if e.status_code in (400, 422) and (params.get("response_format") or {}).get("type") == "json_schema":
+            if (
+                e.status_code in (400, 422)
+                and (params.get("response_format") or {}).get("type") == "json_schema"
+                and falls_back_to_json_mode(e)
+            ):
                 params = dict(params)
                 params["response_format"] = {"type": "json_object"}
                 continue
@@ -5287,7 +5306,12 @@ def translateText(system, user, history, penalty, formatType, model, numLines=No
             raise Exception(f"API endpoint or model not found (404) - check the model ({model}) and your API_PROVIDER and base URL settings. Error: {e}")
         elif e.status_code >= 500:
             raise Exception(f"API server error ({e.status_code}) - retrying... Error: {e}")
-        elif e.status_code == 400 and formatType == "json" and "json_schema" in str(responseFormat):
+        elif (
+            e.status_code == 400
+            and formatType == "json"
+            and "json_schema" in str(responseFormat)
+            and falls_back_to_json_mode(e)
+        ):
             # Only fall back to json_object if the error is NOT "Input should be 'json_schema'"
             # (that message means json_schema IS required and json_object would also be rejected)
             if "input should be 'json_schema'" in str(e).lower() or "input should be \"json_schema\"" in str(e).lower():
@@ -5327,7 +5351,8 @@ def translateText(system, user, history, penalty, formatType, model, numLines=No
         # If structured output fails, fallback to json_object (unless the error
         # explicitly states json_schema is required — falling back would just fail again)
         if formatType == "json" and "json_schema" in str(responseFormat) and \
-                "input should be 'json_schema'" not in error_str:
+                "input should be 'json_schema'" not in error_str and \
+                falls_back_to_json_mode(e):
             responseFormat = {"type": "json_object"}
             params["response_format"] = responseFormat
             try:
