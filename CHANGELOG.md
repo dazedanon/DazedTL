@@ -3,6 +3,18 @@
 Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 [release.mjs](scripts/release.mjs) writes each entry from [release/notes.md](release/notes.md).
 
+## [2.52.1] - 2026-10-28
+
+### Fixed
+
+- **Translate:** a WOLF RPG Editor map that fails on its first event page now shows its own error, such as the provider's refusal or the run's stop, instead of "cannot access local variable 'tt'".
+- **Assistant-led:** Live runs on OpenRouter, and on DeepSeek or Kimi with Thinking effort set to None, no longer fail every request with "unexpected keyword argument".
+- **Translate:** when the provider rejects a request in a Guided Live run, the failed run's message now names the provider's own error, such as "Classes.json: The provider rejected the request: HTTP 400 - ...", instead of "API call failed: Error code: 400 - {'error': ...}. Fallback also failed: ...".
+- **Translate:** after a failed run, a Database files or Maps & events file whose requests the provider rejected now says so in its status tooltip, instead of reading exactly like a file the run never sent; both still read Not started, since **Translate** sends them again.
+- **Translate:** Inspect run's **Technical** view no longer counts files with nothing to translate as applied, as in "2 saved · 2 applied" after a run that applied nothing, and its **Run log** no longer repeats each failed request's error three times, its shortened end starting at a line instead of mid-word.
+- **Settings:** each Settings tab now keeps your place when you switch to another tab and back, such as from **Translation defaults** to **API connections** to check the connection again for its thinking effort levels: its scroll position, open sections such as **Advanced model options** and **Advanced connection settings**, and the level picked in **Check an effort**.
+- **Translate:** when a Guided Live run stops on rejected requests or a refused thinking effort, what the stopped file's requests cost before the stop now still counts in its cost and the run's total.
+
 ## [2.52.0] - 2026-10-28
 
 ### Changed
@@ -1350,6 +1362,7 @@ Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachan
 - The first release of DazedTL as a desktop app, installed from a ZIP with a START launcher and updated from inside the app.
 - **Guided steps** for RPG Maker MV, MZ and VX Ace games, and **Assistant-led** for any game.
 
+[2.52.1]: https://github.com/dazedanon/DazedTL/compare/v2.52.0...v2.52.1
 [2.52.0]: https://github.com/dazedanon/DazedTL/compare/v2.51.0...v2.52.0
 [2.51.0]: https://github.com/dazedanon/DazedTL/compare/v2.50.0...v2.51.0
 [2.50.0]: https://github.com/dazedanon/DazedTL/compare/v2.49.0...v2.50.0
