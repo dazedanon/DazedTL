@@ -321,6 +321,10 @@ class LanguageTests(unittest.TestCase):
         self.assertEqual(
             translate_speaker("老人", names, "English", translate), ["Gran's", [0, 0]]
         )
+        # A module that walks its lines again finds the name it wrote there.
+        self.assertEqual(
+            translate_speaker("Gran's", names, "English", translate), ["Gran's", [0, 0]]
+        )
         self.assertEqual(len(asked), 1)
         # A reply with no letters is asked for once more.
         asked.clear()
@@ -337,6 +341,11 @@ class LanguageTests(unittest.TestCase):
         self.assertEqual(
             translate_speaker("？？？", names, "English", translate), ["???", [0, 0]]
         )
+        asked.clear()
+        self.assertEqual(
+            translate_speaker("???", names, "English", translate), ["???", [0, 0]]
+        )
+        self.assertEqual(asked, [])
         self.assertEqual(
             translate_speaker("ファイン", [], "English", translate), ["Fine", [0, 0]]
         )

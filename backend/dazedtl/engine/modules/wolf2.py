@@ -17,7 +17,7 @@ from tqdm import tqdm
 from util.languages import source_pattern
 from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost, found_mismatch, run_stop_errors
 from util.translation_task import fail_on_parser_error, module_receipt, write_output
-from util.speakers import strip_speaker_prefix
+from util.speakers import find_speaker, strip_speaker_prefix, to_prefixed
 from util.game_encoding import check_line, writable
 
 # OpenAI initialization centralized in util/translation.py
@@ -180,6 +180,17 @@ def checkLine(data, i, filename):
         check_line(data, i, "shift_jis", filename)
 
 
+def isText(line):
+    """Whether *line* is a line of text: not blank, a "//" comment or choice,
+    or an "@" command."""
+    return "/" not in line and "@" not in line and line != "\n"
+
+
+# A speaker: a text line of its own ending in "：", the name before it, saying
+# the run of text lines after it. A "：" inside a line is the line's own text.
+SPEAKER = r"^([^/@\n]+)：\s*$"
+
+
 def translateWOLF(data, pbar, filename):
     """Translates speakers and choices on the spot and gathers the lines,
     each run of consecutive text lines as one, then replaces each run with
@@ -187,34 +198,34 @@ def translateWOLF(data, pbar, filename):
     holding the parser's own marks, such as "/", cannot move a translation
     to another run."""
     stringList = []
-    groups = []  # Where each run in stringList is: [start, end) in data
+    groups = []  # Each run in stringList: [start, end) in data and its speaker
     currentGroup = []
     tokens = [0, 0]
-    speaker = ""
     global LOCK, ESTIMATE, PBAR
     PBAR = pbar
     i = 0
 
     while i < len(data):
-        # Speaker
-        matchList = re.findall(r"^([^/]*)：", data[i])
-        if len(matchList) != 0:
-            response = getSpeaker(matchList[0])
+        # Speaker (util/speakers)
+        speaker = ""
+        found = find_speaker(SPEAKER, data[i])
+        if found:
+            response = getSpeaker(found.name)
             speaker = response[0]
             tokens[0] += response[1][0]
             tokens[1] += response[1][1]
-            data[i] = data[i].replace(matchList[0], f"{speaker}")
+            data[i] = found.written(speaker)
             checkLine(data, i, filename)
             i += 1
-        else:
-            speaker = ""
+            if i == len(data):
+                break
 
-        # Options
+        # Options, up to the "の場合" line that starts the first one's branch
         if "//選択肢" in data[i]:
             i += 1
             choiceList = []
             initialIndex = i
-            while "//" in data[i] and "の場合" not in data[i]:
+            while i < len(data) and "//" in data[i] and "の場合" not in data[i]:
                 choiceList.append(re.search(r"\/\/(.*)", data[i]).group(1))
                 i += 1
 
@@ -235,16 +246,16 @@ def translateWOLF(data, pbar, filename):
                 with LOCK:
                     found_mismatch(MISMATCH, filename)
 
-        # Lines
-        if r"/" not in data[i] and "@" not in data[i] and data[i] != "\n":
+        # Lines: the line that ends the run, such as a choice, is read next
+        if i < len(data) and isText(data[i]):
             # Grab Consecutive Strings
             groupStart = i
             currentGroup.append(data[i])
             i += 1
-            while i < len(data) and r"/" not in data[i] and "@" not in data[i] and data[i] != "\n":
+            while i < len(data) and isText(data[i]):
                 currentGroup.append(data[i])
                 i += 1
-            groups.append((groupStart, i))
+            groups.append((groupStart, i, speaker))
 
             # Join up 401 groups for better translation.
             jaString = "".join(currentGroup)
@@ -253,13 +264,8 @@ def translateWOLF(data, pbar, filename):
             # Remove any textwrap
             jaString = jaString.replace("\n", " ")
 
-            # Add Speaker (If there is one)
-            if speaker != "":
-                jaString = f"[{speaker}]: {jaString}"
-
             # Add String
-            stringList.append(jaString)
-            i += 1
+            stringList.append(to_prefixed(speaker, jaString))
 
         # Nothing relevant. Skip Line.
         else:
@@ -280,8 +286,8 @@ def translateWOLF(data, pbar, filename):
         # Set Strings: each run becomes one line, so later runs move up
         if len(stringList) == len(translatedList):
             removed = 0
-            for (groupStart, groupEnd), translatedText in zip(groups, translatedList):
-                translatedText = strip_speaker_prefix(translatedText)
+            for (groupStart, groupEnd, speaker), translatedText in zip(groups, translatedList):
+                translatedText = strip_speaker_prefix(translatedText, speaker)
                 translatedText = dazedwrap.wrapText(translatedText, width=WIDTH)
                 index = groupStart - removed
                 data[index : groupEnd - removed] = [f"{translatedText}\n"]

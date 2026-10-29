@@ -2,7 +2,6 @@
 import json
 import os
 import re
-from util.speakers import translate_speaker
 import util.dazedwrap as dazedwrap
 import threading
 import time
@@ -33,7 +32,6 @@ NOTEWIDTH = 70
 MAXHISTORY = 10
 ESTIMATE = ""
 TOKENS = [0, 0]
-NAMESLIST = []
 NAMES = False  # Output a list of all the character names found
 BRFLAG = False  # If the game uses <br> instead
 FIXTEXTWRAP = True  # Overwrites textwrap
@@ -170,7 +168,6 @@ def translateOnscripter(data, pbar, filename, translatedList):
     stringList = []
     currentGroup = []
     tokens = [0, 0]
-    speaker = ""
     voice = False
     global LOCK, ESTIMATE, PBAR
     PBAR = pbar
@@ -360,11 +357,6 @@ def fixText(translatedText):
             translatedText = translatedText.replace(match, match.translate(wide_to_ascii))
 
     return translatedText
-
-# Save some money and enter the character before translation
-def getSpeaker(speaker):
-    return translate_speaker(speaker, NAMESLIST, LANGUAGE, translateAI)
-
 
 def translateAI(text, history, history_ctx=None):
     """
