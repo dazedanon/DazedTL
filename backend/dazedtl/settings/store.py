@@ -960,6 +960,10 @@ class Settings:
             raise ValueError(
                 "Save the base OpenRouter model ID, then choose Batch as the translation method."
             )
+        if connection:
+            providers.validate_model_name(
+                normalized["model"], providers.address(connection)
+            )
         configured = preferences.model_options(model_options)
         efforts(connection, state, configured)
         problem = language_pair.problem(source, normalized["language"])
@@ -1299,6 +1303,9 @@ class Settings:
             values = language_pair.frozen(values, pair)
         if mode and active and active["provider"]:
             self.adapter.validate_route(values)
+            providers.validate_model_name(
+                values["model"], values["api"], created=resume is not None
+            )
         if mode == "batch" and not self.translation_defaults()["batch_supported"]:
             raise ValueError("This connection does not support provider batch jobs.")
         if not values["model"]:
@@ -1348,6 +1355,10 @@ class Settings:
                     raise ValueError(
                         "This connection's provider, server, or organization changed. Restore the saved run's original connection before resuming."
                     )
+                # A run saved before Settings refused such a name.
+                providers.validate_model_name(
+                    frozen["model"], frozen["api"], created=True
+                )
                 vault["keys"][key_name]["endpoint"] = frozen["api"]
         self.adapter.manual.request_policy = None
         if mode:

@@ -15,10 +15,8 @@ from retry import retry
 from tqdm import tqdm
 from util.languages import source_pattern
 from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost, found_mismatch, run_stop_errors
-from util.translation_task import fail_on_parser_error, module_receipt
+from util.translation_task import fail_on_parser_error, module_receipt, write_output
 from util.speakers import strip_speaker_prefix
-import tempfile
-from util import system
 
 # Globals
 MODEL = os.getenv("model")
@@ -84,8 +82,7 @@ def handleRegex(filename, estimate):
 
     # Translate
     if not estimate:
-        with open("translated/" + filename, "w", encoding="utf-8-sig") as outFile:
-            outFile.writelines(translatedData[0])
+        write_output(filename, "".join(translatedData[0]), encoding="utf-8-sig")
 
     # Print File
     end = time.time()
@@ -142,24 +139,6 @@ def parseRegex(readFile, filename):
     return [data, totalTokens, None]
 
 
-def save_progress_lines(lines, filename, encoding="utf-8-sig"):
-    """Atomically save current line-based translation progress."""
-    try:
-        if ESTIMATE:
-            return
-        os.makedirs("translated", exist_ok=True)
-        tmp_fd, tmp_path = tempfile.mkstemp(prefix=f"{filename}.", suffix=".tmp", dir="translated")
-        try:
-            with os.fdopen(tmp_fd, "w", encoding=encoding, newline="\n", errors="ignore") as tmp_file:
-                tmp_file.writelines(lines)
-            system.replace(tmp_path, os.path.join("translated", filename))
-        finally:
-            if os.path.exists(tmp_path):
-                system.unlink(tmp_path, ignore_errors=True)
-    except Exception:
-        traceback.print_exc()
-
-
 def translateRegex(data, filename, translatedList):
     if translatedList:
         stringList = translatedList[0]
@@ -199,7 +178,6 @@ def translateRegex(data, filename, translatedList):
                 # Convert newlines back to escape sequences and escape quotes
                 title = title.replace('\n', '\\n').replace('"', '\\"')
                 data[i] = data[i].replace(match.group(1), title)
-                save_progress_lines(data, filename)
 
         # Title
         match = re.search(titleRegex, data[i])
@@ -218,7 +196,6 @@ def translateRegex(data, filename, translatedList):
                 # Set
                 title = re.sub(r"(?<!\\)'", r"\\'", title)
                 data[i] = data[i].replace(match.group(1), title)
-                save_progress_lines(data, filename)
 
         # Speaker
         match = re.search(lineRegexSpeaker, data[i])
@@ -270,7 +247,6 @@ def translateRegex(data, filename, translatedList):
 
                     # Set
                     data[i] = data[i].replace(match.group(1), translatedText)
-                    save_progress_lines(data, filename)
 
         # Sel (Selection menu)
         match = re.search(selRegex, data[i])
@@ -307,7 +283,6 @@ def translateRegex(data, filename, translatedList):
                     # Rebuild the sel line
                     newSelContent = ','.join(translatedItems)
                     data[i] = data[i].replace(match.group(1), newSelContent)
-                    save_progress_lines(data, filename)
 
         # Dialogue
         # Grab multi-line text
@@ -367,7 +342,6 @@ def translateRegex(data, filename, translatedList):
                     while "\\endtext" not in data[i].strip():
                         del data[i]
                     data.insert(i, f"{translatedText}\n")
-                    save_progress_lines(data, filename)
 
         # Choices
         match = re.search(choiceRegex, data[i])
@@ -391,7 +365,6 @@ def translateRegex(data, filename, translatedList):
 
                 # Set
                 data[i] = data[i].replace(match.group(1), translatedText)
-                save_progress_lines(data, filename)
 
             i += 1
         else:

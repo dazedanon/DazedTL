@@ -187,6 +187,43 @@ def fail_on_parser_error(parsed):
     if parsed[2] is not None:
         raise parsed[2]
 
+
+class OutputNotSaved(RuntimeError):
+    """A finished file whose output could not be written (write_output, or
+    RPG Maker's final saveProgress). It fails only its own file, also in a
+    worker given several (util/subprocess_runner), and names its error."""
+
+    def __init__(self, filename, error):
+        super().__init__(f"{filename} could not be saved: {error}")
+
+
+def write_output(filename, text, encoding="utf-8", errors="strict", newline=None):
+    """Writes a module's finished file, translated/<filename>, once and whole
+    (system.write_bytes), after fail_on_parser_error, so a file that fails or
+    stops leaves an earlier output as it was. Modules save no progress to
+    translated/ while they translate: nothing reads it back (Resume translates
+    a stopped file again, its finished requests from the translation cache,
+    and a run collects only the files that finished), and a partial save
+    replaced an earlier complete output. RPG Maker's saveProgress is the one
+    exception, since a Live run resumes from it (compatibility/checkpoints).
+
+    *text* is encoded as open(path, "w", encoding=, errors=, newline=) wrote
+    it, newline=None meaning the platform's line ends, so a module's output
+    stays byte for byte what it was. Returns the path written."""
+    path = Path("translated") / filename
+    buffer = io.BytesIO()
+    stream = io.TextIOWrapper(buffer, encoding=encoding, errors=errors, newline=newline)
+    try:
+        # As open() did, an empty file stays empty: a BOM comes with the
+        # first text.
+        if text:
+            stream.write(text)
+        stream.flush()
+        system.write_bytes(path, buffer.getvalue(), 0o644)
+    except (OSError, UnicodeError) as error:
+        raise OutputNotSaved(filename, error) from error
+    return path
+
 def _failed(result):
     """Whether a file's result is a module's failure."""
     return result == "Fail"

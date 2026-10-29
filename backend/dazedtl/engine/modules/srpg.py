@@ -16,7 +16,7 @@ from retry import retry
 from tqdm import tqdm
 from util.languages import source_pattern
 from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost, found_mismatch, run_stop_errors
-from util.translation_task import fail_on_parser_error, module_receipt
+from util.translation_task import fail_on_parser_error, module_receipt, write_output
 from util.speakers import strip_speaker_prefix
 
 # Globals
@@ -155,8 +155,7 @@ def handleSRPG(filename, estimate):
 
     # Write output file if not in estimate mode
     if not estimate:
-        with open("translated/" + filename, "w", encoding="utf-8", newline="\n") as outFile:
-            json.dump(translatedData[0], outFile, ensure_ascii=False, indent=4)
+        write_output(filename, json.dumps(translatedData[0], ensure_ascii=False, indent=4), newline="\n")
 
     # Print File
     end = time.time()

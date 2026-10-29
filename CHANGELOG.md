@@ -3,6 +3,49 @@
 Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 [release.mjs](scripts/release.mjs) writes each entry from [release/notes.md](release/notes.md).
 
+## [2.52.2] - 2026-10-28
+
+### Changed
+
+- **Translate:** each file's translation, each estimate and each background task starts about twice as fast, because DazedTL now keeps its compiled Python in its profile folder instead of compiling it again every time; the first start after an update compiles it once.
+- **Guided:** the commands DazedTL gives your assistant, such as the project helper and Text QA's, now keep their compiled Python in the profile folder too, so they start faster and leave nothing in the DazedTL folder; DazedTL also removes what a moved DazedTL folder or an earlier Python left there.
+
+### Fixed
+
+- **Translate:** a file that fails after some of its requests were answered, such as on a later request's error or a missing Batch result, now keeps what those requests cost in its cost and the run's total, which left them out.
+- **Translate:** an RPG Maker file that could not be saved after some lines kept their original text now reads as failed, which counted it as finished with mismatches.
+- **Translate:** a WOLF map or common event file now asks once for each choice, choice window and speaker name, instead of paying again to translate its own translation when the text still read as Japanese, such as Chinese; its line now shows the tokens it used, which counted a speaker's input as output and left out those second requests.
+- **Translate:** a server that refuses the run's thinking effort with HTTP 422, or by saying the model takes no reasoning or thinking, now stops a Guided Live run at the first refused request with "refused thinking effort", as **Check an effort** reads such a reply, instead of after three requests with "The provider rejected 3 requests in a row"; a Guided Batch the provider refused for its effort ends with the same message instead of "No successful Batch responses".
+- **Translate:** a request a Guided Live run's provider rejects, such as with HTTP 400, is now sent once, instead of a second time in JSON mode, unless the error says the provider does not take the run's response format.
+- **Settings:** a thinking effort that **Check an effort** accepted now reads refused after a Guided Batch the server refused it in, and after an Assistant-led run that it refused while DazedTL was closed, not only after a Live run.
+- **Translate:** a WOLF map whose request fails partway now shows as failed with what it paid for and keeps the map's earlier translation as it was, instead of being written with the failing page's lines half translated and counted as complete, or replacing a complete earlier translation with the pages that finished.
+- **Translate:** a WOLF choice window's question is now asked for in the target language, where its request read "{LANGUAGE}", and a 選択肢/確認 window without a question, or a common event or database whose text holds `'events':` or `'types':`, no longer fails its file.
+- **Translate:** a custom server that answers the run's structured output with HTTP 422, such as "Input should be 'text' or 'json_object'", now gets a Guided Live request again in JSON mode, as Assistant-led sends it, instead of failing every request; and an error that only repeats the request back, such as a validation error about another field, no longer counts as one about the response format.
+- **Translate:** Run history and Inspect run no longer count a file a failed run left as it was, such as one with nothing to translate, as saved, so a Database run that translated nothing reads "3 failed" instead of "2 files saved · 3 failed".
+- **Translate:** a Database files or Maps & events file whose Live request may still be at the provider now reads Needs review with "Its submission could not be confirmed", as Other event text reads it, instead of Not started.
+- **Translate:** a Guided file that fails on a server error, an unreachable provider or any error in a run started with an earlier version now names the provider's own status and message, such as "The provider failed the request: HTTP 500 - ...", instead of "API server error (500) - retrying... Error: Error code: 500 - {...}"; an error without a message reads its code, such as content_filter, or "HTTP 400 with no reason given." instead of "HTTP 400 - Provider returned HTTP 400.".
+- **Translate:** Inspect run shows a failed Batch request's provider reason as its message instead of the raw `{'code': 'invalid_request', ...}`, each file of a Batch the provider ended with an error names that reason instead of "for example because it was canceled", and a Batch with no successful responses ends with one message, naming the provider's reason when every request got the same, instead of changing its message a moment after it ended.
+- **Translate:** **Review issues** in Inspect run now steps to the next failed or unconfirmed request, where it did nothing once it showed the first.
+- **Translate:** a Guided Live request to Mistral that is refused for its structured output on its last retry, such as after six rate limits, is now sent again in JSON mode, instead of failing with "Mistral API failed after 7 attempts" without sending it.
+- **Translate:** a file of a game other than RPG Maker or WOLF, such as CSV, JSON, Kirikiri, Tyrano, Ren'Py or Unity, whose translation fails partway now shows as failed with its error and what it paid for, instead of counting as translated with part of it written and showing its cost twice.
+- **Translate:** a file stopped partway in a Translation run is now translated again on Resume, which skipped it as finished when its engine had saved part of it.
+- **Translate:** a reply with the wrong number of lines that an engine kept in its original text now counts toward the run's mismatches, which read the file as fully translated.
+- **Translate:** an Image Text file's cost and time now show with the file, which left them out.
+- **Translate:** a model whose name only holds a Claude family word, such as `magnum-opus-72b` on OpenRouter or a custom server, is no longer priced at Claude's cache prices or sent through Anthropic's own connection when no address is set; only Claude's own names, such as `claude-sonnet-5-5` or `anthropic/claude-opus-5.5`, count as Claude.
+- **Translate:** a Guided Live request to Mistral that hits a rate limit on its last retry now fails at once, instead of first waiting out the provider's wait time, up to a minute or more.
+- **Translate:** a WOLF line or database entry that kept its original text because its replies kept failing is now left exactly as it was, which wrote it back with its line breaks turned into spaces.
+- **Windows:** an assistant whose shell is Git Bash, such as Claude Code without its PowerShell tool, now reads how to run the commands DazedTL gives it, such as the project helper's and Text QA's, which are written for PowerShell and failed there as pasted.
+- **Translate:** a Live request that a provider's own API failed with HTTP 500, 503 or 529, such as OpenAI's, Anthropic's or Gemini's, now reads failed, since it bills nothing, so a Guided run whose every request got one reads Failed with its files Not started instead of "Check submission · 35 uncertain requests" and Needs review, and Assistant-led reads it failed too; a gateway's timeout, such as HTTP 502, 504 or 524, or any error from a Custom server still reads uncertain, since the model may have answered and billed it, and an Assistant-led request or Batch submission that got a client error that is not a plain refusal, such as HTTP 408 or 409, now reads uncertain as in Guided runs instead of failed.
+- **Translate:** a Translate estimate or Context's Cost estimate made before an update that sends the same settings to another provider's Batch, such as the fix for models whose name only holds a Claude family word, now shows its price on the new route, or asks for a fresh estimate when its counts were Claude's, instead of keeping the old route's price.
+- **Settings:** a model the price list doesn't know whose name only holds a Claude family word, such as `sonnet-like` or `haiku-writer-8b`, now asks for custom rates instead of taking Claude Sonnet's or Haiku's per-token price, and a Claude name in capitals, such as `Claude-Opus-5`, takes its Claude price instead of none.
+- **Translate:** an estimate for a model whose name only holds a Claude model's, such as `someone/claude-opus-5-distill`, no longer warns that it leaves out the model's thinking, as a Claude 5 model's estimate does.
+- **Settings:** a Claude model saved for an Anthropic connection under another host's name, such as OpenRouter's `anthropic/claude-opus-5.5` or Bedrock's `us.anthropic.claude-...`, is now refused with a message asking for Anthropic's own model ID, and a run saved with one no longer starts or resumes, where every request failed with "not found".
+- **Translate:** a line, speaker name or glossary entry holding text such as `<|endoftext|>` no longer fails its estimate or its Guided request with "Encountered text corresponding to disallowed special token"; it is counted as the text it is.
+- **Translate:** a file of a game other than RPG Maker or WOLF that fails partway when translated again now keeps its earlier translation as it was, instead of replacing it with the part that finished, or with an empty file for Lune, Ren'Py, Unity and CSV.
+- **Translate:** on Windows, a Lune, Ren'Py or Unity file no longer waits about two seconds after each line it translates.
+- **Translate:** a CSV file with nothing left to translate is now written whole, which wrote it empty.
+- **Translate:** an RPG Maker data or plugin file that cannot be saved now fails with the reason, such as a full disk, where an RPG Maker file read only "Translation failed" and a plugin file counted as translated.
+
 ## [2.52.1] - 2026-10-28
 
 ### Fixed
@@ -1362,6 +1405,7 @@ Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachan
 - The first release of DazedTL as a desktop app, installed from a ZIP with a START launcher and updated from inside the app.
 - **Guided steps** for RPG Maker MV, MZ and VX Ace games, and **Assistant-led** for any game.
 
+[2.52.2]: https://github.com/dazedanon/DazedTL/compare/v2.52.1...v2.52.2
 [2.52.1]: https://github.com/dazedanon/DazedTL/compare/v2.52.0...v2.52.1
 [2.52.0]: https://github.com/dazedanon/DazedTL/compare/v2.51.0...v2.52.0
 [2.51.0]: https://github.com/dazedanon/DazedTL/compare/v2.50.0...v2.51.0

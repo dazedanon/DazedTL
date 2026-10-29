@@ -237,13 +237,20 @@ def checkout(game, *pending):
 
 
 class Characters:
-    """A hermetic stand-in for tiktoken's encoding."""
+    """A hermetic stand-in for tiktoken's encoding, which refuses text
+    reading as its special token unless told to count it as text."""
 
-    def encode(self, text, **_kwargs):
+    def encode(self, text, *, disallowed_special="all"):
+        if disallowed_special and "<|endoftext|>" in str(text):
+            raise ValueError(
+                "Encountered text corresponding to disallowed special token"
+            )
         return [ord(character) for character in str(text)]
 
-    def encode_batch(self, texts, **_kwargs):
-        return [self.encode(text) for text in texts]
+    def encode_batch(self, texts, *, disallowed_special="all"):
+        return [
+            self.encode(text, disallowed_special=disallowed_special) for text in texts
+        ]
 
 
 class CompatibilityContracts(unittest.TestCase):
@@ -465,12 +472,16 @@ class CompatibilityContracts(unittest.TestCase):
                 patch.object(translation, "buildClaudeRequest", recorded),
             ):
                 live = TranslationTaskCore._estimate_grouped_speakers(
-                    ["太郎", "花子", "長老", "村人", "兵士"],
+                    # A name reading as the encoder's special token is counted
+                    # as text, which failed the estimate.
+                    ["太郎", "花子", "長老", "<|endoftext|>", "兵士"],
                     "Name each.",
                     config,
                     model,
                 )
-            entries = [{"params": params, "payload": "名前" * 5} for params in sent]
+            entries = [
+                {"params": params, "payload": "名前<|endoftext|>"} for params in sent
+            ]
             cache = TranslationEngine.claude_cache(None, entries, {"model": model})
             # Two names a request, then one: two reply schemas, one read.
             self.assertEqual((len(sent), cache.keys), (3, 2))
@@ -1845,14 +1856,22 @@ class CompatibilityContracts(unittest.TestCase):
 
     def test_each_claude_route_rule_routes_a_model_and_address_alike(self):
         # The Claude name test and the native-Anthropic route test were copied
-        # into the Live send, the estimate, Batch detection, Live pricing and
-        # Settings' route check; each copy must keep answering the same.
+        # into the Live send, the estimate, Batch detection, Live pricing,
+        # per-token rates, default thinking and Settings' route check; each
+        # copy must keep answering the same.
         import os
 
         from dazedtl.compatibility import openrouter_batch
         from dazedtl.compatibility.dazedmtl import ExistingBackend
+        from dazedtl.settings import effort
+        from dazedtl.settings.providers import own_api
         from util import translation
         from util.batch_providers import detect_batch_provider, live_price_route
+        from util.provider_costs import (
+            cache_read_multiplier,
+            foreign_claude_name,
+            on_anthropic_api,
+        )
 
         addresses = (
             "",
@@ -1860,9 +1879,14 @@ class CompatibilityContracts(unittest.TestCase):
             # A proxy path: sent Live natively, but Batches need Anthropic's
             # own API.
             "http://localhost:8080/anthropic",
+            # Another host whose name holds Anthropic's.
+            "https://anthropic.company.example/v1",
             "https://openrouter.ai/api/v1",
             "https://proxy.example/v1",
             "https://api.openai.com/v1",
+            # The same own APIs without a scheme.
+            "api.anthropic.com",
+            "api.openai.com/v1",
         )
         # Per address: native Live send, Batch provider, Live price route,
         # Settings' engine route.
@@ -1870,8 +1894,11 @@ class CompatibilityContracts(unittest.TestCase):
             (True, "anthropic", "anthropic", "anthropic"),
             (True, "anthropic", "anthropic", "anthropic"),
             (True, None, "anthropic", "anthropic"),
+            (True, None, "anthropic", "anthropic"),
             (False, None, "anthropic", "openai"),
             (False, None, "anthropic", "openai"),
+            (False, "openai", "anthropic", "openai"),
+            (True, "anthropic", "anthropic", "anthropic"),
             (False, "openai", "anthropic", "openai"),
         )
         other = (
@@ -1879,6 +1906,9 @@ class CompatibilityContracts(unittest.TestCase):
             (False, None, "", "openai"),
             (False, None, "", "openai"),
             (False, None, "", "openai"),
+            (False, None, "", "openai"),
+            (False, None, "", "openai"),
+            (False, "openai", "openai", "openai"),
             (False, None, "", "openai"),
             (False, "openai", "openai", "openai"),
         )
@@ -1895,6 +1925,17 @@ class CompatibilityContracts(unittest.TestCase):
             ("us.anthropic.claude-sonnet-4-5-20250929-v1:0", claude),
             ("us-gov.anthropic.claude-3-5-sonnet-20240620-v1:0", claude),
             ("bedrock/anthropic.claude-3-haiku", claude),
+            (
+                (
+                    "arn:aws:bedrock:us-east-1:123456789012:inference-profile/"
+                    "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+                ),
+                claude,
+            ),
+            ("vertex_ai/claude-sonnet-5-5", claude),
+            ("publishers/anthropic/models/claude-opus-4-1", claude),
+            ("databricks-claude-sonnet-4", claude),
+            ("databricks/databricks-claude-3-7-sonnet", claude),
             # Other models whose names hold a Claude family word are not
             # Claude's.
             ("magnum-opus-72b", other),
@@ -1902,6 +1943,8 @@ class CompatibilityContracts(unittest.TestCase):
             ("sonnet-like", other),
             ("haiku-writer-8b", other),
             ("someone/claude-style-7b", other),
+            ("someone/claude-opus-5-distill", other),
+            ("someone/databricks-claude-style-7b", other),
             ("gpt-5.4", gpt),
             ("deepseek-v4-flash", other),
             ("", other),
@@ -1933,6 +1976,85 @@ class CompatibilityContracts(unittest.TestCase):
                     # the engine's settings.
                     self.assertEqual(translation.isClaudeNative(model), expected[0])
                     self.assertEqual(translation.isClaudeModel(model), routes is claude)
+                    # Anthropic's own API, where its Batches go, takes only
+                    # Claude's own IDs, so Settings refuses another host's.
+                    self.assertEqual(
+                        foreign_claude_name(model, address),
+                        expected[1] == "anthropic" and not model.startswith("claude-"),
+                    )
+            # Pricing gives Claude's rates to a Claude name only: another
+            # model, with no catalog price, takes the unknown model's
+            # fallback, which a price lookup reads as unpriced.
+            with (
+                self.subTest(model=model, rule="price"),
+                patch.object(translation, "_lookup_model_price", return_value=None),
+                patch.dict(os.environ, {"input_cost": "-1", "output_cost": "-1"}),
+            ):
+                self.assertEqual(
+                    translation.getPricingConfig(model)["inputAPICost"] == -1,
+                    routes is other and not model.startswith("deepseek-"),
+                )
+            # An estimate reads a Claude 5 name with no effort table row as
+            # thinking only when the name is Claude's.
+            with self.subTest(model=model, rule="thinks"):
+                self.assertEqual(
+                    effort.thinks(None, model),
+                    model
+                    in {
+                        "claude-sonnet-5-5",
+                        "Claude-Opus-5",
+                        "vertex_ai/claude-sonnet-5-5",
+                        "deepseek-v4-flash",
+                    },
+                )
+        # A test scenario's stand-in for Anthropic's API counts as its API.
+        stand_in = "http://127.0.0.1:9/api.anthropic.com"
+        with patch.dict(os.environ, {"DAZEDTL_TEST_ANTHROPIC_ENDPOINT": stand_in}):
+            self.assertTrue(on_anthropic_api(stand_in + "/v1"))
+            self.assertFalse(on_anthropic_api("http://127.0.0.1:9/other"))
+        # Kimi's and DeepSeek's own APIs count without a scheme too.
+        for identity, address in (
+            ("kimi", "api.moonshot.ai/v1"),
+            ("deepseek", "API.DeepSeek.com"),
+        ):
+            with self.subTest(identity=identity, address=address):
+                self.assertTrue(own_api(identity, address))
+                self.assertFalse(own_api(identity, "proxy.example/" + address))
+        # Claude's cache reads take each model's rate in any host's form of
+        # its name.
+        for model, read in (
+            ("claude-opus-5-5", 0.05),
+            ("anthropic/claude-opus-5.5", 0.05),
+            ("anthropic/claude-sonnet-5.5:beta", 0.05),
+            ("claude-fable-5.1", 0.025),
+            ("us.anthropic.claude-mythos-5-1-v1:0", 0.025),
+            ("anthropic/claude-opus-4.5", 0.1),
+            ("someone/claude-opus-5.5-distill", 0.1),
+        ):
+            with self.subTest(model=model, rule="cache reads"):
+                self.assertEqual(cache_read_multiplier("anthropic", model), read)
+        # With no catalog price, a Claude name takes its version's rates in
+        # any host's form: OpenRouter writes versions with dots, Anthropic
+        # dates its Claude 3 IDs.
+        for model, rates in (
+            ("anthropic/claude-opus-5.5", (4, 20)),
+            ("claude-opus-5-5", (4, 20)),
+            ("anthropic/claude-opus-4.5", (5, 25)),
+            ("anthropic/claude-opus-4.1", (15, 75)),
+            ("claude-3-opus-20240229", (15, 75)),
+            ("anthropic/claude-3.5-haiku", (0.80, 4)),
+            ("claude-3-5-haiku-20241022", (0.80, 4)),
+            ("anthropic/claude-haiku-4.5", (1, 5)),
+            ("vertex_ai/claude-sonnet-5-5", (2, 10)),
+        ):
+            with (
+                self.subTest(model=model, rule="rates"),
+                patch.object(translation, "_lookup_model_price", return_value=None),
+            ):
+                pricing = translation.getPricingConfig(model)
+                self.assertEqual(
+                    (pricing["inputAPICost"], pricing["outputAPICost"]), rates
+                )
 
     def test_mistral_follows_the_json_mode_strict_and_retry_rules(self):
         # The JSON-mode downgrade spent a retry attempt, so a format rejection

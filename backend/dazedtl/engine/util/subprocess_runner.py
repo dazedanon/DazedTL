@@ -55,8 +55,7 @@ def _report_run_stop(filename, error=None, result=None):
     (util/translation run_stop) as *filename*'s result, with the TOTAL its
     handler returned when a module caught the stop, which tells the run to
     take no further file; False when the run goes on. What the file paid for
-    is in the run's evidence ledger however it ends (util/translation
-    record_paid)."""
+    is in the run's evidence ledger however it ends."""
     translation = sys.modules.get("util.translation")
     stop = None if translation is None else translation.run_stop(error)
     if stop is None:
@@ -201,12 +200,15 @@ def run_handler(project_root, module_name, filename, estimate_only):
                         if not multi_file:
                             raise
                         from util.translation import BatchResultUnavailableError
+                        from util.translation_task import OutputNotSaved
 
                         # A missing Batch result fails only its own file, as
                         # it did with a worker per file, so the files after
-                        # it still save their fetched results.
-                        if batch_phase != "consume" or not isinstance(
-                            exc, BatchResultUnavailableError
+                        # it still save their fetched results; so does an
+                        # output that could not be saved.
+                        if not isinstance(exc, OutputNotSaved) and (
+                            batch_phase != "consume"
+                            or not isinstance(exc, BatchResultUnavailableError)
                         ):
                             raise
             finally:
