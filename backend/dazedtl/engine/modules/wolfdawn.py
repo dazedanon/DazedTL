@@ -58,7 +58,6 @@ import traceback
 
 from colorama import Fore
 from tqdm import tqdm
-from util.target_text import title_case
 from util.languages import source_pattern
 from util.paths import read_active_glossary
 from util.skills import ctx, load_system_prompt
@@ -395,8 +394,9 @@ def _vocab_speaker_lookup(speaker: str) -> str | None:
 
 
 def _normalize_speaker_name(translated: str) -> str:
-    """Title-case / tidy a short NPC-name translation (mirrors other engines)."""
-    out = title_case(translated.strip(), LANGUAGE).replace("'S", "'s").replace("Speaker: ", "")
+    """A short NPC-name translation as every engine reads it (util/speakers
+    name_reply), with ordinals such as 1st kept lower case."""
+    out = wolf_speakers.name_reply(translated.strip(), LANGUAGE)
     return re.sub(
         r"(\d)(St|Nd|Rd|Th)\b",
         lambda m: m.group(1) + m.group(2).lower(),
@@ -689,7 +689,7 @@ def parseDocument(data, filename):
                         continue
                     text = wolf_codes.restore_wolf_code_placeholders(text, code_map)
                     if has_speaker:
-                        model_speaker, body_en = wolf_speakers.parse_prefixed(text)
+                        model_speaker, body_en = wolf_speakers.parse_prefixed(text, speaker_en)
                         if model_speaker is None:
                             body_en = _body_after_dropped_tag(
                                 text, entry.get("speaker") or ""

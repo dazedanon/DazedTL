@@ -11,7 +11,7 @@ from tqdm import tqdm
 
 import util.dazedwrap as dazedwrap
 from util.languages import source_pattern
-from util.speakers import strip_echoed_speaker, translate_speaker
+from util.speakers import strip_echoed_speaker, to_prefixed, translate_speaker
 from util.translation import (
     TranslationConfig,
     calculateCost,
@@ -261,9 +261,8 @@ def translateYuris(data, filename):
 
         cleanMessage = message.replace("\r\n", " ").replace("\n", " ").strip()
         cleanMessage = replace_yuris_problem_dashes(cleanMessage)
-        hasSpeaker = bool(speaker)
-        stringList.append(f"[{speaker}]: {cleanMessage}" if hasSpeaker else cleanMessage)
-        entries.append((index, message, hasSpeaker))
+        stringList.append(to_prefixed(speaker, cleanMessage))
+        entries.append((index, message, speaker))
 
     if not stringList:
         return tokens
@@ -281,9 +280,9 @@ def translateYuris(data, filename):
             found_mismatch(MISMATCH, FILENAME)
         return tokens
 
-    for (index, originalMessage, hasSpeaker), translatedText in zip(entries, translatedList):
-        if hasSpeaker:
-            translatedText = stripSpeakerPrefix(translatedText)
+    for (index, originalMessage, speaker), translatedText in zip(entries, translatedList):
+        if speaker:
+            translatedText = stripSpeakerPrefix(translatedText, speaker)
         translatedText = replace_yuris_problem_dashes(translatedText)
         translatedText = dazedwrap.wrapText(translatedText, width=WIDTH)
         translatedText = translatedText.replace("\n", "\r\n")
@@ -294,9 +293,10 @@ def translateYuris(data, filename):
     return tokens
 
 
-def stripSpeakerPrefix(translated_text):
-    """Same behavior as modules/json.translateJSON: strip [Name]: prefix from TL lines."""
-    return strip_echoed_speaker(translated_text, LANGUAGE).strip()
+def stripSpeakerPrefix(translated_text, speaker):
+    """Same behavior as modules/json.translateJSON: strip the [Name]: prefix
+    the line was sent with from its translation."""
+    return strip_echoed_speaker(translated_text, LANGUAGE, speaker).strip()
 
 
 def getSpeaker(speaker):
