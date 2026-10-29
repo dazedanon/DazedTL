@@ -127,44 +127,71 @@ def validate_catalog(value):
             raise ValueError("Invalid OpenRouter catalog entry.")
 
 
+def _catalog(connection):
+    """The models a verified check loaded, none before one or after a failure."""
+    checked = connection.get("check", {})
+    return connection.get("catalog", {}) if checked.get("status") == "verified" else {}
+
+
+def _batch(connection, model):
+    """Whether ``model`` runs Batch on this connection, its Batch rates when it
+    does, why not when it doesn't, and whether that answer was looked up: a
+    check that failed or hasn't run, or an endpoint read not made for this
+    model and host or that failed, leaves it unknown, unlike a model checked
+    to have no Batch."""
+    known = _catalog(connection)
+    batch = known.get(model + ":batch", {}) if ":" not in model else {}
+    supported = bool(batch.get("text") and batch.get("json"))
+    if not supported:
+        if not known:
+            return False, {}, "Check this connection to load Batch availability.", False
+        if ":" in model:
+            return False, {}, "Choose the base model ID for Batch.", True
+        return (
+            False,
+            batch,
+            "This model has no compatible text Batch endpoint for this account.",
+            True,
+        )
+    endpoints = connection.get("batch_endpoints", {})
+    if (
+        endpoints.get("model") != model
+        or endpoints.get("host") != connection.get("openrouter_host", "")
+        or "providers" not in endpoints
+    ):
+        return (
+            False,
+            {},
+            "Batch support has not been checked for this model and host. Save preferences to check automatically.",
+            False,
+        )
+    if not endpoints.get("rates") or not endpoints.get("providers"):
+        return (
+            False,
+            {},
+            endpoints.get("error")
+            or "No selected Batch endpoint supports this model's required structured outputs.",
+            "error" not in endpoints,
+        )
+    return True, {**batch, **endpoints["rates"]}, "", True
+
+
+def batch_looked_up(connection, model):
+    """Whether this connection knows if ``model`` runs Batch (``_batch``), so
+    a missing Batch policy means no Batch rather than not loaded yet."""
+    return _batch(connection, text(model, "model ID", required=True))[3]
+
+
 def describe(connection, model):
     model = text(model, "model ID", required=True)
     checked = connection.get("check", {})
-    known = connection.get("catalog", {}) if checked.get("status") == "verified" else {}
-    live = known.get(model, {})
-    batch = known.get(model + ":batch", {}) if ":" not in model else {}
-    supported = bool(batch.get("text") and batch.get("json"))
-    reason = (
-        ""
-        if supported
-        else "Check this connection to load Batch availability."
-        if not known
-        else "Choose the base model ID for Batch."
-        if ":" in model
-        else "This model has no compatible text Batch endpoint for this account."
-    )
+    live = _catalog(connection).get(model, {})
+    supported, batch, reason, _looked_up = _batch(connection, model)
     host = connection.get("openrouter_host", "")
     # Model-wide prices do not establish a selected host's Live rates. The
     # public resolver supplies those separately, without inferring eligibility.
     if host:
         live = {}
-    if supported:
-        endpoints = connection.get("batch_endpoints", {})
-        if (
-            endpoints.get("model") != model
-            or endpoints.get("host") != host
-            or "providers" not in endpoints
-        ):
-            supported, batch = False, {}
-            reason = "Batch support has not been checked for this model and host. Save preferences to check automatically."
-        elif not endpoints.get("rates") or not endpoints.get("providers"):
-            supported, batch = False, {}
-            reason = (
-                endpoints.get("error")
-                or "No selected Batch endpoint supports this model's required structured outputs."
-            )
-        else:
-            batch = {**batch, **endpoints["rates"]}
     stamp = checked.get("checkedAt")
     try:
         stale = (

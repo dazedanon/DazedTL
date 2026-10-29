@@ -62,9 +62,18 @@ def unpriced(configuration):
 
 
 def priced(configuration):
-    """Whether these settings know their model's prices."""
+    """Whether these settings know their model's prices: its rates and, on
+    OpenRouter, whether it runs Batch, a policy left out while that isn't
+    looked up (settings/execution.configuration)."""
     rates = configuration.get("rates") or {}
-    return rates.get("input") is not None and rates.get("output") is not None
+    return (
+        rates.get("input") is not None
+        and rates.get("output") is not None
+        and (
+            configuration.get("provider") != "openrouter"
+            or "openrouterBatch" in configuration
+        )
+    )
 
 
 def known(configuration):

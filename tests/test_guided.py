@@ -790,7 +790,14 @@ class GuidedTests(unittest.TestCase):
         )
         self.assertTrue(shown()["current"])
         self.assertEqual(shown()["job"]["estimate"], estimate)
+        # With custom Live rates, a failed check leaves only whether it runs
+        # Batch unknown, which read as none: the estimate was priced again
+        # as a Live-only one. It stands too.
         self.configuration["rates"] = rates
+        del self.configuration["openrouterBatch"]
+        self.assertTrue(shown()["current"])
+        self.assertEqual(shown()["job"]["estimate"], estimate)
+        self.configuration["openrouterBatch"] = None
         moved = shown()
         self.assertTrue(moved["current"])
         self.assertIsNone(moved["job"]["estimate"]["provider"])
