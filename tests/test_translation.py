@@ -1191,11 +1191,35 @@ class TranslationTests(unittest.TestCase):
         self.assertEqual(self.store.load(job["id"])[0]["status"], "complete")
 
     def test_failed_or_uncertain_live_call_is_never_retried_implicitly(self):
+        import httpx
+        import openai
+        from dazedtl.compatibility.translation import ProviderFailure
+
+        def answered(status, host):
+            # As TranslationProvider raises it: the SDK error under its own.
+            response = httpx.Response(
+                status, request=httpx.Request("POST", f"https://{host}/v1/chat")
+            )
+            error = openai.APIStatusError("fixture", response=response, body=None)
+            try:
+                raise ProviderFailure("live", error) from error
+            except ProviderFailure as failure:
+                return failure
+
         rejection = ValueError("Provider rejected the request")
         rejection.status_code = 404
-        for error, status in ((TimeoutError(), "uncertain"), (rejection, "failed")):
-            with self.subTest(status=status):
-                job, plan = self.run_record(requests=[request(speaker=status)])
+        cases = (
+            ("timeout", TimeoutError(), "uncertain"),
+            ("refused", rejection, "failed"),
+            # The provider's own server error bills nothing; the same status
+            # from another host may be a gateway's, as a gateway timeout is.
+            ("server error", answered(500, "api.openai.com"), "failed"),
+            ("custom host", answered(500, "gateway.example"), "uncertain"),
+            ("gateway timeout", answered(504, "api.openai.com"), "uncertain"),
+        )
+        for name, error, status in cases:
+            with self.subTest(name):
+                job, plan = self.run_record(requests=[request(speaker=name)])
                 provider = LiveProvider(error)
                 Runner(self.store, job["id"], provider, lambda: None).step()
                 current, _plan = self.store.load(job["id"])

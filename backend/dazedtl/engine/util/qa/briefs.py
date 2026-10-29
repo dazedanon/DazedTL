@@ -128,7 +128,8 @@ def _task_instructions(task_dir: Path, task: dict[str, Any]) -> str:
         f"## {title}\n\n{text}" for title, text in sections.items() if title != "Handoff"
     )
     return _fill(
-        f"# Text QA task\n\n{_languages(task)}Task: `{task_dir}`\n\n{focus}\n\n{intro}\n\n{body}\n",
+        f"# Text QA task\n\n{system.shell_note()}{_languages(task)}Task: `{task_dir}`"
+        f"\n\n{focus}\n\n{intro}\n\n{body}\n",
         _skill_values(task_dir, task),
     )
 
@@ -164,7 +165,8 @@ def brief(task_dir: str | Path, role: str, worker: str = "") -> str:
             _atomic_write_json(root / "checkpoint.json", checkpoint)
     root, task, _checkpoint = _load_task(task_dir)
     _intro, sections, focus = _skill_sections(task["focus"])
-    parts = [_languages(task) + focus] + [
+    # A worker starts from its brief alone, so it carries the shell note too.
+    parts = [system.shell_note() + _languages(task) + focus] + [
         f"## {name}\n\n{sections[name]}"
         for name in ("Policy", *_BRIEF_SECTIONS[role], "Commands", "Result formats")
     ]

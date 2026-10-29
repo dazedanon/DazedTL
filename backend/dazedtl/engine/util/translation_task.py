@@ -1370,15 +1370,18 @@ class TranslationTaskCore:
         """Keep *figures*, this attempt's receipt for *name*, a file or the
         names passes, with the run's receipts, which its TOTAL adds up, and
         report the result to the run's records (receipt_signal, read by
-        compatibility/process_view record_receipt). Every attempt that paid
-        adds to what the earlier ones paid, as a file that failed and was
-        translated later paid for both; one that paid for nothing, as a retry
-        reading back the files an earlier attempt saved, keeps what they
-        cost."""
+        compatibility/process_view record_receipt). A names pass adds to the
+        earlier ones (_record_names_receipt). A file's attempt that paid
+        replaces what the earlier ones paid, since a later attempt can read
+        and count the same Batch results or failed replies again; one that
+        paid for nothing, as a retry reading back the files an earlier
+        attempt saved, keeps what they cost."""
+        from util.speakers import NAMES_FILE
+
         earlier = self.receipts.get(name)
-        if earlier is None:
+        if earlier is None or name != NAMES_FILE and paid_for(figures):
             self.receipts[name] = dict(figures)
-        elif paid_for(figures):
+        elif name == NAMES_FILE:
             self.receipts[name] = {
                 key: earlier[key] + figures[key]
                 for key in ("input", "output", "cost", "seconds")

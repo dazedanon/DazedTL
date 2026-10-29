@@ -34,20 +34,22 @@ def helper_command(workspace, project_id, *operation):
 
 
 def windows_note():
-    """How an assistant on Windows runs the Python and Git its task needs.
+    """How an assistant on Windows runs the commands, Python and Git its task
+    needs.
 
     A fresh Windows has only the Microsoft Store placeholder for Python and no
     Git but DazedTL's bundled copy, and Python prints to pipes and reads files
     in the ANSI code page, which cannot hold Japanese, so an assistant's own
     script over game text fails with UnicodeEncodeError unless UTF-8 mode is
     on. The example takes system.shell_command's form, which has PowerShell
-    decode UTF-8 too. Every copied task starts with this note.
+    decode UTF-8 too, and system.shell_note says how to run that form outside
+    PowerShell. Every copied task starts with this note.
     """
     if os.name != "nt":
         return ""
     python = system.shell_command(system.python_command("script.py"))
     note = (
-        "On Windows, run Python you write with DazedTL's own Python in UTF-8 mode, in PowerShell"
+        "Run Python you write with DazedTL's own Python in UTF-8 mode,"
         f" `{python}`,"
         " and install nothing into it:"
         " `python` on PATH may be missing or the Microsoft Store placeholder, and without"
@@ -57,6 +59,6 @@ def windows_note():
     if git and any(part.startswith("mingit-") for part in Path(git).parts):
         note += (
             " Git here is DazedTL's bundled copy and may not be on your PATH;"
-            f" in PowerShell run it as `& {system.shell_argument(git)}`."
+            f" run it as `& {system.shell_argument(git)}`."
         )
-    return note + "\n\n"
+    return system.shell_note() + note + "\n\n"

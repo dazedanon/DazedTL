@@ -473,17 +473,17 @@ class Evidence:
                     getattr(getattr(translation, "openai", None), "api_key", "") or ""
                 )
                 detail = error_evidence(error, secret)
-                # Observed tries decide whether anything reached the provider.
-                # Without them only an outright refusal of the final error does;
-                # recovered inner errors are display evidence, not authority.
+                # Observed tries decide whether anything could be billed.
+                # Without them only the final error does; recovered inner
+                # errors are display evidence, not authority.
                 tries = transmission.observed()
-                never_sent = (
-                    transmission.never_sent(tries)
+                unbilled = (
+                    transmission.unbilled(tries)
                     if tries
-                    else getattr(error, "status_code", None) in transmission.REFUSED
+                    else transmission.answered(error)[1] != "maybe"
                 )
                 self.update(
-                    "failed" if never_sent else "uncertain", error=json.dumps(detail)
+                    "failed" if unbilled else "uncertain", error=json.dumps(detail)
                 )
                 raise
             finally:

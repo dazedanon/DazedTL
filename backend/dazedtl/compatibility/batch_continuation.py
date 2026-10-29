@@ -10,7 +10,7 @@ from dazedtl.storage import write_json
 from dazedtl.translation.files import digest, live_path, read_json
 
 from .process_view import ledger, queue, saved
-from .transmission import REFUSED
+from .transmission import REFUSED, answered
 
 APPROVAL = "dazedtl_batch_approval"
 JOURNAL = "dazedtl-batch-submission.json"
@@ -328,8 +328,8 @@ def install_worker(root, plan):
         try:
             result = native(provider, requests, **kwargs)
         except Exception as error:
-            status = getattr(error, "status_code", None)
-            if type(status) is int and status in REFUSED:
+            status, outcome = answered(error)
+            if outcome == "refused":
                 intent["refused"] = status
                 write_json(path, {"intent": intent})
             raise
