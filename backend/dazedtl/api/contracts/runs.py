@@ -238,7 +238,6 @@ class RunProcess(TypedDict):
     received: NotRequired[int | None]
     validated: NotRequired[int | None]
     validatedFiles: NotRequired[int]
-    appliedFiles: NotRequired[int]
     failed: NotRequired[int]
     retryBlocked: NotRequired[bool]
     nextAction: NotRequired[str]

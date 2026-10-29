@@ -21,7 +21,7 @@ import {
 } from "../../ui/PageLayout";
 import { StatusIcon } from "../../ui/StatusIcon";
 import { FieldRow, DetailRow } from "../../ui/FieldRow";
-import { Tabs, TabPanel } from "../../ui/Tabs";
+import { Tabs, StackedTabPanels } from "../../ui/Tabs";
 import { Button } from "../../ui/Button";
 import { ActionBar } from "../../ui/ActionBar";
 import { ActionControl } from "../../ui/ActionControl";
@@ -52,9 +52,6 @@ export default function Settings({
   const { config } = draft;
   // Unsaved GameUpdate edits stay here, so switching tabs keeps them.
   const [gameUpdate, setGameUpdate] = useState<GameUpdateDefaults | null>(null);
-  // Advanced model options stays open across tabs, since the Thinking effort
-  // note sends the user to API connections to check again and back.
-  const [advanced, setAdvanced] = useState(false);
   const gameUpdateDirty =
     !!gameUpdate &&
     !!config &&
@@ -100,6 +97,13 @@ export default function Settings({
     checked?.status === "verified" || checked?.status === "reachable";
   const check = (id: string) =>
     action.run(() => draft.checkConnection(id), "checked", "check");
+  const loading = (
+    <PageBody>
+      <p className="muted" role="status">
+        Loading settings…
+      </p>
+    </PageBody>
+  );
   return (
     <PageLayout
       variant="editor"
@@ -135,66 +139,14 @@ export default function Settings({
           <Message message={action.error} onDismiss={action.clear} />
         )}
       </PageMessages>
-      {section === "updates" ? (
-        <TabPanel id="settings" value={section}>
-          <Updates running={running} />
-        </TabPanel>
-      ) : section === "notifications" ? (
-        <TabPanel id="settings" value={section}>
-          <Notifications />
-        </TabPanel>
-      ) : !config ? (
-        <PageBody>
-          <p className="muted" role="status">
-            Loading settings…
-          </p>
-        </PageBody>
-      ) : (
-        <TabPanel id="settings" value={section}>
-          {section === "gameupdate" ? (
-            <GameUpdateSettings
-              values={gameUpdate || config.gameUpdate}
-              dirty={gameUpdateDirty}
-              busy={busy}
-              error={action.key === "gameupdate" ? action.error : ""}
-              notice={action.key === "gameupdate" ? action.notice : ""}
-              edit={(values) => {
-                if (action.key === "gameupdate") action.clear();
-                setGameUpdate(values);
-              }}
-              save={() =>
-                action.run(
-                  async () => {
-                    await draft.saveGameUpdate(gameUpdate || config.gameUpdate);
-                    setGameUpdate(null);
-                  },
-                  "GameUpdate settings saved.",
-                  "gameupdate",
-                )
-              }
-              revert={() => {
-                action.clear();
-                setGameUpdate(null);
-              }}
-            />
-          ) : section === "preferences" ? (
-            <TranslationDefaults
-              config={config}
-              connection={current}
-              dirty={draft.dirty}
-              busy={busy}
-              running={running}
-              error={action.error}
-              notice={action.notice}
-              advanced={advanced}
-              setAdvanced={setAdvanced}
-              edit={draft.edit}
-              editModelOptions={draft.editModelOptions}
-              save={() => action.run(draft.save, "Translation defaults saved.")}
-              revert={() =>
-                action.run(draft.revert, "Reverted to saved defaults.")
-              }
-            />
+      {/* Every tab stays mounted, so a round trip to another tab keeps its
+          place: scroll position, open disclosures and choices. */}
+      <StackedTabPanels
+        id="settings"
+        value={section}
+        panels={{
+          api: !config ? (
+            loading
           ) : editId !== null ? (
             <ConnectionEditor
               key={editId}
@@ -417,9 +369,59 @@ export default function Settings({
                 />
               </ActionBar>
             </>
-          )}
-        </TabPanel>
-      )}
+          ),
+          preferences: !config ? (
+            loading
+          ) : (
+            <TranslationDefaults
+              config={config}
+              connection={current}
+              dirty={draft.dirty}
+              busy={busy}
+              running={running}
+              error={action.error}
+              notice={action.notice}
+              edit={draft.edit}
+              editModelOptions={draft.editModelOptions}
+              save={() => action.run(draft.save, "Translation defaults saved.")}
+              revert={() =>
+                action.run(draft.revert, "Reverted to saved defaults.")
+              }
+            />
+          ),
+          gameupdate: !config ? (
+            loading
+          ) : (
+            <GameUpdateSettings
+              values={gameUpdate || config.gameUpdate}
+              dirty={gameUpdateDirty}
+              busy={busy}
+              error={action.key === "gameupdate" ? action.error : ""}
+              notice={action.key === "gameupdate" ? action.notice : ""}
+              edit={(values) => {
+                if (action.key === "gameupdate") action.clear();
+                setGameUpdate(values);
+              }}
+              save={() =>
+                action.run(
+                  async () => {
+                    await draft.saveGameUpdate(gameUpdate || config.gameUpdate);
+                    setGameUpdate(null);
+                  },
+                  "GameUpdate settings saved.",
+                  "gameupdate",
+                )
+              }
+              revert={() => {
+                action.clear();
+                setGameUpdate(null);
+              }}
+            />
+          ),
+          notifications: <Notifications />,
+          updates: <Updates running={running} />,
+        }}
+      />
       {removal && config && (
         <RemoveConnection
           connection={removal}
