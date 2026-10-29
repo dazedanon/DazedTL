@@ -340,7 +340,7 @@ class TranslationEngine:
         if not str(secret or "").strip():  # A keyless connection.
             return None
         client = claude_tokens.CountClient(
-            str(secret).strip(), configuration["endpoint"] or None
+            str(secret).strip(), configuration["endpoint"]
         )
         return claude_tokens.input_tokens(
             client, [item["params"] for item in requests], self.token_count

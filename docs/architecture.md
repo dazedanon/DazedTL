@@ -119,7 +119,8 @@ A run's receipts count each billed item once, in its evidence ledger, however it
 A result read again, as after a Stop and resume, by a retry of a reply that failed validation or by another file it serves, adds nothing, and a refused request and its clarification are one item, priced together as Assistant-led prices them.
 A file's tokens and cost, and its names passes' under their own name, are what the ledger counted for it, added to the receipts the run's attempts saved before the ledger counted them, which are never rewritten, and its seconds add up what each attempt spent on it, by one rule (`run_receipts` in [translation_task](../backend/dazedtl/engine/util/translation_task.py)) that the run's records ([process_view](../backend/dazedtl/compatibility/process_view.py) `file_receipts`) and its TOTAL both read; the worker reports each one's seconds as a `seconds` event.
 Each ledger item names its version (`PAID_USAGE` in process_view).
-A run without a ledger, from before `GENERATION_PARAMETERS` in [preferences.py](../backend/dazedtl/settings/preferences.py) or a Batch imported from the original tool, keeps the receipts it saved and, for Live, the receipt lines its log retained (`saved_receipts`); its later attempts add no cost of their own.
+A Batch run frozen without the rest of the ledger, as one imported from the original tool is, keeps its results' `batch_validation` part all the same (`keep_paid_items` in [worker_policy](../backend/dazedtl/compatibility/worker_policy.py)), unless its earlier attempts saved receipts without it, since its results read again would count twice.
+A run without a ledger, from before `GENERATION_PARAMETERS` in [preferences.py](../backend/dazedtl/settings/preferences.py) or such a Batch, keeps the receipts it saved and, for Live, the receipt lines its log retained (`saved_receipts`); its later attempts add no cost of their own.
 
 ### Batch execution and recovery
 

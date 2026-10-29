@@ -47,8 +47,16 @@ class CountStandIn(BaseHTTPRequestHandler):
 
 server = ThreadingHTTPServer(("127.0.0.1", 0), CountStandIn)
 threading.Thread(target=server.serve_forever, daemon=True).start()
+# The Anthropic preset's address is the stand-in, as in a test scenario
+# (scripts/scenario.mjs), so the count process counts at the run's address.
+# The presets were read when the suite's package loaded, before this.
+stand_in = f"http://127.0.0.1:{server.server_port}/api.anthropic.com"
+os.environ["DAZEDTL_TEST_ANTHROPIC_ENDPOINT"] = stand_in
 
 from dazedtl.api.server import Application
+from dazedtl.settings.providers import PROVIDERS
+
+PROVIDERS["anthropic"]["endpoint"] = stand_in
 
 model = "claude-sonnet-5-5"
 game = temporary / "game"
@@ -91,10 +99,8 @@ app.settings_save(
 app.settings.prepare_engine(mode="estimate")
 manual = app.backend.manual
 with app.backend.context():
-    import desktop.backend.manual as engine_manual
     from util import translation
 
-    environment = engine_manual.worker_environment
     listing = manual.inspect(str(game), "RPG Maker MV/MZ")
 
 
@@ -132,24 +138,14 @@ def estimate_worker(_launch, _arguments, cwd, **_options):
 sys.modules["desktop.backend._dazedtl_manual"].launch_worker.layer(
     "probe-estimate-worker", estimate_worker
 )
-# Only the count process reads this module's environment, which leads it to
-# the stand-in.
-with patch.object(
-    engine_manual,
-    "worker_environment",
-    lambda workspace, plan: {
-        **environment(workspace, plan),
-        "ANTHROPIC_BASE_URL": f"http://127.0.0.1:{server.server_port}",
-    },
-):
-    with app.backend.context():
-        job = manual.start(
-            str(game), "RPG Maker MV/MZ", ["Items.json"], listing["revision"]
-        )
-    # Half the suite's budget (scripts/test.mjs) for the run to complete.
-    manual.controller(job["id"]).worker.join(
-        float(os.environ.get("DAZEDTL_TEST_BUDGET") or 10) / 2
+with app.backend.context():
+    job = manual.start(
+        str(game), "RPG Maker MV/MZ", ["Items.json"], listing["revision"]
     )
+# Half the suite's budget (scripts/test.mjs) for the run to complete.
+manual.controller(job["id"]).worker.join(
+    float(os.environ.get("DAZEDTL_TEST_BUDGET") or 10) / 2
+)
 result = manual.jobs[job["id"]]
 assert result["status"] == "complete", (result["status"], result.get("message"))
 estimate = result["estimate"]
@@ -157,7 +153,8 @@ assert estimate["provider"] == "anthropic", estimate
 assert estimate["approximate_input"] is False, estimate
 assert f"[Input: {estimate['input_tokens']}]" in result["message"], result["message"]
 assert calls and all(
-    call[:2] == ("/v1/messages/count_tokens", "sk-ant-probe") for call in calls
+    call[:2] == ("/api.anthropic.com/v1/messages/count_tokens", "sk-ant-probe")
+    for call in calls
 ), calls
 # One request, counted whole: its count is the estimate's input.
 assert estimate["input_tokens"] == max(call[2] for call in calls), (estimate, calls)
