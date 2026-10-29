@@ -2618,6 +2618,7 @@ class ManualJobs:
             # Keep the seconds the run's worker reports after the native log
             # cap: a file's, and the names passes', which name no file.
             metric_run = {
+                "id": "fixture",
                 "mode": "batch",
                 "phase": "consume",
                 "files": ["Items.json"],

@@ -194,6 +194,12 @@ class Evidence:
                     connection.execute(
                         "ALTER TABLE requests ADD COLUMN " + name + " INTEGER"
                     )
+            # The run's receipts read only the paid items, never the request
+            # bodies beside them (process_view paid_receipts).
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS requests_paid ON requests(paid) "
+                "WHERE paid IS NOT NULL"
+            )
             connection.execute(
                 "CREATE TABLE IF NOT EXISTS validated_items (identity TEXT PRIMARY KEY, source TEXT, response TEXT)"
             )
@@ -433,16 +439,21 @@ class Evidence:
                 return
             if not (figures["input"] or figures["output"] or figures["cost"]):
                 return
-            with self.connect() as connection:
-                row = connection.execute(
-                    "SELECT filename FROM requests WHERE id=? AND paid IS NULL",
-                    (current,),
-                ).fetchone()
-                if row is not None:
-                    connection.execute(
-                        "UPDATE requests SET paid=? WHERE id=?",
-                        (paid_record(row[0], figures), current),
-                    )
+            # The response is paid for and kept already: a ledger that cannot
+            # record its cost must not fail its file over it.
+            try:
+                with self.connect() as connection:
+                    row = connection.execute(
+                        "SELECT filename FROM requests WHERE id=? AND paid IS NULL",
+                        (current,),
+                    ).fetchone()
+                    if row is not None:
+                        connection.execute(
+                            "UPDATE requests SET paid=? WHERE id=?",
+                            (paid_record(row[0], figures), current),
+                        )
+            except sqlite3.Error as error:
+                print(f"⚠ A response's cost could not be recorded: {error}", flush=True)
 
         if getattr(translation, "record_paid", None) is not None:
             translation.record_paid.layer(LAYER, paid)

@@ -487,9 +487,10 @@ def manual_jobs(source, workspace, lock, allow_providers):
                 return super()._event(job, event)
 
         def receipts(self, job):
-            # The receipts saved before the run's evidence ledger counted
-            # paid usage; a resumed attempt reads the rest from the ledger.
-            return job.get("file_metrics", {})
+            from .process_view import saved_receipts
+
+            # A resumed attempt reads the rest from the run's evidence ledger.
+            return saved_receipts(self.folder(job["id"]), job)
 
         def seconds(self, job):
             return job.get("file_seconds", {})

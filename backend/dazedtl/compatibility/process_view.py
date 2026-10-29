@@ -610,8 +610,7 @@ def paid_receipts(root):
     "cost"}``: each billed item once, by the file that pays for it, a Live
     response's as it arrived and a Batch result's at its first read in the
     run, however the file ended."""
-    path = Path(root) / "log/dazedtl-process.sqlite3"
-    if not path.is_file():
+    if not _has_ledger(root):
         return {}
     return {
         name: dict(figures)
@@ -637,7 +636,7 @@ def _paid_receipts(root, stamp):
                 "SUM(json_extract(paid,'$.input')),"
                 "SUM(json_extract(paid,'$.output')),"
                 f"SUM(json_extract(paid,'$.cost')) FROM {table} "
-                "WHERE json_extract(paid,'$.version')=? GROUP BY 1",
+                "WHERE paid IS NOT NULL AND json_extract(paid,'$.version')=? GROUP BY 1",
                 (PAID_USAGE,),
             ):
                 if not isinstance(name, str):
@@ -659,29 +658,36 @@ def record_seconds(job, name, seconds):
         job.setdefault("file_seconds", {})[name] = seconds
 
 
+def saved_receipts(root, job):
+    """The receipts the run in *root* saved before its evidence ledger counted
+    paid usage, which are never rewritten: those its worker reported and,
+    for a run without a ledger (settings/preferences GENERATION_PARAMETERS),
+    those its log retained from before receipts were saved."""
+    receipts = {}
+    if job.get("mode") in {"translate", "offline"} and not _has_ledger(root):
+        for line in job.get("log", []):
+            receipts.update(file_metric(line, job.get("files", [])))
+    return {**receipts, **job.get("file_metrics", {})}
+
+
+def _has_ledger(root):
+    return (Path(root) / "log/dazedtl-process.sqlite3").is_file()
+
+
 def file_receipts(root, job):
     """Each file's receipt in the run in *root*, and its names passes' under
     NAMES_FILE, by the run's one rule (engine util/translation_task
-    run_receipts): the receipts its attempts saved before its evidence ledger
-    counted paid usage, which are never rewritten, what the ledger counted
-    and the seconds its attempts spent. A run from before the ledger
-    (settings/preferences GENERATION_PARAMETERS) keeps the receipts it saved,
-    and those its log retained from before receipts were saved."""
+    run_receipts): its saved receipts, what its evidence ledger counted and
+    the seconds its attempts spent. A run without a ledger keeps its saved
+    receipts."""
     from util.translation_task import run_receipts
 
-    files = {*job.get("files", []), NAMES_FILE}
-    if not (Path(root) / "log/dazedtl-process.sqlite3").is_file():
-        result = {}
-        if job.get("mode") in {"translate", "offline"}:
-            for line in job.get("log", []):
-                result.update(file_metric(line, job.get("files", [])))
-        receipts = {**result, **job.get("file_metrics", {})}
-    else:
+    receipts = saved_receipts(root, job)
+    if _has_ledger(root):
         receipts = run_receipts(
-            job.get("file_metrics", {}),
-            paid_receipts(root),
-            job.get("file_seconds", {}),
+            receipts, paid_receipts(root), job.get("file_seconds", {})
         )
+    files = {*job.get("files", []), NAMES_FILE}
     return {name: figures for name, figures in receipts.items() if name in files}
 
 
