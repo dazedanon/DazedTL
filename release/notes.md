@@ -26,3 +26,7 @@
 - **Translate:** a file stopped partway in a Translation run is now translated again on Resume, which skipped it as finished when its engine had saved part of it.
 - **Translate:** a reply with the wrong number of lines that an engine kept in its original text now counts toward the run's mismatches, which read the file as fully translated.
 - **Translate:** an Image Text file's cost and time now show with the file, which left them out.
+- **Translate:** a file of a game other than RPG Maker or WOLF that fails partway when translated again now keeps its earlier translation as it was, instead of replacing it with the part that finished, or with an empty file for Lune, Ren'Py, Unity and CSV; a CSV file that fails partway now shows as failed, which counted it as translated.
+- **Translate:** on Windows, a Lune, Ren'Py or Unity file no longer waits about two seconds after each line it translates.
+- **Translate:** a CSV file with nothing left to translate is now written whole, which wrote it empty.
+- **Translate:** an RPG Maker data or plugin file that cannot be saved now fails with the reason, such as a full disk, where an RPG Maker file read only "Translation failed" and a plugin file counted as translated.
