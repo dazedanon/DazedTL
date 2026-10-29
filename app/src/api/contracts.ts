@@ -246,6 +246,9 @@ export type RequestPage = {
   total: number;
   previous: number | null;
   next: number | null;
+  issues: number[];
+  nextIssue: number | null;
+  firstIssue: number | null;
 };
 
 export type ProviderBatch = {
@@ -3403,6 +3406,7 @@ export type GuidedRequestsRequest = {
   run_id: string;
   group?: string | null;
   index?: number | null;
+  unconfirmed?: boolean;
 };
 
 export type GuidedPayloadRequest = RunIndexRequest & {

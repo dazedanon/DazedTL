@@ -70,15 +70,17 @@ export type RequestInspectionTarget = {
   validation?: boolean;
 };
 const inspectorKey = (id: string) => "dazedtl:request-view:" + id;
-/** A Live request still at the provider after its run ended has no
-    confirmed outcome. */
+/** Whether a run's requests still at the provider are unconfirmed: a Live
+    run's, once it ended. Request pages count them as issues by it. */
+const atProviderUnconfirmed = (job: Job) =>
+  job.mode !== "batch" && !activeRun(job);
+/** A request with no confirmed outcome. */
 const unconfirmed = (
   job: Job,
   row: { state: string; providerFinished?: boolean },
 ) =>
   row.state === "uncertain" ||
-  (job.mode !== "batch" &&
-    !activeRun(job) &&
+  (atProviderUnconfirmed(job) &&
     row.state === "submitted" &&
     !row.providerFinished);
 /** The request to read first: an unconfirmed submission, then a failed or
@@ -130,6 +132,7 @@ type Props = {
   readRequests?: (
     group: string | null,
     index: number | null,
+    unconfirmed: boolean,
   ) => Promise<RequestPage>;
   initialRequest?: RequestInspectionTarget;
   readNames?: (offset: number) => Promise<NameTranslationPage>;
@@ -203,11 +206,17 @@ function RequestProcess({
     view.index >= 0 &&
     loaded.page.rows.some((row) => row.indices.includes(view.index));
   const anchor = holds ? loaded.anchor : view.index >= 0 ? view.index : null;
+  const submitted = atProviderUnconfirmed(job);
   const pageRead = useRead(
     readRequests && !fileOnly
-      ? JSON.stringify([group, anchor, process.requestRevision || ""])
+      ? JSON.stringify([
+          group,
+          anchor,
+          process.requestRevision || "",
+          submitted,
+        ])
       : null,
-    () => readRequests!(group, anchor),
+    () => readRequests!(group, anchor, submitted),
   );
   useOnChange(pageRead.value, (value) => {
     if (value) setLoaded({ group, anchor, page: value });
@@ -396,6 +405,48 @@ function RequestProcess({
       !process.files?.[issue.file]?.states.includes("rejected"),
   );
   const issue = issueRequest(job);
+  // Review issues steps through the issues the request pages list, in the
+  // groups' order: the Response of the one shown, then each next one, on
+  // this page, after it, then the first again; it leaves the header while
+  // that would change nothing.
+  const pageIssues = page?.issues || [];
+  const shownIssue = !!selected && pageIssues.includes(selected.index);
+  const onIssue = shownIssue && contentTab === "response";
+  const later =
+    onIssue &&
+    requests
+      .slice(requests.indexOf(selected) + 1)
+      .find((row) => pageIssues.includes(row.index));
+  const after = [page?.nextIssue, page?.firstIssue].find(
+    (index): index is number =>
+      index != null && !selected?.indices.includes(index),
+  );
+  const following: InspectorView | undefined = later
+    ? { ...view, index: later.index, tab: "response" }
+    : onIssue && after != null
+      ? { index: after, tab: "response", batch: null }
+      : undefined;
+  const review: { view: InspectorView; file?: string } | null = !page
+    ? issue
+      ? { view: issueView(job), file: issue.file || undefined }
+      : null
+    : onIssue
+      ? following
+        ? { view: following }
+        : null
+      : shownIssue
+        ? { view: { ...view, index: selected.index, tab: "response" } }
+        : page.firstIssue != null
+          ? { view: { index: page.firstIssue, tab: "response", batch: null } }
+          : null;
+  const validation =
+    !review && !issue && !!process.validationIssues?.length
+      ? {
+          view: { index: -1, tab: "json", batch: "file" } as InspectorView,
+          file: process.validationIssues[0].file,
+        }
+      : null;
+  const reviewAction = review || validation;
   return (
     <div className="translation-process" data-view={view.tab}>
       <div className="process-overview">
@@ -416,19 +467,13 @@ function RequestProcess({
             <span className="badge">{historyOutcome(job).label}</span>
           )}
         </div>
-        {(issue || !!process.validationIssues?.length) && (
+        {reviewAction && (
           <Button
             variant="quiet"
             onClick={() => {
-              setUnlinkedFile(
-                issue?.file || process.validationIssues?.[0].file,
-              );
+              setUnlinkedFile(reviewAction.file);
               setAttemptSelection(null);
-              change(
-                issue
-                  ? issueView(job)
-                  : { index: -1, tab: "json", batch: "file" },
-              );
+              change(reviewAction.view);
             }}
           >
             Review issues

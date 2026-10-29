@@ -549,6 +549,21 @@ class ProcessTests(unittest.TestCase):
         self.assertEqual(page("batch", 251), ("unsent", 0, None, None))
         self.assertEqual(page("missing", 999), ("batch", 0, None, 100))
         self.assertIsNone(process_view.request_page({"groups": []})["group"])
+        # Review issues did nothing on the first failed request's Response; it
+        # steps to the next issue, which may lie past the page or its group.
+        rows = view["groups"][0]["rows"]
+        rows[150]["state"] = "submitted"
+        rows[230]["state"] = "failed"
+        view["groups"][1]["rows"][0]["state"] = "rejected"
+
+        def issues(index, unconfirmed=False):
+            value = process_view.request_page(view, None, index, unconfirmed)
+            return value["issues"], value["nextIssue"], value["firstIssue"]
+
+        self.assertEqual(issues(5, unconfirmed=True), ([], 150, 150))
+        self.assertEqual(issues(5), ([], 230, 230))
+        self.assertEqual(issues(201), ([230], 250, 230))
+        self.assertEqual(issues(251), ([250], None, 230))
 
     def test_older_live_retries_count_once_only_after_a_replaced_attempt(self):
         # Runs saved before retries recorded their first attempt showed a

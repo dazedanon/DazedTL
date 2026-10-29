@@ -8,6 +8,7 @@ import threading
 from collections import OrderedDict
 from contextlib import closing
 from functools import lru_cache
+from itertools import chain
 from pathlib import Path
 from typing import Any
 
@@ -1035,11 +1036,31 @@ def request_view(root, job):
     }
 
 
-def request_page(view, group=None, index=None):
+def issue(row, unconfirmed=False):
+    """Whether a request is one Inspect run's Review issues opens: a failed,
+    rejected or uncertain one, and with *unconfirmed*, which the inspector
+    decides for its run as it labels its requests, one still marked at the
+    provider."""
+    return row.get("state") in {"failed", "rejected", "uncertain"} or (
+        unconfirmed
+        and row.get("state") == "submitted"
+        and not row.get("providerFinished")
+    )
+
+
+def request_page(view, group=None, index=None, unconfirmed=False):
     """One page of a request group: the group's page holding `index`, else
     the first page of `group` (a Batch or clarification ID), else of the
-    first group."""
+    first group. For Review issues, which steps through the issues (issue)
+    in the order the groups list them: ``issues``, the page's own,
+    ``nextIssue``, the first after the page, and ``firstIssue``, the first
+    of all."""
     groups = view["groups"]
+
+    def issues(rows):
+        return (row["index"] for row in rows if issue(row, unconfirmed))
+
+    every = chain.from_iterable(item["rows"] for item in groups)
 
     def named(row):
         return group in {row["id"], *row["batches"]}
@@ -1062,21 +1083,32 @@ def request_page(view, group=None, index=None):
             "total": 0,
             "previous": None,
             "next": None,
+            "issues": [],
+            "nextIssue": None,
+            "firstIssue": None,
         }
     rows = chosen["rows"]
     position = next(
         (number for number, row in enumerate(rows) if index in row["indices"]), 0
     )
     offset = position - position % REQUEST_PAGE
+    page = rows[offset : offset + REQUEST_PAGE]
+    later = chain(
+        rows[offset + REQUEST_PAGE :],
+        *(item["rows"] for item in groups[groups.index(chosen) + 1 :]),
+    )
     return {
         "group": chosen["id"],
-        "rows": rows[offset : offset + REQUEST_PAGE],
+        "rows": page,
         "offset": offset,
         "total": len(rows),
         "previous": rows[offset - REQUEST_PAGE]["index"] if offset else None,
         "next": rows[offset + REQUEST_PAGE]["index"]
         if offset + REQUEST_PAGE < len(rows)
         else None,
+        "issues": list(issues(page)),
+        "nextIssue": next(issues(later), None),
+        "firstIssue": next(issues(every), None),
     }
 
 
