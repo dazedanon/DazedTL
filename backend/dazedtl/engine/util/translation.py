@@ -3798,7 +3798,10 @@ def callMistral(params, retries=6):
                 raise Exception(f"Mistral connection error: {e}")
             time.sleep(min(45, 2 ** attempt + random.random()))
         attempt += 1
-    raise Exception(f"Mistral API failed after {retries + 1} attempts: {last_error}")
+    # Over the provider's error, whose status the run reports (run_stops).
+    raise Exception(
+        f"Mistral API failed after {retries + 1} attempts: {last_error}"
+    ) from last_error
 
 
 class TranslationConfig:

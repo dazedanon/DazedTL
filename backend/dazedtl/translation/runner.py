@@ -5,6 +5,7 @@ import time
 from contextlib import nullcontext
 from functools import partial
 
+from dazedtl.compatibility import transmission
 from dazedtl.compatibility.batch_window import (
     CHUNK_POLICY,
     RUN_POLICY,
@@ -383,6 +384,17 @@ class Runner:
                 for key in set().union(*receipts)
             }
 
+    def send_live(self, params, tries):
+        """The provider's answer to one Live request, sent once, with each
+        HTTP try it made added to *tries*, which say whether a failed request
+        was billed (transmission.ended), as in a Guided run."""
+        transmission.install()
+        with transmission.watching() as watched:
+            try:
+                return self.received(self.provider.live(params))
+            finally:
+                tries.extend(watched)
+
     def live(self):
         clarify = ClarifyOnce(
             self.plan["configuration"].get("refusalRetry"), JobRetries(self.job)
@@ -409,23 +421,28 @@ class Runner:
                 "message": "Awaiting provider response.",
             }
             self.save("running", "Translating " + identity)
+            tries = []
             try:
-                response = self.received(self.provider.live(params))
+                response = self.send_live(params, tries)
             except Exception as exc:  # noqa: BLE001
-                # Only an answer that proves it unbilled may be sent again.
-                status, outcome = answered(exc)
+                # Only tries that prove it unbilled let it be sent again.
+                status, outcome = transmission.ended(tries, exc)
                 certain = outcome != "maybe"
                 self.job["states"][identity] = {
                     "state": "failed" if certain else "uncertain",
                     "message": self.refused_effort([exc.__cause__ or exc])
                     or (
-                        "Provider rejected the request"
-                        if outcome == "refused"
-                        else "The provider failed the request"
+                        "The provider could not be reached."
+                        if outcome == "unreached"
+                        else (
+                            "Provider rejected the request"
+                            if outcome == "refused"
+                            else "The provider failed the request"
+                        )
+                        + " (HTTP "
+                        + str(status)
+                        + ")."
                     )
-                    + " (HTTP "
-                    + str(status)
-                    + ")."
                     if certain
                     else "The request outcome is uncertain. It will not be sent again automatically.",
                 }
@@ -446,10 +463,11 @@ class Runner:
                     "message": "Clarifying the translation context once.",
                 }
                 self.save("running", self.job["states"][identity]["message"])
+                tries = []
                 try:
-                    response = self.received(self.provider.live(params))
+                    response = self.send_live(params, tries)
                 except Exception as exc:  # noqa: BLE001
-                    certain = answered(exc)[1] != "maybe"
+                    certain = transmission.ended(tries, exc)[1] != "maybe"
                     self.job["states"][identity] = {
                         "state": "failed" if certain else "uncertain",
                         "message": "The clarification retry failed. Review the saved request before further paid work.",

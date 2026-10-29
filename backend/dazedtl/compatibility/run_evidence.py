@@ -476,11 +476,8 @@ class Evidence:
                 # Observed tries decide whether anything could be billed.
                 # Without them only the final error does; recovered inner
                 # errors are display evidence, not authority.
-                tries = transmission.observed()
                 unbilled = (
-                    transmission.unbilled(tries)
-                    if tries
-                    else transmission.answered(error)[1] != "maybe"
+                    transmission.ended(transmission.observed(), error)[1] != "maybe"
                 )
                 self.update(
                     "failed" if unbilled else "uncertain", error=json.dumps(detail)
