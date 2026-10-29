@@ -10,15 +10,18 @@ each model's own tokenizer, so a Claude estimate is always estimated again.
 A pricing fix (provider_costs.PRICE_RULES_VERSION) keeps the counts too, so a
 figure priced under older rules than its route's (``route_rules``) is priced
 again under today's on its next view, or reads outdated when its counts
-can't be; a fix to another route's rules leaves it standing. ``read``
+can't be; a fix to another route's rules leaves it standing. A figure
+whose settings now send it on another route than the one that priced it
+(``rerouted``) is priced again on theirs the same way. ``read``
 decides this for every saved figure a user approves or reads: an
 Assistant-led quote waiting for approval, a Guided Translate estimate and a
 whole-game estimate.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from dazedtl.compatibility.request_text import request_text
+from dazedtl.freshness import Change
 from dazedtl.settings.execution import LOOKED_UP
 
 from .files import digest
@@ -111,13 +114,34 @@ def route_rules(*routes):
     return max(route_price_rules(route) for route in routes or (None,))
 
 
+def recorded_route(figure, key, provider):
+    """The route that priced a saved figure, the Batch provider it records
+    as ``key``; one saved before it recorded one reads as ``provider``, the
+    Batch provider of its current settings (``rerouted``)."""
+    return figure.get(key, provider)
+
+
 def quote_route(quote, provider):
-    """The route that priced an Assistant-led quote, the Batch provider it
-    records as ``route``; one saved before quotes recorded it reads as
-    ``provider``, the Batch provider of its run's current settings. A quote
-    whose route is no longer its settings' is priced again on theirs
-    (service.changed_since)."""
-    return quote.get("route", provider)
+    """The route that priced an Assistant-led quote, recorded as ``route``
+    (``recorded_route``)."""
+    return recorded_route(quote, "route", provider)
+
+
+def estimate_route(counts, provider):
+    """The route that priced a Guided estimate's ``counts``, recorded as
+    ``provider`` (``recorded_route``)."""
+    return recorded_route(counts, "provider", provider)
+
+
+def rerouted(change, routes, provider):
+    """``change`` (freshness.compare) of a figure priced on ``routes``
+    (``quote_route``, ``estimate_route``) whose settings would now send it
+    on ``provider``: once any of them is another route, as after a DazedTL
+    update routes the same settings elsewhere, its price changed too, so
+    ``read`` prices its counts again on ``provider`` or outdates it."""
+    if all(route == provider for route in routes):
+        return change
+    return replace(change or Change(), prices=True)
 
 
 @dataclass(frozen=True)

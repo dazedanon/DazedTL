@@ -320,6 +320,7 @@ class CompatibilityContracts(unittest.TestCase):
                 repriced = reprice(
                     translation.estimateBatchCost(before, queue_file=queue),
                     configuration,
+                    "openai",
                 )
                 self.assertEqual({key: repriced[key] for key in expected}, expected)
                 counts = TranslationEngine.openai_cache(

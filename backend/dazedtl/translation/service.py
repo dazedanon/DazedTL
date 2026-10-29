@@ -102,7 +102,7 @@ def changed_since(current, frozen_sha256, frozen, quote, provider, *, reprice=Tr
     freeze now, or None; ``current`` is None when they can't form a run. The
     run's ``quote``, None for a run without one, priced under older price
     rules than ``provider``'s changed too (repricing.route_rules), as did
-    one priced on another route (repricing.quote_route): ``provider`` is the
+    one priced on another route (repricing.rerouted): ``provider`` is the
     Batch provider of ``current``, the route the run would be sent on. One
     counted by an older output rule (estimate_prices.OUTPUT_RULES_VERSION)
     changed its version.
@@ -135,8 +135,10 @@ def changed_since(current, frozen_sha256, frozen, quote, provider, *, reprice=Tr
     )
     # Compared apart from the settings, which still say whether the user
     # changed them too.
-    if priced and repricing.quote_route(quote, provider) != provider:
-        change = replace(change or Change(), prices=True)
+    if priced:
+        change = repricing.rerouted(
+            change, [repricing.quote_route(quote, provider)], provider
+        )
     if priced and estimate_prices.output_rules(quote) != (
         estimate_prices.OUTPUT_RULES_VERSION
     ):

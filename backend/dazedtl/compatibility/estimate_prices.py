@@ -138,20 +138,24 @@ def prices(counts, configuration, provider, cache=None):
     return value
 
 
-def reprice(estimate, configuration):
-    """``estimate`` priced with the model and rates of ``configuration``, or
-    None when its counts can't be priced again. Claude counts with each
-    model's own tokenizer, so a Claude estimate is never priced again."""
-    provider = estimate.get("provider")
+def reprice(estimate, configuration, route):
+    """``estimate`` priced with the model and rates of ``configuration`` as
+    a Batch of ``route``, the Batch provider its settings send it on now,
+    or None when its counts can't be priced again. Claude counts with each
+    model's own tokenizer, so an estimate counted for Claude, or one whose
+    route is now Claude's, is never priced again; a Batch also needs a route
+    that runs one, as an Assistant-led quote does (service.reading)."""
     if (
-        provider == "anthropic"
+        "anthropic" in (estimate.get("provider"), route)
+        or configuration.get("mode") == "batch"
+        and not route
         or "input_tokens" not in estimate
         or "output_tokens" not in estimate
-        or provider == "openai"
+        or route == "openai"
         and "cacheable_tokens" not in estimate
     ):
         return None
-    return {**estimate, **prices(estimate, configuration, provider)}
+    return {**estimate, **prices(estimate, configuration, route)}
 
 
 def usage_cost(usage, configuration, provider, rows=None):
