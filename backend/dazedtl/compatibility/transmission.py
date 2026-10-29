@@ -7,6 +7,7 @@ connection. Each try is observed at the transport instead.
 
 import importlib
 import threading
+from contextlib import contextmanager
 from urllib.parse import urlsplit
 
 from dazedtl.settings.providers import own_server
@@ -15,6 +16,8 @@ from dazedtl.settings.providers import own_server
 # processed and no Batch was created. Timeouts, conflicts and server errors can
 # follow processing.
 REFUSED = frozenset({400, 401, 402, 403, 404, 405, 413, 415, 422, 429})
+# The one refusal another try may pass: the provider's rate limit.
+RATE_LIMITED = 429
 # A model server's own server errors and overload answers, which end a Live
 # request unanswered and unbilled. Anthropic: "Failed requests aren't charged"
 # (https://support.claude.com/en/articles/8977456), 500 api_error and 529
@@ -66,6 +69,35 @@ def unbilled(tries):
     the model server itself prove that sending the request again cannot be
     charged twice."""
     return bool(tries) and all(outcome != "maybe" for outcome in tries)
+
+
+@contextmanager
+def watching():
+    """Every try the current thread sends while the block runs, oldest first,
+    as (how it ended, its HTTP status or None) pairs, whichever request
+    records it: a call can send several, such as a JSON-mode request after a
+    refused one or a clarification after a refusal."""
+    watched = []
+    _local.watchers = (*getattr(_local, "watchers", ()), watched)
+    try:
+        yield watched
+    finally:
+        _local.watchers = tuple(
+            other for other in _local.watchers if other is not watched
+        )
+
+
+def resendable(tries):
+    """Whether a Live request that failed after *tries* (watching) may be
+    sent again: no try may have been processed and billed (unbilled), and the
+    last could pass on another, since it never connected, met a rate limit
+    or failed by the model server itself. Any other refusal comes back alike.
+    A connection lost after the request was sent may follow processing: only
+    a connection never made proves nothing reached the provider."""
+    if not unbilled([outcome for outcome, _status in tries]):
+        return False
+    outcome, status = tries[-1]
+    return outcome in {"unreached", "failed"} or status == RATE_LIMITED
 
 
 def answered(error):
@@ -124,19 +156,23 @@ def _observing(library):
     unreached = (library.ConnectError, library.ConnectTimeout)
 
     def handle_request(self, request):
-        tries = getattr(_local, "tries", None)
         try:
             response = native(self, request)
         except unreached:
-            if tries is not None:
-                tries.append("unreached")
+            _observe("unreached", None)
             raise
         except BaseException:
-            if tries is not None:
-                tries.append("maybe")
+            _observe("maybe", None)
             raise
-        if tries is not None:
-            tries.append(answer(response.status_code, str(request.url)))
+        _observe(answer(response.status_code, str(request.url)), response.status_code)
         return response
 
     return handle_request
+
+
+def _observe(outcome, status):
+    tries = getattr(_local, "tries", None)
+    if tries is not None:
+        tries.append(outcome)
+    for watched in getattr(_local, "watchers", ()):
+        watched.append((outcome, status))

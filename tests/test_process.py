@@ -161,10 +161,19 @@ class ProcessTests(unittest.TestCase):
         # Only tries that never connected, were refused outright or failed by
         # the model server itself prove that resending cannot charge twice.
         # The tries go through a real SDK client, whose HTTP library is the
-        # one that must be observed.
+        # one that must be observed. A gateway's timeout was sent again by the
+        # SDK's retries and the engine's, 15 times; under the resend policy
+        # the engine sends a request again only when the same rule proves it
+        # unbilled and another try may pass (RequestUnprocessedError).
         import socket
 
         import openai
+
+        from dazedtl.compatibility import resends
+        from dazedtl.settings.preferences import RESENDS
+
+        class Unprocessed(Exception):
+            pass
 
         server = socket.socket()
         server.bind(("127.0.0.1", 0))
@@ -213,17 +222,22 @@ class ProcessTests(unittest.TestCase):
         own = live + "api.openai.com/v1"
         crash = b"HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\n\r\n"
         timeout = b"HTTP/1.1 504 Gateway Timeout\r\nContent-Length: 0\r\n\r\n"
+        limited = b"HTTP/1.1 429 Too Many Requests\r\nContent-Length: 0\r\n\r\n"
+        # (name, addresses tried, answers, record state, sent again)
         cases = [
-            ("refused connection", [dead], [], "failed"),
-            ("refused request", [live], [refusal], "failed"),
-            ("server error", [own, own], [crash, crash], "failed"),
-            ("another host's server error", [live], [crash], "uncertain"),
-            ("gateway timeout", [own], [timeout], "uncertain"),
+            ("refused connection", [dead], [], "failed", True),
+            # Sent again, it would be refused alike.
+            ("refused request", [live], [refusal], "failed", False),
+            ("rate limited", [live], [limited], "failed", True),
+            ("server error", [own, own], [crash, crash], "failed", True),
+            ("another host's server error", [live], [crash], "uncertain", False),
+            ("gateway timeout", [own], [timeout], "uncertain", False),
             (
                 "lost response, then refused connection",
                 [live, dead],
                 [b""],
                 "uncertain",
+                False,
             ),
         ]
         params = {
@@ -234,7 +248,7 @@ class ProcessTests(unittest.TestCase):
             TemporaryDirectory() as temporary,
             patch.dict("os.environ", {"DAZEDTL_TEST_OPENAI_ENDPOINT": own}),
         ):
-            for name, urls, answers, state in cases:
+            for name, urls, answers, state, resent in cases:
                 with self.subTest(name=name):
                     replies[:] = answers
                     root = Path(temporary) / name
@@ -265,10 +279,19 @@ class ProcessTests(unittest.TestCase):
                         translateText=point(tries(urls, evidence)),
                         translateAI=point(lambda text: None),
                         openai=SimpleNamespace(api_key="fixture-key"),
+                        RequestUnprocessedError=Unprocessed,
                     )
                     evidence.install(translation)
-                    with self.assertRaises(RuntimeError):
+                    resends.configure(translation, {"resends": RESENDS})
+                    failure = None
+                    try:
                         translation.translateText('{"Line1":"薬"}')
+                    except Unprocessed as error:
+                        failure, sent_again = error.__cause__, True
+                    except RuntimeError as error:
+                        failure, sent_again = error, False
+                    self.assertEqual(str(failure), "Connection error.")
+                    self.assertEqual(sent_again, resent)
                     self.assertEqual(process_view.payload(root, 0)["state"], state)
 
     def test_live_clarification_groups_require_exact_ownership_and_preserve_each_receipt(
