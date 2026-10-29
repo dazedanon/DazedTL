@@ -59,7 +59,6 @@ def start(root):
             [
                 sys.executable,
                 "-I",
-                "-B",
                 str(Path(__file__).with_name("original_worker.py")),
                 str(root),
             ],
