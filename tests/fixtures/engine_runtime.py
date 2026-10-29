@@ -2672,6 +2672,8 @@ try:
             "threads": "1",
         }
         maps = [f"Map00{number}.json" for number in range(1, 5)]
+        from dazedtl.compatibility.process_view import file_receipt
+
         for refusal, policy, selected, files, stopped in (
             ("effort", "1", maps[:2], maps[:1], refused_effort),
             ("effort", "0", maps[:2], maps[:2], None),
@@ -2684,15 +2686,17 @@ try:
                 ("RPG Maker MV/MZ", (".json",), None),
                 runner_script=stop_runner,
             )
-            errors, handed = [], []
+            errors, handed, logged = [], [], []
             stop_task.file_error_signal.connect(lambda *args: errors.append(args))
             stop_task.progress_signal.connect(lambda *args: handed.append(args[2]))
+            stop_task.log_signal.connect(logged.append)
             with patch.dict(
                 os.environ,
                 {
                     **stop_environment,
                     "STAND_IN_REFUSES": refusal,
                     "STAND_IN_POLICY": policy,
+                    "STAND_IN_PAYS": "1" if stopped is None else "",
                 },
             ):
                 result = stop_task._run_files(selected, False)
@@ -2700,13 +2704,23 @@ try:
             assert result == "Fail", (case, result)
             assert handed == files, (case, handed)
             requests = (stop_root / "sent.txt").read_text().split()
-            # One request per file until the stop.
-            assert len(requests) == len(files), (case, requests)
+            # One request per file until the stop, and the paid one before.
+            assert len(requests) == len(files) + (stopped is None), (case, requests)
             assert [name for name, _ in errors] == files, case
             if stopped is None:
-                # The refusal fails each file alone, as when the run was approved.
+                # The refusal fails each file alone, as when the run was
+                # approved. The stand-in answers the first file's first
+                # request, which that file paid for before it failed: its
+                # receipt keeps it, in the run's records and its TOTAL.
                 assert {error for _, error in errors} == {refused_effort}, case
                 assert stop_task.run_stop is None, case
+                paid = stop_task.receipts["Map001.json"]
+                assert (paid["input"], paid["output"]) == (11, 3), paid
+                assert [
+                    receipt
+                    for receipt in (file_receipt(line, files) for line in logged)
+                    if receipt
+                ] == [("Map001.json", paid, True)], logged
             elif stopped is True:
                 # The two rejections before the stop failed their own files.
                 assert "The model `gone` does not exist." in errors[0][1], case
@@ -2735,8 +2749,6 @@ try:
         # file pays for before the stop leaves its handler: its receipt keeps
         # it, read from its log line by the run's records and from its result
         # by the run's TOTAL.
-        from dazedtl.compatibility.process_view import file_receipt
-
         for policy, sends in (("1", 2), ("0", 2)):
             Record(stop_root).reset()
             (stop_root / "sent.txt").unlink(missing_ok=True)
@@ -2793,8 +2805,7 @@ try:
         from util import subprocess_runner, translation_task
 
         def consume(name, _estimate):
-            with translation._global_accurate_cost_lock:
-                translation._global_accurate_cost += 0.25
+            translation._add_paid(5, 2, 0.25)
             if name == "Map001.json":
                 raise translation.BatchResultUnavailableError("Missing.")
             return str(translation._global_accurate_cost)
@@ -2811,16 +2822,52 @@ try:
                 temporary, "RPG Maker MV/MZ", ["Map001.json", "Map002.json"], False
             )
         reports = [
-            (kind, json.loads(value)["filename"], json.loads(value).get("result"))
+            (kind, json.loads(value))
             for kind, _, value in (
                 line.partition(":") for line in reported.getvalue().splitlines()
             )
             if kind in {"FILE_ERROR", "FILE_RESULT"}
         ]
-        assert reports == [
-            ("FILE_ERROR", "Map001.json", None),
-            ("FILE_RESULT", "Map002.json", "0.25"),
+        assert [(kind, report["filename"]) for kind, report in reports] == [
+            ("FILE_ERROR", "Map001.json"),
+            ("FILE_RESULT", "Map002.json"),
         ], reported.getvalue()
+        assert reports[1][1]["result"] == "0.25", reports
+        # The file that failed keeps the results it paid for on its receipt,
+        # logged as its line and sent with its error for the run's TOTAL.
+        receipt = reports[0][1]["receipt"]
+        assert receipt in reported.getvalue().splitlines(), reported.getvalue()
+        failed = translation_task.file_marker_result(*reports[0])
+        assert failed == ("SUBPROCESS_ERROR", "Missing.", receipt), failed
+        figures = translation_task._result_figures(failed)
+        assert (figures["input"], figures["output"], figures["cost"]) == (5, 2, 0.25)
+
+        # So does a file a module failed in a worker given that one file,
+        # whose exit reports the failure.
+        def failing(_name, _estimate):
+            translation._add_paid(7, 1, 0.5)
+            return "Fail"
+
+        reported = StringIO()
+        with (
+            patch.object(
+                translation_task, "translation_module", lambda _: (0, 0, failing)
+            ),
+            redirect_stdout(reported),
+        ):
+            subprocess_runner.run_handler(temporary, "JSON", "Text1.json", False)
+        marker = next(
+            line
+            for line in reported.getvalue().splitlines()
+            if line.startswith("FILE_RESULT:")
+        )
+        failed = translation_task.file_marker_result(
+            "FILE_RESULT", json.loads(marker.partition(":")[2])
+        )
+        assert failed[0] == "FAILED", reported.getvalue()
+        figures = translation_task._result_figures(failed)
+        assert (figures["input"], figures["output"], figures["cost"]) == (7, 1, 0.5)
+        assert reported.getvalue().splitlines()[-1] == "RESULT:Fail"
         # A module that caught the run's stop still ends it, and what its file
         # cost before the stop reaches the run's receipts.
         spent = "TOTAL: [Input: 5][Output: 2][Cost: $0.0100][0.5s] ✓"

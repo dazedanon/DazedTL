@@ -64,27 +64,40 @@ def _file_start():
     return paid, time.monotonic()
 
 
+def _paid_receipt(filename, result, start):
+    """The receipt of a file that reported no TOTAL of its own, as when it
+    failed or a run's stop left its handler: what this process paid for since
+    *start*, its _file_start, logged as the file's line so its paid requests
+    reach the run's records and TOTAL; None when *result* is a TOTAL or the
+    file paid for nothing."""
+    translation = sys.modules.get("util.translation")
+    if start is None or translation is None:
+        return None
+    from util.translation_task import _result_figures, format_receipt
+
+    if _result_figures(result) is not None:
+        return None
+    paid, began = start
+    spent = translation.paid_usage(paid)
+    if not (spent["input"] or spent["output"] or spent["cost"]):
+        return None
+    spent["seconds"] = time.monotonic() - began
+    receipt = format_receipt(filename, spent, "✗")
+    print(receipt, flush=True)
+    return receipt
+
+
 def _report_run_stop(filename, error=None, result=None, start=None):
     """Reports the stop of a run frozen with the run-stop policy
     (util/translation run_stop) as *filename*'s result, which tells the run to
     take no further file; False when the run goes on. The result is the TOTAL
-    its handler returned when a module caught the stop. When the handler
-    reported no TOTAL, as when the stop left it, the file's receipt is what
-    this process paid for since *start*, its _file_start, logged as the
-    file's line, so its paid requests reach the run's records."""
+    its handler returned when a module caught the stop, else the file's
+    _paid_receipt."""
     translation = sys.modules.get("util.translation")
     stop = None if translation is None else translation.run_stop(error)
     if stop is None:
         return False
-    from util.translation_task import _result_figures, format_receipt
-
-    if start is not None and _result_figures(result) is None:
-        paid, began = start
-        spent = translation.paid_usage(paid)
-        if spent["input"] or spent["output"] or spent["cost"]:
-            spent["seconds"] = time.monotonic() - began
-            result = format_receipt(filename, spent, "✗")
-            print(result, flush=True)
+    result = _paid_receipt(filename, result, start) or result
     print(
         "RUN_STOPPED:"
         + json.dumps(
@@ -94,6 +107,18 @@ def _report_run_stop(filename, error=None, result=None, start=None):
         flush=True,
     )
     return True
+
+
+def _report_file(kind, payload, receipt, multi_file):
+    """Reports a file's result marker, with the receipt of a failed file
+    (_paid_receipt), which the run reads back (util/translation_task
+    file_marker_result). A worker given one file reports its result in its
+    exit instead, so it reports the marker only to carry that receipt."""
+    if receipt is not None:
+        payload["receipt"] = receipt
+    elif not multi_file:
+        return
+    print(kind + ":" + json.dumps(payload, ensure_ascii=False), flush=True)
 
 
 def run_handler(project_root, module_name, filename, estimate_only):
@@ -191,45 +216,41 @@ def run_handler(project_root, module_name, filename, estimate_only):
                             rpgmakermvmz.TOKENS[:] = [0, 0]
                             rpgmakermvmz.TIMETOTAL = 0
                             reset_accurate_cost()
-                        start = _file_start()
+                        # An estimate pays for nothing.
+                        start = None if estimate_only else _file_start()
                         handler_result = handler(current_filename, estimate_only)
                         # A module that caught the run's stop still ends it.
                         if _report_run_stop(
                             current_filename, result=handler_result, start=start
                         ):
                             break
-                        if multi_file:
-                            mismatch_count = 0
-                            if rpgmakermvmz is not None:
-                                mismatch_count = len(rpgmakermvmz.MISMATCH)
-                            print(
-                                "FILE_RESULT:"
-                                + json.dumps(
-                                    {
-                                        "filename": current_filename,
-                                        "result": handler_result or "Fail",
-                                        "mismatch_count": mismatch_count,
-                                    },
-                                    ensure_ascii=False,
-                                ),
-                                flush=True,
-                            )
+                        mismatch_count = 0
+                        if rpgmakermvmz is not None:
+                            mismatch_count = len(rpgmakermvmz.MISMATCH)
+                        result = handler_result or "Fail"
+                        _report_file(
+                            "FILE_RESULT",
+                            {
+                                "filename": current_filename,
+                                "result": result,
+                                "mismatch_count": mismatch_count,
+                            },
+                            _paid_receipt(current_filename, None, start)
+                            if result == "Fail"
+                            else None,
+                            multi_file,
+                        )
                     except Exception as exc:
                         if _report_run_stop(current_filename, exc, start=start):
                             break
+                        _report_file(
+                            "FILE_ERROR",
+                            {"filename": current_filename, "error": str(exc)},
+                            _paid_receipt(current_filename, None, start),
+                            multi_file,
+                        )
                         if not multi_file:
                             raise
-                        print(
-                            "FILE_ERROR:"
-                            + json.dumps(
-                                {
-                                    "filename": current_filename,
-                                    "error": str(exc),
-                                },
-                                ensure_ascii=False,
-                            ),
-                            flush=True,
-                        )
                         from util.translation import BatchResultUnavailableError
 
                         # A missing Batch result fails only its own file, as
