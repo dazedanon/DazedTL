@@ -49,7 +49,7 @@ def start(directory, workspace, plan):
         return system.popen(
             [sys.executable, "-u", str(Path(__file__).resolve()), str(directory)],
             cwd=directory,
-            env={**worker_environment(workspace, plan), "PYTHONDONTWRITEBYTECODE": "1"},
+            env=worker_environment(workspace, plan),
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=errors,
