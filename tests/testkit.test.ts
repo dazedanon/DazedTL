@@ -234,20 +234,22 @@ test(
 );
 
 test(
-  "a display's process group ends with the process that started it, even at SIGKILL, unless it is to outlive it",
+  "a display's process group ends with the process that started it, even at SIGKILL and with a member that ignores SIGTERM, unless it is to outlive it",
   { skip: process.platform !== "linux" },
   async () => {
     // Each group's first process exits at SIGTERM and leaves its child, as
-    // dbus-run-session does with KWin.
+    // dbus-run-session does with KWin; in two of them the child ignores
+    // SIGTERM, as a hung KWin would.
     const owner = spawn(
       process.execPath,
       [
         "--input-type=module",
         "-e",
         `const { spawnGroup } = await import(${JSON.stringify(new URL("../scripts/testkit/display.mjs", import.meta.url).href)});
-        const group = (outlive) =>
-          spawnGroup("sh", ["-c", "sleep 30 & wait"], { stdio: "ignore", outlive }).pid;
-        console.log(JSON.stringify([group(false), group(true)]));
+        const group = (child, outlive) =>
+          spawnGroup("sh", ["-c", child + " & wait"], { stdio: "ignore", outlive }).pid;
+        const hung = "(trap '' TERM; exec sleep 30)";
+        console.log(JSON.stringify([group("sleep 30", false), group(hung, false), group(hung, true)]));
         setInterval(() => {}, 1000);`,
       ],
       { stdio: ["ignore", "pipe", "inherit"] },
@@ -269,14 +271,17 @@ test(
     try {
       const [line] = await once(readline.createInterface(owner.stdout), "line");
       groups = JSON.parse(line);
-      const [bound, kept] = groups;
+      const [bound, hung, kept] = groups;
       await until(
-        "both groups' children",
+        "every group's children",
         () => groups.every((group) => members(group) >= 2),
         5_000,
       );
       owner.kill("SIGKILL");
-      await until("the bound group to end", () => !members(bound), 5_000);
+      // SIGTERM ends a group that obeys it, before any SIGKILL.
+      await until("the bound group to end", () => !members(bound), 10_000);
+      assert.ok(members(hung));
+      await until("the hung group to end", () => !members(hung), 10_000);
       assert.equal(members(kept), 2);
     } finally {
       owner.kill("SIGKILL");
