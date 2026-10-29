@@ -2250,7 +2250,7 @@ try:
         import httpx
         from dazedtl.compatibility.request_parameters import configure_builders
         from dazedtl.settings.preferences import GENERATION_PARAMETERS
-        from openai import BadRequestError
+        from openai import BadRequestError, UnprocessableEntityError
         from util import translation
         from util.batch_providers import (
             PROVIDER_OPENAI,
@@ -2344,14 +2344,16 @@ try:
 
             # A json_schema request's 400 was sent again in JSON mode whatever
             # it said, so under the run-stop policy each rejected request
-            # reached the provider twice. There only a 400 naming the response
-            # format falls back; a run frozen before falls back at every 400.
-            def bad_request(message):
-                body = {"error": {"message": message}}
-                return BadRequestError(
-                    f"Error code: 400 - {body}",
+            # reached the provider twice. There only an error saying the
+            # response format falls back, never one echoing the request back;
+            # a run frozen before falls back at every 400. A validating
+            # server's 422 failed every request instead of using JSON mode.
+            def status_error(status, body):
+                error = BadRequestError if status == 400 else UnprocessableEntityError
+                return error(
+                    f"Error code: {status} - {body}",
                     response=httpx.Response(
-                        400,
+                        status,
                         request=httpx.Request(
                             "POST", "https://provider.invalid/v1/chat/completions"
                         ),
@@ -2359,17 +2361,59 @@ try:
                     body=body,
                 )
 
-            unrelated = "The model `gone` does not exist."
-            unsupported = (
-                "Invalid parameter: 'response_format' of type 'json_schema' "
-                "is not supported with this model."
-            )
-            for run_stops, message, sent in (
-                (True, unrelated, 1),
-                (True, unsupported, 2),
-                (False, unrelated, 2),
+            unrelated = {"message": "The model `gone` does not exist."}
+            unsupported = {
+                "message": "Invalid parameter: 'response_format' of type "
+                "'json_schema' is not supported with this model."
+            }
+            echoed = {
+                "object": "error",
+                "message": "1 validation error for ChatCompletionRequest\n"
+                "model\n  Field required [type=missing, input_value={'messages':"
+                " [], 'response_format': {'type': 'json_schema'}}, input_type=dict]",
+            }
+            literal = {
+                "detail": [
+                    {
+                        "type": "literal_error",
+                        "loc": ["body", "response_format", "type"],
+                        "msg": "Input should be 'text' or 'json_object'",
+                        "input": "json_schema",
+                    }
+                ]
+            }
+            missing = {
+                "detail": [
+                    {
+                        "type": "missing",
+                        "loc": ["body", "model"],
+                        "msg": "Field required",
+                        "input": {"response_format": {"type": "json_schema"}},
+                    }
+                ]
+            }
+            for run_stops, status, body, sent in (
+                (True, 400, unrelated, 1),
+                (True, 400, unsupported, 2),
+                (True, 400, echoed, 1),
+                # JSON mode, or no format at all, would be rejected too.
+                (True, 400, {"message": "Input should be 'json_schema'"}, 1),
+                (False, 400, unrelated, 2),
+                (True, 422, literal, 2),
+                (False, 422, literal, 2),
+                (False, 422, missing, 1),
+                # OpenRouter passes on the upstream server's body as text.
+                (
+                    True,
+                    400,
+                    {
+                        "message": "Provider returned error",
+                        "metadata": {"raw": json.dumps(missing)},
+                    },
+                    1,
+                ),
             ):
-                send = Mock(side_effect=[bad_request(message), good])
+                send = Mock(side_effect=[status_error(status, body), good])
                 with (
                     patch.object(translation, "RUN_STOPS", run_stops),
                     patch.object(
@@ -2389,8 +2433,10 @@ try:
                             numLines=1,
                         )
                     except Exception as error:
-                        assert sent == 1 and "does not exist" in str(error), error
-                assert send.call_count == sent, (run_stops, message, send.call_count)
+                        assert sent == 1 and f"({status})" in str(error), error
+                    else:
+                        assert sent == 2, (run_stops, body)
+                assert send.call_count == sent, (run_stops, body, send.call_count)
                 assert send.call_args.kwargs["response_format"]["type"] == (
                     "json_object" if sent == 2 else "json_schema"
                 )
