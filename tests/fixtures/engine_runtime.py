@@ -1053,13 +1053,15 @@ try:
                     "handlePlugin",
                     "plugins.js",
                     (
-                        r"var q = [\"{\\\"QuestClientName\\\":\\\"村の\\\\n村長\\\"}\"];"
+                        r"var q = [\"{\\\"QuestClientName\\\":\\\"村の\\\\n村長\\\","
+                        r"\\\"QuestLocation\\\":\\\"\\\\n\\\"}\"];"
                         '\nvar txtSubject = "\\\\n[1]の\\\\nクエスト";\n'
                     ),
                     {},
                     [["村の 村長"], ["\\n[1]の クエスト"]],
                     (
-                        r"var q = [\"{\\\"QuestClientName\\\":\\\"EN \'村の 村長\'\\\"}\"];"
+                        r"var q = [\"{\\\"QuestClientName\\\":\\\"EN \'村の 村長\'\\\","
+                        r"\\\"QuestLocation\\\":\\\"\\\\n\\\"}\"];"
                         '\nvar txtSubject = "EN ՚\\\\n[1]の クエスト՚";\n'
                     ),
                 ),

@@ -94,8 +94,9 @@ ENGINE_VERSIONS = {
     "Unity": 2,
     # 3: text inside a field its line already sends, such as a stat label
     # inside a drawTextEx label or a txtSubject inside a disp_list string, is
-    # no longer sent again
-    "RPG Maker Plugin": 3,
+    # no longer sent again; 4: a quest field of spaces or line breaks alone
+    # sends nothing (util/sent_lines)
+    "RPG Maker Plugin": 4,
     "SRPG Studio": 2,
 }
 STALE_QUEUE = (
