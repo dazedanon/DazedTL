@@ -125,6 +125,10 @@ class Probe(Background):
             DAZEDTL_LEGACY_ROOT=str(Path(temporary) / "missing-engine"),
             DAZEDTL_ENGINE_SOURCE=str(Path(temporary) / "missing-engine"),
         )
+        # The workers the fixture starts share the suite's compiled modules
+        # too, instead of compiling theirs into the checkout.
+        if sys.pycache_prefix:
+            environment["PYTHONPYCACHEPREFIX"] = sys.pycache_prefix
         self.start(
             [
                 sys.executable,
