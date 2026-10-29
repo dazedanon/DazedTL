@@ -158,13 +158,22 @@ class OpenRouterQuoteTests(unittest.TestCase):
                 batch.install()
                 openrouter_pricing.configure(translation, policy)
                 local = translation._thread_local
-                # Two calls fetch half the file's results each, which the
-                # TOTAL adds as they arrive.
-                for share in (2, 1):
-                    before = translation._batch_usage()
-                    for name, count in counters.items():
-                        setattr(local, name, count // share)
-                    translation._record_batch_cost(before, model)
+                # Two results hold half the file's usage each, which the
+                # TOTAL adds as they are read.
+                half = {name: count // 2 for name, count in counters.items()}
+                for _result in range(2):
+                    translation._count_batch_result(
+                        {
+                            "prompt_tokens": half["file_batch_regular"]
+                            + half["file_batch_read"]
+                            + half["file_batch_write"],
+                            "completion_tokens": half["file_batch_output"],
+                            "cache_read_input_tokens": half["file_batch_read"],
+                            "cache_creation_input_tokens": half["file_batch_write"],
+                            "cache_creation_1h_input_tokens": 0,
+                        },
+                        model,
+                    )
                 local.file_cost_window_active = True
                 for _call in ("file", "TOTAL"):
                     self.assertAlmostEqual(translation.calculateCost(1, 1, model), cost)

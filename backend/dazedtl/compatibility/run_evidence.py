@@ -15,7 +15,7 @@ from dazedtl.translation.files import digest
 
 from . import transmission
 from .batch_evidence import joined
-from .process_view import source_values
+from .process_view import paid_record, source_values
 from .request_scope import columns, identities, source_locations
 
 LAYER = "evidence"
@@ -181,6 +181,9 @@ class Evidence:
                 # The UTC time a Live response arrived, the time the run's
                 # cost priced its usage at (engine translation._log_live_response).
                 "received_at",
+                # The billed item a Live response is, as its worker priced
+                # and counted it (process_view paid_record).
+                "paid",
             ):
                 if name not in columns(connection):
                     connection.execute(
@@ -191,6 +194,12 @@ class Evidence:
                     connection.execute(
                         "ALTER TABLE requests ADD COLUMN " + name + " INTEGER"
                     )
+            # The run's receipts read only the paid items, never the request
+            # bodies beside them (process_view paid_receipts).
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS requests_paid ON requests(paid) "
+                "WHERE paid IS NOT NULL"
+            )
             connection.execute(
                 "CREATE TABLE IF NOT EXISTS validated_items (identity TEXT PRIMARY KEY, source TEXT, response TEXT)"
             )
@@ -418,6 +427,36 @@ class Evidence:
             return native(provider, params, usage)
 
         translation._write_request_debug_log.layer(LAYER, received)
+
+        def paid(native, figures):
+            # A Live response is counted as it arrives, on its own request,
+            # which its file pays for; a refused request's clarification is
+            # counted with it, on the clarification's. A replayed response
+            # pays for nothing (refusal_retry restored).
+            native(figures)
+            current = getattr(self.local, "current", None)
+            if current is None:
+                return
+            if not (figures["input"] or figures["output"] or figures["cost"]):
+                return
+            # The response is paid for and kept already: a ledger that cannot
+            # record its cost must not fail its file over it.
+            try:
+                with self.connect() as connection:
+                    row = connection.execute(
+                        "SELECT filename FROM requests WHERE id=? AND paid IS NULL",
+                        (current,),
+                    ).fetchone()
+                    if row is not None:
+                        connection.execute(
+                            "UPDATE requests SET paid=? WHERE id=?",
+                            (paid_record(row[0], figures), current),
+                        )
+            except sqlite3.Error as error:
+                print(f"⚠ A response's cost could not be recorded: {error}", flush=True)
+
+        if getattr(translation, "record_paid", None) is not None:
+            translation.record_paid.layer(LAYER, paid)
         from .refusal_retry import receipt
 
         def captured(native, *args, **kwargs):
