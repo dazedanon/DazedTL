@@ -3,6 +3,7 @@
 ### Changed
 
 - **Translate:** each file's translation, each estimate and each background task starts about twice as fast, because DazedTL now keeps its compiled Python in its profile folder instead of compiling it again every time; the first start after an update compiles it once.
+- **Guided:** the commands DazedTL gives your assistant, such as the project helper and Text QA's, now keep their compiled Python in the profile folder too, so they start faster and leave nothing in the DazedTL folder; DazedTL also removes what a moved DazedTL folder or an earlier Python left there.
 
 ### Fixed
 
