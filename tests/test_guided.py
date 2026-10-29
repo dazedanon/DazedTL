@@ -3159,21 +3159,33 @@ class GuidedTests(unittest.TestCase):
             self.guided.saved_form(self.identity)
         self.assertEqual(path.read_bytes(), invalid)
 
-    def test_starting_reviewed_work_reads_its_phase_inputs_once(self):
-        # Each read digests every selected working file, which on a large game
-        # doubled the time a reviewed Live or Batch start took.
+    def test_reviewing_and_starting_work_read_its_inputs_and_guard_once(self):
+        # Each read digests every selected working file and each guard hashes
+        # the game's data, which on a large game doubled the time a review and
+        # a reviewed Live or Batch start took.
+        backend = self.guided.backend
         for mode in ("batch", "translate"):
             with self.subTest(mode=mode):
                 self.started.clear()
                 self.seed_estimate(mode=mode)
-                preview = self.guided.preview(
-                    self.identity, "start", options={"mode": mode}
-                )
                 with patch.object(
-                    self.guided.runs, "inputs", wraps=self.guided.runs.inputs
-                ) as read:
+                    backend, "guided_guard", wraps=backend.guided_guard
+                ) as guard:
+                    preview = self.guided.preview(
+                        self.identity, "start", options={"mode": mode}
+                    )
+                self.assertEqual(guard.call_count, 1)
+                with (
+                    patch.object(
+                        self.guided.runs, "inputs", wraps=self.guided.runs.inputs
+                    ) as read,
+                    patch.object(
+                        backend, "guided_guard", wraps=backend.guided_guard
+                    ) as guard,
+                ):
                     self.guided.execute(self.identity, preview["token"])
                 self.assertEqual(read.call_count, 1)
+                self.assertEqual(guard.call_count, 1)
                 self.assertEqual(len(self.started), 1)
 
     def test_submission_preview_rejects_other_owner_changed_inputs_and_repeated_use(
