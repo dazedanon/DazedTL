@@ -118,7 +118,9 @@ def handleWOLF2(filename, estimate):
 
 
 def openFiles(filename):
-    # Use a robust reader to handle cp932/Shift_JIS variants and occasional bad bytes
+    # Use a robust reader to handle cp932/Shift_JIS variants and occasional
+    # bad bytes. Each reads with universal newlines, so every line ends in
+    # "\n" alone, as the parser and write_output expect.
     def read_file_lines_with_fallback(path: str):
         encodings = ["cp932", "shift_jis", "utf-8-sig", "utf-8"]
         for enc in encodings:
@@ -128,13 +130,8 @@ def openFiles(filename):
             except UnicodeDecodeError:
                 continue
         # Last resort: ignore undecodable bytes under cp932
-        with open(path, "rb") as f:
-            raw = f.read()
-        try:
-            text = raw.decode("cp932", errors="ignore")
-        except Exception:
-            text = raw.decode("latin-1", errors="ignore")
-        return text.splitlines(keepends=True)
+        with open(path, "r", encoding="cp932", errors="ignore") as f:
+            return f.readlines()
 
     path = os.path.join("files", filename)
     lines = read_file_lines_with_fallback(path)
@@ -164,7 +161,7 @@ def parseWOLF(readFile, filename):
         pbar.desc = filename
 
         try:
-            result = translateWOLF(data, [], pbar, filename)
+            result = translateWOLF(data, pbar, filename)
             totalTokens[0] += result[0]
             totalTokens[1] += result[1]
         except run_stop_errors():
@@ -183,12 +180,14 @@ def checkLine(data, i, filename):
         check_line(data, i, "shift_jis", filename)
 
 
-def translateWOLF(data, translatedList, pbar, filename):
-    """Pass 1 (*translatedList* empty) translates speakers and choices on the
-    spot and gathers the lines; pass 2 writes the lines' translations and
-    sends nothing, since speakers and choices then hold their translations."""
-    setData = translatedList != []
+def translateWOLF(data, pbar, filename):
+    """Translates speakers and choices on the spot and gathers the lines,
+    each run of consecutive text lines as one, then replaces each run with
+    its translation. The runs are kept by position, so a translated speaker
+    holding the parser's own marks, such as "/", cannot move a translation
+    to another run."""
     stringList = []
+    groups = []  # Where each run in stringList is: [start, end) in data
     currentGroup = []
     tokens = [0, 0]
     speaker = ""
@@ -200,13 +199,12 @@ def translateWOLF(data, translatedList, pbar, filename):
         # Speaker
         matchList = re.findall(r"^([^/]*)：", data[i])
         if len(matchList) != 0:
-            if not setData:
-                response = getSpeaker(matchList[0])
-                speaker = response[0]
-                tokens[0] += response[1][0]
-                tokens[1] += response[1][1]
-                data[i] = data[i].replace(matchList[0], f"{speaker}")
-                checkLine(data, i, filename)
+            response = getSpeaker(matchList[0])
+            speaker = response[0]
+            tokens[0] += response[1][0]
+            tokens[1] += response[1][1]
+            data[i] = data[i].replace(matchList[0], f"{speaker}")
+            checkLine(data, i, filename)
             i += 1
         else:
             speaker = ""
@@ -221,78 +219,47 @@ def translateWOLF(data, translatedList, pbar, filename):
                 i += 1
 
             # Translate
-            if not setData:
-                response = translateAI(choiceList, "This will be a dialogue option")
-                tokens[0] += response[1][0]
-                tokens[1] += response[1][1]
-                choiceListTL = response[0]
+            response = translateAI(choiceList, "This will be a dialogue option")
+            tokens[0] += response[1][0]
+            tokens[1] += response[1][1]
+            choiceListTL = response[0]
 
-                # Set Data
-                if len(choiceList) == len(choiceListTL):
-                    # Set Data
-                    i = initialIndex
-                    while "//" in data[i] and "の場合" not in data[i]:
-                        choiceListTL[0] = choiceListTL[0].replace(", ", "、")
-                        data[i] = f"//{choiceListTL[0]}\n"
-                        checkLine(data, i, filename)
-                        choiceListTL.pop(0)
-                        i += 1
+            # Set Data
+            if len(choiceList) == len(choiceListTL):
+                for index, choice in enumerate(choiceListTL, start=initialIndex):
+                    data[index] = f"//{choice.replace(', ', '、')}\n"
+                    checkLine(data, index, filename)
 
-                # Mismatch
-                else:
-                    with LOCK:
-                        found_mismatch(MISMATCH, filename)
+            # Mismatch
+            else:
+                with LOCK:
+                    found_mismatch(MISMATCH, filename)
 
         # Lines
         if r"/" not in data[i] and "@" not in data[i] and data[i] != "\n":
-            # Pass 1
-            if not setData:
-                # Grab Consecutive Strings
+            # Grab Consecutive Strings
+            groupStart = i
+            currentGroup.append(data[i])
+            i += 1
+            while i < len(data) and r"/" not in data[i] and "@" not in data[i] and data[i] != "\n":
                 currentGroup.append(data[i])
                 i += 1
-                while i < len(data) and r"/" not in data[i] and "@" not in data[i] and data[i] != "\n":
-                    currentGroup.append(data[i])
-                    i += 1
+            groups.append((groupStart, i))
 
-                # Join up 401 groups for better translation.
-                if len(currentGroup) > 0:
-                    jaString = "".join(currentGroup)
-                    currentGroup = []
+            # Join up 401 groups for better translation.
+            jaString = "".join(currentGroup)
+            currentGroup = []
 
-                # Remove any textwrap
-                jaString = jaString.replace("\n", " ")
+            # Remove any textwrap
+            jaString = jaString.replace("\n", " ")
 
-                # Add Speaker (If there is one)
-                if speaker != "":
-                    jaString = f"[{speaker}]: {jaString}"
+            # Add Speaker (If there is one)
+            if speaker != "":
+                jaString = f"[{speaker}]: {jaString}"
 
-                # Add String
-                stringList.append(jaString)
-                i += 1
-
-            # Pass 2
-            else:
-                # Insert Strings
-                while i < len(data) and r"/" not in data[i] and "@" not in data[i] and data[i] != "\n":
-                    data.pop(i)
-
-                # Get Text
-                translatedText = translatedList[0]
-                translatedList.pop(0)
-
-                if len(translatedList) <= 0:
-                    translatedList = None
-
-                # Remove speaker
-                translatedText = strip_speaker_prefix(translatedText)
-
-                # Textwrap
-                translatedText = dazedwrap.wrapText(translatedText, width=WIDTH)
-
-                # Set Data
-                data.insert(i, f"{translatedText}\n")
-                checkLine(data, i, filename)
-                i += 1
+            # Add String
+            stringList.append(jaString)
+            i += 1
 
         # Nothing relevant. Skip Line.
         else:
@@ -310,15 +277,23 @@ def translateWOLF(data, translatedList, pbar, filename):
         tokens[1] += response[1][1]
         translatedList = response[0]
 
-        # Set Strings
+        # Set Strings: each run becomes one line, so later runs move up
         if len(stringList) == len(translatedList):
-            translateWOLF(data, translatedList, pbar, filename)
+            removed = 0
+            for (groupStart, groupEnd), translatedText in zip(groups, translatedList):
+                translatedText = strip_speaker_prefix(translatedText)
+                translatedText = dazedwrap.wrapText(translatedText, width=WIDTH)
+                index = groupStart - removed
+                data[index : groupEnd - removed] = [f"{translatedText}\n"]
+                checkLine(data, index, filename)
+                removed += groupEnd - groupStart - 1
 
         # Mismatch
         else:
             with LOCK:
                 found_mismatch(MISMATCH, filename)
     return tokens
+
 
 # Save some money and enter the character before translation
 def getSpeaker(speaker):

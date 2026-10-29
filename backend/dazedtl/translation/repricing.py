@@ -10,12 +10,14 @@ each model's own tokenizer, so a Claude estimate is always estimated again.
 A pricing fix (provider_costs.PRICE_RULES_VERSION) keeps the counts too, so a
 figure priced under older rules than its route's (``route_rules``) is priced
 again under today's on its next view, or reads outdated when its counts
-can't be; a fix to another route's rules leaves it standing. A figure
-whose settings now send it on another route than the one that priced it
-(``rerouted``) is priced again on theirs the same way. ``read``
-decides this for every saved figure a user approves or reads: an
-Assistant-led quote waiting for approval, a Guided Translate estimate and a
-whole-game estimate.
+can't be; a fix to another route's rules leaves it standing. A figure's
+route is the Batch provider that priced it, by the one rule a run's worker
+and every view read it by (``route_of``), and a figure is read on the route
+of the settings it is read at (``read_at``): one whose settings now send it
+on another route than the one that priced it (``rerouted``) is priced again
+on theirs the same way. ``read`` decides this for every saved figure a user
+approves or reads: an Assistant-led quote waiting for approval, a Guided
+Translate estimate and a whole-game estimate.
 """
 
 from dataclasses import dataclass, replace
@@ -114,32 +116,64 @@ def route_rules(*routes):
     return max(route_price_rules(route) for route in routes or (None,))
 
 
-def recorded_route(figure, key, provider):
+def route_of(engine, configuration):
+    """The Batch provider a run on ``configuration`` is sent on, so the route
+    a figure priced with it takes, by the rule its worker records a figure's
+    by (TranslationEngine.batch_supported); None for none, for no settings,
+    or for a frozen OpenRouter policy this version refuses."""
+    if not configuration:
+        return None
+    try:
+        return engine.batch_supported(configuration)
+    except KeyError, ValueError:
+        return None
+
+
+def read_at(change, before, after):
+    """The settings a figure priced with ``before`` is read at under
+    ``change`` (freshness.compare): the current ``after`` once they changed,
+    else its own, which then differ from them at most in prices not looked
+    up yet."""
+    return after if change is not None and change.settings else before
+
+
+def own_route(route, before, after):
+    """The route ``route`` (``route_of``) gives the settings ``before`` a
+    figure was priced with, or the current ``after`` for one whose record
+    kept none: the route a figure saved before it recorded one reads as
+    (``recorded_route``)."""
+    return route(after if before is None else before)
+
+
+def recorded_route(figure, key, fallback):
     """The route that priced a saved figure, the Batch provider it records
-    as ``key``; one saved before it recorded one reads as ``provider``, the
-    Batch provider of its current settings (``rerouted``)."""
-    return figure.get(key, provider)
+    as ``key``; one saved before it recorded one reads as ``fallback``, the
+    route its own settings take (``own_route``)."""
+    return figure.get(key, fallback)
 
 
-def quote_route(quote, provider):
+def quote_route(quote, fallback):
     """The route that priced an Assistant-led quote, recorded as ``route``
     (``recorded_route``)."""
-    return recorded_route(quote, "route", provider)
+    return recorded_route(quote, "route", fallback)
 
 
-def estimate_route(counts, provider):
+def estimate_route(counts, fallback):
     """The route that priced a Guided estimate's ``counts``, recorded as
     ``provider`` (``recorded_route``)."""
-    return recorded_route(counts, "provider", provider)
+    return recorded_route(counts, "provider", fallback)
 
 
-def rerouted(change, routes, provider):
-    """``change`` (freshness.compare) of a figure priced on ``routes``
-    (``quote_route``, ``estimate_route``) whose settings would now send it
-    on ``provider``: once any of them is another route, as after a DazedTL
-    update routes the same settings elsewhere, its price changed too, so
-    ``read`` prices its counts again on ``provider`` or outdates it."""
-    if all(route == provider for route in routes):
+def rerouted(change, routes, before, after, route):
+    """``change`` (freshness.compare) of a figure priced with the settings
+    ``before`` on ``routes`` (``quote_route``, ``estimate_route``), whose
+    settings are now ``after``: once any of them is another route than the
+    one ``route`` (``route_of``) gives the settings it is read at
+    (``read_at``), as after a DazedTL update routes the same settings
+    elsewhere, its price changed too, so ``read`` prices its counts again on
+    that route or outdates it."""
+    on = route(read_at(change, before, after))
+    if all(item == on for item in routes):
         return change
     return replace(change or Change(), prices=True)
 
@@ -147,37 +181,43 @@ def rerouted(change, routes, provider):
 @dataclass(frozen=True)
 class Reading:
     """How a saved figure reads now: ``current`` while it stands as saved
-    (``figure`` None) or priced again (``figure``, at ``settings``)."""
+    (``figure`` None) or priced again (``figure``, at ``settings`` on
+    ``route``)."""
 
     current: bool
     settings: dict | None = None
-    figure: object = None
+    figure: dict | None = None
+    route: str | None = None
 
 
 OUTDATED = Reading(False)
 
 
-def read(change, before, after, again):
+def read(change, before, after, route, again):
     """How a figure priced with the settings ``before`` reads now.
 
     ``change`` is freshness.compare of its basis, with the price rules it was
     priced under, against the current one, with the price rules its route
-    needs (``route_rules``); ``after`` the current settings;
-    ``again(settings)`` its counts priced with ``settings`` under today's
-    rules, None when they can't be. Unchanged, it stands as saved. When only
-    what prices it changed and its requests keep their text, it is priced
-    again: at the current settings when they changed, else at the ones it was
-    priced with, whose prices a snapshot may not have looked up yet.
-    Otherwise it reads outdated and is estimated again."""
+    needs (``route_rules``), and ``rerouted``; ``after`` the current
+    settings; ``route(settings)`` the route settings send a run on
+    (``route_of``); ``again(settings, route)`` its counts priced with
+    ``settings`` on ``route`` under today's rules, None when they can't be.
+    Unchanged, it stands as saved. When only what prices it changed and its
+    requests keep their text, it is priced again at the settings it is read
+    at (``read_at``), on their route: the current settings when they
+    changed, else the ones it was priced with, whose prices a snapshot may
+    not have looked up yet. Otherwise it reads outdated and is estimated
+    again."""
     if change is None:
         return Reading(True)
     if not change.priced_only or not before:
         return OUTDATED
-    settings = after if change.settings else before
+    settings = read_at(change, before, after)
     if not settings or not priced(settings) or not same_requests(before, settings):
         return OUTDATED
-    figure = again(settings)
-    return OUTDATED if figure is None else Reading(True, settings, figure)
+    on = route(settings)
+    figure = again(settings, on)
+    return OUTDATED if figure is None else Reading(True, settings, figure, on)
 
 
 def approval_token(token, configuration, route):
