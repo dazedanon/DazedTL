@@ -1,5 +1,9 @@
 <!-- The next release's notes; see docs/development.md#release-notes. -->
 
+### Changed
+
+- **Translate:** each file's translation, each estimate and each background task starts about twice as fast, because DazedTL now keeps its compiled Python in its profile folder instead of compiling it again every time; the first start after an update compiles it once.
+
 ### Fixed
 
 - **Translate:** a file that fails after some of its requests were answered, such as on a later request's error or a missing Batch result, now keeps what those requests cost in its cost and the run's total, which left them out.
