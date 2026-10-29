@@ -1,6 +1,7 @@
 """The platform layer keeps the Windows rules on every platform."""
 
 import importlib
+import importlib.util
 import json
 import os
 import stat
@@ -95,6 +96,62 @@ class SpawnTests(unittest.TestCase):
                         timeout=20,
                     )
                 self.assertEqual(result.stdout.strip(), expected)
+
+    def test_a_command_an_assistant_runs_compiles_where_this_process_does(self):
+        # Commands handed to assistants, such as the Text QA CLI, ran this
+        # Python without the cache, so a script importing the engine wrote
+        # __pycache__ inside the install, which an update must not find.
+        with TemporaryDirectory() as folder:
+            install = Path(folder, "インストール folder")
+            install.mkdir()
+            Path(install, "engine_module.py").write_text(
+                "NAME = 'engine'\n", encoding="utf-8"
+            )
+            script = Path(install, "tool.py")
+            script.write_text(
+                "import sys, engine_module\nprint(engine_module.NAME, sys.argv[1])\n",
+                encoding="utf-8",
+            )
+            cache = Path(folder, "python-cache")
+            with (
+                patch.object(sys, "pycache_prefix", str(cache)),
+                patch.object(sys, "dont_write_bytecode", False),
+            ):
+                line = system.shell_command(system.python_command(script, "it's"))
+            shell = (
+                ["powershell", "-NoProfile", "-Command", line]
+                if os.name == "nt"
+                else ["sh", "-c", line]
+            )
+            # An assistant's shell may say to write no bytecode at all.
+            environment = dict(os.environ)
+            environment.pop("PYTHONDONTWRITEBYTECODE", None)
+            result = system.run(
+                shell, capture_output=True, text=True, timeout=60, env=environment
+            )
+            self.assertEqual(result.stdout.strip(), "engine it's", result.stderr)
+            self.assertEqual(list(install.rglob("*.pyc")), [])
+            self.assertTrue(list(cache.rglob("engine_module.*.pyc")))
+
+    def test_the_cache_keeps_only_what_this_python_reads_again(self):
+        # A moved install or another Python left its compiled modules in the
+        # profile for good.
+        with TemporaryDirectory() as folder:
+            cache = Path(folder, "python-cache")
+            with patch.object(sys, "pycache_prefix", str(cache)):
+                current = Path(importlib.util.cache_from_source(system.__file__))
+                moved = Path(
+                    importlib.util.cache_from_source(str(Path(folder, "old/a.py")))
+                )
+                other = current.with_name("system.cpython-30.pyc")
+                for path in (current, moved, other):
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_bytes(b"")
+                system.prune_bytecode()
+            self.assertTrue(current.exists())
+            self.assertFalse(other.exists())
+            self.assertFalse(moved.parent.exists())
+            self.assertTrue(cache.is_dir())
 
 
 class WriteTests(unittest.TestCase):

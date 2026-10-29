@@ -35,7 +35,7 @@ it when a clean source, deterministic rebuild, or another available method produ
 faithful result. It does not authorize downloading models or performing broader generative edits.
 Use these exact local paths with platform-appropriate command quoting:
 
-- Image Editor Python: `{{IMAGE_TOOL_PYTHON}}`
+- Image Editor Python, as a command quoted for your shell: `{{IMAGE_TOOL_PYTHON}}`
 - Local inpainting bridge: `{{IMAGE_INPAINT_CLI}}`
 - Family background solver: `{{IMAGE_FAMILY_CLI}}`
 - Text recipe fitter: `{{IMAGE_RECIPE_CLI}}`
@@ -211,8 +211,8 @@ Wherever a member's lettering does not reach a pixel, that member holds the true
 Before inpainting any requested image that has a family, rebuild its text-free background with the family solver and render the translation on that output:
 
 ```text
-"{{IMAGE_TOOL_PYTHON}}" "{{IMAGE_FAMILY_CLI}}" solve --project "{{GAME_ROOT}}" --asset img/pictures/Card12.png --output "{{GAME_ROOT}}/.dazedtl/image_translation_resources/assets/Card12_clean.png"
-"{{IMAGE_TOOL_PYTHON}}" "{{IMAGE_FAMILY_CLI}}" check --project "{{GAME_ROOT}}" --asset img/pictures/Card12.png --shared --candidate SAVED_CLEAN.png --residual RESIDUAL.png
+{{IMAGE_TOOL_PYTHON}} "{{IMAGE_FAMILY_CLI}}" solve --project "{{GAME_ROOT}}" --asset img/pictures/Card12.png --output "{{GAME_ROOT}}/.dazedtl/image_translation_resources/assets/Card12_clean.png"
+{{IMAGE_TOOL_PYTHON}} "{{IMAGE_FAMILY_CLI}}" check --project "{{GAME_ROOT}}" --asset img/pictures/Card12.png --shared --candidate SAVED_CLEAN.png --residual RESIDUAL.png
 ```
 
 Read its JSON before using the output:
@@ -340,8 +340,8 @@ more faithful.
 Invoke the configured Python and bridge paths above as follows, adapting quoting to the host shell:
 
 ```text
-"{{IMAGE_TOOL_PYTHON}}" "{{IMAGE_INPAINT_CLI}}" status
-"{{IMAGE_TOOL_PYTHON}}" "{{IMAGE_INPAINT_CLI}}" fill --image SOURCE.png --mask MASK.png --output CANDIDATE.png --method lama_manga
+{{IMAGE_TOOL_PYTHON}} "{{IMAGE_INPAINT_CLI}}" status
+{{IMAGE_TOOL_PYTHON}} "{{IMAGE_INPAINT_CLI}}" fill --image SOURCE.png --mask MASK.png --output CANDIDATE.png --method lama_manga
 ```
 
 Add exact target typography only after accepting and validating a text-free background. Record the
@@ -445,9 +445,9 @@ When the image's family has an accepted translated sibling, fit that sibling's t
 `fit` recovers each string's font, size, placement rule and effect stack from the accepted image, its clean base and the exact strings it shows; `check` re-renders the accepted image and fails above 6 levels of mean error; `render` draws a member's new strings on its own clean base.
 
 ```text
-"{{IMAGE_TOOL_PYTHON}}" "{{IMAGE_RECIPE_CLI}}" fit --accepted ACCEPTED.png --base ACCEPTED_CLEAN.png --font FONT.otf --slot "title=Accepted title" --slot "subtitle=Accepted subtitle" --recipe "{{GAME_ROOT}}/.dazedtl/image_translation_resources/recipes/FAMILY.json"
-"{{IMAGE_TOOL_PYTHON}}" "{{IMAGE_RECIPE_CLI}}" check --recipe RECIPE.json --accepted ACCEPTED.png --base ACCEPTED_CLEAN.png --diff DIFF.png
-"{{IMAGE_TOOL_PYTHON}}" "{{IMAGE_RECIPE_CLI}}" render --recipe RECIPE.json --base TARGET_CLEAN.png --slot "title=New title" --slot "subtitle=New subtitle" --like FROZEN_ORIGINAL.png --output CANDIDATE.png
+{{IMAGE_TOOL_PYTHON}} "{{IMAGE_RECIPE_CLI}}" fit --accepted ACCEPTED.png --base ACCEPTED_CLEAN.png --font FONT.otf --slot "title=Accepted title" --slot "subtitle=Accepted subtitle" --recipe "{{GAME_ROOT}}/.dazedtl/image_translation_resources/recipes/FAMILY.json"
+{{IMAGE_TOOL_PYTHON}} "{{IMAGE_RECIPE_CLI}}" check --recipe RECIPE.json --accepted ACCEPTED.png --base ACCEPTED_CLEAN.png --diff DIFF.png
+{{IMAGE_TOOL_PYTHON}} "{{IMAGE_RECIPE_CLI}}" render --recipe RECIPE.json --base TARGET_CLEAN.png --slot "title=New title" --slot "subtitle=New subtitle" --like FROZEN_ORIGINAL.png --output CANDIDATE.png
 ```
 
 - Name the rules one image cannot prove: `--align NAME=left` for left-aligned slots such as dialogue lines, and `--same-style line1,line2` for slots that share one effect stack, such as the lines of one message.
@@ -607,10 +607,10 @@ It makes the checks a look at the image misses and writes diagnostic composites 
 - Protected shapes are unchanged and the text keeps the declared clearance from them.
 
 ```text
-"{{IMAGE_TOOL_PYTHON}}" "{{IMAGE_VALIDATE_CLI}}" request REQUEST.json --reproduce --diagnostics "{{GAME_ROOT}}/.dazedtl/image_translation_resources/work/validation"
-"{{IMAGE_TOOL_PYTHON}}" "{{IMAGE_VALIDATE_CLI}}" recipes "{{GAME_ROOT}}" --asset img/pictures/Sibling.png --reproduce
-"{{IMAGE_TOOL_PYTHON}}" "{{IMAGE_VALIDATE_CLI}}" files --original ORIGINAL.png --candidate CANDIDATE.png --intermediate TEXTFREE.png --cleanup MASK.png --text X,Y,WIDTH,HEIGHT
-"{{IMAGE_TOOL_PYTHON}}" "{{IMAGE_VALIDATE_CLI}}" encode CANDIDATE.png --like ORIGINAL.png --output FINAL.png
+{{IMAGE_TOOL_PYTHON}} "{{IMAGE_VALIDATE_CLI}}" request REQUEST.json --reproduce --diagnostics "{{GAME_ROOT}}/.dazedtl/image_translation_resources/work/validation"
+{{IMAGE_TOOL_PYTHON}} "{{IMAGE_VALIDATE_CLI}}" recipes "{{GAME_ROOT}}" --asset img/pictures/Sibling.png --reproduce
+{{IMAGE_TOOL_PYTHON}} "{{IMAGE_VALIDATE_CLI}}" files --original ORIGINAL.png --candidate CANDIDATE.png --intermediate TEXTFREE.png --cleanup MASK.png --text X,Y,WIDTH,HEIGHT
+{{IMAGE_TOOL_PYTHON}} "{{IMAGE_VALIDATE_CLI}}" encode CANDIDATE.png --like ORIGINAL.png --output FINAL.png
 ```
 
 `request` checks a task's changed images and their recipes exactly as the Image Manager does when it reads your report, and `--reproduce` also runs each recipe and compares its output hash.
