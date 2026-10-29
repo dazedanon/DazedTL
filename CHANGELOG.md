@@ -3,6 +3,32 @@
 Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 [release.mjs](scripts/release.mjs) writes each entry from [release/notes.md](release/notes.md).
 
+## [2.52.4] - 2026-10-29
+
+### Fixed
+
+- **Windows:** in Text QA, a reviewer your assistant starts whose shell is Git Bash, such as Claude Code without its PowerShell tool, now reads how to run its first command, where that PowerShell command failed as pasted.
+- **Settings:** GPT-6.1, GPT-6 and GPT-5.6 no longer offer the Maximum thinking effort, which those models refuse, and Check an effort no longer fails for GPT-5.1 Medium and High or GPT-5 Minimal.
+- **Translate:** a Custom connection with the Gemini-compatible protocol, such as a proxy, no longer sends its key straight to Google past the proxy: it runs Live only, with no Batch price in its estimates and quotes to approve and a waiting Batch quote on it reading outdated, since Gemini Batches move their files through Google's own API, and its requests go to its own address.
+- **Translate:** a Gemini Batch sent on such a connection before this update still finishes, its status, results and cancellation read at Google where it runs instead of failing at the proxy, and a Gemini or Kimi Batch saved without a key's name is read only with the connection it was sent on instead of another one's key.
+- **Translate:** while an OpenRouter connection's check has failed, or before its first check, a Live cost estimate, the Cost estimate and an Assistant-led Live quote show their Live price with no Batch price, where Batch was priced at half its Live price, and Live translation goes ahead; once the check passes, the Batch price shows and the Live estimate stays current. A Batch estimate or quote keeps its Batch price meanwhile, and estimating, approving or starting a Batch waits for the check instead of saying its settings or inputs changed, a chosen Batch staying Batch with the reason beside it, where it switched to Live.
+- **Translate:** after an update that changes how DazedTL builds a game's requests, as this one does for most engines other than RPG Maker, a Batch collected before it but not yet submitted stops before anything is sent and asks to translate its files again, where it was submitted and could pay for translations no file takes; a Batch already submitted is still collected, and a Live run or a submitted Batch saved before 2.0 now continues instead of stopping with "The engine changed. Start a new run to keep saved requests tied to their original code."
+- **Translate:** reviewing and starting a Live or Batch translation on a large game no longer reads the game's data, or every selected working file, twice.
+- **Translate:** a Text file or a JSON dialogue list no longer pays a second time for each speaker name, which was sent again once it held its translation, and a JSON speaker keeps its first translation instead of that reply's.
+- **Translate:** in a Text, Regex, Tyrano, Kirikiri, Ren'Py, CSV, WOLF RPG, WOLF RPG 2, WolfDawn, JSON, YU-RIS or RPG Maker MV/MZ game, a speaker name translated with a `]`, such as `Al]Ice`, no longer leaves its `[Al]Ice]:` label in the game text, and a Text file no longer sends the label twice in its line; a Lune line starting with a word and a colon, such as `Note: the door is locked`, is no longer cut to `the door is locked`.
+- **Translate:** a Regex or WOLF RPG speaker now has only the name itself translated, where it was also replaced in the rest of its line, such as a voice file named after the speaker.
+- **Translate:** a Tyrano `#name:face` line now has only its name translated, keeping its face, and a speaker name a model answers on two lines is written on one, where it added a line to Tyrano, WOLF RPG 2, Kirikiri, Regex and WolfDawn files.
+- **Translate:** the second of two Kirikiri speaker lines in a row is now translated.
+- **Translate:** a Text, Tyrano or Kirikiri line holding only spaces, such as `　`, no longer moves every later translation in its file up one line, and a Text file or JSON dialogue list no longer sends the lines after a speaker's line as said by that speaker.
+- **Translate:** a Regex `\text` block holding only spaces no longer moves every later translation in its file up one block, an empty one no longer pays to send the block before it again and take its translation, and a `$menu_item` with an empty label no longer gets a translation between every letter; a CSV row with `:name[]` tags or `\M` markers whose text has furigana, such as `＜漢字＝かんじ＞`, is now translated in its target, where it stayed in Japanese or lost its tag; and a WOLF RPG 2 line ending in `：` inside a message, such as `答えは次の通り：`, is now translated with its message instead of read as a new speaker.
+- **Translate:** a WOLF RPG 2 line holding a `：`, such as 「待って：ね」, is now translated as dialogue instead of read as a speaker, and one starting with `：` no longer stays in Japanese; choices (`//選択肢`) right after a line of dialogue are now translated, and a WOLF RPG 2 or Kirikiri file ending on a speaker line, or a WOLF RPG 2 file ending on its choices, no longer fails.
+- **Translate:** a CSV file's `:name[]` tag in the target column now gets the translated name too, where it stayed in Japanese, and a tag with no line after it no longer writes its translation between every letter of a filled target.
+- **Translate:** a CSV row with `:name[]` tags or `\M` markers and an empty target now keeps its tag or marker in the target.
+- **Translate:** in an RPG Maker MV/MZ or WOLF RPG game, a line the translation left in Japanese now keeps its own line breaks, where it was written back on one line; an RPG Maker MV/MZ list of script, comment, plugin, nickname or profile text whose reply comes back a line short or long now stays in Japanese and reports the mismatch, where its translations landed on the wrong commands; a WOLF RPG DataBase with status effects after its items no longer fails; and a WOLF RPG or RPG Maker MV/MZ file that cannot be saved now fails with its name and the reason.
+- **Translate:** an RPG Maker plugin file's quest summary or objective nested deeper than usual now wraps with its own line breaks, where the game could not read that quest list; codes such as an icon `\I[5]` or a variable `\V[1]` in any plugin text, and color codes in quest names, places, objectives and menus, are now written back with as many backslashes as the file uses, as color codes in `txtSubject` and quest summaries already were, and so is a menu help's line break.
+- **Translate:** an RPG Maker plugin file whose quest reply comes back a line short now keeps that quest field in Japanese and reports the mismatch, where the other quests' translations moved onto the wrong quests; a status label drawn on two screens, such as `【口づけ】`, now gets its own translation on both, where every later label took the next one's; and a label translated with an apostrophe or quotes, such as `Kiss's`, no longer ends its quoted text, also when it sits in a later quoted part of its line, a variable or a plugin setting's script, which stopped the game from loading the plugin.
+- **Translate:** an RPG Maker plugin file no longer writes a translation over the same Japanese elsewhere on its line, such as another plugin's setting or a later quest whose name holds an earlier one's.
+
 ## [2.52.3] - 2026-10-28
 
 ### Fixed
@@ -1435,6 +1461,7 @@ Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachan
 - The first release of DazedTL as a desktop app, installed from a ZIP with a START launcher and updated from inside the app.
 - **Guided steps** for RPG Maker MV, MZ and VX Ace games, and **Assistant-led** for any game.
 
+[2.52.4]: https://github.com/dazedanon/DazedTL/compare/v2.52.3...v2.52.4
 [2.52.3]: https://github.com/dazedanon/DazedTL/compare/v2.52.2...v2.52.3
 [2.52.2]: https://github.com/dazedanon/DazedTL/compare/v2.52.1...v2.52.2
 [2.52.1]: https://github.com/dazedanon/DazedTL/compare/v2.52.0...v2.52.1
