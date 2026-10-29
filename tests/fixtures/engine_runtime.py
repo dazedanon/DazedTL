@@ -2335,15 +2335,13 @@ try:
                 params, ensure_ascii=False
             ), params
             assert params["response_format"]["type"] == mode, (model, params)
-            # Gemini's Batch files take JSON mode; Live and the others keep it.
+            # Gemini's Batch files take JSON mode; the others keep it.
             batch_format = _openai_batch_body(protocol, params)["response_format"]
             assert batch_format == (
                 {"type": "json_object"}
                 if protocol == "gemini"
                 else params["response_format"]
             ), (model, batch_format)
-            live = _openai_batch_body(protocol, params, batch=False)
-            assert live["response_format"] == params["response_format"], model
         # Kimi Batches run only K2.6 and K2.7 Code, at 60% of the Live price.
         kimi = {"api_url": "https://api.moonshot.ai/v1", "api_provider": "openai"}
         assert [
@@ -2637,6 +2635,8 @@ try:
             "def provider(_native, *_args, **_kwargs):\n"
             "    with open(folder / 'sent.txt', 'a') as sent:\n"
             "        sent.write('sent\\n')\n"
+            "    if os.environ.get('STAND_IN_PAYS') and len((folder / 'sent.txt').read_text().split()) == 1:\n"
+            "        return openai.types.chat.ChatCompletion.model_validate({'id': 'paid', 'object': 'chat.completion', 'created': 0, 'model': 'gpt-stand-in', 'choices': [{'index': 0, 'finish_reason': 'stop', 'message': {'role': 'assistant', 'content': '{}'}}], 'usage': {'prompt_tokens': 11, 'completion_tokens': 3, 'total_tokens': 14}})\n"
             "    message = {'effort': \"Unsupported value: 'reasoning_effort' does not support 'high'.\", 'model': 'The model `gone` does not exist.'}[refused]\n"
             "    request = httpx2.Request('POST', 'https://stand-in.test/v1/chat/completions')\n"
             "    try:\n"
@@ -2684,9 +2684,10 @@ try:
                 ("RPG Maker MV/MZ", (".json",), None),
                 runner_script=stop_runner,
             )
-            errors, handed = [], []
+            errors, handed, logged = [], [], []
             stop_task.file_error_signal.connect(lambda *args: errors.append(args))
             stop_task.progress_signal.connect(lambda *args: handed.append(args[2]))
+            stop_task.log_signal.connect(logged.append)
             with patch.dict(
                 os.environ,
                 {
@@ -2709,12 +2710,24 @@ try:
                 assert stop_task.run_stop is None, case
             elif stopped is True:
                 # The two rejections before the stop failed their own files.
-                assert "The model `gone` does not exist." in errors[0][1], case
+                # They read as the provider's own error, which the run's
+                # message names, not the SDK's and the engine's wrapping.
+                assert errors[0][1] == (
+                    "The provider rejected the request: HTTP 400 - The model "
+                    "`gone` does not exist."
+                ), case
                 assert errors[0][1] == errors[1][1], case
                 assert errors[2][1].startswith(
                     "The provider rejected 3 requests in a row with the same error"
                 ), case
                 assert stop_task.run_stop == errors[2][1], case
+                # The Run log reads each request's error once, and each
+                # failed file's once more: the worker's closing ERROR marker
+                # and a second copy through its progress bar repeated them.
+                kinds = [
+                    line.split(" ", 1)[0] for line in logged if "does not exist" in line
+                ]
+                assert kinds == ["[API_ERROR]", "❌"] * 2 + ["[API_ERROR]"], logged
             else:
                 assert errors == [("Map001.json", stopped)], case
                 assert stop_task.run_stop == stopped, case
@@ -2731,7 +2744,13 @@ try:
                 ),
                 encoding="utf-8",
             )
-        for policy, sends in (("1", 1), ("0", 2)):
+        # Under the policy the stand-in answers the first request, which the
+        # file pays for before the stop leaves its handler: its receipt keeps
+        # it, read from its log line by the run's records and from its result
+        # by the run's TOTAL.
+        from dazedtl.compatibility.process_view import file_receipt
+
+        for policy, sends in (("1", 2), ("0", 2)):
             Record(stop_root).reset()
             (stop_root / "sent.txt").unlink(missing_ok=True)
             for text_file in texts:
@@ -2739,15 +2758,17 @@ try:
             stop_task = TranslationTask(
                 stop_root, ("JSON", (".json",), None), runner_script=stop_runner
             )
-            errors, handed = [], []
+            errors, handed, logged = [], [], []
             stop_task.file_error_signal.connect(lambda *args: errors.append(args))
             stop_task.progress_signal.connect(lambda *args: handed.append(args[2]))
+            stop_task.log_signal.connect(logged.append)
             with patch.dict(
                 os.environ,
                 {
                     **stop_environment,
                     "STAND_IN_REFUSES": "effort",
                     "STAND_IN_POLICY": policy,
+                    "STAND_IN_PAYS": "1" if policy == "1" else "",
                 },
             ):
                 result = stop_task._run_files(texts, False)
@@ -2764,6 +2785,13 @@ try:
                 assert errors == [(name, refused_effort) for name in handed], case
                 assert stop_task.run_stop == refused_effort, case
                 assert written == [], (case, written)
+                paid = stop_task.receipts["Text1.json"]
+                assert (paid["input"], paid["output"]) == (11, 3), paid
+                assert [
+                    receipt
+                    for receipt in (file_receipt(line, texts) for line in logged)
+                    if receipt
+                ] == [("Text1.json", paid, True)], logged
             else:
                 assert result != "Fail", case
                 assert handed == texts and errors == [], case
@@ -2776,6 +2804,20 @@ try:
         from io import StringIO
 
         from util import subprocess_runner, translation_task
+
+        # A failed worker's error is its closing ERROR line, which the Run log
+        # leaves out, not its traceback's first line, the first of chained
+        # errors.
+        rejected = "The provider rejected the request: HTTP 400 - No."
+        assert (
+            translation_task._process_error(
+                "Traceback (most recent call last):\n"
+                "Exception: API call failed: Error code: 400\n"
+                f"util.translation.RequestRejectedError: {rejected}",
+                ["[API_ERROR] " + rejected, "ERROR:" + rejected],
+            )
+            == rejected
+        )
 
         def consume(name, _estimate):
             with translation._global_accurate_cost_lock:

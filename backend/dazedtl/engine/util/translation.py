@@ -246,6 +246,20 @@ _thread_local = threading.local()
 # Cross-thread running total of accurate cache-discounted cost (protected by lock).
 _global_accurate_cost      = 0.0
 _global_accurate_cost_lock = threading.Lock()
+# The input and output tokens and cost of every response this process paid
+# for, which reset_accurate_cost leaves alone (protected by the same lock).
+_global_paid = {"input": 0, "output": 0, "cost": 0.0}
+
+
+def _add_paid(input_tokens, output_tokens, cost):
+    """Add a paid response's tokens and cost to the run's TOTAL and to what
+    this process paid for (paid_usage), together."""
+    global _global_accurate_cost
+    with _global_accurate_cost_lock:
+        _global_accurate_cost += cost
+        _global_paid["input"] += int(input_tokens or 0)
+        _global_paid["output"] += int(output_tokens or 0)
+        _global_paid["cost"] += cost
 
 
 def _usage_to_debug_dict(usage):
@@ -5472,7 +5486,6 @@ def _record_live_cost(usage, model):
     route's cache prices, Live cache writes lasting five minutes, all at the
     price of the time it arrived. Add it to the file's and the run's cost,
     which calculateCost then reports in place of pricing the token totals."""
-    global _global_accurate_cost
     pricing = getPricingConfig(model)
     route = live_price_route(model)
     cost = usage_cost(
@@ -5486,8 +5499,9 @@ def _record_live_cost(usage, model):
         ),
     )
     _thread_local.file_live_cost = getattr(_thread_local, "file_live_cost", 0) + cost
-    with _global_accurate_cost_lock:
-        _global_accurate_cost += cost
+    _add_paid(
+        getattr(usage, "prompt_tokens", 0), getattr(usage, "completion_tokens", 0), cost
+    )
     _thread_local.file_cost_ready = True
 
 
@@ -5543,13 +5557,16 @@ def _record_batch_cost(since, model):
     """Add the Batch results this file fetched after ``since``, an earlier
     _batch_usage, to the run's TOTAL; the file's line prices them all once
     the file is done (calculateCost)."""
-    global _global_accurate_cost
     added = _batch_usage(since)
     if not any(added.values()):
         return
-    cost = _batch_results_cost(added, model)
-    with _global_accurate_cost_lock:
-        _global_accurate_cost += cost
+    _add_paid(
+        added["input_tokens"]
+        + added["cache_read_input_tokens"]
+        + added["cache_creation_input_tokens"],
+        added["output_tokens"],
+        _batch_results_cost(added, model),
+    )
 
 
 _BATCH_COLLECT_FILE_COUNTERS = (
@@ -5616,6 +5633,19 @@ def priced_cost():
     TOTAL calculateCost reports."""
     with _global_accurate_cost_lock:
         return _global_accurate_cost
+
+
+def paid_usage(since=None):
+    """The tokens and cost of every response this process paid for so far,
+    as ``{"input", "output", "cost"}``, or only those after ``since``, an
+    earlier reading. What a file or page paid for is what was paid after a
+    reading taken when it began, which stays known when it fails before
+    counting its responses (util/subprocess_runner)."""
+    with _global_accurate_cost_lock:
+        paid = dict(_global_paid)
+    if since is not None:
+        paid = {key: value - since[key] for key, value in paid.items()}
+    return paid
 
 
 def reset_accurate_cost():
@@ -6361,10 +6391,10 @@ def translateAI(text, history, config, filename=None, pbar=None, lock=None,
                     )
                 except Exception as api_err:
                     err_msg = f"[API_ERROR] {api_err}"
-                    # Print to stdout so the GUI captures it immediately
+                    # Print to stdout so the GUI captures it immediately, and
+                    # only there: the progress bar's write goes to stdout too,
+                    # which printed each failed attempt twice in the Run log.
                     print(err_msg, flush=True)
-                    if pbar:
-                        pbar.write(err_msg)
                     # Also write to the translation log file for persistence
                     try:
                         Path(config.logFilePath).parent.mkdir(parents=True, exist_ok=True)

@@ -1351,7 +1351,6 @@ def summary(root, job, view=None):
         "rejected": rejected,
         "validationIssues": validation_issues,
         "unused": sum(row["state"] == "unused" for row in items),
-        "appliedFiles": len(job.get("appliedOutputs", [])),
         "failed": failed,
         "batches": receipts,
         "noRequestFiles": no_request_files(root, job, items),

@@ -6,6 +6,7 @@ import {
   type ReactNode,
 } from "react";
 import { Button } from "./Button";
+import { tailExcerpt } from "./excerpt";
 
 /** Show a readable excerpt while keeping the complete retained text available. */
 export function ExpandableText({
@@ -54,7 +55,7 @@ export function ExpandableText({
   const excerpt = !truncate
     ? text
     : tail
-      ? content.split("\n").slice(-6).join("\n").slice(-limit)
+      ? tailExcerpt(content, limit)
       : appearance === "code" || head.length === content.length
         ? head.trimEnd()
         : // Prose ends its excerpt between words.

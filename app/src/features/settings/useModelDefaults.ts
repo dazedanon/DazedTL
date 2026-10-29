@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../../api/client";
 import { messageOf } from "../../api/errors";
 import type { ModelDefaults } from "../../api/contracts";
+import { useTabPanelShown } from "../../ui/Tabs";
 
 /**
  * The active connection's defaults for `model`, read again whenever `basis`,
@@ -21,8 +22,11 @@ export function useModelDefaults(
     error?: string;
   }>();
   const key = JSON.stringify([connectionId, model, basis, host, attempt]);
+  const current = result?.key === key;
+  // A hidden Settings tab reads them again once it shows.
+  const shown = useTabPanelShown();
   useEffect(() => {
-    if (!model) return;
+    if (!model || current || !shown) return;
     let active = true;
     // Typing a model ID should not launch a resolver for each keystroke.
     const timer = setTimeout(() => {
@@ -39,11 +43,11 @@ export function useModelDefaults(
       active = false;
       clearTimeout(timer);
     };
-  }, [key, connectionId, model]);
+  }, [key, connectionId, model, current, shown]);
   return {
-    value: result?.key === key ? result.value : undefined,
-    error: result?.key === key ? result.error : undefined,
-    loading: !!model && result?.key !== key,
+    value: current ? result.value : undefined,
+    error: current ? result.error : undefined,
+    loading: !!model && !current,
     retry: () => retry((value) => value + 1),
   };
 }
