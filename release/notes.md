@@ -2,7 +2,7 @@
 
 ### Fixed
 
-- **Translate:** starting a reviewed Live or Batch translation on a large game no longer reads every selected working file twice before it starts.
+- **Translate:** reviewing and starting a Live or Batch translation on a large game no longer reads the game's data, or every selected working file, twice.
 - **Windows:** in Text QA, a reviewer your assistant starts whose shell is Git Bash, such as Claude Code without its PowerShell tool, now reads how to run its first command, where that PowerShell command failed as pasted.
 - **Translate:** a Text file or a JSON dialogue list no longer pays a second time for each speaker name, which was sent again once it held its translation, and a JSON speaker keeps its first translation instead of that reply's.
 - **Translate:** in a Text, Regex, Tyrano, Kirikiri, Ren'Py, CSV, WOLF RPG or WOLF RPG 2 game, a speaker name translated with a `]`, such as `Al]Ice`, no longer leaves its `[Al]Ice]:` label in the game text, and a Text file no longer sends the label twice in its line; a Lune line starting with a word and a colon, such as `Note: the door is locked`, is no longer cut to `the door is locked`.
