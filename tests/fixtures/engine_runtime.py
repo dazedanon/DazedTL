@@ -945,12 +945,14 @@ try:
         # dialogue, and wrote a choice that is part of a later one, or an
         # empty one, over the whole csel line. The plugin module read an actor
         # code \n[1] as a line break, and sent a quest client's line break
-        # as text. CSV read its target column as the speaker by default, and
-        # as the name it wrote there made the row look translated, wrote each
-        # row's translation to the next row. CSV, Kirikiri, Regex, Lune, Tyrano
-        # and WOLF2 sent each speaker name again in the pass that writes the
-        # translations, as it then held its translation, and WOLF2 its
-        # choices too; Lune refused the .l files it is offered.
+        # as text, and wrote a txtSubject's or QuestContent's color code \c[2]
+        # with one backslash. CSV read its target column as the speaker by
+        # default, and as the name it wrote there made the row look
+        # translated, wrote each row's translation to the next row. CSV,
+        # Kirikiri, Regex, Lune, Tyrano and WOLF2 sent each speaker name again
+        # in the pass that writes the translations, as it then held its
+        # translation, and WOLF2 its choices too; Lune refused the .l files it
+        # is offered.
         shapes = temporary / "engine-shapes"
         for folder in ("files", "translated", "log"):
             (shapes / folder).mkdir(parents=True)
@@ -992,6 +994,29 @@ try:
                     (
                         r"var q = [\"{\\\"QuestClientName\\\":\\\"EN \'村の 村長\'\\\"}\"];"
                         '\nvar txtSubject = "EN ՚\\\\n[1]の クエスト՚";\n'
+                    ),
+                ),
+                (
+                    "modules.rpgmakerplugin",
+                    "handlePlugin",
+                    "plugins.js",
+                    (
+                        r"var q = [\"{\\\"QuestContent\\\":\\\"\\\""
+                        + "\\" * 16
+                        + r"c[2]森"
+                        + "\\" * 16
+                        + r"c[0]で\\\"\\\"}\"];"
+                        '\nvar txtSubject = "\\\\C[2]クエスト\\\\C[0]";\n'
+                    ),
+                    {},
+                    [["\\c[2]森\\c[0]で"], ["\\C[2]クエスト\\C[0]"]],
+                    (
+                        r"var q = [\"{\\\"QuestContent\\\":\\\"\\\"EN \'"
+                        + "\\" * 16
+                        + r"c[2]森"
+                        + "\\" * 16
+                        + r"c[0]で\'\\\"\\\"}\"];"
+                        '\nvar txtSubject = "EN ՚\\\\C[2]クエスト\\\\C[0]՚";\n'
                     ),
                 ),
                 (
