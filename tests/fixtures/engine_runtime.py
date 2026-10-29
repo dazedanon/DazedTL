@@ -530,6 +530,18 @@ try:
                     "DataBase.json", {"types": [{"stringArgs": ["一頁"]}]}, failure
                 )
                 assert sorted(os.listdir("translated")) == ["Map001.json"]
+                # A file that could not be saved failed with a bare OSError,
+                # WOLF's own write, instead of OutputNotSaved naming it.
+                from util.translation_task import OutputNotSaved
+
+                Path("translated/Map002.json").mkdir()
+                try:
+                    wolf_file("Map002.json", {"events": []})
+                except OutputNotSaved as error:
+                    assert "Map002.json could not be saved" in str(error), error
+                else:
+                    raise AssertionError("A WOLF file that could not be saved passed.")
+                Path("translated/Map002.json").rmdir()
                 # A file's kind was searched for in its whole text, so a
                 # CommonEvent line holding "'events':" was parsed as a map.
                 wolf_fails.clear()
@@ -663,21 +675,17 @@ try:
         ):
             got = wolf_misfit(*commands)
             assert got == (written, ["M.json"], marked), (commands, got)
-        # A chunk translateAI kept in its source text after failed validation
-        # came back the right length, so its lines were written back with
-        # their line breaks turned into spaces ("勇者の 記録"); a page's list
-        # and a DataBase category whose reply translateAI kept are now left
-        # as they were, and counted once, by translateAI.
-        keeping = [False]
 
+        # A line translateAI kept in its source text, a whole chunk after
+        # failed validation or one line of a reply it otherwise kept, comes
+        # back as it was sent, and was written back with its line breaks
+        # turned into spaces ("勇者の 記録"). Each such line now keeps its
+        # source exactly, in a page's lists and a DataBase category, and the
+        # reply's other lines are written.
         def wolf_keeps(text, *_args):
-            keeping[0] = isinstance(text, list) and any(
-                "勇者の" in line for line in text
-            )
-            if keeping[0]:
-                return [list(text), [3, 1]]
             if isinstance(text, list):
-                return [[f"EN {line}" for line in text], [3, 1]]
+                reply = [line if "勇者の" in line else f"EN {line}" for line in text]
+                return [reply, [3, 1]]
             return [f"EN {text}", [3, 1]]
 
         def wolf_db(*types):
@@ -688,7 +696,7 @@ try:
             def answer(text, *_args):
                 sent.append(text)
                 reply = wolf_keeps(text)
-                if not keeping[0] and any("看板" in line for line in text):
+                if any("看板" in line for line in text):
                     reply[0].pop()
                 return reply
 
@@ -701,7 +709,6 @@ try:
                     STATEFLAG=True,
                     MISMATCH=[],
                     translateAI=answer,
-                    last_translation_had_mismatch=lambda: keeping[0],
                 ),
                 redirect_stdout(printed),
             ):
@@ -712,15 +719,13 @@ try:
                 return document, wolf.MISMATCH, marked, sent
 
         battle = {"code": 300, "stringArgs": ["BTLメッセージ", "勇者の\n記録"]}
-        with patch.multiple(
-            wolf,
-            CODE300=True,
-            translateAI=wolf_keeps,
-            last_translation_had_mismatch=lambda: keeping[0],
-        ):
-            page = [deepcopy(battle)]
+        attack = {"code": 300, "stringArgs": ["BTLメッセージ", "攻撃"]}
+        with patch.multiple(wolf, CODE300=True, MISMATCH=[], translateAI=wolf_keeps):
+            page = deepcopy([battle, attack])
             wolf.searchCodes(page, SimpleNamespace(refresh=lambda: None), [], "M.json")
-            assert page == [battle], page
+            attacked = {**attack, "stringArgs": ["BTLメッセージ", "EN 攻撃"]}
+            assert page == [battle, attacked], page
+            assert wolf.MISMATCH == [], wolf.MISMATCH
 
         def category(name, *fields):
             return {
@@ -731,7 +736,8 @@ try:
         # A DataBase category whose reply had the wrong length reached the
         # set-data pass as empty lists once another category fit, and the
         # file failed with an IndexError; the status effects were sent once
-        # for each of their lists that held text.
+        # for each of their lists that held text. Status effects after items
+        # took the items' font, the number 18, and failed on "font + text".
         directory = os.getcwd()
         os.chdir(temporary)
         (temporary / "log").mkdir(exist_ok=True)
@@ -740,11 +746,18 @@ try:
             armor = category("防具", ("名前", "看板"), ("説明", "宿屋"))
             weapon = category("武器", ("名前", "剣"), ("説明", "勇者の\n記録"))
             states = category("ステート", ("名前", "毒"), ("表示名", "毒状態"))
-            written, mismatched, marked, sent = wolf_db(states, items, armor, weapon)
+            written, mismatched, marked, sent = wolf_db(items, states, armor, weapon)
         finally:
             os.chdir(directory)
-        assert written[2:] == [armor, weapon], written
-        assert written[1]["data"][0]["data"][0]["value"] == "EN 薬草", written
+        values = [
+            [field["value"] for field in table["data"][0]["data"]] for table in written
+        ]
+        assert values == [
+            ["EN 薬草", "\\f[18]EN 話 記録"],
+            ["EN 毒", "EN 毒状態"],
+            ["看板", "宿屋"],
+            ["EN 剣", "勇者の\n記録"],
+        ], values
         assert (mismatched, marked) == (["D.json"], 1), (mismatched, marked)
         # Nothing more of a category is sent, and paid for, once it cannot be written.
         assert ["宿屋"] not in sent, sent
@@ -990,13 +1003,18 @@ try:
         # filled target. Text, Tyrano and Kirikiri's narration took a reply
         # for a line of spaces they sent nothing for, moving each later
         # translation up a line, and Text and JSON's list format sent the
-        # lines after a speaker's as said by it. WOLF2 joined a speaker right
-        # after a run of text to that run, and WOLF2 and Kirikiri left the
-        # second of two speakers in a row untranslated. Tyrano translated
-        # "#name:face" whole, face included, and a name reply on two lines
-        # added a line to the file. CSV wrote an empty target without its
-        # source's :name[] tag or \M marker, and JSON, Yuris and WolfDawn kept
-        # the label of a name holding "]".
+        # lines after a speaker's as said by it, also after an empty name.
+        # Kirikiri left the second of two speakers in a row untranslated.
+        # Tyrano translated "#name:face" whole, face included, and a name
+        # reply on two lines added a line to the file. CSV wrote an empty
+        # target without its source's :name[] tag or \M marker, and JSON, Yuris
+        # and WolfDawn kept the label of a name holding "]". WOLF2 read a line
+        # ending in "：" inside a message as a speaker, though only a message's
+        # first line names it. Regex's \text block of spaces took the next
+        # block's reply, and an empty one sent the block before it again; CSV
+        # looked for a row's text without its furigana in a target holding
+        # them, so that target stayed Japanese and an empty one lost its
+        # :name[] tag.
         shapes = temporary / "engine-shapes"
         for folder in ("files", "translated", "log"):
             (shapes / folder).mkdir(parents=True)
@@ -1569,10 +1587,37 @@ try:
                     "modules.wolf2",
                     "handleWOLF2",
                     "Map001.txt",
-                    "アリス：\nやあ\nボブ：\nアリス：\nまたね\n",
+                    (
+                        "アリス：\nやあ\n答えは次の通り：\n三だ\n"
+                        "//選択肢\n//はい\n//いいえ\nボブ：\nまたね\n"
+                    ),
                     {},
-                    ["アリス", "ボブ", ["[Alice]: やあ ", "[Alice]: またね "]],
-                    'Alice：\nEN "[Alice]: やあ "\nAlice：\nAlice：\nEN "[Alice]: またね "\n',
+                    [
+                        "アリス",
+                        ["はい", "いいえ"],
+                        "ボブ",
+                        ["[Alice]: やあ 答えは次の通り： 三だ ", "[Alice]: またね "],
+                    ],
+                    (
+                        'Alice：\nEN "[Alice]: やあ 答えは次の通り： 三だ "\n'
+                        '//選択肢\n//EN "はい"\n//EN "いいえ"\n'
+                        'Alice：\nEN "[Alice]: またね "\n'
+                    ),
+                ),
+                (
+                    "modules.regex",
+                    "handleRegex",
+                    "script.txt",
+                    (
+                        "\\text\n一\n\\endtext\n\\text\n\\endtext\n"
+                        "\\text\n\u3000\n\\endtext\n\\text\n二\n\\endtext\n"
+                    ),
+                    {},
+                    [["一", "二"]],
+                    (
+                        "\ufeff\\text\nEN 一\n\\endtext\n\\text\n\\endtext\n"
+                        "\\text\n\u3000\n\\endtext\n\\text\nEN 二\n\\endtext\n"
+                    ),
                 ),
                 (
                     "modules.csv",
@@ -1584,6 +1629,30 @@ try:
                     'Source,Target\r\n"\\M[やあ]\nやあ","\\M[やあ]\nEN ""やあ"""\r\n',
                 ),
                 (
+                    "modules.csv",
+                    "handleCSV",
+                    "Scene.csv",
+                    (
+                        'Source,Target\n":name[アリス]\n＜漢字＝かんじ＞だよ",'
+                        '":name[アリス]\n＜漢字＝かんじ＞だよ"\n'
+                        '":name[アリス]\n＜仮名＝かな＞か",\n'
+                        '":name[アリス]\n＜仮名＝かな＞だ",":name[アリス]\n仮名だ"\n'
+                    ),
+                    {"PARSE_NAME_TAGS": True},
+                    [
+                        "アリス",
+                        ["[Alice]: 漢字だよ", "[Alice]: 仮名か", "[Alice]: 仮名だ"],
+                    ],
+                    (
+                        'Source,Target\r\n":name[Alice]\n＜漢字＝かんじ＞だよ",'
+                        '":name[Alice]\nEN ""[Alice]: 漢字だよ"""\r\n'
+                        '":name[Alice]\n＜仮名＝かな＞か",'
+                        '":name[Alice]\nEN ""[Alice]: 仮名か"""\r\n'
+                        '":name[Alice]\n＜仮名＝かな＞だ",'
+                        '":name[Alice]\nEN ""[Alice]: 仮名だ"""\r\n'
+                    ),
+                ),
+                (
                     "modules.json",
                     "handleJSON",
                     "Talk.json",
@@ -1591,14 +1660,16 @@ try:
                         [
                             {"character_nameText": "アリス", "m_text": "やあ"},
                             {"m_text": "静かだ"},
+                            {"character_nameText": "", "m_text": "またね"},
                         ]
                     ),
                     {"name": "Al]Ice", "replies": {"[Al]Ice]: やあ": "[Al]Ice]: Hi"}},
-                    ["アリス", ["[Al]Ice]: やあ", "静かだ"]],
+                    ["アリス", ["[Al]Ice]: やあ", "静かだ", "またね"]],
                     json.dumps(
                         [
                             {"character_nameText": "Al]Ice", "m_text": "Hi"},
                             {"m_text": "EN 静かだ"},
+                            {"character_nameText": "", "m_text": "EN またね"},
                         ],
                         ensure_ascii=False,
                         indent=4,
@@ -3277,6 +3348,81 @@ try:
                 os.chdir(directory)
                 parser.resetActorMapCache()
         configure_states({"engine": "MVMZ"}, temporary, None)
+
+        # RPG Maker's write pass took each list's reply whatever its length:
+        # a short reply was written out of its place and a long one wrote its
+        # first lines. It now keeps the list's source and the file joins
+        # MISMATCH. A line left untranslated comes back as it was sent and
+        # was written with its line breaks turned into spaces; it now keeps
+        # its source exactly. A speaker translated with "]" left its
+        # "[Al]Ice]:" label in the text.
+        def mv_page(commands, reply, **settings):
+            page = {"list": deepcopy(commands + [command(0, [])])}
+            printed = StringIO()
+            changes = {
+                **options,
+                "CODE324": True,
+                "CODE325": True,
+                "PAGE_PACKING": False,
+                "MISMATCH": [],
+                "translateAI": extensions.point(reply),
+                **settings,
+            }
+            with patch.multiple(parser, **changes), redirect_stdout(printed):
+                parser.searchCodes(
+                    page, SimpleNamespace(update=lambda *_: None), [], "Map001.json"
+                )
+                marked = printed.getvalue().count("MISMATCH_EVENT:Map001.json\n")
+                written = [entry["parameters"] for entry in page["list"][:-1]]
+                return written, parser.MISMATCH, marked
+
+        def mv_reply(change):
+            def reply(text, *_args, **_kwargs):
+                return [change([f"EN {line}" for line in text], text), [0, 0]]
+
+            return reply
+
+        titles = [command(324, [1, "勇者"]), command(324, [2, "魔王"])]
+        for commands, change, written, marked in (
+            (titles, lambda reply, _sent: reply[:-1], [[1, "勇者"], [2, "魔王"]], 1),
+            (titles[:1], lambda reply, _sent: [*reply, "EN"], [[1, "勇者"]], 1),
+            (
+                [command(325, [1, "勇者の\n記録"]), command(325, [2, "魔王"])],
+                lambda reply, sent: [sent[0], *reply[1:]],
+                [[1, "勇者の\n記録"], [2, "\\}\\}EN 魔王"]],
+                0,
+            ),
+        ):
+            got = mv_page(commands, mv_reply(change))
+            mismatched = ["Map001.json"] if marked else []
+            assert got == (written, mismatched, marked), (commands, got)
+        got = mv_page(
+            [name("アリス"), command(401, ["やあ"])],
+            mv_reply(
+                lambda _reply, sent: [line.replace("やあ", "Hi") for line in sent]
+            ),
+            SPEAKER_CONTEXT=True,
+            getSpeaker=lambda _name: ["Al]Ice", [0, 0]],
+        )
+        assert got[0][1] == ["Hi"], got
+
+        # A final save over a folder "succeeded": RPG Maker's own atomic
+        # write fell back to moving the save into the folder. It saves
+        # through write_output now, which fails the file with OutputNotSaved.
+        saves = temporary / "mv-saves"
+        (saves / "translated/Map001.json").mkdir(parents=True)
+        directory = os.getcwd()
+        os.chdir(saves)
+        try:
+            with patch.multiple(parser, ESTIMATE=False, SPEAKER_PARSE_MODE=False):
+                parser.saveProgress({"events": []}, "Map001.json", force=True)
+        except OutputNotSaved as error:
+            assert "Map001.json could not be saved" in str(error), error
+        else:
+            raise AssertionError("A final save over a folder passed.")
+        finally:
+            os.chdir(directory)
+        assert not any((saves / "translated/Map001.json").iterdir())
 
         # New lines get the QA lint fixes that need no reviewer, keeping codes,
         # line breaks and a dakuten apostrophe; a collect pass's untranslated
