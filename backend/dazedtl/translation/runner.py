@@ -12,6 +12,7 @@ from dazedtl.compatibility.batch_window import (
     job_tokens,
     reserve_run,
 )
+from dazedtl.compatibility.transmission import answered
 from dazedtl.storage import write_json
 
 from .batch_refusals import advance, outline, started
@@ -411,12 +412,20 @@ class Runner:
             try:
                 response = self.received(self.provider.live(params))
             except Exception as exc:  # noqa: BLE001
-                status = getattr(exc, "status_code", None)
-                certain = type(status) is int and 400 <= status < 500
+                # Only an answer that proves it unbilled may be sent again.
+                status, outcome = answered(exc)
+                certain = outcome != "maybe"
                 self.job["states"][identity] = {
                     "state": "failed" if certain else "uncertain",
                     "message": self.refused_effort([exc.__cause__ or exc])
-                    or "Provider rejected the request (HTTP " + str(status) + ")."
+                    or (
+                        "Provider rejected the request"
+                        if outcome == "refused"
+                        else "The provider failed the request"
+                    )
+                    + " (HTTP "
+                    + str(status)
+                    + ")."
                     if certain
                     else "The request outcome is uncertain. It will not be sent again automatically.",
                 }
@@ -440,8 +449,7 @@ class Runner:
                 try:
                     response = self.received(self.provider.live(params))
                 except Exception as exc:  # noqa: BLE001
-                    status = getattr(exc, "status_code", None)
-                    certain = type(status) is int and 400 <= status < 500
+                    certain = answered(exc)[1] != "maybe"
                     self.job["states"][identity] = {
                         "state": "failed" if certain else "uncertain",
                         "message": "The clarification retry failed. Review the saved request before further paid work.",
@@ -855,8 +863,10 @@ class Runner:
                 ]
             )
         except Exception as exc:  # noqa: BLE001
-            code = getattr(exc, "status_code", None)
-            certain = type(code) is int and 400 <= code < 500
+            # A create the provider refused outright left no Batch; any other
+            # error may follow a created one.
+            code, outcome = answered(exc)
+            certain = outcome == "refused"
             for item in chunk["items"]:
                 self.job["states"][item["request"]] = {
                     "state": "failed" if certain else "uncertain",

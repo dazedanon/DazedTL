@@ -6,6 +6,7 @@ from contextlib import AbstractContextManager, nullcontext
 from copy import deepcopy
 from typing import Any
 
+from dazedtl.compatibility.transmission import answered
 from dazedtl.storage import write_json
 
 from .files import digest, project_path, read_json
@@ -220,8 +221,9 @@ def advance(
                         ]
                     )
                 except Exception as exc:
-                    status = getattr(exc, "status_code", None)
-                    if type(status) is int and 400 <= status < 500:
+                    # A create refused outright left no Batch; any other error
+                    # may follow a created one.
+                    if answered(exc)[1] == "refused":
                         batch["state"] = "failed"
                         save(path, record)
                         continue
