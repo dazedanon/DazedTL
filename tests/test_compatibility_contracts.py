@@ -1597,6 +1597,67 @@ class CompatibilityContracts(unittest.TestCase):
                     self.assertEqual(translation.isClaudeNative(model), expected[0])
                     self.assertEqual(translation.isClaudeModel(model), routes is claude)
 
+    def test_mistral_sends_its_json_mode_request_on_the_last_attempt(self):
+        # The JSON-mode downgrade spent a retry attempt, so a format rejection
+        # on the last attempt, here after a rate limit, raised "failed after
+        # N attempts" unsent.
+        import httpx
+        import openai
+        from util import translation
+
+        sent = []
+        body = {"message": "response_format json_schema is not supported"}
+
+        def create(**params):
+            sent.append(params["response_format"]["type"])
+            if len(sent) == 1:
+                raise openai.RateLimitError(
+                    "slow down",
+                    response=httpx.Response(
+                        429,
+                        headers={"retry-after": "0"},
+                        request=httpx.Request("POST", "https://api.mistral.ai"),
+                    ),
+                    body=None,
+                )
+            if params["response_format"]["type"] == "json_schema":
+                raise openai.UnprocessableEntityError(
+                    "rejected",
+                    response=httpx.Response(
+                        422, request=httpx.Request("POST", "https://api.mistral.ai")
+                    ),
+                    body=body,
+                )
+            return SimpleNamespace(
+                parse=lambda: "reply", headers={"x-ratelimit-remaining-tokens": "9"}
+            )
+
+        client = SimpleNamespace(
+            chat=SimpleNamespace(
+                completions=SimpleNamespace(
+                    with_raw_response=SimpleNamespace(create=create)
+                )
+            ),
+            RateLimitError=openai.RateLimitError,
+            APIStatusError=openai.APIStatusError,
+            APIConnectionError=openai.APIConnectionError,
+        )
+        limiter = SimpleNamespace(acquire=lambda _tokens: None, update=lambda _h: None)
+        for run_stops in (False, True):
+            sent.clear()
+            with (
+                self.subTest(run_stops=run_stops),
+                patch.object(translation, "openai", client),
+                patch.object(translation, "_get_mistral_limiter", return_value=limiter),
+                patch.object(translation, "RUN_STOPS", run_stops),
+            ):
+                params = {
+                    "messages": [{"role": "user", "content": "薬"}],
+                    "response_format": {"type": "json_schema"},
+                }
+                self.assertEqual(translation.callMistral(params, retries=1), "reply")
+                self.assertEqual(sent, ["json_schema", "json_schema", "json_object"])
+
     def test_an_openai_batch_estimate_prices_cache_reads_at_the_models_price(self):
         # Every OpenAI Batch estimate priced cache reads at a tenth of input,
         # though GPT-6.1 Sol reads at a twentieth. The models OpenAI's Batch

@@ -3626,7 +3626,8 @@ def callMistral(params, retries=6):
     est = sum(_estimate_mistral_tokens(m.get("content", "")) for m in params.get("messages", []))
     est += params.get("max_tokens", 0) // 2
     last_error = None
-    for attempt in range(retries + 1):
+    attempt = 0
+    while attempt <= retries:
         limiter.acquire(est)
         try:
             raw = openai.chat.completions.with_raw_response.create(**params)
@@ -3645,8 +3646,10 @@ def callMistral(params, retries=6):
             time.sleep(retry_after if retry_after is not None else min(60, 2 ** attempt + random.random() * 2))
         except openai.APIStatusError as e:
             last_error = e
-            # Mistral rejects unsupported params with 400/422 — downgrade the
-            # structured-output format once and retry immediately.
+            # Mistral rejects unsupported params with 400/422 - downgrade the
+            # structured-output format once and send it at once. The JSON-mode
+            # request is a different request, not a retry, so it spends no
+            # attempt: on the last attempt it is still sent.
             if (
                 e.status_code in (400, 422)
                 and (params.get("response_format") or {}).get("type") == "json_schema"
@@ -3655,16 +3658,15 @@ def callMistral(params, retries=6):
                 params = dict(params)
                 params["response_format"] = {"type": "json_object"}
                 continue
-            if e.status_code >= 500 and attempt < retries:
-                time.sleep(min(45, 2 ** attempt + random.random()))
-                continue
-            raise Exception(f"Mistral API error ({e.status_code}): {e}")
+            if e.status_code < 500 or attempt >= retries:
+                raise Exception(f"Mistral API error ({e.status_code}): {e}")
+            time.sleep(min(45, 2 ** attempt + random.random()))
         except openai.APIConnectionError as e:
             last_error = e
-            if attempt < retries:
-                time.sleep(min(45, 2 ** attempt + random.random()))
-                continue
-            raise Exception(f"Mistral connection error: {e}")
+            if attempt >= retries:
+                raise Exception(f"Mistral connection error: {e}")
+            time.sleep(min(45, 2 ** attempt + random.random()))
+        attempt += 1
     raise Exception(f"Mistral API failed after {retries + 1} attempts: {last_error}")
 
 
