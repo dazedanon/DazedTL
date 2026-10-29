@@ -294,8 +294,14 @@ export function RunInspector({
               readPayload={(index) =>
                 api.guided.payload(projectId, job.id, index)
               }
-              readRequests={(group, index) =>
-                api.guided.requests(projectId, job.id, group, index)
+              readRequests={(group, index, unconfirmed) =>
+                api.guided.requests(
+                  projectId,
+                  job.id,
+                  group,
+                  index,
+                  unconfirmed,
+                )
               }
               readNames={(offset) =>
                 api.guided.nameResults(projectId, job.id, offset)

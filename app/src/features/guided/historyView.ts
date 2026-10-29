@@ -1,6 +1,10 @@
 import type { Job } from "../../api/contracts.ts";
 import { plural } from "../../ui/displayText.ts";
-import { activeRun, needsSubmissionReview } from "./translationView.ts";
+import {
+  activeRun,
+  needsSubmissionReview,
+  translatedOutputs,
+} from "./translationView.ts";
 
 export type HistoryOutcome = {
   kind:
@@ -51,9 +55,12 @@ export function historyOutcome(job: Job): HistoryOutcome {
     (job.outputsAvailable === true
       ? Object.keys(job.outputs || {})
       : undefined);
+  // An output that changed nothing, such as one with nothing to translate,
+  // saved no translation.
+  const translated = saved && translatedOutputs(job, saved);
   const partialNames = new Set(job.partialOutputs || []);
-  const partial = saved?.filter((name) => partialNames.has(name)) || [];
-  const whole = saved?.filter((name) => !partialNames.has(name));
+  const partial = translated?.filter((name) => partialNames.has(name)) || [];
+  const whole = translated?.filter((name) => !partialNames.has(name));
   const output = [
     whole?.length ? `${plural(whole.length, "file")} saved` : "",
     partial.length ? `${plural(partial.length, "partial file")} saved` : "",

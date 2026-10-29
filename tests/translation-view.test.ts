@@ -756,6 +756,24 @@ test("Database files and Maps & events rows read the file's lines and state", ()
   assert.equal(rejected.label, "Not started");
   assert.match(rejected.detail, /requests failed without returning any lines/);
   assert.equal(row(untouched, "Map002.json").detail, "");
+  // A request that may still be at the provider reads Needs review, as
+  // Other event text reads it: sending it again may pay twice.
+  const stopped: Job = {
+    ...failed,
+    status: "stopped",
+    process: { errors: [], files: { "Map001.json": requested(["submitted"]) } },
+  };
+  const unsure = row(
+    state({ "Map001.json": { lines: 6, translated: 0 } }, [stopped]),
+  );
+  assert.deepEqual(
+    [unsure.label, unsure.detail],
+    [
+      fileStatus("Map001.json", stopped).label,
+      fileStatus("Map001.json", stopped).detail,
+    ],
+  );
+  assert.equal(unsure.label, "Needs review");
   const partial = row(
     state({ "Map001.json": { lines: 13, translated: 11, help: 2 } }),
   );
@@ -1150,7 +1168,11 @@ test("history outcomes distinguish verified output from completed attempts and u
     historyOutcome({ ...recorded, availableOutputs: [] }).kind,
     "missing",
   );
-  const verified = { ...recorded, availableOutputs: ["Items.json"] };
+  const verified = {
+    ...recorded,
+    availableOutputs: ["Items.json"],
+    changedOutputs: ["Items.json"],
+  };
   assert.equal(historyOutcome(verified).kind, "saved");
   assert.equal(
     historyOutcome({ ...verified, partialOutputs: ["Items.json"] }).kind,
@@ -2527,7 +2549,7 @@ test("text locations name the editor's event, page and command, counting from on
 
 // A failed Database run's record said "2 applied" for Armors and Enemies,
 // whose outputs, with nothing to translate, matched the game unapplied.
-test("a run's applied files leave out outputs that changed nothing", () => {
+test("a run's saved and applied files leave out outputs that changed nothing", () => {
   const run = {
     id: "run",
     mode: "translate",
@@ -2538,4 +2560,27 @@ test("a run's applied files leave out outputs that changed nothing", () => {
   } as unknown as Job;
   assert.deepEqual(appliedFiles(run), ["Actors.json"]);
   assert.deepEqual(appliedFiles({ ...run, changedOutputs: [] }), []);
+  // Run history counted them saved too: "2 files saved · 3 failed" after a
+  // run that translated nothing.
+  const failed = {
+    ...run,
+    availableOutputs: ["Armors.json", "Enemies.json"],
+    appliedOutputs: [],
+    changedOutputs: [],
+    process: { failed: 3, errors: [] },
+  } as unknown as Job;
+  assert.deepEqual(historyOutcome(failed), {
+    kind: "failed",
+    label: "Failed",
+    detail: "3 failed",
+  });
+  assert.equal(
+    historyOutcome({ ...failed, status: "complete", process: { prepared: 0 } })
+      .kind,
+    "empty",
+  );
+  assert.equal(
+    historyOutcome({ ...failed, changedOutputs: ["Armors.json"] }).detail,
+    "1 file saved · 3 failed",
+  );
 });

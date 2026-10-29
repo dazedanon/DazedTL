@@ -10,7 +10,7 @@ from pathlib import Path
 from dazedtl import storage, system
 from dazedtl.settings.preferences import RUN_STOPS
 
-from .provider_responses import error_evidence
+from .provider_responses import error_evidence, provider_error
 
 # Statuses a provider answers the same request with again: bad request,
 # unauthorized, forbidden, not found and unprocessable. Timeouts, conflicts,
@@ -27,16 +27,6 @@ FLAGGED = re.compile(
 )
 
 
-def provider_error(detail):
-    """How the provider's error *detail* (provider_responses error_evidence)
-    reads in a run's messages: its status and its own message, without the
-    SDK's and the engine's wrapping."""
-    text = detail["message"].strip()
-    if not text.endswith((".", "!", "?")):
-        text += "."
-    return f"HTTP {detail['status']} - {text}"
-
-
 def stop_message(detail):
     """The one message a run stops with after *detail*'s error repeated."""
     return (
@@ -50,6 +40,53 @@ def stop_message(detail):
 def rejection_message(detail):
     """The message a request the provider rejected fails with."""
     return f"The provider rejected the request: {provider_error(detail)}"
+
+
+class ProviderFailure(Exception):
+    """A Live request the engine gave up on, read as the provider's own error
+    (failed) instead of the engine's wrapped text."""
+
+
+def failed(translation, native, *args, **kwargs):
+    """A Live call in every Guided run, frozen with the rule or before it:
+    once the engine's tries end, an error the provider answered fails it with
+    the provider's own status and message, a rejection as one, and an
+    unreachable provider says so; the requests and their retries stay as the
+    run sends them, and a run's stop or rejection passes as it is. A Batch
+    phase sends nothing Live and passes as it is."""
+    if translation.get_batch_phase():
+        return native(*args, **kwargs)
+    try:
+        return native(*args, **kwargs)
+    except translation.RunStoppingError, translation.RequestRejectedError:
+        raise
+    except Exception as error:
+        secret = getattr(getattr(translation, "openai", None), "api_key", "") or ""
+        detail = error_evidence(error, secret)
+        if detail["status"] in DETERMINISTIC:
+            raise ProviderFailure(rejection_message(detail)) from error
+        if detail["status"] is not None:
+            raise ProviderFailure(
+                f"The provider failed the request: {provider_error(detail)}"
+            ) from error
+        unreachable = _unreachable(error)
+        if unreachable is None:
+            raise
+        raise ProviderFailure(
+            f"The provider could not be reached: {unreachable}"
+        ) from error
+
+
+def _unreachable(error):
+    """The SDK's own words for a provider it could not reach, such as
+    "Connection error." or "Request timed out.", from *error*'s chain."""
+    seen = set()
+    while error is not None and id(error) not in seen:
+        seen.add(id(error))
+        if any(kind.__name__ == "APIConnectionError" for kind in type(error).__mro__):
+            return str(error).strip() or "Connection error."
+        error = error.__cause__ or error.__context__
+    return None
 
 
 class Record:
@@ -143,8 +180,9 @@ def guarded(translation, record, native, *args, **kwargs):
 def configure(translation, policy, root, *, coordinator=False):
     """Follows the rule in a run frozen with it; the coordinator, which
     starts each attempt before its workers, clears the last attempt's
-    record."""
+    record. Every run's failed calls read as their provider's error (failed)."""
     translation.RUN_STOPS = bool(policy and policy.get("runStops") == RUN_STOPS)
+    translation.translateAI.layer(LAYER, partial(failed, translation))
     translation.translateText.remove(LAYER)
     if not translation.RUN_STOPS:
         return

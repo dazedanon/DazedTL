@@ -2,7 +2,11 @@ import type { ReactNode } from "react";
 import type { Job, NameTranslationPage } from "../../api/contracts";
 import { ExpandableText } from "../../ui/ExpandableText";
 import { NameTranslationFeedback } from "./NameTranslationFeedback";
-import { activeWorker, appliedFiles } from "./translationView";
+import {
+  activeWorker,
+  appliedFiles,
+  translatedOutputs,
+} from "./translationView";
 
 /** Run evidence remains available even when no individual payload was retained. */
 export function RunTechnical({
@@ -38,10 +42,12 @@ export function RunTechnical({
         : job.message.replace(" See the run log.", ""),
     );
   }
+  const saved = translatedOutputs(job, job.availableOutputs).length;
+  const partial = translatedOutputs(job, job.partialOutputs).length;
   const applied = appliedFiles(job).length;
   const outputs = [
-    job.availableOutputs?.length && `${job.availableOutputs.length} saved`,
-    job.partialOutputs?.length && `${job.partialOutputs.length} partial`,
+    saved && `${saved} saved`,
+    partial && `${partial} partial`,
     applied && `${applied} applied`,
   ].filter(Boolean);
   const usage = Object.entries(process.usage || {}).filter(

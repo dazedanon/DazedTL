@@ -3613,6 +3613,32 @@ try:
                         assert error.cause == cause, (source, error.cause)
                     else:
                         raise AssertionError(f"No Batch result for {source}.")
+            # A request the provider ended with an error says why, not that
+            # it may have been canceled, as the fetch kept the error.
+            submitted = batch_history.submitted_results()
+            stored = "{'code': 'invalid_request', 'message': 'Model is gone'}"
+            with (
+                patch.object(translation, "_batch_results", {}),
+                patch.object(
+                    batch_history,
+                    "submitted_results",
+                    lambda: {key: stored for key in submitted},
+                ),
+            ):
+                try:
+                    translation.translateAI(
+                        ["回復", "毒"], [], config, filename="Items.json"
+                    )
+                except translation.BatchResultUnavailableError as error:
+                    assert (error.cause, str(error).split(" No full-price")[0]) == (
+                        "unreturned",
+                        (
+                            "The provider ended the Batch request for some of "
+                            "this file's lines with an error: Model is gone."
+                        ),
+                    ), str(error)
+                else:
+                    raise AssertionError("No Batch result for the ended request.")
             assert len(sent_batches) == 2
             translation.set_batch_phase(None)
             # The run's new speaker names go out Live before any Batch phase;

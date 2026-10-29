@@ -10,6 +10,7 @@ from dazedtl.translation.files import digest, live_path
 
 from .batch_evidence import extends
 from .process_view import batch_results, evidence_root, queue, saved
+from .provider_responses import NO_REASON
 from .translation import TranslationProvider
 
 TERMINAL = {"completed", "ended", "failed", "expired", "cancelled", "canceled"}
@@ -210,7 +211,7 @@ def collect(
             # Complete downloaded success coverage distinguishes canceled or
             # rejected requests from a missing paid response, with the
             # provider's reason where it gave one, such as a refused thinking
-            # effort (process_view batch_refusal).
+            # effort (process_view empty_batch).
             reasons = errors if isinstance(errors, dict) else {}
             previous = {
                 error.get("custom_id"): error
@@ -219,11 +220,7 @@ def collect(
             batch["provider_errors"] = [
                 {"custom_id": custom, "message": reasons[custom]}
                 if reasons.get(custom)
-                else previous.get(custom)
-                or {
-                    "custom_id": custom,
-                    "message": "This request ended without a successful response.",
-                }
+                else previous.get(custom) or {"custom_id": custom, "message": NO_REASON}
                 for custom, key in batch["custom_ids"].items()
                 if key not in part
             ]

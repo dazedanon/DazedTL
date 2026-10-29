@@ -703,6 +703,46 @@ class BatchMonitorTests(unittest.TestCase):
                 [{"custom_id": "one", "message": reason}],
             )
 
+    def test_a_batch_with_no_successful_response_ends_once_with_its_reason(self):
+        # A Guided Batch the provider answered no request of ended twice: its
+        # worker saved "N files failed. Actors.json: ..." and the monitor then
+        # saved "No successful Batch responses...", so Run history and the
+        # banner disagreed and only the first ending reached failed_run.
+        from dazedtl.compatibility.process_view import empty_batch
+
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            monitor, job, _ = self.fixture(root)
+            monitor.backend.manual.failed_run = Mock()
+            provider = Mock()
+            provider.status.return_value = {
+                "api_status": "completed",
+                "counts": {"succeeded": 0, "errored": 1, "processing": 0},
+            }
+            reason = "{'code': 'invalid_request', 'message': 'Model is gone'}"
+            provider.collect_terminal.return_value = ({}, {"one": reason}, {})
+            with patch.object(
+                batch_control, "TranslationProvider", return_value=provider
+            ):
+                monitor.tick()
+            ending = (
+                "The provider ended every request of the Batch with an error: "
+                "Model is gone. Use Translate for a fresh estimate of remaining "
+                "work."
+            )
+            self.assertEqual((job["status"], job["message"]), ("failed", ending))
+            monitor.backend.manual.failed_run.assert_called_once_with("run")
+            # A worker that ended the run itself ended it with the same one
+            # message, which the monitor leaves as it is.
+            self.assertEqual(empty_batch(root), ending)
+            monitor.settled.clear()
+            monitor.backend.manual.failed_run.reset_mock()
+            monitor.backend.manual.save.reset_mock()
+            monitor.tick()
+            monitor.backend.manual.failed_run.assert_not_called()
+            monitor.backend.manual.save.assert_not_called()
+            self.assertIn("run", monitor.settled)
+
     def test_a_worker_that_found_its_batch_ended_reads_as_collecting_until_checked(
         self,
     ):
