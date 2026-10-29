@@ -1834,7 +1834,7 @@ class CompatibilityContracts(unittest.TestCase):
         from dazedtl.settings import effort
         from util import translation
         from util.batch_providers import detect_batch_provider, live_price_route
-        from util.provider_costs import foreign_claude_name
+        from util.provider_costs import foreign_claude_name, on_anthropic_api
 
         addresses = (
             "",
@@ -1842,6 +1842,8 @@ class CompatibilityContracts(unittest.TestCase):
             # A proxy path: sent Live natively, but Batches need Anthropic's
             # own API.
             "http://localhost:8080/anthropic",
+            # Another host whose name holds Anthropic's.
+            "https://anthropic.company.example/v1",
             "https://openrouter.ai/api/v1",
             "https://proxy.example/v1",
             "https://api.openai.com/v1",
@@ -1852,12 +1854,14 @@ class CompatibilityContracts(unittest.TestCase):
             (True, "anthropic", "anthropic", "anthropic"),
             (True, "anthropic", "anthropic", "anthropic"),
             (True, None, "anthropic", "anthropic"),
+            (True, None, "anthropic", "anthropic"),
             (False, None, "anthropic", "openai"),
             (False, None, "anthropic", "openai"),
             (False, "openai", "anthropic", "openai"),
         )
         other = (
             (False, "openai", "openai", "openai"),
+            (False, None, "", "openai"),
             (False, None, "", "openai"),
             (False, None, "", "openai"),
             (False, None, "", "openai"),
@@ -1877,6 +1881,17 @@ class CompatibilityContracts(unittest.TestCase):
             ("us.anthropic.claude-sonnet-4-5-20250929-v1:0", claude),
             ("us-gov.anthropic.claude-3-5-sonnet-20240620-v1:0", claude),
             ("bedrock/anthropic.claude-3-haiku", claude),
+            (
+                (
+                    "arn:aws:bedrock:us-east-1:123456789012:inference-profile/"
+                    "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+                ),
+                claude,
+            ),
+            ("vertex_ai/claude-sonnet-5-5", claude),
+            ("publishers/anthropic/models/claude-opus-4-1", claude),
+            ("databricks-claude-sonnet-4", claude),
+            ("databricks/databricks-claude-3-7-sonnet", claude),
             # Other models whose names hold a Claude family word are not
             # Claude's.
             ("magnum-opus-72b", other),
@@ -1885,6 +1900,7 @@ class CompatibilityContracts(unittest.TestCase):
             ("haiku-writer-8b", other),
             ("someone/claude-style-7b", other),
             ("someone/claude-opus-5-distill", other),
+            ("someone/databricks-claude-style-7b", other),
             ("gpt-5.4", gpt),
             ("deepseek-v4-flash", other),
             ("", other),
@@ -1920,8 +1936,7 @@ class CompatibilityContracts(unittest.TestCase):
                     # Claude's own IDs, so Settings refuses another host's.
                     self.assertEqual(
                         foreign_claude_name(model, address),
-                        expected[1] == "anthropic"
-                        and not model.lower().startswith("claude-"),
+                        expected[1] == "anthropic" and not model.startswith("claude-"),
                     )
             # Pricing gives Claude's rates to a Claude name only: another
             # model, with no catalog price, takes the unknown model's
@@ -1941,7 +1956,39 @@ class CompatibilityContracts(unittest.TestCase):
                 self.assertEqual(
                     effort.thinks(None, model),
                     model
-                    in {"claude-sonnet-5-5", "Claude-Opus-5", "deepseek-v4-flash"},
+                    in {
+                        "claude-sonnet-5-5",
+                        "Claude-Opus-5",
+                        "vertex_ai/claude-sonnet-5-5",
+                        "deepseek-v4-flash",
+                    },
+                )
+        # A test scenario's stand-in for Anthropic's API counts as its API.
+        stand_in = "http://127.0.0.1:9/api.anthropic.com"
+        with patch.dict(os.environ, {"DAZEDTL_TEST_ANTHROPIC_ENDPOINT": stand_in}):
+            self.assertTrue(on_anthropic_api(stand_in + "/v1"))
+            self.assertFalse(on_anthropic_api("http://127.0.0.1:9/other"))
+        # With no catalog price, a Claude name takes its version's rates in
+        # any host's form: OpenRouter writes versions with dots, Anthropic
+        # dates its Claude 3 IDs.
+        for model, rates in (
+            ("anthropic/claude-opus-5.5", (4, 20)),
+            ("claude-opus-5-5", (4, 20)),
+            ("anthropic/claude-opus-4.5", (5, 25)),
+            ("anthropic/claude-opus-4.1", (15, 75)),
+            ("claude-3-opus-20240229", (15, 75)),
+            ("anthropic/claude-3.5-haiku", (0.80, 4)),
+            ("claude-3-5-haiku-20241022", (0.80, 4)),
+            ("anthropic/claude-haiku-4.5", (1, 5)),
+            ("vertex_ai/claude-sonnet-5-5", (2, 10)),
+        ):
+            with (
+                self.subTest(model=model, rule="rates"),
+                patch.object(translation, "_lookup_model_price", return_value=None),
+            ):
+                pricing = translation.getPricingConfig(model)
+                self.assertEqual(
+                    (pricing["inputAPICost"], pricing["outputAPICost"]), rates
                 )
 
     def test_mistral_follows_the_json_mode_strict_and_retry_rules(self):
