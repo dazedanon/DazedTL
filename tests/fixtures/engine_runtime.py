@@ -945,16 +945,26 @@ try:
         # dialogue, and wrote a choice that is part of a later one, or an
         # empty one, over the whole csel line. The plugin module read an actor
         # code \n[1] as a line break, and sent a quest client's line break
-        # as text. CSV read its target column as the speaker by default, and
-        # as the name it wrote there made the row look translated, wrote each
-        # row's translation to the next row. CSV, Kirikiri, Regex, Lune, Tyrano
-        # and WOLF2 sent each speaker name again in the pass that writes the
-        # translations, as it then held its translation, and WOLF2 its
-        # choices too; Lune refused the .l files it is offered.
+        # as text, and wrote a txtSubject's or QuestContent's color code \c[2]
+        # with one backslash. CSV read its target column as the speaker by
+        # default, and as the name it wrote there made the row look
+        # translated, wrote each row's translation to the next row. CSV,
+        # Kirikiri, Regex, Lune, Tyrano and WOLF2 sent each speaker name again
+        # in the pass that writes the translations, as it then held its
+        # translation, and WOLF2 its choices too; Lune refused the .l files it
+        # is offered. Lune moved on once per text field, so it skipped the
+        # entry after one with two, and after a mismatch wrote the next batch
+        # one entry early. WOLF2 and CSV found the lines to write by parsing
+        # the file again, so a name translated with the parser's own mark
+        # ("/", "]") moved or dropped a translation; CSV and Kirikiri also
+        # wrote the name over the rest of its line or cell. WOLF2's
+        # last-resort reader, for a file no encoding reads whole, kept "\r\n"
+        # line ends, which joined the whole file into one line.
         shapes = temporary / "engine-shapes"
         for folder in ("files", "translated", "log"):
             (shapes / folder).mkdir(parents=True)
         os.chdir(shapes)
+        platform_line_ends = {"modules.nscript", "modules.regex", "modules.wolf2"}
         try:
             for module_name, handler, scene, source, options, requests, output in (
                 (
@@ -998,6 +1008,29 @@ try:
                     "handlePlugin",
                     "plugins.js",
                     (
+                        r"var q = [\"{\\\"QuestContent\\\":\\\"\\\""
+                        + "\\" * 16
+                        + r"c[2]森"
+                        + "\\" * 16
+                        + r"c[0]で\\\"\\\"}\"];"
+                        '\nvar txtSubject = "\\\\C[2]クエスト\\\\C[0]";\n'
+                    ),
+                    {},
+                    [["\\c[2]森\\c[0]で"], ["\\C[2]クエスト\\C[0]"]],
+                    (
+                        r"var q = [\"{\\\"QuestContent\\\":\\\"\\\"EN \'"
+                        + "\\" * 16
+                        + r"c[2]森"
+                        + "\\" * 16
+                        + r"c[0]で\'\\\"\\\"}\"];"
+                        '\nvar txtSubject = "EN ՚\\\\C[2]クエスト\\\\C[0]՚";\n'
+                    ),
+                ),
+                (
+                    "modules.rpgmakerplugin",
+                    "handlePlugin",
+                    "plugins.js",
+                    (
                         r"var q = [\"{\\\"QuestName\\\":\\\"最初の\\\\n依頼\\\"}\"];"
                         '\nvar txtSubject = "クエスト";\n'
                     ),
@@ -1033,19 +1066,29 @@ try:
                     "modules.csv",
                     "handleCSV",
                     "Scene.csv",
-                    'Source,Target\n":name[アリス]\nやあ",\n',
-                    {"PARSE_NAME_TAGS": True},
-                    ["アリス", ["[Alice]: やあ"]],
-                    'Source,Target\r\n":name[Alice]\nやあ","EN ""[Alice]: やあ"""\r\n',
+                    (
+                        'Source,Target\n":name[アリス]\nアリスだよ",'
+                        '":name[アリス]\nアリスだよ"\n":name[アリス]\nやあ",\n'
+                    ),
+                    {"PARSE_NAME_TAGS": True, "name": "Al]Ice"},
+                    ["アリス", ["[Al]Ice]: アリスだよ", "[Al]Ice]: やあ"]],
+                    (
+                        'Source,Target\r\n":name[Al]Ice]\nアリスだよ",'
+                        '":name[アリス]\nEN ""[Al]Ice]: アリスだよ"""\r\n'
+                        '":name[Al]Ice]\nやあ","EN ""[Al]Ice]: やあ"""\r\n'
+                    ),
                 ),
                 (
                     "modules.kirikiri",
                     "handleKirikiri",
                     "scene.ks",
-                    "【アリス】[CR]\n[text]やあ[KeyWait]\n",
+                    '【アリス】[CR][voice storage="アリス01"]\n[text]やあ[KeyWait]\n',
                     {},
                     ["アリス", ["[Alice]: やあ"]],
-                    "【Alice】[CR]\n[text]EN '[Alice]: やあ'[KeyWait]\n",
+                    (
+                        '【Alice】[CR][voice storage="アリス01"]\n'
+                        "[text]EN '[Alice]: やあ'[KeyWait]\n"
+                    ),
                 ),
                 (
                     "modules.regex",
@@ -1060,10 +1103,26 @@ try:
                     "modules.lune",
                     "handleLune",
                     "scene.l",
-                    '[{"name": "アリス", "message": "やあ"}]',
-                    {},
-                    ["アリス", ["やあ"]],
-                    '[\n    {\n        "name": "Alice",\n        "message": "EN \\"やあ\\""\n    }\n]',
+                    json.dumps(
+                        [
+                            {"name": "アリス", "text": "一", "message": "二"},
+                            {"message": "三"},
+                            {"message": "四"},
+                            {"message": "五"},
+                        ]
+                    ),
+                    {"BATCHSIZE": 2, "MISMATCH": [], "short": 2},
+                    ["アリス", ["一", "二"], ["三", "四"], ["五"]],
+                    json.dumps(
+                        [
+                            {"name": "Alice", "text": 'EN "一"', "message": 'EN "二"'},
+                            {"message": "三"},
+                            {"message": "四"},
+                            {"message": 'EN "五"'},
+                        ],
+                        ensure_ascii=False,
+                        indent=4,
+                    ),
                 ),
                 (
                     "modules.tyrano",
@@ -1083,6 +1142,26 @@ try:
                     ["アリス", ["はい", "いいえ"], ["[Alice]: やあ "]],
                     'Alice：\nEN "[Alice]: やあ "\n\n//選択肢\n//EN "はい"\n//EN "いいえ"\n//はいの場合\n',
                 ),
+                (
+                    "modules.wolf2",
+                    "handleWOLF2",
+                    "Map001.txt",
+                    "アリス：\n「待って：ね」\n\nまたね\n",
+                    {"name": "Al/Ice"},
+                    ["アリス", ["[Al/Ice]: 「待って：ね」 ", "またね "]],
+                    'Al/Ice：\nEN "[Al/Ice]: 「待って：ね」 "\n\nEN "またね "\n',
+                ),
+                (
+                    "modules.wolf2",
+                    "handleWOLF2",
+                    "Map001.txt",
+                    "やあ\r\n\r\n".encode("cp932")
+                    + b"\x81 "
+                    + "またね\r\n".encode("cp932"),
+                    {},
+                    [["やあ ", " またね "]],
+                    'EN "やあ "\n\nEN " またね "\n',
+                ),
             ):
                 module = import_module(module_name)
                 encoding = "utf-8"
@@ -1092,20 +1171,35 @@ try:
                     "modules.wolf2",
                 ):
                     encoding = "cp932"
-                (shapes / "files" / scene).write_bytes(source.encode(encoding))
+                if isinstance(source, str):
+                    source = source.encode(encoding)
+                (shapes / "files" / scene).write_bytes(source)
                 sent = []
+                # The reply to a name, and which list reply leaves out its
+                # last line (a mismatch), counting from 1
+                reply, short = options.pop("name", "Alice"), options.pop("short", 0)
+                assert isinstance(reply, str) and isinstance(short, int)
+                listed = []
 
                 def shape_reply(text, *_args, **_kwargs):
                     if text:
                         sent.append(list(text) if isinstance(text, list) else text)
                     if isinstance(text, list):
-                        return [[f'EN "{line}"' for line in text], [1, 1]]
-                    return ["Alice", [1, 1]]
+                        listed.append(text)
+                        lines = [f'EN "{line}"' for line in text]
+                        if len(listed) == short:
+                            lines.pop()
+                        return [lines, [1, 1]]
+                    return [reply, [1, 1]]
 
                 its = {"translateAI": shape_reply, "NAMESLIST": [], **options}
                 with patch.multiple(module, **its), redirect_stdout(StringIO()):
                     getattr(module, handler)(scene, False)
                 assert sent == requests, (module_name, sent)
+                # These modules write the platform's line ends (write_output's
+                # newline=None); the expected text spells them "\n".
+                if module_name in platform_line_ends:
+                    output = output.replace("\n", os.linesep)
                 written = (shapes / "translated" / scene).read_bytes()
                 assert written.decode(encoding) == output, (module_name, written)
         finally:
@@ -3369,7 +3463,9 @@ try:
         # requests in a row. The files after the stop are never handed, so
         # nothing more is sent; a run frozen before keeps sending one refused
         # request per file. Real workers translate packed maps against a
-        # stand-in provider that rejects every request.
+        # stand-in provider that rejects every request, which builds each as
+        # the engine does, and keep the run's evidence ledger as a frozen
+        # run's workers do.
         # Each run has its own folder and runs beside the others: their
         # workers, which start one after another within a run, took most of
         # this probe's time when the runs did too.
@@ -3459,17 +3555,19 @@ try:
             "    raise RuntimeError('No network in the run-stop workers.')\n"
             "socket.create_connection = socket.socket.connect = socket.socket.connect_ex = offline\n"
             "time.sleep = lambda _seconds: None\n"
-            "from functools import partial\n"
             "from pathlib import Path\n"
             "from runpy import run_path\n"
             "rejecting = run_path(str(Path(__file__).with_name('stand_in.py')))\n"
             "from util import translation\n"
-            "from dazedtl.compatibility import request_parameters, run_stops\n"
-            "from dazedtl.settings.preferences import RUN_STOPS\n"
+            "from dazedtl.compatibility import run_stops\n"
+            "from dazedtl.compatibility.request_parameters import configure_builders\n"
+            "from dazedtl.compatibility.run_evidence import Evidence\n"
+            "from dazedtl.settings.preferences import GENERATION_PARAMETERS, RUN_STOPS\n"
             "folder = Path(sys.argv[1])\n"
             "stand_in = json.loads((folder / 'stand-in.json').read_text())\n"
             "refused = stand_in['refuses']\n"
-            "def provider(_native, *_args, **_kwargs):\n"
+            "def provider(_native, system, user, history, penalty, formatType, model, numLines=None, **kwargs):\n"
+            "    translation.buildOpenAIRequest(system, user, history, penalty, formatType, model, numLines, api_provider='openai', use_cache_routing=True, **kwargs)\n"
             "    with open(folder / 'sent.txt', 'a') as sent:\n"
             "        sent.write('sent\\n')\n"
             "    if stand_in['pays'] and len((folder / 'sent.txt').read_text().split()) == 1:\n"
@@ -3478,10 +3576,12 @@ try:
             f"    message = {stand_in_messages!r}[refused]\n"
             "    rejecting['reject'](rejecting['Rejected'](message))\n"
             "translation.translateText.layer('stand-in', provider)\n"
-            "translation.translateText.layer('request-parameters', partial(request_parameters.refusal, translation, 'high', None))\n"
+            "from modules import rpgmakermvmz\n"
+            "evidence = Evidence(folder, 'translate')\n"
+            "evidence.install(translation, rpgmakermvmz)\n"
+            "configure_builders(translation, GENERATION_PARAMETERS, evidence.record, provider='openai', thinking_effort='high')\n"
             "policy = {'runStops': RUN_STOPS} if stand_in['policy'] == '1' else None\n"
             "run_stops.configure(translation, policy, folder)\n"
-            "from modules import rpgmakermvmz\n"
             "rpgmakermvmz.PAGE_PACKING = True\n"
             "from util.subprocess_runner import file_arguments, run_handler\n"
             "run_handler(str(folder), sys.argv[2], file_arguments(sys.argv[3]), sys.argv[4] == 'True')\n",
@@ -3532,6 +3632,14 @@ try:
             )
             return task, result, errors, handed, logged, requests, written
 
+        from dazedtl.compatibility.process_view import paid_receipts
+
+        def paid_tokens(task):
+            """The tokens the run's ledger counted for each file, each priced."""
+            paid = paid_receipts(task.project_root)
+            assert all(figures["cost"] > 0 for figures in paid.values()), paid
+            return {name: (paid[name]["input"], paid[name]["output"]) for name in paid}
+
         maps = [f"Map00{number}.json" for number in range(1, 5)]
         mvmz_runs = (
             ("effort", "1", maps[:2], maps[:1], refused_effort),
@@ -3574,6 +3682,14 @@ try:
             case = (refusal, policy, errors)
             assert result == "Fail", (case, result)
             assert handed == files, (case, handed)
+            # The response the stand-in answered before the refusal reaches
+            # the run's ledger from the worker, once, under the file it paid
+            # for; the refused requests paid for nothing.
+            paid = paid_tokens(stop_task)
+            assert paid == ({"Map001.json": (11, 3)} if stopped is None else {}), (
+                case,
+                paid,
+            )
             # One request per file until the stop, and the paid one before.
             assert len(requests) == len(files) + (stopped is None), (case, requests)
             assert [name for name, _ in errors] == files, case
@@ -3619,6 +3735,12 @@ try:
             case = (policy, result, errors)
             assert handed == texts[: len(handed)], (case, handed)
             assert len(requests) == sends, (case, requests)
+            # A response paid for before the run stop reaches the ledger too.
+            paid = paid_tokens(stop_task)
+            assert paid == ({"Text1.json": (11, 3)} if policy == "1" else {}), (
+                case,
+                paid,
+            )
             if policy == "1":
                 assert result == "Fail", case
                 assert errors[0] == ("Text1.json", refused_effort), case
@@ -3824,11 +3946,7 @@ try:
         from dazedtl.compatibility.batch_evidence import (
             install as retain_batch_evidence,
         )
-        from dazedtl.compatibility.process_view import (
-            paid_receipts,
-            payload,
-            request_view,
-        )
+        from dazedtl.compatibility.process_view import payload, request_view
         from dazedtl.compatibility.request_parameters import batch_routing
         from dazedtl.compatibility.request_scope import identities
         from dazedtl.compatibility.run_evidence import Evidence

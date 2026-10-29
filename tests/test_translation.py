@@ -1191,6 +1191,8 @@ class TranslationTests(unittest.TestCase):
         self.assertEqual(self.store.load(job["id"])[0]["status"], "complete")
 
     def test_failed_or_uncertain_live_call_is_never_retried_implicitly(self):
+        import socket
+
         import httpx
         import openai
         from dazedtl.compatibility.translation import ProviderFailure
@@ -1206,10 +1208,33 @@ class TranslationTests(unittest.TestCase):
             except ProviderFailure as failure:
                 return failure
 
+        class Unreached(LiveProvider):
+            # A request that never connected, sent through a real SDK client
+            # whose tries the run observes: its error has no status.
+            def live(self, params):
+                self.calls += 1
+                closed = socket.socket()
+                closed.bind(("127.0.0.1", 0))
+                port = closed.getsockname()[1]
+                closed.close()
+                # Windows retries a refused local connection for seconds but
+                # rejects 0.0.0.0 at once (test_process).
+                client = openai.OpenAI(
+                    api_key="fixture-key",
+                    base_url=f"http://0.0.0.0:{port}/",
+                    max_retries=0,
+                    timeout=5,
+                )
+                try:
+                    client.chat.completions.create(model="fixture", messages=[])
+                except openai.OpenAIError as error:
+                    raise ProviderFailure("live", error) from error
+
         rejection = ValueError("Provider rejected the request")
         rejection.status_code = 404
         cases = (
             ("timeout", TimeoutError(), "uncertain"),
+            ("never connected", Unreached(), "failed"),
             ("refused", rejection, "failed"),
             # The provider's own server error bills nothing; the same status
             # from another host may be a gateway's, as a gateway timeout is.
@@ -1220,10 +1245,14 @@ class TranslationTests(unittest.TestCase):
         for name, error, status in cases:
             with self.subTest(name):
                 job, plan = self.run_record(requests=[request(speaker=name)])
-                provider = LiveProvider(error)
+                provider = (
+                    error if isinstance(error, LiveProvider) else LiveProvider(error)
+                )
                 Runner(self.store, job["id"], provider, lambda: None).step()
                 current, _plan = self.store.load(job["id"])
                 self.assertEqual(current["status"], status)
+                if isinstance(error, Unreached):
+                    self.assertIn("could not be reached", current["message"])
                 # Reading a retired terminal label must keep the receipt and
                 # request state authoritative, including the duplicate guard.
                 current["status"] = "retired_status"

@@ -167,6 +167,23 @@ def unwrapped(text):
     return ESCAPED_NEWLINE.sub(" ", text)
 
 
+# A color code \c[2] or \C[2]: a backslash run before c or C and [, with the
+# same depth of escaping as an escaped line break. It is sent with one
+# backslash and written back at the depth its source uses.
+ESCAPED_COLOR = re.compile(r"\\+(?=[cC]\[)")
+
+
+def colorDepth(text):
+    """The backslashes a plugin string's color codes use, or None."""
+    found = ESCAPED_COLOR.search(text)
+    return found.group(0) if found else None
+
+
+def atColorDepth(text, backslashes):
+    """The text with each color code's backslashes set to backslashes."""
+    return ESCAPED_COLOR.sub(lambda _found: backslashes, text)
+
+
 def translatePlugin(data, pbar, filename, translatedList):
     if len(translatedList) > 0:
         questList = translatedList[0]
@@ -275,8 +292,6 @@ def translatePlugin(data, pbar, filename, translatedList):
                 # Save Original String
                 jaString = match
                 originalString = jaString
-                newline = None
-                colorCode = None
 
                 # Make sure it contains Japanese
                 if not re.search(LANGREGEX, jaString):
@@ -288,9 +303,8 @@ def translatePlugin(data, pbar, filename, translatedList):
 
                 # Replace \n and \c
                 newline = escapedNewline(jaString)
-                if re.search(r"\\+C", jaString):
-                    colorCode = re.search(r"\\+C", jaString).group(0)
-                    jaString = re.sub(r"\\+C", r"\\C", jaString)
+                colors = colorDepth(jaString)
+                jaString = atColorDepth(jaString, "\\")
 
                 # Remove any textwrap
                 jaString = unwrapped(jaString)
@@ -307,10 +321,6 @@ def translatePlugin(data, pbar, filename, translatedList):
                             translatedText = custom[0]
                             custom.pop(0)
 
-                            # Set to None if empty list
-                            if len(translatedList) <= 0:
-                                translatedList = None
-
                             # Replace Single Quotes
                             translatedText = re.sub(r"([^\\'])'", r"\1՚", translatedText)
                             translatedText = re.sub(r"([^\\'])\"", r"\1՚", translatedText)
@@ -320,8 +330,11 @@ def translatePlugin(data, pbar, filename, translatedList):
                                 # Textwrap
                                 # translatedText = dazedwrap.wrapText(translatedText, WIDTH)
                                 translatedText = re.sub(r"\n", re.escape(newline), translatedText)
-                            if colorCode:
-                                translatedText = re.sub(r"\n", re.escape(colorCode), translatedText)
+                            else:
+                                # A raw line break would end the JS string
+                                translatedText = translatedText.replace("\n", " ")
+                            if colors:
+                                translatedText = atColorDepth(translatedText, colors)
 
                             # Set Data
                             with open("log/translations.txt", "a+", encoding="utf-8") as tlFile:
@@ -352,10 +365,6 @@ def translatePlugin(data, pbar, filename, translatedList):
                             # Grab and Pop
                             translatedText = questList[0][0]
                             questList[0].pop(0)
-
-                            # Set to None if empty list
-                            if len(translatedList) <= 0:
-                                translatedList = None
 
                             # Replace Single Quotes
                             translatedText = translatedText.replace('"', "'")
@@ -389,10 +398,6 @@ def translatePlugin(data, pbar, filename, translatedList):
                             translatedText = questList[1][0]
                             questList[1].pop(0)
 
-                            # Set to None if empty list
-                            if len(translatedList) <= 0:
-                                translatedList = None
-
                             # Replace Single Quotes
                             translatedText = translatedText.replace('"', "'")
                             translatedText = re.sub(r"([^\\'])'", r"\1\\'", translatedText)
@@ -424,10 +429,6 @@ def translatePlugin(data, pbar, filename, translatedList):
                             # Grab and Pop
                             translatedText = questList[2][0]
                             questList[2].pop(0)
-
-                            # Set to None if empty list
-                            if len(translatedList) <= 0:
-                                translatedList = None
 
                             # Replace Single Quotes
                             translatedText = translatedText.replace('"', "'")
@@ -461,10 +462,6 @@ def translatePlugin(data, pbar, filename, translatedList):
                             translatedText = questList[3][0]
                             questList[3].pop(0)
 
-                            # Set to None if empty list
-                            if len(translatedList) <= 0:
-                                translatedList = None
-
                             # Replace Single Quotes
                             translatedText = translatedText.replace('"', "'")
                             translatedText = re.sub(r"([^\\'])'", r"\1\\'", translatedText)
@@ -482,8 +479,7 @@ def translatePlugin(data, pbar, filename, translatedList):
                     originalString = match
 
                     # Remove any textwrap
-                    match = unwrapped(match)
-                    match = match.replace(r"\\\\\\\\\\\\\\\\c", "\\c")
+                    match = atColorDepth(unwrapped(match), "\\")
 
                     # Pass 1
                     if setData == False:
@@ -498,15 +494,13 @@ def translatePlugin(data, pbar, filename, translatedList):
                             translatedText = questList[4][0]
                             questList[4].pop(0)
 
-                            # Set to None if empty list
-                            if len(translatedList) <= 0:
-                                translatedList = None
-
                             # Textwrap
                             translatedText = dazedwrap.wrapText(translatedText, width=WIDTH)
                             newline = escapedNewline(originalString) or r"\\\\\\\\n"
                             translatedText = translatedText.replace("\n", newline)
-                            match = match.replace("\\c", r"\\\\\\\\\\\\\\\\c")
+                            colors = colorDepth(originalString)
+                            if colors:
+                                translatedText = atColorDepth(translatedText, colors)
 
                             # Replace Single Quotes
                             translatedText = translatedText.replace('"', "'")
@@ -539,10 +533,6 @@ def translatePlugin(data, pbar, filename, translatedList):
                             # Grab and Pop
                             translatedText = questList[5][0]
                             questList[5].pop(0)
-
-                            # Set to None if empty list
-                            if len(translatedList) <= 0:
-                                translatedList = None
 
                             # Textwrap
                             translatedText = dazedwrap.wrapText(translatedText, width=WIDTH)

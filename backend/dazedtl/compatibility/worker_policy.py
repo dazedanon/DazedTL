@@ -108,6 +108,39 @@ def configure_states(plan, root, policy):
             state_requests.restore(module)
 
 
+def keep_paid_items(translation, root, plan, evidence):
+    """Keep what the run in *root* pays for in its evidence ledger, each
+    billed item once, where its records and TOTAL read it (process_view
+    paid_receipts): its *evidence* keeps them when the run froze it. A Batch
+    run frozen without it, as a recovery imported from the original tool
+    is, keeps its results there all the same, in the ledger's
+    batch_validation part, unless its earlier attempts saved receipts
+    without a ledger (attempt.json): its results read again would count in
+    those and in the ledger alike."""
+    if evidence is None:
+        if plan.get("mode") != "batch":
+            return
+        root = Path(root)
+        if not (root / "log/dazedtl-process.sqlite3").is_file():
+            try:
+                attempt = json.loads(system.read_text(root / "attempt.json"))
+            except FileNotFoundError:
+                attempt = {}
+            if attempt.get("receipts"):
+                return
+        from .batch_validation import Ledger
+        from .batch_validation import install as install_batch_validation
+
+        install_batch_validation(Ledger(root), translation)
+    from util import translation_task
+
+    from .process_view import paid_receipts
+
+    translation_task.paid_receipts.layer(
+        "evidence", lambda _native, folder: paid_receipts(folder)
+    )
+
+
 def install(*, coordinator=False):
     from desktop.backend import manual_environment
 
@@ -174,6 +207,7 @@ def install(*, coordinator=False):
             resends.configure(translation, None)
             configure_states(plan, grouping_root, None)
             checkpoint_reader()
+            keep_paid_items(translation, root, plan, None)
             return result
         if (
             not isinstance(policy, dict)
@@ -252,7 +286,7 @@ def install(*, coordinator=False):
         translation.STRICT_STRUCTURED_OUTPUTS = bool(strict_router)
         configure_short_outputs(translation, policy)
         configure_small_kana(translation, policy)
-        record = None
+        record = evidence = None
         if policy.get("generationParameters") and plan.get("mode") in {
             "estimate",
             "batch",
@@ -272,15 +306,7 @@ def install(*, coordinator=False):
             )
             evidence.install(translation, sys.modules.get("modules.rpgmakermvmz"))
             record = evidence.record
-            # The run's TOTAL reads what its ledger counted, as its records do
-            # (process_view file_receipts).
-            from util import translation_task
-
-            from .process_view import paid_receipts
-
-            translation_task.paid_receipts.layer(
-                "evidence", lambda _native, folder: paid_receipts(folder)
-            )
+        keep_paid_items(translation, root, plan, evidence)
         configure_builders(
             translation,
             policy.get("generationParameters"),
