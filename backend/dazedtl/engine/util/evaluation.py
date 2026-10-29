@@ -117,7 +117,7 @@ class _EvaluationRunBusyError(RuntimeError):
 
 DEFAULT_CANDIDATES = (
     {"provider": "openai", "endpoint": "https://api.openai.com/v1", "model": "gpt-5.6-terra", "label": "GPT-5.6 Terra", "execution": "batch"},
-    {"provider": "gemini", "endpoint": "https://generativelanguage.googleapis.com/v1beta/openai/", "model": "gemini-3.6-flash", "label": "Gemini 3.6 Flash", "execution": "batch"},
+    {"provider": "gemini", "endpoint": batch_api.GEMINI_API_URL, "model": "gemini-3.6-flash", "label": "Gemini 3.6 Flash", "execution": "batch"},
     {"provider": "anthropic", "endpoint": "https://api.anthropic.com", "model": "claude-sonnet-5", "label": "Claude Sonnet 5", "execution": "batch"},
 )
 
@@ -1566,6 +1566,15 @@ def _validate_candidates(candidates: list[dict]) -> None:
                 "OpenRouter does not provide the OpenAI Batch API used by "
                 "Evaluation. Change the OpenRouter row to Live."
             )
+        if (
+            provider == "gemini"
+            and execution == "batch"
+            and not batch_api.on_gemini_api(endpoint)
+        ):
+            raise ValueError(
+                "Gemini Batches run only on Google's own API. Change the row "
+                "for this Gemini-compatible server to Live."
+            )
         if not str(candidate.get("model") or "").strip():
             raise ValueError(f"Model is required for {provider}")
         settings = generation_settings(candidate)
@@ -2455,7 +2464,7 @@ def _clients(candidate: dict, secret: str, *, max_retries: int | None = None):
         max_retries=max_retries,
     )
     google_client = (
-        batch_api._google_client(secret) if provider == "gemini" else None
+        batch_api.google_files_client(secret) if provider == "gemini" else None
     )
     return client, google_client
 

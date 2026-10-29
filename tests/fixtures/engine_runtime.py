@@ -4193,6 +4193,17 @@ try:
                 assert abs(priced - (8 * 0.8 + 2 * 0.2 + 4 * 3) / 1_000_000) < 1e-12, (
                     priced
                 )
+            # Settings that no longer offer the Batch, as a Custom
+            # Gemini-compatible proxy's no longer do, still apply its saved
+            # results, priced on the Batch they came from; a consume pass
+            # never sends.
+            with patch.object(openrouter_batch, "_worker_policy", None):
+                assert translation.getBatchProvider(config.model) is None
+                assert translation.appliedBatchProvider(config.model) == "openrouter"
+                translated = translation.translateAI(
+                    ["薬"], [], config, filename="Items.json"
+                )
+                assert translated[0] == ["Potion"], translated
             # Schema-shaped responses can fail native content validation without
             # being refusals; here every line comes back empty. Retain the failed body and generic outcome before
             # the file finishes, even when human-readable logs are unavailable.
