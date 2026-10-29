@@ -10,7 +10,6 @@ after the prefix by what the sample measured.
 """
 
 import json
-import os
 import random
 import time
 from concurrent.futures import FIRST_EXCEPTION, ThreadPoolExecutor, wait
@@ -45,14 +44,14 @@ def http_client(timeout):
 class CountClient:
     """Anthropic's token-count endpoint, called as the Anthropic SDK calls it
     but without importing the SDK, which takes seconds on Windows; ``count``
-    uses it as ``client.messages.count_tokens(**fields).input_tokens``."""
+    uses it as ``client.messages.count_tokens(**fields).input_tokens``.
+    *address* is the one *api_key* was set with, read as every Claude
+    client reads one (batch_providers.anthropic_base_url)."""
 
-    def __init__(self, api_key, base_url=None, *, timeout=30.0):
-        base = (base_url or os.environ.get("ANTHROPIC_BASE_URL") or "https://api.anthropic.com")
-        base = base.strip().rstrip("/")
-        if base.endswith("/v1"):
-            base = base[:-3]
-        self.url = base + "/v1/messages/count_tokens"
+    def __init__(self, api_key, address, *, timeout=30.0):
+        from util.batch_providers import anthropic_base_url
+
+        self.url = anthropic_base_url(address) + "/v1/messages/count_tokens"
         self.headers = {"x-api-key": api_key, "anthropic-version": "2023-06-01"}
         self.client = http_client(timeout)
         self.messages = self

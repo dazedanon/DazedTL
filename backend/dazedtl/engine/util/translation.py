@@ -474,7 +474,9 @@ def _estimate_static_token_count(static_system, model):
         # A local run blocks the network, where the client would only retry.
         if os.getenv("DAZEDTL_TEST_OFFLINE") != "1":
             try:
-                client = anthropic.Anthropic(api_key=openai.api_key)
+                from util.batch_providers import anthropic_client
+
+                client = anthropic_client(openai.api_key, os.getenv("api", ""))
                 backtick = chr(96) * 3
                 system_block = [{
                     "type": "text",
@@ -2394,10 +2396,10 @@ def clearEstimateRequests(*, strict=False):
 
 
 def _get_anthropic_client():
-    key = os.getenv("key", "").strip()
-    if not key:
-        raise Exception("Batch translation requires the 'key' env var (see .env).")
-    return anthropic.Anthropic(api_key=key)
+    """The run's Claude client: its key, sent to its address."""
+    from util.batch_providers import PROVIDER_ANTHROPIC, get_client
+
+    return get_client(PROVIDER_ANTHROPIC)
 
 
 def countClaudeTokens(requests, approximate, log_prefix):
@@ -2414,7 +2416,9 @@ def countClaudeTokens(requests, approximate, log_prefix):
             if not key:
                 raise ValueError("no Claude API key")
             return claude_tokens.count(
-                claude_tokens.CountClient(key), requests, approximate
+                claude_tokens.CountClient(key, os.getenv("api", "")),
+                requests,
+                approximate,
             )
         except Exception as error:
             unavailable = f"{type(error).__name__}: {error}"
@@ -5410,10 +5414,12 @@ def translateText(system, user, history, penalty, formatType, model, numLines=No
         )
         _check_message_content(ant_kwargs.get("messages", ()))
 
-        from util.batch_providers import create_anthropic_message
+        from util.batch_providers import anthropic_client, create_anthropic_message
 
-        ant_client = anthropic.Anthropic(
-            api_key=openai.api_key, max_retries=sdk_retries(anthropic)
+        # The run's address, where its Batches, model list and token counts
+        # go too.
+        ant_client = anthropic_client(
+            openai.api_key, _live_api, max_retries=sdk_retries(anthropic)
         )
         try:
             ant_resp = create_anthropic_message(ant_client, ant_kwargs)

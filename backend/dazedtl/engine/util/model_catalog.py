@@ -98,14 +98,11 @@ class ModelCatalogCore:
         return sorted(m for m in all_models if any(m.lower().startswith(p) for p in prefixes))
 
     def _fetch_anthropic(self):
-        import anthropic
+        from util.batch_providers import anthropic_client
 
-        from util.batch_providers import anthropic_base_url
-
-        kwargs = {"api_key": self.api_key, "timeout": 15, "max_retries": 0}
-        if self.api_url:
-            kwargs["base_url"] = anthropic_base_url(self.api_url)
-        client = anthropic.Anthropic(**kwargs)
+        client = anthropic_client(
+            self.api_key, self.api_url, timeout=15, max_retries=0
+        )
         return sorted(m.id for m in client.models.list(limit=100))
 
     def _fetch_gemini(self):

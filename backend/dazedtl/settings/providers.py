@@ -138,16 +138,24 @@ PRESET_HOSTS = frozenset(
 )
 
 
+def absolute(address):
+    """A server *address* as a URL: one typed without a scheme, such as
+    "api.anthropic.com/v1", reads as HTTPS. hostname and the Claude
+    clients' address (engine batch_providers.anthropic_base_url) read
+    addresses through it."""
+    value = str(address or "").strip()
+    if re.match(r"[a-z][a-z0-9+.-]*://", value, re.IGNORECASE):
+        return value
+    return "https://" + value.removeprefix("//")
+
+
 def hostname(address):
     """The host of a server *address* in lower case, such as "api.anthropic.com"
     in "https://api.anthropic.com/v1", with or without a scheme, so a bare
     "api.anthropic.com" names it too; None when it names none. The one host
     parser the provider rules here read an address with."""
-    value = str(address or "").strip()
-    if not re.match(r"(?:[a-z][a-z0-9+.-]*:)?//", value, re.IGNORECASE):
-        value = "//" + value
     try:
-        return urlsplit(value).hostname
+        return urlsplit(absolute(address)).hostname
     except ValueError:
         return None
 
@@ -156,12 +164,9 @@ def own_server(url):
     """Whether *url* is on a preset provider's own API (PRESET_HOSTS), so an
     error it answers is the provider's own and not a gateway's. The one rule a
     run's transmission state asks (compatibility/transmission); in test
-    scenarios the OpenAI preset's stand-in, which DAZEDTL_TEST_OPENAI_ENDPOINT
-    names, counts as OpenAI's."""
-    value = str(url or "").strip()
-    stand_in = os.environ.get("DAZEDTL_TEST_OPENAI_ENDPOINT", "").strip().rstrip("/")
-    return hostname(value) in PRESET_HOSTS or (
-        bool(stand_in) and (value == stand_in or value.startswith(stand_in + "/"))
+    scenarios the presets' stand-ins (STAND_INS) count as their APIs."""
+    return hostname(url) in PRESET_HOSTS or any(
+        _stand_in(identity, url) for identity in STAND_INS
     )
 
 
@@ -180,12 +185,16 @@ def own_api(identity, endpoint):
     its own Batches and model list. The one rule the app
     and the engine ask; in test scenarios the OpenAI and Anthropic presets'
     stand-ins (STAND_INS) count as their APIs, paths under them included."""
+    return hostname(endpoint) == OWN_HOSTS[identity] or _stand_in(identity, endpoint)
+
+
+def _stand_in(identity, endpoint):
+    """Whether `endpoint` is at or under a test scenario's stand-in for the
+    preset `identity`'s own API (STAND_INS)."""
     value = str(endpoint or "").strip().rstrip("/").lower()
     stand_in = os.environ.get(STAND_INS.get(identity, ""), "")
     stand_in = stand_in.strip().rstrip("/").lower()
-    return hostname(value) == OWN_HOSTS[identity] or (
-        bool(stand_in) and (value == stand_in or value.startswith(stand_in + "/"))
-    )
+    return bool(stand_in) and (value == stand_in or value.startswith(stand_in + "/"))
 
 
 def completion_field(protocol, endpoint):
