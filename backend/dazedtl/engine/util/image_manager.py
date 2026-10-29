@@ -722,9 +722,27 @@ def thumbnail_profile_png_bytes(
         return output.getvalue()
 
 
+def legacy_tool_python(text: str) -> str:
+    """A Skills tab copy of the image skill from before {{IMAGE_TOOL_PYTHON}}
+    became a whole command quoted it as a path; the command goes unquoted."""
+    return text.replace('"{{IMAGE_TOOL_PYTHON}}"', "{{IMAGE_TOOL_PYTHON}}")
+
+
+def tool_placeholders(scripts: Path) -> dict[str, str]:
+    """The image skill's placeholders for DazedTL's own Python and its tools
+    in scripts. The Python is a whole command: an assistant runs the tools with
+    the app's options, which keep compiled Python out of the install."""
+    return {
+        "{{IMAGE_TOOL_PYTHON}}": system.shell_command(system.python_command()),
+        "{{IMAGE_INPAINT_CLI}}": str(scripts / "image_inpaint.py"),
+        "{{IMAGE_VALIDATE_CLI}}": str(scripts / "image_validate.py"),
+        "{{IMAGE_RECIPE_CLI}}": str(scripts / "image_recipe.py"),
+        "{{IMAGE_FAMILY_CLI}}": str(scripts / "image_family.py"),
+    }
+
+
 def build_translation_handoff(game_root: str | Path, engine_id: str, image_root: str | Path | None = None) -> str:
     """Build the same image-localization instructions for either desktop UI."""
-    import sys
     from util.paths import PROJECT_ROOT, prepare_game_translation_context
     from util.skills import load_clipboard_skill
     root = _resolved_root(game_root)
@@ -741,16 +759,10 @@ def build_translation_handoff(game_root: str | Path, engine_id: str, image_root:
         "{{GAME_ROOT}}": str(root),
         "{{EDITABLE_IMAGES_FOLDER}}": str(images),
         "{{VOCAB_FILE}}": str(prepare_game_translation_context(root)),
-        # Keep a venv interpreter's own path: resolving its symlink selects the
-        # base Python, which lacks the packages installed in the venv.
-        "{{IMAGE_TOOL_PYTHON}}": str(Path(sys.executable).absolute()),
-        "{{IMAGE_INPAINT_CLI}}": str((PROJECT_ROOT / "scripts" / "image_inpaint.py").resolve()),
-        "{{IMAGE_VALIDATE_CLI}}": str((PROJECT_ROOT / "scripts" / "image_validate.py").resolve()),
-        "{{IMAGE_RECIPE_CLI}}": str((PROJECT_ROOT / "scripts" / "image_recipe.py").resolve()),
-        "{{IMAGE_FAMILY_CLI}}": str((PROJECT_ROOT / "scripts" / "image_family.py").resolve()),
+        **tool_placeholders((PROJECT_ROOT / "scripts").resolve()),
         "{{SOURCE_LANGUAGE}}": game_source_language(root),
     }
-    prompt = load_clipboard_skill("image_translation.md")
+    prompt = legacy_tool_python(load_clipboard_skill("image_translation.md"))
     missing = [token for token in replacements if token not in prompt]
     if missing:
         raise ValueError("Image translation skill is missing required placeholder(s): " + ", ".join(missing))
