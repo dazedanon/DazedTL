@@ -35,6 +35,7 @@ from dataclasses import dataclass
 from typing import Any, Iterable, Iterator
 
 from util import target_text
+from util.speakers import to_prefixed
 from util.source_text import holds_source
 
 # The number of rows a part's text owns, kept on its anchor beside
@@ -553,7 +554,7 @@ def message_entry(text: str, speaker: str, *, unwrap: bool = True) -> str | None
     text = text.replace("\\px[200]", "")
     if not text:
         return None
-    return f"[{speaker}]: {text}" if speaker else text
+    return to_prefixed(speaker, text)
 
 
 # The codes at the start of a message's text that Guided translation keeps
@@ -643,20 +644,14 @@ def written_rows(rows: list[str], language) -> list[str]:
     return written
 
 
-def untranslated(reply: Any, sent: Any) -> bool:
-    """Whether a reply leaves its text untranslated: text the translation
-    left untranslated or refused comes back as it was sent."""
-    return reply == sent
-
-
 def write_text(commands: list, rows: tuple[int, ...], value: str, *, joined: bool = True) -> None:
     """Write a part's text, *value*, over the text *rows* that hold it.
     Joined, as translation writes a message, the first row holds the text
     and the others are emptied, which the engine leaves out when it writes
     the list back. Otherwise the text is laid over the rows by :func:`spread`,
     adding and removing none, as a list written as it stands needs. Text the
-    translation did not translate (see :func:`untranslated`) is not written,
-    so its rows stay as the game has them."""
+    translation left untranslated (util.translation.reply_to_write) is not
+    written, so its rows stay as the game has them."""
     if joined:
         commands[rows[0]]["parameters"] = [value]
         for at in rows[1:]:

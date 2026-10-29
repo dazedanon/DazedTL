@@ -6021,6 +6021,34 @@ def found_mismatch(mismatches, filename):
     report_mismatch(filename)
 
 
+def reply_to_write(translated, lines, mismatches, lock, *filenames):
+    """What an engine module writes of the reply translateAI returned for
+    *lines*, sent as one list: None when the reply does not have one
+    translation per line sent, else its translations with None for each that
+    came back as it was sent. A None keeps its source text exactly.
+
+    A reply of the wrong length is never written, since its lines may not be
+    in their places: the files of its lines, *filenames*, join the module's
+    *mismatches* and the run counts it once (found_mismatch), under the
+    module's *lock*. A line that comes back as it was sent is text left
+    untranslated: translateAI returns a chunk that failed validation, and a
+    line of a reply it otherwise kept, as they were sent, and has counted
+    them itself; a Batch collect pass and an estimate leave every line so.
+    Written, such a line would replace its source with the form it was sent
+    in, often with its line breaks turned into spaces."""
+    if len(translated) != len(lines):
+        with lock:
+            found_mismatch(mismatches, filenames[0])
+            for filename in filenames[1:]:
+                if filename not in mismatches:
+                    mismatches.append(filename)
+        return None
+    return [
+        None if reply == sent else reply
+        for reply, sent in zip(translated, lines, strict=True)
+    ]
+
+
 def _retry_live_translation(func):
     """Retry live provider work; batch phases only read or write local data.
     A RunStoppingError stops the run at once instead, and a
