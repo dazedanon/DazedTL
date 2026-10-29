@@ -16,7 +16,8 @@ from tqdm import tqdm
 from util.languages import source_pattern
 from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost, found_mismatch, run_stop_errors
 from util.translation_task import fail_on_parser_error, module_receipt, write_output
-from util.speakers import find_speaker, strip_speaker_prefix, to_prefixed
+from util.sent_lines import SentLines
+from util.speakers import find_speaker
 
 # Globals
 MODEL = os.getenv("model")
@@ -128,7 +129,7 @@ def parseRegex(readFile, filename):
         PBAR = pbar
 
         try:
-            result = translateRegex(data, filename, [])
+            result = translateRegex(data, filename)
             totalTokens[0] += result[0]
             totalTokens[1] += result[1]
         except run_stop_errors():
@@ -139,66 +140,60 @@ def parseRegex(readFile, filename):
     return [data, totalTokens, None]
 
 
-def translateRegex(data, filename, translatedList):
-    if translatedList:
-        stringList = translatedList[0]
-        choiceList = translatedList[1]
-    else:
-        stringList = []
-        choiceList = []
+# A chapter title, set as \setgamedatatitle("...") or title '...'
+SETGAMEDATATITLE = r'\\setgamedatatitle\("(.+?)"\)'
+TITLE = r"title\s'(.*)'$"
+# A speaker, said by the dialogue after it (util/speakers)
+SPEAKER = r'"name":\s?"(.+)",'
+# Dialogue: a JSON "text" field, or the lines of a \text ... \endtext block
+DIALOGUE = r'\"text\":\s?\"(.+)\",'
+# Choices: the items of \sel(...), and a $menu_item's label
+SEL = r'\\sel\((.+)\)'
+CHOICE = r"\$menu_item.+?,(.*?),"
+
+
+def translateRegex(data, filename):
+    """Translates titles and speakers on the spot and walks the lines once,
+    sending each dialogue line and choice with the place its reply goes
+    (util/sent_lines), then writes each reply there."""
+    global LOCK, ESTIMATE, FILENAME, PBAR, MISMATCH
     tokens = [0, 0]
     speaker = ""
-    global LOCK, ESTIMATE, FILENAME, PBAR, MISMATCH
+    dialogue = SentLines()
+    choices = SentLines(unlabel=None)
     i = 0
-    
-    # Define regex patterns outside loop
-    dialogueRegex = r'\"text\":\s?\"(.+)\",'
-    lineRegexSpeaker = r'"name":\s?"(.+)",'
-    choiceRegex = r"\$menu_item.+?,(.*?),"
-    titleRegex = r"title\s'(.*)'$"
-    setgamedatatitleRegex = r'\\setgamedatatitle\("(.+?)"\)'
-    selRegex = r'\\sel\((.+)\)'
 
     while i < len(data):
-
-        # Setgamedatatitle
-        match = re.search(setgamedatatitleRegex, data[i])
+        # Setgamedatatitle - Translate immediately (not batched)
+        match = re.search(SETGAMEDATATITLE, data[i])
         if match:
-            # Pass 1 - Translate immediately (not batched)
-            if not translatedList:
-                response = translateAI(
-                    match.group(1).replace('\\n', '\n'),
-                    f"Reply with the {LANGUAGE} translation of the chapter title",
-                    True,
-                )
-                tokens[0] += response[1][0]
-                tokens[1] += response[1][1]
-                title = response[0]
-                
-                # Convert newlines back to escape sequences and escape quotes
-                title = title.replace('\n', '\\n').replace('"', '\\"')
-                data[i] = data[i].replace(match.group(1), title)
+            response = translateAI(
+                match.group(1).replace('\\n', '\n'),
+                f"Reply with the {LANGUAGE} translation of the chapter title",
+                True,
+            )
+            tokens[0] += response[1][0]
+            tokens[1] += response[1][1]
 
-        # Title
-        match = re.search(titleRegex, data[i])
+            # Convert newlines back to escape sequences and escape quotes
+            title = response[0].replace('\n', '\\n').replace('"', '\\"')
+            data[i] = data[i].replace(match.group(1), title)
+
+        # Title - Translate immediately (not batched)
+        match = re.search(TITLE, data[i])
         if match:
-            # Pass 1 - Translate immediately (not batched)
-            if not translatedList:
-                response = translateAI(
-                    match.group(1),
-                    f"Reply with the {LANGUAGE} translation of the chapter title",
-                    True,
-                )
-                tokens[0] += response[1][0]
-                tokens[1] += response[1][1]
-                title = response[0]
-
-                # Set
-                title = re.sub(r"(?<!\\)'", r"\\'", title)
-                data[i] = data[i].replace(match.group(1), title)
+            response = translateAI(
+                match.group(1),
+                f"Reply with the {LANGUAGE} translation of the chapter title",
+                True,
+            )
+            tokens[0] += response[1][0]
+            tokens[1] += response[1][1]
+            title = re.sub(r"(?<!\\)'", r"\\'", response[0])
+            data[i] = data[i].replace(match.group(1), title)
 
         # Speaker (util/speakers)
-        found = find_speaker(lineRegexSpeaker, data[i])
+        found = find_speaker(SPEAKER, data[i])
         if found:
             response = getSpeaker(found.name)
             speaker = response[0]
@@ -206,202 +201,123 @@ def translateRegex(data, filename, translatedList):
             tokens[1] += response[1][1]
             data[i] = found.written(speaker)
 
-        # Dialogue (JSON text field)
-        match = re.search(dialogueRegex, data[i])
+        # Dialogue (JSON text field), which its speaker says alone
+        match = re.search(DIALOGUE, data[i])
         if match:
-            jaString = match.group(1)
-
-            # Replace linebreaks
-            jaString = jaString.replace('\\n', ' ')
-
-            # Pass 1 - Collect for batch translation
-            if not translatedList:
-                stringList.append(to_prefixed(speaker, jaString))
-
-            # Pass 2 - Apply translated text
-            else:
-                if stringList:
-                    # Grab and Pop
-                    translatedText = stringList[0]
-                    stringList.pop(0)
-
-                    # Set to None if empty list
-                    if len(stringList) <= 0:
-                        stringList = None
-
-                    # Remove speaker prefix from translation
-                    translatedText = strip_speaker_prefix(translatedText, speaker)
-
-                    # Textwrap
-                    translatedText = dazedwrap.wrapText(translatedText, width=WIDTH)
-                    translatedText = translatedText.replace('\n', '\\n')
-
-                    # Escape Quotes (Required for JSON)
-                    translatedText = re.sub(r'(?<!\\)"', r'\\"', translatedText)
-
-                    # Set
-                    data[i] = data[i].replace(match.group(1), translatedText)
-
-            # The speaker says this text alone
+            jaString = match.group(1).replace('\\n', ' ')
+            dialogue.send(jaString, _field_writer(data, i, match.group(1)), speaker)
             speaker = ""
 
         # Sel (Selection menu)
-        match = re.search(selRegex, data[i])
+        match = re.search(SEL, data[i])
         if match:
-            # Split the selection items
-            selItems = [item.strip().strip('"') for item in match.group(1).split(',')]
-            
-            # Pass 1 - Collect all items for batch translation
-            if not translatedList:
-                for item in selItems:
-                    if item:  # Skip empty strings
-                        choiceList.append(item)
+            items = [item.strip().strip('"') for item in match.group(1).split(',')]
+            for item, write in zip(items, _sel_writers(data, i, items)):
+                choices.send(item, write)
 
-            # Pass 2 - Apply translated items
-            else:
-                if choiceList:
-                    translatedItems = []
-                    for item in selItems:
-                        if item:
-                            # Grab and Pop
-                            translatedText = choiceList[0]
-                            choiceList.pop(0)
-
-                            # Set to None if empty list
-                            if len(choiceList) <= 0:
-                                choiceList = None
-                            
-                            # Escape Quotes
-                            translatedText = translatedText.replace('"', '\\"')
-                            translatedItems.append(f'"{translatedText}"')
-                        else:
-                            translatedItems.append('""')
-                    
-                    # Rebuild the sel line
-                    newSelContent = ','.join(translatedItems)
-                    data[i] = data[i].replace(match.group(1), newSelContent)
-
-        # Dialogue
-        # Grab multi-line text
+        # Dialogue: the lines of a \text block, sent as one
         if "\\text" in data[i].strip():
-            lines = []
-            i += 1                              
-
-            # Pass 1
-            if not translatedList:
-                while "\\endtext" not in data[i].strip():
-                    lines.append(data[i])
-                    i += 1
-                if lines:
-                    jaString = "".join(lines).replace("\n", "")  
-
-                # Save Original String
-                originalString = jaString
-
-                # Strip Spaces
-                jaString = jaString.strip()
-
-                # Remove Textwrap
-                jaString = jaString.replace('\n', ' ')
-
-                if jaString:
-                    stringList.append(to_prefixed(speaker, jaString))
-
-            # Pass 2
-            else:
-                # Get Text
-                if stringList:
-                    # Grab and Pop
-                    translatedText = stringList[0]
-                    stringList.pop(0)
-
-                    # Set to None if empty list
-                    if len(stringList) <= 0:
-                        stringList = None
-
-                    # Remove speaker
-                    translatedText = strip_speaker_prefix(translatedText, speaker)
-
-                    # Escape Quotes
-                    translatedText = re.sub(r'(?<!\\)"', r"", translatedText)
-
-                    # Remove characters that may break scripts
-                    translatedText = translatedText.replace("<", "(")
-                    translatedText = translatedText.replace(">", ")")
-
-                    # Textwrap
-                    translatedText = dazedwrap.wrapText(translatedText, width=WIDTH)   
-                    
-                    # Set Data
-                    while "\\endtext" not in data[i].strip():
-                        del data[i]
-                    data.insert(i, f"{translatedText}\n")
+            i += 1
+            start = i
+            while "\\endtext" not in data[i].strip():
+                i += 1
+            jaString = "".join(data[start:i]).replace("\n", "").strip()
+            dialogue.send(jaString, _block_writer(data, start, i), speaker)
 
         # Choices
-        match = re.search(choiceRegex, data[i])
+        match = re.search(CHOICE, data[i])
         if match:
-            # Pass 1
-            if not translatedList:
-                choiceList.append(match.group(1))
-
-            # Pass 2
-            else:
-                # Grab and Pop
-                translatedText = choiceList[0]
-                choiceList.pop(0)
-
-                # Replace Spaces
-                translatedText = translatedText.replace("\u3000", " ")
-
-                # Escape Quotes
-                translatedText = re.sub(r'(?<!\\)"', r'\\"', translatedText)
-                translatedText = re.sub(r"(?<!\\)'", r"\\'", translatedText)
-
-                # Set
-                data[i] = data[i].replace(match.group(1), translatedText)
-
-            i += 1
-        else:
-            i += 1
+            choices.send(match.group(1), _choice_writer(data, i, match.group(1)))
+        i += 1
 
     # EOF
-    if not translatedList:
-        stringListTL = []
-        choiceListTL = []
-        
-        # Set total progress bar for all items
-        totalItems = len(stringList) + len(choiceList)
-        if totalItems > 0:
-            PBAR.total = totalItems
-            PBAR.refresh()
+    totalItems = len(dialogue) + len(choices)
+    if totalItems > 0:
+        PBAR.total = totalItems
+        PBAR.refresh()
+    replies = []
+    for lines, history in (
+        (dialogue, "Reply with the English Translation"),
+        (choices, "Reply with the English TL of the Dialogue Choice"),
+    ):
+        if not lines:
+            continue
+        response = translateAI(lines.lines, history)
+        tokens[0] += response[1][0]
+        tokens[1] += response[1][1]
+        replies.append((lines, response[0]))
+        if len(lines) != len(response[0]):
+            with LOCK:
+                found_mismatch(MISMATCH, FILENAME)
 
-        # String List
-        if stringList:
-            response = translateAI(stringList, "Reply with the English Translation")
-            tokens[0] += response[1][0]
-            tokens[1] += response[1][1]
-            stringListTL = response[0]
-
-            if len(stringList) != len(stringListTL):
-                # Mismatch
-                with LOCK:
-                    found_mismatch(MISMATCH, FILENAME)
-
-        # Choice List
-        if choiceList:
-            response = translateAI(choiceList, "Reply with the English TL of the Dialogue Choice")
-            tokens[0] += response[1][0]
-            tokens[1] += response[1][1]
-            choiceListTL = response[0]
-
-            if len(choiceList) != len(choiceListTL):
-                # Mismatch
-                with LOCK:
-                    found_mismatch(MISMATCH, FILENAME)
-
-        # Set Strings
-        translateRegex(data, filename, [stringListTL, choiceListTL])
+    # A short reply list still answers the lines it reaches
+    for lines, translated in replies:
+        lines.write(translated)
     return tokens
+
+
+def _field_writer(data, i, sent):
+    """Writes the reply to a "text" field on line *i* over the *sent* text."""
+
+    def write(translatedText):
+        translatedText = dazedwrap.wrapText(translatedText, width=WIDTH)
+        translatedText = translatedText.replace('\n', '\\n')
+
+        # Escape Quotes (Required for JSON)
+        translatedText = re.sub(r'(?<!\\)"', r'\\"', translatedText)
+        data[i] = data[i].replace(sent, translatedText)
+
+    return write
+
+
+def _block_writer(data, start, end):
+    """Writes the reply to a \\text block's lines *start* to *end* as the
+    block's one line. Its other lines are emptied, not removed, so the lines
+    after them keep their places for the replies written after it."""
+
+    def write(translatedText):
+        # Remove quotes and characters that may break scripts
+        translatedText = re.sub(r'(?<!\\)"', r"", translatedText)
+        translatedText = translatedText.replace("<", "(")
+        translatedText = translatedText.replace(">", ")")
+
+        translatedText = dazedwrap.wrapText(translatedText, width=WIDTH)
+        data[start:end] = [f"{translatedText}\n"] + [""] * (end - start - 1)
+
+    return write
+
+
+def _sel_writers(data, i, items):
+    """A write for each of the *items* in the \\sel on line *i*. Each writes
+    the list between the \\sel's parentheses again with its reply in its
+    item's place, every item quoted and separated by "," alone. The list is
+    found again on the line, whatever line breaks a reply put in it."""
+    parts = [f'"{item}"' for item in items]
+
+    def writer(index):
+        def write(translatedText):
+            parts[index] = '"' + translatedText.replace('"', '\\"') + '"'
+            match = re.search(SEL, data[i], re.DOTALL)
+            data[i] = data[i][: match.start(1)] + ",".join(parts) + data[i][match.end(1) :]
+
+        return write
+
+    return [writer(index) for index in range(len(items))]
+
+
+def _choice_writer(data, i, sent):
+    """Writes the reply to the $menu_item label *sent* on line *i*."""
+
+    def write(translatedText):
+        translatedText = translatedText.replace("\u3000", " ")
+
+        # Escape Quotes
+        translatedText = re.sub(r'(?<!\\)"', r'\\"', translatedText)
+        translatedText = re.sub(r"(?<!\\)'", r"\\'", translatedText)
+        data[i] = data[i].replace(sent, translatedText)
+
+    return write
+
 
 # Save some money and enter the character before translation
 def getSpeaker(speaker):

@@ -360,10 +360,14 @@ def restore_source(prefix: str, speaker: str, body: str) -> str:
 # translates the name through translate_speaker, writes back only the name
 # (FoundSpeaker.written), sends the lines the speaker says as
 # ``[Speaker]: line`` (to_prefixed) and takes that prefix off each reply line
-# (strip_speaker_prefix with the speaker). translate_speaker answers a name it
-# translated, or a translation it gave, from its cache at no cost, so a module
-# that walks its lines again to write the replies finds the names its first
-# walk wrote for free and needs no rule of its own for which walk translates.
+# (strip_speaker_prefix with the speaker); Regex, CSV, WOLF2 and JSON send
+# and write their lines through util/sent_lines, which does both. A speaker
+# says only the lines its engine's syntax gives it, never lines after them
+# that name no speaker. translate_speaker answers a name it translated, or a
+# translation it gave, from its cache at no cost, so a module that walks its
+# lines again to write the replies (Text, Tyrano, Kirikiri) finds the names
+# its first walk wrote for free and needs no rule of its own for which walk
+# translates.
 # ============================================================================
 
 

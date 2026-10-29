@@ -60,7 +60,10 @@ def relative_file(value):
 # FROZEN_POLICIES), so a run keeps the requests it was approved with. Version 2
 # takes in the request changes these engines made since 2.0.0 without a new
 # version, such as speakers and WOLF choices sent once and WOLF RPG 2 choices
-# after dialogue sent.
+# after dialogue sent. Version 3 of Regex, CSV, WOLF RPG 2 and JSON sends no
+# text of spaces alone (util/sent_lines), Regex no longer sends an empty
+# \text block as the block before it, and WOLF RPG 2 reads a speaker only as
+# a message's first line.
 #
 # Only the version that collected a Batch starts submitting it: a queue an
 # older version collected is refused before anything is sent (STALE_QUEUE),
@@ -75,17 +78,17 @@ def relative_file(value):
 # reuses the replies it saved for those built the same; refusing it would only
 # pay again for what its unfinished files already have.
 ENGINE_VERSIONS = {
-    "CSV": 2,
+    "CSV": 3,
     "Tyrano": 2,
     "Kirikiri": 2,
-    "JSON": 2,
+    "JSON": 3,
     "Lune": 2,
     "Yuris": 2,
     "NScript": 2,
     "Wolf RPG (WolfDawn)": 2,
     "Wolf RPG": 2,
-    "Wolf RPG 2": 2,
-    "Regex": 2,
+    "Wolf RPG 2": 3,
+    "Regex": 3,
     "Text": 2,
     "RenPy": 2,
     "Unity": 2,

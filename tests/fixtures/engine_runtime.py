@@ -985,13 +985,18 @@ try:
         # filled target. Text, Tyrano and Kirikiri's narration took a reply
         # for a line of spaces they sent nothing for, moving each later
         # translation up a line, and Text and JSON's list format sent the
-        # lines after a speaker's as said by it. WOLF2 joined a speaker right
-        # after a run of text to that run, and WOLF2 and Kirikiri left the
-        # second of two speakers in a row untranslated. Tyrano translated
-        # "#name:face" whole, face included, and a name reply on two lines
-        # added a line to the file. CSV wrote an empty target without its
-        # source's :name[] tag or \M marker, and JSON, Yuris and WolfDawn kept
-        # the label of a name holding "]".
+        # lines after a speaker's as said by it, also after an empty name.
+        # Kirikiri left the second of two speakers in a row untranslated.
+        # Tyrano translated "#name:face" whole, face included, and a name
+        # reply on two lines added a line to the file. CSV wrote an empty
+        # target without its source's :name[] tag or \M marker, and JSON, Yuris
+        # and WolfDawn kept the label of a name holding "]". WOLF2 read a line
+        # ending in "：" inside a message as a speaker, though only a message's
+        # first line names it. Regex's \text block of spaces took the next
+        # block's reply, and an empty one sent the block before it again; CSV
+        # looked for a row's text without its furigana in a target holding
+        # them, so that target stayed Japanese and an empty one lost its
+        # :name[] tag.
         shapes = temporary / "engine-shapes"
         for folder in ("files", "translated", "log"):
             (shapes / folder).mkdir(parents=True)
@@ -1485,10 +1490,37 @@ try:
                     "modules.wolf2",
                     "handleWOLF2",
                     "Map001.txt",
-                    "アリス：\nやあ\nボブ：\nアリス：\nまたね\n",
+                    (
+                        "アリス：\nやあ\n答えは次の通り：\n三だ\n"
+                        "//選択肢\n//はい\n//いいえ\nボブ：\nまたね\n"
+                    ),
                     {},
-                    ["アリス", "ボブ", ["[Alice]: やあ ", "[Alice]: またね "]],
-                    'Alice：\nEN "[Alice]: やあ "\nAlice：\nAlice：\nEN "[Alice]: またね "\n',
+                    [
+                        "アリス",
+                        ["はい", "いいえ"],
+                        "ボブ",
+                        ["[Alice]: やあ 答えは次の通り： 三だ ", "[Alice]: またね "],
+                    ],
+                    (
+                        'Alice：\nEN "[Alice]: やあ 答えは次の通り： 三だ "\n'
+                        '//選択肢\n//EN "はい"\n//EN "いいえ"\n'
+                        'Alice：\nEN "[Alice]: またね "\n'
+                    ),
+                ),
+                (
+                    "modules.regex",
+                    "handleRegex",
+                    "script.txt",
+                    (
+                        "\\text\n一\n\\endtext\n\\text\n\\endtext\n"
+                        "\\text\n\u3000\n\\endtext\n\\text\n二\n\\endtext\n"
+                    ),
+                    {},
+                    [["一", "二"]],
+                    (
+                        "\ufeff\\text\nEN 一\n\\endtext\n\\text\n\\endtext\n"
+                        "\\text\n\u3000\n\\endtext\n\\text\nEN 二\n\\endtext\n"
+                    ),
                 ),
                 (
                     "modules.csv",
@@ -1500,6 +1532,30 @@ try:
                     'Source,Target\r\n"\\M[やあ]\nやあ","\\M[やあ]\nEN ""やあ"""\r\n',
                 ),
                 (
+                    "modules.csv",
+                    "handleCSV",
+                    "Scene.csv",
+                    (
+                        'Source,Target\n":name[アリス]\n＜漢字＝かんじ＞だよ",'
+                        '":name[アリス]\n＜漢字＝かんじ＞だよ"\n'
+                        '":name[アリス]\n＜仮名＝かな＞か",\n'
+                        '":name[アリス]\n＜仮名＝かな＞だ",":name[アリス]\n仮名だ"\n'
+                    ),
+                    {"PARSE_NAME_TAGS": True},
+                    [
+                        "アリス",
+                        ["[Alice]: 漢字だよ", "[Alice]: 仮名か", "[Alice]: 仮名だ"],
+                    ],
+                    (
+                        'Source,Target\r\n":name[Alice]\n＜漢字＝かんじ＞だよ",'
+                        '":name[Alice]\nEN ""[Alice]: 漢字だよ"""\r\n'
+                        '":name[Alice]\n＜仮名＝かな＞か",'
+                        '":name[Alice]\nEN ""[Alice]: 仮名か"""\r\n'
+                        '":name[Alice]\n＜仮名＝かな＞だ",'
+                        '":name[Alice]\nEN ""[Alice]: 仮名だ"""\r\n'
+                    ),
+                ),
+                (
                     "modules.json",
                     "handleJSON",
                     "Talk.json",
@@ -1507,14 +1563,16 @@ try:
                         [
                             {"character_nameText": "アリス", "m_text": "やあ"},
                             {"m_text": "静かだ"},
+                            {"character_nameText": "", "m_text": "またね"},
                         ]
                     ),
                     {"name": "Al]Ice", "replies": {"[Al]Ice]: やあ": "[Al]Ice]: Hi"}},
-                    ["アリス", ["[Al]Ice]: やあ", "静かだ"]],
+                    ["アリス", ["[Al]Ice]: やあ", "静かだ", "またね"]],
                     json.dumps(
                         [
                             {"character_nameText": "Al]Ice", "m_text": "Hi"},
                             {"m_text": "EN 静かだ"},
+                            {"character_nameText": "", "m_text": "EN またね"},
                         ],
                         ensure_ascii=False,
                         indent=4,

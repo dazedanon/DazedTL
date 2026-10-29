@@ -10,6 +10,7 @@ import traceback
 import tiktoken
 import csv
 import io
+from functools import partial
 from pathlib import Path
 from colorama import Fore
 from dotenv import load_dotenv
@@ -18,7 +19,8 @@ from tqdm import tqdm
 from util.languages import source_pattern
 from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost, found_mismatch, run_stop_errors
 from util.translation_task import fail_on_parser_error, module_receipt, write_output
-from util.speakers import find_speaker, strip_speaker_prefix, to_prefixed
+from util.sent_lines import SentLines
+from util.speakers import find_speaker
 
 # Globals
 MODEL = os.getenv("model")
@@ -253,18 +255,17 @@ def translateCSV(data, pbar, filename):
     - REMOVE_FURIGANA: remove furigana
     - SKIP_COMMENT_ROWS: skip rows with 'comment' in first column
 
-    Translates each speaker on the spot and writes its name back, gathers
-    the rows' text, then writes each translation to the row it came from,
-    replacing the text that row sent. The rows and their text are kept from
-    the gathering, since a name written back can change a cell that decides
-    them, such as a speaker column that is also the target or a :name[] tag.
+    Translates each speaker on the spot and writes its name back, sends
+    each row's text (util/sent_lines), then writes each translation to the
+    row it came from, over the text as the cell holds it. The rows and their
+    text are kept from the walk, since a name written back can change a cell
+    that decides them, such as a speaker column that is also the target or a
+    :name[] tag.
     """
     global LOCK, ESTIMATE, PBAR
     PBAR = pbar
     totalTokens = [0, 0]
-    stringList = []
-    # (row index, text the row's translation replaces, its speaker) per string
-    sent = []
+    lines = SentLines()
 
     # Translate
     for i in _collect_process_indices(data):
@@ -308,40 +309,35 @@ def translateCSV(data, pbar, filename):
                 if voMatch:
                     jaString = jaString.replace(voMatch.group(0), "")
 
-        # Remove furigana if configured
+        # Remove furigana if configured. The translation replaces the text
+        # as a target holds it: as the cell does, or without its furigana.
+        cellText = jaString
         if REMOVE_FURIGANA:
             jaString = re.sub(r"＜(.*)＝.*＞", r"\1", jaString)
-
-        # A name tag with no line after it has nothing to translate
-        if not jaString.strip():
-            continue
-
-        # Store original for replacement
-        sent.append((i, jaString, speaker))
+        held = (cellText, jaString)
 
         # Remove textwrap
         jaString = jaString.replace("\\n", " ")
         jaString = jaString.replace("\n", " ")
 
-        # Collect strings
-        stringList.append(to_prefixed(speaker, jaString))
+        # A name tag with no line after it sends nothing
+        lines.send(jaString, partial(_set_translation, data[i], held), speaker)
 
     # EOF - Process collected strings
-    if len(stringList) > 0:
+    if len(lines) > 0:
         # Set Progress
-        pbar.total = len(stringList)
+        pbar.total = len(lines)
         pbar.refresh()
 
         # Translate
-        response = translateAI(stringList, "")
+        response = translateAI(lines.lines, "")
         totalTokens[0] += response[1][0]
         totalTokens[1] += response[1][1]
         translatedList = response[0]
 
         # Set Strings
-        if len(stringList) == len(translatedList):
-            for (i, ojaString, speaker), translatedText in zip(sent, translatedList):
-                _set_translation(data[i], ojaString, translatedText, speaker)
+        if len(lines) == len(translatedList):
+            lines.write(translatedList)
         # Mismatch
         else:
             with LOCK:
@@ -367,12 +363,10 @@ def _write_name(row, name, translated):
             row[column] = found.written(translated)
 
 
-def _set_translation(row, ojaString, translatedText, speaker):
-    """Writes *translatedText*, the translation of *ojaString* sent with
-    *speaker*, to *row*'s target column."""
-    # Remove speaker prefix from translation if present
-    translatedText = strip_speaker_prefix(translatedText, speaker)
-
+def _set_translation(row, held, translatedText):
+    """Writes *translatedText* to *row*'s target column, over its text in the
+    first form in *held* the cell holds: as the row's cell holds it, then as
+    it was sent, without its furigana."""
     # Add wordwrap
     translatedText = dazedwrap.wrapText(translatedText, WIDTH)
     translatedText = translatedText.replace("\n", "\\n")
@@ -390,14 +384,16 @@ def _set_translation(row, ojaString, translatedText, speaker):
         # :name[] tag or \M marker, so the tag or marker stays even when it
         # holds the same text; an empty target takes them from the cell the
         # text came from
-        cell = row[actual_target]
-        if not cell and ojaString in _row_source_text(row):
-            cell = _row_source_text(row)
-        if cell:
-            head, sent, tail = cell.rpartition(ojaString)
-            row[actual_target] = head + translatedText + tail if sent else cell
+        cell = row[actual_target] or _row_source_text(row)
+        for text in held:
+            head, sent, tail = cell.rpartition(text)
+            if sent:
+                row[actual_target] = head + translatedText + tail
+                break
         else:
-            row[actual_target] = translatedText
+            # A target holding other text keeps it
+            if not row[actual_target]:
+                row[actual_target] = translatedText
     else:
         row[actual_target] = translatedText
 
