@@ -17,8 +17,6 @@ from dazedtl.translation.files import digest, live_path, read_json
 # The engine's names pass translates the speakers of every file in one list and
 # records its requests under this name (engine util/speakers.NAMES_FILE).
 NAMES_FILE = "speakers"
-# Its receipt's label in the run log.
-NAMES_RECEIPT = "Speakers"
 
 
 # The last read of the most recently used evidence files, one entry per file
@@ -552,8 +550,8 @@ def source_values(params):
 
 def file_receipt(line, files):
     """Interpret the same per-file receipt used by Qt, never a total/estimate,
-    as ``(file, figures, used)``; ``used`` says whether the attempt spent any
-    tokens on the file, or None. Figures are its tokens, cost and seconds."""
+    as ``(file, figures)``, or None. Figures are its tokens, cost and
+    seconds."""
     line = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", str(line))
     match = re.match(
         r"^\s*(.+?):\s.*?\[Input:\s*(\d+)\].*?\[Output:\s*(\d+)\].*?\[Cost:\s*\$([\d,.]+)\].*?\[([\d.]+)s\]",
@@ -571,7 +569,7 @@ def file_receipt(line, files):
             "cost": cost,
             "seconds": seconds,
         }
-        return match[1].strip(), figures, figures["input"] + figures["output"] > 0
+        return match[1].strip(), figures
     except ValueError:
         return None
 
@@ -581,26 +579,14 @@ def file_metric(line, files):
     return {receipt[0]: receipt[1]} if receipt else {}
 
 
-def record_receipt(job, line):
-    """Keep a run log line's receipt with the run's: a file's from translating
-    or saving a Batch, or a names pass's from any phase, under NAMES_FILE."""
-    receipt = file_receipt(line, [*job.get("files", []), NAMES_RECEIPT])
-    if not receipt:
-        return
-    name, figures, used = receipt
-    receipts = job.get("file_metrics", {})
-    if name == NAMES_RECEIPT:
-        # A later names pass translates only names no earlier one did.
-        earlier = receipts.get(NAMES_FILE, {})
-        figures = {key: earlier.get(key, 0) + value for key, value in figures.items()}
-        name = NAMES_FILE
-    elif job.get("mode") != "translate" and job.get("phase") != "consume":
-        return
-    elif not used and name in receipts:
-        # A retry reads the files an earlier attempt saved back without
-        # usage; keep what that attempt cost.
-        return
-    job.setdefault("file_metrics", {})[name] = figures
+def record_receipt(job, name, figures):
+    """Keep the receipt a run's worker reported for one of its files, or for
+    its names passes under NAMES_FILE: what the run's attempts paid for it,
+    as its TOTAL adds them up (engine util/translation_task _record_receipt)."""
+    if name in (*job.get("files", []), NAMES_FILE):
+        job.setdefault("file_metrics", {})[name] = {
+            key: figures[key] for key in ("input", "output", "cost", "seconds")
+        }
 
 
 def file_receipts(job):

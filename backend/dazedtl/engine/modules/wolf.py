@@ -15,7 +15,7 @@ from dotenv import load_dotenv
 from retry import retry
 from tqdm import tqdm
 from util.languages import source_pattern
-from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost, getPricingConfig, calculateCost, run_stop_errors
+from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost, run_stop_errors
 from util.speakers import strip_speaker_prefix
 from util import system
 
@@ -112,6 +112,13 @@ def handleWOLF(filename, estimate):
     # Translate
     start = time.time()
     translatedData = openFiles(filename)
+
+    # Parsers return the error of the page that failed, after saving each
+    # page that finished. Fail the file so partial output is never written or
+    # reported as complete; the run logs what it paid for
+    # (util/subprocess_runner _paid_receipt).
+    if translatedData[2] is not None:
+        raise translatedData[2]
 
     # Translate
     if not estimate:
@@ -215,46 +222,44 @@ def maybe_save_progress_json(data, filename, tokens):
         traceback.print_exc()
 
 
+def translatePage(search, data, page, pbar, filename, totalTokens):
+    """Translate one *page* of *data* with *search* (searchCodes or searchDB);
+    None when it finished, else its error, which a run's stop is not: that
+    goes through unchanged. A finished page adds its tokens to *totalTokens*
+    and saves the file's progress; a failing page does neither, and the
+    caller ends the file with its error."""
+    try:
+        tokens = search(page, pbar, [], filename)
+    except run_stop_errors():
+        raise
+    except Exception as e:
+        return e
+    totalTokens[0] += tokens[0]
+    totalTokens[1] += tokens[1]
+    maybe_save_progress_json(data, filename, tokens)
+    return None
+
+
 def parseOther(data, filename):
     totalTokens = [0, 0]
-    totalLines = 0
-    events = data["commands"]
-    global LOCK
 
-    # Thread for each page in file
+    # The whole file is one page
     with tqdm(bar_format=BAR_FORMAT, position=POSITION, leave=LEAVE) as pbar:
         pbar.desc = filename
-        pbar.total = totalLines
-        translationData = searchCodes(events, pbar, [], filename)
-        try:
-            totalTokens[0] += translationData[0]
-            totalTokens[1] += translationData[1]
-        except Exception as e:
-            return [data, totalTokens, e]
-        finally:
-            maybe_save_progress_json(data, filename, translationData)
-    return [data, totalTokens, None]
+        pbar.total = 0
+        error = translatePage(searchCodes, data, data["commands"], pbar, filename, totalTokens)
+    return [data, totalTokens, error]
 
 
 def parseDB(data, filename):
     totalTokens = [0, 0]
-    totalLines = 0
-    events = data["types"]
-    global LOCK
 
-    # Thread for each page in file
+    # The whole file is one page
     with tqdm(bar_format=BAR_FORMAT, position=POSITION, leave=LEAVE) as pbar:
         pbar.desc = filename
-        pbar.total = totalLines
-        translationData = searchDB(events, pbar, [], filename)
-        try:
-            totalTokens[0] += translationData[0]
-            totalTokens[1] += translationData[1]
-        except Exception as e:
-            return [data, totalTokens, e]
-        finally:
-            maybe_save_progress_json(data, filename, translationData)
-    return [data, totalTokens, None]
+        pbar.total = 0
+        error = translatePage(searchDB, data, data["types"], pbar, filename, totalTokens)
+    return [data, totalTokens, error]
 
 
 def parseMap(data, filename):
@@ -269,9 +274,7 @@ def parseMap(data, filename):
             for page in event["pages"]:
                 totalLines += len(page["list"])
 
-    # Process pages synchronously and save progress after each that finishes,
-    # with its own tokens; a failing page saves no progress, and its error
-    # reaches the caller unchanged.
+    # Process pages synchronously; the first page that fails ends the file.
     with tqdm(bar_format=BAR_FORMAT, position=POSITION, total=totalLines, leave=LEAVE) as pbar:
         pbar.desc = filename
         pbar.total = totalLines
@@ -279,19 +282,19 @@ def parseMap(data, filename):
             if event is not None:
                 for page in event["pages"]:
                     if page is not None:
-                        try:
-                            tt = searchCodes(page["list"], pbar, None, filename)
-                        except run_stop_errors():
-                            raise
-                        except Exception as e:
-                            return [data, totalTokens, e]
-                        totalTokens[0] += tt[0]
-                        totalTokens[1] += tt[1]
-                        maybe_save_progress_json(data, filename, tt)
+                        error = translatePage(searchCodes, data, page["list"], pbar, filename, totalTokens)
+                        if error is not None:
+                            return [data, totalTokens, error]
     return [data, totalTokens, None]
 
 
 def searchCodes(events, pbar, jobList, filename):
+    """Translate one page of event commands; returns its [input, output] tokens.
+
+    The first pass translates choices and names on the spot and gathers the
+    rest into lists, which are translated at the end of the page; the
+    set-data pass (*jobList* holds those translations) only writes them, so
+    it never sends what the first pass already translated."""
     # Lists
     if jobList:
         stringList = jobList[0]
@@ -349,7 +352,7 @@ def searchCodes(events, pbar, jobList, filename):
                 speaker = ""
 
                 # Grab Speaker
-                if "\n" in jaString:
+                if "\n" in jaString and not setData:
                     match = re.search(speakerRegex, jaString)
                     if not match:
                         # Try alternative pattern without @\d+ prefix
@@ -411,7 +414,7 @@ def searchCodes(events, pbar, jobList, filename):
                         stringList.pop(0)
 
             ### Event Code: 102 Choices
-            if codeList[i]["code"] == 102 and CODE102 == True:
+            if codeList[i]["code"] == 102 and CODE102 == True and not setData:
                 # Grab Choice List
                 choiceList = []
                 jaChoiceList = codeList[i]["stringArgs"]
@@ -451,9 +454,9 @@ def searchCodes(events, pbar, jobList, filename):
             ### Event Code: 210 Common Event
             if codeList[i]["code"] == 210 and CODE210 == True:
                 # Speaker Event
-                if "stringArgs" in codeList[i] and codeList[i]["intArgs"][0] == None and len(codeList[i]["stringArgs"]) == 2:
+                if "stringArgs" in codeList[i] and codeList[i]["intArgs"][0] == None and len(codeList[i]["stringArgs"]) == 2 and not setData:
                     response = getSpeaker(codeList[i]["stringArgs"][1])
-                    totalTokens[1] += response[1][0]
+                    totalTokens[0] += response[1][0]
                     totalTokens[1] += response[1][1]
 
                     # Set Data
@@ -578,7 +581,7 @@ def searchCodes(events, pbar, jobList, filename):
             ### Event Code: 300 Common Events
             if codeList[i]["code"] == 300 and CODE300 == True and "stringArgs" in codeList[i] and len(codeList[i]["stringArgs"]) > 1:
                 # Choices
-                if codeList[i]["stringArgs"][0] == "[共]汎用ウィンドウ生成" or codeList[i]["stringArgs"][0] == "選択肢/確認":
+                if (codeList[i]["stringArgs"][0] == "[共]汎用ウィンドウ生成" or codeList[i]["stringArgs"][0] == "選択肢/確認") and not setData:
                     # Grab String
                     choiceList = codeList[i]["stringArgs"][1].split(",")
 
@@ -652,14 +655,17 @@ def searchCodes(events, pbar, jobList, filename):
                     if "：\n" in jaString or "：\r\n" in jaString:
                         match = re.search(speakerRegex, jaString)
                         if match:
-                            # TL Speaker
-                            response = getSpeaker(match.group(1))
-                            speaker = response[0]
-                            totalTokens[0] += response[1][0]
-                            totalTokens[1] += response[1][1]
+                            if not setData:
+                                # TL Speaker
+                                response = getSpeaker(match.group(1))
+                                speaker = response[0]
+                                totalTokens[0] += response[1][0]
+                                totalTokens[1] += response[1][1]
 
-                            # Set nametag and remove from string
-                            codeList[i]["stringArgs"][1] = codeList[i]["stringArgs"][1].replace(match.group(1), speaker)
+                                # Set nametag
+                                codeList[i]["stringArgs"][1] = codeList[i]["stringArgs"][1].replace(match.group(1), speaker)
+
+                            # Remove nametag from string
                             jaString = jaString.replace(match.group(0), "")
 
                     # Grab Only Text
@@ -853,7 +859,9 @@ def searchCodes(events, pbar, jobList, filename):
         if setData == True:
             stringList = []
             jobList = [stringListTL, list210TL, list300TL, list150TL, list250TL, list122TL]  # Add list122TL
-            searchCodes(events, pbar, jobList, filename)
+            tokens = searchCodes(events, pbar, jobList, filename)
+            totalTokens[0] += tokens[0]
+            totalTokens[1] += tokens[1]
 
         else:
             # Set Data

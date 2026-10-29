@@ -1766,6 +1766,73 @@ class CompatibilityContracts(unittest.TestCase):
                 )
             client.request.assert_not_called()
 
+    def test_a_files_receipt_adds_every_paid_attempt_and_a_failed_save_fails(self):
+        # A file that failed in an earlier attempt and was saved in a later
+        # one paid for both, but the later receipt replaced the earlier, so
+        # the run's TOTAL dropped what the failed attempt paid. An RPG Maker
+        # file whose save failed after validation mismatches read as a soft
+        # success, so the run did not show it failed.
+        from util.translation_task import TranslationTask, file_marker_result
+
+        def worker(task, files, estimate_only, batch_phase, file_result_callback):
+            saved = "TOTAL: [Input: 70][Output: 9][Cost: $0.5000][4.0s] ✓"
+            unsaved = "Map002.json: [Input: 30][Output: 3][Cost: $0.2500][2.0s] ✗"
+            # A retry reads back what an earlier attempt saved, paying nothing.
+            replayed = "TOTAL: [Input: 0][Output: 0][Cost: $0.0000][0.1s] ✓"
+            for name, payload, mismatches in (
+                ("Map001.json", {"result": saved}, 0),
+                ("Map002.json", {"result": "Fail", "receipt": unsaved}, 2),
+                ("Map003.json", {"result": replayed}, 0),
+            ):
+                file_result_callback(
+                    name, file_marker_result("FILE_RESULT", payload, mismatches)
+                )
+            return "Success"
+
+        def figures(tokens_in, tokens_out, cost, seconds):
+            return {
+                "input": tokens_in,
+                "output": tokens_out,
+                "cost": cost,
+                "seconds": seconds,
+            }
+
+        files = ["Map001.json", "Map002.json", "Map003.json"]
+        with TemporaryDirectory() as directory:
+            task = TranslationTask(
+                Path(directory),
+                ("RPG Maker MV/MZ", (".json",), None),
+                receipts={
+                    "Map001.json": figures(50, 5, 0.25, 3.0),
+                    "Map003.json": figures(10, 1, 0.25, 1.0),
+                },
+            )
+            errors, mismatched, receipts = [], [], []
+            task.receipt_signal.connect(lambda *args: receipts.append(args))
+            with patch.object(TranslationTask, "run_module_in_process", worker):
+                # Batch collection only queues requests: nothing is paid.
+                task._run_files(files, False, "collect")
+                self.assertEqual(receipts, [])
+                task.file_error_signal.connect(lambda *args: errors.append(args))
+                task.file_mismatch_signal.connect(lambda *args: mismatched.append(args))
+                result = task._run_files(files, False, "consume")
+        self.assertEqual(result, "Fail")
+        self.assertEqual([name for name, _ in errors], ["Map002.json"])
+        self.assertEqual(mismatched, [])
+        # The run's records keep what its TOTAL adds up.
+        self.assertEqual(
+            receipts,
+            [
+                ("Map001.json", figures(120, 14, 0.75, 7.0)),
+                ("Map002.json", figures(30, 3, 0.25, 2.0)),
+                ("Map003.json", figures(10, 1, 0.25, 1.0)),
+            ],
+        )
+        self.assertEqual(
+            task._run_total(result),
+            "TOTAL: [Input: 160][Output: 18][Cost: $1.2500][10.0s] ✓",
+        )
+
     def test_declined_speaker_preflight_retains_provider_work_and_resets_retry_phase(
         self,
     ):
@@ -1902,68 +1969,45 @@ class ManualJobs:
             self.assertEqual(
                 (paid["status"], paid["outputs"]), ("complete", {"Items.json": "kept"})
             )
-            # Keep every file's metric receipt after the native log cap, and
-            # never present Batch collection/estimate figures as paid results.
+            # Keep every receipt the run's worker reports after the native log
+            # cap: a file's, and the names passes', which name no file.
             from dazedtl.compatibility.process_view import file_metrics
 
             metric_run = {
                 "mode": "batch",
-                "phase": "collect",
+                "phase": "consume",
                 "files": ["Items.json"],
                 "log": [],
             }
-            event = {
-                "event": "log",
-                "args": [
-                    "Items.json: [Input: 120] [Output: 20] [Cost: $0.0042] [12.5s] ✓"
-                ],
-            }
-            controller._event(metric_run, event)
-            self.assertEqual(file_metrics(metric_run), {})
-            metric_run["phase"] = "consume"
-            controller._event(metric_run, event)
-            # Retrying the save reads Items.json back without usage.
-            replay = "Items.json: [Input: 0] [Output: 0] [Cost: $0.0000] [0.0s] ✓"
-            controller._event(metric_run, {"event": "log", "args": [replay]})
-            metric_run["phase"] = "done"
+            items = {"input": 120, "output": 20, "cost": 0.0042, "seconds": 12.5}
+            names = {"input": 60, "output": 12, "cost": 0.02, "seconds": 3.0}
+            for name, figures in (
+                ("Items.json", items),
+                ("speakers", names),
+                ("Other.json", items),
+            ):
+                controller._event(
+                    metric_run, {"event": "receipt", "args": [name, figures]}
+                )
             self.assertEqual(
                 file_metrics(metric_run),
                 {"Items.json": {"cost": 0.0042, "seconds": 12.5}},
             )
-            # A resumed attempt's TOTAL starts from the same receipts, with
-            # their tokens, and from every names pass the run paid for, which
-            # names no file.
-            names = "Speakers: [Input: 30][Output: 6][Cost: $0.0100][1.5s] ✓"
-            metric_run["phase"] = "preparing"
-            controller._event(metric_run, {"event": "log", "args": [names]})
-            controller._event(metric_run, {"event": "log", "args": [names]})
-            self.assertEqual(
-                file_metrics(metric_run),
-                {"Items.json": {"cost": 0.0042, "seconds": 12.5}},
-            )
+            # A resumed attempt's TOTAL starts from the same receipts.
             self.assertEqual(
                 controller.receipts(metric_run),
-                {
-                    "Items.json": {
-                        "input": 120,
-                        "output": 20,
-                        "cost": 0.0042,
-                        "seconds": 12.5,
-                    },
-                    "speakers": {
-                        "input": 60,
-                        "output": 12,
-                        "cost": 0.02,
-                        "seconds": 3.0,
-                    },
-                },
+                {"Items.json": items, "speakers": names},
             )
             restored = json.loads(json.dumps(metric_run))
             self.assertEqual(file_metrics(restored), file_metrics(metric_run))
+            # Live runs from before receipts were kept show the ones their
+            # log retained.
             legacy = {
                 "mode": "translate",
                 "files": ["Items.json"],
-                "log": event["args"],
+                "log": [
+                    "Items.json: [Input: 120] [Output: 20] [Cost: $0.0042] [12.5s] ✓"
+                ],
             }
             self.assertEqual(file_metrics(legacy), file_metrics(restored))
             legacy["files"] = ["Other.json"]
