@@ -252,12 +252,15 @@ def run_handler(project_root, module_name, filename, estimate_only):
                         if not multi_file:
                             raise
                         from util.translation import BatchResultUnavailableError
+                        from util.translation_task import OutputNotSaved
 
                         # A missing Batch result fails only its own file, as
                         # it did with a worker per file, so the files after
-                        # it still save their fetched results.
-                        if batch_phase != "consume" or not isinstance(
-                            exc, BatchResultUnavailableError
+                        # it still save their fetched results; so does an
+                        # output that could not be saved.
+                        if not isinstance(exc, OutputNotSaved) and (
+                            batch_phase != "consume"
+                            or not isinstance(exc, BatchResultUnavailableError)
                         ):
                             raise
             finally:

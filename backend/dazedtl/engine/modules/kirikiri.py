@@ -15,11 +15,9 @@ from retry import retry
 from tqdm import tqdm
 from util.languages import source_pattern
 from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost, getPricingConfig, calculateCost, found_mismatch, run_stop_errors
-from util.translation_task import fail_on_parser_error, module_receipt
+from util.translation_task import fail_on_parser_error, module_receipt, write_output
 from util.speakers import strip_speaker_prefix
-import tempfile
-from util import system
-from util.game_encoding import UnwritableText, writable
+from util.game_encoding import check_line, writable
 
 # Globals
 MODEL = os.getenv("model")
@@ -110,17 +108,11 @@ def handleKirikiri(filename, estimate):
         end = time.time()
         fail_on_parser_error(translatedData)
 
-        # Final write safeguard: if for some reason the progress file was
-        # never written (e.g. no translatable lines triggered saves), write it now.
         # A line the encoding can't write, or a write that fails, fails the
-        # file (util/game_encoding).
+        # file (util/game_encoding). An empty file is not written.
         if translatedData[0]:
             lines = writable(translatedData[0], "cp932", filename)
-            os.makedirs("translated", exist_ok=True)
-            final_path = os.path.join("translated", filename)
-            # Write directly (small risk window acceptable on final flush)
-            with open(final_path, "w", encoding="cp932", errors="ignore", newline="\n") as f:
-                f.writelines(lines)
+            write_output(filename, "".join(lines), encoding="cp932", errors="ignore", newline="\n")
 
         tqdm.write(module_receipt(filename, translatedData[1], end - start, MODEL))
         with LOCK:
@@ -159,57 +151,12 @@ def parseKiriKiri(readFile, filename):
     return [data, totalTokens, None]
 
 
-def save_progress_lines(lines, filename, encoding="cp932"):
-    """Atomically (with retries) save current line-based translation progress.
-
-    Rationale:
-    Windows raises PermissionError if the destination file is open elsewhere.
-    We avoid holding an open handle outside this function and add a small
-    exponential backoff retry loop to handle transient locks (e.g. AV scanners).
-    """
-    if ESTIMATE:
-        return
-    # A line the encoding can't write fails the file (util/game_encoding).
-    lines = writable(lines, encoding, filename)
-
-    max_attempts = 5
-    backoff = 0.05  # seconds
-    tmp_fd = None
-    tmp_path = None
-
-    for attempt in range(1, max_attempts + 1):
-        try:
-            os.makedirs("translated", exist_ok=True)
-
-            # Create temp file every attempt (prior one cleaned in finally).
-            tmp_fd, tmp_path = tempfile.mkstemp(prefix=f"{filename}.", suffix=".tmp", dir="translated")
-            with os.fdopen(tmp_fd, "w", encoding=encoding, newline="\n", errors="ignore") as tmp_file:
-                tmp_file.writelines(lines)
-                tmp_file.flush()
-                os.fsync(tmp_file.fileno())
-
-            dest_path = os.path.join("translated", filename)
-            try:
-                system.replace(tmp_path, dest_path)
-            except PermissionError as e:
-                # Retry on Windows-specific sharing violation
-                if attempt < max_attempts:
-                    time.sleep(backoff)
-                    backoff *= 2
-                    continue
-                else:
-                    raise e
-            # Success, break loop
-            break
-        except Exception:
-            if attempt == max_attempts:
-                traceback.print_exc()
-        finally:
-            # Ensure temp file removed if it still exists
-            if tmp_path and os.path.exists(tmp_path):
-                system.unlink(tmp_path, ignore_errors=True)
-            tmp_fd = None
-            tmp_path = None
+def checkLine(data, i, filename):
+    """Fails the file at once when line i, just set, holds a letter the
+    game's cp932 can't write, before its later requests are paid for
+    (util/game_encoding). An estimate writes nothing."""
+    if not ESTIMATE:
+        check_line(data, i, "cp932", filename)
 
 
 def translateKiriKiri(data, pbar, filename, jobList):
@@ -245,7 +192,7 @@ def translateKiriKiri(data, pbar, filename, jobList):
             tokens[0] += response[1][0]
             tokens[1] += response[1][1]
             data[i] = data[i].replace(speakerJA, speaker)
-            save_progress_lines(data, filename)
+            checkLine(data, i, filename)
             i += 1
 
         # Choices
@@ -267,7 +214,7 @@ def translateKiriKiri(data, pbar, filename, jobList):
                 data[i] = data[i].replace("'", '"')
                 translatedText = translatedText.replace('"', "'")
                 data[i] = data[i].replace(jaString, translatedText)
-                save_progress_lines(data, filename)
+                checkLine(data, i, filename)
 
         # Tagged dialogue lines e.g., [思考 storage="..."]text[/思考]
         tagged = re.match(taggedDialogueRegex, data[i])
@@ -311,7 +258,7 @@ def translateKiriKiri(data, pbar, filename, jobList):
                     translatedText = translatedText.replace('"', "'")
                     # Replace only inner content
                     data[i] = data[i].replace(jaString, translatedText)
-                    save_progress_lines(data, filename)
+                    checkLine(data, i, filename)
 
         # Simple narrative line handling: translate each whitespace-led, non-tag, non-command line independently.
         # This avoids reflowing or merging blocks, preventing misplaced text.
@@ -346,7 +293,7 @@ def translateKiriKiri(data, pbar, filename, jobList):
                             indent_match = re.match(r"^([ \t\u3000]+)", data[i])
                             indent = indent_match.group(1) if indent_match else ""
                             data[i] = f"{indent}{translatedText}\n"
-                            save_progress_lines(data, filename)
+                            checkLine(data, i, filename)
 
         # Dialogue
         match = re.search(dialogueRegex, data[i])
@@ -390,7 +337,7 @@ def translateKiriKiri(data, pbar, filename, jobList):
                     data[i] = data[i].replace("'", '"')
                     translatedText = translatedText.replace('"', "'")
                     data[i] = data[i].replace(jaString, translatedText)
-                    save_progress_lines(data, filename)
+                    checkLine(data, i, filename)
 
         # Next Line
         i += 1

@@ -34,6 +34,7 @@ from util.provider_costs import (
     batch_price_factor,
     cache_read_multiplier,
     cache_write_multiplier,
+    claude_version_name,
     has_billed_cache_writes,
     is_claude_model,
     is_claude_native,
@@ -487,8 +488,7 @@ def _estimate_static_token_count(static_system, model):
             except Exception:
                 pass
         if token_count is None:
-            enc = tiktoken.encoding_for_model("gpt-4")
-            token_count = len(enc.encode(static_system))
+            token_count = approximate_tokens(static_system)
 
         try:
             cache[identity] = token_count
@@ -2514,24 +2514,32 @@ def openai_prompt_cache(params):
     """openai_cache_counts of requests with these parameters, encoded a few
     hundred at a time as estimateBatchCost encodes them, so a big game's
     tokens are never all held at once."""
-    enc = tiktoken.encoding_for_model("gpt-4")
-
     def prompts():
         for start in range(0, len(params), 512):
-            yield from enc.encode_batch(
-                [prompt_text(value) for value in params[start : start + 512]],
-                disallowed_special=(),
+            yield from approximate_encode(
+                prompt_text(value) for value in params[start : start + 512]
             )
 
     return openai_cache_counts(prompts())
 
 
+# The approximate encoder: what DazedTL counts tokens with where a
+# provider's own count isn't used. Text that reads as one of its special
+# tokens, such as "<|endoftext|>" in a game's line, a speaker name or a
+# glossary entry, is counted as the text it is.
 def approximate_tokens(text):
-    """The approximate encoder's count of ``text``, special-token text
-    counted as text: what an estimate counts where Claude's own count
-    isn't used."""
+    """The approximate encoder's count of ``text``."""
     return len(
         tiktoken.encoding_for_model("gpt-4").encode(text, disallowed_special=())
+    )
+
+
+def approximate_encode(texts):
+    """The approximate encoder's tokens of each of ``texts``, encoded on its
+    threads: the same tokens as approximate_tokens counts, several times
+    faster for many texts."""
+    return tiktoken.encoding_for_model("gpt-4").encode_batch(
+        list(texts), disallowed_special=()
     )
 
 
@@ -2734,7 +2742,6 @@ def estimateBatchCost(model=None, *, queue_file=None, log_prefix="[BATCH]"):
         print(f"{log_prefix} No requests need translation.", flush=True)
         return None
 
-    enc = tiktoken.encoding_for_model("gpt-4")
     dynamic_tokens = 0
     request_params = []
     request_dynamic = []  # each request's approximate tokens after its prefix
@@ -2751,9 +2758,9 @@ def estimateBatchCost(model=None, *, queue_file=None, log_prefix="[BATCH]"):
         chunk_params = [entry.get("params", {}) for entry in chunk]
         # Split system blocks at the cache breakpoint ("" = nothing cached).
         splits = [claude_tokens.split(params) for params in chunk_params]
-        messages = enc.encode_batch([prompt_text(params) for params in chunk_params])
-        dynamic = enc.encode_batch([dyn for _prefix, dyn in splits])
-        payloads = enc.encode_batch([str(entry.get("payload", "")) for entry in chunk])
+        messages = approximate_encode(prompt_text(params) for params in chunk_params)
+        dynamic = approximate_encode(dyn for _prefix, dyn in splits)
+        payloads = approximate_encode(str(entry.get("payload", "")) for entry in chunk)
         for entry, params, message_tokens, dyn_tokens, payload_tokens in zip(
             chunk, chunk_params, messages, dynamic, payloads
         ):
@@ -2942,11 +2949,10 @@ def _estimate_openai_batch_input_tokens(params):
 
     # Match the existing queue estimator; do not download a model-specific
     # tokenizer while resuming paid work (model aliases also change over time).
-    encoding = tiktoken.encoding_for_model("gpt-4")
     body = json.dumps(
         _openai_batch_body("openai", params), ensure_ascii=False, separators=(",", ":")
     )
-    tokens = len(encoding.encode(body, disallowed_special=()))
+    tokens = approximate_tokens(body)
     return (tokens * 105 + 99) // 100 + 32
 
 
@@ -4059,6 +4065,46 @@ def _lookup_model_price(model: str):
     return None
 
 
+def _claude_pricing(model):
+    """getPricingConfig's table for a Claude model (is_claude_model), by its
+    family and version as Anthropic writes them (claude_version_name), so
+    OpenRouter's "claude-opus-4.5" reads as "claude-opus-4-5"."""
+    model = claude_version_name(model)
+    if "claude-fable" in model or "claude-mythos" in model:
+        rates = (10.00, 50.00)
+    elif "claude-opus-5-5" in model:
+        rates = (4.00, 20.00)
+    elif (
+        "claude-opus-4-5" in model or "claude-opus-4-6" in model
+        or "claude-opus-4-7" in model or "claude-opus-4-8" in model
+        or "claude-opus-5" in model
+    ):
+        rates = (5.00, 25.00)
+    elif "claude-opus" in model or "claude-3-opus" in model:
+        # Opus 4, 4.1, 3
+        rates = (15.00, 75.00)
+    elif "claude-haiku-4-5" in model or "claude-haiku-4-6" in model:
+        rates = (1.00, 5.00)
+    elif "claude-3-5-haiku" in model or "claude-haiku-3-5" in model:
+        rates = (0.80, 4.00)
+    elif "claude-3-haiku" in model:
+        rates = (0.25, 1.25)
+    elif "haiku" in model:
+        # An unknown Haiku version: the current flagship's price as a best guess.
+        rates = (1.00, 5.00)
+    elif "claude-sonnet-5" in model:
+        # Sonnet 5 and 5.5
+        rates = (2.00, 10.00)
+    else:
+        rates = (3.00, 15.00)
+    return {
+        "inputAPICost": rates[0],
+        "outputAPICost": rates[1],
+        "batchSize": 30,
+        "frequencyPenalty": 0.05,
+    }
+
+
 def getPricingConfig(model):
     """
     Get pricing configuration for a given model.
@@ -4121,33 +4167,11 @@ def getPricingConfig(model):
         cfg = {"inputAPICost": 0.30,  "outputAPICost": 0.90,  "batchSize": 40, "frequencyPenalty": 0.0}
     elif "mistral" in model or "pixtral" in model:
         cfg = {"inputAPICost": 2.00,  "outputAPICost": 6.00,  "batchSize": 40, "frequencyPenalty": 0.0}
-    elif "claude-fable" in model or "claude-mythos" in model:
-        cfg = {"inputAPICost": 10.00, "outputAPICost": 50.00, "batchSize": 30, "frequencyPenalty": 0.05}
-    elif "claude-opus-5-5" in model:
-        cfg = {"inputAPICost": 4.00,  "outputAPICost": 20.00, "batchSize": 30, "frequencyPenalty": 0.05}
-    elif (
-        "claude-opus-4-5" in model or "claude-opus-4-6" in model
-        or "claude-opus-4-7" in model or "claude-opus-4-8" in model
-        or "claude-opus-5" in model
-    ):
-        cfg = {"inputAPICost": 5.00,  "outputAPICost": 25.00, "batchSize": 30, "frequencyPenalty": 0.05}
-    elif "claude-opus" in model or model == "claude-3-opus":
-        # Opus 4, 4.1, 3 — $15/$75
-        cfg = {"inputAPICost": 15.00, "outputAPICost": 75.00, "batchSize": 30, "frequencyPenalty": 0.05}
-    elif "claude-haiku-4-5" in model or "claude-haiku-4-6" in model:
-        cfg = {"inputAPICost": 1.00,  "outputAPICost": 5.00,  "batchSize": 30, "frequencyPenalty": 0.05}
-    elif "claude-haiku-3-5" in model:
-        cfg = {"inputAPICost": 0.80,  "outputAPICost": 4.00,  "batchSize": 30, "frequencyPenalty": 0.05}
-    elif "claude-3-haiku" in model:
-        cfg = {"inputAPICost": 0.25,  "outputAPICost": 1.25,  "batchSize": 30, "frequencyPenalty": 0.05}
-    elif "haiku" in model:
-        # Unknown haiku version — use current flagship pricing as best guess
-        cfg = {"inputAPICost": 1.00,  "outputAPICost": 5.00,  "batchSize": 30, "frequencyPenalty": 0.05}
-    elif "claude-sonnet-5" in model:
-        # Sonnet 5 and 5.5
-        cfg = {"inputAPICost": 2.00,  "outputAPICost": 10.00, "batchSize": 30, "frequencyPenalty": 0.05}
-    elif "sonnet" in model or "claude" in model:
-        cfg = {"inputAPICost": 3.00,  "outputAPICost": 15.00, "batchSize": 30, "frequencyPenalty": 0.05}
+    elif is_claude_model(model):
+        # Only a Claude name, by the one rule, takes Claude's rates; another
+        # model whose name holds a family word, such as "sonnet-like", takes
+        # the unknown model's below.
+        cfg = _claude_pricing(model)
     elif "gemini-3.6-flash" in model:
         # Google AI Developer API standard rates. Batch is applied separately
         # by estimateBatchCost/_price_usage at the provider's 50% discount.
@@ -4961,8 +4985,7 @@ def _translation_completion_limit(
     floor=MIN_TRANSLATION_OUTPUT_TOKENS,
 ):
     """Size output while retaining safe minimum and maximum bounds."""
-    enc = tiktoken.encoding_for_model("gpt-4")
-    payload_tokens = len(enc.encode(str(user or "")))
+    payload_tokens = approximate_tokens(str(user or ""))
     ceiling = max(1, int(ceiling))
     floor = min(ceiling, max(1, int(floor)))
     return min(
@@ -5898,19 +5921,18 @@ def countTokens(system, user, history):
     """Count tokens for cost estimation"""
     inputTotalTokens = 0
     outputTotalTokens = 0
-    enc = tiktoken.encoding_for_model("gpt-4")
 
     # Input
     if isinstance(history, list):
         for line in history:
-            inputTotalTokens += len(enc.encode(line))
+            inputTotalTokens += approximate_tokens(line)
     else:
-        inputTotalTokens += len(enc.encode(history))
-    inputTotalTokens += len(enc.encode(system))
-    inputTotalTokens += len(enc.encode(user))
+        inputTotalTokens += approximate_tokens(history)
+    inputTotalTokens += approximate_tokens(system)
+    inputTotalTokens += approximate_tokens(user)
 
     # Output
-    outputTotalTokens += output_allowance(len(enc.encode(user)))
+    outputTotalTokens += output_allowance(approximate_tokens(user))
 
     return [inputTotalTokens, outputTotalTokens]
 

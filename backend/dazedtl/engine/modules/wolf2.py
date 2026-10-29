@@ -16,11 +16,9 @@ from retry import retry
 from tqdm import tqdm
 from util.languages import source_pattern
 from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost, found_mismatch, run_stop_errors
-from util.translation_task import fail_on_parser_error, module_receipt
+from util.translation_task import fail_on_parser_error, module_receipt, write_output
 from util.speakers import strip_speaker_prefix
-import tempfile
-from util import system
-from util.game_encoding import UnwritableText, writable
+from util.game_encoding import check_line, writable
 
 # OpenAI initialization centralized in util/translation.py
 
@@ -113,8 +111,7 @@ def handleWOLF2(filename, estimate):
             TOKENS[1] += translatedData[1][1]
         # A line the encoding can't write fails the file (util/game_encoding).
         lines = writable(translatedData[0], "shift_jis", filename)
-        with open("translated/" + filename, "w", encoding="shift_jis", errors="ignore") as outFile:
-            outFile.writelines(lines)
+        write_output(filename, "".join(lines), encoding="shift_jis", errors="ignore")
         tqdm.write(module_receipt(filename, translatedData[1], end - start, MODEL))
 
     return module_receipt("TOTAL", TOKENS, end - start, MODEL)
@@ -178,38 +175,12 @@ def parseWOLF(readFile, filename):
     return [data, totalTokens, None]
 
 
-def save_progress_lines(lines, filename, encoding="shift_jis"):
-    """Atomically save current line-based translation progress."""
-    try:
-        if ESTIMATE:
-            return
-        lines = writable(lines, encoding, filename)
-        os.makedirs("translated", exist_ok=True)
-        tmp_fd, tmp_path = tempfile.mkstemp(prefix=f"{filename}.", suffix=".tmp", dir="translated")
-        try:
-            with os.fdopen(tmp_fd, "w", encoding=encoding, newline="\n", errors="ignore") as tmp_file:
-                tmp_file.writelines(lines)
-            system.replace(tmp_path, os.path.join("translated", filename))
-        finally:
-            if os.path.exists(tmp_path):
-                system.unlink(tmp_path, ignore_errors=True)
-    except UnwritableText:
-        raise
-    except Exception:
-        traceback.print_exc()
-
-
-def saveCheckLines(lines, filename, tokens=None, encoding="shift_jis"):
-    try:
-        if tokens is not None:
-            if not (isinstance(tokens, (list, tuple)) and len(tokens) >= 2 and (tokens[0] or tokens[1])):
-                return
-        save_progress_lines(lines, filename, encoding=encoding)
-    except UnwritableText:
-        # The file fails at once instead of translating on unsaved.
-        raise
-    except Exception:
-        traceback.print_exc()
+def checkLine(data, i, filename):
+    """Fails the file at once when line i, just set, holds a letter the
+    game's shift_jis can't write, before its later requests are paid for
+    (util/game_encoding). An estimate writes nothing."""
+    if not ESTIMATE:
+        check_line(data, i, "shift_jis", filename)
 
 
 def translateWOLF(data, translatedList, pbar, filename):
@@ -230,7 +201,7 @@ def translateWOLF(data, translatedList, pbar, filename):
             tokens[0] += response[1][0]
             tokens[1] += response[1][1]
             data[i] = data[i].replace(matchList[0], f"{speaker}")
-            saveCheckLines(data, filename)
+            checkLine(data, i, filename)
             i += 1
         else:
             speaker = ""
@@ -257,9 +228,9 @@ def translateWOLF(data, translatedList, pbar, filename):
                 while "//" in data[i] and "の場合" not in data[i]:
                     choiceListTL[0] = choiceListTL[0].replace(", ", "、")
                     data[i] = f"//{choiceListTL[0]}\n"
+                    checkLine(data, i, filename)
                     choiceListTL.pop(0)
                     i += 1
-                    saveCheckLines(data, filename)
 
             # Mismatch
             else:
@@ -314,7 +285,7 @@ def translateWOLF(data, translatedList, pbar, filename):
 
                 # Set Data
                 data.insert(i, f"{translatedText}\n")
-                saveCheckLines(data, filename)
+                checkLine(data, i, filename)
                 i += 1
 
         # Nothing relevant. Skip Line.

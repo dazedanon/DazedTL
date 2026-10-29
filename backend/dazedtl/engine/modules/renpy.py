@@ -15,10 +15,8 @@ from retry import retry
 from tqdm import tqdm
 from util.languages import source_pattern
 from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost, getPricingConfig, calculateCost, found_mismatch, run_stop_errors
-from util.translation_task import fail_on_parser_error, module_receipt
+from util.translation_task import fail_on_parser_error, module_receipt, write_output
 from util.speakers import strip_speaker_prefix
-import tempfile
-from util import system
 
 # Globals
 MODEL = os.getenv("model")
@@ -100,18 +98,17 @@ def handleRenpy(filename, estimate):
             return totalString
 
     else:
-        with open("translated/" + filename, "w", encoding="utf8", errors="ignore") as outFile:
-            start = time.time()
-            translatedData = openFiles(filename)
-            fail_on_parser_error(translatedData)
+        start = time.time()
+        translatedData = openFiles(filename)
+        fail_on_parser_error(translatedData)
 
-            # Print Result
-            end = time.time()
-            outFile.writelines(translatedData[0])
-            tqdm.write(module_receipt(filename, translatedData[1], end - start, MODEL))
-            with LOCK:
-                TOKENS[0] += translatedData[1][0]
-                TOKENS[1] += translatedData[1][1]
+        # Print Result
+        end = time.time()
+        write_output(filename, "".join(translatedData[0]), encoding="utf8", errors="ignore")
+        tqdm.write(module_receipt(filename, translatedData[1], end - start, MODEL))
+        with LOCK:
+            TOKENS[0] += translatedData[1][0]
+            TOKENS[1] += translatedData[1][1]
 
     return module_receipt("TOTAL", TOKENS, end - start, MODEL)
 
@@ -152,24 +149,6 @@ def parseRenpy(readFile, filename):
             traceback.print_exc()
             return [data, totalTokens, e]
     return [data, totalTokens, None]
-
-
-def save_progress_lines(lines, filename, encoding="utf-8"):
-    """Atomically save current line-based translation progress."""
-    try:
-        if ESTIMATE:
-            return
-        os.makedirs("translated", exist_ok=True)
-        tmp_fd, tmp_path = tempfile.mkstemp(prefix=f"{filename}.", suffix=".tmp", dir="translated")
-        try:
-            with os.fdopen(tmp_fd, "w", encoding=encoding, newline="\n", errors="ignore") as tmp_file:
-                tmp_file.writelines(lines)
-            system.replace(tmp_path, os.path.join("translated", filename))
-        finally:
-            if os.path.exists(tmp_path):
-                system.unlink(tmp_path, ignore_errors=True)
-    except Exception:
-        traceback.print_exc()
 
 
 def translateRenpy(data, filename, translatedList):
@@ -239,7 +218,6 @@ def translateRenpy(data, filename, translatedList):
 
                     # Set Data
                     data[i] = data[i].replace(originalString, translatedText)
-                    save_progress_lines(data, filename)
             i += 1
         else:
             i += 1

@@ -15,10 +15,8 @@ from retry import retry
 from tqdm import tqdm
 from util.languages import source_pattern
 from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost, getPricingConfig, calculateCost, found_mismatch, run_stop_errors
-from util.translation_task import fail_on_parser_error, module_receipt
+from util.translation_task import fail_on_parser_error, module_receipt, write_output
 from util.speakers import SPEAKER_TAG_RE, extract_dialogue_after_speaker, strip_speaker_prefix
-import tempfile
-from util import system
 
 # Globals
 MODEL = os.getenv("model")
@@ -84,8 +82,7 @@ def handleText(filename, estimate):
 
     # Translate
     if not estimate:
-        with open("translated/" + filename, "w", encoding="utf-8", newline="\n") as outFile:
-            outFile.writelines(translatedData[0])
+        write_output(filename, "".join(translatedData[0]), newline="\n")
 
     # Print File
     end = time.time()
@@ -140,35 +137,6 @@ def parseText(readFile, filename):
             traceback.print_exc()
             return [data, totalTokens, e]
     return [data, totalTokens, None]
-
-
-def save_progress_lines(lines, filename, encoding="utf-8"):
-    """Atomically save current line-based translation progress."""
-    try:
-        if ESTIMATE:
-            return
-        os.makedirs("translated", exist_ok=True)
-        tmp_fd, tmp_path = tempfile.mkstemp(prefix=f"{filename}.", suffix=".tmp", dir="translated")
-        try:
-            with os.fdopen(tmp_fd, "w", encoding=encoding, newline="\n", errors="ignore") as tmp_file:
-                tmp_file.writelines(lines)
-            system.replace(tmp_path, os.path.join("translated", filename))
-        finally:
-            if os.path.exists(tmp_path):
-                system.unlink(tmp_path, ignore_errors=True)
-    except Exception:
-        traceback.print_exc()
-
-
-def saveCheckLines(lines, filename, tokens=None, encoding="utf-8"):
-    """Save progress only when tokens indicate work or when explicitly called after a mutation."""
-    try:
-        if tokens is not None:
-            if not (isinstance(tokens, (list, tuple)) and len(tokens) >= 2 and (tokens[0] or tokens[1])):
-                return
-        save_progress_lines(lines, filename, encoding=encoding)
-    except Exception:
-        traceback.print_exc()
 
 
 def translateTxt(data, filename, translatedList):
@@ -230,7 +198,6 @@ def translateTxt(data, filename, translatedList):
 
                     # Set Data
                     data[i] = f"{translatedText}\n"
-                    saveCheckLines(data, filename)
 
             i += 1
         else:

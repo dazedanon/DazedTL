@@ -1,7 +1,6 @@
 import json
 import os
 import re
-import tempfile
 import threading
 import time
 import traceback
@@ -21,8 +20,7 @@ from util.translation import (
     run_stop_errors,
     found_mismatch,
 )
-from util.translation_task import fail_on_parser_error, format_receipt, module_receipt
-from util import system
+from util.translation_task import fail_on_parser_error, format_receipt, module_receipt, write_output
 
 
 MODEL = os.getenv("model")
@@ -179,9 +177,7 @@ def handleYuris(filename, estimate):
     pass_reason = yuris_whole_file_pass_through_reason(data)
     if pass_reason:
         if not estimate:
-            os.makedirs(os.path.dirname(os.path.join("translated", filename)) or "translated", exist_ok=True)
-            with open("translated/" + filename, "w", encoding="utf-8", newline="\n") as outFile:
-                json.dump(data, outFile, ensure_ascii=False, indent=4)
+            write_output(filename, json.dumps(data, ensure_ascii=False, indent=4), newline="\n")
         end = time.time()
         # Machine-readable line so the GUI can apply totals row state (same as other modules).
         figures = {"input": 0, "output": 0, "cost": calculateCost(0, 0, MODEL), "seconds": end - start}
@@ -192,9 +188,7 @@ def handleYuris(filename, estimate):
         fail_on_parser_error(translatedData)
 
         if not estimate:
-            os.makedirs(os.path.dirname(os.path.join("translated", filename)) or "translated", exist_ok=True)
-            with open("translated/" + filename, "w", encoding="utf-8", newline="\n") as outFile:
-                json.dump(translatedData[0], outFile, ensure_ascii=False, indent=4)
+            write_output(filename, json.dumps(translatedData[0], ensure_ascii=False, indent=4), newline="\n")
 
         end = time.time()
         tqdm.write(module_receipt(filename, translatedData[1], end - start, MODEL))
@@ -294,7 +288,6 @@ def translateYuris(data, filename):
         translatedText = dazedwrap.wrapText(translatedText, width=WIDTH)
         translatedText = translatedText.replace("\n", "\r\n")
         data[index]["message"] = originalMessage.replace(originalMessage, translatedText)
-        save_progress_json(data, filename)
         if PBAR is not None:
             PBAR.update(1)
 
@@ -304,28 +297,6 @@ def translateYuris(data, filename):
 def stripSpeakerPrefix(translated_text):
     """Same behavior as modules/json.translateJSON: strip [Name]: prefix from TL lines."""
     return strip_echoed_speaker(translated_text, LANGUAGE).strip()
-
-
-def save_progress_json(data, filename):
-    try:
-        if ESTIMATE:
-            return
-        target = os.path.join("translated", filename)
-        os.makedirs(os.path.dirname(target) or "translated", exist_ok=True)
-        tmp_fd, tmp_path = tempfile.mkstemp(
-            prefix=f"{os.path.basename(filename)}.",
-            suffix=".tmp",
-            dir=os.path.dirname(target) or "translated",
-        )
-        try:
-            with os.fdopen(tmp_fd, "w", encoding="utf-8", newline="\n") as tmp_file:
-                json.dump(data, tmp_file, ensure_ascii=False, indent=4)
-            system.replace(tmp_path, target)
-        finally:
-            if os.path.exists(tmp_path):
-                system.unlink(tmp_path, ignore_errors=True)
-    except Exception:
-        traceback.print_exc()
 
 
 def getSpeaker(speaker):

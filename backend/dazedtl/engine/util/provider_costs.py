@@ -27,16 +27,19 @@ from datetime import UTC, datetime
 # no cache reads in an OpenAI Batch on the models whose Batch doesn't cache
 # (openai_batch_caches). 4, OpenAI: an OpenAI Batch that writes the cache but
 # expects no reads shows its price with those writes
-# (translation.openai_cache_prices).
+# (translation.openai_cache_prices). 5, no Batch route: Claude's cache reads
+# at each model's rate in any host's form of its name, such as a native-Claude
+# proxy's "claude-opus-5.5" (cache_read_multiplier); the Batch routes take no
+# such name or, on OpenRouter, price at its policy's frozen rates.
 EVERY_ROUTE_PRICE_RULES = 2
-ROUTE_PRICE_RULES = {"openai": 4}
+ROUTE_PRICE_RULES = {"openai": 4, None: 5}
 PRICE_RULES_VERSION = max(EVERY_ROUTE_PRICE_RULES, *ROUTE_PRICE_RULES.values())
 
 
 def route_price_rules(route: str | None) -> int:
     """The price rules version at which ``route``'s rules last changed: a
     figure priced on it under that version or a later one is current."""
-    return max(EVERY_ROUTE_PRICE_RULES, ROUTE_PRICE_RULES.get(route or "", 0))
+    return max(EVERY_ROUTE_PRICE_RULES, ROUTE_PRICE_RULES.get(route or None, 0))
 
 
 def received_at(created=None) -> str:
@@ -106,18 +109,42 @@ def is_openai_model(model: str) -> bool:
 # A Claude model by its name, on Anthropic's API or any other host: a name
 # starting "claude-", in any dated or versioned form, alone or as another host
 # names it: OpenRouter's "anthropic/" (or "~anthropic/" for its latest
-# aliases) and Bedrock's "anthropic." with or without a region, behind a
-# gateway's own prefix such as "bedrock/". Another model's name holding a
-# Claude family word, such as "magnum-opus-72b", is not Claude's.
+# aliases), Bedrock's "anthropic." with or without a region, also inside an
+# ARN, Vertex AI's "publishers/anthropic/models/" and LiteLLM's "vertex_ai/",
+# behind a gateway's own prefix such as "bedrock/", or a Databricks
+# endpoint's "databricks-", alone or behind LiteLLM's "databricks/". Another
+# model's name holding a Claude family word, such as "magnum-opus-72b", or
+# another owner's "claude-" model, such as "someone/claude-style-7b", is not
+# Claude's.
 _CLAUDE_MODEL = re.compile(
-    r"(?:(?:[\w.~-]+/)*~?(?:[a-z-]+\.)?anthropic[./])?claude-[a-z0-9]"
+    r"(?:(?:[\w.:~-]+/)*(?:~?(?:[a-z-]+\.)?anthropic[./](?:models/)?|vertex_ai(?:_beta)?/)"
+    r"|(?:databricks/)?databricks-)?"
+    r"(claude-[a-z0-9].*)",
+    re.DOTALL,
 )
+
+
+def claude_model_name(model: str) -> str | None:
+    """The Claude name in ``model``, from "claude-" on in lower case, such as
+    "claude-opus-5.5" in "anthropic/claude-opus-5.5"; None when ``model``
+    names no Claude model."""
+    match = _CLAUDE_MODEL.fullmatch(str(model or "").strip().lower())
+    return match.group(1) if match else None
+
+
+def claude_version_name(model: str) -> str | None:
+    """The Claude name in ``model`` (claude_model_name) with its version
+    written as Anthropic writes it, hyphens between the numbers, so
+    OpenRouter's "anthropic/claude-opus-4.5" reads "claude-opus-4-5": the
+    name a Claude model's per-token rates are found by."""
+    name = claude_model_name(model)
+    return None if name is None else re.sub(r"(?<=\d)\.(?=\d)", "-", name)
 
 
 def is_claude_model(model: str) -> bool:
     """Whether ``model`` names a Claude model, priced at Anthropic's cache
     prices wherever it runs (batch_providers.live_price_route)."""
-    return bool(_CLAUDE_MODEL.match(str(model or "").strip().lower()))
+    return claude_model_name(model) is not None
 
 
 def is_claude_native(model: str, address: str | None) -> bool:
@@ -128,6 +155,32 @@ def is_claude_native(model: str, address: str | None) -> bool:
     Batches need Anthropic's own API (batch_providers.detect_batch_provider)."""
     address = str(address or "").strip().lower()
     return is_claude_model(model) and (not address or "anthropic" in address)
+
+
+def on_anthropic_api(address: str | None) -> bool:
+    """Whether a native Claude request to ``address`` reaches Anthropic's own
+    API: no address set, or one at its host (settings/providers own_api). A
+    proxy path holding "anthropic", or another host whose name holds it, is
+    sent Live natively but is not Anthropic's API."""
+    from dazedtl.settings.providers import own_api
+
+    return not str(address or "").strip() or own_api("anthropic", address)
+
+
+def foreign_claude_name(model: str, address: str | None) -> bool:
+    """Whether ``model`` names Claude other than by its own ID for a request
+    to Anthropic's own API, which takes only Claude's own IDs ("claude-...",
+    in lower case as its model list writes them) and answers any other name
+    with not found: another host's form, such as OpenRouter's
+    "anthropic/claude-opus-5.5" or Bedrock's "us.anthropic.claude-...", or
+    the ID in capitals, such as "Claude-Opus-5". Settings refuses it before
+    any request is sent (settings/providers validate_model_name)."""
+    name = claude_model_name(model)
+    return (
+        name is not None
+        and on_anthropic_api(address)
+        and name != str(model).strip()
+    )
 
 
 def _openai_model_at_least(model: str, major: int, minor: int) -> bool:
@@ -208,7 +261,8 @@ def cache_read_multiplier(provider: str, model: str) -> float:
     """Return cache-read price as a multiple of regular input pricing.
 
     Anthropic reads cost 0.05 times regular input on Claude Opus 5.5 and
-    Sonnet 5.5 and 0.025 times on Claude Fable 5.1 and Mythos 5.1. Several
+    Sonnet 5.5 and 0.025 times on Claude Fable 5.1 and Mythos 5.1, in any
+    host's form of their names (claude_version_name). Several
     OpenAI families read at their own multiple (_OPENAI_CACHE_READS). Kimi
     reads cost $0.16 of K2.6's $0.95 and $0.19 of K2.7 Code's $0.95
     (https://platform.kimi.ai/docs/pricing/chat). DeepSeek reads cost $0.006
@@ -224,9 +278,10 @@ def cache_read_multiplier(provider: str, model: str) -> float:
             if family.search(name):
                 return multiplier
     if normalized_provider == "anthropic":
-        if re.search(r"claude-(?:fable|mythos)-5-1(?:\D|$)", name):
+        claude = claude_version_name(model) or ""
+        if re.match(r"claude-(?:fable|mythos)-5-1(?:\D|$)", claude):
             return 0.025
-        if re.search(r"claude-(?:opus|sonnet)-5-5(?:\D|$)", name):
+        if re.match(r"claude-(?:opus|sonnet)-5-5(?:\D|$)", claude):
             return 0.05
     if normalized_provider == "kimi":
         if "kimi-k2.7-code" in name:

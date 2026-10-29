@@ -93,8 +93,34 @@ def address(connection):
     )
 
 
+def validate_model_name(model, endpoint, *, created=False):
+    """Refuses a Claude name other than Claude's own ID for Anthropic's own
+    API (provider_costs.foreign_claude_name), where every request, Live or
+    Batch, would fail with not found: when Settings saves it, and before a run
+    starts or resumes with it. A run already *created* keeps a capitalized
+    ID, which it was sent with before Settings refused one, so it resumes."""
+    from util.provider_costs import claude_model_name, foreign_claude_name
+
+    if not foreign_claude_name(model, endpoint):
+        return
+    typed = str(model).strip()
+    if claude_model_name(model) == typed.lower():
+        if created:
+            return
+        raise ValueError(
+            "Anthropic's API takes Claude's model IDs in lower case: "
+            f"enter {typed.lower()} instead of {typed} in Settings."
+        )
+    raise ValueError(
+        "Anthropic's API takes Claude's own model IDs, such as claude-opus-5-5, "
+        f"not another host's name for one, such as {typed}. "
+        "Enter Anthropic's ID for this model in Settings, or use that host's connection."
+    )
+
+
 # The host only a provider's own API serves, unlike others that serve its models.
 OWN_HOSTS = {
+    "anthropic": "api.anthropic.com",
     "openai": "api.openai.com",
     "kimi": "api.moonshot.ai",
     "deepseek": "api.deepseek.com",
@@ -105,12 +131,25 @@ OWN_HOSTS = {
 PRESET_HOSTS = frozenset(
     {
         *OWN_HOSTS.values(),
-        "api.anthropic.com",
         "generativelanguage.googleapis.com",
         "api.mistral.ai",
         "openrouter.ai",
     }
 )
+
+
+def hostname(address):
+    """The host of a server *address* in lower case, such as "api.anthropic.com"
+    in "https://api.anthropic.com/v1", with or without a scheme, so a bare
+    "api.anthropic.com" names it too; None when it names none. The one host
+    parser the provider rules here read an address with."""
+    value = str(address or "").strip()
+    if not re.match(r"(?:[a-z][a-z0-9+.-]*:)?//", value, re.IGNORECASE):
+        value = "//" + value
+    try:
+        return urlsplit(value).hostname
+    except ValueError:
+        return None
 
 
 def own_server(url):
@@ -121,29 +160,30 @@ def own_server(url):
     names, counts as OpenAI's."""
     value = str(url or "").strip()
     stand_in = os.environ.get("DAZEDTL_TEST_OPENAI_ENDPOINT", "").strip().rstrip("/")
-    try:
-        hostname = urlsplit(value).hostname
-    except ValueError:
-        return False
-    return hostname in PRESET_HOSTS or (
+    return hostname(value) in PRESET_HOSTS or (
         bool(stand_in) and (value == stand_in or value.startswith(stand_in + "/"))
     )
 
 
+# The variable naming a test scenario's stand-in for a preset's own API.
+STAND_INS = {
+    "openai": "DAZEDTL_TEST_OPENAI_ENDPOINT",
+    "anthropic": "DAZEDTL_TEST_ANTHROPIC_ENDPOINT",
+}
+
+
 def own_api(identity, endpoint):
-    """Whether `endpoint` is the provider `identity`'s own API: OpenAI's, whose
-    Batches share one enqueued-token window; Kimi's, with its own Batches; or
+    """Whether `endpoint` is the provider `identity`'s own API: Anthropic's,
+    with Message Batches and only Claude's own IDs; OpenAI's, whose Batches
+    share one enqueued-token window; Kimi's, with its own Batches; or
     DeepSeek's, with its own output ceiling and JSON mode. The one rule the app
-    and the engine ask; in test scenarios the OpenAI preset's stand-in, which
-    DAZEDTL_TEST_OPENAI_ENDPOINT names, counts as OpenAI's."""
-    value = str(endpoint or "").strip().rstrip("/")
-    stand_in = os.environ.get("DAZEDTL_TEST_OPENAI_ENDPOINT", "").strip().rstrip("/")
-    try:
-        hostname = urlsplit(value).hostname
-    except ValueError:
-        hostname = None
-    return hostname == OWN_HOSTS[identity] or (
-        identity == "openai" and bool(stand_in) and value == stand_in
+    and the engine ask; in test scenarios the OpenAI and Anthropic presets'
+    stand-ins (STAND_INS) count as their APIs, paths under them included."""
+    value = str(endpoint or "").strip().rstrip("/").lower()
+    stand_in = os.environ.get(STAND_INS.get(identity, ""), "")
+    stand_in = stand_in.strip().rstrip("/").lower()
+    return hostname(value) == OWN_HOSTS[identity] or (
+        bool(stand_in) and (value == stand_in or value.startswith(stand_in + "/"))
     )
 
 
@@ -166,10 +206,7 @@ def local(endpoint):
     """Whether *endpoint* is a server on this computer, which bills nothing.
     A server elsewhere on the network may be a gateway to a paid provider.
     The one rule Settings and the legacy evaluation's budget ask."""
-    try:
-        host = urlsplit(str(endpoint or "").strip()).hostname or ""
-    except ValueError:
-        return False
+    host = hostname(endpoint) or ""
     if host == "localhost" or host.endswith(".localhost"):
         return True
     try:
