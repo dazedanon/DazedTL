@@ -58,8 +58,14 @@ When the user says the text up to an update was checked before, such as everythi
 A task that preparing QA again names replaces this one, as after a playtest: every command on this task then refuses and names the new task, so go on with that task's README.
 Never decline lines to narrow QA's scope.
 
+The worker prompt, with the worker's name in place of `<name>`:
+
+````text
+{{SHELL_NOTE}}You are text QA worker <name>. Run {{CLI}} brief --task {{TASK}} --role worker --worker <name> and follow it.
+````
+
 1. Start four workers that run at the same time, such as background sub-agents, each a fresh session with a name of its own, such as `rev-1` to `rev-4`.
-   Give each only this prompt: `You are text QA worker <name>. Run {{CLI}} brief --task {{TASK}} --role worker --worker <name> and follow it.`
+   Give each only the worker prompt above, changing nothing but its name.
    A worker's run ends after a few bundles, which keeps its reviews sharp and its cost low, with one line saying how far it got; start its next run under the same name with the same prompt until `status` reports `complete`.
    Restart a worker that `next` gave no bundle once `status` shows `bundles_pending` again or no worker is running, since accepted bundles open new ones and `next` opens the next stage.
    Choices every reviewer must follow go through `decide` (step 6), never into a worker's prompt.
