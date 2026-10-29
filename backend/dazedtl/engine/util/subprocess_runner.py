@@ -10,7 +10,6 @@ from pathlib import Path
 import io
 import json
 import threading
-import time
 from contextlib import nullcontext
 
 # Set UTF-8 encoding for stdout to handle Unicode characters
@@ -51,53 +50,17 @@ def monitor_progress():
         progress_event.wait(0.1)
 
 
-def _file_start():
-    """When a file began: what this process had paid for then
-    (util/translation paid_usage), nothing before a module loaded the
-    translator, and the time."""
-    translation = sys.modules.get("util.translation")
-    paid = (
-        {"input": 0, "output": 0, "cost": 0.0}
-        if translation is None
-        else translation.paid_usage()
-    )
-    return paid, time.monotonic()
-
-
-def _paid_receipt(filename, result, start):
-    """The receipt of a file that reported no TOTAL of its own, as when it
-    failed or a run's stop left its handler: what this process paid for since
-    *start*, its _file_start, logged as the file's line so its paid requests
-    reach the run's records and TOTAL; None when *result* is a TOTAL or the
-    file paid for nothing."""
-    translation = sys.modules.get("util.translation")
-    if start is None or translation is None:
-        return None
-    from util.translation_task import _result_figures, format_receipt, paid_for
-
-    if _result_figures(result) is not None:
-        return None
-    paid, began = start
-    spent = translation.paid_usage(paid)
-    if not paid_for(spent):
-        return None
-    spent["seconds"] = time.monotonic() - began
-    receipt = format_receipt(filename, spent, "✗")
-    print(receipt, flush=True)
-    return receipt
-
-
-def _report_run_stop(filename, error=None, result=None, start=None):
+def _report_run_stop(filename, error=None, result=None):
     """Reports the stop of a run frozen with the run-stop policy
-    (util/translation run_stop) as *filename*'s result, which tells the run to
-    take no further file; False when the run goes on. The result is the TOTAL
-    its handler returned when a module caught the stop, else the file's
-    _paid_receipt."""
+    (util/translation run_stop) as *filename*'s result, with the TOTAL its
+    handler returned when a module caught the stop, which tells the run to
+    take no further file; False when the run goes on. What the file paid for
+    is in the run's evidence ledger however it ends (util/translation
+    record_paid)."""
     translation = sys.modules.get("util.translation")
     stop = None if translation is None else translation.run_stop(error)
     if stop is None:
         return False
-    result = _paid_receipt(filename, result, start) or result
     print(
         "RUN_STOPPED:"
         + json.dumps(
@@ -109,16 +72,12 @@ def _report_run_stop(filename, error=None, result=None, start=None):
     return True
 
 
-def _report_file(kind, payload, receipt, multi_file):
-    """Reports a file's result marker, with the receipt of a failed file
-    (_paid_receipt), which the run reads back (util/translation_task
-    file_marker_result). A worker given one file reports its result in its
-    exit instead, so it reports the marker only to carry that receipt."""
-    if receipt is not None:
-        payload["receipt"] = receipt
-    elif not multi_file:
-        return
-    print(kind + ":" + json.dumps(payload, ensure_ascii=False), flush=True)
+def _report_file(kind, payload, multi_file):
+    """Reports a file's result marker, which the run reads back
+    (util/translation_task file_marker_result). A worker given one file
+    reports its result in its exit instead."""
+    if multi_file:
+        print(kind + ":" + json.dumps(payload, ensure_ascii=False), flush=True)
 
 
 def run_handler(project_root, module_name, filename, estimate_only):
@@ -207,7 +166,6 @@ def run_handler(project_root, module_name, filename, estimate_only):
                         rpgmakermvmz.configureBatchMapNames(filenames)
 
                 for current_filename in filenames:
-                    start = None
                     try:
                         if rpgmakermvmz is not None:
                             # Separate subprocesses used to provide fresh totals for
@@ -216,37 +174,28 @@ def run_handler(project_root, module_name, filename, estimate_only):
                             rpgmakermvmz.TOKENS[:] = [0, 0]
                             rpgmakermvmz.TIMETOTAL = 0
                             reset_accurate_cost()
-                        # An estimate pays for nothing.
-                        start = None if estimate_only else _file_start()
                         handler_result = handler(current_filename, estimate_only)
                         # A module that caught the run's stop still ends it.
-                        if _report_run_stop(
-                            current_filename, result=handler_result, start=start
-                        ):
+                        if _report_run_stop(current_filename, result=handler_result):
                             break
                         mismatch_count = 0
                         if rpgmakermvmz is not None:
                             mismatch_count = len(rpgmakermvmz.MISMATCH)
-                        result = handler_result or "Fail"
                         _report_file(
                             "FILE_RESULT",
                             {
                                 "filename": current_filename,
-                                "result": result,
+                                "result": handler_result or "Fail",
                                 "mismatch_count": mismatch_count,
                             },
-                            _paid_receipt(current_filename, None, start)
-                            if result == "Fail"
-                            else None,
                             multi_file,
                         )
                     except Exception as exc:
-                        if _report_run_stop(current_filename, exc, start=start):
+                        if _report_run_stop(current_filename, exc):
                             break
                         _report_file(
                             "FILE_ERROR",
                             {"filename": current_filename, "error": str(exc)},
-                            _paid_receipt(current_filename, None, start),
                             multi_file,
                         )
                         if not multi_file:

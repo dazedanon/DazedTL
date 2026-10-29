@@ -436,13 +436,13 @@ def manual_jobs(source, workspace, lock, allow_providers):
             with self.lock:
                 args = event.get("args", [])
                 if (
-                    event.get("event") == "receipt"
+                    event.get("event") == "seconds"
                     and len(args) >= 2
                     and job.get("mode") in {"translate", "batch"}
                 ):
-                    from .process_view import record_receipt
+                    from .process_view import record_seconds
 
-                    record_receipt(job, args[0], args[1])
+                    record_seconds(job, args[0], args[1])
                 failed = (
                     event.get("event") == "finished"
                     and len(args) >= 2
@@ -487,9 +487,12 @@ def manual_jobs(source, workspace, lock, allow_providers):
                 return super()._event(job, event)
 
         def receipts(self, job):
-            from .process_view import file_receipts
+            # The receipts saved before the run's evidence ledger counted
+            # paid usage; a resumed attempt reads the rest from the ledger.
+            return job.get("file_metrics", {})
 
-            return file_receipts(job)
+        def seconds(self, job):
+            return job.get("file_seconds", {})
 
         def _launch(self, job, resume):
             if job.get("phase") == "canceled":

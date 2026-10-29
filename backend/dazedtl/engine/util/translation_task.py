@@ -81,10 +81,9 @@ def _result_token_usage(result):
     return int(match.group("input")), int(match.group("output"))
 
 def _result_figures(result):
-    """One file's receipt from the TOTAL its worker reported for it, as
+    """The figures of the TOTAL a file's worker reported for it, as
     ``{"input", "output", "cost", "seconds"}``, or None."""
-    # A result tuple holds the file's TOTAL or receipt third, which may be a
-    # failed result carrying one (_with_receipt).
+    # A result tuple holds the file's TOTAL third.
     while isinstance(result, tuple) and len(result) >= 3:
         result = result[2]
     text = _strip_ansi(str(result or ""))
@@ -117,17 +116,37 @@ def _receipt(figures):
     receipt["input"], receipt["output"] = int(receipt["input"]), int(receipt["output"])
     return receipt
 
-def paid_for(figures) -> bool:
-    """Whether a receipt's figures, or a reading of what a process paid for
-    (util/translation paid_usage), paid for anything."""
-    return bool(figures["input"] or figures["output"] or figures["cost"])
+def run_receipts(saved, paid, seconds):
+    """Each name's receipt in a run, a file's or its names passes': the
+    receipts *saved* by its attempts from before paid usage was counted in
+    the run's evidence ledger, which later attempts add to, what the ledger
+    counted for it (*paid*, ``{"input", "output", "cost"}``) and the
+    *seconds* its attempts spent on it. The host's run records and the
+    run's TOTAL read receipts by it alike."""
+    receipts = {}
+    for name in dict.fromkeys([*saved, *paid, *seconds]):
+        figures = dict.fromkeys(("input", "output", "cost", "seconds"), 0)
+        for part in (saved.get(name) or {}, paid.get(name) or {}):
+            for key in figures:
+                figures[key] += part.get(key, 0)
+        figures["seconds"] += seconds.get(name, 0)
+        receipts[name] = figures
+    return receipts
+
+
+@extensions.point
+def paid_receipts(root):
+    """What the evidence ledger of the run in *root* counted for each name,
+    as ``{"input", "output", "cost"}``; the host keeps the ledger
+    (compatibility/process_view paid_receipts), and a run without one
+    counted nothing there."""
+    return {}
 
 
 def format_receipt(name, figures, mark="✓", colored=False) -> str:
-    """A receipt's log line, which _result_figures and the records of runs
-    from before receipts were reported (compatibility/process_view
-    file_receipt) read back: *name*'s tokens, cost and seconds, then whether
-    it finished. An engine module's lines are *colored* (module_receipt)."""
+    """A receipt's log line: *name*'s tokens, cost and seconds, then whether
+    it finished, which _result_figures reads back from a file's TOTAL. An
+    engine module's lines are *colored* (module_receipt)."""
     tokens = (
         f"[Input: {int(figures['input'])}][Output: {int(figures['output'])}]"
         f"[Cost: ${figures['cost']:,.4f}]"
@@ -163,35 +182,20 @@ def fail_on_parser_error(parsed):
     """Ends a file whose parser returned an error. Every engine module's
     parser returns ``[data, tokens, error]``; its error is raised before the
     module writes the finished file or reports it, so the run records the
-    file failed with what it paid for (util/subprocess_runner _paid_receipt)
-    and never takes partial output for a translated file."""
+    file failed, with what it paid for in the run's evidence ledger, and
+    never takes partial output for a translated file."""
     if parsed[2] is not None:
         raise parsed[2]
 
 def _failed(result):
-    """Whether a file's result is a module's failure, with or without the
-    receipt of what it paid for (_with_receipt)."""
-    return result == "Fail" or (isinstance(result, tuple) and result[0] == "FAILED")
+    """Whether a file's result is a module's failure."""
+    return result == "Fail"
 
-def _with_receipt(result, receipt):
-    """A failed file's result carrying *receipt*, the line its worker logged
-    for what the file paid for (util/subprocess_runner _paid_receipt), as its
-    third item, where _result_figures reads a file's TOTAL."""
-    if not receipt:
-        return result
-    if result == "Fail":
-        return ("FAILED", "Translation failed", receipt)
-    if isinstance(result, tuple) and result[0] == "SUBPROCESS_ERROR":
-        return (*result[:2], receipt)
-    return result
-
-def _file_result(result, receipt, mismatch_count):
-    """A file's result as its worker returned or reported it, with the
-    receipt of what a failed file paid for (_with_receipt). A file that
+def _file_result(result, mismatch_count):
+    """A file's result as its worker returned or reported it. A file that
     finished with *mismatch_count* validation mismatches kept the original
     text of those chunks, a soft failure that does not fail the run; a file
     that failed, as when it could not be saved, stays failed."""
-    result = _with_receipt(result, receipt)
     if not mismatch_count or _failed(result):
         return result
     return (
@@ -210,14 +214,11 @@ def file_marker_result(kind, payload, mismatch_count=0):
     if kind == "RUN_STOPPED":
         return ("RUN_STOPPED", str(payload.get("error")), payload.get("result"))
     if kind == "FILE_ERROR":
-        error = ("SUBPROCESS_ERROR", payload.get("error") or "Unknown error")
-        return _with_receipt(error, payload.get("receipt"))
-    return _file_result(
-        payload.get("result") or "Fail", payload.get("receipt"), mismatch_count
-    )
+        return ("SUBPROCESS_ERROR", payload.get("error") or "Unknown error")
+    return _file_result(payload.get("result") or "Fail", mismatch_count)
 
 def format_run_total(receipts) -> str:
-    """The run's TOTAL: every file's receipt added up, in the receipts' own
+    """The run's TOTAL: every receipt added up, in the receipts' own
     format."""
     receipts = list(receipts)
     return format_receipt(
@@ -371,15 +372,22 @@ class TranslationTaskCore:
                  batch_workflow_return=None, *, code_root=None, runner_script=None,
                  runtime_profile=None, resume_cached=False, preserve_batch_queue=False,
                  speaker_scan=None, scanned_speakers=None, adopted_requests=None,
-                 receipts=None):
+                 receipts=None, seconds=None):
         self.project_root = Path(project_root)
-        # Each translated file's figures by name, starting from the receipts
-        # of the run's earlier attempts; the run's TOTAL adds them up.
+        # The receipts the run's earlier attempts saved before paid usage was
+        # counted in its evidence ledger, by name (run_receipts).
         self.receipts = {}
         for name, figures in (receipts or {}).items():
             receipt = _receipt(figures)
             if receipt is not None:
                 self.receipts[name] = receipt
+        # The seconds the run's attempts spent on each name, this one's added
+        # as it goes (_record_seconds).
+        self.seconds = {}
+        for name, spent in (seconds or {}).items():
+            receipt = _receipt({"seconds": spent})
+            if receipt is not None:
+                self.seconds[name] = receipt["seconds"]
         # The estimate's request queue, built from the same frozen inputs; a
         # fresh Batch preparation whose names step changed nothing submits it
         # instead of collecting the same requests again.
@@ -824,11 +832,6 @@ class TranslationTaskCore:
             stdout_lines = []
             stderr_lines = []
             run_stops = []
-            # The receipt a worker given one file logged for what the file
-            # paid for when it failed, which goes with the result its exit
-            # reports.
-            receipt = [None]
-
             def read_stdout():
                 """Read stdout line by line."""
                 for line in iter(process.stdout.readline, ''):
@@ -860,8 +863,6 @@ class TranslationTaskCore:
                                 run_stops.append(result)
                             if file_result_callback is not None:
                                 file_result_callback(payload["filename"], result)
-                            else:
-                                receipt[0] = payload.get("receipt")
                         except Exception as exc:
                             stderr_lines.append(f"Invalid {kind} marker: {exc}")
                     else:
@@ -930,7 +931,7 @@ class TranslationTaskCore:
                         except UnicodeError:
                             result_text = parsed.encode('ascii', 'ignore').decode('ascii')
                         break
-                return _file_result(result_text, receipt[0], mismatch_count)
+                return _file_result(result_text, mismatch_count)
             else:
                 # Extract error message from stderr
                 error_msg = stderr.strip() if stderr.strip() else "Unknown error"
@@ -943,7 +944,7 @@ class TranslationTaskCore:
                 actual_error = _process_error(clean_error, stdout_lines)
                 self.emit_log(f"❌ Process error: {actual_error}")
                 # Return the actual error so it can be used to determine if file is unsupported
-                return _with_receipt(("SUBPROCESS_ERROR", actual_error), receipt[0])
+                return ("SUBPROCESS_ERROR", actual_error)
 
         except Exception as e:
             self.emit_log(f"❌ Failed to run module process: {str(e)}")
@@ -1352,9 +1353,9 @@ class TranslationTaskCore:
             mvmz.setSpeakerParseMode(False)
 
     def _record_names_receipt(self, tokens_in, tokens_out, cost, seconds):
-        """Logs what translating names together cost, a receipt the run's TOTAL
-        adds to its files'. A later names pass translates only names no earlier
-        one did, so its cost adds to theirs."""
+        """Logs what translating names together cost; the run's TOTAL adds
+        what the run's names passes paid for, which its evidence ledger
+        counted under NAMES_FILE, and the time they took to its files'."""
         from util.speakers import NAMES_FILE
 
         receipt = {
@@ -1364,37 +1365,29 @@ class TranslationTaskCore:
             "seconds": round(seconds, 1),
         }
         self.emit_log(format_receipt("Speakers", receipt))
-        self._record_receipt(NAMES_FILE, receipt)
+        self._record_seconds(NAMES_FILE, receipt["seconds"])
 
-    def _record_receipt(self, name, figures):
-        """Keep *figures*, this attempt's receipt for *name*, a file or the
-        names passes, with the run's receipts, which its TOTAL adds up, and
-        report the result to the run's records (receipt_signal, read by
-        compatibility/process_view record_receipt). A names pass adds to the
-        earlier ones (_record_names_receipt). A file's attempt that paid
-        replaces what the earlier ones paid, since a later attempt can read
-        and count the same Batch results or failed replies again; one that
-        paid for nothing, as a retry reading back the files an earlier
-        attempt saved, keeps what they cost."""
-        from util.speakers import NAMES_FILE
-
-        earlier = self.receipts.get(name)
-        if earlier is None or name != NAMES_FILE and paid_for(figures):
-            self.receipts[name] = dict(figures)
-        elif name == NAMES_FILE:
-            self.receipts[name] = {
-                key: earlier[key] + figures[key]
-                for key in ("input", "output", "cost", "seconds")
-            }
-        self.receipt_signal.emit(name, dict(self.receipts[name]))
+    def _record_seconds(self, name, seconds):
+        """Add the *seconds* this attempt spent on *name*, a file or the
+        names passes, to what the run's earlier attempts spent on it, and
+        report the sum to the run's records (seconds_signal, read by
+        compatibility/process_view record_seconds). A file's tokens and cost
+        are what the run's evidence ledger counted for it (run_receipts)."""
+        self.seconds[name] = self.seconds.get(name, 0) + seconds
+        self.seconds_signal.emit(name, self.seconds[name])
 
     def _run_total(self, result):
-        """The run's TOTAL: every receipt it recorded, the earlier attempts'
-        and its names passes included, rather than the total the last file's
-        worker reported for that file."""
-        if self.estimate_only or self.parse_speakers or not self.receipts:
+        """The run's TOTAL: every name's receipt (run_receipts), the files'
+        and the names passes', rather than the total the last file's worker
+        reported for that file."""
+        if self.estimate_only or self.parse_speakers:
             return result
-        return format_run_total(self.receipts.values())
+        receipts = run_receipts(
+            self.receipts, paid_receipts(self.project_root), self.seconds
+        )
+        if not receipts:
+            return result
+        return format_run_total(receipts.values())
 
     def _prepare_wolf_speakers(self, matching_files):
         """Scan WolfDawn JSON nameplates, then resolve all new speakers together."""
@@ -1545,7 +1538,7 @@ class TranslationTaskCore:
                     estimate_output_tokens += usage[1]
             figures = _result_figures(result) if records_receipts else None
             if figures is not None:
-                self._record_receipt(filename, figures)
+                self._record_seconds(filename, figures["seconds"])
             try:
                 if (
                     isinstance(result, tuple)
@@ -2227,7 +2220,7 @@ class TranslationTask(TranslationTaskCore):
         for name in (
             "log", "progress", "item_progress", "file_error", "file_mismatch",
             "file_finished", "status", "finished", "batch_phase", "estimate_ready",
-            "speaker_confirmation", "receipt",
+            "speaker_confirmation", "seconds",
         ):
             setattr(self, name + "_signal", TaskSignal())
         self.initialize(*args, **kwargs)

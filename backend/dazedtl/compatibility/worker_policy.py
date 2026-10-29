@@ -269,6 +269,15 @@ def install(*, coordinator=False):
             )
             evidence.install(translation, sys.modules.get("modules.rpgmakermvmz"))
             record = evidence.record
+            # The run's TOTAL reads what its ledger counted, as its records do
+            # (process_view file_receipts).
+            from util import translation_task
+
+            from .process_view import paid_receipts
+
+            translation_task.paid_receipts.layer(
+                "evidence", lambda _native, folder: paid_receipts(folder)
+            )
         configure_builders(
             translation,
             policy.get("generationParameters"),

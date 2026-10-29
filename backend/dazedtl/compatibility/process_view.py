@@ -18,6 +18,13 @@ from dazedtl.translation.files import digest, live_path, read_json
 # The engine's names pass translates the speakers of every file in one list and
 # records its requests under this name (engine util/speakers.NAMES_FILE).
 NAMES_FILE = "speakers"
+# The version of the billed items a run's evidence ledger keeps in the `paid`
+# column of its requests and Batch results (paid_record): version 1 holds the
+# file that pays for the item, its input and output tokens, the billed usage
+# it was priced from and its cost, priced in the worker as it counted it
+# (engine util/translation record_paid). Ledgers of runs started before keep
+# no items for what they paid then; their saved receipts stand for it.
+PAID_USAGE = 1
 
 
 # The last read of the most recently used evidence files, one entry per file
@@ -580,34 +587,110 @@ def file_metric(line, files):
     return {receipt[0]: receipt[1]} if receipt else {}
 
 
-def record_receipt(job, name, figures):
-    """Keep the receipt a run's worker reported for one of its files, or for
-    its names passes under NAMES_FILE: what the run's attempts paid for it,
-    as its TOTAL adds them up (engine util/translation_task _record_receipt)."""
+def paid_record(file, figures):
+    """A billed item as a run's evidence ledger keeps it (PAID_USAGE): the
+    *file* that pays for it, with the *figures* the worker counted it with
+    (engine util/translation record_paid)."""
+    return json.dumps(
+        {
+            "version": PAID_USAGE,
+            "file": file,
+            "input": int(figures["input"]),
+            "output": int(figures["output"]),
+            "cost": float(figures["cost"]),
+            "usage": figures["usage"],
+        },
+        ensure_ascii=False,
+    )
+
+
+def paid_receipts(root):
+    """What the evidence ledger of the run in *root* counted for each file,
+    and for its names passes under NAMES_FILE, as ``{"input", "output",
+    "cost"}``: each billed item once, by the file that pays for it, a Live
+    response's as it arrived and a Batch result's at its first read in the
+    run, however the file ended."""
+    path = Path(root) / "log/dazedtl-process.sqlite3"
+    if not path.is_file():
+        return {}
+    return {
+        name: dict(figures)
+        for name, figures in _paid_receipts(str(root), ledger_stamp(root)).items()
+    }
+
+
+@lru_cache(maxsize=8)
+def _paid_receipts(root, stamp):
+    connection = ledger(root)
+    if connection is None:
+        return {}
+    result: dict[str, dict[str, Any]] = {}
+    with closing(connection):
+        for table in ("requests", "batch_validation"):
+            fields = {
+                row[1] for row in connection.execute(f"PRAGMA table_info({table})")
+            }
+            if "paid" not in fields:
+                continue
+            for name, tokens_in, tokens_out, cost in connection.execute(
+                "SELECT json_extract(paid,'$.file'),"
+                "SUM(json_extract(paid,'$.input')),"
+                "SUM(json_extract(paid,'$.output')),"
+                f"SUM(json_extract(paid,'$.cost')) FROM {table} "
+                "WHERE json_extract(paid,'$.version')=? GROUP BY 1",
+                (PAID_USAGE,),
+            ):
+                if not isinstance(name, str):
+                    continue
+                figures = result.setdefault(
+                    name, {"input": 0, "output": 0, "cost": 0.0}
+                )
+                figures["input"] += int(tokens_in or 0)
+                figures["output"] += int(tokens_out or 0)
+                figures["cost"] += float(cost or 0)
+    return result
+
+
+def record_seconds(job, name, seconds):
+    """Keep the seconds a run's attempts spent on one of its files, or on its
+    names passes under NAMES_FILE, as its worker reported them (engine
+    util/translation_task _record_seconds)."""
     if name in (*job.get("files", []), NAMES_FILE):
-        job.setdefault("file_metrics", {})[name] = {
-            key: figures[key] for key in ("input", "output", "cost", "seconds")
-        }
+        job.setdefault("file_seconds", {})[name] = seconds
 
 
-def file_receipts(job):
-    """Each file's receipt figures, which also start a resumed attempt's
-    total. Receipts recorded before tokens were have only cost and seconds."""
-    # New receipts survive the native 40-line log cap. Old Live runs can still
-    # show the receipts retained in their log; missing figures stay unknown.
-    result = {}
-    if job.get("mode") in {"translate", "offline"}:
-        for line in job.get("log", []):
-            result.update(file_metric(line, job.get("files", [])))
-    return {**result, **job.get("file_metrics", {})}
+def file_receipts(root, job):
+    """Each file's receipt in the run in *root*, and its names passes' under
+    NAMES_FILE, by the run's one rule (engine util/translation_task
+    run_receipts): the receipts its attempts saved before its evidence ledger
+    counted paid usage, which are never rewritten, what the ledger counted
+    and the seconds its attempts spent. A run from before the ledger
+    (settings/preferences GENERATION_PARAMETERS) keeps the receipts it saved,
+    and those its log retained from before receipts were saved."""
+    from util.translation_task import run_receipts
+
+    files = {*job.get("files", []), NAMES_FILE}
+    if not (Path(root) / "log/dazedtl-process.sqlite3").is_file():
+        result = {}
+        if job.get("mode") in {"translate", "offline"}:
+            for line in job.get("log", []):
+                result.update(file_metric(line, job.get("files", [])))
+        receipts = {**result, **job.get("file_metrics", {})}
+    else:
+        receipts = run_receipts(
+            job.get("file_metrics", {}),
+            paid_receipts(root),
+            job.get("file_seconds", {}),
+        )
+    return {name: figures for name, figures in receipts.items() if name in files}
 
 
-def file_metrics(job):
+def file_metrics(root, job):
     """The cost and processing time shown for each file; the names pass is
     the run's, not a file's."""
     return {
-        name: {"cost": figures["cost"], "seconds": figures["seconds"]}
-        for name, figures in file_receipts(job).items()
+        name: {"cost": figures.get("cost", 0), "seconds": figures.get("seconds", 0)}
+        for name, figures in file_receipts(root, job).items()
         if name != NAMES_FILE
     }
 
@@ -1437,7 +1520,7 @@ def summary(root, job, view=None):
         "errors": error_messages(root, errors),
         "runErrors": error_messages(root, run_errors),
         "usage": usage,
-        "fileMetrics": file_metrics(job),
+        "fileMetrics": file_metrics(root, job),
         # Request rows stay out of observation; the inspector pages them.
         "files": view["files"],
         "groups": [

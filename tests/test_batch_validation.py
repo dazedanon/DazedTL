@@ -102,6 +102,69 @@ class BatchValidationTests(unittest.TestCase):
             )
             self.assertEqual({path: path.read_bytes() for path in before}, before)
 
+    def test_a_batch_result_is_paid_for_once_by_the_file_reading_it_first(self):
+        # A file's cost added what each attempt read: a reply failing
+        # validation, never saved for reuse, read again by a retry; the files
+        # a stopped consume had saved, read again on resume; and a request two
+        # files share, read by each. The ledger keeps each result once, as its
+        # first read in the run counted it.
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            keys = ("failing", "saved", "shared", "older")
+            responses = {key: {"text": key} for key in keys}
+            # A run started before results were counted read "older" then:
+            # its saved receipts hold that, so reading it again pays nothing.
+            older = Evidence(root, "batch")
+            with older.connect() as connection:
+                connection.execute(
+                    "CREATE TABLE batch_validation (request_key TEXT PRIMARY KEY,"
+                    " filename TEXT, source TEXT, response_hash TEXT, state TEXT)"
+                )
+                connection.execute(
+                    "INSERT INTO batch_validation VALUES (?,?,?,?,?)",
+                    (
+                        "older",
+                        "Items.json",
+                        "{}",
+                        digest(responses["older"]),
+                        "received",
+                    ),
+                )
+
+            def native(text, config, filename=None):
+                for key in text:
+                    translator.require_batch_result(json.dumps({"Line1": key}), "en")
+                return text
+
+            translator = SimpleNamespace(
+                translateAI=point(native),
+                _batch_results=responses,
+                get_cache_key=lambda payload, *_: json.loads(payload)["Line1"],
+                require_batch_result=point(
+                    lambda payload, *_: responses[json.loads(payload)["Line1"]]
+                ),
+                batch_result_paid=lambda _result, model: {
+                    "input": 10,
+                    "output": 2,
+                    "cost": 0.5 if model == "fixture" else 9.0,
+                    "usage": {},
+                },
+                cache_translation=point(lambda *_: None),
+            )
+            install(Evidence(root, "batch"), translator)
+            config = SimpleNamespace(model="fixture")
+            for _attempt in range(2):
+                translator.translateAI(
+                    ["failing", "saved", "shared", "older"],
+                    config,
+                    filename="Items.json",
+                )
+                translator.translateAI(["shared"], config, filename="Weapons.json")
+            self.assertEqual(
+                process_view.paid_receipts(root),
+                {"Items.json": {"input": 30, "output": 6, "cost": 1.5}},
+            )
+
     def choice_fixture(self, root):
         source = ["特別な品", "やめる"]
 
