@@ -236,13 +236,18 @@ export const gameName = (names) =>
 export const contentFolder = (names, game) =>
   names[0] === "mv" ? path.join(game, "www") : game;
 
-/** Runs scripts/testkit/ace_game.py's `command` on the Ace game. */
+/**
+ * Runs scripts/testkit/ace_game.py's `command` on the Ace game. A game is
+ * built before any profile exists, so it compiles nothing, never into the
+ * checkout the user's app may run from.
+ */
 const aceGame = (command, game) =>
   execFileSync(
     python,
     [
       "-X",
       "utf8",
+      "-B",
       path.join(import.meta.dirname, "ace_game.py"),
       command,
       game,

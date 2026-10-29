@@ -6,7 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { root, python } from "./dependencies.mjs";
+import { root } from "./dependencies.mjs";
 import { Page, until, message } from "./testkit/cdp.mjs";
 import { freePort, startApp, stopApp, running } from "./testkit/app.mjs";
 import {
@@ -17,7 +17,7 @@ import {
   virtualDisplay,
 } from "./testkit/display.mjs";
 import { gameName, makeGame, variants } from "./testkit/games.mjs";
-import { scenarios } from "./testkit/scenarios.mjs";
+import { helperCommand, scenarios } from "./testkit/scenarios.mjs";
 import { checkout, previousRelease } from "./testkit/checkout.mjs";
 import { e2eOptions, readOptions } from "./testkit/options.mjs";
 
@@ -198,7 +198,7 @@ async function describe(state, page) {
     if (project)
       lines.push(
         "The project helper, as an assistant's task runs it:",
-        `  ${python} ${path.join(state.root, "scripts/project.py")} --workspace ${path.join(state.profile, "workspace")} --project ${project.id} <command>`,
+        `  ${helperCommand(state, project.id).join(" ")} <command>`,
       );
   } else
     lines.push(
