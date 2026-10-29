@@ -2543,6 +2543,83 @@ class CompatibilityContracts(unittest.TestCase):
                     sent.clear()
                     send()
                     self.assertEqual(sent, [reached])
+        # Gemini and Kimi clients sent the run's key to their provider's own
+        # API whatever the run's address was, so a Custom Gemini-compatible
+        # connection's Batches went to Google while its Live requests went to
+        # its proxy. Gemini Batch files go through Google's own Files API,
+        # which a proxy's address does not name, so a Gemini Batch elsewhere
+        # is refused before its key is sent anywhere.
+        from util import batch_providers
+
+        proxy = "https://proxy.example/v1beta/openai"
+        google = "https://generativelanguage.googleapis.com/v1beta/openai"
+        with (
+            patch.object(httpx.HTTPTransport, "handle_request", answering(httpx)),
+            patch.object(httpx2.HTTPTransport, "handle_request", answering(httpx2)),
+            patch.dict(
+                os.environ, {"api": proxy, "key": "run-key", "API_PROVIDER": "gemini"}
+            ),
+        ):
+            for client, send, reached in (
+                *(
+                    (
+                        f"run's {provider} key",
+                        lambda provider=provider: get_client(provider).models.list(),
+                        (proxy + "/models", "Bearer run-key"),
+                    )
+                    for provider in ("gemini", "kimi")
+                ),
+                (
+                    "given Gemini key and address",
+                    lambda: get_client(
+                        "gemini", api_key="saved-key", api_url=proxy
+                    ).models.list(),
+                    (proxy + "/models", "Bearer saved-key"),
+                ),
+            ):
+                with self.subTest(client=client):
+                    sent.clear()
+                    send()
+                    self.assertEqual(sent, [reached])
+            for client, send in (
+                (
+                    "run's Gemini Batch",
+                    lambda: batch_providers.submit_batch(
+                        "gemini",
+                        [{"custom_id": "1", "params": {"model": "gemini-3-flash"}}],
+                    ),
+                ),
+                (
+                    "given Gemini Batch's results",
+                    lambda: batch_providers.read_openai_results(
+                        "gemini",
+                        "files/out",
+                        None,
+                        {},
+                        client=get_client("gemini", api_key="saved-key", api_url=proxy),
+                        google_client=batch_providers._google_client("saved-key"),
+                    ),
+                ),
+            ):
+                with self.subTest(client=client):
+                    sent.clear()
+                    with self.assertRaisesRegex(RuntimeError, "Google's own API"):
+                        send()
+                    self.assertEqual(sent, [])
+            # On Google's own API, Gemini Batch files still go to Google.
+            sent.clear()
+            batch_providers.read_openai_results(
+                "gemini",
+                "files/out",
+                None,
+                {},
+                client=get_client("gemini", api_key="saved-key", api_url=google),
+                google_client=batch_providers._google_client("saved-key"),
+            )
+            self.assertEqual(
+                [url.split("?")[0] for url, _key in sent],
+                ["https://generativelanguage.googleapis.com/v1beta/files/out:download"],
+            )
 
     def test_a_failed_claude_count_is_asked_again(self):
         # The estimate's instructions count saved the approximate count when
