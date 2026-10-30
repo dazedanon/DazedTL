@@ -3,3 +3,4 @@
 ### Fixed
 
 - **Starting DazedTL:** a folder used from both Windows and Linux, such as on a dual-boot drive, now keeps an install for each system instead of stopping at startup with `EPERM: operation not permitted, rename` after downloading Python.
+- **Forge:** updated to the latest version, which keeps its panels' spacing and scrolling correct in games on older engines.
