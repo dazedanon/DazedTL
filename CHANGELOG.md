@@ -3,6 +3,13 @@
 Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 [release.mjs](scripts/release.mjs) writes each entry from [release/notes.md](release/notes.md).
 
+## [2.52.6] - 2026-10-30
+
+### Fixed
+
+- **Starting DazedTL:** a folder used from both Windows and Linux, such as on a dual-boot drive, now keeps an install for each system instead of stopping at startup with `EPERM: operation not permitted, rename` after downloading Python.
+- **Forge:** updated to the latest version, which keeps its panels' spacing and scrolling correct in games on older engines.
+
 ## [2.52.5] - 2026-10-29
 
 ### Fixed
@@ -1467,6 +1474,7 @@ Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachan
 - The first release of DazedTL as a desktop app, installed from a ZIP with a START launcher and updated from inside the app.
 - **Guided steps** for RPG Maker MV, MZ and VX Ace games, and **Assistant-led** for any game.
 
+[2.52.6]: https://github.com/dazedanon/DazedTL/compare/v2.52.5...v2.52.6
 [2.52.5]: https://github.com/dazedanon/DazedTL/compare/v2.52.4...v2.52.5
 [2.52.4]: https://github.com/dazedanon/DazedTL/compare/v2.52.3...v2.52.4
 [2.52.3]: https://github.com/dazedanon/DazedTL/compare/v2.52.2...v2.52.3
