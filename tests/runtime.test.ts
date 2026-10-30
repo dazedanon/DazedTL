@@ -4,7 +4,13 @@ import http from "node:http";
 import path from "node:path";
 import test from "node:test";
 import { root, requireNode } from "../scripts/dependencies.mjs";
-import { retried } from "../scripts/setup.mjs";
+import { replaceFolder } from "../scripts/files.mjs";
+import {
+  readState,
+  retried,
+  switchSystem,
+  writeState,
+} from "../scripts/setup.mjs";
 import { windowSize } from "../app/electron/window-size.cjs";
 import { EventEmitter } from "node:events";
 import os from "node:os";
@@ -381,6 +387,102 @@ test("setup downloads try again after a lost connection or a busy server, never 
     /^Error: Electron could not be downloaded \(\w+\)\. Check the internet/,
   );
   assert.equal(offline.tried.count, 3);
+});
+
+test("a finished folder replaces what is there, waiting out a scanner's lock", (t) => {
+  const folder = fs.mkdtempSync(path.join(os.tmpdir(), "dazedtl-replace-"));
+  t.after(() => fs.rmSync(folder, { recursive: true, force: true }));
+  const target = path.join(folder, "python-3.14.7");
+  const staging = `${target}.partial`;
+  fs.mkdirSync(path.join(target, "bin"), { recursive: true });
+  fs.writeFileSync(path.join(target, "bin/python3"), "");
+  fs.mkdirSync(staging);
+  fs.writeFileSync(path.join(staging, "python.exe"), "");
+  const rename = fs.renameSync;
+  let locked = 2;
+  t.mock.method(fs, "renameSync", (from: string, to: string) => {
+    if (locked-- > 0)
+      throw Object.assign(new Error("locked"), { code: "EPERM" });
+    rename(from, to);
+  });
+
+  replaceFolder(staging, target);
+
+  assert.deepEqual(fs.readdirSync(folder), ["python-3.14.7"]);
+  assert.deepEqual(fs.readdirSync(target), ["python.exe"]);
+});
+
+test("a folder two systems share keeps both installs and switches between them", (t) => {
+  t.mock.method(console, "log", () => {});
+  const folder = fs.mkdtempSync(path.join(os.tmpdir(), "dazedtl-shared-"));
+  t.after(() => fs.rmSync(folder, { recursive: true, force: true }));
+  const write = (name: string, text: string) => {
+    fs.mkdirSync(path.dirname(path.join(folder, name)), { recursive: true });
+    fs.writeFileSync(path.join(folder, name), text);
+  };
+  const read = (name: string) =>
+    fs.readFileSync(path.join(folder, name), "utf8");
+  const here = (name: string) => fs.existsSync(path.join(folder, name));
+  const electron = "app/node_modules/electron/path.txt";
+
+  // An install from before the record, alone in its folder, stays in place.
+  write(".venv/bin/activate", "");
+  write(electron, "electron");
+  write(".runtime/python-3.14.7/bin/python3", "");
+  write(".runtime/node-v26.8.1-linux-x64/bin/node", "");
+  write(".runtime/state.json", '{"npm":"linux"}');
+  write(".runtime/node-v26.8.1-win-x64.zip", "");
+  switchSystem(folder, "linux-x64");
+  assert.deepEqual(readState(folder), { system: "linux-x64", npm: "linux" });
+  assert.equal(read(electron), "electron");
+
+  // Windows' first start: its Node beside Linux's, its Python blocked until now.
+  fs.rmSync(path.join(folder, ".runtime/state.json"));
+  write(".runtime/state.json", '{"npm":"linux"}');
+  write(".runtime/node-v26.8.1-win-x64/node.exe", "");
+  write(".runtime/python-3.14.7.partial/python.exe", "");
+  switchSystem(folder, "win32-x64");
+  assert.deepEqual(readState(folder), { system: "win32-x64" });
+  for (const name of [".venv", "app/node_modules", ".runtime/python-3.14.7"])
+    assert.equal(here(name), false, name);
+  assert.ok(here(".runtime/node-v26.8.1-linux-x64/bin/node"));
+
+  // Each system then finds its own install, with what setup recorded for it.
+  write(".venv/Scripts/python.exe", "");
+  write(electron, "electron.exe");
+  write(".runtime/python-3.14.7/python.exe", "");
+  writeState({ system: "win32-x64", npm: "windows" }, folder);
+
+  // A switch stopped partway, as a closed console leaves it, goes on from
+  // there on what the install recorded, with no Node left to tell.
+  fs.rmSync(path.join(folder, ".runtime/node-v26.8.1-linux-x64"), {
+    recursive: true,
+  });
+  fs.rmSync(path.join(folder, ".runtime/node-v26.8.1-win-x64"), {
+    recursive: true,
+  });
+  const rename = fs.renameSync;
+  const stop = t.mock.method(fs, "renameSync", (from: string, to: string) => {
+    if (from.endsWith("node_modules"))
+      throw Object.assign(new Error("stopped"), { code: "EIO" });
+    rename(from, to);
+  });
+  assert.throws(
+    () => switchSystem(folder, "linux-x64"),
+    /could not be replaced/,
+  );
+  stop.mock.restore();
+
+  for (const [system, npm, name, marker] of [
+    ["linux-x64", "linux", "electron", ".venv/bin/activate"],
+    ["win32-x64", "windows", "electron.exe", ".venv/Scripts/python.exe"],
+    ["linux-x64", "linux", "electron", ".runtime/python-3.14.7/bin/python3"],
+  ] as const) {
+    switchSystem(folder, system);
+    assert.deepEqual(readState(folder), { system, npm });
+    assert.equal(read(electron), name);
+    assert.ok(here(marker), marker);
+  }
 });
 
 test("paths inside the home folder read home-relative, and only there", () => {

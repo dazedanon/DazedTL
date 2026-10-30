@@ -47,6 +47,8 @@ if [ ! -x "$node" ]; then
   rm -rf "$staging"
   mkdir -p "$staging"
   tar -xzf "$archive" -C "$staging" || fail "Node could not be unpacked."
+  # mv would move it inside a folder that an interrupted install left behind.
+  rm -rf "$root/.runtime/$name"
   mv "$staging/$name" "$root/.runtime/$name"
   rm -rf "$staging" "$archive"
 fi

@@ -66,8 +66,20 @@ try {
       Add-Type -AssemblyName System.IO.Compression.FileSystem
       [IO.Compression.ZipFile]::ExtractToDirectory($archive, $staging)
     }
-    Move-Item (Join-Path $staging $name) (Join-Path $runtime $name)
-    Remove-Item -Recurse -Force $staging, $archive
+    # Antivirus scanners briefly lock new files, and Move-Item would move Node
+    # inside a folder that an interrupted install left behind.
+    $target = Join-Path $runtime $name
+    for ($try = 1; ; $try++) {
+      try {
+        if (Test-Path -LiteralPath $target) { Remove-Item -LiteralPath $target -Recurse -Force }
+        Move-Item -LiteralPath (Join-Path $staging $name) -Destination $target
+        break
+      } catch {
+        if ($try -ge 150) { throw }
+        Start-Sleep -Milliseconds 200
+      }
+    }
+    Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $staging, $archive
   }
 } catch {
   Fail $_.Exception.Message

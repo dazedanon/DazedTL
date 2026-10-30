@@ -18,24 +18,26 @@ import {
   requireNode,
   bundledGit,
 } from "./dependencies.mjs";
+import { replaceFolder, settle } from "./files.mjs";
 import { extract } from "./tar.mjs";
 import { extract as unzip } from "./zip.mjs";
 
-const stateFile = path.join(runtime, "state.json");
+const stateName = ".runtime/state.json";
 
-/** @returns {{ mode?: "user" | "dev", venv?: "managed", pip?: string, npm?: string }} */
-export function readState() {
+/** @returns {{ system?: string, mode?: "user" | "dev", venv?: "managed", pip?: string, npm?: string }} */
+export function readState(folder = root) {
   try {
-    return JSON.parse(fs.readFileSync(stateFile, "utf8"));
+    return JSON.parse(fs.readFileSync(path.join(folder, stateName), "utf8"));
   } catch {
     return {};
   }
 }
 
-export function writeState(state) {
-  fs.mkdirSync(runtime, { recursive: true });
-  fs.writeFileSync(`${stateFile}.partial`, JSON.stringify(state, null, 2));
-  fs.renameSync(`${stateFile}.partial`, stateFile);
+export function writeState(state, folder = root) {
+  const file = path.join(folder, stateName);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(`${file}.partial`, JSON.stringify(state, null, 2));
+  settle(() => fs.renameSync(`${file}.partial`, file));
 }
 
 function digest(...parts) {
@@ -143,6 +145,14 @@ async function downloadOnce({ hash, url }, label) {
   return data;
 }
 
+/** Unpacks a runtime beside `folder`, so an interrupted start leaves none half-installed. */
+function install(folder, unpack) {
+  const staging = `${folder}.partial`;
+  settle(() => fs.rmSync(staging, { recursive: true, force: true }));
+  unpack(staging);
+  replaceFolder(staging, folder);
+}
+
 function managedExecutable(version) {
   return path.join(
     runtime,
@@ -165,10 +175,7 @@ async function managedPython(version) {
     ),
     `Python ${version}`,
   );
-  const staging = `${folder}.partial`;
-  fs.rmSync(staging, { recursive: true, force: true });
-  extract(archive, staging, { strip: 1 });
-  fs.renameSync(staging, folder);
+  install(folder, (staging) => extract(archive, staging, { strip: 1 }));
   return executable;
 }
 
@@ -196,9 +203,9 @@ function createdFrom(folder) {
   }
 }
 
-function removeOld(prefix, keep) {
+function removeOld(pattern, keep) {
   for (const name of fs.readdirSync(runtime))
-    if (name.startsWith(prefix) && name !== keep)
+    if (pattern.test(name) && name !== keep)
       try {
         fs.rmSync(path.join(runtime, name), { recursive: true, force: true });
       } catch {
@@ -206,12 +213,87 @@ function removeOld(prefix, keep) {
       }
 }
 
+/** How a system's Node build is named in its folder. */
+const nodeBuild = (system) =>
+  platforms[system].node.replace(/\.(zip|tar\.gz)$/, "");
+
 /** The folder name of the pinned Node for this system. */
 function nodeFolder() {
-  const target = platforms[platform];
-  if (!target) throw new Error(`DazedTL does not support ${platform}.`);
+  if (!platforms[platform])
+    throw new Error(`DazedTL does not support ${platform}.`);
   const version = read(".node-version").toString().trim();
-  return `node-v${version}-${target.node.replace(/\.(zip|tar\.gz)$/, "")}`;
+  return `node-v${version}-${nodeBuild(platform)}`;
+}
+
+function runtimeNames(folder) {
+  const runtimes = path.join(folder, ".runtime");
+  return fs.existsSync(runtimes) ? fs.readdirSync(runtimes) : [];
+}
+
+/**
+ * What runs only on the system that installed it yet has the same path on
+ * every system. Node and MinGit stay out: each system's has a name of its own.
+ */
+function systemFiles(folder) {
+  return [
+    ".venv",
+    "app/node_modules",
+    ...runtimeNames(folder)
+      .filter((name) => name.startsWith("python-"))
+      .map((name) => `.runtime/${name}`),
+  ];
+}
+
+/** The system whose install is in `folder`. */
+function installedSystem(folder, system) {
+  const recorded = readState(folder).system;
+  if (recorded) return recorded;
+  // Installs from before the record: a finished setup removed every other
+  // system's Node, so another system's Node here means that system's install.
+  const names = runtimeNames(folder);
+  return (
+    Object.keys(platforms).find(
+      (other) =>
+        other !== system &&
+        names.some(
+          (name) =>
+            name.startsWith("node-v") && name.endsWith(`-${nodeBuild(other)}`),
+        ),
+    ) ?? system
+  );
+}
+
+/**
+ * A folder on a drive that two systems share, such as a dual-boot partition,
+ * holds one system's install at a time: the other's waits in .runtime/parked,
+ * so only the first start on each system installs anything. Moving it never
+ * reads inside it, which matters for links that only its own system can follow.
+ * The state file names the install in place, so it moves last and comes back
+ * first, and a stopped switch picks up where it left off.
+ */
+export function switchSystem(folder = root, system = platform) {
+  const installed = installedSystem(folder, system);
+  if (installed !== system) {
+    console.log(
+      "This folder last ran on another system. Switching it to this one…",
+    );
+    const parked = path.join(folder, ".runtime", "parked");
+    const move = (name, from, to) => {
+      const source = path.join(from, name);
+      if (!fs.existsSync(source)) return;
+      const target = path.join(to, name);
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      replaceFolder(source, target);
+    };
+    const away = path.join(parked, installed);
+    const back = path.join(parked, system);
+    for (const name of [...systemFiles(folder), stateName])
+      move(name, folder, away);
+    for (const name of [stateName, ...systemFiles(back)])
+      move(name, back, folder);
+  }
+  const state = readState(folder);
+  if (state.system !== system) writeState({ ...state, system }, folder);
 }
 
 /**
@@ -231,10 +313,7 @@ async function npm() {
         pinned((file) => file === `${name}.tar.gz`),
         name,
       );
-      const staging = `${folder}.partial`;
-      fs.rmSync(staging, { recursive: true, force: true });
-      extract(archive, staging, { strip: 1 });
-      fs.renameSync(staging, folder);
+      install(folder, (staging) => extract(archive, staging, { strip: 1 }));
     }
   }
   const directory = path.dirname(node);
@@ -295,12 +374,12 @@ export async function installElectron(electron) {
     }),
   );
   const dist = path.join(electron, "dist");
-  fs.rmSync(dist, { recursive: true, force: true });
+  settle(() => fs.rmSync(dist, { recursive: true, force: true }));
   unzip(fs.readFileSync(archive), dist);
   // install.js keeps the type definitions beside the package's own.
   const types = path.join(dist, "electron.d.ts");
   if (fs.existsSync(types))
-    fs.renameSync(types, path.join(electron, "electron.d.ts"));
+    settle(() => fs.renameSync(types, path.join(electron, "electron.d.ts")));
   fs.writeFileSync(path.join(electron, "path.txt"), executable);
 }
 
@@ -311,9 +390,10 @@ export async function installElectron(electron) {
  */
 export async function ensureSetup({ mode }) {
   requireNode();
+  fs.mkdirSync(runtime, { recursive: true });
+  switchSystem();
   const state = readState();
   const pythonVersion = read(".python-version").toString().trim();
-  fs.mkdirSync(runtime, { recursive: true });
 
   const environment = path.join(root, ".venv");
   if (fs.lstatSync(environment, { throwIfNoEntry: false })?.isSymbolicLink())
@@ -335,7 +415,7 @@ export async function ensureSetup({ mode }) {
     const base =
       process.env.DAZEDTL_PYTHON || (await managedPython(pythonVersion));
     console.log(`Creating the Python environment (${pythonVersion})…`);
-    fs.rmSync(environment, { recursive: true, force: true });
+    settle(() => fs.rmSync(environment, { recursive: true, force: true }));
     run(base, ["-I", "-m", "venv", environment]);
     if (version(python) !== pythonVersion)
       throw new Error(`The new .venv does not run Python ${pythonVersion}.`);
@@ -396,12 +476,9 @@ export async function ensureSetup({ mode }) {
         pinned((file) => /^MinGit-[\d.]+-64-bit\.zip$/.test(file)),
         "Git",
       );
-      const staging = `${git.folder}.partial`;
-      fs.rmSync(staging, { recursive: true, force: true });
-      unzip(archive, staging);
-      fs.renameSync(staging, git.folder);
+      install(git.folder, (staging) => unzip(archive, staging));
     }
-    removeOld("mingit-", path.basename(git.folder));
+    removeOld(/^mingit-/, path.basename(git.folder));
   } else if (spawnSync("git", ["--version"], { stdio: "ignore" }).status !== 0)
     throw new Error(
       process.platform === "darwin"
@@ -411,8 +488,9 @@ export async function ensureSetup({ mode }) {
   state.mode = mode;
   writeState(state);
   if (state.venv === "managed" && !process.env.DAZEDTL_PYTHON)
-    removeOld("python-", `python-${pythonVersion}`);
-  removeOld("node-v", nodeFolder());
+    removeOld(/^python-/, `python-${pythonVersion}`);
+  // Another system's Node stays for that system's next start in this folder.
+  removeOld(new RegExp(`^node-v.*-${nodeBuild(platform)}`), nodeFolder());
 }
 
 if (import.meta.main) {

@@ -9,6 +9,7 @@ import crypto from "node:crypto";
 import http from "node:http";
 import https from "node:https";
 import { root as checkout } from "./dependencies.mjs";
+import { replaceFolder, settle } from "./files.mjs";
 import { entries, relative } from "./tar.mjs";
 import { CHANGELOG, NOTES, parseChangelog, parseNotes } from "./changelog.mjs";
 
@@ -392,8 +393,7 @@ export function writeStaged(root, files) {
     fs.mkdirSync(path.dirname(target), { recursive: true });
     fs.writeFileSync(target, data);
   }
-  fs.rmSync(next, { recursive: true, force: true });
-  fs.renameSync(partial, next);
+  replaceFolder(partial, next);
   fs.rmSync(revert, { force: true });
 }
 
@@ -409,19 +409,6 @@ export function requestRevert(root = checkout) {
 /** Withdraws a "Go back" request before the launcher acts on it. */
 export function cancelRevert(root = checkout) {
   fs.rmSync(folders(root).revert, { force: true });
-}
-
-// Antivirus scanners briefly lock new files on Windows; retry before failing.
-function settle(action) {
-  for (let attempt = 0; ; attempt++)
-    try {
-      return action();
-    } catch (error) {
-      const code = /** @type {NodeJS.ErrnoException} */ (error).code;
-      if (attempt >= 20 || !["EBUSY", "EPERM", "EACCES"].includes(code ?? ""))
-        throw error;
-      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100);
-    }
 }
 
 function place(source, target, executable = false) {
@@ -482,8 +469,7 @@ function backup(root, names, previous, version) {
     path.join(partial, "meta.json"),
     JSON.stringify({ version, missing }),
   );
-  fs.rmSync(previous, { recursive: true, force: true });
-  fs.renameSync(partial, previous);
+  replaceFolder(partial, previous);
 }
 
 function restore(root, previous) {
