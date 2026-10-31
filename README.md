@@ -55,6 +55,7 @@ Paste one in and keep DazedTL open: the results show up by themselves, and Dazed
 
 ### See the cost before you pay
 
+With a frontier model such as Claude Opus 5.5, an average-sized game costs about $20–30 to translate; a small one can cost under $10, and a very large one $50 or more.
 Anything that uses your API key shows an estimate first, and nothing is charged until you approve it.
 Batch translation is often half the price of Live, if you can wait.
 
