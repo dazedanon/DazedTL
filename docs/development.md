@@ -29,7 +29,7 @@ node scripts/start.mjs
 | Command | What it does |
 | --- | --- |
 | `node scripts/test.mjs` | Runs every behavior test, Python and Node, within a 10-second budget |
-| `node scripts/build.mjs` | Checks formatting, lint (Oxlint, Ruff), types (Pyright, TypeScript), design tokens, generated API contracts and Windows path lengths, then builds the renderer |
+| `node scripts/build.mjs` | Checks formatting, lint (Oxlint, Ruff), types (Pyright, TypeScript), design tokens, generated API contracts, Windows path lengths and document word limits, then builds the renderer |
 | `node scripts/format.mjs` | Formats the code with Prettier and Ruff, leaving the bundled engine, Markdown and JSON alone |
 
 To run one test module:
@@ -224,6 +224,7 @@ A prerelease leaves them pending, and the app shows a beta's pending notes as th
 ## Documentation
 
 Each document serves one reader: write what that reader needs to act, and link to the code or a script's `--help` for the rest.
+The build holds each document to its word limit in [docs.mjs](../scripts/docs.mjs).
 
 - The [README](../README.md) is the landing page, for people who use AI but can't program: what DazedTL does, shown with the [README media](#readme-media), then installing, getting started and current limits.
 - The [user guide](user-guide.md) tells users how to do each task, in a few lines each.
