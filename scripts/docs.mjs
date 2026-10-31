@@ -11,7 +11,7 @@ import { root } from "./dependencies.mjs";
 const limits = {
   "AGENTS.md": 1000,
   "README.md": 1200,
-  "docs/architecture.md": 16500,
+  "docs/architecture.md": 9800,
   "docs/development.md": 3000,
   "docs/text-qa-redesign.md": 4000,
   "docs/translation-contract.md": 6000,

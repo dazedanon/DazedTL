@@ -5221,6 +5221,10 @@ def buildClaudeRequest(system, user, history, formatType, model, numLines=None,
     both use the same logical prompt. When ``cache_ttl`` is not ``None``, only
     the first, static system block is cached. Dynamic system guidance and user
     messages follow the explicit breakpoint and cannot bust that prefix.
+    The cache lasts five minutes, not an hour: a Batch starts most requests
+    together, so many write the cache instead of reading it (about one in ten
+    read it in real Claude Batches), and a five-minute write costs 1.25 times
+    input where a one-hour write costs twice.
     """
     _require_request_text(system, user)
     ant_system = _provider_system_blocks(system, vocab_text)

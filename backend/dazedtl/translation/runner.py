@@ -184,7 +184,9 @@ class Runner:
         unless each has one, as Guided passes a Live chunk's English on only
         when every line of it was translated: each line is held by a request
         accepted before it, as the part before is, since Live sends its
-        requests in plan order, and its receipt translates it."""
+        requests in plan order, and its receipt translates it. It joins the
+        request only at send time, so the request's fingerprint and compiled
+        payload stay the bytes the user approved."""
         quoted = self.preceding.get(identity)
         if not quoted:
             return None
