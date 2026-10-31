@@ -6,4 +6,5 @@
 
 ### Changed
 
+- **User guide:** a third of its old length, each step in a few lines: what to click, what to paste into your assistant and what comes next.
 - **GitHub page:** the README shows DazedTL at work: a game translated from Japanese to English, a live translation, handing tasks to your assistant, Text QA's corrections and what a game typically costs, with links to the Discord and to support DazedTL.

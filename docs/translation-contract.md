@@ -244,7 +244,7 @@ Pausing stops locally at a checkpoint; it does not cancel a remote job.
 Use stop --cancel-provider when the run's `can_cancel_provider` capability allows Batch cancellation; it also cancels the run's clarification Batches.
 OpenRouter rejects that operation; ordinary stop pauses local work and prevents later submissions while already submitted jobs continue.
 Available completed rows remain recoverable.
-See [OpenRouter setup and recovery](user-guide.md#openrouter) for its result-retention limitations.
+Results missing from a finished OpenRouter Batch wait for Retry collection and are never sent again automatically, and results DazedTL downloaded stay available after OpenRouter deletes its copy.
 Record actual token usage separately from the estimate.
 
 An uncertain request is never sent again automatically.

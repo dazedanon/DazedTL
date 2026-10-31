@@ -16,8 +16,24 @@ set's own ``version``, ``kind`` "set" or "targeted"), then one item per line
 (ITEM_FIELDS). A regression set's items are split once into a tune half and a
 held-out half, each recurring group whole on one side. A targeted item file,
 which a change brings for the cases where it fires, has the same form with
-``kind`` "targeted", its own ``version`` and no split; it never joins the
-held-out half. docs/development.md#quality-measurement says how to make one.
+``kind`` "targeted", its own ``name`` and ``version`` and no split; it never
+joins the held-out half.
+
+To make one, give its header ``schema``, ``format``, ``language`` (the
+``source`` and ``target`` languages) and ``contexts``: by ID, a game's
+``overlays`` (the sections its system prompt adds) and ``glossary`` text.
+Each item has a unique ``id``, ``type`` "defect" or "control", the
+correction's ``kind``, its ``context`` ID, the chunk's ``lines`` in order, the
+``history`` lines before them, ``target`` (the index of the line scored), the
+first ``draft`` and the ``accepted`` translation, and for a defect the
+reviewer's ``reason`` and, for a glossary fix, the ``glossary`` rows it
+follows. Each line has its ``source``, ``speaker`` as Assistant-led names it,
+``speaker_name`` as Guided does (either may be null) and its ``kind``
+(LINE_KINDS). An item whose lines lack ``speaker_name`` can't be sent the way
+Guided sends it, nor one lacking ``speaker`` or ``kind`` the way Assistant-led
+does, so it is left out of that method's runs. ``validate`` checks the file.
+Context the form lacks becomes a new field: add it, raise FORMAT and read it
+in its method's request builder.
 
 Read-only: building reads the export, the QA tasks it names and, for games
 whose tasks are gone, their Git history; it writes only the set its caller
