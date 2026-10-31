@@ -11,12 +11,15 @@
   <a href="CHANGELOG.md"><img src="https://img.shields.io/github/v/tag/dazedanon/DazedTL?sort=semver&label=version&color=5ee0c4&labelColor=1b2a2e" alt="Latest version"></a>
   <img src="https://img.shields.io/badge/runs%20on-Windows%20%7C%20Linux-5ee0c4?labelColor=1b2a2e" alt="Runs on Windows and Linux">
   <a href="LICENSE.md"><img src="https://img.shields.io/badge/license-MIT-5ee0c4?labelColor=1b2a2e" alt="MIT license"></a>
+  <a href="https://discord.gg/StsRWHPupu"><img src="https://img.shields.io/discord/1124349971097976903?label=discord&logo=discord&logoColor=white&color=5ee0c4&labelColor=1b2a2e" alt="Discord: people online"></a>
+  <a href="https://dazedanon.gumroad.com/l/dazedanon"><img src="https://img.shields.io/badge/support-Gumroad-5ee0c4?logo=gumroad&logoColor=white&labelColor=1b2a2e" alt="Support DazedTL on Gumroad"></a>
 </p>
 
 <p align="center">
   <a href="#install"><b>Install</b></a> ·
   <a href="docs/user-guide.md"><b>User guide</b></a> ·
-  <a href="CHANGELOG.md"><b>What's new</b></a>
+  <a href="CHANGELOG.md"><b>What's new</b></a> ·
+  <a href="https://discord.gg/StsRWHPupu"><b>Discord</b></a>
 </p>
 
 <p align="center">
@@ -99,6 +102,11 @@ The [changelog](CHANGELOG.md) lists what changed in every version.
 - WOLF RPG games don't have guided steps yet; translate them Assistant-led.
 - On Ubuntu 24.04 and newer, the first start shows a one-time command to run in a terminal before DazedTL can open.
 - macOS has a **START.command** launcher, but it hasn't been tested yet.
-- If something goes wrong, click **Copy diagnostics** in the sidebar and include it when you report the problem.
+- If something goes wrong, click **Copy diagnostics** in the sidebar and include it when you report the problem on [Discord](#community).
+
+## Community
+
+- Ask questions, share your translations and report problems on the [AI Translations Discord](https://discord.gg/StsRWHPupu).
+- DazedTL is free. If it helps you, you can support it with any amount on [Gumroad](https://dazedanon.gumroad.com/l/dazedanon).
 
 Working on DazedTL itself? See the [development guide](docs/development.md).
