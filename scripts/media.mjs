@@ -12,6 +12,7 @@ import { Page, until } from "./testkit/cdp.mjs";
 import { electronOf } from "./testkit/app.mjs";
 import { applyTask, connect } from "./testkit/journey.mjs";
 import { readOptions } from "./testkit/options.mjs";
+import { reviewQa } from "./testkit/scenarios.mjs";
 
 const usage = `Usage:
   node scripts/media.mjs [--work <empty folder>] [--keep]
@@ -37,6 +38,21 @@ const showcaseModel = "gpt-6-luna";
 // How long each stand-in answer takes while the animation records, so the
 // run's progress shows.
 const answerDelay = 200;
+// Text QA's finding in the showcase: the spirit's question, which the
+// variant's stand-in answers word for word.
+const qaLine = "汝、何のために力を求める？";
+const qaCorrection = {
+  correction: "Tell me: why do you seek power?",
+  category: "fluency",
+  summary: "It keeps the Japanese word order, so it reads as stilted English.",
+  editorial_basis: {
+    defect:
+      "The question follows Japanese word order, which no English speaker uses.",
+    source_support:
+      "汝、何のために力を求める？ simply asks why the listener seeks power.",
+    not_preference: true,
+  },
+};
 // How much faster the animation plays while the app works, such as while it
 // prepares the estimate, than while the pointer moves and the viewer reads.
 const waitSpeed = 3;
@@ -423,12 +439,37 @@ try {
   console.log("Playing the game in English…");
   playGame(state, [{ ...scene, out: path.join(shots, "game-en.png") }]);
 
+  console.log("Reviewing Text QA…");
+  const variant = JSON.parse(
+    fs.readFileSync(
+      path.join(root, "tests/fixtures/game-variants/showcase/variant.json"),
+      "utf8",
+    ),
+  );
+  const corrections = path.join(work, "corrections.json");
+  fs.writeFileSync(
+    corrections,
+    JSON.stringify([
+      { translation: variant.provider.reply[qaLine], ...qaCorrection },
+    ]),
+  );
+  const { corrected } = await reviewQa(
+    { page, state },
+    "--corrections",
+    corrections,
+  );
+  if (!corrected.length)
+    throw new Error(`Text QA never reviewed ${qaLine} deeply.`);
+
   console.log("Taking the stills…");
   await emulate(page, 2);
   await page.click("Project");
   await page.waitText("lines translated");
   await still(page, path.join(shots, "project.png"));
   await page.click("Translation");
+  await page.click(/^4Check/);
+  await page.waitText("correction applied");
+  await still(page, path.join(shots, "qa.png"));
   await page.click(/^5Release/);
   await page.waitText("Build release ZIP");
   await still(page, path.join(shots, "release.png"));
@@ -443,7 +484,7 @@ try {
   animate(recording, path.join(media, "translate.webp"));
   webp(path.join(shots, "game.png"), path.join(media, "game.webp"));
   socialCard(path.join(shots, "game.png"), socialPreview);
-  for (const name of ["estimate", "project", "release"])
+  for (const name of ["estimate", "project", "qa", "release"])
     webp(
       path.join(shots, `${name}.png`),
       path.join(media, `${name}.webp`),

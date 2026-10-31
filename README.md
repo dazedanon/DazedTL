@@ -53,9 +53,17 @@ Batch translation is often half the price of Live, if you can wait.
   <img src="docs/media/estimate.webp" width="880" alt="The review before a Live translation: the model, the estimated cost, requests and tokens, and the files it covers, with Start and Decline">
 </p>
 
-### Check it, then share it
+### Have it checked
 
 Text QA has your assistant review the translation, and play MV and MZ games, fixing what it finds.
+You answer only what it can't settle, and every correction can be undone.
+
+<p align="center">
+  <img src="docs/media/qa.webp" width="880" alt="Text QA's result: a stilted line corrected for fluency, showing the Japanese, the new and old English with the changed words marked, the reason, and Undo">
+</p>
+
+### Share it
+
 **Release** builds a clean game ZIP, or a patch ZIP with only the changed files.
 Every change DazedTL makes to the game is a checkpoint you can undo, and a new version of the game merges into your translation.
 

@@ -1,5 +1,5 @@
 {
-  "description": "The README's showcase: a short original story over the MZ game, its village joined by a forest and a shrine, and the stand-in answering every line with a readable English translation, so screenshots read as a real translation. Its title screen and scenes draw on img/titles1/Village.png, in windows of img/system/Window.png.",
+  "description": "The README's showcase: a short original story over the MZ game, its village joined by a forest and a shrine, and the stand-in answering every line with a readable English translation, so screenshots read as a real translation, except the spirit's question (汝、何のために力を求める？), answered word for word for Text QA to correct. Its title screen and scenes draw on img/titles1/Village.png, in windows of img/system/Window.png.",
   "maps": {
     "2": "ささやきの森",
     "3": "古い祠"
@@ -481,7 +481,7 @@
       "森の村に住む元気な女の子。": "A cheerful girl from the forest village.\nShe dreams of finding a magic staff.",
       "魔法の杖を探しに行くって？": "You're going after the magic staff?\n...Fine. I'm coming with you.",
       "えへへ、ありがとう、リオ！": "Hehe, thanks, Rio!",
-      "汝、何のために力を求める？": "Tell me: why do you seek power?",
+      "汝、何のために力を求める？": "You, for what reason do you seek the power?",
       "にゃ～……目がまわる……": "Nyaa... Everything's spinning...",
       "%1は眠ってしまった！": "%1 fell asleep!",
       "%1には効かなかった！": "It had no effect on %1!",

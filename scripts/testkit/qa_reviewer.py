@@ -4,11 +4,16 @@ first deep item, which gets a correction so applying has a finding. It ends
 when the task is complete and prints what each stage reviewed.
 
     python scripts/testkit/qa_reviewer.py TASK RESULTS [--clean] [--ask]
+        [--corrections FILE]
 
 TASK is the task folder the project helper's `qa --prepare` names; results go
 to RESULTS. With --clean, every item is reviewed clean. With --ask, each line
 an observation brings to deep review, such as the playtest's, is a question
-for the user with a proposal.
+for the user with a proposal. With --corrections, FILE's corrections replace
+the first item's: a JSON list of {translation, correction, category,
+summary}, each line whose translation is `translation` sent from the screen to
+deep review and corrected there, with the editorial_basis a subjective
+category such as fluency needs.
 """
 
 import argparse
@@ -36,12 +41,25 @@ def clean(item):
     }
 
 
-def screen(bundle, _corrected):
+def screen(bundle, _corrected, corrections=None):
     items = bundle["items"]
+    # A scene lists its lines; another item is its own line.
+    lines = [line for item in items for line in item.get("lines") or [item]]
     return {
         "schema": qa.SCREEN_RESULT_SCHEMA,
         "reviewed_all": True,
-        "exceptions": [],
+        "exceptions": [
+            {
+                "id": line["id"],
+                "verdict": "suspect",
+                "categories": [fix["category"]],
+                "note": fix["summary"],
+            }
+            for line in lines
+            if "id" in line
+            for fix in corrections or []
+            if fix["translation"] == line.get("translation")
+        ],
         "motif_reviews": [
             {
                 "id": item["id"],
@@ -62,11 +80,32 @@ def screen(bundle, _corrected):
     }
 
 
-def deep(bundle, corrected, ask=False):
+def deep(bundle, corrected, ask=False, corrections=None):
     reviews = []
     for item in bundle["items"]:
         text = item.get("translation") or ""
-        if ask and any(
+        given = next(
+            (fix for fix in corrections or [] if fix["translation"] == text), None
+        )
+        if given:
+            corrected.append(item["id"])
+            reviews.append(
+                {
+                    **clean(item),
+                    "disposition": "actionable",
+                    "severity": "medium",
+                    "category": given["category"],
+                    "summary": given["summary"],
+                    "evidence": "A scripted reviewer makes the corrections it is given.",
+                    "correction": given["correction"],
+                    **(
+                        {"editorial_basis": given["editorial_basis"]}
+                        if "editorial_basis" in given
+                        else {}
+                    ),
+                }
+            )
+        elif ask and any(
             evidence.get("verdict") == "observation"
             for evidence in item.get("screen_evidence") or []
         ):
@@ -81,6 +120,7 @@ def deep(bundle, corrected, ask=False):
             )
         elif (
             not corrected
+            and corrections is None
             and text
             and "\n" not in text
             and "%" not in item.get("source", "")
@@ -131,11 +171,19 @@ def main() -> None:
     parser.add_argument("results", type=Path)
     parser.add_argument("--clean", action="store_true")
     parser.add_argument("--ask", action="store_true")
+    parser.add_argument("--corrections", type=Path)
     args = parser.parse_args()
+    corrections = (
+        json.loads(args.corrections.read_text(encoding="utf-8"))
+        if args.corrections
+        else None
+    )
     args.results.mkdir(parents=True, exist_ok=True)
     reviewers = {
-        "screen": screen,
-        "deep": lambda bundle, corrected: deep(bundle, corrected, args.ask),
+        "screen": lambda bundle, corrected: screen(bundle, corrected, corrections),
+        "deep": lambda bundle, corrected: deep(
+            bundle, corrected, args.ask, corrections
+        ),
         "sweep": sweep,
         "editorial": editorial,
     }

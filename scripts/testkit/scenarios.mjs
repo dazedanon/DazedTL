@@ -210,8 +210,9 @@ const playtest = [
 ];
 
 /** Prepares Text QA through the project helper, reviews it with the
- * scripted reviewer and applies it; returns what the reviewer reports. */
-async function reviewQa({ page, state }) {
+ * scripted reviewer, given `options` such as --corrections, and applies it;
+ * returns what the reviewer reports. */
+export async function reviewQa({ page, state }, ...options) {
   const prepared = await helper(page, state, "qa", "--prepare");
   // The reviewer of the checkout the app runs from, whose engine and QA
   // rules prepared the task.
@@ -221,6 +222,7 @@ async function reviewQa({ page, state }) {
       "scripts/testkit/qa_reviewer.py",
       prepared.task,
       path.join(state.work, "qa-results"),
+      ...options,
     ),
   );
   const applied = await helper(page, state, "qa", "--apply");
