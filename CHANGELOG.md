@@ -3,6 +3,12 @@
 Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 [release.mjs](scripts/release.mjs) writes each entry from [release/notes.md](release/notes.md).
 
+## [2.52.9] - 2026-10-31
+
+### Changed
+
+- **Documentation:** the architecture guide and the translation contract, for people working on DazedTL, are about half as long and point to the code for details.
+
 ## [2.52.8] - 2026-10-31
 
 ### Added
@@ -1491,6 +1497,7 @@ Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachan
 - The first release of DazedTL as a desktop app, installed from a ZIP with a START launcher and updated from inside the app.
 - **Guided steps** for RPG Maker MV, MZ and VX Ace games, and **Assistant-led** for any game.
 
+[2.52.9]: https://github.com/dazedanon/DazedTL/compare/v2.52.8...v2.52.9
 [2.52.8]: https://github.com/dazedanon/DazedTL/compare/v2.52.7...v2.52.8
 [2.52.7]: https://github.com/dazedanon/DazedTL/compare/v2.52.6...v2.52.7
 [2.52.6]: https://github.com/dazedanon/DazedTL/compare/v2.52.5...v2.52.6
