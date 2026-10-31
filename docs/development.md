@@ -190,6 +190,15 @@ To add a scenario, add its steps to [scripts/testkit/scenarios.mjs](../scripts/t
 To add a kind of game content, add a folder to [tests/fixtures/game-variants](../tests/fixtures/game-variants) whose `variant.json` describes it; [games.mjs](../scripts/testkit/games.mjs) says what it can change.
 The headless playtest runner, the scripted Text QA reviewer, the scripted Plugin files assistant and the scripted Assistant-led assistant sit beside them in [scripts/testkit](../scripts/testkit).
 
+## README media
+
+`node scripts/media.mjs` takes the README's screenshots and animation in [docs/media](media) again; run it when a screen they show changes.
+It builds the `set-up` [scenario](#test-scenarios) on the `showcase` game variant, a short story whose stand-in replies are readable English, and connects the OpenAI preset under a priced model, so the estimate shows a price.
+It then drives the app as a user does: it saves the database's estimate as a still, records Maps & events from **Translate** to **Apply** with a pointer drawn over each click, and saves the Project and Release pages.
+[render.cjs](../scripts/testkit/render.cjs) plays the game's first message before and after, for the before-and-after card.
+It needs ffmpeg with libwebp and runs outside a sandbox, as the scenarios do; `--keep` leaves the app running.
+Every user downloads these files with each update, so keep them small: stills are WebP 1760 pixels wide, the animation 1280.
+
 ## Quality measurement
 
 A change that shapes translated text is judged by what Text QA has to correct, counted the same way every time.
@@ -359,7 +368,7 @@ Never edit `CHANGELOG.md` by hand; [changelog.mjs](../scripts/changelog.mjs) rea
 
 ## Documentation
 
-- The [README](../README.md) is a short, plain-language page for installing, getting started and current limitations, for people who use AI but cannot program.
+- The [README](../README.md) is the project's landing page, for people who use AI but cannot program: what DazedTL does, shown with the [README media](#readme-media), then plain-language installing, getting started and current limitations.
 - The [user guide](user-guide.md) explains the app's workflows, API setup, backups and diagnostics.
 - [Architecture](architecture.md) covers code ownership, boundaries and design decisions.
 - The [translation contract](translation-contract.md) is for engine adapter authors and assistant integrations.
