@@ -2,7 +2,7 @@
 // minutes on Linux. The build checks first, then the behavior tests, then the
 // previous-release QA check, every CI scenario, the live test and the upgrade
 // test side by side, each in a private display of its own. Prints one table of
-// what passed and failed, with each one's log. See "Live test" in
+// what passed and failed, with each one's log. See "CI" in
 // docs/development.md.
 import fs from "node:fs";
 import os from "node:os";
