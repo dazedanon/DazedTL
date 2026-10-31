@@ -14,7 +14,7 @@ const limits = {
   "docs/architecture.md": 9800,
   "docs/development.md": 3000,
   "docs/text-qa-redesign.md": 4000,
-  "docs/translation-contract.md": 6000,
+  "docs/translation-contract.md": 3200,
   "docs/user-guide.md": 2500,
 };
 
