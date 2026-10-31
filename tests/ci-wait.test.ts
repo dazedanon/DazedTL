@@ -38,6 +38,17 @@ test("a 304 answer reuses the cached body and sends the ETag", async () => {
   assert.deepEqual(seen, [undefined, '"v1"']);
 });
 
+test("a commit GitHub lacks reads as missing, so a release pushes it first", async () => {
+  // GitHub answers 422, not 404, for a commit it doesn't have.
+  const fetchImpl = async () =>
+    new Response('{"message":"No commit found for SHA: abc"}', {
+      status: 422,
+      headers: { "x-ratelimit-remaining": "4000" },
+    });
+  const read = githubReader({ token: "t", fetchImpl: fetchImpl as never });
+  assert.equal(await read("repos/o/r/commits/abc"), null);
+});
+
 test("a run cancelled by a later push hands over to the newer run", async () => {
   const old = run(1, "completed", "cancelled", 1000);
   const next = run(2, "completed", "success", 2000);

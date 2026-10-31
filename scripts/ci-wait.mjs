@@ -12,7 +12,11 @@ export const defaultRepository = "dazedanon/DazedTL";
 export const workflow = ".github/workflows/ci.yml";
 const lowCalls = 50;
 
-/** A GitHub API reader that sends If-None-Match and pauses near the limit. */
+/**
+ * A GitHub API reader that sends If-None-Match and pauses near the limit.
+ * What GitHub doesn't have reads as null: a 404, or the 422 it answers for a
+ * commit it lacks.
+ */
 export function githubReader({
   token,
   fetchImpl = fetch,
@@ -51,7 +55,7 @@ export function githubReader({
         if (limited) continue;
       }
       if (response.status === 304 && known) return known.body;
-      if (response.status === 404) return null;
+      if (response.status === 404 || response.status === 422) return null;
       if (!response.ok)
         throw new Error(`GitHub answered ${response.status} for ${route}.`);
       const body = await response.json();
