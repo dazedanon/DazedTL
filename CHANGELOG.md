@@ -3,6 +3,17 @@
 Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 [release.mjs](scripts/release.mjs) writes each entry from [release/notes.md](release/notes.md).
 
+## [2.52.8] - 2026-10-31
+
+### Added
+
+- **Releases:** each new version is also published as a GitHub Release with its notes, so the GitHub page shows the latest version and what changed.
+
+### Changed
+
+- **User guide:** a third of its old length, each step in a few lines: what to click, what to paste into your assistant and what comes next.
+- **GitHub page:** the README shows DazedTL at work: a game translated from Japanese to English, a live translation, handing tasks to your assistant, Text QA's corrections and what a game typically costs, with links to the Discord and to support DazedTL.
+
 ## [2.52.7] - 2026-10-31
 
 ### Changed
@@ -1480,6 +1491,7 @@ Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachan
 - The first release of DazedTL as a desktop app, installed from a ZIP with a START launcher and updated from inside the app.
 - **Guided steps** for RPG Maker MV, MZ and VX Ace games, and **Assistant-led** for any game.
 
+[2.52.8]: https://github.com/dazedanon/DazedTL/compare/v2.52.7...v2.52.8
 [2.52.7]: https://github.com/dazedanon/DazedTL/compare/v2.52.6...v2.52.7
 [2.52.6]: https://github.com/dazedanon/DazedTL/compare/v2.52.5...v2.52.6
 [2.52.5]: https://github.com/dazedanon/DazedTL/compare/v2.52.4...v2.52.5
