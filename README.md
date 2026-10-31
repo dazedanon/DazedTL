@@ -44,6 +44,15 @@ DazedTL translates a game's text with your AI provider and writes it back into t
   <img src="docs/media/project.webp" width="880" alt="The Project page: lines translated, files applied and cost so far, and the tasks of the five stages with the next step highlighted">
 </p>
 
+### Hand the tricky parts to your assistant
+
+Names, plugins, images and other text that needs looking into become tasks DazedTL copies for your assistant.
+Paste one in and keep DazedTL open: the results show up by themselves, and DazedTL checks every change before you apply it.
+
+<p align="center">
+  <img src="docs/media/assistant.webp" width="880" alt="Handing Plugin files to an assistant: the task is copied, waits while the assistant works, comes back ready to apply, and is applied to the game">
+</p>
+
 ### See the cost before you pay
 
 Anything that uses your API key shows an estimate first, and nothing is charged until you approve it.

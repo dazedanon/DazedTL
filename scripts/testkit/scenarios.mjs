@@ -62,6 +62,19 @@ export const helperCommand = (state, project) =>
     project,
   );
 
+/** The scripted assistant answering the Plugin files task `request`, as a
+ * pythonCommand. */
+export const pluginAssistant = (state, project, request) =>
+  pythonCommand(
+    state,
+    path.join(import.meta.dirname, "plugin_assistant.py"),
+    request,
+    "--game",
+    state.game,
+    "--helper-json",
+    JSON.stringify(helperCommand(state, project)),
+  );
+
 /** Runs the project helper with `args` and reads its JSON reply. */
 async function helper(page, state, ...args) {
   const project = (await page.call("workspace_snapshot")).application.project;
@@ -245,17 +258,7 @@ const plugins = [
     });
     if (!task.request)
       throw new Error(`Plugin files has no task: ${task.message}`);
-    runPython(
-      pythonCommand(
-        state,
-        path.join(import.meta.dirname, "plugin_assistant.py"),
-        task.request,
-        "--game",
-        state.game,
-        "--helper-json",
-        JSON.stringify(helperCommand(state, project.id)),
-      ),
-    );
+    runPython(pluginAssistant(state, project.id, task.request));
     const applied = await page.call("plugins_action", {
       project_id: project.id,
       action: "apply",

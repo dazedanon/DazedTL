@@ -193,8 +193,9 @@ The headless playtest runner, the scripted Text QA reviewer, the scripted Plugin
 ## README media
 
 `node scripts/media.mjs` takes the README's screenshots and animation in [docs/media](media) again; run it when a screen they show changes.
-It builds the `set-up` [scenario](#test-scenarios) on the `showcase` game variant, a short story whose stand-in replies are readable English, and connects the OpenAI preset under a priced model, so the estimate shows a price.
-It then drives the app as a user does: it saves the database's estimate as a still, records Maps & events from **Translate** to **Apply** with a pointer drawn over each click, runs Text QA, where the scripted reviewer corrects the one line the variant's stand-in answers word for word, and saves the Project, Check and Release pages.
+It builds the `set-up` [scenario](#test-scenarios) on the `showcase` game variant, a short story whose stand-in replies are readable English, with `plugin-text`'s plugin, and connects the OpenAI preset under a priced model, so the estimate shows a price.
+It then drives the app as a user does: it saves the database's estimate as a still, records Maps & events from **Translate** to **Apply** with a pointer drawn over each click, and records Plugin files' task copied, answered by the scripted assistant and applied.
+It runs Text QA, where the scripted reviewer corrects the one line the variant's stand-in answers word for word, and saves the Project, Check and Release pages.
 [render.cjs](../scripts/testkit/render.cjs) plays the game's first message before and after, for the before-and-after card, which also makes the link card [resources/social-preview.jpg](../resources/social-preview.jpg).
 GitHub shows that card for links to the repository; upload it again in its Settings > Social preview when it changes.
 It needs ffmpeg with libwebp and runs outside a sandbox, as the scenarios do; `--keep` leaves the app running.

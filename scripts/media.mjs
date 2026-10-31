@@ -6,13 +6,14 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
-import { spawnSync } from "node:child_process";
+import { execFile, spawnSync } from "node:child_process";
+import { promisify } from "node:util";
 import { root } from "./dependencies.mjs";
 import { Page, until } from "./testkit/cdp.mjs";
 import { electronOf } from "./testkit/app.mjs";
 import { applyTask, connect } from "./testkit/journey.mjs";
 import { readOptions } from "./testkit/options.mjs";
-import { reviewQa } from "./testkit/scenarios.mjs";
+import { pluginAssistant, reviewQa } from "./testkit/scenarios.mjs";
 
 const usage = `Usage:
   node scripts/media.mjs [--work <empty folder>] [--keep]
@@ -30,8 +31,10 @@ const media = path.join(root, "docs/media");
 const socialPreview = path.join(root, "resources/social-preview.jpg");
 // The banner's own background, which the cards share.
 const background = "0x121b1c";
-// The window the stills and animation show, in CSS pixels.
+// The window the stills and animations show, in CSS pixels; the handover to
+// the assistant fills less of it, so its animation shows less.
 const viewport = { width: 1280, height: 800 };
+const handover = { width: 1280, height: 600 };
 // The model the showcase connection names. The stand-in answers for it, and
 // DazedTL prices it as OpenAI does, so the estimate reads as a real one.
 const showcaseModel = "gpt-6-luna";
@@ -83,10 +86,10 @@ function playGame(state, shots) {
   );
 }
 
-/** Lays the window out at the README's size, at `scale` device pixels. */
-const emulate = (page, scale) =>
+/** Lays the window out at `size`, at `scale` device pixels. */
+const emulate = (page, scale, size = viewport) =>
   page.send("Emulation.setDeviceMetricsOverride", {
-    ...viewport,
+    ...size,
     deviceScaleFactor: scale,
     mobile: false,
   });
@@ -352,7 +355,7 @@ exec(
     path.join(root, "scripts/scenario.mjs"),
     "set-up",
     "--game",
-    "showcase+playable",
+    "showcase+plugin-text+playable",
     "--app",
     "--work",
     appWork,
@@ -439,6 +442,42 @@ try {
   console.log("Playing the game in English…");
   playGame(state, [{ ...scene, out: path.join(shots, "game-en.png") }]);
 
+  console.log("Recording Plugin files…");
+  await page.click("Plugin files");
+  await emulate(page, 1, handover);
+  const project = (await page.call("workspace_snapshot")).application.project;
+  const handing = await record(
+    page,
+    path.join(work, "plugin-frames"),
+    async (wait) => {
+      await page.evaluate(`void ${pointer}`);
+      await pointTo(page, { x: 900, y: 420 });
+      await clickShown(page, "Copy plugin task");
+      await wait(page.waitText("Task copied."));
+      await pause(1800);
+      // The copied task, answered as the user's assistant answers it, while
+      // the window keeps drawing.
+      const task = await page.call("plugins_action", {
+        project_id: project.id,
+        action: "plugin_task",
+      });
+      const [assistant, ...options] = pluginAssistant(
+        state,
+        project.id,
+        task.request,
+      );
+      await wait(promisify(execFile)(assistant, options));
+      await wait(page.waitText("ready to apply"));
+      await pause(1400);
+      await clickShown(page, "Apply to game");
+      await wait(page.waitText("applied to the game"));
+      await pointTo(page, { x: 900, y: 420 });
+      await pause(1600);
+    },
+  );
+  await page.idle();
+  await page.evaluate(`document.getElementById("media-pointer")?.remove()`);
+
   console.log("Reviewing Text QA…");
   const variant = JSON.parse(
     fs.readFileSync(
@@ -482,6 +521,7 @@ try {
   );
   fs.mkdirSync(media, { recursive: true });
   animate(recording, path.join(media, "translate.webp"));
+  animate(handing, path.join(media, "assistant.webp"));
   webp(path.join(shots, "game.png"), path.join(media, "game.webp"));
   socialCard(path.join(shots, "game.png"), socialPreview);
   for (const name of ["estimate", "project", "qa", "release"])
