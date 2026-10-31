@@ -306,7 +306,9 @@ Release once user-visible work has landed: the session that finished it cuts the
 A patch release follows only for a regression players hit.
 Before `main` moves, the release requires [CI](#live-test) to have passed on GitHub for that `dev` commit.
 It pushes `dev` first when GitHub lacks the commit and waits for a run still in progress; a first failed attempt gets one rerun of its failed jobs, and a second failure or a cancelled run stops the release.
-A prerelease such as `2.1.0-beta.1` is tagged on `dev` for the Beta channel instead, without waiting for CI, and `--local` stops before pushing.
+Once the tag is on the mirrors, a stable release publishes its [notes](#release-notes) as the tag's GitHub Release, marked Latest, with the token the CI check uses; a Release the tag already has is updated instead.
+If that step fails, the release still stands: run `node scripts/release.mjs github 2.0.1` to publish the Release from the tag's `CHANGELOG.md` entry.
+A prerelease such as `2.1.0-beta.1` is tagged on `dev` for the Beta channel instead, without waiting for CI or a GitHub Release, and `--local` stops before pushing.
 The [updater](architecture.md#distribution-and-updates) only accepts tags whose signed manifest matches every file.
 
 The mirrors are listed in [release/mirrors.json](../release/mirrors.json); the release pushes to all of them through one remote:
@@ -358,7 +360,7 @@ Write them just before releasing, from `git log` since the last tag, under the [
 - For a fix, name the old symptom so people recognize it, and quote an error only if users saw it.
 - Merge related commits into one line and leave out changes nobody would notice.
 
-The release moves the notes into [CHANGELOG.md](../CHANGELOG.md) under the version and date, links the version to its changes on GitHub, empties `release/notes.md` and uses the notes as the tag message.
+The release moves the notes into [CHANGELOG.md](../CHANGELOG.md) under the version and date, links the version to its changes on GitHub, empties `release/notes.md` and uses the notes as the tag message and the GitHub Release.
 A prerelease leaves them pending, and the app shows a beta's pending notes as that version's.
 Never edit `CHANGELOG.md` by hand; [changelog.mjs](../scripts/changelog.mjs) reads and writes it.
 
