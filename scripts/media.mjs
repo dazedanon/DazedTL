@@ -24,6 +24,11 @@ const { option, flag } = readOptions(usage, {
 });
 
 const media = path.join(root, "docs/media");
+// What GitHub shows for a link to the repository, uploaded by hand in its
+// Settings > Social preview.
+const socialPreview = path.join(root, "resources/social-preview.jpg");
+// The banner's own background, which the cards share.
+const background = "0x121b1c";
 // The window the stills and animation show, in CSS pixels.
 const viewport = { width: 1280, height: 800 };
 // The model the showcase connection names. The stand-in answers for it, and
@@ -32,6 +37,9 @@ const showcaseModel = "gpt-6-luna";
 // How long each stand-in answer takes while the animation records, so the
 // run's progress shows.
 const answerDelay = 200;
+// How much faster the animation plays while the app works, such as while it
+// prepares the estimate, than while the pointer moves and the viewer reads.
+const waitSpeed = 3;
 
 /** Runs a command to its end, failing with its output. */
 function exec(command, args, options = {}) {
@@ -95,7 +103,7 @@ const pointer = `(() => {
       #media-pointer { position: fixed; inset: auto; left: 0; top: 0; margin: 0;
         padding: 0; border: 0; background: none; overflow: visible; width: 26px;
         height: 30px; pointer-events: none;
-        transition: transform 700ms cubic-bezier(0.3, 0.1, 0.2, 1); }
+        transition: transform 550ms cubic-bezier(0.3, 0.1, 0.2, 1); }
       #media-pointer svg { position: absolute; left: -2px; top: -2px;
         filter: drop-shadow(0 2px 3px rgb(0 0 0 / 0.45)); }
       #media-pointer .ring { position: absolute; left: -18px; top: -18px;
@@ -120,7 +128,7 @@ const pointTo = (page, at) =>
     if (pointer.matches(":popover-open")) pointer.hidePopover();
     pointer.showPopover();
     pointer.style.transform = "translate(${at.x}px, ${at.y}px)";
-    await new Promise((resolve) => setTimeout(resolve, 850));
+    await new Promise((resolve) => setTimeout(resolve, 650));
   })()`);
 
 /** Moves the pointer to the control named `name` and clicks it. */
@@ -142,11 +150,18 @@ const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
  * Records the window while `act` runs, as the frames the window drew and
- * when; returns them with the time recording ended.
+ * when; returns them with the time recording ended and the spans `act`
+ * spent waiting on the app, through the `wait` it is given.
  */
 async function record(page, folder, act) {
   fs.mkdirSync(folder, { recursive: true });
   const frames = [];
+  const waits = [];
+  const wait = async (until) => {
+    const from = Date.now() / 1000;
+    await until;
+    waits.push({ from, to: Date.now() / 1000 });
+  };
   const listener = (event) => {
     const message = JSON.parse(String(event.data));
     if (message.method !== "Page.screencastFrame") return;
@@ -162,20 +177,30 @@ async function record(page, folder, act) {
   page.socket.addEventListener("message", listener);
   await page.send("Page.startScreencast", { format: "png", everyNthFrame: 1 });
   try {
-    await act();
+    await act(wait);
   } finally {
     await page.send("Page.stopScreencast");
     page.socket.removeEventListener("message", listener);
   }
-  return { frames, end: Date.now() / 1000 };
+  return { frames, waits, end: Date.now() / 1000 };
 }
 
 /** Encodes recorded frames as a looping animated WebP. */
-function animate({ frames, end }, out) {
+function animate({ frames, waits, end }, out) {
   if (frames.length < 2) throw new Error("The recording caught no motion.");
+  // A frame shows for as long as the window kept it, less the part of that
+  // spent waiting on the app, which plays waitSpeed times faster.
+  const shown = (from, to) =>
+    waits.reduce(
+      (time, span) =>
+        time -
+        Math.max(0, Math.min(to, span.to) - Math.max(from, span.from)) *
+          (1 - 1 / waitSpeed),
+      to - from,
+    );
   const list = frames.flatMap((frame, index) => [
     `file '${frame.file}'`,
-    `duration ${((frames[index + 1]?.time ?? end) - frame.time).toFixed(3)}`,
+    `duration ${shown(frame.time, frames[index + 1]?.time ?? end).toFixed(3)}`,
   ]);
   // The concat demuxer takes the last frame's duration only when it repeats.
   list.push(`file '${frames.at(-1).file}'`);
@@ -240,7 +265,6 @@ function gameCard(before, after, out) {
       28,
       ":box=1:boxcolor=0x0b1a22@0.85:boxborderw=10",
     );
-  const background = "0x0f1719";
   exec("ffmpeg", [
     "-y",
     "-loglevel",
@@ -256,6 +280,33 @@ function gameCard(before, after, out) {
       `[before]pad=w=iw+64:h=ih:color=${background},${text("→", 40, "0x5ee0c4", "w-64+(64-tw)/2", "(h-th)/2")}[left]`,
       `[left][after]hstack,pad=w=iw+40:h=ih+40:x=20:y=20:color=${background}`,
     ].join(";"),
+    out,
+  ]);
+}
+
+/** The link card: the banner over the game's before and after. */
+function socialCard(card, out) {
+  exec("ffmpeg", [
+    "-y",
+    "-loglevel",
+    "error",
+    "-i",
+    path.join(root, "resources/forum-banner.gif"),
+    "-i",
+    card,
+    "-filter_complex",
+    [
+      `color=c=${background}:s=1280x640[canvas]`,
+      // The banner's first frame, inside its border.
+      "[0]trim=end_frame=1,crop=iw-8:ih-8:4:4,scale=760:-1:flags=lanczos[banner]",
+      "[1]scale=1120:-1:flags=lanczos[card]",
+      "[canvas][banner]overlay=x=(W-w)/2:y=24[top]",
+      "[top][card]overlay=x=(W-w)/2:y=H-h-20",
+    ].join(";"),
+    "-frames:v",
+    "1",
+    "-q:v",
+    "2",
     out,
   ]);
 }
@@ -340,26 +391,31 @@ try {
   await page.click("Live");
   await emulate(page, 1);
   setMode({ delay: answerDelay });
-  const recording = await record(page, path.join(work, "frames"), async () => {
-    await page.evaluate(`void ${pointer}`);
-    await pointTo(page, { x: 760, y: 560 });
-    await pause(600);
-    await clickShown(page, "Translate");
-    await until(
-      "the estimate",
-      () => page.locate("Start Live translation"),
-      5 * 60_000,
-    );
-    await pause(1800);
-    await clickShown(page, "Start Live translation");
-    await page.waitText("Run finished.", 5 * 60_000);
-    await pause(1200);
-    await clickShown(page, /^Apply \(\d+\)$/);
-    await clickShown(page, "Apply reviewed files");
-    await page.waitText("Saved translations applied.");
-    await pointTo(page, { x: 900, y: 600 });
-    await pause(2200);
-  });
+  const recording = await record(
+    page,
+    path.join(work, "frames"),
+    async (wait) => {
+      await page.evaluate(`void ${pointer}`);
+      await pointTo(page, { x: 760, y: 560 });
+      await clickShown(page, "Translate");
+      await wait(
+        until(
+          "the estimate",
+          () => page.locate("Start Live translation"),
+          5 * 60_000,
+        ),
+      );
+      await pause(1600);
+      await clickShown(page, "Start Live translation");
+      await wait(page.waitText("Run finished.", 5 * 60_000));
+      await pause(700);
+      await clickShown(page, /^Apply \(\d+\)$/);
+      await clickShown(page, "Apply reviewed files");
+      await wait(page.waitText("Saved translations applied."));
+      await pointTo(page, { x: 900, y: 600 });
+      await pause(1500);
+    },
+  );
   setMode({ delay: 0 });
   await page.idle();
   await page.evaluate(`document.getElementById("media-pointer")?.remove()`);
@@ -386,15 +442,22 @@ try {
   fs.mkdirSync(media, { recursive: true });
   animate(recording, path.join(media, "translate.webp"));
   webp(path.join(shots, "game.png"), path.join(media, "game.webp"));
+  socialCard(path.join(shots, "game.png"), socialPreview);
   for (const name of ["estimate", "project", "release"])
     webp(
       path.join(shots, `${name}.png`),
       path.join(media, `${name}.webp`),
       1760,
     );
-  for (const name of fs.readdirSync(media).sort())
+  for (const file of [
+    ...fs
+      .readdirSync(media)
+      .sort()
+      .map((name) => path.join(media, name)),
+    socialPreview,
+  ])
     console.log(
-      `  docs/media/${name.padEnd(16)} ${(fs.statSync(path.join(media, name)).size / 1024).toFixed(0).padStart(5)} KB`,
+      `  ${path.relative(root, file).padEnd(30)} ${(fs.statSync(file).size / 1024).toFixed(0).padStart(5)} KB`,
     );
 } finally {
   page.close();
