@@ -3,7 +3,7 @@ import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
 import test from "node:test";
-import { root, requireNode } from "../scripts/dependencies.mjs";
+import { root, pinnedVersion, requireNode } from "../scripts/dependencies.mjs";
 import { replaceFolder } from "../scripts/files.mjs";
 import {
   readState,
@@ -318,9 +318,7 @@ test("desktop bounds fit scaled work areas without enlarging the default window 
 });
 
 test("Node updates can launch the app while setup retains its exact runtime pin", () => {
-  const expected = fs
-    .readFileSync(path.join(root, ".node-version"), "utf8")
-    .trim();
+  const expected = pinnedVersion("node-version");
   const [major, minor, patch] = expected.split(".").map(Number);
   const descriptor = Object.getOwnPropertyDescriptor(process.versions, "node")!;
   const cases = [

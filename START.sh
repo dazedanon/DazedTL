@@ -16,7 +16,7 @@ case "$(uname -s)-$(uname -m)" in
   Darwin-arm64) platform=darwin-arm64 ;;
   *) fail "this system ($(uname -s) $(uname -m)) is not supported." ;;
 esac
-version="$(tr -d '[:space:]' < "$root/.node-version")"
+version="$(tr -d '[:space:]' < "$root/scripts/node-version")"
 name="node-v$version-$platform"
 node="$root/.runtime/$name/bin/node"
 if [ ! -x "$node" ]; then

@@ -17,7 +17,7 @@ function Fail($message) {
 }
 
 try {
-  $version = (Get-Content -Raw (Join-Path $root '.node-version')).Trim()
+  $version = (Get-Content -Raw (Join-Path $root 'scripts\node-version')).Trim()
   # Windows on Arm runs the x64 Node, matching the other x64 runtimes.
   $name = "node-v$version-win-x64"
   $runtime = Join-Path $root '.runtime'

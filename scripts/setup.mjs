@@ -17,6 +17,7 @@ import {
   platforms,
   requireNode,
   bundledGit,
+  pinnedVersion,
 } from "./dependencies.mjs";
 import { replaceFolder, settle } from "./files.mjs";
 import { extract } from "./tar.mjs";
@@ -221,7 +222,7 @@ const nodeBuild = (system) =>
 function nodeFolder() {
   if (!platforms[platform])
     throw new Error(`DazedTL does not support ${platform}.`);
-  const version = read(".node-version").toString().trim();
+  const version = pinnedVersion("node-version");
   return `node-v${version}-${nodeBuild(platform)}`;
 }
 
@@ -393,7 +394,7 @@ export async function ensureSetup({ mode }) {
   fs.mkdirSync(runtime, { recursive: true });
   switchSystem();
   const state = readState();
-  const pythonVersion = read(".python-version").toString().trim();
+  const pythonVersion = pinnedVersion("python-version");
 
   const environment = path.join(root, ".venv");
   if (fs.lstatSync(environment, { throwIfNoEntry: false })?.isSymbolicLink())

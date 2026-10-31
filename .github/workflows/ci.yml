@@ -82,7 +82,7 @@ jobs:
       # Runs the test driver only; START gets a PATH without this Node.
       - uses: actions/setup-node@v7
         with:
-          node-version-file: .node-version
+          node-version-file: scripts/node-version
       - name: Live test
         if: runner.os == 'Windows'
         run: node scripts/e2e.mjs --work "$env:RUNNER_TEMP\e2e"
@@ -114,7 +114,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-node@v7
         with:
-          node-version-file: .node-version
+          node-version-file: scripts/node-version
       - name: Upgrade test
         if: runner.os == 'Windows'
         run: >-

@@ -612,7 +612,7 @@ An archive is accepted only when the signature verifies with a key from the inst
 The manifest hashes committed blobs, which is what forges archive; [release.mjs](../scripts/release.mjs) proves each tag against its own `git archive` before pushing.
 The [update controller](../app/electron/updates.cjs) runs the updater in Electron's Node as a child process, so verifying an archive never blocks the window.
 The launcher applies a staged update before setup and before anything loads the files it replaces, as a journaled, backed-up swap that finishes after a crash and restores on failure, then hands over to the new START launcher so a release's own setup code applies from its first start.
-START.bat stays one line ([bootstrap.ps1](../scripts/bootstrap.ps1) says why), and releases keep the files 2.0.0's launcher reads after its swap ([start.mjs](../scripts/start.mjs)).
+START.bat stays one line ([bootstrap.ps1](../scripts/bootstrap.ps1) says why).
 Files outside the manifest, such as `.venv`, `.runtime` and downloaded models, are never touched, and Git checkouts are left to Git.
 The app writes nothing beside the files a manifest lists: it compiles its Python into the profile, and the commands it hands assistants do too, by the [platform layer's](../backend/dazedtl/system.py) rule.
 Every tracked path stays within the Windows path budget of 185 characters, checked by [paths.mjs](../scripts/paths.mjs), which says why.

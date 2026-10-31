@@ -1368,7 +1368,10 @@ def main():
     # Workers record their own stalls there.
     os.environ[FOLDER] = str(directory.resolve())
     try:
-        if platform.python_version() != (root / ".python-version").read_text().strip():
+        if (
+            platform.python_version()
+            != (root / "scripts/python-version").read_text().strip()
+        ):
             print("DAZEDTL_ERROR runtime_version", file=sys.stderr, flush=True)
             return 1
         # Off the way of the first request; nothing waits for it.

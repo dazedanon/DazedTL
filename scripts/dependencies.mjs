@@ -30,14 +30,20 @@ export const platforms = {
   },
 };
 /**
+ * The runtime version a file in scripts/ pins: "node-version",
+ * "python-version" or "mingit-version". runtimes.mjs pins their downloads.
+ * @param {string} name
+ */
+export function pinnedVersion(name) {
+  return fs.readFileSync(path.join(root, "scripts", name), "utf8").trim();
+}
+/**
  * The Git that setup installs on Windows, which ships without one; other
  * systems use their own Git. Null outside Windows.
  */
 export function bundledGit() {
   if (process.platform !== "win32") return null;
-  const version = fs
-    .readFileSync(path.join(root, ".mingit-version"), "utf8")
-    .trim();
+  const version = pinnedVersion("mingit-version");
   const folder = path.join(runtime, `mingit-${version}`);
   return { folder, bin: path.join(folder, "cmd") };
 }
@@ -47,9 +53,7 @@ export const platform =
     ? "win32-x64"
     : `${process.platform}-${process.arch}`;
 export function requireNode({ exact = false } = {}) {
-  const expected = fs
-    .readFileSync(path.join(root, ".node-version"), "utf8")
-    .trim();
+  const expected = pinnedVersion("node-version");
   const current = process.versions.node;
   const [major, minor, patch] = expected.split(".").map(Number);
   const [currentMajor, currentMinor, currentPatch] = current
@@ -62,7 +66,7 @@ export function requireNode({ exact = false } = {}) {
   if (exact ? current !== expected : !compatible)
     throw new Error(
       exact
-        ? `Use Node ${expected} for setup, as pinned in .node-version. Found ${current}.`
+        ? `Use Node ${expected} for setup, as pinned in scripts/node-version. Found ${current}.`
         : `Use Node ${expected} or a newer Node ${major} release. Found ${current}.`,
     );
 }

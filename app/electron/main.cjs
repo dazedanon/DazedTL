@@ -225,7 +225,7 @@ app
         architecture: process.arch,
         protocol: protocol.version,
         expectedPython: fs
-          .readFileSync(path.join(root, ".python-version"), "utf8")
+          .readFileSync(path.join(root, "scripts/python-version"), "utf8")
           .trim(),
       },
       root,
