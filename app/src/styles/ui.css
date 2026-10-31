@@ -1076,6 +1076,88 @@ pre {
   }
 }
 
+/* The dazed cat (CatMark): its body and each moving part are accent masks
+   laid over their boxes in the drawing, so a part turns or scales about its
+   own centre. In one 2.4 s loop the sparkles dip in turn, then the eyes make
+   a quarter turn, which an X shows unchanged, so every loop ends at rest. */
+.cat-mark {
+  position: relative;
+  display: inline-block;
+}
+.cat-mark-part {
+  position: absolute;
+  background: var(--color-accent);
+  mask-repeat: no-repeat;
+}
+.cat-mark-body {
+  inset: 0;
+  mask-size: 100% 100%;
+}
+.cat-mark-eye {
+  --cat-mark-motion: cat-mark-eye;
+}
+.cat-mark-sparkle[data-turn="0"] {
+  --cat-mark-motion: cat-mark-sparkle-0;
+}
+.cat-mark-sparkle[data-turn="1"] {
+  --cat-mark-motion: cat-mark-sparkle-1;
+}
+.cat-mark-sparkle[data-turn="2"] {
+  --cat-mark-motion: cat-mark-sparkle-2;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .cat-mark[data-playing] .cat-mark-part:not(.cat-mark-body) {
+    animation: var(--cat-mark-motion) 2.4s ease-in-out infinite;
+  }
+}
+@keyframes cat-mark-eye {
+  0%,
+  55% {
+    transform: none;
+  }
+  95%,
+  100% {
+    transform: rotate(90deg);
+  }
+}
+@keyframes cat-mark-sparkle-0 {
+  0%,
+  33%,
+  100% {
+    transform: none;
+    opacity: 1;
+  }
+  16.5% {
+    transform: scale(0.55);
+    opacity: 0.45;
+  }
+}
+@keyframes cat-mark-sparkle-1 {
+  0%,
+  33%,
+  67%,
+  100% {
+    transform: none;
+    opacity: 1;
+  }
+  50% {
+    transform: scale(0.55);
+    opacity: 0.45;
+  }
+}
+@keyframes cat-mark-sparkle-2 {
+  0%,
+  67%,
+  100% {
+    transform: none;
+    opacity: 1;
+  }
+  83.5% {
+    transform: scale(0.55);
+    opacity: 0.45;
+  }
+}
+
 .action-control {
   display: flex;
   flex-direction: column;

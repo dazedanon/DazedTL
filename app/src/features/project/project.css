@@ -115,8 +115,6 @@
   flex-shrink: 0;
   width: 64px;
   height: 64px;
-  background: var(--color-accent);
-  mask: url("../../assets/brand/cat-outline.png") center / contain no-repeat;
 }
 .project-welcome strong {
   font-size: var(--font-body);
