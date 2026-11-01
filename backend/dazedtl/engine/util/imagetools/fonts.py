@@ -61,7 +61,9 @@ _BOLD_CANDIDATES = (
 # Faces that draw Japanese and Chinese, which a Chinese or Japanese
 # translation is set in when its face lacks them (see covering): the ones
 # Windows and macOS install with every language, then the ones Linux
-# distributions ship, by file name in the system's font folders.
+# distributions ship, by file name in the system's font folders. DazedTL
+# ships none, since every Windows and macOS computer has one; with none
+# installed, the chosen face is kept.
 CJK_FACES = (
     "YuGothM.ttc",
     "YuGothR.ttc",

@@ -24,7 +24,7 @@
 ## Documentation
 
 - Keep each fact in one place and link to the authoritative code or document instead of copying it; the [documentation list](docs/development.md#documentation) says what each document holds.
-- Update affected documentation in the same change and remove obsolete guidance.
+- Update affected documentation in the same change, at the level of detail the documentation list gives it, and remove obsolete guidance.
   Add a document only for a reader need no existing one serves, and write no feature inventories, function catalogs or progress diaries.
 - Add a rule to this file only when most sessions need it and no script can enforce it; otherwise enforce it in a script, or put it in the document or skill where it applies.
 

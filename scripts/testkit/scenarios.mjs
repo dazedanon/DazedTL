@@ -62,6 +62,19 @@ export const helperCommand = (state, project) =>
     project,
   );
 
+/** The scripted assistant answering the Plugin files task `request`, as a
+ * pythonCommand. */
+export const pluginAssistant = (state, project, request) =>
+  pythonCommand(
+    state,
+    path.join(import.meta.dirname, "plugin_assistant.py"),
+    request,
+    "--game",
+    state.game,
+    "--helper-json",
+    JSON.stringify(helperCommand(state, project)),
+  );
+
 /** Runs the project helper with `args` and reads its JSON reply. */
 async function helper(page, state, ...args) {
   const project = (await page.call("workspace_snapshot")).application.project;
@@ -210,8 +223,9 @@ const playtest = [
 ];
 
 /** Prepares Text QA through the project helper, reviews it with the
- * scripted reviewer and applies it; returns what the reviewer reports. */
-async function reviewQa({ page, state }) {
+ * scripted reviewer, given `options` such as --corrections, and applies it;
+ * returns what the reviewer reports. */
+export async function reviewQa({ page, state }, ...options) {
   const prepared = await helper(page, state, "qa", "--prepare");
   // The reviewer of the checkout the app runs from, whose engine and QA
   // rules prepared the task.
@@ -221,6 +235,7 @@ async function reviewQa({ page, state }) {
       "scripts/testkit/qa_reviewer.py",
       prepared.task,
       path.join(state.work, "qa-results"),
+      ...options,
     ),
   );
   const applied = await helper(page, state, "qa", "--apply");
@@ -243,17 +258,7 @@ const plugins = [
     });
     if (!task.request)
       throw new Error(`Plugin files has no task: ${task.message}`);
-    runPython(
-      pythonCommand(
-        state,
-        path.join(import.meta.dirname, "plugin_assistant.py"),
-        task.request,
-        "--game",
-        state.game,
-        "--helper-json",
-        JSON.stringify(helperCommand(state, project.id)),
-      ),
-    );
+    runPython(pluginAssistant(state, project.id, task.request));
     const applied = await page.call("plugins_action", {
       project_id: project.id,
       action: "apply",

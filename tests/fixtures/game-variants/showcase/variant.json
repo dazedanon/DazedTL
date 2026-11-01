@@ -1,0 +1,570 @@
+{
+  "description": "The README's showcase: a short original story over the MZ game, its village joined by a forest and a shrine, and the stand-in answering every line with a readable English translation, so screenshots read as a real translation, except the spirit's question (汝、何のために力を求める？), answered word for word for Text QA to correct. Its title screen and scenes draw on img/titles1/Village.png, in windows of img/system/Window.png.",
+  "maps": {
+    "2": "ささやきの森",
+    "3": "古い祠"
+  },
+  "system": {
+    "title1Name": "Village"
+  },
+  "events": [
+    {
+      "name": "少年",
+      "note": "",
+      "x": 5,
+      "y": 8,
+      "pages": [
+        {
+          "conditions": {
+            "actorId": 1,
+            "actorValid": false,
+            "itemId": 1,
+            "itemValid": false,
+            "selfSwitchCh": "A",
+            "selfSwitchValid": false,
+            "switch1Id": 1,
+            "switch1Valid": false,
+            "switch2Id": 1,
+            "switch2Valid": false,
+            "variableId": 1,
+            "variableValid": false,
+            "variableValue": 0
+          },
+          "directionFix": false,
+          "image": {
+            "characterIndex": 0,
+            "characterName": "",
+            "direction": 2,
+            "pattern": 0,
+            "tileId": 0
+          },
+          "list": [
+            {
+              "code": 101,
+              "indent": 0,
+              "parameters": [
+                "",
+                0,
+                0,
+                2,
+                "少年"
+              ]
+            },
+            {
+              "code": 401,
+              "indent": 0,
+              "parameters": [
+                "ミカねえちゃん、また魔法の練習？"
+              ]
+            },
+            {
+              "code": 401,
+              "indent": 0,
+              "parameters": [
+                "この前みたいに屋根を燃やさないでね！"
+              ]
+            },
+            {
+              "code": 0,
+              "indent": 0,
+              "parameters": []
+            }
+          ],
+          "moveFrequency": 3,
+          "moveRoute": {
+            "list": [
+              {
+                "code": 0,
+                "indent": 0,
+                "parameters": []
+              }
+            ],
+            "repeat": true,
+            "skippable": false,
+            "wait": false
+          },
+          "moveSpeed": 3,
+          "moveType": 0,
+          "priorityType": 1,
+          "stepAnime": false,
+          "through": false,
+          "trigger": 0,
+          "walkAnime": true
+        }
+      ]
+    },
+    {
+      "name": "道具屋",
+      "note": "",
+      "x": 11,
+      "y": 5,
+      "pages": [
+        {
+          "conditions": {
+            "actorId": 1,
+            "actorValid": false,
+            "itemId": 1,
+            "itemValid": false,
+            "selfSwitchCh": "A",
+            "selfSwitchValid": false,
+            "switch1Id": 1,
+            "switch1Valid": false,
+            "switch2Id": 1,
+            "switch2Valid": false,
+            "variableId": 1,
+            "variableValid": false,
+            "variableValue": 0
+          },
+          "directionFix": false,
+          "image": {
+            "characterIndex": 0,
+            "characterName": "",
+            "direction": 2,
+            "pattern": 0,
+            "tileId": 0
+          },
+          "list": [
+            {
+              "code": 101,
+              "indent": 0,
+              "parameters": [
+                "",
+                0,
+                0,
+                2,
+                "道具屋"
+              ]
+            },
+            {
+              "code": 401,
+              "indent": 0,
+              "parameters": [
+                "森へ行くなら、ポーションを持っていきな。"
+              ]
+            },
+            {
+              "code": 401,
+              "indent": 0,
+              "parameters": [
+                "夜の森は危ないからね。"
+              ]
+            },
+            {
+              "code": 0,
+              "indent": 0,
+              "parameters": []
+            }
+          ],
+          "moveFrequency": 3,
+          "moveRoute": {
+            "list": [
+              {
+                "code": 0,
+                "indent": 0,
+                "parameters": []
+              }
+            ],
+            "repeat": true,
+            "skippable": false,
+            "wait": false
+          },
+          "moveSpeed": 3,
+          "moveType": 0,
+          "priorityType": 1,
+          "stepAnime": false,
+          "through": false,
+          "trigger": 0,
+          "walkAnime": true
+        }
+      ]
+    },
+    {
+      "name": "リオ",
+      "note": "",
+      "x": 9,
+      "y": 9,
+      "pages": [
+        {
+          "conditions": {
+            "actorId": 1,
+            "actorValid": false,
+            "itemId": 1,
+            "itemValid": false,
+            "selfSwitchCh": "A",
+            "selfSwitchValid": false,
+            "switch1Id": 1,
+            "switch1Valid": false,
+            "switch2Id": 1,
+            "switch2Valid": false,
+            "variableId": 1,
+            "variableValid": false,
+            "variableValue": 0
+          },
+          "directionFix": false,
+          "image": {
+            "characterIndex": 0,
+            "characterName": "",
+            "direction": 2,
+            "pattern": 0,
+            "tileId": 0
+          },
+          "list": [
+            {
+              "code": 101,
+              "indent": 0,
+              "parameters": [
+                "",
+                0,
+                0,
+                2,
+                "リオ"
+              ]
+            },
+            {
+              "code": 401,
+              "indent": 0,
+              "parameters": [
+                "魔法の杖を探しに行くって？"
+              ]
+            },
+            {
+              "code": 401,
+              "indent": 0,
+              "parameters": [
+                "……しょうがないな、俺もついていくよ。"
+              ]
+            },
+            {
+              "code": 101,
+              "indent": 0,
+              "parameters": [
+                "",
+                0,
+                0,
+                2,
+                "ミカ"
+              ]
+            },
+            {
+              "code": 401,
+              "indent": 0,
+              "parameters": [
+                "えへへ、ありがとう、リオ！"
+              ]
+            },
+            {
+              "code": 0,
+              "indent": 0,
+              "parameters": []
+            }
+          ],
+          "moveFrequency": 3,
+          "moveRoute": {
+            "list": [
+              {
+                "code": 0,
+                "indent": 0,
+                "parameters": []
+              }
+            ],
+            "repeat": true,
+            "skippable": false,
+            "wait": false
+          },
+          "moveSpeed": 3,
+          "moveType": 0,
+          "priorityType": 1,
+          "stepAnime": false,
+          "through": false,
+          "trigger": 0,
+          "walkAnime": true
+        }
+      ]
+    },
+    {
+      "name": "おばあさん",
+      "note": "",
+      "x": 3,
+      "y": 5,
+      "pages": [
+        {
+          "conditions": {
+            "actorId": 1,
+            "actorValid": false,
+            "itemId": 1,
+            "itemValid": false,
+            "selfSwitchCh": "A",
+            "selfSwitchValid": false,
+            "switch1Id": 1,
+            "switch1Valid": false,
+            "switch2Id": 1,
+            "switch2Valid": false,
+            "variableId": 1,
+            "variableValid": false,
+            "variableValue": 0
+          },
+          "directionFix": false,
+          "image": {
+            "characterIndex": 0,
+            "characterName": "",
+            "direction": 2,
+            "pattern": 0,
+            "tileId": 0
+          },
+          "list": [
+            {
+              "code": 101,
+              "indent": 0,
+              "parameters": [
+                "",
+                0,
+                0,
+                2,
+                "おばあさん"
+              ]
+            },
+            {
+              "code": 401,
+              "indent": 0,
+              "parameters": [
+                "森の奥の祠には、昔から精霊様が住んでおられる。"
+              ]
+            },
+            {
+              "code": 401,
+              "indent": 0,
+              "parameters": [
+                "心の優しい子にだけ、姿を見せてくださるそうじゃよ。"
+              ]
+            },
+            {
+              "code": 0,
+              "indent": 0,
+              "parameters": []
+            }
+          ],
+          "moveFrequency": 3,
+          "moveRoute": {
+            "list": [
+              {
+                "code": 0,
+                "indent": 0,
+                "parameters": []
+              }
+            ],
+            "repeat": true,
+            "skippable": false,
+            "wait": false
+          },
+          "moveSpeed": 3,
+          "moveType": 0,
+          "priorityType": 1,
+          "stepAnime": false,
+          "through": false,
+          "trigger": 0,
+          "walkAnime": true
+        }
+      ]
+    },
+    {
+      "name": "ネコ",
+      "note": "",
+      "x": 13,
+      "y": 9,
+      "pages": [
+        {
+          "conditions": {
+            "actorId": 1,
+            "actorValid": false,
+            "itemId": 1,
+            "itemValid": false,
+            "selfSwitchCh": "A",
+            "selfSwitchValid": false,
+            "switch1Id": 1,
+            "switch1Valid": false,
+            "switch2Id": 1,
+            "switch2Valid": false,
+            "variableId": 1,
+            "variableValid": false,
+            "variableValue": 0
+          },
+          "directionFix": false,
+          "image": {
+            "characterIndex": 0,
+            "characterName": "",
+            "direction": 2,
+            "pattern": 0,
+            "tileId": 0
+          },
+          "list": [
+            {
+              "code": 101,
+              "indent": 0,
+              "parameters": [
+                "",
+                0,
+                0,
+                2,
+                "ネコ"
+              ]
+            },
+            {
+              "code": 401,
+              "indent": 0,
+              "parameters": [
+                "にゃ～……目がまわる……"
+              ]
+            },
+            {
+              "code": 101,
+              "indent": 0,
+              "parameters": [
+                "",
+                0,
+                0,
+                2,
+                "ミカ"
+              ]
+            },
+            {
+              "code": 401,
+              "indent": 0,
+              "parameters": [
+                "だ、大丈夫？　魔法の練習に巻き込んじゃったかな……"
+              ]
+            },
+            {
+              "code": 0,
+              "indent": 0,
+              "parameters": []
+            }
+          ],
+          "moveFrequency": 3,
+          "moveRoute": {
+            "list": [
+              {
+                "code": 0,
+                "indent": 0,
+                "parameters": []
+              }
+            ],
+            "repeat": true,
+            "skippable": false,
+            "wait": false
+          },
+          "moveSpeed": 3,
+          "moveType": 0,
+          "priorityType": 1,
+          "stepAnime": false,
+          "through": false,
+          "trigger": 0,
+          "walkAnime": true
+        }
+      ]
+    }
+  ],
+  "provider": {
+    "reply": {
+      "お金を %1__PROTECTED_0__ 手に入れた！": "Found %1__PROTECTED_0__!",
+      "魔法の杖が欲しいなら、祠の精霊に認めてもらわなきゃ。": "If you want the magic staff, the shrine's spirit has to accept you first.",
+      "森の奥の祠には、昔から精霊様が住んでおられる。": "A spirit has dwelt in the shrine deep in the forest since ancient times.\nThey say it only shows itself to the kind-hearted.",
+      "村のみんなを守れる魔法使いになりたいんです！": "I want to become a mage who can protect everyone in my village!",
+      "森へ行くなら、ポーションを持っていきな。": "Heading into the forest? Take some potions with you.\nThe woods get dangerous after dark.",
+      "なんだか、木がしゃべってるみたいだな……": "It almost sounds like the trees are talking...",
+      "……よかろう。その杖を手に取るがよい。": "...Very well. Take up the staff.",
+      "ミカねえちゃん、また魔法の練習？": "Practicing magic again, Mika?\nJust don't set the roof on fire like last time!",
+      "この森でささやき声が聞こえても、": "If you hear whispers in this forest,\nwhatever you do, don't look back.",
+      "魔法の杖がやさしく光り始めた……": "The magic staff begins to glow softly...",
+      "おお、ミカよ。よく来てくれた。": "Ah, Mika, thank you for coming.\nThey say a magic staff lies sleeping deep in the forest.",
+      "よくぞ来た、小さき魔法使いよ。": "So you have come, little mage.",
+      "わかりました！行ってきます！": "Understood! I'll be on my way!",
+      "森の村に住む元気な女の子。": "A cheerful girl from the forest village.\nShe dreams of finding a magic staff.",
+      "魔法の杖を探しに行くって？": "You're going after the magic staff?\n...Fine. I'm coming with you.",
+      "えへへ、ありがとう、リオ！": "Hehe, thanks, Rio!",
+      "汝、何のために力を求める？": "You, for what reason do you seek the power?",
+      "にゃ～……目がまわる……": "Nyaa... Everything's spinning...",
+      "%1は眠ってしまった！": "%1 fell asleep!",
+      "%1には効かなかった！": "It had no effect on %1!",
+      "あら、人間の魔法少女？": "Oh my, a human magical girl? How rare!",
+      "HPを50回復する。": "Restores 50 HP.",
+      "%1は魔法を唱えた！": "%1 casts a spell!",
+      "%1は目を覚ました！": "%1 woke up!",
+      "%1は毒にかかった！": "%1 was poisoned!",
+      "%1の毒が消えた！": "%1 is no longer poisoned!",
+      "ミカの幼なじみ。": "Mika's childhood friend.",
+      "これがわたしの杖": "I did it...! This is my very own staff!",
+      "見習い魔法少女": "Apprentice Magical Girl",
+      "魔法少女の冒険": "Magical Girl's Adventure",
+      "コンティニュー": "Continue",
+      "いらっしゃい！": "Welcome! It's 10G for the night.",
+      "はじまりの村": "Starting Village",
+      "ニューゲーム": "New Game",
+      "ささやきの森": "Whispering Forest",
+      "だ、大丈夫？": "A-are you okay? Did my magic practice hit you...?",
+      "夜は通行注意": "Old Shrine Ahead\n*Use caution after dark",
+      "ポーション": "Potion",
+      "ステータス": "Status",
+      "ゲーム終了": "Game End",
+      "オプション": "Options",
+      "大事なもの": "Key Items",
+      "タイトルへ": "To Title",
+      "宿屋の主人": "Innkeeper",
+      "頼んだぞ。": "I'm counting on you.",
+      "おばあさん": "Old Woman",
+      "魔法使い": "Mage",
+      "ファイア": "Fire",
+      "アイテム": "Items",
+      "並び替え": "Formation",
+      "最強装備": "Optimize",
+      "全て外す": "Remove All",
+      "購入する": "Buy",
+      "売却する": "Sell",
+      "最大HP": "Max HP",
+      "最大MP": "Max MP",
+      "魔法防御": "M. Defense",
+      "一般防具": "General Armor",
+      "旅の商人": "Traveling Merchant",
+      "レベル": "Level",
+      "経験値": "EXP",
+      "逃げる": "Escape",
+      "スキル": "Skills",
+      "セーブ": "Save",
+      "やめる": "Cancel",
+      "攻撃力": "Attack",
+      "防御力": "Defense",
+      "魔法力": "M. Attack",
+      "敏捷性": "Agility",
+      "命中率": "Hit Rate",
+      "回避率": "Evasion",
+      "装飾品": "Accessory",
+      "いいえ": "No",
+      "道具屋": "Shopkeeper",
+      "古い祠": "Old Shrine",
+      "ミカ": "Mika",
+      "リオ": "Rio",
+      "剣士": "Swordsman",
+      "睡眠": "Sleep",
+      "戦う": "Fight",
+      "攻撃": "Attack",
+      "防御": "Guard",
+      "装備": "Equip",
+      "武器": "Weapons",
+      "防具": "Armor",
+      "魔法": "Magic",
+      "身体": "Body",
+      "物理": "Physical",
+      "村長": "Village Chief",
+      "はい": "Yes",
+      "少年": "Boy",
+      "ネコ": "Cat",
+      "妖精": "Fairy",
+      "精霊": "Spirit",
+      "毒": "Poison",
+      "運": "Luck",
+      "盾": "Shield",
+      "頭": "Head",
+      "炎": "Fire",
+      "剣": "Sword"
+    }
+  }
+}

@@ -5,7 +5,8 @@
 // while it runs through <folder>/mode.json:
 //
 //   { "refuse": ["text"], "decline": ["text"], "fail": ["text"],
-//     "failStatus": 400, "failError": null, "failFirst": false, "stall": false, "answer": null, "hold": false,
+//     "failStatus": 400, "failError": null, "failFirst": false, "stall": false, "answer": null,
+//     "delay": 0, "hold": false,
 //     "batchSeconds": 0, "long": ["text"], "reply": { "text": "reply" },
 //     "target": null, "effort": null, "lists": true }
 //
@@ -24,6 +25,8 @@
 //   as a kaomoji a model keeps or a line it leaves in Japanese.
 // - stall: chat requests get no answer until stall is turned off; with
 //   answer: N, the first N requests are still answered.
+// - delay: each chat answer waits that many milliseconds, as a slower model
+//   does, so a Live run's progress shows while it runs.
 // - hold: a Batch stays in progress until hold is turned off; otherwise it
 //   completes batchSeconds after it was created.
 // - effort: "refuse" answers a request carrying `reasoning_effort` with
@@ -617,7 +620,13 @@ export async function startProvider({ folder, port = 0 }) {
           }
           answered++;
           const answer = complete(params);
-          return reply(answer.status, answer.value);
+          if (!settings.delay) return reply(answer.status, answer.value);
+          const wait = setTimeout(() => {
+            held.delete(wait);
+            reply(answer.status, answer.value);
+          }, settings.delay);
+          held.add(wait);
+          return;
         }
         if (request.method === "POST" && route === "/files") {
           const boundary = /boundary=(.+)$/.exec(

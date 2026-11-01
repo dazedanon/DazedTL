@@ -12,7 +12,11 @@ export const defaultRepository = "dazedanon/DazedTL";
 export const workflow = ".github/workflows/ci.yml";
 const lowCalls = 50;
 
-/** A GitHub API reader that sends If-None-Match and pauses near the limit. */
+/**
+ * A GitHub API reader that sends If-None-Match and pauses near the limit.
+ * What GitHub doesn't have reads as null: a 404, or the 422 it answers for a
+ * commit it lacks.
+ */
 export function githubReader({
   token,
   fetchImpl = fetch,
@@ -51,7 +55,7 @@ export function githubReader({
         if (limited) continue;
       }
       if (response.status === 304 && known) return known.body;
-      if (response.status === 404) return null;
+      if (response.status === 404 || response.status === 422) return null;
       if (!response.ok)
         throw new Error(`GitHub answered ${response.status} for ${route}.`);
       const body = await response.json();
@@ -62,20 +66,31 @@ export function githubReader({
   };
 }
 
-/** Asks GitHub to do something, such as rerun a run's failed jobs. */
+/**
+ * Asks GitHub to do something, such as rerun a run's failed jobs or publish
+ * a release: POSTs `body` as JSON unless `method` says otherwise, and
+ * resolves GitHub's answer, or null when it sends none.
+ */
 export function githubWriter({ token, fetchImpl = fetch }) {
-  return async function post(route) {
+  return async function post(
+    /** @type {string} */ route,
+    /** @type {{ method?: string, body?: unknown }} */ { method, body } = {},
+  ) {
     const response = await fetchImpl(`https://api.github.com/${route}`, {
-      method: "POST",
+      method: method ?? "POST",
       headers: {
         Accept: "application/vnd.github+json",
         "User-Agent": "DazedTL ci-wait",
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(body === undefined ? {} : { "Content-Type": "application/json" }),
       },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       signal: AbortSignal.timeout(30_000),
     });
     if (!response.ok)
       throw new Error(`GitHub answered ${response.status} for ${route}.`);
+    const text = await response.text();
+    return text ? JSON.parse(text) : null;
   };
 }
 

@@ -427,7 +427,9 @@ def link_retries(rows):
 
     Runs record that attempt. Older runs only marked attempts that a later
     validated response replaced, so each of those leads the following attempts
-    at its lines, through the one that replaced it.
+    at its lines, through the one that replaced it. The link is presentation
+    only: receipt indices, submission guards and billed usage stay with each
+    attempt.
     """
     positions = {row["id"]: index for index, row in enumerate(rows)}
 

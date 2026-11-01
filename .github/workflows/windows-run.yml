@@ -1,5 +1,5 @@
 # Runs one command on a disposable Windows machine, to reproduce a problem
-# there without a Windows install of your own. See "Live test" in
+# there without a Windows install of your own. See "CI" in
 # docs/development.md.
 name: Windows run
 

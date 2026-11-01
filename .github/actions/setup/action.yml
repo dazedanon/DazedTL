@@ -9,7 +9,7 @@ runs:
   steps:
     - uses: actions/setup-node@v7
       with:
-        node-version-file: .node-version
+        node-version-file: scripts/node-version
     - uses: actions/cache@v6
       with:
         path: |
@@ -17,7 +17,7 @@ runs:
           !.runtime/checkouts
           .venv
           app/node_modules
-        key: setup-${{ runner.os }}-${{ hashFiles('.node-version', '.python-version', '.mingit-version', 'scripts/runtimes.lock', 'backend/requirements*.lock', 'app/package-lock.json') }}
+        key: setup-${{ runner.os }}-${{ hashFiles('scripts/node-version', 'scripts/python-version', 'scripts/mingit-version', 'scripts/runtimes.lock', 'backend/requirements*.lock', 'app/package-lock.json') }}
         restore-keys: setup-${{ runner.os }}-
     - run: node scripts/setup.mjs
       shell: bash

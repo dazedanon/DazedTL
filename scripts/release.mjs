@@ -1,13 +1,15 @@
 // Publishes a DazedTL release from the dev branch: runs the checks, signs a
 // manifest of every file, tags it and pushes it to every mirror. A stable
 // release fast-forwards main to dev and commits there, once CI has passed for
-// that commit on GitHub, and files release/notes.md under its version in
-// CHANGELOG.md; a prerelease such as 2.1.0-beta.1 is tagged on dev for the
-// beta channel and leaves the notes pending. It holds the landing lock
+// that commit on GitHub, files release/notes.md under its version in
+// CHANGELOG.md and publishes them as the tag's GitHub Release; a prerelease
+// such as 2.1.0-beta.1 is tagged on dev for the beta channel and leaves the
+// notes pending. It holds the landing lock
 // (scripts/land-lock.mjs) throughout, so no landing moves dev meanwhile.
 //
 //   node scripts/release.mjs key               create the signing key, once
 //   node scripts/release.mjs 2.0.0 [--local]   release; --local skips pushing
+//   node scripts/release.mjs github 2.0.0      publish v2.0.0's GitHub Release
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -28,6 +30,7 @@ import {
   addRelease,
   formatSections,
   notesTemplate,
+  parseChangelog,
   parseNotes,
 } from "./changelog.mjs";
 import {
@@ -168,6 +171,16 @@ function checkRemote() {
     );
 }
 
+/** The GitHub mirror's address and its owner/name, as the API names it. */
+function githubMirror() {
+  const site = mirrors(root).find((mirror) => mirror.type === "github");
+  if (!site) throw new Error("release/mirrors.json names no GitHub mirror.");
+  return {
+    url: site.url.replace(/\/$/, ""),
+    repository: new URL(site.url).pathname.replace(/^\/|\.git$|\/$/g, ""),
+  };
+}
+
 /**
  * Requires the CI workflow to have passed on GitHub for `commit`, pushing
  * dev there first when GitHub does not have it, so main only moves to commits
@@ -178,9 +191,7 @@ function checkRemote() {
  * @param {boolean} push
  */
 export async function requireCI(commit, push) {
-  const site = mirrors(root).find((mirror) => mirror.type === "github");
-  if (!site) throw new Error("release/mirrors.json names no GitHub mirror.");
-  const repository = new URL(site.url).pathname.replace(/^\/|\.git$/g, "");
+  const { repository } = githubMirror();
   const short = commit.slice(0, 7);
   const token = ghToken();
   const read = githubReader({ token, log: console.log });
@@ -217,6 +228,72 @@ export async function requireCI(commit, push) {
       "This release owns the red build: fix it forward on dev or revert the commit that broke it, then release again.",
     ].join("\n"),
   );
+}
+
+/**
+ * Publishes the GitHub Release of a pushed stable tag, named like the tag
+ * message, with the version's CHANGELOG.md entry as its notes, and marks it
+ * the latest release. A rerun updates the Release the tag already has
+ * instead of adding another. Resolves the Release's page.
+ * @param {{
+ *   version: string,
+ *   changelog: string,
+ *   repository: string,
+ *   read: (route: string) => Promise<any>,
+ *   write: (route: string, request: { method?: string, body?: unknown }) => Promise<any>,
+ * }} options `changelog` is CHANGELOG.md as the tag holds it.
+ */
+export async function publishRelease({
+  version,
+  changelog,
+  repository,
+  read,
+  write,
+}) {
+  const tag = `v${version}`;
+  const entry = parseChangelog(changelog).find(
+    (release) => release.version === version,
+  );
+  if (!entry?.sections.length)
+    throw new Error(`${CHANGELOG} at ${tag} has no notes for ${version}.`);
+  // Creating a Release for a tag GitHub lacks would make a new tag there.
+  if (!(await read(`repos/${repository}/git/ref/tags/${tag}`)))
+    throw new Error(`GitHub does not have ${tag}; push it first.`);
+  const release = {
+    name: `DazedTL ${version}`,
+    body: formatSections(entry.sections).trimEnd(),
+    draft: false,
+    prerelease: false,
+    make_latest: "true",
+  };
+  const existing = await read(`repos/${repository}/releases/tags/${tag}`);
+  const published = existing
+    ? await write(`repos/${repository}/releases/${existing.id}`, {
+        method: "PATCH",
+        body: release,
+      })
+    : await write(`repos/${repository}/releases`, {
+        body: { tag_name: tag, ...release },
+      });
+  return published?.html_url ?? "";
+}
+
+/**
+ * Publishes `version`'s GitHub Release from its tag, the last step of a
+ * stable release and the command that retries it.
+ * @param {string} version
+ */
+async function publishGitHubRelease(version) {
+  const tag = `v${version}`;
+  const token = ghToken();
+  const url = await publishRelease({
+    version,
+    changelog: git("show", `${tag}:${CHANGELOG}`),
+    repository: githubMirror().repository,
+    read: githubReader({ token, log: console.log }),
+    write: githubWriter({ token }),
+  });
+  console.log(`Published the GitHub Release for ${tag}: ${url}`);
 }
 
 /** Hashes the staged blobs, which are exactly what the mirrors archive. */
@@ -267,9 +344,7 @@ function today() {
 
 /** Where a changelog entry's version heading links: its changes on GitHub. */
 function compareLink(version, previous) {
-  const site = mirrors(root).find((mirror) => mirror.type === "github");
-  if (!site) throw new Error("release/mirrors.json names no GitHub mirror.");
-  const base = site.url.replace(/\/$/, "");
+  const base = githubMirror().url;
   return previous
     ? `${base}/compare/v${previous}...v${version}`
     : `${base}/releases/tag/v${version}`;
@@ -436,8 +511,20 @@ async function release(version, push) {
   const retry = `git push ${remote} ${stable ? `${branch} ` : ""}${tag}`;
   if (!push)
     console.log(`Tagged ${version} locally. Publish it with: ${retry}`);
-  else if (published) console.log(`Released ${version}.`);
-  else {
+  else if (published) {
+    console.log(`Released ${version}.`);
+    // The tag stands on every mirror, so a failure here only needs a retry.
+    if (stable)
+      await publishGitHubRelease(version).catch((error) => {
+        console.error(
+          [
+            `${version} is released, but its GitHub Release was not published: ${error instanceof Error ? error.message : error}`,
+            `Publish it with: node scripts/release.mjs github ${version}`,
+          ].join("\n"),
+        );
+        process.exitCode = 1;
+      });
+  } else {
     console.error(
       `Tagged ${version}, but some mirrors did not accept it. Run "${retry}" again once they are reachable.`,
     );
@@ -449,6 +536,14 @@ if (import.meta.main)
   try {
     const [command] = process.argv.slice(2);
     if (command === "key") createKey();
+    else if (command === "github") {
+      const version = process.argv[3] ?? "";
+      if (!isVersion(version) || version.includes("-"))
+        throw new Error(
+          `Give the stable version whose GitHub Release to publish, such as 2.0.0, not "${version}".`,
+        );
+      await publishGitHubRelease(version);
+    }
     // Landings wait until the release has moved dev and main.
     else
       await withLock(

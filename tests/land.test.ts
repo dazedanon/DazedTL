@@ -112,7 +112,7 @@ test("a conflicting merge of dev stays in progress with the release notes merged
   git(["init", "-q", "-b", "dev"]);
   git(["config", "user.name", "Test"]);
   git(["config", "user.email", "test@example.com"]);
-  write(".gitattributes", "release/notes.md merge=dazedtl-notes\n");
+  write("release/.gitattributes", "/notes.md merge=dazedtl-notes\n");
   write("release/notes.md", notes("Base."));
   write("code.py", "value = 0\n");
   commit("base");
@@ -163,7 +163,7 @@ test("merging dev stops on notes that reword a line dev has released, and says w
   git(["init", "-q", "-b", "dev"]);
   git(["config", "user.name", "Test"]);
   git(["config", "user.email", "test@example.com"]);
-  write(".gitattributes", "release/notes.md merge=dazedtl-notes\n");
+  write("release/.gitattributes", "/notes.md merge=dazedtl-notes\n");
   write("release/notes.md", changed("Runs stop."));
   commit("base");
   git(["switch", "-qc", "work"]);
