@@ -230,6 +230,7 @@ The build holds each document to its word limit in [docs.mjs](../scripts/docs.mj
 
 - The [README](../README.md) is the landing page, for people who use AI but can't program: what DazedTL does, shown with the [README media](#readme-media), then installing, getting started and current limits.
 - The [user guide](user-guide.md) tells users how to do each task, in a few lines each.
+  The app's **Guide** page shows it, so a renamed heading also renames the anchor that help's Learn more links name, which the guide tests check.
   What the app already says on screen stays out: errors and edge cases, recovery offers and each option's help.
   A change adds to it only when it adds a task or changes what the user does.
 - This development guide says which command to run when, and the rules around it; a script's options and details belong in its header and `--help`.

@@ -10,7 +10,7 @@ from dazedtl.translation.files import read_json
 
 # "translation" records a game whose method has not been chosen yet.
 METHODS = {"guided", "len", "translation"}
-SCREENS = {"project", "translation", "guided", "manual", "settings"}
+SCREENS = {"project", "translation", "guided", "manual", "settings", "guide"}
 SCHEMA_VERSION = 5
 # What the engine detection names a folder it recognizes no game in
 # (TranslationEngine.detect).

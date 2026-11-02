@@ -927,6 +927,11 @@ pre {
 .help-popover ul {
   padding-left: var(--space-5);
 }
+/* Learn more follows help that is often bare text, which :first-child
+   doesn't count. */
+.help-popover > .help-popover-guide {
+  margin: var(--space-2) 0 0;
+}
 .combobox {
   position: relative;
   min-width: 0;

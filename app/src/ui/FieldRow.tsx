@@ -1,4 +1,6 @@
 import type { ReactNode } from "react";
+import { GuideLink } from "./GuideLink";
+import type { GuideSection } from "./guideSections";
 import { HelpPopover } from "./HelpPopover";
 interface ControlProps {
   id: string;
@@ -10,6 +12,7 @@ export function FieldRow({
   label,
   help,
   helpDisplay = "text",
+  guide,
   note,
   error,
   children,
@@ -19,6 +22,8 @@ export function FieldRow({
   label: string;
   help?: string;
   helpDisplay?: "text" | "popover";
+  /** The guide's section on the field, linked from its help. */
+  guide?: GuideSection;
   /** A quiet line under the help, such as where a value comes from. */
   note?: string;
   error?: string;
@@ -34,7 +39,7 @@ export function FieldRow({
       {help && helpDisplay === "popover" ? (
         <div className="field-label field-label--help">
           <label htmlFor={id}>{label}</label>
-          <HelpPopover id={`${id}-help`} label={label}>
+          <HelpPopover id={`${id}-help`} label={label} guide={guide}>
             {help}
           </HelpPopover>
         </div>
@@ -48,7 +53,15 @@ export function FieldRow({
           "aria-invalid": error ? true : undefined,
         })}
         {help && helpDisplay === "text" && (
-          <small id={`${id}-help`}>{help}</small>
+          <small id={`${id}-help`}>
+            {help}
+            {guide && (
+              <>
+                {" "}
+                <GuideLink section={guide} />
+              </>
+            )}
+          </small>
         )}
         {note && <small id={`${id}-note`}>{note}</small>}
         {error && (

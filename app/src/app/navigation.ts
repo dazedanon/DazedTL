@@ -161,9 +161,14 @@ export class Navigation {
 
   navigate(snapshot: WorkspaceSnapshot, screen: Screen) {
     if (
-      !["project", "translation", "guided", "manual", "settings"].includes(
-        screen,
-      )
+      ![
+        "project",
+        "translation",
+        "guided",
+        "manual",
+        "settings",
+        "guide",
+      ].includes(screen)
     )
       throw new Error("Choose an available screen.");
     if (

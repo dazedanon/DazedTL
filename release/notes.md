@@ -2,6 +2,7 @@
 
 ### Added
 
+- **Guide:** the user guide opens inside DazedTL from **Guide** in the sidebar, with its sections beside the text and a search; help on checkpoints, API keys, GameUpdate, speaker names and Assistant-led progress has a **Learn more** link to its section.
 - **Settings:** a **Credits** tab thanks the people who built DazedTL and DazedMTLTool, the tool it grew from.
 
 ### Fixed

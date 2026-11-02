@@ -150,6 +150,7 @@ export function ProgressPanel({
               : "Copy the starting prompt into your coding assistant. It prepares the game, extracts and translates the text and builds a patch on its own; its reports appear here.")
         }
         help="These are your assistant's saved reports and the last time it used DazedTL. Neither shows that its session is still running, and finished text doesn't mean the game has been checked."
+        guide="assistant-led"
       >
         {status === "blocked" && (
           <Notice tone="warning">

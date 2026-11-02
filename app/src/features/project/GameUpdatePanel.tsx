@@ -160,6 +160,7 @@ export function GameUpdatePanel({
         <FieldRow
           id="gameupdate-repo"
           label="Repository"
+          guide="publishing-with-gameupdate"
           help={
             target && shownRepo
               ? `Players download ${target.host}/${target.owner}/${shownRepo}, branch ${target.branch}.`

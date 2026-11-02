@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { ActionRow } from "./ActionList";
 import type { DisplayState } from "./displayStatus";
+import type { GuideSection } from "./guideSections";
 import { StatusHeading } from "./StatusMark";
 import { StatusPanel } from "./StatusPanel";
 
@@ -44,6 +45,7 @@ export function AssistantTask({
   progress,
   description,
   help,
+  guide,
   results = [],
   children,
 }: {
@@ -55,6 +57,8 @@ export function AssistantTask({
   description?: ReactNode;
   /** Background on what the task does and does not do. */
   help?: ReactNode;
+  /** The guide's section on the task, linked from its help. */
+  guide?: GuideSection;
   results?: AssistantResult[];
   /** Custom result content, for tasks whose results are not rows. */
   children?: ReactNode;
@@ -67,6 +71,7 @@ export function AssistantTask({
       progress={progress}
       description={description}
       help={help}
+      guide={guide}
     >
       {results.map((row) => (
         <ActionRow
