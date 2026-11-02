@@ -514,7 +514,10 @@ pre {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   column-gap: var(--space-2);
-  padding-block: var(--space-2);
+  min-height: 0;
+}
+.check-field--described + .check-field--described {
+  margin-top: var(--space-3);
 }
 .check-field-name {
   display: flex;
@@ -524,7 +527,7 @@ pre {
 .check-field--described > small {
   grid-column: 2;
   max-width: var(--measure);
-  margin-top: var(--space-1);
+  margin-top: var(--space-half);
   line-height: 1.5;
 }
 /* A count typed inside a check field's sentence. */

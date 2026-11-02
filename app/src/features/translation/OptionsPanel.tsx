@@ -168,7 +168,7 @@ export function OptionsPanel({
               id="translation-gameupdate"
               label="GameUpdate"
               description={
-                state.gameUpdate.state === "unconfigured" ? (
+                options.install_gameupdate && state.gameUpdateNeedsOwner ? (
                   <>
                     Lets players download your newest translation by running
                     GameUpdate. DazedTL sets it up once the owner of your patch

@@ -61,6 +61,13 @@ class GameUpdate:
     def defaults(self):
         return self.translation.settings.game_update()
 
+    def needs_owner(self, status):
+        """Whether GameUpdate waits for Settings' owner: the game's config
+        does, or a game without GameUpdate yet would."""
+        return status["state"] == "unconfigured" or (
+            status["state"] == "absent" and not self.defaults()["username"].strip()
+        )
+
     def busy(self, project_id):
         """Whether an operation is changing the game or its Git history."""
         return (

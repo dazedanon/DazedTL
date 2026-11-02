@@ -418,6 +418,8 @@ class TranslationState(ProjectOptions):
     gameUpdate: GameUpdateStatus
     # Whether GameUpdate installs in this game's engine, so Options offers it.
     gameUpdateOffered: bool
+    # Whether its owner is still to be set in Settings, as the Options choice says.
+    gameUpdateNeedsOwner: bool
     lifecycle: Lifecycle
     # Release's options and ZIPs; None for a Guided project.
     release: AssistantRelease | None

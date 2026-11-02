@@ -1801,6 +1801,7 @@ export type TranslationState = ProjectOptions & {
   git: GitStatus | null;
   gameUpdate: GameUpdateStatus;
   gameUpdateOffered: boolean;
+  gameUpdateNeedsOwner: boolean;
   lifecycle: Lifecycle;
   release: AssistantRelease | null;
   originalsRecorded: boolean;

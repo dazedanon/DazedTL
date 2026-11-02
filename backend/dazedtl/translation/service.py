@@ -483,6 +483,7 @@ class Translation:
                 )
         legacy = self.legacy_record(project_id)
         unavailable, unread = batch_reasons(self.settings)
+        game_update = self.game_update.state(project_id)
         return {
             "projectId": project_id,
             **selected,
@@ -495,8 +496,9 @@ class Translation:
                 self.workspace, project_id, project.root, saved_lifecycle
             ),
             "git": git,
-            "gameUpdate": self.game_update.state(project_id),
+            "gameUpdate": game_update,
             "gameUpdateOffered": gameupdate_offered(detected),
+            "gameUpdateNeedsOwner": self.game_update.needs_owner(game_update),
             "lifecycle": lifecycle_view(saved_lifecycle),
             "release": self.releases.view(project_id, project.root, saved_lifecycle)
             if record.get("method") == "len"

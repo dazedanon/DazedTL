@@ -12,9 +12,9 @@ from unittest.mock import patch
 
 from dazedtl.api.contracts.translation import TranslationBatch
 from dazedtl.api.contracts.validation import _close_contracts
+from dazedtl.compatibility.translation import TranslationEngine
 from dazedtl.projects.store import SCHEMA_VERSION
 from dazedtl.storage import WorkspaceLock, write_json
-from dazedtl.compatibility.translation import TranslationEngine
 from dazedtl.translation import jobs, organize
 from dazedtl.translation import results as result_files
 from dazedtl.translation.files import digest, project_path

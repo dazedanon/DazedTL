@@ -240,7 +240,12 @@ class WorkflowTests(unittest.TestCase):
             connection_summary=lambda: connection_summary(self.settings),
             model_defaults=lambda *_args, **_kwargs: {},
             translation_defaults=lambda: {"batch_supported": True},
-            game_update=dict,
+            game_update=lambda: {
+                "forge": "gitlab",
+                "host": "",
+                "username": "",
+                "branch": "main",
+            },
             adapter=SimpleNamespace(
                 allow_providers=False,
                 running=lambda: False,
