@@ -78,6 +78,7 @@ export function CheckField({
   id,
   label,
   help,
+  description,
   checked,
   disabled,
   onChange,
@@ -85,25 +86,45 @@ export function CheckField({
   id: string;
   label: string;
   help?: string;
+  /** What the choice does, shown under its label. */
+  description?: ReactNode;
   checked: boolean;
   disabled?: boolean;
   onChange: (checked: boolean) => void;
 }) {
-  return (
-    <div className="check-field">
-      <input
-        id={id}
-        type="checkbox"
-        checked={checked}
-        disabled={disabled}
-        aria-describedby={help ? `${id}-help` : undefined}
-        onChange={(event) => onChange(event.target.checked)}
-      />
+  const describedBy =
+    [help && `${id}-help`, description && `${id}-description`]
+      .filter(Boolean)
+      .join(" ") || undefined;
+  const name = (
+    <>
       <label htmlFor={id}>{label}</label>
       {help && (
         <HelpPopover id={`${id}-help`} label={label}>
           {help}
         </HelpPopover>
+      )}
+    </>
+  );
+  return (
+    <div
+      className={`check-field${description ? " check-field--described" : ""}`}
+    >
+      <input
+        id={id}
+        type="checkbox"
+        checked={checked}
+        disabled={disabled}
+        aria-describedby={describedBy}
+        onChange={(event) => onChange(event.target.checked)}
+      />
+      {description ? (
+        <>
+          <span className="check-field-name">{name}</span>
+          <small id={`${id}-description`}>{description}</small>
+        </>
+      ) : (
+        name
       )}
     </div>
   );

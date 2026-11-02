@@ -2122,10 +2122,22 @@ class TranslationTests(unittest.TestCase):
         write_json(project.path, {"version": 1, "options": older})
         value = project.read()
         self.assertFalse(value["options"]["thorough_investigation"])
+        # Older projects keep the GameUpdate they were prepared with, and
+        # which tools a game gets changes no saved run.
+        self.assertTrue(value["options"]["install_gameupdate"])
+        self.assertFalse(value["options"]["install_tl_inspector"])
         bound = digest({k: v for k, v in older.items() if k != "mode"})
         self.assertEqual(scope(value["options"]), bound)
         self.assertEqual(
-            scope({**value["options"], "thorough_investigation": True}), bound
+            scope(
+                {
+                    **value["options"],
+                    "thorough_investigation": True,
+                    "install_gameupdate": False,
+                    "install_tl_inspector": True,
+                }
+            ),
+            bound,
         )
 
     def test_project_paths_and_plan_constraints_reject_unsafe_inputs(self):

@@ -14,13 +14,24 @@ DEFAULTS = {
     "include_images": True,
     "include_glossary_base": True,
     "install_forge": True,
+    "install_gameupdate": True,
+    "install_tl_inspector": False,
     "thorough_investigation": False,
 }
 # Options added after workflow.json shipped, which older files and drafts lack.
-ADDED = {"thorough_investigation": False}
-# How the assistant works rather than what it translates, so changing one keeps
-# saved runs and their quotes current.
-METHOD = {"mode", "thorough_investigation"}
+ADDED = {
+    "install_gameupdate": True,
+    "install_tl_inspector": False,
+    "thorough_investigation": False,
+}
+# How the assistant works or what it installs rather than what it translates,
+# so changing one keeps saved runs and their quotes current.
+METHOD = {
+    "mode",
+    "install_gameupdate",
+    "install_tl_inspector",
+    "thorough_investigation",
+}
 
 
 def options(value):
@@ -41,6 +52,8 @@ def options(value):
             "include_images",
             "include_glossary_base",
             "install_forge",
+            "install_gameupdate",
+            "install_tl_inspector",
             "thorough_investigation",
         )
     ):

@@ -155,6 +155,8 @@ options = {
     "instructions": "",
     "include_glossary_base": False,
     "install_forge": False,
+    "install_gameupdate": True,
+    "install_tl_inspector": False,
 }
 manifest = {"files": {"data/System.json": {}}}
 from dazedtl.compatibility.checkpoint_commits import Change

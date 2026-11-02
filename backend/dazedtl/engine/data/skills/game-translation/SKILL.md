@@ -66,16 +66,15 @@ For a fresh task, use the selected untranslated game as the initial source basel
 Normal preparation such as `TranslationUpdateCheck` does not make it an existing translation.
 Run `record_original` on that folder; do not demand a separately downloaded pristine copy unless concrete evidence shows the selected source is unsuitable.
 
-For RPG Maker, use the same preparation steps as Workflow before translation: run the project helper's `operation rpgmaker_prepare` to format game JSON and plugin configuration and install GameUpdate with the MV/MZ startup check.
+For RPG Maker, use the same preparation steps as Workflow before translation: run the project helper's `operation rpgmaker_prepare` to format game JSON and plugin configuration and install GameUpdate with the MV/MZ startup check when the project's options include it.
 Then `operation git_setup` records the prepared untranslated baseline.
 `setup.md` loads Workflow's RPG Maker speaker, glossary, wrapping and investigation instructions for these games.
 For Ace, the operation first converts Data with RV2JSON and formats its JSON export (`data_path` if not in `ace_json`), leaving native Marshal files intact.
-Other engines keep their own preparation route; for WOLF, Unity and TyranoScript, `operation gameupdate` installs GameUpdate so players can update the patch ([project-lifecycle.md](references/project-lifecycle.md)).
+Other engines keep their own preparation route; for WOLF, Unity and TyranoScript, `operation gameupdate` installs GameUpdate so players can update the patch, or takes it out when the options leave it out ([project-lifecycle.md](references/project-lifecycle.md)).
 Existing updater configuration, README and ignore rules are preserved on reinstall.
-Len's **Install Forge** checkbox defaults on for MV/MZ and is saved as `install_forge`.
-`operation rpgmaker_prepare` honors it through Workflow's bundled installer and saved playtest settings, and running it again on a prepared game applies a changed choice.
-An unchecked choice skips installation/updates and does not remove existing Forge.
-Forge does not apply to Ace or other engines; do not ask for another confirmation after the user has selected this option.
+The project's Options choose which tools go into the game: GameUpdate (on by default, saved as `install_gameupdate`), and for MV/MZ Forge (on, `install_forge`) and TL Inspector (off, `install_tl_inspector`).
+`operation rpgmaker_prepare` installs the chosen ones through Workflow's bundled installers and saved playtest settings and takes out the others, and running it again on a prepared game applies a changed choice.
+`operation package` refuses while the game's GameUpdate or Forge differs from the options, naming the operation that applies them; do not ask for another confirmation after the user has chosen.
 
 This copy lives at `DAZEDTL_ROOT/data/skills/game-translation`. Resolve DAZEDTL_ROOT
 as the bundled engine folder three levels above this skill folder, inside the DazedTL

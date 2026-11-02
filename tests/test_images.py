@@ -1594,6 +1594,8 @@ class DecodedImagePatchTests(unittest.TestCase):
                 "instructions": "",
                 "include_glossary_base": False,
                 "install_forge": False,
+                "install_gameupdate": True,
+                "install_tl_inspector": False,
             },
             self.manifest,
             self.game.parent / "deliveries",

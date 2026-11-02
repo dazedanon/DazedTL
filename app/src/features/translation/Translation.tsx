@@ -106,7 +106,7 @@ function Workspace({
   state,
   settings,
   openProject,
-  initialView = "progress",
+  initialView,
 }: {
   project: Project;
   state: TranslationState;
@@ -129,7 +129,14 @@ function Workspace({
       "live",
     ),
   };
-  const [view, setView] = useState<View>(initialView);
+  // Until the assistant first uses the project, the page opens on Options,
+  // so the choices are made before the starting prompt is copied.
+  const [view, setView] = useState<View>(
+    initialView ??
+      (state.assistantSeenAt || state.progress?.updated_at
+        ? "progress"
+        : "options"),
+  );
   const [editorAssets, setEditorAssets] = useState<string[] | null>(null);
   const [imageFooter, setImageFooter] = useState<HTMLDivElement | null>(null);
   // Text QA runs in the Guided game workspace its first use opens.
@@ -155,8 +162,8 @@ function Workspace({
     !!application.snapshot?.application.running,
   );
   const tabs: Tab<View>[] = [
-    { id: "progress", label: "Progress" },
     { id: "options", label: "Options" },
+    { id: "progress", label: "Progress" },
     { id: "context", label: "Context" },
     {
       id: "images",
@@ -376,13 +383,17 @@ function Workspace({
                 disabled={disabled}
                 settings={settings}
               />
-              <GameUpdatePanel
-                key={project.id}
-                projectId={project.id}
-                status={state.gameUpdate}
-                disabled={disabled}
-                openSettings={() => settings("gameupdate")}
-              />
+              {/* Options' GameUpdate choice links Settings itself while that
+                  is all the panel would say. */}
+              {state.gameUpdate.state !== "unconfigured" && (
+                <GameUpdatePanel
+                  key={project.id}
+                  projectId={project.id}
+                  status={state.gameUpdate}
+                  disabled={disabled}
+                  openSettings={() => settings("gameupdate")}
+                />
+              )}
             </PageBody>
             <ActionBar feedback={<Feedback dirty={draft.dirty} />}>
               {draft.dirty && (

@@ -508,6 +508,25 @@ pre {
 .check-group--stacked {
   grid-template-columns: minmax(0, 1fr);
 }
+/* A choice that says what it does: its description lines up with the label
+   text, under it. */
+.check-field--described {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: var(--space-2);
+  padding-block: var(--space-2);
+}
+.check-field-name {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.check-field--described > small {
+  grid-column: 2;
+  max-width: var(--measure);
+  margin-top: var(--space-1);
+  line-height: 1.5;
+}
 /* A count typed inside a check field's sentence. */
 .check-field > .inline-number {
   width: var(--inline-number-width);

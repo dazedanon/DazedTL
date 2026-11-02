@@ -153,6 +153,8 @@ class GitLaunchTests(unittest.TestCase):
             "instructions": "",
             "include_glossary_base": False,
             "install_forge": False,
+            "install_gameupdate": True,
+            "install_tl_inspector": False,
         }
         engine.git_status(str(game), options)
         write(b'{"a": 4}')

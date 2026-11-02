@@ -1451,6 +1451,8 @@ export type TranslationOptions = {
   include_images: boolean;
   include_glossary_base: boolean;
   install_forge: boolean;
+  install_gameupdate: boolean;
+  install_tl_inspector: boolean;
   thorough_investigation: boolean;
 };
 
@@ -1798,6 +1800,7 @@ export type TranslationState = ProjectOptions & {
   coverage: Coverage | null;
   git: GitStatus | null;
   gameUpdate: GameUpdateStatus;
+  gameUpdateOffered: boolean;
   lifecycle: Lifecycle;
   release: AssistantRelease | null;
   originalsRecorded: boolean;

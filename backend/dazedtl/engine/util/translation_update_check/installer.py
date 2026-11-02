@@ -6,6 +6,7 @@ import json
 import re
 from pathlib import Path
 
+from util import system
 from util.game_settings import game_target_language
 from util.rpgmaker_plugin_registry import entry_texts, update_plugin_entry, with_entries
 
@@ -128,3 +129,25 @@ def install(game_root: str | Path, *, settings_root: str | Path | None = None) -
         return False, f"Could not install translation update check: {exc}"
 
     return True, f"Translation update check installed for RPG Maker {engine}."
+
+
+def uninstall(game_root: str | Path) -> tuple[bool, str]:
+    """Take the checker out of plugins.js and delete its file."""
+    detected = _detect_engine(Path(game_root))
+    if detected is None:
+        return True, "Translation update check: not an RPG Maker MV/MZ game."
+    _, plugins_js, plugins_dir = detected
+    target = plugins_dir / f"{PLUGIN_NAME}.js"
+    if target.is_symlink() or (target.exists() and not target.is_file()):
+        return False, f"Plugin destination is not a regular file: {target}"
+    try:
+        content = plugins_js.read_text(encoding="utf-8")
+        if _declared(content):
+            newline = "\r\n" if "\r\n" in content else "\n"
+            updated = update_plugin_entry(content, PLUGIN_NAME, None, newline)
+            plugins_js.write_text(updated, encoding="utf-8", newline="")
+        if target.is_file():
+            system.unlink(target)
+    except (OSError, ValueError) as exc:
+        return False, f"Could not remove translation update check: {exc}"
+    return True, "Translation update check removed."

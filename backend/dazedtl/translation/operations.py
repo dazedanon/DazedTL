@@ -544,7 +544,7 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
             if key not in {"inputs", "checkpoint"}
         }
     elif action == "gameupdate":
-        result = engine.install_gameupdate(source, log=progress)
+        result = engine.gameupdate(source, options, log=progress)
     elif action == "stage_update":
         official = Path(arguments["official"]).expanduser().resolve(strict=True)
         if (

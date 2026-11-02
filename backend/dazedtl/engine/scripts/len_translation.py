@@ -94,10 +94,12 @@ def main(argv=None) -> int:
         project = load_project(args.game_root)
         if args.command == "rpgmaker-prep":
             from util.project_preparation import prepare_rpgmaker
-            from util.len_translation import setup_forge
+            from util.len_translation import setup_forge, setup_inspector
 
             result = prepare_rpgmaker(project.game_root, data_path=args.data_path,
-                                     log=lambda message: print(message, file=sys.stderr))
+                                     log=lambda message: print(message, file=sys.stderr),
+                                     gameupdate=project.install_gameupdate)
+            result["tl_inspector"] = setup_inspector(project)
             result["forge"] = setup_forge(project)
             print(json.dumps(result, ensure_ascii=False, indent=2))
         elif args.command == "forge-setup":

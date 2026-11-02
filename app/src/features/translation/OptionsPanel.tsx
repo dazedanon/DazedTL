@@ -143,33 +143,76 @@ export function OptionsPanel({
           />
         )}
       </FieldRow>
-      <CheckGroup id="translation-scope" label="Include">
+      <CheckGroup id="translation-scope" label="Translate" stacked>
         <CheckField
           id="translation-images"
-          label="Image text"
+          label="Text in images"
+          description="Your assistant also translates words drawn into the game's pictures, such as title screens and menu graphics."
           checked={options.include_images}
           onChange={(checked) => edit("include_images", checked)}
         />
         <CheckField
           id="translation-glossary"
-          label="Base glossary"
+          label="DazedTL's base glossary"
+          description="Common Japanese honorifics and interface words, added below the game's own glossary. Japanese games only."
           checked={options.include_glossary_base}
           onChange={(checked) => edit("include_glossary_base", checked)}
         />
       </CheckGroup>
-      <CheckGroup id="translation-setup" label="Setup">
-        {project.engine === "MVMZ" && (
-          <CheckField
-            id="translation-forge"
-            label="Install Forge for playtesting"
-            checked={options.install_forge}
-            onChange={(checked) => edit("install_forge", checked)}
-          />
-        )}
+      {/* Your assistant installs or takes out each tool when it prepares
+          the game. */}
+      {(state.gameUpdateOffered || project.engine === "MVMZ") && (
+        <CheckGroup id="translation-tools" label="Install in the game" stacked>
+          {state.gameUpdateOffered && (
+            <CheckField
+              id="translation-gameupdate"
+              label="GameUpdate"
+              description={
+                state.gameUpdate.state === "unconfigured" ? (
+                  <>
+                    Lets players download your newest translation by running
+                    GameUpdate. DazedTL sets it up once the owner of your patch
+                    repositories is set in Settings.{" "}
+                    <Button
+                      variant="link"
+                      onClick={() => settings("gameupdate")}
+                    >
+                      Open GameUpdate settings
+                    </Button>
+                  </>
+                ) : (
+                  "Lets players download your newest translation by running GameUpdate."
+                )
+              }
+              checked={options.install_gameupdate}
+              onChange={(checked) => edit("install_gameupdate", checked)}
+            />
+          )}
+          {project.engine === "MVMZ" && (
+            <>
+              <CheckField
+                id="translation-forge"
+                label="Forge"
+                description="An in-game cheat and editor menu for playtesting: switches, variables, items, gold and teleport. It ships with the translation."
+                checked={options.install_forge}
+                onChange={(checked) => edit("install_forge", checked)}
+              />
+              <CheckField
+                id="translation-inspector"
+                label="TL Inspector"
+                description="Press its hotkey in the game to see which file and line the text on screen comes from. Stays on your computer."
+                checked={options.install_tl_inspector}
+                onChange={(checked) => edit("install_tl_inspector", checked)}
+              />
+            </>
+          )}
+        </CheckGroup>
+      )}
+      <CheckGroup id="translation-investigation" label="Investigation" stacked>
         <CheckField
           id="translation-thorough"
           label="Thorough investigation"
-          help="Three independent passes look for names, running jokes and speech habits instead of one. They find more, and that step uses about three times as much of your assistant's plan."
+          description="Three passes instead of one look for names, running jokes and speech habits. Finds more, and that step uses about three times as much of your assistant's plan."
           checked={options.thorough_investigation}
           onChange={(checked) => edit("thorough_investigation", checked)}
         />

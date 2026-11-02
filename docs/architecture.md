@@ -137,6 +137,7 @@ The engine probe ([engine_runtime](../tests/fixtures/engine_runtime.py)) checks 
   Assistant-led's patch checks refuse with a `PackageRefusal`, whose message is the assistant's next step and whose reason Release shows.
 - A VX Ace game ZIP's name must be ASCII: its Game.exe fails as "RGSS301.dll File corrupted" from a Japanese-named folder on English Windows.
 - Writing the GameUpdate config never marks saved work Outdated, and outside RPG Maker, GameUpdate installs only for engines whose patch layouts were checked (`GAMEUPDATE_ENGINES` in [translation](../backend/dazedtl/compatibility/translation.py)).
+- Assistant-led's preparation installs or takes out GameUpdate, Forge and TL Inspector as the project's options choose, and `setup_mismatch` in [translation](../backend/dazedtl/compatibility/translation.py) is the one rule that holds a patch while the game's GameUpdate or Forge differs from them.
 
 ## Plugins and images
 

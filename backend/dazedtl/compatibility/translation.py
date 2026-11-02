@@ -66,6 +66,12 @@ def provider_errors(function):
 GAMEUPDATE_ENGINES = frozenset({"WOLF", "Unity", "TyranoScript"})
 
 
+def gameupdate_offered(engine):
+    """Whether GameUpdate installs in games of `engine`: RPG Maker's
+    preparation installs it, and operation gameupdate the others'."""
+    return engine in {"MVMZ", "ACE"} or engine in GAMEUPDATE_ENGINES
+
+
 def gameupdate_refusal(engine, files):
     """Why GameUpdate would break a patch of these files, or None. In a WOLF
     game it unpacks the game's Data.wolf into a loose Data folder and takes
@@ -153,6 +159,8 @@ class TranslationEngine:
                     "instructions",
                     "include_glossary_base",
                     "install_forge",
+                    "install_gameupdate",
+                    "install_tl_inspector",
                 )
             },
         )
@@ -667,15 +675,18 @@ class TranslationEngine:
             # Formatting changes a VX Ace game's exports, which it reads once
             # packed into Data.
             game.watch(data_path or "ace_json")
-            return self._prepare(source, options, data_path, log)
+            result = self._prepare(source, options, data_path, log)
+            game.wrote(*result.get("gameupdate_removed", ()))
+            return result
 
-    def install_gameupdate(self, source, log=None):
+    def gameupdate(self, source, options, log=None):
         """Installs GameUpdate's files in a game of an engine whose patches
-        GameUpdate installs (GAMEUPDATE_ENGINES), in one write to the game;
-        an RPG Maker game gets them from its preparation. DazedTL writes the
+        GameUpdate installs (GAMEUPDATE_ENGINES), or takes them out when the
+        project's options leave GameUpdate out, in one write to the game; an
+        RPG Maker game gets them from its preparation. DazedTL writes the
         game's config once the files are there, as for RPG Maker."""
         from util.len_patch_scope import setup_files
-        from util.project_preparation import install_gameupdate
+        from util.project_preparation import install_gameupdate, remove_gameupdate
 
         from .game_write import write_game
 
@@ -685,6 +696,14 @@ class TranslationEngine:
             raise ValueError(
                 "An RPG Maker game gets GameUpdate from operation rpgmaker_prepare."
             )
+        log = log or (lambda _line: None)
+        if not options["install_gameupdate"]:
+            with write_game(root, log=log, pack=False) as game:
+                removed, errors = remove_gameupdate(root, log=log)
+                game.wrote(*removed)
+                if errors:
+                    raise ValueError("GameUpdate removal failed. " + "; ".join(errors))
+            return {"engine": engine, "removed": removed}
         if engine not in GAMEUPDATE_ENGINES:
             raise ValueError(
                 "GameUpdate installs only in games DazedTL recognizes as WOLF, "
@@ -696,7 +715,6 @@ class TranslationEngine:
             engine, _tracked(root) if game_git_set_up(root) else ()
         ):
             raise ValueError(refusal)
-        log = log or (lambda _line: None)
         readme = not (root / "README.md").exists()
         with write_game(root, log=log, pack=False) as game:
             copied, errors = install_gameupdate(root, wolf=engine == "WOLF", log=log)
@@ -704,6 +722,47 @@ class TranslationEngine:
             if errors:
                 raise ValueError("GameUpdate copy failed. " + "; ".join(errors))
         return {"engine": engine, "files": copied}
+
+    def setup_mismatch(self, source, options):
+        """The tool a patch would carry against the project's options, as
+        (the assistant's next step, the user's reason), or None. GameUpdate
+        and Forge go to players; TL Inspector never does."""
+        from util.forge import installer as forge
+        from util.project_preparation import gameupdate_installed
+
+        root = Path(source)
+        engine = self.detect(root)
+        rpgmaker = engine in {"MVMZ", "ACE"}
+        step = "operation rpgmaker_prepare" if rpgmaker else "operation gameupdate"
+        tools = []
+        if gameupdate_offered(engine):
+            tools.append(
+                (
+                    "GameUpdate",
+                    options["install_gameupdate"],
+                    gameupdate_installed(root),
+                )
+            )
+        if engine == "MVMZ":
+            tools.append(
+                (
+                    "Forge",
+                    options["install_forge"],
+                    bool(forge.status(root).get("installed")),
+                )
+            )
+        for name, chosen, held in tools:
+            if chosen and not held:
+                return (
+                    f"The project's options include {name}, which the game doesn't have. Run {step} to install it, then package again.",
+                    f"Your assistant installs {name} first, as Options choose.",
+                )
+            if held and not chosen:
+                return (
+                    f"The project's options leave {name} out, but the game still has it. Run {step} to take it out, then package again.",
+                    f"Your assistant takes {name} out first, as Options choose.",
+                )
+        return None
 
     def rpgmaker_prepare_release(self, staged, options, baseline, log=None):
         """Prepares a new version's copy staged for a game update, which is
@@ -717,19 +776,25 @@ class TranslationEngine:
         and the exports formatting changes are packed into its Data, as
         preparing the game packs them."""
         from util.forge import installer as forge
-        from util.project_preparation import rpgmaker_layout
+        from util.project_preparation import GAMEUPDATE_LAUNCHER, rpgmaker_layout
 
         log = log or (lambda _line: None)
         layout = rpgmaker_layout(staged)
+        tools = {
+            "gameupdate": baseline is None or GAMEUPDATE_LAUNCHER in baseline,
+            "forge": False,
+        }
         if not layout or layout["engine"] != "ACE":
             target = forge.status(Path(staged)).get("target")
-            had_forge = bool(target) and (
+            tools["forge"] = bool(target) and (
                 baseline is None
                 or Path(target).relative_to(staged).as_posix() in baseline
             )
-            return self._prepare(staged, options, None, log, forge=had_forge)
+            return self._prepare(staged, options, None, log, baseline=tools)
         return self._convert_ace(
-            staged, lambda: self._prepare(staged, options, None, log), log
+            staged,
+            lambda: self._prepare(staged, options, None, log, baseline=tools),
+            log,
         )
 
     def _convert_ace(self, staged, prepare, log):
@@ -750,9 +815,12 @@ class TranslationEngine:
             actions.run(Path(staged), "ace_pack", log, only=changed)
         return result
 
-    def _prepare(self, source, options, data_path, log, *, forge=True):
+    def _prepare(self, source, options, data_path, log, *, baseline=None):
+        """Prepares the game's RPG Maker files, installing or taking out
+        GameUpdate, Forge and TL Inspector as the project's options choose;
+        a staged release copy gets only the tools its `baseline` names."""
         from desktop.backend.cli_environment import public_values
-        from util.len_translation import setup_forge
+        from util.len_translation import setup_forge, setup_inspector
         from util.project_preparation import prepare_rpgmaker
 
         values = public_values(self.profile)
@@ -765,10 +833,20 @@ class TranslationEngine:
                 if key.casefold() not in {"key", "secret", "api_key"}
             ).encode("utf-8"),
         )
-        result = prepare_rpgmaker(source, data_path=data_path, env_path=path, log=log)
+        gameupdate = (
+            options["install_gameupdate"]
+            if baseline is None
+            else baseline["gameupdate"]
+        )
+        result = prepare_rpgmaker(
+            source, data_path=data_path, env_path=path, log=log, gameupdate=gameupdate
+        )
+        project = self.project(source, options)
+        if baseline is None:
+            result["tl_inspector"] = setup_inspector(project)
         result["forge"] = (
-            setup_forge(self.project(source, options))
-            if forge
+            setup_forge(project)
+            if baseline is None or baseline["forge"]
             else {"status": "skipped", "message": "The game's baseline has no Forge."}
         )
         return result

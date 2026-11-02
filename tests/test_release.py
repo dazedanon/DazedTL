@@ -2,6 +2,7 @@
 
 import json
 import os
+import shutil
 import sqlite3
 import subprocess
 import unittest
@@ -733,6 +734,49 @@ class ReleaseTests(unittest.TestCase):
             self.assertFalse(current(release, game))
             self.assertTrue(current({**release, "checkpoint": None}, game))
 
+    def test_preparing_an_mz_game_installs_the_tools_its_options_choose(self):
+        # Assistant-led's preparation installed GameUpdate whatever the
+        # project chose and never TL Inspector; preparing again applies a
+        # changed choice, and a patch waits until the game matches.
+        with TemporaryDirectory() as folder:
+            temporary = Path(folder)
+            game = temporary / "game"
+            shutil.copytree(Path(__file__).parent / "fixtures/mz-game", game)
+            (temporary / "profile").mkdir()
+            engine = TranslationEngine(temporary / "profile")
+            plugins = game / "js/plugins"
+            options = {
+                "mode": "agent",
+                "include_images": False,
+                "instructions": "",
+                "include_glossary_base": False,
+                "install_forge": False,
+                "install_gameupdate": False,
+                "install_tl_inspector": True,
+            }
+            engine.rpgmaker_prepare(game, options)
+            self.assertFalse((game / "GameUpdate.bat").exists())
+            # The update check stays as TL Inspector's loader; without
+            # GameUpdate's config it checks nothing.
+            self.assertTrue((plugins / "TLInspector.js").is_file())
+            self.assertTrue((plugins / "TranslationUpdateCheck.js").is_file())
+            self.assertIsNone(engine.setup_mismatch(game, options))
+            options.update(install_gameupdate=True, install_tl_inspector=False)
+            self.assertIn("rpgmaker_prepare", engine.setup_mismatch(game, options)[0])
+            engine.rpgmaker_prepare(game, options)
+            self.assertTrue((game / "GameUpdate.bat").is_file())
+            self.assertFalse((plugins / "TLInspector.js").exists())
+            self.assertIsNone(engine.setup_mismatch(game, options))
+            options.update(install_gameupdate=False)
+            engine.rpgmaker_prepare(game, options)
+            self.assertFalse((game / "gameupdate").exists())
+            self.assertFalse((plugins / "TranslationUpdateCheck.js").exists())
+            self.assertNotIn(
+                "TranslationUpdateCheck",
+                (game / "js/plugins.js").read_text(encoding="utf-8"),
+            )
+            self.assertIsNone(engine.setup_mismatch(game, options))
+
     def test_gameupdate_installs_only_where_it_updates_a_patch(self):
         # GameUpdate takes a WOLF game's Data.wolf out once it unpacks the
         # loose Data folder, a patch's repacked one too.
@@ -740,6 +784,7 @@ class ReleaseTests(unittest.TestCase):
         self.assertIsNone(gameupdate_refusal("WOLF", ["Data/Picture.wolf"]))
         self.assertIsNone(gameupdate_refusal("Unity", ["Data.wolf"]))
         engine = TranslationEngine.__new__(TranslationEngine)
+        on, off = {"install_gameupdate": True}, {"install_gameupdate": False}
         with TemporaryDirectory() as folder:
             game = Path(folder)
             for detected, refusal in (
@@ -748,18 +793,39 @@ class ReleaseTests(unittest.TestCase):
             ):
                 engine.detect = lambda _root, name=detected: name
                 with self.assertRaisesRegex(ValueError, refusal):
-                    engine.install_gameupdate(game)
+                    engine.gameupdate(game, on)
             engine.detect = lambda _root: "Unity"
             written = []
             with patch("dazedtl.compatibility.game_write.write_game") as write_game:
                 write_game.return_value.__enter__.return_value.wrote = lambda *names: (
                     written.extend(names)
                 )
-                engine.install_gameupdate(game)
-            self.assertTrue((game / "gameupdate/patch.sh").is_file())
-            self.assertFalse((game / "UberWolfCli.exe").exists())
-            # The write names what it installed, so its checkpoint takes the
-            # files into the patch.
+                self.assertIn("install", engine.setup_mismatch(game, on)[0])
+                engine.gameupdate(game, on)
+                self.assertIsNone(engine.setup_mismatch(game, on))
+                self.assertTrue((game / "gameupdate/patch.sh").is_file())
+                self.assertFalse((game / "UberWolfCli.exe").exists())
+                # The write names what it installed, so its checkpoint takes
+                # the files into the patch.
+                self.assertLessEqual(
+                    {"GameUpdate.bat", "gameupdate/patch.sh", "README.md"}, set(written)
+                )
+                # Options that leave GameUpdate out take it out again, and the
+                # patch waits until they do; the player README stays.
+                (game / "gameupdate/patch-config.txt").write_text("repo=x", encoding="utf-8")
+                self.assertIn("take it out", engine.setup_mismatch(game, off)[0])
+                written.clear()
+                engine.gameupdate(game, off)
+            self.assertIsNone(engine.setup_mismatch(game, off))
+            self.assertEqual(
+                sorted(path.relative_to(game).as_posix() for path in game.rglob("*")),
+                ["README.md"],
+            )
             self.assertLessEqual(
-                {"GameUpdate.bat", "gameupdate/patch.sh", "README.md"}, set(written)
+                {
+                    "GameUpdate.bat",
+                    "gameupdate/patch.sh",
+                    "gameupdate/patch-config.txt",
+                },
+                set(written),
             )

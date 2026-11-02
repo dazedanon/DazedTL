@@ -16,6 +16,8 @@ class TranslationOptions(TypedDict):
     include_images: bool
     include_glossary_base: bool
     install_forge: bool
+    install_gameupdate: bool
+    install_tl_inspector: bool
     thorough_investigation: bool
 
 
@@ -414,6 +416,8 @@ class TranslationState(ProjectOptions):
     coverage: Coverage | None
     git: GitStatus | None
     gameUpdate: GameUpdateStatus
+    # Whether GameUpdate installs in this game's engine, so Options offers it.
+    gameUpdateOffered: bool
     lifecycle: Lifecycle
     # Release's options and ZIPs; None for a Guided project.
     release: AssistantRelease | None

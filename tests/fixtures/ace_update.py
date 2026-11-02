@@ -36,6 +36,8 @@ options = {
     "instructions": "",
     "include_glossary_base": False,
     "install_forge": False,
+    "install_gameupdate": True,
+    "install_tl_inspector": False,
 }
 (temporary / "profile").mkdir()
 engine = TranslationEngine(temporary / "profile")

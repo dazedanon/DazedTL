@@ -16,6 +16,9 @@ WOLF_ONLY_GAMEUPDATE_NAMES = frozenset({"UberWolfCli.exe", "UberWolfCli.LICENSE.
 RPG_GAMEUPDATE_COPY_SKIP_NAMES = GAMEUPDATE_COPY_SKIP_NAMES | WOLF_ONLY_GAMEUPDATE_NAMES
 # Reinstalling the helper keeps a game's own README.
 GAMEUPDATE_PRESERVE_EXISTING = frozenset({"README.md"})
+GAMEUPDATE_LAUNCHER = "GameUpdate.bat"
+GAMEUPDATE_CONFIG = "gameupdate/patch-config.txt"
+GAMEUPDATE_STATE = "gameupdate/previous_patch_sha.txt"
 
 
 def format_plugins_js(path: str | Path) -> int:
@@ -91,6 +94,55 @@ def install_gameupdate(game_root: str | Path, *, wolf: bool = False, source: str
     return copied, errors
 
 
+def gameupdate_installed(game_root: str | Path) -> bool:
+    """Whether the game holds GameUpdate's launcher, which players run."""
+    return (Path(game_root) / GAMEUPDATE_LAUNCHER).is_file()
+
+
+def remove_gameupdate(game_root: str | Path, *, source: str | Path | None = None,
+                      log=None) -> tuple[list[str], list[str]]:
+    """Delete the GameUpdate files install_gameupdate copies, the config and
+    state written beside them, and on MV/MZ the update check; the README stays,
+    since it is the published repository's page. Returns the removed paths and
+    any errors."""
+    from util import system
+    from util.translation_update_check.installer import uninstall as uninstall_check
+
+    root = Path(game_root)
+    source = Path(source) if source is not None else PROJECT_ROOT / "gameupdate"
+    names = {path.relative_to(source).as_posix() for path in source.rglob("*") if path.is_file()}
+    names -= GAMEUPDATE_PRESERVE_EXISTING | {WOLF_README_SECTION}
+    names |= {GAMEUPDATE_CONFIG, GAMEUPDATE_STATE}
+    removed, errors = [], []
+    for name in sorted(names):
+        target = root / name
+        try:
+            _game_path(root, target)
+            if target.is_file():
+                system.unlink(target)
+                removed.append(name)
+                if log:
+                    log(f"  removed {name}")
+        except (OSError, ValueError) as exc:
+            errors.append(f"{name}: {exc}")
+    folder = root / "gameupdate"
+    try:
+        if folder.is_dir() and not folder.is_symlink() and not any(folder.iterdir()):
+            system.rmdir(folder)
+    except OSError as exc:
+        errors.append(f"gameupdate: {exc}")
+    plugins = rpgmaker_layout(root)
+    if plugins and plugins["plugins_js"]:
+        check = plugins["plugins_js"].parent / "plugins/TranslationUpdateCheck.js"
+        held = check.is_file()
+        ok, message = uninstall_check(root)
+        if not ok:
+            errors.append(message)
+        elif held:
+            removed += [path.relative_to(root).as_posix() for path in (plugins["plugins_js"], check)]
+    return removed, errors
+
+
 def _game_path(root: Path, path: Path) -> Path:
     """Validate a selected game path before an in-place preparation write."""
     if not path.is_relative_to(root) or ".." in path.relative_to(root).parts:
@@ -151,11 +203,14 @@ def install_startup_check(game_root: str | Path, *, settings_root: str | Path | 
 
 
 def prepare_rpgmaker(game_root: str | Path, *, data_path: str | Path | None = None,
-                     gameupdate_source: str | Path | None = None, env_path=None, log=None) -> dict:
+                     gameupdate_source: str | Path | None = None, env_path=None, log=None,
+                     gameupdate: bool = True) -> dict:
     """Run Workflow's three file-preparation steps, before the shared Git setup.
 
     Ace extraction/conversion is Workflow Step 0: supply its existing JSON export.
-    Native Marshal files are never run through a text formatter.
+    Native Marshal files are never run through a text formatter. Without
+    `gameupdate`, the third step takes GameUpdate and its startup check out
+    instead of installing them.
     """
     from util.dazedformat import format_json_files
 
@@ -179,9 +234,9 @@ def prepare_rpgmaker(game_root: str | Path, *, data_path: str | Path | None = No
         _game_path(root, plugins)
         _game_path(root, plugins.parent / "plugins/TranslationUpdateCheck.js")
     source = Path(gameupdate_source) if gameupdate_source is not None else PROJECT_ROOT / "gameupdate"
-    if not (source / "GameUpdate.bat").is_file():
+    if not (source / GAMEUPDATE_LAUNCHER).is_file():
         raise ValueError(f"The bundled GameUpdate helper is missing: {source}")
-    _game_path(root, root / "gameupdate/patch-config.txt")
+    _game_path(root, root / GAMEUPDATE_CONFIG)
 
     emit = log or (lambda _message: None)
     emit("1. Format game data")
@@ -191,6 +246,15 @@ def prepare_rpgmaker(game_root: str | Path, *, data_path: str | Path | None = No
     emit("2. Format plugin configuration" if plugins else "2. Plugin configuration: not applicable to Ace")
     if plugins:
         format_plugins_js(plugins)
+    result = {"engine": layout["engine"], "data_path": str(data), "formatted_json": count,
+              "plugins_formatted": bool(plugins),
+              "next_step": "Review preparation, then run git-setup before translating."}
+    if not gameupdate:
+        emit("3. Remove GameUpdate")
+        removed, errors = remove_gameupdate(root, source=source, log=emit)
+        if errors:
+            raise ValueError("GameUpdate removal failed. " + "; ".join(errors))
+        return {**result, "gameupdate_removed": removed}
     emit("3. Install GameUpdate")
     copied, errors = install_gameupdate(root, source=source, log=emit)
     if errors:
@@ -203,11 +267,8 @@ def prepare_rpgmaker(game_root: str | Path, *, data_path: str | Path | None = No
         if not installed:
             raise ValueError(checker_message)
     emit(checker_message)
-    return {"engine": layout["engine"], "data_path": str(data), "formatted_json": count,
-            "plugins_formatted": bool(plugins), "gameupdate_files": copied,
-            "config_written": configured, "config_status": config_message,
-            "startup_check": checker_message,
-            "next_step": "Review preparation, then run git-setup before translating."}
+    return {**result, "gameupdate_files": copied, "config_written": configured,
+            "config_status": config_message, "startup_check": checker_message}
 
 
 def prepare_rpgmaker_patch(patch_root: str | Path, game_root: str | Path, *, log=None) -> dict:

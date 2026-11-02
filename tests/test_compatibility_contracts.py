@@ -4003,6 +4003,8 @@ def parse(codeList, i, headerString, jaString):
                 "instructions": "",
                 "include_glossary_base": False,
                 "install_forge": False,
+                "install_gameupdate": True,
+                "install_tl_inspector": False,
             }
             engine.rpgmaker_prepare(game, options)
             self.assertEqual(sorted(path.name for path in game.glob("Game.rgss*")), [])

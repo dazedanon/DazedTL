@@ -62,6 +62,8 @@ class LenProject:
     instructions: str = ""
     include_glossary_base: bool = True
     install_forge: bool = True
+    install_gameupdate: bool = True
+    install_tl_inspector: bool = False
 
     @property
     def workspace(self) -> Path:
@@ -82,8 +84,9 @@ def _validate_project(project: LenProject) -> None:
         raise ValueError("Choose an existing game folder.")
     if project.mode not in MODES:
         raise ValueError("Choose a supported translation mode.")
-    if any(type(value) is not bool for value in (project.include_images, project.include_glossary_base, project.install_forge)):
-        raise ValueError("Image scope, base glossary and Forge installation must be enabled or disabled.")
+    if any(type(value) is not bool for value in (project.include_images, project.include_glossary_base, project.install_forge,
+                                                 project.install_gameupdate, project.install_tl_inspector)):
+        raise ValueError("Image scope, base glossary and tool installation must be enabled or disabled.")
     if not isinstance(project.instructions, str):
         raise ValueError("Project instructions must be text.")
     # Do not write through project metadata symlinks into unrelated locations.
@@ -107,6 +110,8 @@ def load_project(game_root: Path) -> LenProject:
         # The skill resumes from artifacts and reviews costs before paid work.
         project = LenProject(game_root, include_glossary_base=data.get("include_glossary_base", True),
                              install_forge=data.get("install_forge", True),
+                             install_gameupdate=data.get("install_gameupdate", True),
+                             install_tl_inspector=data.get("install_tl_inspector", False),
                              **{key: data[key] for key in (
             "mode", "include_images", "instructions"
         )})
@@ -486,26 +491,35 @@ def _prepare_local_work(project: LenProject) -> None:
     project.work_root.mkdir(parents=True, exist_ok=True)
 
 
-def setup_forge(project: LenProject) -> dict:
-    """Honor Len's saved opt-in using Workflow's existing offline Forge installer."""
+def _playtest_config() -> dict:
+    """The translator's playtest settings, which Forge and TL Inspector are written with."""
+    from util.playtest.config import load_config
+
+    if os.environ.get("DAZEDTL_DESKTOP_WORKSPACE"):
+        from desktop.backend.cli_environment import public_values
+        values = public_values(os.environ["DAZEDTL_DESKTOP_WORKSPACE"])
+        return {"hotkey": values["tlHotkey"], "forgeHotkey": values["forgeHotkey"],
+                "uiScale": values["playtestUiScale"], "editorCmd": values["tlEditorCmd"], "workspaceFolder": "auto"}
+    return load_config(DATA_DIR.parent / ".env")
+
+
+def _setup_tool(project: LenProject, module, name: str, chosen: bool) -> dict:
+    """Installs an MV/MZ playtest tool the project chooses, or takes out one it doesn't."""
     _validate_project(project)
     layout = rpgmaker_layout(project.game_root)
     if not layout or layout["engine"] != "MVMZ":
-        return {"status": "unsupported", "message": "Forge supports RPG Maker MV/MZ only."}
-    if not project.install_forge:
-        return {"status": "skipped", "message": "Forge installation is disabled for this project."}
-    from util.forge.installer import install
-    from util.playtest.config import load_config
+        return {"status": "unsupported", "message": f"{name} supports RPG Maker MV/MZ only."}
+    if not chosen:
+        if not module.status(project.game_root).get("installed"):
+            return {"status": "skipped", "message": f"{name} installation is disabled for this project."}
+        ok, message = module.uninstall(project.game_root)
+        if not ok:
+            raise ValueError(message)
+        return {"status": "removed", "message": message}
     from util.project_preparation import format_plugins_js
 
     try:
-        cfg = load_config(DATA_DIR.parent / ".env")
-        if os.environ.get("DAZEDTL_DESKTOP_WORKSPACE"):
-            from desktop.backend.cli_environment import public_values
-            values = public_values(os.environ["DAZEDTL_DESKTOP_WORKSPACE"])
-            cfg = {"hotkey": values["tlHotkey"], "forgeHotkey": values["forgeHotkey"],
-                   "uiScale": values["playtestUiScale"], "editorCmd": values["tlEditorCmd"], "workspaceFolder": "auto"}
-        ok, message = install(project.game_root, cfg=cfg)
+        ok, message = module.install(project.game_root, cfg=_playtest_config())
         if not ok:
             raise ValueError(message)
         format_plugins_js(layout["plugins_js"])
@@ -514,3 +528,17 @@ def setup_forge(project: LenProject) -> dict:
         # runtime-patch repositories keep all of that working material local.
         _prepare_local_work(project)
     return {"status": "installed", "message": message}
+
+
+def setup_forge(project: LenProject) -> dict:
+    """Honor Len's saved Forge choice using Workflow's existing offline installer."""
+    from util.forge import installer
+
+    return _setup_tool(project, installer, "Forge", project.install_forge)
+
+
+def setup_inspector(project: LenProject) -> dict:
+    """Honor the saved TL Inspector choice; its file stays out of every patch."""
+    from util.tl_inspector import installer
+
+    return _setup_tool(project, installer, "TL Inspector", project.install_tl_inspector)
