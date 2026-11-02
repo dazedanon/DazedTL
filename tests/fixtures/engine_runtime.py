@@ -3708,15 +3708,20 @@ try:
             "いいえ": "No",
             "はいはい": "Sure, sure",
             "はいはいはい": "Okay",
+            "本当に？": "Really?",
+            "行く？ どこへ": "Go where?",
+            "行く？_どこへ": "Go where?",
         }
         galge_sent = []
+        galge_questions = []
 
         def galge_reply(change):
-            def reply(text, *_args, **_kwargs):
+            def reply(text, *args, **_kwargs):
                 if isinstance(text, str):
                     galge_sent.append(text)
                     return [galge_english.get(text, text), [0, 0]]
                 galge_sent.append(list(text))
+                galge_questions.append(args[0]["source_items"])
                 return [
                     change([galge_english.get(line, line) for line in text]),
                     [0, 0],
@@ -3786,6 +3791,70 @@ try:
             )
             choices_sent = [sent for sent in galge_sent if isinstance(sent, list)]
             assert len(choices_sent) == 2, (code, galge_sent)
+
+        # LL_GalgeChoiceWindowMV read each command by regex: a reply's comma
+        # split its choice in two in the game, shifting the branches; the
+        # choices went with the last message translated on the page, not the
+        # one their menu shows; and the rest of the line was read as the
+        # plugin's argument, so a word after it was sent inside the last
+        # choice and a message's line break was sent as an underscore.
+        def galge_mv_command(text):
+            return command(356, [f"LL_GalgeChoiceWindowMV {text}"])
+
+        menus = [
+            galge_mv_command("setMessageText 行く？"),
+            galge_mv_command("setChoices はい,はいはい"),
+            galge_mv_command("showChoice 1 1 1"),
+            galge_mv_command("setChoices はい,いいえ 予備"),
+            galge_mv_command("setMessageText 本当に？"),
+            galge_mv_command("showChoice 2 1 1"),
+            galge_mv_command("setMessageText 行く？\nどこへ"),
+            # A choice left untranslated keeps its line break, not the space
+            # it was sent with, which would end the plugin's argument.
+            galge_mv_command("setChoices はい,未\n訳"),
+        ]
+        for arguments, questions, newline in (
+            (True, [["行く？"], ["本当に？"]], " "),
+            (False, [["行く？"], ["行く？"]], "_"),
+        ):
+            galge_sent.clear()
+            galge_questions.clear()
+            written, mismatched, _marked = mv_page(
+                menus,
+                galge_reply(lambda reply: reply),
+                CODE356=True,
+                GALGE_CHOICES=True,
+                GALGE_ARGUMENTS=arguments,
+            )
+            assert [line for [line] in written] == [
+                "LL_GalgeChoiceWindowMV setMessageText Go?",
+                "LL_GalgeChoiceWindowMV setChoices Yes,Sure\uff0c_sure",
+                "LL_GalgeChoiceWindowMV showChoice 1 1 1",
+                # A frozen run sent the trailing word inside the last choice.
+                "LL_GalgeChoiceWindowMV setChoices Yes,"
+                + ("No 予備" if arguments else "いいえ 予備"),
+                "LL_GalgeChoiceWindowMV setMessageText Really?",
+                "LL_GalgeChoiceWindowMV showChoice 2 1 1",
+                "LL_GalgeChoiceWindowMV setMessageText Go_where?",
+                "LL_GalgeChoiceWindowMV setChoices Yes,未\n訳",
+            ], (arguments, written)
+            # The game splits the choices on the comma, two choices each.
+            assert [
+                len(line.split(" ")[2].split(",")) for [line] in written[1:4:2]
+            ] == [2, 2]
+            assert mismatched == [], mismatched
+            # Frozen runs send the rest of the first line and the last
+            # question translated, as they were approved.
+            last = f"行く？{newline}どこへ"
+            questions.append([last])
+            assert galge_questions == questions, (arguments, galge_questions)
+            sent = ["行く？", ["はい", "はいはい"]]
+            sent += [
+                ["はい", "いいえ"] if arguments else ["はい", "いいえ 予備"],
+                "本当に？",
+            ]
+            sent += [last, ["はい", f"未{newline}訳"]]
+            assert galge_sent == sent, (arguments, galge_sent)
 
         # A final save over a folder "succeeded": RPG Maker's own atomic
         # write fell back to moving the save into the folder. It saves

@@ -3739,6 +3739,82 @@ def _galge_sends(setData):
     return setData or not GALGE_CHOICES
 
 
+# Runs whose frozen policy reads LL_GalgeChoiceWindowMV (code 356) commands
+# by the plugin's own argument send that argument, and send a menu's choices
+# with the question it shows. Older runs send the rest of the command after
+# its subcommand and the question of the last Galge message translated on the
+# page.
+GALGE_ARGUMENTS = False
+_GALGE_MV = "LL_GalgeChoiceWindowMV"
+# The plugin splits setChoices' argument on the ASCII comma, so a reply's
+# comma is written as the full-width comma the game's Japanese font draws,
+# and the choice stays one choice.
+_GALGE_CHOICE_COMMA = "\uff0c"
+
+
+def _galge_mv_command(text):
+    """An LL_GalgeChoiceWindowMV command (code 356) parsed as the game reads
+    it: MV's command356 splits the line on the plain space into the command
+    and its arguments, and the plugin reads its subcommand from the first
+    argument and its message or choices from the second alone, newlines
+    included. Returns the subcommand and the second argument's (start, end)
+    span in *text*, or None for another command; the text around the span is
+    never the plugin's message or choices, so writes keep it byte for byte."""
+    if not isinstance(text, str):
+        return None
+    parts = text.split(" ", 3)
+    if len(parts) < 2 or parts[0] != _GALGE_MV:
+        return None
+    start = min(len(parts[0]) + len(parts[1]) + 2, len(text))
+    end = start + len(parts[2]) if len(parts) > 2 else start
+    return parts[1], start, end
+
+
+def _galge_mv_questions(codeList):
+    """The source question each LL_GalgeChoiceWindowMV setChoices command's
+    menu shows, by the command's id: the plugin keeps the last setMessageText
+    until another replaces it and draws it when showChoice shows the choices,
+    so a menu's question is the last one set before the showChoice after its
+    setChoices, or before the page's end when none follows."""
+    questions = {}
+    question = ""
+    waiting = []
+    for entry in codeList:
+        if not isinstance(entry, dict) or entry.get("code") != 356:
+            continue
+        parameters = entry.get("parameters") or [None]
+        command = _galge_mv_command(parameters[0])
+        if command is None:
+            continue
+        name, start, end = command
+        if name == "setMessageText":
+            question = parameters[0][start:end].replace("\n", " ")
+        elif name == "setChoices":
+            waiting.append(entry)
+        elif name == "showChoice":
+            questions.update((id(choices), question) for choices in waiting)
+            waiting = []
+    questions.update((id(choices), question) for choices in waiting)
+    return questions
+
+
+def _galge_mv_sent(text, name):
+    """The text an LL_GalgeChoiceWindowMV *name* command (code 356) sends
+    and the (start, end) span of *text* its reply is written over, or None
+    when it sends none: the plugin's argument, its newlines as spaces, or for
+    a run frozen without GALGE_ARGUMENTS the rest of the command after its
+    subcommand, its newlines as underscores, as it was approved. The reply is
+    written over the sent text alone, so the rest of the command stays byte
+    for byte."""
+    if GALGE_ARGUMENTS:
+        command = _galge_mv_command(text)
+        if command is None or command[0] != name or command[1] == command[2]:
+            return None
+        return text[command[1] : command[2]].replace("\n", " "), command[1:]
+    match = re.search(rf"{_GALGE_MV} {name} (.+)", text.replace("\n", "_"))
+    return None if match is None else (match.group(1), match.span(1))
+
+
 # Set from the run's frozen request policy (pagePacking): event pages of one
 # file with at most SHARED_LINES message boxes and choices share a
 # request, each page labelled, instead of each costing a request of its own.
@@ -3951,6 +4027,12 @@ def _searchCodes(page, pbar, jobList, filename):
 
         parameterSourceSnapshots = (
             _capture_event_parameter_sources(codeList) if setData else []
+        )
+        # Read before this pass writes any message over its source.
+        galgeQuestions = (
+            _galge_mv_questions(codeList)
+            if CODE356 and GALGE_ARGUMENTS and _galge_sends(setData)
+            else {}
         )
 
         # Iterate through page
@@ -5840,67 +5922,65 @@ def _searchCodes(page, pbar, jobList, filename):
 
                 # LL_GalgeChoiceWindowMV Message
                 galgeSend = _galge_sends(setData)
-                if "LL_GalgeChoiceWindowMV setMessageText" in jaString and galgeSend:
-                    ### Message Text First
-                    match = re.search(r"LL_GalgeChoiceWindowMV setMessageText (.+)", jaString)
-                    if match:
-                        jaString = match.group(1)
+                galgeMessage = galgeSend and _galge_mv_sent(oldjaString, "setMessageText")
+                if galgeMessage:
+                    sourceQuestion, (start, end) = galgeMessage
+                    response = _translate_string(sourceQuestion, "")
+                    totalTokens[0] += response[1][0]
+                    totalTokens[1] += response[1][1]
 
-                        # Remove any textwrap & TL
-                        jaString = re.sub(r"\n", " ", jaString)
-                        sourceQuestion = jaString
-                        response = _translate_string(jaString, "")
-                        translatedText = response[0]
-                        totalTokens[0] += response[1][0]
-                        totalTokens[1] += response[1][1]
-
-                        # Textwrap & Replace Whitespace
-                        translatedText = rpgmaker_rewrap.wrap_message(
-                            translatedText, WIDTH, source=match.group(1), rows=MESSAGEROWS
-                        )
-                        translatedText = word_spacing.join_words(
-                            translatedText,
-                            word_spacing.chosen("LL_GalgeChoiceWindowMV setMessageText", SPACES_356, NBSP_356),
-                        )
-
-                        # Replace and Set
-                        translatedText = match.group(0).replace(match.group(1), translatedText)
-                        codeList[i]["parameters"][0] = translatedText
+                    # Textwrap & Replace Whitespace
+                    translatedText = rpgmaker_rewrap.wrap_message(
+                        response[0], WIDTH, source=oldjaString[start:end], rows=MESSAGEROWS
+                    )
+                    translatedText = word_spacing.join_words(
+                        translatedText,
+                        word_spacing.chosen("LL_GalgeChoiceWindowMV setMessageText", SPACES_356, NBSP_356),
+                    )
+                    codeList[i]["parameters"][0] = oldjaString[:start] + translatedText + oldjaString[end:]
 
                 # LL_GalgeChoiceWindowMV Choices
-                if "LL_GalgeChoiceWindowMV setChoices" in jaString and galgeSend:
-                    match = re.search(r"LL_GalgeChoiceWindowMV setChoices (.+)", jaString)
-                    if match:
-                        jaString = match.group(1)
-                        choiceList = jaString.split(",")
+                galgeChoices = galgeSend and _galge_mv_sent(oldjaString, "setChoices")
+                if galgeChoices:
+                    sent, (start, end) = galgeChoices
+                    choiceList = sent.split(",")
+                    # A choice left untranslated keeps its source, newlines
+                    # and all, so no space the send put there splits it.
+                    sourceChoices = oldjaString[start:end].split(",")
+                    question = (
+                        galgeQuestions.get(id(codeList[i]), "")
+                        if GALGE_ARGUMENTS
+                        else sourceQuestion
+                    )
 
-                        # Keep the original Japanese message as choice context.
-                        response = translateAI(
-                            choiceList,
-                            {
-                                "instructions": [ctx("events.choice")],
-                                "source_items": [sourceQuestion],
-                            },
-                            True,
+                    # Keep the original Japanese message as choice context.
+                    response = translateAI(
+                        choiceList,
+                        {
+                            "instructions": [ctx("events.choice")],
+                            "source_items": [question],
+                        },
+                        True,
+                    )
+                    totalTokens[0] += response[1][0]
+                    totalTokens[1] += response[1][1]
+                    replies = reply_to_write(response[0], choiceList, MISMATCH, LOCK, filename)
+
+                    # Each reply goes in its own choice's place, so a choice
+                    # inside another one (はい in はいはい) is never written
+                    # there, and keeps the plugin's comma out, so it stays one
+                    # choice; a reply of the wrong length writes none.
+                    if replies is not None:
+                        spacing = word_spacing.chosen("LL_GalgeChoiceWindowMV setChoices", SPACES_356, NBSP_356)
+                        choiceListTL = [
+                            choice
+                            if reply is None
+                            else word_spacing.join_words(reply.replace(",", _GALGE_CHOICE_COMMA), spacing)
+                            for choice, reply in zip(sourceChoices, replies)
+                        ]
+                        codeList[i]["parameters"][0] = (
+                            oldjaString[:start] + ",".join(choiceListTL) + oldjaString[end:]
                         )
-                        totalTokens[0] += response[1][0]
-                        totalTokens[1] += response[1][1]
-                        replies = reply_to_write(response[0], choiceList, MISMATCH, LOCK, filename)
-
-                        # Each reply goes in its own choice's place, so a
-                        # choice inside another one (はい in はいはい) is never
-                        # written there; a reply of the wrong length writes none.
-                        if replies is not None:
-                            spacing = word_spacing.chosen("LL_GalgeChoiceWindowMV setChoices", SPACES_356, NBSP_356)
-                            choiceListTL = [
-                                choice if reply is None else word_spacing.join_words(reply, spacing)
-                                for choice, reply in zip(choiceList, replies)
-                            ]
-                            translatedText = match.group(0)[: match.start(1) - match.start(0)] + ",".join(choiceListTL)
-
-                            # Set Data
-                            codeList[i]["parameters"][0] = translatedText
-
             ### Event Code: 102 Show Choice
             if "code" in codeList[i] and codeList[i]["code"] == 102 and CODE102 is True:
                 choiceJob = _choice_job(codeList[i])

@@ -130,6 +130,13 @@ SHORT_OUTPUTS = "short-outputs-v1"
 # for again on the write pass. A run frozen without it sends them on both
 # passes, as it did when approved.
 GALGE_CHOICES = "galge-choices-once-v1"
+# LL_GalgeChoiceWindowMV (code 356) commands are read as the game reads them,
+# by the plugin's own argument (engine rpgmakermvmz _galge_mv_command), and
+# its choices are sent with the question their menu shows. A run frozen
+# without it sends the rest of the command after its subcommand and the
+# question of the last Galge message translated on the page, as it did when
+# approved.
+GALGE_ARGUMENTS = "galge-arguments-v1"
 # Each battle-message-users policy a saved run may hold, by the parser level it
 # enables: v2 also treats a party of one actor as that actor.
 BATTLE_MESSAGE_USERS_LEVELS = {
@@ -151,6 +158,7 @@ FROZEN_POLICIES = {
     "sourceText": SOURCE_TEXT,
     "shortOutputs": SHORT_OUTPUTS,
     "galgeChoices": GALGE_CHOICES,
+    "galgeArguments": GALGE_ARGUMENTS,
 }
 # A reply's lines have the small kana a model leaves in a line holding no
 # other Japanese written as Latin letters (engine util/target_text

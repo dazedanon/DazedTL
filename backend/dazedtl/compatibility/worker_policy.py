@@ -13,6 +13,7 @@ from dazedtl.settings.preferences import (
     BATTLE_MESSAGE_USERS_LEVELS,
     CHOICE_COLLECTION,
     CODE_NAMEPLATES,
+    GALGE_ARGUMENTS,
     GALGE_CHOICES,
     GENERATION_PARAMETERS,
     MAP_NAME_IDENTITIES,
@@ -90,6 +91,9 @@ def configure_states(plan, root, policy):
         )
         cast(Any, module).GALGE_CHOICES = bool(
             policy and policy.get("galgeChoices") == GALGE_CHOICES
+        )
+        cast(Any, module).GALGE_ARGUMENTS = bool(
+            policy and policy.get("galgeArguments") == GALGE_ARGUMENTS
         )
         source_text = (policy or {}).get("sourceText")
         cast(Any, module).SOURCE_TEXT = (
@@ -222,6 +226,7 @@ def install(*, coordinator=False):
             or policy.get("stateGrouping") not in (None, state_requests.POLICY)
             or policy.get("choiceCollection") not in (None, CHOICE_COLLECTION)
             or policy.get("galgeChoices") not in (None, GALGE_CHOICES)
+            or policy.get("galgeArguments") not in (None, GALGE_ARGUMENTS)
             or policy.get("speakerContext") not in (None, SPEAKER_CONTEXT)
             or policy.get("sameLineSpeakers") not in (None, SAME_LINE_SPEAKERS)
             or policy.get("codeNameplates") not in (None, CODE_NAMEPLATES)
