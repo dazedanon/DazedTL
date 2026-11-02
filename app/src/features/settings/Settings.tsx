@@ -11,6 +11,7 @@ import TranslationDefaults from "./TranslationDefaults";
 import GameUpdateSettings from "./GameUpdateSettings";
 import Updates from "./Updates";
 import Notifications from "./Notifications";
+import Credits from "./Credits";
 import { updateAttention, useUpdates } from "../../app/updates";
 import { RemoveConnection } from "./RemoveConnection";
 import {
@@ -34,6 +35,7 @@ const sections = [
   { id: "gameupdate", label: "GameUpdate" },
   { id: "notifications", label: "Notifications" },
   { id: "updates", label: "Updates" },
+  { id: "credits", label: "Credits" },
 ] as const;
 export type SettingsSection = (typeof sections)[number]["id"];
 
@@ -420,6 +422,7 @@ export default function Settings({
           ),
           notifications: <Notifications />,
           updates: <Updates running={running} />,
+          credits: <Credits />,
         }}
       />
       {removal && config && (
