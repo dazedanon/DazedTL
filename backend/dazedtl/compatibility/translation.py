@@ -699,6 +699,11 @@ class TranslationEngine:
             raise ValueError(
                 "An RPG Maker game gets GameUpdate from operation rpgmaker_prepare."
             )
+        if engine not in GAMEUPDATE_ENGINES:
+            raise ValueError(
+                "GameUpdate installs only in games DazedTL recognizes as WOLF, "
+                "Unity or TyranoScript, whose patches it was checked with."
+            )
         log = log or (lambda _line: None)
         if not self.project(root, options).install_gameupdate:
             with write_game(root, log=log, pack=False) as game:
@@ -707,11 +712,6 @@ class TranslationEngine:
                 if errors:
                     raise ValueError("GameUpdate removal failed. " + "; ".join(errors))
             return {"engine": engine, "removed": removed}
-        if engine not in GAMEUPDATE_ENGINES:
-            raise ValueError(
-                "GameUpdate installs only in games DazedTL recognizes as WOLF, "
-                "Unity or TyranoScript, whose patches it was checked with."
-            )
         from util.paths import game_git_set_up
 
         if refusal := gameupdate_refusal(
@@ -731,7 +731,8 @@ class TranslationEngine:
         (the assistant's next step, the user's reason), or None. GameUpdate
         and Forge go to players; TL Inspector never does."""
         from util.forge import installer as forge
-        from util.project_preparation import gameupdate_installed
+        from util.paths import game_git_set_up
+        from util.project_preparation import GAMEUPDATE_CONFIG, gameupdate_installed
 
         root = Path(source)
         engine = self.detect(root)
@@ -740,23 +741,29 @@ class TranslationEngine:
         step = "operation rpgmaker_prepare" if rpgmaker else "operation gameupdate"
         tools = []
         if gameupdate_offered(engine):
-            tools.append(
-                (
-                    "GameUpdate",
-                    project.install_gameupdate,
-                    gameupdate_installed(root),
+            installed = gameupdate_installed(root)
+            if project.install_gameupdate and not installed and not rpgmaker:
+                refusal = gameupdate_refusal(
+                    engine, _tracked(root) if game_git_set_up(root) else ()
                 )
-            )
+                if refusal:
+                    return (
+                        refusal,
+                        "GameUpdate can't update this patch. Untick GameUpdate in Options, or your assistant ships the data as the game's files.",
+                    )
+            # A config left behind still joins the patch.
+            held = installed or (root / GAMEUPDATE_CONFIG).is_file()
+            tools.append(("GameUpdate", project.install_gameupdate, installed, held))
         if engine == "MVMZ":
             tools.append(
                 (
                     "Forge",
                     project.install_forge,
-                    bool(forge.status(root).get("installed")),
+                    *[bool(forge.status(root).get("installed"))] * 2,
                 )
             )
-        for name, chosen, held in tools:
-            if chosen and not held:
+        for name, chosen, installed, held in tools:
+            if chosen and not installed:
                 return (
                     f"The project's options include {name}, which the game doesn't have. Run {step} to install it, then package again.",
                     f"Your assistant installs {name} first, as Options choose.",

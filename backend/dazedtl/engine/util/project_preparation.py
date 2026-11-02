@@ -95,8 +95,10 @@ def install_gameupdate(game_root: str | Path, *, wolf: bool = False, source: str
 
 
 def gameupdate_installed(game_root: str | Path) -> bool:
-    """Whether the game holds GameUpdate's launcher, which players run."""
-    return (Path(game_root) / GAMEUPDATE_LAUNCHER).is_file()
+    """Whether the game holds GameUpdate, by the rule its config writer uses."""
+    from util.gameupdate_config import installed
+
+    return installed(game_root)
 
 
 def remove_gameupdate(game_root: str | Path, *, source: str | Path | None = None,

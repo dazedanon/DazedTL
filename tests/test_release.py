@@ -784,7 +784,8 @@ class ReleaseTests(unittest.TestCase):
         self.assertIsNone(gameupdate_refusal("WOLF", ["Data/Picture.wolf"]))
         self.assertIsNone(gameupdate_refusal("Unity", ["Data.wolf"]))
         engine = TranslationEngine.__new__(TranslationEngine)
-        on, off = {"install_gameupdate": True}, {"install_gameupdate": False}
+        on = {"mode": "agent", "install_gameupdate": True}
+        off = {**on, "install_gameupdate": False}
         with TemporaryDirectory() as folder:
             game = Path(folder)
             for detected, refusal in (
