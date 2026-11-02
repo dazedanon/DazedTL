@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 from util.len_translation import LenProject, import_glossary
 from util.paths import ensure_game_glossary
-from util.vocab import BASE_SEPARATOR, remove_vocab_section, update_vocab_section
+from util.vocab import BASE_SEPARATOR, update_vocab_section
 
 BASE = BASE_SEPARATOR + "# Honorifics\nさん (san)\n"
 
@@ -125,20 +125,13 @@ class GlossarySectionTests(unittest.TestCase):
             "# Game Characters · キャラクター\nニーナ / ネーナ (Nina)\nサンク (Sank) - Male\n"
             "ミカ (Mika)\nリナ (Rina)\n\n# Items\n薬 (Potion)\n\n" + BASE,
         )
-        # Replacing or removing a category leaves none of its rows behind.
+        # Replacing a category leaves none of its rows behind.
         self.write(
             "# Items\n薬 (Potion)\n\n# Skills\n火 (Fire)\n\n# items\n毒 (Poison)"
         )
         self.assertEqual(
             self.update("Items", [("剣", "Sword")]),
             "# Items\n剣 (Sword)\n\n# Skills\n火 (Fire)\n\n" + BASE,
-        )
-        self.write(
-            "# Items\n薬 (Potion)\n\n# Skills\n火 (Fire)\n\n# items\n毒 (Poison)"
-        )
-        remove_vocab_section("Items", game_root=self.root)
-        self.assertEqual(
-            self.glossary.read_text(encoding="utf-8"), "# Skills\n火 (Fire)\n\n" + BASE
         )
         # WOLF writes a section per database note, and two notes may share
         # an English label; each keeps its own rows.

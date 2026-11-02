@@ -313,44 +313,24 @@ def _should_prepare_speakers_automatically(
 ) -> bool:
     """Decide whether translation should resolve speakers before file work.
 
-    WolfDawn always auto-preflights on a fresh run. RPG Maker normally relies on
-    Workflow "Collect names", but batch collect/consume cannot live-translate
-    speakers - unresolved FIRSTLINESPEAKERS (and other nameplates) would stay
+    RPG Maker normally relies on Workflow "Collect names", but batch
+    collect/consume cannot live-translate speakers - unresolved FIRSTLINESPEAKERS (and other nameplates) would stay
     Japanese while dialogue is batched. Fresh RPG Maker batches therefore run
     the same unresolved-speaker preflight.
     """
     name = str(module_name or "").casefold()
     if estimate_only or parse_speakers or (batch_mode and batch_resume_state):
         return False
-    if "wolfdawn" in name:
-        return True
     if batch_mode and name == "rpg maker mv/mz":
         return True
     return False
 
 TRANSLATION_MODULE_SPECS = (
     ("RPG Maker MV/MZ", (".json",), "modules.rpgmakermvmz", "handleMVMZ"),
-    ("CSV", (".csv",), "modules.csv", "handleCSV"),
-    ("Tyrano", (".ks",), "modules.tyrano", "handleTyrano"),
-    ("Kirikiri", (".ks",), "modules.kirikiri", "handleKirikiri"),
-    ("JSON", (".json",), "modules.json", "handleJSON"),
-    ("Lune", (".l",), "modules.lune", "handleLune"),
-    ("Yuris", (".json",), "modules.yuris", "handleYuris"),
-    ("NScript", (".nscript",), "modules.nscript", "handleOnscripter"),
-    ("Wolf RPG (WolfDawn)", (".json",), "modules.wolfdawn", "handleWolfDawn"),
-    ("Wolf RPG", (".json",), "modules.wolf", "handleWOLF"),
-    ("Wolf RPG 2", (".txt",), "modules.wolf2", "handleWOLF2"),
-    ("Regex", (".txt", ".json", ".script", ".csv"), "modules.regex", "handleRegex"),
-    ("Text", (".txt", ".srt"), "modules.text", "handleText"),
-    ("RenPy", (".rpy",), "modules.renpy", "handleRenpy"),
-    ("Unity", (".unity",), "modules.unity", "handleUnity"),
     # The strings the semi-manual image workflow exported. Declared by whole
     # filename rather than ".json" so it never offers up a folder of RPG Maker
     # data - the match below is endswith, so both forms work here.
     ("Image Text", ("image_text.json",), "modules.imagetext", "handleImageText"),
-    ("RPG Maker Plugin", (".js",), "modules.rpgmakerplugin", "handlePlugin"),
-    ("Aquedi4 Prepared JSON", (".json",), "modules.aquedi4", "handleAquedi4"),
-    ("SRPG Studio", (".json",), "modules.srpg", "handleSRPG"),
 )
 
 def _lazy_module_handler(module_name, handler_name):
@@ -1426,103 +1406,6 @@ class TranslationTaskCore:
             return result
         return format_run_total(receipts.values())
 
-    def _prepare_wolf_speakers(self, matching_files):
-        """Scan WolfDawn JSON nameplates, then resolve all new speakers together."""
-        try:
-            import modules.wolfdawn as wolfdawn
-            wolfdawn.refreshRuntimeConfig()
-        except Exception as exc:
-            self.emit_log(f"❌ Could not start WOLF speaker preflight: {exc}")
-            return False
-
-        collected = []
-        seen = set()
-        scan_failures = []
-        total_files = len(matching_files)
-        self.status_signal.emit("Scanning WOLF speakers…")
-        self.emit_log(
-            f"🔎 Scanning {total_files} WOLF JSON file(s) for unresolved speakers "
-            "without making API calls…"
-        )
-        for index, filename in enumerate(matching_files, 1):
-            if self.should_stop:
-                return False
-            try:
-                path = self.project_root / "files" / filename
-                data = json.loads(path.read_text(encoding="utf-8-sig"))
-                for speaker in wolfdawn.collectSpeakerNames(data):
-                    if speaker not in seen:
-                        seen.add(speaker)
-                        collected.append(speaker)
-            except Exception as exc:
-                scan_failures.append(filename)
-                self.emit_log(f"❌ Could not scan WOLF speakers in {filename}: {exc}")
-                self.file_error_signal.emit(filename, str(exc))
-            self.status_signal.emit(
-                f"Scanning WOLF speakers… {index}/{total_files}"
-            )
-
-        if scan_failures:
-            self.emit_log(
-                f"❌ WOLF speaker scan failed for {len(scan_failures)}/{total_files} "
-                "file(s). No speaker translations were submitted."
-            )
-            return False
-
-        pending = wolfdawn.pendingSpeakerNames(collected)
-        if not pending:
-            self.emit_log(
-                f"🔤 WOLF speaker scan complete ({total_files}/{total_files}). "
-                "Every detected speaker is already in the game glossary."
-            )
-            return True
-
-        self.status_signal.emit(f"Waiting to translate {len(pending)} speakers…")
-        self.emit_log(
-            f"🔤 WOLF speaker scan complete. Found {len(pending)} unresolved unique "
-            "speaker(s); no speaker API calls have been made."
-        )
-        from util.skills import ctx
-        estimate = self._emit_batch_output(
-            self._estimate_grouped_speakers,
-            pending, ctx("names.npc"), wolfdawn.TRANSLATION_CONFIG, wolfdawn.MODEL,
-        )
-        self.emit_log(
-            f"📊 Speaker estimate: {int(estimate.get('request_count', 0))} grouped request(s), "
-            f"{int(estimate.get('input_tokens', 0)):,} input / "
-            f"{int(estimate.get('output_tokens', 0)):,} output tokens, approximately "
-            f"${float(estimate.get('estimated_cost', 0.0)):.6f}."
-        )
-        if not self._wait_speaker_translation(pending, estimate):
-            self.emit_log(
-                "⏹ Speaker translation canceled. No unresolved speakers were sent, "
-                "and the translation run did not start."
-            )
-            return False
-
-        self.status_signal.emit(f"Translating {len(pending)} speakers together…")
-        self.emit_log(
-            f"🔤 Translating {len(pending)} WOLF speakers in grouped list batches…"
-        )
-        before_cost = _priced_cost()
-        started = time.monotonic()
-        tokens = wolfdawn.translateSpeakerNames(pending)
-        if tokens is False:
-            self.emit_log(
-                "❌ WOLF speaker translations could not be validated or saved. "
-                "The translation run did not start."
-            )
-            return False
-        if tokens[0] or tokens[1]:
-            self._record_names_receipt(
-                tokens[0],
-                tokens[1],
-                _names_cost(wolfdawn, tokens[0], tokens[1], before_cost),
-                time.monotonic() - started,
-            )
-        self.emit_log("✅ Speaker translations saved to the game glossary.")
-        return True
-
     @extensions.point
     def _run_files(self, matching_files, estimate_only, batch_phase=None):
         """Process matching files; return last cost string or 'Fail'."""
@@ -1887,15 +1770,11 @@ class TranslationTaskCore:
                     batch_resume_state=self.batch_resume_state,
                 )
                 if should_prepare_speakers:
-                    module_name_lower = str(self.module_info[0] or "").casefold()
-                    if "wolfdawn" in module_name_lower:
-                        prepared = self._prepare_wolf_speakers(matching_files)
-                    else:
-                        # Its file count shows how far the scan has got
-                        # before the requests are collected.
-                        prepared = self._prepare_mvmz_speakers(
-                            matching_files, emit_progress=True
-                        )
+                    # Its file count shows how far the scan has got before
+                    # the requests are collected.
+                    prepared = self._prepare_mvmz_speakers(
+                        matching_files, emit_progress=True
+                    )
                     if not prepared:
                         self.finished_signal.emit(False, "Speaker translation canceled")
                         return

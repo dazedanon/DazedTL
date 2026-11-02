@@ -444,7 +444,6 @@ There is a large corpus of finished, reusable pipelines bundled with this skill.
   メイリオ|Meiryo|Yu Gothic|Tahoma|Arial|Consolas|Segoe|SimSun|宋体|黑体|ヒラギノ|
   Noto |IPA|VL ` or a short ASCII label). Still copy the file to the output and still
   emit its progress tick, or the run appears hung on a file you deliberately skipped.
-  (`DAZEDTL_ROOT/modules/yuris.py:96`.)
 - **Each engine has a handful of characters its own renderer mishandles, and that
   list belongs in the write-back path, not the prompt.** The Yuris runtime breaks on
   `―` U+2015 HORIZONTAL BAR, so it is rewritten to `-` on output. Asking the model

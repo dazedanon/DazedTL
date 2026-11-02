@@ -1426,6 +1426,33 @@ class CompatibilityContracts(unittest.TestCase):
             ("expired: ", "expired: "),
         ):
             self.assertEqual(stored_reason(stored), reason)
+        # An errored Anthropic request was kept as the SDK object's Python
+        # text, "errored: ErrorResponse(error=...)", which read raw.
+        from anthropic.types.messages import MessageBatchErroredResult
+        from util.batch_providers import _download_anthropic
+
+        row = SimpleNamespace(
+            custom_id="req-1",
+            result=MessageBatchErroredResult.model_validate(
+                {
+                    "type": "errored",
+                    "error": {
+                        "type": "error",
+                        "error": {
+                            "type": "invalid_request_error",
+                            "message": "Model is gone",
+                        },
+                    },
+                }
+            ),
+        )
+        client = SimpleNamespace(
+            messages=SimpleNamespace(
+                batches=SimpleNamespace(results=lambda identity: [row])
+            )
+        )
+        _, errors, _ = _download_anthropic(client, "batch", {"req-1": "key"})
+        self.assertEqual(stored_reason(errors[0][1]), "Model is gone.")
 
     def test_claude_estimates_scale_from_claudes_own_count_of_a_spread_sample(self):
         # Claude's estimates once counted only the shared instructions with

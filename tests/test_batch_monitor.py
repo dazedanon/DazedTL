@@ -743,6 +743,14 @@ class BatchMonitorTests(unittest.TestCase):
             monitor.backend.manual.failed_run.assert_not_called()
             monitor.backend.manual.save.assert_not_called()
             self.assertIn("run", monitor.settled)
+            # A worker that could not read its records as it ended ended it
+            # with its own message, which the monitor ended a second time.
+            job["message"] = "2 files failed. Actors.json: no response"
+            monitor.settled.clear()
+            monitor.tick()
+            monitor.backend.manual.failed_run.assert_not_called()
+            monitor.backend.manual.save.assert_not_called()
+            self.assertEqual(job["message"], "2 files failed. Actors.json: no response")
 
     def test_a_worker_that_found_its_batch_ended_reads_as_collecting_until_checked(
         self,

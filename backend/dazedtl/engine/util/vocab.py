@@ -619,26 +619,3 @@ def update_vocab_section(
             flush=True,
         )
     return kept
-
-
-def remove_vocab_section(category: str, *, game_root=None) -> None:
-    """Remove a category's sections from the game-specific vocab, if present
-    (see :func:`fold_glossary_sections`)."""
-    with _VOCAB_LOCK:
-        glossary_path = _path(game_root)
-        existing = glossary_path.read_text(encoding="utf-8")
-
-        game_part, base_part = _split_base(existing)
-
-        found = fold_glossary_sections(game_part, category)
-        if found is None:
-            return
-        new_game = found.before + found.after
-        new_game = re.sub(r"\n{3,}", "\n\n", new_game).rstrip("\n")
-        if base_part:
-            combined = new_game + "\n\n" + base_part if new_game else base_part
-        else:
-            combined = new_game + "\n" if new_game else ""
-        if combined == existing:
-            return
-        _replace_glossary(glossary_path, combined)

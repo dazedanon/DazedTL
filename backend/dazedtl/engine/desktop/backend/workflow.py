@@ -396,8 +396,9 @@ class Workflows:
         self._collect(project)
         if project.get("collection_error"):
             raise ValueError(project["collection_error"])
-        allowed = {"names", "database", "foundation", "narrative", "db_selected", "maps"} if project["engine"] == "WOLF" else {"database", "dialogue", "variables", "advanced", "speakers"}
-        if phase not in allowed:
+        if project["engine"] == "WOLF":
+            raise ValueError("WOLF RPG games translate Assistant-led.")
+        if phase not in {"database", "dialogue", "variables", "advanced", "speakers"}:
             raise ValueError("Choose an existing translation phase.")
         if type(sync) is not bool:
             raise ValueError("Choose whether to sync completed translations before this phase.")
@@ -411,8 +412,6 @@ class Workflows:
         prepare = getattr(self.manual, "prepare_inputs", None)
         if prepare is not None:
             prepare()
-        if project["engine"] == "WOLF":
-            return self._wolf_phase(project, phase)
         inventory = self.manual.inspect(folder / "files", "RPG Maker MV/MZ", managed=True)
         files = [row["name"] for row in inventory["files"] if row["name"] in DB_FILES] if phase == "database" else [
             row["name"] for row in inventory["files"] if row["name"] in EVENT_FILES_EXACT or re.fullmatch(r"Map\d+\.json", row["name"])]
@@ -440,37 +439,6 @@ class Workflows:
             settings["CODE408"] = project["phase1_comments"]
         return {"id": project_id, "phase": phase, "engine_options": settings, "widths": project["widths"],
                 "glossary_revision": self.documents(project_id)["glossary"]["revision"]}
-
-    def _wolf_phase(self, project, phase):
-        from .wolf import manifest
-        from util.wolfdawn import db_classify as db
-        folder = self.folder(project["id"])
-        value = manifest(Path(project["source"]))
-        if not value:
-            raise ValueError("Extract and import WOLF text first.")
-        kinds = {e["json"]: e["kind"] for e in value["entries"]}
-        target = {"names"} if phase == "names" else {"map", "common", "gamedat", "txt", "txt-dir"} if phase == "maps" else {"db"}
-        inventory = self.manual.inspect(folder / "files", "Wolf RPG (WolfDawn)", managed=True)
-        files = [row["name"] for row in inventory["files"] if kinds.get(row["name"]) in target]
-        if not files:
-            raise ValueError("Import files belonging to this phase first.")
-        groups = []
-        if phase in {"foundation", "narrative"}:
-            distribution = db.analyze_content_distribution(folder / "files")
-            tiers = frozenset({db.TIER_NARRATIVE}) if phase == "narrative" else db.FOUNDATION_TIERS
-            groups = db.selected_groups_for_tiers(distribution.groups, tiers)
-        if phase == "db_selected":
-            groups = project["wolf"]["db_groups"]
-        if phase in {"foundation", "narrative", "db_selected"} and not groups:
-            raise ValueError("No database sheets match this selection.")
-        job = self.manual.start(str(folder / "files"), "Wolf RPG (WolfDawn)", files, inventory["revision"], project["mode"], project["source"],
-            workflow={"id": project["id"], "phase": phase, "widths": project["widths"], "engine_options": {},
-                      "wolf_speakers": {"literal_line1_lowconf": project["wolf"]["literal_line1_lowconf"]},
-                      "environment": {"wolfDbIncludeGroups": json.dumps(groups, ensure_ascii=False) if groups else "", "wolfDbIncludeTiers": ""},
-                      "glossary_revision": self.documents(project["id"])["glossary"]["revision"]})
-        project["manual_job"] = job["id"]
-        self.save(project)
-        return job
 
     def _refresh_files(self, project):
         """Lists the data files a game update or a hand copy added or removed,

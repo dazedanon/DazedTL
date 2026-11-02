@@ -9,13 +9,9 @@ a ``note`` field (the WOLF database category it came from), and a static
 * ``refs`` - referenced by name (picture codes, switch labels, etc.); skipped.
 * ``verify`` - also appears in indirect literals; left untranslated by default.
 
-:mod:`modules.wolfdawn` translates only entries whose badge is ``safe``.
-``refs``, ``verify``, and legacy entries without a badge keep ``text == source``
-so injection is a no-op for them.
-
-Phase 0 still harvests translated **short name-like** entries into ``glossary.txt``,
-grouped by ``note``. Multi-line profile blurbs, dialogue, and other content-shaped
-names are translated in ``names.json`` but omitted from the glossary.
+Only entries whose badge is ``safe`` are translated; ``refs``, ``verify``, and
+legacy entries without a badge keep ``text == source`` so injection is a no-op
+for them.
 """
 
 from __future__ import annotations
@@ -31,15 +27,7 @@ PathLike = Union[str, Path]
 SAFETY_SAFE = "safe"
 SAFETY_REFS = "refs"
 SAFETY_VERIFY = "verify"
-_TRANSLATABLE_SAFETY = frozenset({SAFETY_SAFE})
 
-# names.json ``note`` values that are content fields, not short display names.
-_VOCAB_SKIP_NOTE_RE = re.compile(
-    r"プロフィール|説明|セリフ|台詞|会話|自己紹介|挨拶|モノローグ|独白",
-)
-
-# Short row labels and item/skill names fit; multi-line blurbs do not.
-_VOCAB_HARVEST_MAX_LEN = 72
 
 # WolfDawn labels standard database types bilingually in a document's group
 # ``typeName`` (e.g. ``"Weapon · 武器"``). names.json ``note`` values are the JP
@@ -78,36 +66,6 @@ def has_safety_metadata(data: dict[str, Any]) -> bool:
 def entry_safety(entry: dict[str, Any]) -> str:
     """Return the normalised ``safety`` badge for one names.json entry."""
     return str(entry.get("safety", "")).strip().lower()
-
-
-def is_name_translatable(entry: dict[str, Any]) -> bool:
-    """True when WolfDawn marks *entry* as safe (per-name, not per-category)."""
-    return entry_safety(entry) in _TRANSLATABLE_SAFETY
-
-
-def is_vocab_harvest_candidate(entry: dict[str, Any]) -> bool:
-    """True when a translated names.json entry should seed ``glossary.txt``.
-
-    Translation uses :func:`is_name_translatable`; this is stricter. Profile text,
-    multi-line blurbs, and dialogue-shaped strings are still translated in
-    ``names.json`` but are not glossary terms.
-    """
-    if not is_name_translatable(entry):
-        return False
-    src = str(entry.get("source", ""))
-    if not src.strip():
-        return False
-    if "\n" in src or "\r" in src:
-        return False
-    if len(src) > _VOCAB_HARVEST_MAX_LEN:
-        return False
-    note = str(entry.get("note", ""))
-    if _VOCAB_SKIP_NOTE_RE.search(note):
-        return False
-    # Two or more sentence endings usually means dialogue, not a row label.
-    if len(re.findall(r"[。！？]", src)) >= 2:
-        return False
-    return True
 
 
 def count_name_safety(data: dict[str, Any]) -> dict[str, int]:

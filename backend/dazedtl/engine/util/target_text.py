@@ -414,13 +414,3 @@ def title_case(name, language):
     return name.title()
 
 
-_LATIN_NAME = re.compile(r"([a-zA-Z？?])")
-
-
-def name_translated(name, language) -> bool:
-    """Whether a reply for a name reads as a translation into *language*: a
-    Latin-script name holds a letter or a question mark, as ？？？ for an
-    unknown speaker; a name in another script holds anything at all."""
-    if script(language) == LATIN:
-        return _LATIN_NAME.search(name) is not None
-    return bool(str(name).strip())

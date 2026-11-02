@@ -149,7 +149,7 @@ class WorkerCrashTests(unittest.TestCase):
             ],
             [
                 ("worker.error", "manual_estimate", "FileNotFoundError"),
-                ("worker.error", "manual_estimate", "StopIteration"),
+                ("worker.error", "manual_estimate", "ValueError"),
             ],
         )
         self.assertEqual(records[0]["errno"], 2)

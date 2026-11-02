@@ -51,9 +51,6 @@ def prepare(root):
         rows = plan["workflow"].get("widths", {}).get("messageRows")
         if rows:
             os.environ["messageRows"] = str(rows)
-    import util.speakers as speakers
-    if (root / "context/wolf_speakers.json").is_file():
-        speakers.CONFIG_PATH = root / "context/wolf_speakers.json"
     import util.translation as translation
     if plan.get('batch_link'):
         from .batches import batch_root
@@ -70,7 +67,10 @@ def prepare(root):
     from importlib import import_module
     from util.engine_options import apply_engine_options
     from util.translation_task import TRANSLATION_MODULE_SPECS
-    module_path = next(item[2] for item in TRANSLATION_MODULE_SPECS if item[0] == plan["engine"])
+    module_path = next((item[2] for item in TRANSLATION_MODULE_SPECS if item[0] == plan["engine"]), None)
+    if module_path is None:
+        from .manual import RETIRED_ENGINE
+        raise ValueError(RETIRED_ENGINE.format(engine=plan["engine"]))
     module = import_module(module_path)
     apply_engine_options(module, plan["engines"])
     return plan
