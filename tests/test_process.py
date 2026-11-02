@@ -12,7 +12,7 @@ from typing import Any
 from unittest.mock import Mock, patch
 
 from dazedtl.compatibility import process_view, request_scope, state_requests
-from dazedtl.compatibility.run_evidence import Evidence, keep_aligned_partial_results
+from dazedtl.compatibility.run_evidence import Evidence
 from dazedtl.settings.store import Settings
 from dazedtl.storage import write_json
 from dazedtl.translation.files import digest
@@ -1267,28 +1267,6 @@ class ProcessTests(unittest.TestCase):
                 "line, including any name at its start. The stretches:"
                 "\n- line 1\n  前\n- line 2\n  失敗\n  既存 → Reused",
             )
-            # The native comment handler may consume aligned mixed results;
-            # malformed lengths and name-preflight failures keep their guard.
-            module = SimpleNamespace(
-                THREAD_CTX=SimpleNamespace(), MISMATCH=["Items.json"]
-            )
-
-            def native_module(text):
-                module.THREAD_CTX.last_translation_had_mismatch = True
-                return [[text[0], "Translated"], [3, 4]]
-
-            module.translateAI = point(native_module)
-            keep_aligned_partial_results(module)
-            self.assertEqual(
-                module.translateAI(values[:2]), [[values[0], "Translated"], [3, 4]]
-            )
-            self.assertFalse(module.THREAD_CTX.last_translation_had_mismatch)
-            self.assertEqual(module.MISMATCH, ["Items.json"])
-            module.translateAI(values)
-            self.assertTrue(module.THREAD_CTX.last_translation_had_mismatch)
-            module.THREAD_CTX.in_speaker = True
-            module.translateAI(values[:2])
-            self.assertTrue(module.THREAD_CTX.last_translation_had_mismatch)
 
     def test_every_reuse_stretch_after_a_calls_start_quotes_its_translated_neighbours(
         self,

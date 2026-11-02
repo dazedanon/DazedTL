@@ -33,36 +33,6 @@ def connected(path):
         connection.close()
 
 
-def keep_aligned_partial_results(module):
-    """Keep valid comment chunks instead of discarding the whole 408 group.
-
-    The shared translator already substitutes original text for each rejected
-    chunk. Preserve that aligned result; native mismatch logs and the file's
-    MISMATCH list still report the rejected work. Name preflight remains atomic.
-    """
-    if (
-        module is None
-        or not hasattr(module, "THREAD_CTX")
-        or not hasattr(module, "translateAI")
-    ):
-        return
-
-    def translate(native, text, *args, **kwargs):
-        result = native(text, *args, **kwargs)
-        output = result[0] if isinstance(result, (list, tuple)) and result else None
-        if (
-            not getattr(module.THREAD_CTX, "in_speaker", False)
-            and isinstance(text, list)
-            and isinstance(output, list)
-            and len(output) == len(text)
-            and all(isinstance(value, str) for value in [*text, *output])
-        ):
-            module.THREAD_CTX.last_translation_had_mismatch = False
-        return result
-
-    module.translateAI.layer("partial-results", translate)
-
-
 def shared_requests(spans, size):
     """Consecutive stretches grouped to fit one request each; a longer
     stretch keeps a group of its own."""
@@ -369,7 +339,7 @@ class Evidence:
                     ),
                 )
 
-    def install(self, translation, module=None):
+    def install(self, translation):
         """Records each request, response and validation outcome of this run."""
         self.translation_local = getattr(translation, "_thread_local", None)
         # Identical requests of several files, such as a scene two maps
@@ -889,4 +859,3 @@ class Evidence:
             from .batch_validation import install
 
             install(self, translation)
-        keep_aligned_partial_results(module)
