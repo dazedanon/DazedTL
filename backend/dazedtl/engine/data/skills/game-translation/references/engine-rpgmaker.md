@@ -1299,8 +1299,9 @@ Where a pattern spans control codes, exclude structural characters from the capt
 ### Bound every field to its own string
 
 A pattern that captures to "the last quote" or "the next quote" runs past its field on a packed `plugins.js` line or a minified plugin, sending keys and other settings as one string and writing the translation over all of them.
-Anchor on the key up to the field's opening quote, then end the field at that string's own closing quote: a string whose opening quote has q backslashes before it is closed by the first quote of its kind with q more than a multiple of 2(q + 1) backslashes before it (an even count at the top level), as `stringEnd` in `modules/rpgmakerplugin.py` does; quotes escaped deeper belong to its text.
+Anchor on the key up to the field's opening quote, allowing only what puts a string there (`:`, `=`, or a parameter's `] ||` fallback), never other code, so `this.txtSubject = q.subject; var t = "依頼";` sends nothing; then end the field at that string's own closing quote: a string whose opening quote has q backslashes before it is closed by the first quote of its kind with q more than a multiple of 2(q + 1) backslashes before it (an even count at the top level), as `stringEnd` in `modules/rpgmakerplugin.py` does; quotes escaped deeper belong to its text.
 A label inside a string, such as a drawTextEx `\}…\{` or `\C[n]…\C[0]` label, must end inside the string around it, and is read only inside the string that holds its `drawTextEx` call (a plugin setting's script), or on the whole line where the call is plain code.
+When a candidate is rejected, search again from the start of its text, not its end, so a label it ran over, as in `'\\}' + n + '\\}回数\\{'`, is still read.
 A rewrite tied to a call, such as the counter `回` → `x` after a `$gameVariables` value, applies in that same scope and only to `回` as a word of its own, not the start of `回復`.
 
 ---

@@ -443,17 +443,26 @@ def opening(pattern):
 
 def inside(pattern):
     """Fields inside a string, *pattern*'s group "text": each kept where the
-    string around its text also holds the rest of its match."""
+    string around its text also holds the rest of its match. After a match
+    that is not kept, the search goes on from the start of its text, so a
+    field it ran over, as in '\\}' + n + '\\}回数\\{', is still read."""
     compiled = re.compile(pattern)
 
+    def kept(line, scopes, match):
+        start, end = match.span("text")
+        if not within(scopes, start, end):
+            return False
+        strings = around(line, start)
+        return bool(strings) and match.end() <= strings[-1][2]
+
     def find(line, scopes):
-        for match in compiled.finditer(line):
-            start, end = match.span("text")
-            if not within(scopes, start, end):
-                continue
-            strings = around(line, start)
-            if strings and match.end() <= strings[-1][2]:
-                yield start, end, match.group("quote")
+        match = compiled.search(line)
+        while match:
+            if kept(line, scopes, match):
+                yield *match.span("text"), match.group("quote")
+                match = compiled.search(line, match.end())
+            else:
+                match = compiled.search(line, match.start("text"))
 
     return find
 
@@ -652,8 +661,12 @@ KINDS = (
         regionWrite,
         inRegion,
     ),
+    # A key or assignment holding a string, or a parameter's fallback
+    # (parameters['txtSubject'] || 'クエスト'), never code between them
     Kind(
-        opening(r"""txtSubject(?:\\*["'])?[^"'\n]*?(?P<quote>\\*)["']"""),
+        opening(
+            r"""txtSubject(?:\\*["'])?(?:\s*[:=]|\]\s*\|\|)\s*(?P<quote>\\*)["']"""
+        ),
         CUSTOM,
         subjectRequest,
         subjectWrite,
