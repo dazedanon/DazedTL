@@ -9,7 +9,13 @@ import {
   lockRef,
   releaseLock,
 } from "../scripts/land-lock.mjs";
-import { formatBranch, mergeDev, timer, waitForApp } from "../scripts/land.mjs";
+import {
+  formatBranch,
+  mergeDev,
+  readReview,
+  timer,
+  waitForApp,
+} from "../scripts/land.mjs";
 import { addRelease, notesTemplate } from "../scripts/changelog.mjs";
 
 test("a landing waits for a live lock, takes over a dead or unrenewed one and tells the user of a long wait once", async (t) => {
@@ -222,4 +228,35 @@ test("a landing commits what the formatter changed, and only that", async (t) =>
   // A formatted branch gets no commit.
   assert.equal(await formatBranch(git, dir, format, () => {}), null);
   assert.equal(git(["rev-list", "--count", "HEAD"]).stdout, "2\n");
+});
+
+test("a landing's review record accounts for every finding, or says why no review ran", () => {
+  const record = (value: unknown) => readReview(JSON.stringify(value));
+  assert.deepEqual(
+    record({
+      level: "medium",
+      findings: [
+        { summary: "Off by one", outcome: "fixed", reason: "" },
+        { summary: "Slow loop", outcome: "dismissed", reason: "Runs once" },
+      ],
+    }),
+    {
+      level: "medium",
+      findings: [
+        { summary: "Off by one", outcome: "fixed" },
+        { summary: "Slow loop", outcome: "dismissed", reason: "Runs once" },
+      ],
+    },
+  );
+  assert.deepEqual(record({ skipped: "Docs only" }), { skipped: "Docs only" });
+  assert.throws(
+    () =>
+      record({
+        level: "medium",
+        findings: [{ summary: "Slow loop", outcome: "dismissed" }],
+      }),
+    /Finding 1 .* without a reason/,
+  );
+  assert.throws(() => record({ level: "medium" }), /findings list/);
+  assert.throws(() => readReview("level: medium"), /not JSON/);
 });

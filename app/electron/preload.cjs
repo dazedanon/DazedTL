@@ -20,6 +20,8 @@ contextBridge.exposeInMainWorld("dazedtl", {
   ready: () => invoke("dazedtl:ready"),
   copyText: (text) => invoke("dazedtl:copy-text", text),
   copyDiagnostics: () => invoke("dazedtl:copy-diagnostics"),
+  copyProblemReport: (context) =>
+    invoke("dazedtl:copy-problem-report", context),
   reportRendererError: (failure) => invoke("dazedtl:renderer-error", failure),
   reloadInterface: () => invoke("dazedtl:reload-interface"),
   chooseFolder: () => invoke("dazedtl:choose-folder"),

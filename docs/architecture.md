@@ -342,6 +342,7 @@ Drafts and actions:
 - The project registry is the only record of where a project's game is ([location](../backend/dazedtl/projects/location.py)): the game folder names its project in a marker Git never commits, so a moved game keeps its project and a copy opens a new one.
   Other records find the game through the registry, and no saved key names the game folder: estimates, Text QA context and bindings name the game's files relative to it, so a move changes one record, outdates nothing and needs no new approval.
 - Diagnostics record only fixed metadata and code locations, never messages, payloads or raw stderr; a [watchdog](../backend/dazedtl/watchdog.py) records hangs, workers report through the [diagnostics](../backend/dazedtl/diagnostics.py) hooks, and the report names the checkout revision.
+  **Report a problem** copies a Discord-sized summary of the same records with the open game's name, engine and mode, which the renderer passes in.
 - Connections and preferences share one atomic record, the workspace's `settings/settings.json`, with the languages new games start in.
   A game records its pair in `.dazedtl/settings.json` at Set up, and every run freezes it ([language_pair](../backend/dazedtl/settings/language_pair.py)); a pair whose languages share a script is refused, since letters couldn't tell translated text from text left.
 - A Japanese source names no source in frozen settings, the translation cache, Batch keys or the census, so work saved before languages became a setting stays current.

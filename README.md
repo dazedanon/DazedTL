@@ -120,7 +120,7 @@ The [changelog](CHANGELOG.md) lists what changed in every version.
 - WOLF RPG games don't have guided steps yet; translate them Assistant-led.
 - On Ubuntu 24.04 and newer, the first start shows a one-time command to run in a terminal before DazedTL can open.
 - macOS has a **START.command** launcher, but it hasn't been tested yet.
-- If something goes wrong, click **Copy diagnostics** in the sidebar and include it when you report the problem on [Discord](#community).
+- If something goes wrong, click **Report a problem** in the sidebar and paste the report on [Discord](#community).
 
 ## Community
 

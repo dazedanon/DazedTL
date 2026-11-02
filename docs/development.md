@@ -160,9 +160,11 @@ Work on `dev`; `main` always holds the latest stable release, so a ZIP of `main`
 
 ### Landing
 
-`node scripts/land.mjs` lands a finished branch on `dev` from its worktree: it formats the branch, merges `dev` into it, runs the tests and build checks, fast-forwards the main checkout's `dev` and pushes it to every mirror.
+`node scripts/land.mjs --review <file.json>` lands a finished branch on `dev` from its worktree: it formats the branch, merges `dev` into it, runs the tests and build checks, fast-forwards the main checkout's `dev` and pushes it to every mirror.
 One landing runs at a time, under a lock that a release also holds.
 
+- The review record says which `code-review` level ran and whether each finding was fixed or dismissed, with a reason, or why no review ran; [readReview](../scripts/land.mjs) gives its shape.
+  Each landed record joins `dazedtl-reviews.jsonl` in the shared Git directory with its branch and range, to show whether reviews catch enough to become a gate.
 - A failed test run runs once more after the machine's load drops; a pass then is reported as `Flaky:`, and a second failure stops the landing.
 - Both sides' [release notes](#release-notes) are joined, and conflicts only in the generated API contracts are resolved by writing them again.
   A branch that repeats a notes line `dev` already released stops on `release/notes.md`: keep only what's new.
