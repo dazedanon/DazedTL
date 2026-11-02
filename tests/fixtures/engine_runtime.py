@@ -3583,12 +3583,19 @@ try:
             ],
         )
 
-        galge_english = {"行く？": "Go?", "はい": "Yes", "いいえ": "No"}
+        galge_english = {
+            "行く？": "Go?",
+            "はい": "Yes",
+            "いいえ": "No",
+            "はいはい": "Sure, sure",
+        }
+        galge_sent = []
 
         def galge_reply(change):
             def reply(text, *_args, **_kwargs):
                 if isinstance(text, str):
                     return [galge_english.get(text, text), [0, 0]]
+                galge_sent.append(list(text))
                 return [
                     change([galge_english.get(line, line) for line in text]),
                     [0, 0],
@@ -3601,12 +3608,27 @@ try:
             (lambda reply: reply[:-1], galge),
             (lambda reply: [*reply, "Maybe"], galge),
         ):
+            galge_sent.clear()
             written, mismatched, marked = mv_page(
                 [galge_window], galge_reply(change), CODE357=True
             )
             assert written[0][3] == {"messageText": "Go?", "choices": choices}, written
             failed = choices == galge
             assert (mismatched, bool(marked)) == (["Map001.json"] * failed, failed)
+            # Pass 2 sent the choices a failed reply kept again, a second
+            # paid request for the same text.
+            assert galge_sent == [["はい", "いいえ"]], galge_sent
+        # Each reply was written with str.replace over the whole choices, so
+        # はい's reply landed inside はいはい and はいはい's found nothing.
+        nested = '["{\\"label\\":\\"はい\\"}","{\\"label\\":\\"はいはい\\"}"]'
+        nested_window = deepcopy(galge_window)
+        nested_window["parameters"][3]["choices"] = nested
+        written, _mismatched, _marked = mv_page(
+            [nested_window], galge_reply(lambda reply: reply), CODE357=True
+        )
+        assert written[0][3]["choices"] == (
+            '["{\\"label\\":\\"Yes\\"}","{\\"label\\":\\"Sure, sure\\"}"]'
+        ), written
 
         # A final save over a folder "succeeded": RPG Maker's own atomic
         # write fell back to moving the save into the folder. It saves

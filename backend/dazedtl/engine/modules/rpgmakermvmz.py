@@ -4798,7 +4798,9 @@ def _searchCodes(page, pbar, jobList, filename):
                                         # Reassemble: restore outer quotes and formatting codes
                                         params_obj["Text:json"] = f'"{prefix}{translatedText}{suffix}"'
 
-                if headerString == "LL_GalgeChoiceWindow":
+                # Sent and written in pass 1 alone, so choices a failed reply
+                # left in Japanese are not sent and paid for again in pass 2.
+                if headerString == "LL_GalgeChoiceWindow" and setData:
                     ### Message Text First
                     jaString = codeList[i]["parameters"][3]["messageText"]
 
@@ -4821,8 +4823,9 @@ def _searchCodes(page, pbar, jobList, filename):
 
                     ### Choices
                     jaString = codeList[i]["parameters"][3]["choices"]
-                    matchList = re.findall(r'"label[\\]*":[\\]*"(.*?)[\\]', jaString)
-                    if matchList != None:
+                    labels = list(re.finditer(r'"label[\\]*":[\\]*"(.*?)[\\]', jaString))
+                    matchList = [label.group(1) for label in labels]
+                    if matchList:
                         # Give choices the original Japanese question, never
                         # the translated text written back above.
                         response = translateAI(
@@ -4837,11 +4840,17 @@ def _searchCodes(page, pbar, jobList, filename):
                         totalTokens[1] += response[1][1]
                         translatedText = jaString
 
-                        # Replace Strings
+                        # Each reply goes in its own label's place, last first
+                        # so earlier places hold, and a label inside another
+                        # one (はい in はいはい) is never written there.
                         replies = reply_to_write(response[0], matchList, MISMATCH, LOCK, filename)
-                        for choice, reply in zip(matchList, replies or []):
+                        for label, reply in reversed(list(zip(labels, replies or []))):
                             if reply is not None:
-                                translatedText = translatedText.replace(choice, reply.replace('"', ''))
+                                translatedText = (
+                                    translatedText[: label.start(1)]
+                                    + reply.replace('"', "")
+                                    + translatedText[label.end(1) :]
+                                )
 
                         # Set Data
                         codeList[i]["parameters"][3]["choices"] = translatedText
