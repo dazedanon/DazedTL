@@ -845,6 +845,14 @@ async function batchRun(page) {
 // run beside it.
 const queuedAllowance = 150_000;
 
+/** Shows the Assistant-led page's Progress tab, where its API runs are
+ * approved. The page opens on Options until the assistant first uses the
+ * project, and a background change never moves the user off it. */
+async function openProgress(page) {
+  await page.click("Translation");
+  await page.click("Progress");
+}
+
 /** Opens `game` from the project menu, choosing `method` for a new game. */
 async function openFolder(page, state, game, method) {
   await chooseFolder({ root: state.root, inspect: state.app.inspect }, game);
@@ -929,7 +937,7 @@ const queuedBatch = [
     "Approve the Assistant-led estimate on Progress; its first chunk waits unsent",
     async ({ page, state }) => {
       await openFolder(page, state, state.game);
-      await page.click("Translation");
+      await openProgress(page);
       const before = created(state);
       await page.click("Approve and submit Batch");
       const run = await until("a chunk waiting for capacity", async () => {
@@ -1109,7 +1117,7 @@ const repriced = [
         },
       });
       await openFolder(page, state, state.game);
-      await page.click("Translation");
+      await openProgress(page);
       await page.waitText(
         "DazedTL corrected its prices after this estimate in a way that needs a new one.",
       );
@@ -1161,7 +1169,7 @@ const repriced = [
           `The whole-game estimate shows ${tasks(whole)}, not today's ${tasks(state.whole)}.`,
         );
       await openFolder(page, state, state.game);
-      await page.click("Translation");
+      await openProgress(page);
       const shown = await batchRun(page);
       for (const name of quotePrices)
         if (shown.quote[name] !== quote[name])
@@ -1217,10 +1225,7 @@ const reorganized = [
     async ({ page, state }) => {
       await assistant(page, state, "organize", "--complete");
       const estimate = await organizedRun(page, state);
-      // The page opened on Options before the assistant first used the
-      // project, and stays there: a background change never moves the user.
-      await page.click("Translation");
-      await page.click("Progress");
+      await openProgress(page);
       await page.click("Approve and start Live");
       const run = await until(
         "the Live run to end",
