@@ -547,7 +547,7 @@ const batch = [
       if (ready !== "ready")
         throw new Error(`The Batch could not start: ${ready}`);
       await page.click("Submit Batch");
-      await page.waitText("Waiting for provider results");
+      await page.waitText("Files fill in when");
     },
   ],
 ];

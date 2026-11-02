@@ -15,6 +15,9 @@ from typing import Any
 from dazedtl.freshness import Digests, signature, signature_settled
 from dazedtl.translation.files import digest, live_path, read_json
 
+# Provider Batch statuses after which a Batch takes no more work.
+BATCH_ENDED = {"completed", "ended", "failed", "expired", "cancelled", "canceled"}
+
 # The engine's names pass translates the speakers of every file in one list and
 # records its requests under this name (engine util/speakers.NAMES_FILE).
 NAMES_FILE = "speakers"
@@ -129,9 +132,7 @@ def consumed_files(root, *, allow_mismatches=False):
     root = Path(root)
     history = saved(evidence_root(root), "batch_history.json").get("batches", [])
     if not history or not all(
-        batch.get("status") == "consumed"
-        and batch.get("api_status")
-        in {"completed", "ended", "failed", "expired", "cancelled", "canceled"}
+        batch.get("status") == "consumed" and batch.get("api_status") in BATCH_ENDED
         for batch in history
     ):
         return frozenset()
@@ -1407,30 +1408,15 @@ def summary(root, job, view=None):
     for batch in batches:
         current = (
             polls.get(batch["id"], {})
-            if batch.get("api_status")
-            not in {"completed", "ended", "failed", "expired", "cancelled", "canceled"}
+            if batch.get("api_status") not in BATCH_ENDED
             else {}
         )
         status = current.get("api_status") or batch.get("api_status") or "unknown"
         counts = current.get("counts") or batch.get("request_counts") or {}
         cancellation = job.get("dazedtl_batch_cancellations", {}).get(batch["id"])
-        if cancellation and status not in {
-            "completed",
-            "ended",
-            "failed",
-            "expired",
-            "cancelled",
-            "canceled",
-        }:
+        if cancellation and status not in BATCH_ENDED:
             status = cancellation["status"]
-            if status in {
-                "completed",
-                "ended",
-                "failed",
-                "expired",
-                "cancelled",
-                "canceled",
-            }:
+            if status in BATCH_ENDED:
                 counts = cancellation.get("counts") or {}
         receipts.append(
             {
@@ -1562,6 +1548,61 @@ def summary(root, job, view=None):
     }
 
 
+# Provider request counts that end a request without a translation.
+BATCH_FAILED = (("errored", "failed"), ("expired", "expired"), ("canceled", "canceled"))
+
+
+def batch_waiting_message(batches):
+    """The one line a submitted Batch run shows while it waits on the provider.
+
+    `batches` are the run's Batch rows (`status`, `total`, provider `counts`).
+    Every poll loop downloads results only once every Batch in the run has
+    ended, so the line says so: until then the files stay untranslated and
+    then fill in together."""
+    # A clarification re-sends refused requests its original Batch already
+    # counts, so only the run's own Batches are counted.
+    batches = [row for row in batches if not row.get("clarification")]
+    count = len(batches)
+    finished = sum(1 for row in batches if row.get("status") in BATCH_ENDED)
+    counts = [row.get("counts") or {} for row in batches]
+
+    def requests(key):
+        return sum(
+            value for row in counts if type(value := row.get(key)) is int and value > 0
+        )
+
+    failed = {label: requests(key) for key, label in BATCH_FAILED}
+    done = requests("succeeded") + sum(failed.values())
+    totals = [row.get("total") for row in batches]
+    sent = (
+        sum(totals)
+        if totals and all(type(total) is int for total in totals)
+        else done + requests("processing")
+    )
+    lost = ", ".join(f"{number} {label}" for label, number in failed.items() if number)
+    if count and finished == count:
+        ended = (
+            "The Batch has finished"
+            if count == 1
+            else f"{'Both' if count == 2 else f'All {count}'} Batches have finished"
+        )
+        outcome = f"; of {sent} requests, {lost}" if lost and sent else ""
+        return f"{ended}{outcome}. Downloading the results; the files fill in next."
+    progress = []
+    if sent and any(counts):
+        progress.append(
+            f"{done} of {sent} requests done" + (f" ({lost})" if lost else "")
+        )
+    if count > 1:
+        progress.append(f"{finished} of {count} Batches finished")
+    which = "every Batch finishes" if count > 1 else "the Batch finishes"
+    return (
+        "Waiting for the provider"
+        + (": " + ", ".join(progress) if progress else "")
+        + f". Files fill in when {which}."
+    )
+
+
 def phase_feedback(job):
     """Current phase wins over an earlier scan's status and file progress."""
     approval = job.get("approval") or {}
@@ -1618,31 +1659,16 @@ def phase_feedback(job):
         }
     if phase.startswith("poll"):
         batches = (job.get("process") or {}).get("batches", [])
-        ended = {"completed", "ended", "failed", "expired", "cancelled", "canceled"}
         # The original Batch has ended, so its counts would read as finished.
         if any(
-            row.get("clarification") and row.get("status") not in ended
+            row.get("clarification") and row.get("status") not in BATCH_ENDED
             for row in batches
         ):
             return {
                 "message": "Waiting for the Batch clarification of refused requests.",
                 "progress": None,
             }
-        counts = [row.get("counts") or {} for row in batches]
-        done = sum(row.get("succeeded") or 0 for row in counts)
-        pending = sum(row.get("processing") or 0 for row in counts)
-        detail = (
-            f" Last saved provider status: {done} completed, {pending} processing."
-            if counts and any(counts)
-            else ""
-        )
-        terminal = bool(batches) and all(row.get("status") in ended for row in batches)
-        message = (
-            "Provider work has finished. Results are collected automatically."
-            if terminal
-            else "Batch submitted. Waiting for provider results."
-        )
-        return {"message": message + detail, "progress": None}
+        return {"message": batch_waiting_message(batches), "progress": None}
     if phase in {"collect", "collect_done", "submit"}:
         return {"message": "Preparing Batch requests locally."}
     if phase == "consume":

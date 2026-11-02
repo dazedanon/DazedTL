@@ -174,14 +174,8 @@ class BatchMonitor:
             )
         except OSError, ValueError:
             return None
-        return (
-            {
-                "state": "collecting",
-                "message": "Provider work has finished. Results are collected automatically.",
-            }
-            if collectable
-            else None
-        )
+        # The run's waiting line reads its finished Batch rows.
+        return {"state": "collecting", "message": ""} if collectable else None
 
     def check(self, identity):
         with self.backend.context():
