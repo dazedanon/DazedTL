@@ -236,7 +236,7 @@ class ImageManagerState(TypedDict):
     counts: ImageCounts
     investigated: Annotated[
         bool,
-        "Whether every image in the folder has a finding, is in the game or is excluded.",
+        "Whether every image in the folder has a finding or is in the game.",
     ]
     folders: list[ImageFolder]
     selection: list[str]

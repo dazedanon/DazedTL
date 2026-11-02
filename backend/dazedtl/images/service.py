@@ -136,8 +136,8 @@ def receipt_view(receipt):
 
 def _investigated(value, counts):
     """Whether the images are investigated: the folder Images reads is
-    scanned and every image in it has a finding or is settled, in the game
-    or excluded, so an investigation of the remaining images has nothing
+    scanned and every image in it has a finding or is in the game, so an
+    investigation of the remaining images has nothing
     left to ask. The Images task and images --status both read this."""
     return bool(value["inventoryRevision"]) and not counts["notExamined"]
 
@@ -880,13 +880,9 @@ class ImageService:
             != row.get("originalPngHash", row.get("sourcePngHash"))
         )
         row["checks"] = checks
-        row["reason"] = (row.get("manualOverride") or row.get("finding") or {}).get(
+        row["reason"] = (row.get("finding") or {}).get(
             "reason", row.get("staleReason", "")
         )
-        if row.get("manualOverrideStale"):
-            row["reason"] += (
-                " Source changed; the manual exclusion is retained, but its investigation is stale."
-            )
         reported = row.get("editResult") or {}
         if issues:
             row["state"], row["blockedReason"] = (
@@ -898,12 +894,11 @@ class ImageService:
             "candidateHash"
         ) and row.get("sourceHash") == (row.get("applied") or {}).get("runtimeHash"):
             row["state"], row["blockedReason"] = "applied", ""
-        # The user's review of this exact edit outranks the translation's skip
-        # and an exclusion, so the user can apply an image the assistant left
-        # out.
-        elif not row["userReviewed"] and (
-            row["classification"] == "excluded" or reported.get("status") == "skipped"
-        ):
+        # Only the translation's own skip makes an image skipped; a discovery
+        # finding, an exclusion included, only leaves the image unticked. The
+        # user's review of this exact edit outranks the skip, so the user can
+        # apply an image the assistant left out.
+        elif not row["userReviewed"] and reported.get("status") == "skipped":
             row["state"], row["blockedReason"] = "skipped", ""
         elif not row.get("hasEditable"):
             row["state"], row["blockedReason"] = (
@@ -933,12 +928,9 @@ class ImageService:
         # one the user reviewed, applied or that is blocked for another reason.
         if row["state"] != "needs_review":
             row["heldReason"] = ""
-        # Why the translation skipped the image, while that skip holds; an
-        # exclusion's reason is its finding's.
+        # Why the translation skipped the image, while that skip holds.
         row["skipReason"] = (
-            reported.get("reason", "")
-            if row["state"] == "skipped" and reported.get("status") == "skipped"
-            else ""
+            reported.get("reason", "") if row["state"] == "skipped" else ""
         )
         return row
 
@@ -1429,8 +1421,8 @@ class ImageService:
                 )
             elif action == "prepare":
                 return self._prepare(project_id, options)
-            elif action in {"user_review", "exclude", "include"}:
-                self._review(project_id, action, options)
+            elif action == "user_review":
+                self._review(project_id, options)
             elif action == "remove_copies":
                 self._remove(project_id, options)
             elif action in {"preview_apply", "preview_restore"}:
@@ -1684,7 +1676,8 @@ class ImageService:
             raise ValueError("Choose All images, Current folders, or Selected images.")
         if scope == "selected":
             return scope, self._chosen(project_id, options)
-        # Images not yet examined; applied and excluded ones are settled.
+        # Images not yet examined; applied ones and an exclusion a report
+        # found are settled.
         if scope == "remaining":
             identities = [
                 row["id"] for row in self._index(project_id).rows(filter="remaining")
@@ -1692,13 +1685,12 @@ class ImageService:
             if not identities:
                 raise ValueError("Every image has been investigated.")
             return scope, self._ids(project_id, identities)
-        # Investigating all images again leaves out the settled ones: images
-        # in the game and the user's own exclusions.
+        # Investigating all images again leaves out the images in the game.
         if scope == "all":
             identities = [
                 row["id"]
                 for row in self._index(project_id).rows()
-                if row["state"] != "applied" and not row.get("manualOverride")
+                if row["state"] != "applied"
             ]
             if not identities:
                 raise ValueError("Every image is already in the game.")
@@ -2358,9 +2350,7 @@ class ImageService:
                         )
                     finding["reusedFrom"] = result["reusedFrom"]
                 row["finding"] = finding
-                row["classification"] = (row.get("manualOverride") or {}).get(
-                    "classification", classification
-                )
+                row["classification"] = classification
                 row.pop("staleReason", None)
                 # A finding sets its image's tick once, so an image the user
                 # took out stays out when the same request saves again. A
@@ -2723,7 +2713,9 @@ class ImageService:
             self.adapter.withhold(root, profile["imageRoot"])
             game.wrote(*originals)
 
-    def _review(self, project_id, action, options):
+    def _review(self, project_id, options):
+        """Saves or clears the user's review of each chosen image's edited
+        copy, bound to its source and the exact copy reviewed."""
         identities = self._chosen(project_id, options)
         self.refresh_assets(project_id, identities)
         index = self._index(project_id)
@@ -2731,48 +2723,26 @@ class ImageService:
         with index.connection() as db:
             for identity in identities:
                 row = index.get(identity, db)
-                if action in {"exclude", "include"}:
-                    if action == "include" or options.get("excluded") is False:
-                        row.pop("manualOverride", None)
-                        row.pop("manualOverrideStale", None)
-                        finding = row.get("finding") or {}
-                        row["classification"] = (
-                            finding.get("classification", "not_examined")
-                            if finding.get("sourceHash") == row.get("sourceHash")
-                            else "not_examined"
-                        )
-                    else:
-                        if not reason.strip():
-                            raise ValueError("Record a reason for excluding an image.")
-                        row["manualOverride"] = {
-                            "classification": "excluded",
-                            "excluded": True,
-                            "reason": reason,
-                            "sourceHash": row.get("sourceHash", ""),
-                            "saved": now(),
-                        }
-                        row["classification"] = "excluded"
+                if options.get("reviewed") is False:
+                    row.pop("userReview", None)
                 else:
-                    if options.get("reviewed") is False:
-                        row.pop("userReview", None)
-                    else:
-                        if (
-                            not row.get("candidateHash")
-                            or not all(row.get("checks", {}).values())
-                            or row.get("sourceIssue")
-                            or row.get("originalIssue")
-                        ):
-                            raise ValueError(
-                                "Resolve structural/source issues before marking this image reviewed."
-                            )
-                        row["userReview"] = {
-                            "version": REVIEW_VERSION,
-                            "sourceHash": row["sourceHash"],
-                            "candidateHash": row["candidateHash"],
-                            "reviewed": True,
-                            "reason": reason,
-                            "saved": now(),
-                        }
+                    if (
+                        not row.get("candidateHash")
+                        or not all(row.get("checks", {}).values())
+                        or row.get("sourceIssue")
+                        or row.get("originalIssue")
+                    ):
+                        raise ValueError(
+                            "Resolve structural/source issues before marking this image reviewed."
+                        )
+                    row["userReview"] = {
+                        "version": REVIEW_VERSION,
+                        "sourceHash": row["sourceHash"],
+                        "candidateHash": row["candidateHash"],
+                        "reviewed": True,
+                        "reason": reason,
+                        "saved": now(),
+                    }
                 index.put(db, self._status(row), row.get("generation", ""))
         self._touch(project_id)
 

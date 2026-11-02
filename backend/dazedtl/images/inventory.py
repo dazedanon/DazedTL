@@ -719,10 +719,7 @@ def inspect_row(root, adapter, row, old, key):
             "sourceHash"
         ) != row.get("sourceHash"):
             row.pop("finding", None)
-            if not row.get("manualOverride"):
-                row["classification"] = "not_examined"
-            elif row["manualOverride"].get("sourceHash") != row.get("sourceHash"):
-                row["manualOverrideStale"] = True
+            row["classification"] = "not_examined"
             row["staleReason"] = (
                 "The source changed since discovery. Investigate this image again."
             )
