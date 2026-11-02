@@ -152,6 +152,8 @@ class TranslationEngine:
             Path(source).resolve(),
             mode="local" if options["mode"] == "agent" else "api",
             # The engine's project keeps only what shapes the corpus and setup.
+            # Plans saved before the tool choices existed lack them and get
+            # the engine project's defaults, as their projects' options do.
             **{
                 key: options[key]
                 for key in (
@@ -162,6 +164,7 @@ class TranslationEngine:
                     "install_gameupdate",
                     "install_tl_inspector",
                 )
+                if key in options
             },
         )
 
@@ -697,7 +700,7 @@ class TranslationEngine:
                 "An RPG Maker game gets GameUpdate from operation rpgmaker_prepare."
             )
         log = log or (lambda _line: None)
-        if not options["install_gameupdate"]:
+        if not self.project(root, options).install_gameupdate:
             with write_game(root, log=log, pack=False) as game:
                 removed, errors = remove_gameupdate(root, log=log)
                 game.wrote(*removed)
@@ -732,6 +735,7 @@ class TranslationEngine:
 
         root = Path(source)
         engine = self.detect(root)
+        project = self.project(root, options)
         rpgmaker = engine in {"MVMZ", "ACE"}
         step = "operation rpgmaker_prepare" if rpgmaker else "operation gameupdate"
         tools = []
@@ -739,7 +743,7 @@ class TranslationEngine:
             tools.append(
                 (
                     "GameUpdate",
-                    options["install_gameupdate"],
+                    project.install_gameupdate,
                     gameupdate_installed(root),
                 )
             )
@@ -747,7 +751,7 @@ class TranslationEngine:
             tools.append(
                 (
                     "Forge",
-                    options["install_forge"],
+                    project.install_forge,
                     bool(forge.status(root).get("installed")),
                 )
             )
@@ -833,15 +837,13 @@ class TranslationEngine:
                 if key.casefold() not in {"key", "secret", "api_key"}
             ).encode("utf-8"),
         )
+        project = self.project(source, options)
         gameupdate = (
-            options["install_gameupdate"]
-            if baseline is None
-            else baseline["gameupdate"]
+            project.install_gameupdate if baseline is None else baseline["gameupdate"]
         )
         result = prepare_rpgmaker(
             source, data_path=data_path, env_path=path, log=log, gameupdate=gameupdate
         )
-        project = self.project(source, options)
         if baseline is None:
             result["tl_inspector"] = setup_inspector(project)
         result["forge"] = (

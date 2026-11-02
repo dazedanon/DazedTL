@@ -812,7 +812,9 @@ class ReleaseTests(unittest.TestCase):
                 )
                 # Options that leave GameUpdate out take it out again, and the
                 # patch waits until they do; the player README stays.
-                (game / "gameupdate/patch-config.txt").write_text("repo=x", encoding="utf-8")
+                (game / "gameupdate/patch-config.txt").write_text(
+                    "repo=x", encoding="utf-8"
+                )
                 self.assertIn("take it out", engine.setup_mismatch(game, off)[0])
                 written.clear()
                 engine.gameupdate(game, off)

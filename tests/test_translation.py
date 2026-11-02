@@ -14,6 +14,7 @@ from dazedtl.api.contracts.translation import TranslationBatch
 from dazedtl.api.contracts.validation import _close_contracts
 from dazedtl.projects.store import SCHEMA_VERSION
 from dazedtl.storage import WorkspaceLock, write_json
+from dazedtl.compatibility.translation import TranslationEngine
 from dazedtl.translation import jobs, organize
 from dazedtl.translation import results as result_files
 from dazedtl.translation.files import digest, project_path
@@ -2126,6 +2127,10 @@ class TranslationTests(unittest.TestCase):
         # which tools a game gets changes no saved run.
         self.assertTrue(value["options"]["install_gameupdate"])
         self.assertFalse(value["options"]["install_tl_inspector"])
+        # Runs planned then resume with the options they were planned with.
+        planned = TranslationEngine.__new__(TranslationEngine).project(self.game, older)
+        self.assertTrue(planned.install_gameupdate)
+        self.assertFalse(planned.install_tl_inspector)
         bound = digest({k: v for k, v in older.items() if k != "mode"})
         self.assertEqual(scope(value["options"]), bound)
         self.assertEqual(
