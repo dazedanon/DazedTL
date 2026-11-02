@@ -58,6 +58,22 @@ FREQUENCY_PENALTY = PRICING_CONFIG["frequencyPenalty"]
 
 # tqdm Globals
 BAR_FORMAT = "{l_bar}{bar:10}{r_bar}{bar:-10b}"
+
+# The font size each DataBase table writes before its texts that take one, the
+# one font rule per table: its descriptions, and the skill table's log texts.
+# A table it leaves out writes no font. Each table read the font of the table
+# before it, so status effects after items failed on the number 18, and the
+# skill logs were written as "24" + text, a literal 24 in the battle log.
+TABLE_FONTS = {"近況文章": 16, "道具": 18, "防具": 24, "敵": 24, "武器": 24, "技能": 24}
+
+
+def withFont(text, table):
+    """*text* as *table* writes it: after its font command, \\f[size], when the
+    table has a font (TABLE_FONTS), else as it is."""
+    size = TABLE_FONTS.get(table)
+    return f"\\f[{size}]{text}" if size else text
+
+
 POSITION = 0
 LEAVE = False
 PBAR = None
@@ -780,7 +796,6 @@ def searchDB(events, pbar, jobList, filename):
     totalTokens = [0, 0]
     initialJAString = ""
     tableList = events
-    font = ""
     global LOCK
     global NAMESLIST
     global MISMATCH
@@ -792,8 +807,6 @@ def searchDB(events, pbar, jobList, filename):
         for table in tableList:
             # Grab NPCs
             if table["name"] == "アイドル" and NPCFLAG == True and npcList is not None:
-                # Its descriptions take no font, as the states' texts
-                font = ""
                 with open("log/translations.txt", "a", encoding="utf-8") as file:
                     if setData:
                         file.write(f"\n#Actors\n")
@@ -836,7 +849,7 @@ def searchDB(events, pbar, jobList, filename):
                                     if dataList[j].get("value") != "" and (translatedText := npcList[1].pop(0)) is not None:
                                         # Textwrap
                                         translatedText = dazedwrap.wrapText(translatedText, LISTWIDTH)
-                                        translatedText = font + translatedText
+                                        translatedText = withFont(translatedText, table["name"])
 
                                         # Set Data
                                         dataList[j].update({"value": translatedText})
@@ -1115,7 +1128,6 @@ def searchDB(events, pbar, jobList, filename):
 
             # Grab DB Names
             if table["name"] == "マップ設定" and DBNAMEFLAG == True and dbNameList is not None:
-                font = None
                 dbName = table["data"]
                 for j in range(len(dbName)):
                     # Pass 1 (Grab Data)
@@ -1130,7 +1142,6 @@ def searchDB(events, pbar, jobList, filename):
 
             # Grab DB Values
             if table["name"] == "近況文章" and DBVALUEFLAG == True and dbValueList is not None:
-                font = 16
                 subject = ""
                 for entry in table["data"]:
                     dbValue = entry["data"]
@@ -1160,7 +1171,7 @@ def searchDB(events, pbar, jobList, filename):
 
                                         # Textwrap
                                         translatedText = dazedwrap.wrapText(translatedText, 30)
-                                        translatedText = translatedText.replace("\n", f"\r\n\\f[{font}]")
+                                        translatedText = translatedText.replace("\n", "\r\n" + withFont("", table["name"]))
 
                                         # Subject
                                         if subject:
@@ -1181,7 +1192,6 @@ def searchDB(events, pbar, jobList, filename):
                     dataList = item["data"]
 
                     # Parse
-                    font = 18
                     for j in range(len(dataList)):
                         # Name
                         if dataList[j].get("name") == "名前":
@@ -1220,8 +1230,7 @@ def searchDB(events, pbar, jobList, filename):
                                     translatedText = dazedwrap.wrapText(translatedText, LISTWIDTH)
 
                                     # Font
-                                    if font:
-                                        translatedText = f"\\f[{font}]{translatedText}"
+                                    translatedText = withFont(translatedText, table["name"])
 
                                     # Set Data
                                     dataList[j].update({"value": translatedText})
@@ -1254,7 +1263,6 @@ def searchDB(events, pbar, jobList, filename):
                                 if dataList[j].get("value") != "" and (translatedText := itemList[2].pop(0)) is not None:
                                     # Textwrap
                                     translatedText = dazedwrap.wrapText(translatedText, LISTWIDTH)
-                                    # translatedText = font + translatedText
 
                                     # Remove Taro
                                     translatedText = re.sub(r"\bTaro\b", "", translatedText)
@@ -1282,15 +1290,13 @@ def searchDB(events, pbar, jobList, filename):
                                     translatedText = dazedwrap.wrapText(translatedText, LISTWIDTH)
 
                                     # Font
-                                    if font:
-                                        translatedText = f"\\f[{font}]{translatedText}"
+                                    translatedText = withFont(translatedText, table["name"])
 
                                     # Set Data
                                     dataList[j].update({"value": translatedText})
 
             # Grab Armors
             if table["name"] == "防具" and ARMORFLAG == True and armorList is not None:
-                font = "24"
                 for armor in table["data"]:
                     dataList = armor["data"]
 
@@ -1328,8 +1334,7 @@ def searchDB(events, pbar, jobList, filename):
                                     translatedText = dazedwrap.wrapText(translatedText, LISTWIDTH)
 
                                     # Font
-                                    if font:
-                                        translatedText = f"\\f[{font}]{translatedText}"
+                                    translatedText = withFont(translatedText, table["name"])
 
                                     # Set Data
                                     dataList[j].update({"value": translatedText})
@@ -1373,15 +1378,13 @@ def searchDB(events, pbar, jobList, filename):
                                     translatedText = dazedwrap.wrapText(translatedText, LISTWIDTH)
 
                                     # Font
-                                    if font:
-                                        translatedText = f"\\f[{font}]{translatedText}"
+                                    translatedText = withFont(translatedText, table["name"])
 
                                     # Set Data
                                     dataList[j].update({"value": translatedText})
 
             # Grab Weapons
             if table["name"] == "武器" and WEAPONFLAG == True and weaponsList is not None:
-                font = "24"
                 for weapon in table["data"]:
                     dataList = weapon["data"]
 
@@ -1419,15 +1422,13 @@ def searchDB(events, pbar, jobList, filename):
                                     translatedText = dazedwrap.wrapText(translatedText, LISTWIDTH)
 
                                     # Font
-                                    if font:
-                                        translatedText = f"\\f[{font}]{translatedText}"
+                                    translatedText = withFont(translatedText, table["name"])
 
                                     # Set Data
                                     dataList[j].update({"value": translatedText})
 
             # Grab Skills
             if table["name"] == "技能" and SKILLFLAG == True and skillList is not None:
-                font = "24"
                 for skill in table["data"]:
                     dataList = skill["data"]
 
@@ -1466,8 +1467,7 @@ def searchDB(events, pbar, jobList, filename):
                                     translatedText = dazedwrap.wrapText(translatedText, LISTWIDTH)
 
                                     # Font
-                                    if font:
-                                        translatedText = f"\\f[{font}]{translatedText}"
+                                    translatedText = withFont(translatedText, table["name"])
 
                                     # Set Data
                                     dataList[j].update({"value": translatedText})
@@ -1500,7 +1500,7 @@ def searchDB(events, pbar, jobList, filename):
                                 if dataList[j].get("value") != "" and (translatedText := skillList[2].pop(0)) is not None:
                                     # Textwrap
                                     translatedText = dazedwrap.wrapText(translatedText, LISTWIDTH)
-                                    translatedText = font + translatedText
+                                    translatedText = withFont(translatedText, table["name"])
 
                                     # Remove Taro
                                     translatedText = re.sub(r"\bTaro\b", "", translatedText)
@@ -1541,7 +1541,7 @@ def searchDB(events, pbar, jobList, filename):
                                     translatedText = re.sub(r"\bTaro\b", "", translatedText)
 
                                     # Font
-                                    translatedText = font + translatedText
+                                    translatedText = withFont(translatedText, table["name"])
 
                                     # Set Data
                                     dataList[j].update({"value": translatedText})
@@ -1574,7 +1574,7 @@ def searchDB(events, pbar, jobList, filename):
                                 if dataList[j].get("value") != "" and (translatedText := skillList[4].pop(0)) is not None:
                                     # Textwrap
                                     translatedText = dazedwrap.wrapText(translatedText, LISTWIDTH)
-                                    translatedText = font + translatedText
+                                    translatedText = withFont(translatedText, table["name"])
 
                                     # Remove Taro
                                     translatedText = re.sub(r"\bTaro\b", "", translatedText)
@@ -1584,9 +1584,6 @@ def searchDB(events, pbar, jobList, filename):
 
             # Grab States
             if table["name"] == "ステート" and STATEFLAG == True and stateList is not None:
-                # Its texts take no font. Inherited from the table before,
-                # 道具's 18 failed every text and 技能's "24" headed each.
-                font = ""
                 for state in table["data"]:
                     dataList = state["data"]
 
@@ -1622,7 +1619,7 @@ def searchDB(events, pbar, jobList, filename):
                                 if dataList[j].get("value") != "" and (translatedText := stateList[1].pop(0)) is not None:
                                     # Textwrap
                                     translatedText = dazedwrap.wrapText(translatedText, LISTWIDTH)
-                                    translatedText = font + translatedText
+                                    translatedText = withFont(translatedText, table["name"])
 
                                     # Set Data
                                     dataList[j].update({"value": translatedText})
@@ -1655,7 +1652,7 @@ def searchDB(events, pbar, jobList, filename):
                                 if dataList[j].get("value") != "" and (translatedText := stateList[2].pop(0)) is not None:
                                     # Textwrap
                                     translatedText = dazedwrap.wrapText(translatedText, LISTWIDTH)
-                                    translatedText = font + translatedText
+                                    translatedText = withFont(translatedText, table["name"])
 
                                     # Remove Taro
                                     translatedText = re.sub(r"\bTaro\b", "", translatedText)
@@ -1691,7 +1688,7 @@ def searchDB(events, pbar, jobList, filename):
                                 if dataList[j].get("value") != "" and (translatedText := stateList[3].pop(0)) is not None:
                                     # Textwrap
                                     translatedText = dazedwrap.wrapText(translatedText, LISTWIDTH)
-                                    translatedText = font + translatedText
+                                    translatedText = withFont(translatedText, table["name"])
 
                                     # Remove Taro
                                     translatedText = re.sub(r"\bTaro\b", "", translatedText)
@@ -1727,7 +1724,7 @@ def searchDB(events, pbar, jobList, filename):
                                 if dataList[j].get("value") != "" and (translatedText := stateList[4].pop(0)) is not None:
                                     # Textwrap
                                     translatedText = dazedwrap.wrapText(translatedText, LISTWIDTH)
-                                    translatedText = font + translatedText
+                                    translatedText = withFont(translatedText, table["name"])
 
                                     # Remove Taro
                                     translatedText = re.sub(r"\bTaro\b", "", translatedText)
@@ -1762,7 +1759,7 @@ def searchDB(events, pbar, jobList, filename):
                                 if dataList[j].get("value") != "" and (translatedText := stateList[5].pop(0)) is not None:
                                     # Textwrap
                                     translatedText = dazedwrap.wrapText(translatedText, LISTWIDTH)
-                                    translatedText = font + translatedText
+                                    translatedText = withFont(translatedText, table["name"])
 
                                     # Remove Taro
                                     translatedText = re.sub(r"\bTaro\b", "", translatedText)
@@ -1798,7 +1795,7 @@ def searchDB(events, pbar, jobList, filename):
                                 if dataList[j].get("value") != "" and (translatedText := stateList[6].pop(0)) is not None:
                                     # Textwrap
                                     translatedText = dazedwrap.wrapText(translatedText, LISTWIDTH)
-                                    translatedText = font + translatedText
+                                    translatedText = withFont(translatedText, table["name"])
 
                                     # Remove Taro
                                     translatedText = re.sub(r"\bTaro\b", "", translatedText)
@@ -1834,7 +1831,7 @@ def searchDB(events, pbar, jobList, filename):
                                 if dataList[j].get("value") != "" and (translatedText := stateList[7].pop(0)) is not None:
                                     # Textwrap
                                     translatedText = dazedwrap.wrapText(translatedText, LISTWIDTH)
-                                    translatedText = font + translatedText
+                                    translatedText = withFont(translatedText, table["name"])
 
                                     # Remove Taro
                                     translatedText = re.sub(r"\bTaro\b", "", translatedText)

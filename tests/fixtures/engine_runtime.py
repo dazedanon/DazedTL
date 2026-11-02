@@ -696,6 +696,8 @@ try:
             def answer(text, *_args):
                 sent.append(text)
                 reply = wolf_keeps(text)
+                # A skill's log goes out after a stand-in user, Taro.
+                reply[0] = [line.replace("EN Taroは", "Taro ") for line in reply[0]]
                 if any("看板" in line for line in text):
                     reply[0].pop()
                 return reply
@@ -707,6 +709,7 @@ try:
                     ARMORFLAG=True,
                     WEAPONFLAG=True,
                     STATEFLAG=True,
+                    SKILLFLAG=True,
                     MISMATCH=[],
                     translateAI=answer,
                 ),
@@ -738,6 +741,8 @@ try:
         # file failed with an IndexError; the status effects were sent once
         # for each of their lists that held text. Status effects after items
         # took the items' font, the number 18, and failed on "font + text".
+        # The skill table's battle log texts were written after its font
+        # size alone, "24Taro cast Fire", a literal 24 in the game's log.
         directory = os.getcwd()
         os.chdir(temporary)
         (temporary / "log").mkdir(exist_ok=True)
@@ -746,7 +751,17 @@ try:
             armor = category("防具", ("名前", "看板"), ("説明", "宿屋"))
             weapon = category("武器", ("名前", "剣"), ("説明", "勇者の\n記録"))
             states = category("ステート", ("名前", "毒"), ("表示名", "毒状態"))
-            written, mismatched, marked, sent = wolf_db(items, states, armor, weapon)
+            skill = category(
+                "技能",
+                ("名前", "炎"),
+                ("説明", "炎の技"),
+                ("発動時文章", "は炎を放った"),
+                ("使用時文章[戦闘](人名~", "は炎を唱えた"),
+                ("失敗時文章[(対象)～]", "は炎を避けた"),
+            )
+            written, mismatched, marked, sent = wolf_db(
+                items, states, armor, weapon, skill
+            )
         finally:
             os.chdir(directory)
         values = [
@@ -757,6 +772,13 @@ try:
             ["EN 毒", "EN 毒状態"],
             ["看板", "宿屋"],
             ["EN 剣", "勇者の\n記録"],
+            [
+                "EN 炎",
+                "\\f[24]EN 炎の技",
+                "\\f[24] 炎を放った",
+                "\\f[24] 炎を唱えた",
+                "\\f[24] 炎を避けた",
+            ],
         ], values
         assert (mismatched, marked) == (["D.json"], 1), (mismatched, marked)
         # Nothing more of a category is sent, and paid for, once it cannot be written.
