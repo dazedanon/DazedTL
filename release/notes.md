@@ -2,6 +2,7 @@
 
 ### Changed
 
+- **Settings:** the Credits tab is one shorter list that names each person once, with V2 marking work on DazedTL and V1 work on DazedMTLTool, the tool it grew from.
 - **Sidebar:** the "Report copied." and "Task copied." notes under Report a problem and Share a fix now fade away after a few seconds, and stay while you point at them or tab to Learn more; a note that the copy failed still stays.
 
 ### Fixed
