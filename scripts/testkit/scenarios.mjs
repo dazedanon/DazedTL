@@ -1812,6 +1812,42 @@ async function imageRow(page, id) {
   return items[0];
 }
 
+/** Answers the copied investigation task `text` as an assistant does,
+ * excluding the image `excluded`, finding the other lettered ones uncertain
+ * and the rest without text, so the investigation ticks none. */
+function investigateImages(text, excluded) {
+  const file = /using request (.+?\.json)\./.exec(text)?.[1];
+  if (!file) throw new Error("The copied task names no request.");
+  const request = JSON.parse(fs.readFileSync(file, "utf8"));
+  const assets = request.assets.map((asset) => ({
+    id: asset.id,
+    sourceHash: asset.sourceHash,
+    classification:
+      asset.id === excluded
+        ? "excluded"
+        : path.basename(asset.id).startsWith("text_")
+          ? "uncertain"
+          : "no_text",
+    method: "visual",
+    examined: true,
+    reason: asset.id === excluded ? "The scripted assistant set it aside." : "",
+    evidence: "contact sheet",
+    variants: [],
+  }));
+  fs.writeFileSync(
+    request.report,
+    JSON.stringify({
+      version: 1,
+      kind: "discovery",
+      projectId: request.projectId,
+      requestId: request.id,
+      inventoryRevision: request.inventoryRevision,
+      complete: true,
+      assets,
+    }),
+  );
+}
+
 /** Answers the copied image task `text` as the scripted assistant, giving
  * an error for the images whose IDs are in `errors`. */
 function editImages(state, text, errors = []) {
@@ -1857,18 +1893,33 @@ const imagesRevised = () => {
   let revision;
   return [
     [
-      "Translate a lettered image and apply it",
+      "Translate a lettered image the investigation excluded and apply it",
       async ({ page, state }) => {
         await page.click("3Translate");
         await page.click(/^Images\b/);
         await page.waitText(lettered[1]);
+        // An exclusion is a finding that leaves the image unticked, not a
+        // skip, so the user can still tick the image and translate it.
+        const [id] = Object.keys(revisionNotes);
+        investigateImages(
+          await copyTask(page, state, "Copy investigation task"),
+          id,
+        );
+        await until("the investigation's findings", async () => {
+          const row = await imageRow(page, id);
+          return row?.classification === "excluded" && row.state !== "skipped";
+        });
+        const { selection } = await page.call("images_state", {
+          project_id: await imagesProject(page),
+        });
+        if (selection.length)
+          throw new Error(`The investigation ticked ${selection.join(", ")}.`);
         await tickImage(page, lettered[0]);
         const request = editImages(
           state,
           await copyTask(page, state, "Copy translation task (1)"),
         );
         await applyImages(page, 1);
-        const [id] = Object.keys(revisionNotes);
         await until(
           "the image to read Applied",
           async () => (await imageRow(page, id))?.state === "applied",
@@ -2107,7 +2158,7 @@ export const scenarios = {
   },
   "images-revised": {
     description:
-      "A Guided project on the lettered-images game: one lettered image translated by a scripted assistant and applied, revision notes written on it and on the other in Compare images, kept through leaving Images and a restart and sent in one revision task from the footer; the assistant revises the applied image and fails the other, whose note waits, and Apply to game puts the revised image back.",
+      "A Guided project on the lettered-images game: one lettered image the investigation excluded, ticked, translated by a scripted assistant and applied, revision notes written on it and on the other in Compare images, kept through leaving Images and a restart and sent in one revision task from the footer; the assistant revises the applied image and fails the other, whose note waits, and Apply to game puts the revised image back.",
     game: "lettered-images",
     steps: () => [open, setup[0], ...imagesRevised()],
   },

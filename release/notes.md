@@ -3,3 +3,7 @@
 ### Added
 
 - **Guide:** the user guide opens inside DazedTL from **Guide** in the sidebar, with its sections beside the text and a search; help on checkpoints, API keys, GameUpdate, speaker names and Assistant-led progress has a **Learn more** link to its section.
+
+### Fixed
+
+- **Images:** an image your assistant's investigation excluded no longer reads Skipped once you tick it, so **Copy translation task** includes it instead of saying the translation skipped every image.

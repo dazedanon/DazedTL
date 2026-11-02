@@ -2381,7 +2381,7 @@ export type ImageManagerState = {
   observationRevision?: string;
   inventoryRevision: string;
   counts: ImageCounts;
-  /** Whether every image in the folder has a finding, is in the game or is excluded. */
+  /** Whether every image in the folder has a finding or is in the game. */
   investigated: boolean;
   folders: ImageFolder[];
   selection: string[];
