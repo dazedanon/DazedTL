@@ -709,9 +709,13 @@ class CompatibilityContracts(unittest.TestCase):
             },
             {"provider": "gemini", "endpoint": proxy, "model": model},
         ]
-        with self.assertRaisesRegex(ValueError, "to Live"):
-            evaluation._validate_candidates(rows)
-        evaluation._validate_candidates([*rows[:1], {**rows[1], "execution": "live"}])
+        # Pricing the OpenAI row reads the shipped table, never the network.
+        with patch.dict(os.environ, {"DAZEDTL_TEST_OFFLINE": "1"}):
+            with self.assertRaisesRegex(ValueError, "to Live"):
+                evaluation._validate_candidates(rows)
+            evaluation._validate_candidates(
+                [*rows[:1], {**rows[1], "execution": "live"}]
+            )
 
     def test_engine_extension_layers_reach_aliases_and_reconfigure_in_place(self):
         # Host wrappers used to reassign module attributes: aliases bound at
