@@ -302,7 +302,7 @@ class ImageNativeTranslation:
                 raise ValueError(
                     "Review the saved image run's model and cost before resuming paid work."
                 )
-            self.settings.prepare_engine(mode=job["mode"], resume=plan)
+            self.settings.prepare_engine(resume=plan)
             self.backend.manual.resume(run_id)
         elif action == "export":
             result = self.backend.manual.export(run_id)

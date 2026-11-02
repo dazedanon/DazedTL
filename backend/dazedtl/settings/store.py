@@ -9,7 +9,6 @@ from pathlib import Path
 from typing import Any, TypeGuard
 
 from dazedtl.storage import WorkspaceError, read_versioned_json, write_json
-from dazedtl.translation.refusals import POLICY as REFUSAL_POLICY
 
 from . import effort, language_pair, openrouter, preferences, providers
 
@@ -1277,9 +1276,14 @@ class Settings:
         return self.describe()
 
     def prepare_engine(self, mode=None, resume=None, pair=None):
-        """Writes the engine's settings before an engine action; a new run
-        translates between the game's language *pair*
-        (settings/language_pair)."""
+        """Writes the engine's settings before an engine action. A new run in
+        *mode* passes the new-run checks and freezes its request policy
+        (execution.request_policy), translating between the game's language
+        *pair* (settings/language_pair); a *resume* keeps everything its run
+        froze, so it takes neither and only needs its own connection."""
+        if resume is not None and (mode or pair is not None):
+            raise TypeError("A resumed run keeps the mode and languages it froze.")
+        self.adapter.manual.request_policy = None
         state = self._read()
         active = self._connection(state)
         if mode and active and not self._configured(active):
@@ -1295,30 +1299,20 @@ class Settings:
         values = self._values(state)
         if pair is not None:
             values = language_pair.frozen(values, pair)
-        if mode and active and active["provider"]:
-            self.adapter.validate_route(values)
-            providers.validate_model_name(
-                values["model"], values["api"], created=resume is not None
-            )
         if not values["model"]:
             values["model"] = state["values"]["model"]
-        configured = (
-            active["model_options"] if active else state["model_options"]
-        ).get(values["model"], preferences.DEFAULT_OPTIONS)
-        frozen_batch = {"openrouterBatch": None}
-        if mode and active and active["provider"] == "openrouter":
-            try:
-                frozen_batch = openrouter.frozen(
-                    active, values["model"], configured, required=mode == "batch"
+        policy = None
+        if mode:
+            from .execution import request_policy
+
+            # A Batch whose policy no lookup could read waits for it before
+            # anything else is checked or priced (openrouter.frozen).
+            policy = request_policy(self, mode)
+            if mode == "batch" and not self.translation_defaults()["batch_supported"]:
+                raise ValueError(
+                    "This connection does not support provider batch jobs."
                 )
-            except openrouter.Unread:
-                # A new Batch waits for it before anything else is checked
-                # or priced, where Live freezes it as not read yet; a resumed
-                # run keeps the policy it froze.
-                if resume is None:
-                    raise
-        if mode == "batch" and not self.translation_defaults()["batch_supported"]:
-            raise ValueError("This connection does not support provider batch jobs.")
+            values.update(batchsize=policy["entriesPerRequest"])
         vault = {
             "active": active["runtime_name"] if self._configured(active) else "",
             "keys": {
@@ -1369,76 +1363,7 @@ class Settings:
                     frozen["model"], frozen["api"], created=True
                 )
                 vault["keys"][key_name]["endpoint"] = frozen["api"]
-        self.adapter.manual.request_policy = None
-        if mode:
-            custom = configured["pricing"] == "custom"
-            defaults = self.model_defaults(
-                state["active"], values["model"], cached_only=custom
-            )
-            input_rate = configured["inputRate"] if custom else defaults["inputRate"]
-            output_rate = configured["outputRate"] if custom else defaults["outputRate"]
-            if input_rate is None or output_rate is None:
-                raise ValueError(
-                    "No price is available for this model. Enter custom rates in Settings before starting; use 0 for a free model."
-                )
-            entries = (
-                configured["entriesPerRequest"]
-                or preferences.DEFAULT_ENTRIES_PER_REQUEST
-            )
-            self.adapter.manual.request_policy = {
-                "version": 1,
-                "model": values["model"],
-                "generationParameters": preferences.GENERATION_PARAMETERS,
-                "maxOutputTokens": preferences.output_allowance(
-                    configured.get("maxOutputTokens"), defaults.get("maxOutputTokens")
-                ),
-                **effort.frozen(
-                    active["provider"] if active else None,
-                    values["model"],
-                    configured,
-                    effort.record(active, values["model"]),
-                ),
-                "refusalRetry": REFUSAL_POLICY,
-                "stateGrouping": "compatible-states-v1",
-                **preferences.FROZEN_POLICIES,
-                **preferences.REPLY_POLICIES,
-                "entriesPerRequest": entries,
-                "inputRate": input_rate,
-                "outputRate": output_rate,
-                "source": "custom" if custom else defaults["source"],
-                "updatedAt": None if custom else defaults["updatedAt"],
-            }
-            if active and active["provider"] == "openrouter":
-                self.adapter.manual.request_policy["openrouterStructuredOutputs"] = (
-                    openrouter.STRUCTURED_OUTPUTS
-                )
-                self.adapter.manual.request_policy.update(frozen_batch)
-                if mode == "batch":
-                    batch_policy = frozen_batch["openrouterBatch"]
-                    assert batch_policy is not None  # Required policies raise instead.
-                    batch_limit = batch_policy.get("max_output")
-                    self.adapter.manual.request_policy["maxOutputTokens"] = (
-                        preferences.output_allowance(
-                            self.adapter.manual.request_policy["maxOutputTokens"],
-                            batch_limit,
-                        )
-                    )
-            if (active and active["provider"] == "openai") or configured.get(
-                "batchInputTokens"
-            ) is not None:
-                self.adapter.manual.request_policy["batchInputTokens"] = (
-                    configured.get("batchInputTokens")
-                    or preferences.DEFAULT_BATCH_INPUT_TOKENS
-                )
-            if (
-                active
-                and active["provider"] == "openrouter"
-                and active.get("openrouter_host")
-            ):
-                self.adapter.manual.request_policy["openrouterHost"] = active[
-                    "openrouter_host"
-                ]
-            values.update(batchsize=entries)
+        self.adapter.manual.request_policy = policy
         self.adapter.install_settings(
             state["revision"], values, state["legacy"]["engines"], vault
         )

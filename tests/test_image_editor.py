@@ -8,8 +8,12 @@ from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
+from dazedtl.compatibility.dazedmtl import ExistingBackend
+from dazedtl.images import native_translation
 from dazedtl.images.editor import ImageEditor, validate_blocks
 from dazedtl.images.native_translation import ImageNativeTranslation
+from dazedtl.settings import providers
+from dazedtl.settings.store import Settings
 from dazedtl.storage import write_bytes, write_json
 from dazedtl.translation.files import digest, read_json
 
@@ -258,6 +262,83 @@ class EditorTests(unittest.TestCase):
     def exported(self):
         state = self.save()
         return self.editor.action("project", state["revision"], "export", self.ids)
+
+    def test_a_batch_resume_keeps_its_frozen_policy_while_the_check_fails(self):
+        # The image resume ran the new-run gate, which reads the active
+        # OpenRouter connection's live Batch support, False until a check
+        # passes, so it refused a run that froze its Batch policy.
+        metadata = {
+            "values": {
+                "language": "English",
+                "model": "fixture",
+                "API_PROVIDER": "openai",
+            }
+        }
+        adapter = SimpleNamespace(
+            settings_metadata=lambda: metadata,
+            allow_providers=True,
+            validate_route=lambda values: ExistingBackend.validate_route(
+                ExistingBackend, values
+            ),
+            engine_route=ExistingBackend.engine_route,
+            provider_defaults=lambda _: {"batch_supported": False},
+            manual=SimpleNamespace(request_policy=None),
+            install_settings=Mock(),
+        )
+        write_json(
+            self.base / "profile/settings/settings.json",
+            {
+                "version": 2,
+                "revision": 0,
+                "values": {"language": "English", "model": "fixture"},
+                "legacy": {"values": metadata["values"], "engines": {}, "draft": None},
+                "model_options": {},
+                "active": "",
+                "draft": None,
+                "connections": [],
+            },
+        )
+        settings = Settings(self.base / "profile", adapter)
+        with patch.object(providers, "check") as check:
+            view = settings.save_connection(0, "openrouter", secret="fixture-key")
+            check.assert_not_called()
+        model = "z-ai/glm-4.6"
+        settings.save(
+            view["revision"],
+            view["activeConnectionId"],
+            {"language": "English", "model": model, "sourceLanguage": "Japanese"},
+            {},
+        )
+        self.assertFalse(settings.translation_defaults()["batch_supported"])
+        connection = settings._connection(settings._read())
+        self.core.settings = settings
+        translator = ImageNativeTranslation(self.core, self.editor)
+        source = str(native_translation.native.input_folder(self.backend, "project"))
+        self.backend.manual.jobs["paid"] = {
+            "id": "paid",
+            "engine": "Image Text",
+            "source": source,
+            "mode": "batch",
+            "status": "stopped",
+        }
+        translator._write(
+            "project",
+            {"paid": {"mode": "batch", "inputs": {"configuration": {"model": model}}}},
+        )
+        self.backend.saved_run_configuration = lambda _identity: {
+            "engine": "Image Text",
+            "selected": ["image_text.json"],
+            "mode": "batch",
+            "key_name": connection["runtime_name"],
+            "settings": {
+                "model": model,
+                "API_PROVIDER": connection["protocol"],
+                "api": providers.address(connection),
+                "organization": "",
+            },
+        }
+        translator.action("project", "paid", "resume", {"approved": True})
+        self.backend.manual.resume.assert_called_once_with("paid")
 
     def test_subset_and_empty_scope_do_not_remove_other_saved_images(self):
         self.save()

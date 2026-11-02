@@ -350,6 +350,8 @@ Drafts and actions:
 - The public preference schema is [preferences.py](../backend/dazedtl/settings/preferences.py); legacy engine values are kept privately and materialized only before engine actions.
 - Provider presets declare their transport protocol apart from their identity; existing connections and frozen runs keep their identity and route, and runs find credentials by the connection's name, so removing a connection strands its unfinished runs.
 - Settings that change requests, such as an OpenRouter host, token budgets, thinking effort ([effort](../backend/dazedtl/settings/effort.py)) and rates, freeze into each new plan through the [request adapter](../backend/dazedtl/compatibility/request_parameters.py) and [worker adapter](../backend/dazedtl/compatibility/worker_policy.py), so a settings change can't redirect or reprice a resumed run.
+  One reader in [execution](../backend/dazedtl/settings/execution.py) builds them, as the `configuration` estimates and Assistant-led runs freeze and as the `request_policy` a Guided or image run's engine freezes.
+  A resume passes only its saved plan to `prepare_engine` in [settings/store.py](../backend/dazedtl/settings/store.py), which skips the new-run checks, such as whether the active connection runs Batch, and checks only the run's own connection.
 - Prices are looked up outside the lock only when preparing, reviewing or approving work; snapshots use prices already looked up ([model_defaults](../backend/dazedtl/compatibility/model_defaults.py)).
 
 ### Notifications

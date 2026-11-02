@@ -302,27 +302,22 @@ class SettingsTests(unittest.TestCase):
                 }
                 saved["connections"][0]["model"] = name
                 write_json(path, saved)
-                # An image run resumes in its mode, which reads Settings' model
-                # too; an unpriced one is refused only after the name passed.
-                for mode, after in ((None, None), ("translate", "No price")):
-                    with (
-                        self.subTest(model=name, mode=mode),
-                        patch.object(
-                            Settings,
-                            "model_defaults",
-                            return_value={"inputRate": None, "outputRate": None},
-                        ),
-                    ):
-                        expected = "Claude's own model IDs" if refused else after
-                        if expected:
-                            with self.assertRaisesRegex(ValueError, expected):
-                                Settings(temporary, adapter).prepare_engine(
-                                    mode, resume=resume
-                                )
-                        else:
-                            Settings(temporary, adapter).prepare_engine(
-                                mode, resume=resume
-                            )
+                # A resume prices nothing, so an unpriced model resumes too.
+                with (
+                    self.subTest(model=name),
+                    patch.object(
+                        Settings,
+                        "model_defaults",
+                        return_value={"inputRate": None, "outputRate": None},
+                    ),
+                ):
+                    if refused:
+                        with self.assertRaisesRegex(
+                            ValueError, "Claude's own model IDs"
+                        ):
+                            Settings(temporary, adapter).prepare_engine(resume=resume)
+                    else:
+                        Settings(temporary, adapter).prepare_engine(resume=resume)
 
     def test_removing_a_connection_forgets_its_key_and_respects_saved_runs(self):
         # Removal must not strand a run silently or leave the removed key in the engine's derived key cache.
