@@ -683,7 +683,7 @@ class ImageService:
                 f"Keep revision notes on at most {NOTED_IMAGES:,} images at once."
             )
         texts = {
-            identity: text(note, "A revision note")
+            identity: note
             for identity, note in texts.items()
             if text(note, "A revision note").strip()
         }
