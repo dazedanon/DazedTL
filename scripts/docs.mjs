@@ -15,7 +15,7 @@ const limits = {
   "docs/development.md": 3000,
   "docs/text-qa-redesign.md": 4000,
   "docs/translation-contract.md": 3200,
-  "docs/user-guide.md": 2500,
+  "docs/user-guide.md": 3500,
 };
 
 const problems = [];

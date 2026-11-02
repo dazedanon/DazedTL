@@ -6,13 +6,27 @@ To install it, see the [README](../README.md#install).
 ## Before you start
 
 1. In **Settings**, choose your AI provider, paste its API key and save; see [API keys and models](#api-keys-and-models).
-2. Have an AI coding assistant ready, such as Claude Code or Codex, with access to the game's folder and the DazedTL folder.
+2. Have an AI coding assistant ready, such as Claude Code or Codex, with access to the game's folder and the DazedTL folder; see [What you need](#what-you-need).
+3. Keep the game as the developer released it, such as the ZIP you downloaded; see [Good habits](#good-habits).
+
+## What you need
+
+An **AI coding assistant**, also called an AI agent, is an AI chat that can read and change the files in a folder and run commands there.
+[Claude Code](https://claude.com/product/claude-code) and [Codex](https://developers.openai.com/codex) are two.
+Claude Code comes with Claude's paid plans and Codex with ChatGPT's plans; check each site for prices and limits.
+DazedTL hands it the work that needs looking into, such as names, plugins and images, or in Assistant-led the whole game.
+It asks before it changes files or runs commands unless you allow it to, so read what it wants to do.
+
+An **editor**, or IDE, shows a folder's files and runs your assistant in a panel beside them.
+[VS Code](https://code.visualstudio.com/) is free; [Cursor](https://cursor.com/) has free and paid plans with its own AI.
+You can also run an assistant in its own app or a terminal.
+Wherever it runs, open the game folder in it and give it access to the DazedTL folder: its tasks read the game and run DazedTL's project helper, which lives in the DazedTL folder.
 
 ## How it works
 
 - **Projects.** Each game folder you open is a project: click **Open a game** on the Project page.
   A game you move or rename keeps its project; open it from its new folder.
-- **Two methods.** A new game asks how to translate it: [Guided steps](#guided-steps) for RPG Maker MV, MZ and VX Ace, or [Assistant-led](#assistant-led) for any game.
+- **Two methods.** A new game asks how to translate it: [Guided steps](#guided-steps) for RPG Maker MV, MZ and VX Ace, or [Assistant-led](#assistant-led) for any game; see [Choosing a method](#choosing-a-method).
   **Change method** on the Project page switches later and keeps your work.
 - **Assistant tasks.** Some steps copy a task for your assistant.
   Paste it in and keep DazedTL open: the results show up by themselves.
@@ -31,6 +45,38 @@ Tasks use the same words everywhere:
 | **Done** | Finished work that doesn't change the game. |
 | **Outdated** | Something it was based on changed; redo it. |
 | **Blocked** | It can't continue; the detail beside it says why. |
+
+## Choosing a method
+
+| | **Guided steps** | **Assistant-led** |
+| --- | --- | --- |
+| Games | RPG Maker MV, MZ and VX Ace | Any engine |
+| Who translates | Your API key, stage by stage | Your assistant, from one starting prompt, through your API key or by itself |
+| You decide | Each step, with an estimate before any paid work | The options at the start, and each estimate in the API modes |
+| Your assistant's plan | Used for a few tasks | Used throughout |
+
+Pick Guided steps for an RPG Maker game: you see and control each step.
+Pick Assistant-led for other engines, such as WOLF RPG or TyranoScript, for a game whose text mostly sits in unusual plugins or scripts, or if you have no API key.
+In Assistant-led your assistant follows Len's game-translation skills and writes its own tools for the game, so it can reach text in formats the Guided steps don't read.
+
+## Good habits
+
+DazedTL already does the safekeeping inside the game folder:
+
+- Every change it makes is a [checkpoint](#checkpoints-and-undo) you can undo, and edits you make outside DazedTL get one of their own, so there is nothing to save by hand.
+- Before it first changes the game, it records the original files in the game folder's Git repository.
+- A new version of the game merges into your checkpoints through [Game updates](#game-updates).
+
+That record lives only in this game folder on this computer, so two things are still yours to do:
+
+- **Keep the developer's original download**, such as the ZIP, somewhere other than the game folder.
+- **Push to a private remote repository** after each session of work, so a copy of your checkpoints exists off this computer; see [Make a remote repository](#make-a-remote-repository).
+  The remote holds your translation and the files it changes, not the whole game.
+
+Also:
+
+- Work in one game folder: a copy of it opens as a new project.
+- Translate a little and [playtest](#playtest-checklist) it before you translate the rest.
 
 ## Guided steps
 
@@ -133,6 +179,18 @@ To try again from scratch, stop your assistant and choose **Start over…** on *
 
 Your assistant uses its own plan in every mode, so on a limited plan pick a smaller model or lower reasoning effort.
 
+## Playtest checklist
+
+A run that ends without errors doesn't prove the game reads well, so play it after each Apply, and once more before you share it:
+
+- Start a new game and play the scenes you translated; also open the menus, items, skills and shops.
+- Look for Japanese left on screen, text running out of its box, and a name spelled two ways.
+- Save and load once.
+- Before sharing, test what **Release** builds on a fresh copy: unzip the clean game ZIP, or apply the patch ZIP to the developer's original.
+
+When you find a problem, take a screenshot, note where it happened and give both to your assistant.
+For MV and MZ games, **Playtest tools** helps you find a line's source; see [Check](#4-check).
+
 ## Checkpoints and undo
 
 Every change DazedTL makes to the game is a checkpoint on the Project page's **Checkpoints** tab, newest first.
@@ -169,6 +227,23 @@ To list, check or restore them, run these from the DazedTL folder, or ask your a
 
 Don't edit or delete files in the backup folder by hand: backups share files.
 
+## Make a remote repository
+
+A remote repository is a copy of the game folder's checkpoints on a Git site such as [GitGud](https://gitgud.io) or [GitHub](https://github.com).
+DazedTL doesn't create or push to one yet, so set it up once per game:
+
+1. Sign in and create an empty project: on GitGud **New project > Create blank project**, on GitHub **New repository**.
+   Make it **Private**, and don't add a README, license or `.gitignore`.
+2. Copy its HTTPS address, such as `https://gitgud.io/your-name/your-game.git`.
+3. Paste this into your assistant with your address:
+   "In the game folder, add `ADDRESS` as the remote `origin` and push the `original` branch and the translation branch, `main`, or `translation` in games set up by older versions.
+   Stop and ask if `origin` already exists."
+4. If Git asks you to sign in, do it in the window it opens; never paste a password or token into your assistant.
+
+After later work, ask your assistant to push again.
+GitHub refuses files over 100 MB, and other sites have limits of their own; if a push fails on a big file, ask your assistant to explain the choices before anything is deleted.
+Upload only what you may store: a private repository isn't permission to share someone's game.
+
 ## Publishing with GameUpdate
 
 GameUpdate lets players update to your latest translation from a public Git repository on GitGud, GitHub or a Forgejo server such as Codeberg.
@@ -177,7 +252,7 @@ Set up adds it to the game: `GameUpdate.bat`, `GameUpdate_linux.sh`, the `gameup
 1. In **Settings > GameUpdate**, choose the site and enter the owner of your repositories, such as `dazed-translations`.
    Leave the owner empty if you don't use GameUpdate.
 2. Confirm the game's repository under **GameUpdate** in the **Release** task, or on **Options** for Assistant-led; DazedTL fills it in from the game's Git remote when it can.
-3. Push the translation to that repository before you build a ZIP.
+3. Push the translation to that repository before you build a ZIP; see [Make a remote repository](#make-a-remote-repository), and make it public when you release.
    Otherwise GameUpdate stays off in that ZIP, since it can't tell which version players start from.
 
 GameUpdate can't update an encrypted VX Ace game, so share a new patch for each update instead.
@@ -221,6 +296,25 @@ DazedTL updates itself.
 When a new version is ready, **Settings** shows a dot: open **Updates** and click **Restart to update**.
 Your projects, settings and API keys are kept.
 **Go back to** returns to the previous version, and the **Beta** channel gets test versions early.
+
+## Common problems
+
+**No speaker names found, or names missing before you translate.**
+On **Context > Names & glossary**, copy the task: your assistant identifies the game's **Speaker formats** first.
+Then **Speaker names > Open scan > Run local scan** collects the names, and **View formats** shows what was found; its **Settings** tab turns kinds of names on or off, such as **Face names**.
+Do this before you translate **Maps & events**.
+
+**A plugin's text doesn't show up translated.**
+Text from a plugin command or script in an event comes from **Event text sources**: copy its investigation task again, then translate **Other event text**.
+A menu or label a plugin draws itself belongs to **Plugin files**: copy its task again and tell your assistant where you saw the text.
+
+**Japanese left after Apply.**
+Run [Text QA](#4-check): its **Never translated** list shows text still in Japanese, and for MV and MZ games the playtest names the task that translates what players see.
+Lines that failed keep their original text until you translate them again; text inside pictures is the **Images** task.
+
+**The assistant can't see the game folder or reach DazedTL.**
+Open the game folder in your editor, give your assistant access to the DazedTL folder, and start a new chat.
+If it says the local DazedTL request failed while DazedTL is open, its sandbox is blocking the connection: approve the helper command when your assistant asks for permission.
 
 ## When something goes wrong
 
