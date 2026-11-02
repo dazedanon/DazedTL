@@ -4,12 +4,15 @@
 // session that cuts the next release answers for a run still red. Runs on
 // Linux and macOS. A wait on the user's DazedTL or a slow landing lock is
 // told to the user on the desktop too, since agents run this in the
-// background. See "Landing" in docs/development.md.
+// background. Each landing carries a record of its code review, kept in the
+// shared Git directory to measure what reviews catch. See "Landing" in
+// docs/development.md.
 //
-//   node scripts/land.mjs
+//   node scripts/land.mjs --review <file.json>
 //
 // Exits 0 when landed, 1 when refused or a check failed and 2 on a merge
 // conflict.
+import fs from "node:fs";
 import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -31,6 +34,55 @@ const appPoll = 30_000;
 const pushRetry = 60_000;
 const pushTimeout = 5 * 60_000;
 const icon = path.join(import.meta.dirname, "..", "resources", "icon.png");
+const reviewLevels = ["low", "medium", "high", "xhigh", "max", "ultra"];
+const reviewShape =
+  '{"level": "medium", "findings": [{"summary": "...", "outcome": "fixed"}, {"summary": "...", "outcome": "dismissed", "reason": "..."}]}, or {"skipped": "why"}';
+/** Where landed reviews are recorded, one JSON line each, beside the lock. */
+export const reviewLog = "dazedtl-reviews.jsonl";
+
+/**
+ * Reads a landing's review record: the code-review level and what became of
+ * each finding it reported, or why no review ran. Throws with what is wrong.
+ * @param {string} text
+ * @returns {{ skipped: string } | { level: string, findings: { summary: string, outcome: "fixed" | "dismissed", reason?: string }[] }}
+ */
+export function readReview(text) {
+  let record;
+  try {
+    record = JSON.parse(text);
+  } catch (error) {
+    throw new Error(`The review record is not JSON: ${reason(error)}`);
+  }
+  const filled = (/** @type {unknown} */ value) =>
+    typeof value === "string" && value.trim() !== "";
+  if (record && filled(record.skipped)) return { skipped: record.skipped };
+  if (!record || !reviewLevels.includes(record.level))
+    throw new Error(
+      `The review record needs a level (${reviewLevels.join(", ")}) or a skipped reason.`,
+    );
+  if (!Array.isArray(record.findings))
+    throw new Error(
+      "The review record needs a findings list, empty when the review found nothing.",
+    );
+  const findings = record.findings.map(
+    (/** @type {any} */ item, /** @type {number} */ index) => {
+      const which = `Finding ${index + 1} of the review record`;
+      if (!filled(item?.summary)) throw new Error(`${which} needs a summary.`);
+      if (item.outcome === "fixed")
+        return { summary: item.summary, outcome: "fixed" };
+      if (item.outcome !== "dismissed")
+        throw new Error(`${which} needs an outcome of fixed or dismissed.`);
+      if (!filled(item.reason))
+        throw new Error(`${which} is dismissed without a reason.`);
+      return {
+        summary: item.summary,
+        outcome: "dismissed",
+        reason: item.reason,
+      };
+    },
+  );
+  return { level: record.level, findings };
+}
 
 /** Whether the user's own DazedTL runs from the main checkout. */
 export function appRunning(
@@ -184,11 +236,25 @@ async function warnRedDev(/** @type {Deps} */ { read, log }, main) {
  * Lands the branch checked out at `cwd`. Resolves the exit code.
  * @param {string} cwd
  * @param {Deps} deps
+ * @param {string | undefined} reviewFile the review record's path
  */
-export async function land(cwd, deps) {
+export async function land(cwd, deps, reviewFile) {
   const { log } = deps;
   if (process.platform === "win32") {
     log("Land from Linux or macOS; land.mjs does not run on Windows.");
+    return 1;
+  }
+  if (!reviewFile) {
+    log(
+      `Land with --review <file.json> holding the branch's code review: ${reviewShape}.`,
+    );
+    return 1;
+  }
+  let review;
+  try {
+    review = readReview(fs.readFileSync(reviewFile, "utf8"));
+  } catch (error) {
+    log(`${reason(error)} Expected: ${reviewShape}.`);
     return 1;
   }
   const here = gitIn(cwd);
@@ -207,9 +273,8 @@ export async function land(cwd, deps) {
     log(`Commit or remove these changes first:\n${dirty}`);
     return 1;
   }
-  const main = path.dirname(
-    path.resolve(top, out("rev-parse", "--git-common-dir")),
-  );
+  const common = path.resolve(top, out("rev-parse", "--git-common-dir"));
+  const main = path.dirname(common);
   await warnRedDev(deps, main);
   const time = timer(deps.now);
   const unformatted = await formatBranch(git, top, deps.run, log);
@@ -227,7 +292,13 @@ export async function land(cwd, deps) {
   const { code, report } = await withLock(
     git,
     { branch, worktree: top },
-    () => underLock(deps, { top, main, branch }, time, tell),
+    () =>
+      underLock(deps, { top, main, branch }, time, tell, (range) =>
+        fs.appendFileSync(
+          path.join(common, reviewLog),
+          `${JSON.stringify({ landed: new Date(deps.now?.() ?? Date.now()).toISOString(), branch, range, ...review })}\n`,
+        ),
+      ),
     { log, notify: tell, onStop: deps.onStop },
   );
   for (const line of report) log(line);
@@ -353,9 +424,10 @@ export async function mergeDev(git, top, run, log) {
  * @param {{ top: string, main: string, branch: string }} where
  * @param {ReturnType<typeof timer>} time
  * @param {(line: string) => void} tell
+ * @param {(range: string) => void} record records the review of a landed range
  * @returns {Promise<{ code: number, report: string[] }>}
  */
-async function underLock(deps, { top, main, branch }, time, tell) {
+async function underLock(deps, { top, main, branch }, time, tell, record) {
   const { run, log, wait } = deps;
   const git = gitIn(top);
   const atMain = gitIn(main);
@@ -439,6 +511,8 @@ async function underLock(deps, { top, main, branch }, time, tell) {
         ? `dev could not move to ${head.slice(0, 7)}; nothing landed.`
         : "dev moved without the landing lock; land again.",
     );
+  // dev has the commits now, whether or not every mirror takes them.
+  record(`${before}..${head}`);
 
   const pushUrls = lines(
     atMain(["remote", "get-url", "--push", "--all", "all"]).stdout,
@@ -521,9 +595,10 @@ function realDeps() {
 }
 
 if (import.meta.main) {
-  if (process.argv.length > 2) {
-    console.error("Usage: node scripts/land.mjs");
+  const args = process.argv.slice(2);
+  if (args.length && (args.length !== 2 || args[0] !== "--review")) {
+    console.error("Usage: node scripts/land.mjs --review <file.json>");
     process.exit(1);
   }
-  process.exitCode = await land(process.cwd(), realDeps());
+  process.exitCode = await land(process.cwd(), realDeps(), args[1]);
 }
