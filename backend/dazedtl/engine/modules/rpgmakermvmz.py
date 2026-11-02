@@ -3725,7 +3725,20 @@ def _message_end(commands, start, allowed):
 # first event pass; the write pass then leaves them alone instead of requesting
 # them again. Older runs keep the native two-pass behavior.
 CHOICE_COLLECTION = False
+# Runs whose frozen policy sends LL_GalgeChoiceWindow (code 357) and
+# LL_GalgeChoiceWindowMV (code 356) text once translate it on the first event
+# pass alone. Older runs send it on both passes, as they were approved.
+GALGE_CHOICES = False
 _EVENT_PASS = threading.local()
+
+
+def _galge_sends(setData):
+    """Whether this event pass sends LL_GalgeChoiceWindow text: pass 1 alone
+    by the run's frozen GALGE_CHOICES policy, so text a failed reply left in
+    Japanese is not sent and paid for again in pass 2."""
+    return setData or not GALGE_CHOICES
+
+
 # Set from the run's frozen request policy (pagePacking): event pages of one
 # file with at most SHARED_LINES message boxes and choices share a
 # request, each page labelled, instead of each costing a request of its own.
@@ -4798,9 +4811,7 @@ def _searchCodes(page, pbar, jobList, filename):
                                         # Reassemble: restore outer quotes and formatting codes
                                         params_obj["Text:json"] = f'"{prefix}{translatedText}{suffix}"'
 
-                # Sent and written in pass 1 alone, so choices a failed reply
-                # left in Japanese are not sent and paid for again in pass 2.
-                if headerString == "LL_GalgeChoiceWindow" and setData:
+                if headerString == "LL_GalgeChoiceWindow" and _galge_sends(setData):
                     ### Message Text First
                     jaString = codeList[i]["parameters"][3]["messageText"]
 
@@ -5828,7 +5839,8 @@ def _searchCodes(page, pbar, jobList, filename):
                         codeList[i]["parameters"][0] = translatedText
 
                 # LL_GalgeChoiceWindowMV Message
-                if "LL_GalgeChoiceWindowMV setMessageText" in jaString:
+                galgeSend = _galge_sends(setData)
+                if "LL_GalgeChoiceWindowMV setMessageText" in jaString and galgeSend:
                     ### Message Text First
                     match = re.search(r"LL_GalgeChoiceWindowMV setMessageText (.+)", jaString)
                     if match:
@@ -5856,7 +5868,7 @@ def _searchCodes(page, pbar, jobList, filename):
                         codeList[i]["parameters"][0] = translatedText
 
                 # LL_GalgeChoiceWindowMV Choices
-                if "LL_GalgeChoiceWindowMV setChoices" in jaString:
+                if "LL_GalgeChoiceWindowMV setChoices" in jaString and galgeSend:
                     match = re.search(r"LL_GalgeChoiceWindowMV setChoices (.+)", jaString)
                     if match:
                         jaString = match.group(1)
@@ -5873,19 +5885,21 @@ def _searchCodes(page, pbar, jobList, filename):
                         )
                         totalTokens[0] += response[1][0]
                         totalTokens[1] += response[1][1]
-                        choiceListTL = response[0]
-                        translatedText = match.group(0)
+                        replies = reply_to_write(response[0], choiceList, MISMATCH, LOCK, filename)
 
-                        # Replace Strings
-                        for j in range(len(choiceListTL)):
-                            choiceListTL[j] = word_spacing.join_words(
-                                choiceListTL[j],
-                                word_spacing.chosen("LL_GalgeChoiceWindowMV setChoices", SPACES_356, NBSP_356),
-                            )
-                            translatedText = translatedText.replace(choiceList[j], choiceListTL[j])
+                        # Each reply goes in its own choice's place, so a
+                        # choice inside another one (はい in はいはい) is never
+                        # written there; a reply of the wrong length writes none.
+                        if replies is not None:
+                            spacing = word_spacing.chosen("LL_GalgeChoiceWindowMV setChoices", SPACES_356, NBSP_356)
+                            choiceListTL = [
+                                choice if reply is None else word_spacing.join_words(reply, spacing)
+                                for choice, reply in zip(choiceList, replies)
+                            ]
+                            translatedText = match.group(0)[: match.start(1) - match.start(0)] + ",".join(choiceListTL)
 
-                        # Set Data
-                        codeList[i]["parameters"][0] = translatedText
+                            # Set Data
+                            codeList[i]["parameters"][0] = translatedText
 
             ### Event Code: 102 Show Choice
             if "code" in codeList[i] and codeList[i]["code"] == 102 and CODE102 is True:

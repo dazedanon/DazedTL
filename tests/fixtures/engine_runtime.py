@@ -3588,12 +3588,14 @@ try:
             "はい": "Yes",
             "いいえ": "No",
             "はいはい": "Sure, sure",
+            "はいはいはい": "Okay",
         }
         galge_sent = []
 
         def galge_reply(change):
             def reply(text, *_args, **_kwargs):
                 if isinstance(text, str):
+                    galge_sent.append(text)
                     return [galge_english.get(text, text), [0, 0]]
                 galge_sent.append(list(text))
                 return [
@@ -3610,14 +3612,14 @@ try:
         ):
             galge_sent.clear()
             written, mismatched, marked = mv_page(
-                [galge_window], galge_reply(change), CODE357=True
+                [galge_window], galge_reply(change), CODE357=True, GALGE_CHOICES=True
             )
             assert written[0][3] == {"messageText": "Go?", "choices": choices}, written
             failed = choices == galge
             assert (mismatched, bool(marked)) == (["Map001.json"] * failed, failed)
             # Pass 2 sent the choices a failed reply kept again, a second
             # paid request for the same text.
-            assert galge_sent == [["はい", "いいえ"]], galge_sent
+            assert galge_sent == ["行く？", ["はい", "いいえ"]], galge_sent
         # Each reply was written with str.replace over the whole choices, so
         # はい's reply landed inside はいはい and はいはい's found nothing.
         nested = '["{\\"label\\":\\"はい\\"}","{\\"label\\":\\"はいはい\\"}"]'
@@ -3629,6 +3631,42 @@ try:
         assert written[0][3]["choices"] == (
             '["{\\"label\\":\\"Yes\\"}","{\\"label\\":\\"Sure, sure\\"}"]'
         ), written
+
+        # LL_GalgeChoiceWindowMV (code 356) sent its message and choices on
+        # both passes, and wrote each choice with str.replace over the whole
+        # command from the reply whatever its length.
+        galge_mv = [
+            command(356, ["LL_GalgeChoiceWindowMV setMessageText 行く？"]),
+            command(356, ["LL_GalgeChoiceWindowMV setChoices はい,はいはいはい"]),
+        ]
+        choices_mv = "LL_GalgeChoiceWindowMV setChoices "
+        for change, choices in (
+            (lambda reply: reply, "Yes,Okay"),
+            (lambda reply: reply[:-1], "はい,はいはいはい"),
+            (lambda reply: [*reply, "Maybe"], "はい,はいはいはい"),
+        ):
+            galge_sent.clear()
+            written, mismatched, _marked = mv_page(
+                galge_mv, galge_reply(change), CODE356=True, GALGE_CHOICES=True
+            )
+            assert written == [
+                ["LL_GalgeChoiceWindowMV setMessageText Go?"],
+                [choices_mv + choices],
+            ], written
+            failed = choices.startswith("は")
+            assert mismatched == ["Map001.json"] * failed, mismatched
+            assert galge_sent == ["行く？", ["はい", "はいはいはい"]], galge_sent
+        # A run frozen without the policy sends both windows on both passes,
+        # as it was approved.
+        for window, code in ((galge_mv, "CODE356"), ([galge_window], "CODE357")):
+            galge_sent.clear()
+            mv_page(
+                window,
+                galge_reply(lambda reply: reply[:-1]),
+                **{code: True, "GALGE_CHOICES": False},
+            )
+            choices_sent = [sent for sent in galge_sent if isinstance(sent, list)]
+            assert len(choices_sent) == 2, (code, galge_sent)
 
         # A final save over a folder "succeeded": RPG Maker's own atomic
         # write fell back to moving the save into the folder. It saves

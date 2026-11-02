@@ -124,6 +124,12 @@ SOURCE_TEXT_LEVELS = {
 # measures the whole line, codes included, so a run approved before reuses
 # every saved line its estimate counted.
 SHORT_OUTPUTS = "short-outputs-v1"
+# RPG Maker MV/MZ's LL_GalgeChoiceWindow (code 357) and
+# LL_GalgeChoiceWindowMV (code 356) message and choices are sent on the
+# first event pass alone, so text a failed reply kept is not sent and paid
+# for again on the write pass. A run frozen without it sends them on both
+# passes, as it did when approved.
+GALGE_CHOICES = "galge-choices-once-v1"
 # Each battle-message-users policy a saved run may hold, by the parser level it
 # enables: v2 also treats a party of one actor as that actor.
 BATTLE_MESSAGE_USERS_LEVELS = {
@@ -144,6 +150,7 @@ FROZEN_POLICIES = {
     "battleMessageUsers": BATTLE_MESSAGE_USERS,
     "sourceText": SOURCE_TEXT,
     "shortOutputs": SHORT_OUTPUTS,
+    "galgeChoices": GALGE_CHOICES,
 }
 # A reply's lines have the small kana a model leaves in a line holding no
 # other Japanese written as Latin letters (engine util/target_text
