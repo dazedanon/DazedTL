@@ -3,11 +3,15 @@ import type {
   ImageAsset,
   ImageDraft,
   ImageManagerState,
+  ImageRevision,
 } from "../../api/contracts";
 
 export function imageDraft(state: ImageManagerState): ImageDraft {
   return {
     selection: state.selection || [],
+    notes: Object.fromEntries(
+      Object.entries(state.notes || {}).map(([id, note]) => [id, note.text]),
+    ),
     view: Object.assign(
       {
         query: "",
@@ -26,9 +30,10 @@ export function imageDraft(state: ImageManagerState): ImageDraft {
 
 /**
  * The choices a reply saved, with the user's edits made while it was on its
- * way replayed on top: images ticked or unticked since, and changed view
- * settings. Keeping the edited draft whole would save over what the reply
- * brought, such as an assistant's newly ticked recommendations.
+ * way replayed on top: images ticked or unticked since, notes written or
+ * cleared, and changed view settings. Keeping the edited draft whole would
+ * save over what the reply brought, such as an assistant's newly ticked
+ * recommendations or the notes its report answered.
  */
 export function rebaseImageDraft(
   before: ImageDraft,
@@ -41,8 +46,18 @@ export function rebaseImageDraft(
   const removed = new Set(before.selection.filter((id) => !has.has(id)));
   const changed = <K extends keyof ImageDraft>(key: K) =>
     JSON.stringify(current[key]) !== JSON.stringify(before[key]);
+  const notes = { ...saved.notes };
+  for (const id of new Set([
+    ...Object.keys(before.notes),
+    ...Object.keys(current.notes),
+  ])) {
+    if (current.notes[id] === before.notes[id]) continue;
+    if (current.notes[id]) notes[id] = current.notes[id];
+    else delete notes[id];
+  }
   return {
     ...saved,
+    notes,
     selection: [
       ...new Set(
         [...saved.selection, ...added].filter((id) => !removed.has(id)),
@@ -259,6 +274,19 @@ export function imageDiscovery(
     label === displayLabels[imageDisplay(asset, listed)] ||
     (reasonShown && label === imageReason(asset, listed, target));
   return named ? asset.reason : `${label} · ${asset.reason}`;
+}
+/** What an entry of an image's revision history records. */
+export function revisionEvent(entry: ImageRevision) {
+  if (entry.kind === "apply") return "Applied to the game";
+  if (entry.kind === "restore") return "Original restored";
+  return (
+    {
+      edited: "Revised",
+      unchanged: "Left unchanged",
+      needs_review: "Revised, waiting for your review",
+      skipped: "Skipped",
+    }[entry.status || ""] || "Answered"
+  );
 }
 /** An image's state in the shared words, then its reason. */
 export function imageStatus(

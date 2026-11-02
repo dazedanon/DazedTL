@@ -12,13 +12,17 @@ import { Notice } from "../../ui/Notice";
 import { ExpandableText } from "../../ui/ExpandableText";
 import { imageDisplay } from "../../ui/displayStatus";
 import { StatusMark } from "../../ui/StatusMark";
-import { imageDiscovery, imageReason } from "./imageSelection";
+import { imageDiscovery, imageReason, revisionEvent } from "./imageSelection";
 import { useRead } from "../../state/useRead";
+import { historyWhen } from "../guided/historyView";
 
 export function ImageCompare({
   projectId,
   asset,
   listed,
+  note,
+  sentAt,
+  onNote,
   busy,
   error,
   notice,
@@ -29,6 +33,11 @@ export function ImageCompare({
   asset: ImageAsset;
   /** Whether the image is in the list to translate. */
   listed: boolean;
+  /** The image's revision note as the draft holds it. */
+  note: string;
+  /** When the copied task the assistant has now sent this note, if it did. */
+  sentAt?: string;
+  onNote: (text: string) => void;
   busy: boolean;
   error: string;
   notice: string;
@@ -65,7 +74,7 @@ export function ImageCompare({
   const loadError = images.error === undefined ? "" : messageOf(images.error);
   const [zoom, setZoom] = useState(0);
   const [background, setBackground] = useState("checker");
-  const [comment, setComment] = useState("");
+  const history = [...(asset.revisions || [])].reverse();
   const blocking = asset.state === "blocked" || !!asset.sourceIssue;
   const reasonShown = !blocking && !asset.heldReason;
   const reason = reasonShown && imageReason(asset, listed, target);
@@ -240,11 +249,55 @@ export function ImageCompare({
             aria-label="Image revision notes"
             rows={2}
             maxLength={4000}
-            value={comment}
-            onChange={(event) => setComment(event.target.value)}
+            value={note}
+            onChange={(event) => onNote(event.target.value)}
             placeholder="Describe the change for your coding assistant…"
           />
+          {note && (
+            <small>
+              {sentAt
+                ? `Sent to your assistant ${historyWhen(sentAt)}. It stays here until its report answers it.`
+                : "Kept with this image until your assistant's report answers it. Copy revision task in the Images footer sends every noted image at once."}
+            </small>
+          )}
         </label>
+        {!!history.length && (
+          <section className="image-revision-history">
+            <h3>Revision history</h3>
+            <ol>
+              {history.map((entry, index) => (
+                <li key={index}>
+                  <span className="muted">
+                    {revisionEvent(entry)}{" "}
+                    {historyWhen(entry.answered || entry.saved)}
+                  </span>
+                  {(entry.note || entry.reason) && (
+                    <dl className="image-evidence">
+                      {entry.note && (
+                        <>
+                          <dt>You asked</dt>
+                          <dd>
+                            <ExpandableText
+                              text={entry.note}
+                              label="Revision note"
+                              appearance="inline"
+                            />
+                          </dd>
+                        </>
+                      )}
+                      {entry.reason && (
+                        <>
+                          <dt>Assistant</dt>
+                          <dd>{entry.reason}</dd>
+                        </>
+                      )}
+                    </dl>
+                  )}
+                </li>
+              ))}
+            </ol>
+          </section>
+        )}
       </div>
       <ActionBar
         feedback={
@@ -256,27 +309,25 @@ export function ImageCompare({
       >
         <Button
           disabled={busy}
-          onClick={() =>
-            onAction("revision_task", {
-              asset_ids: [asset.id],
-              comments: comment,
-            })
-          }
+          onClick={() => onAction("revision_task", { asset_ids: [asset.id] })}
         >
           Copy revision task
         </Button>
-        <Button
-          disabled={busy || !candidate || asset.state === "blocked"}
-          onClick={() =>
-            onAction("user_review", {
-              asset_ids: [asset.id],
-              reason: comment,
-              reviewed: !asset.userReviewed,
-            })
-          }
-        >
-          {asset.userReviewed ? "Remove user review" : "Mark user reviewed"}
-        </Button>
+        {/* A review binds the game's file, which Apply changed, so an image
+            in the game has none to give until it is edited again. */}
+        {asset.state !== "applied" && (
+          <Button
+            disabled={busy || !candidate || asset.state === "blocked"}
+            onClick={() =>
+              onAction("user_review", {
+                asset_ids: [asset.id],
+                reviewed: !asset.userReviewed,
+              })
+            }
+          >
+            {asset.userReviewed ? "Remove user review" : "Mark user reviewed"}
+          </Button>
+        )}
       </ActionBar>
     </Modal>
   );

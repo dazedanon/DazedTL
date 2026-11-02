@@ -257,8 +257,13 @@ test("Images leads with the step its saved work reaches", () => {
   assert.equal(flow({ examined: 2, uncertain: 1 }, "complete").unticked, false);
 });
 
-const draft = (selection: string[], scroll = 0): ImageDraft => ({
+const draft = (
+  selection: string[],
+  scroll = 0,
+  notes: Record<string, string> = {},
+): ImageDraft => ({
   selection,
+  notes,
   view: {
     query: "",
     status: "all",
@@ -289,6 +294,24 @@ test("edits made while a report is picked up keep its new ticks", () => {
     rebaseImageDraft(before, draft(["b.png", "c.png"]), saved).selection,
     ["b.png", "sign.png", "c.png"],
   );
+});
+
+test("notes written while a report is picked up keep its answers", () => {
+  // Protect saved revision notes: the report answered a.png's note, so the
+  // older draft must not bring it back, while the note the user wrote or
+  // cleared meanwhile still saves.
+  const notes = { "a.png": "Bigger", "b.png": "Redo", "c.png": "Fix" };
+  const before = draft([], 0, notes);
+  const saved = draft([], 0, { "b.png": "Redo", "c.png": "Fix" });
+  const current = draft([], 0, {
+    "a.png": "Bigger",
+    "b.png": "Redo the sign",
+    "d.png": "New",
+  });
+  assert.deepEqual(rebaseImageDraft(before, current, saved).notes, {
+    "b.png": "Redo the sign",
+    "d.png": "New",
+  });
 });
 
 test("a scroll saves the view alone and leaves the list unchanged", () => {

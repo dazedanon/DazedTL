@@ -152,6 +152,7 @@ The [image service](../backend/dazedtl/images/service.py) owns the inventory, se
 - Lettered sound effects are flavor, often hundreds per game, so an image with nothing else stays out of the list; detector misses alone never certify an image has no text.
 - Every image an assistant changes needs a [recipe](../backend/dazedtl/images/recipes.py), and reports pass the same [validation](../backend/dazedtl/images/validation.py) as the assistant's validator; only the user accepts an image the assistant can't prove, and the app never runs a recipe's command.
 - A [family](../backend/dazedtl/images/families.py) member is reviewed by the crop that differs from an examined sibling, so look-alike CG frames aren't paid for again.
+- Revision notes are the user's per-image intent, so they save with the selection through `images_update` until a report answers them; each answered note, apply and restore then joins the image's capped revision history on its inventory row.
 - Apply freezes the batch in a one-use preview, and Restore originals reads each selected image from the game's [original files](#original-game-files) instead of undoing apply checkpoints, which would bring back an earlier translation after a reapply and images the user didn't select.
 - The [background solver](../backend/dazedtl/images/background.py) and the [image text editor](../backend/dazedtl/images/editor.py) use only offline resources, never a hosted fallback or model download.
 

@@ -3,6 +3,7 @@ test scenarios: each step runs the project helper the way the starting prompt
 tells an assistant to, and game text moves only through DazedTL's operations.
 
     python scripts/testkit/assistant.py STEP --helper-json HELPER --game GAME
+    python scripts/testkit/assistant.py edit-images --game GAME --request FILE [--error ID]...
 
 STEP is setup (identify, record the original, prepare, set up Git), organize (list the
 game's Japanese as source units and organize them into a run, with
@@ -17,6 +18,9 @@ whose file name starts with text_), archived-images (decode a WOLF game's
 Data/Picture.wolf into a folder, translate its text_ images through the
 Images steps on that folder, pack it again and checkpoint it, checking that
 the patch's download holds the image only inside the archive),
+edit-images (answer the image editing task whose request is FILE, of a
+Guided project too, editing each image's working copy and reviewing it, or
+reporting an error for each ID given with --error),
 checkpoint, the operation assistants started before the app checkpointed
 their work ran, play (run the release playtest and wait for it, printing
 where it stands), untranslated (translate the text Text QA counts as never
@@ -271,66 +275,7 @@ class Assistant:
         self.helper("images", "--scan", "--root", DECODED)
         self.investigate()
         step = self.helper("images", "--translate")
-        request = json.loads(
-            Path(step["task"]).with_suffix(".json").read_text(encoding="utf-8")
-        )
-        renderer = self.game / RENDERER
-        renderer.parent.mkdir(parents=True, exist_ok=True)
-        renderer.write_bytes(b"# The scripted assistant's renderer\n")
-        manifest = {"version": 1, "recipes": {}}
-        rows = []
-        for asset in request["assets"]:
-            # The lettering's corner painted over, inside the recipe's text
-            # region.
-            editable = self.game / asset["editable"]
-            image = Image.open(editable)
-            image.load()
-            image.paste((200, 10, 10), (0, 0, 16, 16))
-            image.save(editable, format="PNG")
-            candidate = sha256(editable.read_bytes())
-            manifest["recipes"][asset["id"]] = {
-                "output": candidate,
-                "command": ["{python}", RENDERER, asset["id"], "{output}"],
-                "inputs": {
-                    RENDERER: sha256(renderer.read_bytes()),
-                    asset["frozen"]: asset["frozenHash"],
-                },
-                "check": {"text": [[0, 0, 16, 16]]},
-            }
-            rows.append(
-                {
-                    "id": asset["id"],
-                    "sourceHash": asset["sourceHash"],
-                    "candidateHash": candidate,
-                    "status": "edited",
-                    "reason": "",
-                    "review": {
-                        "version": 1,
-                        "visual": True,
-                        "alpha": True,
-                        "protectedPixels": True,
-                        "layout": True,
-                        "evidence": "Compared original and candidate at native size.",
-                    },
-                }
-            )
-        (self.game / RESOURCES / "manifest.json").write_text(
-            json.dumps(manifest), encoding="utf-8"
-        )
-        Path(step["report"]).write_text(
-            json.dumps(
-                {
-                    "version": 1,
-                    "kind": "editing",
-                    "projectId": request["projectId"],
-                    "requestId": request["id"],
-                    "inventoryRevision": request["inventoryRevision"],
-                    "complete": True,
-                    "assets": rows,
-                }
-            ),
-            encoding="utf-8",
-        )
+        edit_images(self.game, Path(step["task"]).with_suffix(".json"))
         applied = self.helper("images", "--apply")
         if applied["next"] != "done" or applied["problems"]:
             raise SystemExit("images --apply: " + json.dumps(applied)[:2000])
@@ -892,6 +837,89 @@ class Assistant:
         self.report("qa")
 
 
+def edit_images(game, request_path, errors=()):
+    """Answers the image editing task whose request is at `request_path`, as
+    an assistant does: paints the lettering's corner of each image's working
+    copy, red, or blue for an image with revision notes, inside the recipe's
+    text region; saves each recipe and a report that reviews every edit,
+    giving the images whose IDs are in `errors` an error instead. Returns
+    the report's rows."""
+    request = json.loads(Path(request_path).read_text(encoding="utf-8"))
+    renderer = game / RENDERER
+    renderer.parent.mkdir(parents=True, exist_ok=True)
+    renderer.write_bytes(b"# The scripted assistant's renderer\n")
+    path = game / RESOURCES / "manifest.json"
+    manifest = (
+        json.loads(path.read_text(encoding="utf-8"))
+        if path.is_file()
+        else {"version": 1, "recipes": {}}
+    )
+    rows = []
+    for asset in request["assets"]:
+        if asset["id"] in errors:
+            rows.append(
+                {
+                    "id": asset["id"],
+                    "sourceHash": asset["sourceHash"],
+                    "candidateHash": None,
+                    "status": "error",
+                    "reason": "The scripted assistant could not read it.",
+                }
+            )
+            continue
+        editable = game / asset["editable"]
+        image = Image.open(editable)
+        image.load()
+        image.paste(
+            (10, 10, 200) if asset.get("revisionNotes") else (200, 10, 10),
+            (0, 0, 16, 16),
+        )
+        image.save(editable, format="PNG")
+        candidate = sha256(editable.read_bytes())
+        manifest["recipes"][asset["id"]] = {
+            "output": candidate,
+            "command": ["{python}", RENDERER, asset["id"], "{output}"],
+            "inputs": {
+                RENDERER: sha256(renderer.read_bytes()),
+                asset["frozen"]: asset["frozenHash"],
+            },
+            "check": {"text": [[0, 0, 16, 16]]},
+        }
+        rows.append(
+            {
+                "id": asset["id"],
+                "sourceHash": asset["sourceHash"],
+                "candidateHash": candidate,
+                "status": "edited",
+                "reason": "Revised as asked." if asset.get("revisionNotes") else "",
+                "review": {
+                    "version": 1,
+                    "visual": True,
+                    "alpha": True,
+                    "protectedPixels": True,
+                    "layout": True,
+                    "evidence": "Compared original and candidate at native size.",
+                },
+            }
+        )
+    path.write_text(json.dumps(manifest), encoding="utf-8")
+    Path(request["report"]).write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "kind": "editing",
+                "projectId": request["projectId"],
+                "requestId": request["id"],
+                "inventoryRevision": request["inventoryRevision"],
+                "complete": True,
+                "assets": rows,
+            }
+        ),
+        encoding="utf-8",
+    )
+    return rows
+
+
 def named(text, codes):
     """`text` with each code of `codes` (name to code) written as its name."""
     for name, code in codes.items():
@@ -999,6 +1027,7 @@ def main() -> None:
             "write",
             "images",
             "archived-images",
+            "edit-images",
             "checkpoint",
             "play",
             "untranslated",
@@ -1008,12 +1037,23 @@ def main() -> None:
             "package",
         ],
     )
-    parser.add_argument("--helper-json", required=True)
+    parser.add_argument("--helper-json")
     parser.add_argument("--game", type=Path, required=True)
     parser.add_argument("--requests", type=int)
     parser.add_argument("--complete", action="store_true")
     parser.add_argument("--miss")
+    parser.add_argument("--request", type=Path)
+    parser.add_argument("--error", action="append", default=[])
     args = parser.parse_args()
+    if args.step == "edit-images":
+        # A Guided task's editing request, which needs no project helper.
+        if not args.request:
+            parser.error("edit-images needs --request")
+        for row in edit_images(args.game, args.request, args.error):
+            print(f"{row['id']}: {row['status']}")
+        return
+    if not args.helper_json:
+        parser.error(f"{args.step} needs --helper-json")
     assistant = Assistant(json.loads(args.helper_json), args.game)
     if args.step == "translate":
         print(json.dumps(assistant.translate(args.requests), ensure_ascii=False))

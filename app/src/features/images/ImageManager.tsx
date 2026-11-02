@@ -851,6 +851,26 @@ function Manager({
     ...(state.editing.errors || []),
     ...state.warnings,
   ];
+  // Revision notes save with the list, so they survive closing Compare,
+  // leaving Images and restarting; a report that answers one removes it.
+  const notes = value.notes;
+  const noted = Object.keys(notes).length;
+  // A note is with the assistant while the task that sent it waits and the
+  // note is as it sent it.
+  const sentAt = (id: string) => {
+    const note = state.notes?.[id];
+    return note?.sentIn === state.editing.requestId && note?.text === notes[id]
+      ? note?.sentAt
+      : undefined;
+  };
+  const writeNote = (id: string, text: string) =>
+    draft.session.edit((current) => ({
+      ...current,
+      notes: Object.fromEntries([
+        ...Object.entries(current.notes).filter(([key]) => key !== id),
+        ...(text ? [[id, text]] : []),
+      ]),
+    }));
   const activeCompare =
     compare &&
     (grid.items.find(({ asset }) => asset.id === compare.id)?.asset || compare);
@@ -1068,9 +1088,24 @@ function Manager({
           }
           disabled={busy || listSaving || !flow.toTranslate}
           disabledReason={
-            flow.toTranslate ? "" : "Tick the images to translate first."
+            flow.toTranslate
+              ? ""
+              : !flow.listed
+                ? "Tick the images to translate first."
+                : counts.selectedSkipped
+                  ? "The translation skipped every image left in your list. Open one in Compare images to mark it reviewed or copy a revision task for it."
+                  : "Every image in your list is already in the game."
           }
           {...step("edit_task", "Copying…")}
+        />
+      )}
+      {noted > 0 && (
+        <ActionControl
+          label={`Copy revision task (${noted.toLocaleString()})`}
+          disabled={busy}
+          {...step("revision_task", "Copying…")}
+          // Every image with a note waiting, in one task.
+          onClick={() => void perform("revision_task", { noted: true })}
         />
       )}
       {(flow.ready > 0 || flow.step === "apply") &&
@@ -1492,6 +1527,9 @@ function Manager({
           projectId={projectId}
           asset={activeCompare}
           listed={selection.has(activeCompare.id)}
+          note={notes[activeCompare.id] || ""}
+          sentAt={sentAt(activeCompare.id)}
+          onNote={(text) => writeNote(activeCompare.id, text)}
           busy={action.busy}
           error={action.error}
           notice={action.notice}

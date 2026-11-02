@@ -2228,6 +2228,28 @@ export type ImageApplication = {
   recovered?: boolean;
 };
 
+/** One entry of an image's revision history: a revision note a report
+answered, or an apply or restore of the image. */
+export type ImageRevision = {
+  kind: "revision" | "apply" | "restore";
+  candidateHash: string;
+  saved?: string;
+  note?: string;
+  sent?: string;
+  answered?: string;
+  requestId?: string;
+  status?: string;
+  reason?: string;
+};
+
+/** The user's revision note on one image, kept until a report answers it. */
+export type ImageNote = {
+  text: string;
+  saved: string;
+  sentIn?: string;
+  sentAt?: string;
+};
+
 export type ImageAsset = {
   id: string;
   path: string;
@@ -2263,6 +2285,7 @@ export type ImageAsset = {
   staleReason: string;
   candidateMetadata: ImageMetadata | null;
   applied: ImageApplication | null;
+  revisions?: ImageRevision[];
 };
 
 export type ImageCounts = {
@@ -2363,6 +2386,7 @@ export type ImageManagerState = {
   folders: ImageFolder[];
   selection: string[];
   view: ImageView;
+  notes?: Record<string, ImageNote>;
   discovery: ImageReportState;
   editing: ImageReportState;
   receipts: ImageReceipt[];
@@ -2381,6 +2405,7 @@ export type ImageForeignWork = ForeignWork & {
 
 export type ImageDraft = {
   selection: string[];
+  notes: Record<string, string>;
   view: ImageView;
   discoveryScope: ImageDiscoveryScope;
   folders: string[];
@@ -2948,6 +2973,7 @@ export type ImagesListRequest = {
 
 export type ImageDraftChanges = {
   selection?: string[];
+  notes?: Record<string, string>;
   view?: ImageView;
   discoveryScope?: ImageDiscoveryScope;
   folders?: string[];
