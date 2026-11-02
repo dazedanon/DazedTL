@@ -3554,15 +3554,19 @@ try:
             got = mv_page(commands, mv_reply(change))
             mismatched = ["Map001.json"] if marked else []
             assert got == (written, mismatched, marked), (commands, got)
-        got = mv_page(
-            [name("アリス"), command(401, ["やあ"])],
-            mv_reply(
-                lambda _reply, sent: [line.replace("やあ", "Hi") for line in sent]
-            ),
-            SPEAKER_CONTEXT=True,
-            getSpeaker=lambda _name: ["Al]Ice", [0, 0]],
-        )
-        assert got[0][1] == ["Hi"], got
+        # Without the speaker-context policy, as projects from before
+        # event-speaker-context-v1 run, pass 2 read no speaker once pass 1
+        # wrote the translated name, and left the label there.
+        for context in (True, False):
+            got = mv_page(
+                [name("アリス"), command(401, ["やあ"])],
+                mv_reply(
+                    lambda _reply, sent: [line.replace("やあ", "Hi") for line in sent]
+                ),
+                SPEAKER_CONTEXT=context,
+                getSpeaker=lambda _name: ["Al]Ice", [0, 0]],
+            )
+            assert got[0][1] == ["Hi"], (context, got)
 
         # LL_GalgeChoiceWindow's choices (code 357) were written from the
         # reply whatever its length: a short one failed the page with an

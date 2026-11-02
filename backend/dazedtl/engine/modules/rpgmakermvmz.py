@@ -5029,9 +5029,12 @@ def _searchCodes(page, pbar, jobList, filename):
                     sourceName if _scalar_original(codeList[i]) is not None else None
                 )
                 currentName = _101_speaker_name(_101_name_current(codeList[i], isVar))
-                if SPEAKER_CONTEXT:
+                if SPEAKER_CONTEXT or not setData:
                     # Retain the current display name even when skip-translated
-                    # prevents getSpeaker from running below.
+                    # prevents getSpeaker from running below. Pass 2 sends
+                    # nothing with it, so runs without the policy read it there
+                    # too: the name pass 1 wrote is the label its lines were
+                    # sent with, which pass 2 strips (strip_speaker_prefix).
                     speaker = currentName
                 if sourceName and (
                     _text_needs_translation(sourceName)
