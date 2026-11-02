@@ -5,13 +5,15 @@ import { methodLabels } from "../features/project/MethodDialog";
 import { useAction } from "../state/useAction";
 import { Button } from "../ui/Button";
 import { engineLabel } from "../ui/displayText";
+import { FadingNote } from "../ui/FadingNote";
 import { GuideLink } from "../ui/GuideLink";
 
 /**
  * The sidebar's copies for Discord, both naming the open game: Report a
  * problem copies a bug report, and Share a fix a task for the user's
  * assistant, which writes up a fix it made in the game. One line below them
- * says how the last copy went.
+ * says how the last copy went; a success fades away by itself, a failure
+ * stays.
  */
 export function ShareActions({ project }: { project?: Project | null }) {
   const action = useAction();
@@ -73,19 +75,23 @@ export function ShareActions({ project }: { project?: Project | null }) {
         <Wrench size={18} />
         Share a fix
       </Button>
-      {(action.error || action.notice) && (
-        <p
-          className="sidebar-feedback"
-          role={action.error ? "alert" : "status"}
-        >
-          {action.error || action.notice}
-          {action.notice && action.key === "fix" && (
-            <>
-              {" "}
-              <GuideLink section="contributing" />
-            </>
-          )}
+      {action.error ? (
+        <p className="sidebar-feedback" role="alert">
+          {action.error}
         </p>
+      ) : (
+        action.notice && (
+          // A new copy clears the notice first, so its note mounts afresh.
+          <FadingNote className="sidebar-feedback" onGone={action.clear}>
+            {action.notice}
+            {action.key === "fix" && (
+              <>
+                {" "}
+                <GuideLink section="contributing" />
+              </>
+            )}
+          </FadingNote>
+        )
       )}
     </>
   );

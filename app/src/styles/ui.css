@@ -1993,3 +1993,36 @@ pre {
 .record-wait-failure {
   color: var(--color-error-text);
 }
+
+/* A FadingNote fades, then folds its row away, so the controls around it
+   slide into place instead of jumping; a list with a gap sets
+   --fading-note-gap to fold that too. Held again midway, it unfolds before
+   its text fades back in. FadingNote sets the step's length; reduced motion
+   hides it at once. */
+.fading-note {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition:
+    grid-template-rows var(--fading-note-step) ease,
+    margin-top var(--fading-note-step) ease,
+    opacity var(--fading-note-step) ease var(--fading-note-step);
+}
+.fading-note > * {
+  min-height: 0;
+}
+.fading-note[data-fading] {
+  grid-template-rows: 0fr;
+  margin-top: calc(-1 * var(--fading-note-gap, 0px));
+  overflow: hidden;
+  opacity: 0;
+  transition:
+    opacity var(--fading-note-step) ease,
+    grid-template-rows var(--fading-note-step) ease var(--fading-note-step),
+    margin-top var(--fading-note-step) ease var(--fading-note-step);
+}
+@media (prefers-reduced-motion: reduce) {
+  .fading-note,
+  .fading-note[data-fading] {
+    transition: none;
+  }
+}
