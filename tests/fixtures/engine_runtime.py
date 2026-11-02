@@ -1014,7 +1014,11 @@ try:
         # block's reply, and an empty one sent the block before it again; CSV
         # looked for a row's text without its furigana in a target holding
         # them, so that target stayed Japanese and an empty one lost its
-        # :name[] tag.
+        # :name[] tag. The plugin module read a txtSubject to its line's last
+        # quote; kept a data_map_name_list region open to the enclosing
+        # block's close, counting braces in strings; read stat labels in other
+        # settings on a packed line holding one drawTextEx script; and wrote
+        # 回 after a game variable as x where it begins 回復.
         shapes = temporary / "engine-shapes"
         for folder in ("files", "translated", "log"):
             (shapes / folder).mkdir(parents=True)
@@ -1323,6 +1327,110 @@ try:
                         ensure_ascii=False,
                     )
                     + "\n];\n",
+                ),
+                (
+                    "modules.rpgmakerplugin",
+                    "handlePlugin",
+                    "Quest.js",
+                    'var txtSubject = "依頼"; var key = "依頼人";\n',
+                    {},
+                    [["依頼"]],
+                    'var txtSubject = "EN ՚依頼՚"; var key = "依頼人";\n',
+                ),
+                (
+                    "modules.rpgmakerplugin",
+                    "handlePlugin",
+                    "MapName.js",
+                    (
+                        "var setup = function() {\n"
+                        "    this.disp_list = {\n"
+                        "        data_map_name_list: {\n"
+                        r'            1: ["町", "\\{森"],'
+                        "\n"
+                        "        },\n"
+                        '        title: ["外の文字列"],\n'
+                        "    };\n"
+                        '    var after = ["後の文字列"];\n'
+                        "};\n"
+                    ),
+                    {},
+                    [["町", "\\{森"]],
+                    (
+                        "var setup = function() {\n"
+                        "    this.disp_list = {\n"
+                        "        data_map_name_list: {\n"
+                        r'            1: ["EN \"町\"", "EN \"\\{森\""],'
+                        "\n"
+                        "        },\n"
+                        '        title: ["外の文字列"],\n'
+                        "    };\n"
+                        '    var after = ["後の文字列"];\n'
+                        "};\n"
+                    ),
+                ),
+                (
+                    "modules.rpgmakerplugin",
+                    "handlePlugin",
+                    "plugins.js",
+                    "var $plugins =\n[\n"
+                    + json.dumps(
+                        {
+                            "name": "Tracker",
+                            "parameters": {
+                                "Stats": "this.drawTextEx('\\\\C[16]攻撃力\\\\C[0] ' + a, 0, 0);"
+                            },
+                        },
+                        ensure_ascii=False,
+                    )
+                    + ","
+                    + json.dumps(
+                        {
+                            "name": "Title",
+                            "parameters": {"Text": "\\C[2]勇者\\C[0]の冒険"},
+                        },
+                        ensure_ascii=False,
+                    )
+                    + "\n];\n",
+                    {},
+                    [["攻撃力"]],
+                    "var $plugins =\n[\n"
+                    + json.dumps(
+                        {
+                            "name": "Tracker",
+                            "parameters": {
+                                "Stats": "this.drawTextEx('\\\\C[16]EN \"攻撃力\"\\\\C[0] ' + a, 0, 0);"
+                            },
+                        },
+                        ensure_ascii=False,
+                    )
+                    + ","
+                    + json.dumps(
+                        {
+                            "name": "Title",
+                            "parameters": {"Text": "\\C[2]勇者\\C[0]の冒険"},
+                        },
+                        ensure_ascii=False,
+                    )
+                    + "\n];\n",
+                ),
+                (
+                    "modules.rpgmakerplugin",
+                    "handlePlugin",
+                    "Tracker.js",
+                    (
+                        r"this.drawTextEx('\\}回数：\\{' + `${$gameVariables.value(5)}回`, 0, 0);"
+                        "\n"
+                        r"this.drawTextEx(`${$gameVariables.value(6)}回復`, 0, 36);"
+                        "\n"
+                    ),
+                    {},
+                    [["回数："]],
+                    (
+                        r"this.drawTextEx('\\}EN \'回数：\'\\{' + `${$gameVariables.value(5)}x`, 0, 0);"
+                        "\n"
+                        r"this.drawTextEx(`${$gameVariables.value(6)}回復`, 0, 36);"
+                        "\n"
+                    ),
                 ),
                 (
                     "modules.csv",

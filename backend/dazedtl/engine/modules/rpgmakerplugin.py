@@ -241,6 +241,13 @@ def written(translation, source, depth=None, width=None):
 # over the same text elsewhere on the line or find a field the requests left
 # out. Text two kinds match belongs to the field the walk reads first, so a
 # stat label inside a drawTextEx label is part of that label.
+#
+# A field is bounded by its own string: one a pattern anchors on runs from
+# its opening quote to that string's closing quote (stringEnd), and a label
+# inside a string must end inside it (around). A field read only in part of
+# the file reads only there: a disp_list region's strings inside the object
+# its anchor opens, and a drawTextEx label inside the string that holds the
+# call, a plugin setting's script, or on its line where no string does.
 
 
 @dataclass(frozen=True, eq=False)
@@ -253,7 +260,7 @@ class Group:
 
 
 def everywhere(line, region):
-    return True
+    return [(0, len(line))]
 
 
 def inRegion(line, region):
@@ -261,22 +268,29 @@ def inRegion(line, region):
 
 
 def drawing(line, region):
-    return "drawTextEx" in line
+    """Where a drawTextEx call's labels are read on *line*: the string
+    holding each call, or the whole line for a call outside any string."""
+    scopes = set()
+    for call in re.finditer("drawTextEx", line):
+        strings = around(line, call.start())
+        scopes.add(strings[-1][1:] if strings else (0, len(line)))
+    return sorted(scopes)
 
 
 @dataclass(frozen=True, eq=False)
 class Kind:
-    """A kind of field: how the walk finds it on a line (its text in the
-    match's group "text", or its first group, and the backslashes it reads its
-    depth from in group "quote"), the request it joins, the text that request
-    sends, None for a match it leaves, how a translation is written, and
-    which lines it reads, by the line and whether it is in a disp_list region."""
+    """A kind of field: how the walk finds it in the spans of a line it reads
+    (the span of each field's text and the backslashes it reads its depth
+    from), the request it
+    joins, the text that request sends, None for a match it leaves, how a
+    translation is written, and where on a line it reads, by the line and the
+    spans of the disp_list regions on it."""
 
-    find: Callable[[str], Iterator[re.Match]]
+    find: Callable[[str, list[tuple[int, int]]], Iterator[tuple[int, int, str]]]
     group: Group
     request: Callable[[str], str | None]
     write: Callable[[str, "Field", str], str]
-    reads: Callable[[str, bool], bool] = everywhere
+    reads: Callable[[str, list[tuple[int, int]]], list[tuple[int, int]]] = everywhere
 
 
 @dataclass(frozen=True, eq=False)
@@ -352,22 +366,96 @@ def unescaped(text, start, end):
     return "".join(chars), places
 
 
-def enclosing(line, position, depth):
-    """The quote of each string around *position* in *line*, outermost first,
-    for a code there with the backslashes *depth*: one string for each
-    doubling of them, as each string doubles the backslashes inside it."""
-    quotes, text = [], line
-    for _level in range(max(1, len(depth).bit_length() - 1)):
+def around(line, position, levels=None):
+    """Each string around *position* in *line*, outermost first, up to
+    *levels* of them: its quote and the span of its text in *line*."""
+    found, text, outer = [], line, []
+
+    def inLine(index):
+        # A place in the innermost text read so far as a place in the line
+        for start, places in reversed(outer):
+            index = places[index - 1] + 1 if index else start
+        return index
+
+    while levels is None or len(found) < levels:
         spans = literals(text)
         # The last string starting at or before the position, if it holds it
         index = bisect_right(spans, (position, len(text) + 1)) - 1
         if index < 0 or not position < spans[index][1]:
             break
         start, end, quote = spans[index]
-        quotes.append(quote)
+        found.append((quote, inLine(start), inLine(end)))
         text, places = unescaped(text, start, end)
+        outer.append((start, places))
         position = bisect_left(places, position)
-    return quotes
+    return found
+
+
+def enclosing(line, position, depth):
+    """The quote of each string around *position* in *line*, outermost first,
+    for a code there with the backslashes *depth*: one string for each
+    doubling of them, as each string doubles the backslashes inside it."""
+    levels = max(1, len(depth).bit_length() - 1)
+    return [quote for quote, _start, _end in around(line, position, levels)]
+
+
+@lru_cache(maxsize=8)
+def closingQuote(mark):
+    return re.compile(r"(\\*)" + re.escape(mark))
+
+
+def stringEnd(line, start, quote, mark):
+    """Where the text from *start* of a string opened by *mark* with the
+    backslashes *quote* before it ends: before the first *mark* its own depth
+    closes, or None where its line does not.
+
+    Each string around it doubles the backslashes of what it holds and adds
+    one before each quote, so a string q backslashes deep is closed by a quote
+    with q more than a multiple of 2(q + 1) before it, an even count at the top
+    level; a quote of its text, escaped deeper, never matches.
+    """
+    period = 2 * (len(quote) + 1)
+    for found in closingQuote(mark).finditer(line, start):
+        if len(found.group(1)) % period == len(quote):
+            return found.start()
+    return None
+
+
+def within(scopes, start, end):
+    return any(first <= start and end <= last for first, last in scopes)
+
+
+def opening(pattern):
+    """Fields whose *pattern* ends at their string's opening quote, with its
+    backslashes in group "quote": each field's text runs to its string's own
+    closing quote."""
+    compiled = re.compile(pattern)
+
+    def find(line, scopes):
+        for match in compiled.finditer(line):
+            start = match.end()
+            end = stringEnd(line, start, match.group("quote"), line[start - 1])
+            if end is not None and within(scopes, start, end):
+                yield start, end, match.group("quote")
+
+    return find
+
+
+def inside(pattern):
+    """Fields inside a string, *pattern*'s group "text": each kept where the
+    string around its text also holds the rest of its match."""
+    compiled = re.compile(pattern)
+
+    def find(line, scopes):
+        for match in compiled.finditer(line):
+            start, end = match.span("text")
+            if not within(scopes, start, end):
+                continue
+            strings = around(line, start)
+            if strings and match.end() <= strings[-1][2]:
+                yield start, end, match.group("quote")
+
+    return find
 
 
 def literalText(text, quotes):
@@ -507,8 +595,50 @@ GROUPS = (
 )
 
 
-def finder(pattern):
-    return re.compile(pattern).finditer
+# A disp_list region: the object or list its anchor opens, and its strings
+REGION_ANCHOR = re.compile(r"data_map_name_list[\\\"']*\s*[:=]?\s*([{\[])")
+REGION_STRING = re.compile(source_pattern("disp_list"))
+CLOSES = {"{": "}", "[": "]"}
+
+
+def regionStrings(line, scopes):
+    for start, end, _quote in literals(line):
+        if within(scopes, start, end) and REGION_STRING.fullmatch(line, start - 1, end + 1):
+            yield start, end, ""
+
+
+def regions(data):
+    """The span of each line's disp_list region, by line: from the bracket
+    its anchor opens to the one that closes it, counting the brackets of the
+    code between, not those in its strings."""
+    found, opener, depth = {}, None, 0
+    for index, line in enumerate(data):
+        if opener is None and "data_map_name_list" not in line:
+            continue
+        spans = literals(line)
+        begin = 0
+        if opener is None:
+            anchor = REGION_ANCHOR.search(line)
+            if anchor is None or any(s <= anchor.start(1) < e for s, e, _q in spans):
+                continue
+            opener, depth, begin = anchor.group(1), 0, anchor.start(1)
+        strings = iter(spans)
+        string = next(strings, None)
+        end, position = len(line), begin
+        while position < len(line):
+            while string is not None and string[1] < position:
+                string = next(strings, None)
+            if string is not None and string[0] <= position <= string[1]:
+                position = string[1] + 1
+                continue
+            char = line[position]
+            depth += (char == opener) - (char == CLOSES[opener])
+            if depth == 0:
+                end, opener = position, None
+                break
+            position += 1
+        found[index] = [(begin, end)]
+    return found
 
 
 # The kinds in the order the walk reads them on a line
@@ -516,79 +646,84 @@ KINDS = (
     # A disp_list region's strings (e.g., this.disp_list = { key: { subkey:
     # ["string1", "string2"] } })
     Kind(
-        lambda line: re.finditer(source_pattern("disp_list"), line),
+        regionStrings,
         CUSTOM,
         regionRequest,
         regionWrite,
         inRegion,
     ),
-    Kind(finder(r'txtSubject.+?"(?P<text>.+)"'), CUSTOM, subjectRequest, subjectWrite),
     Kind(
-        finder(r'[\\]+"QuestName[\\]+":(?P<quote>[\\]+)"(?P<text>.*?)[\\]+"'),
+        opening(r"""txtSubject(?:\\*["'])?[^"'\n]*?(?P<quote>\\*)["']"""),
+        CUSTOM,
+        subjectRequest,
+        subjectWrite,
+    ),
+    Kind(
+        opening(r'[\\]+"QuestName[\\]+":(?P<quote>[\\]+)"'),
         QUEST_GROUPS[0],
         questRequest,
         jsonWrite,
     ),
     Kind(
-        finder(r'QuestClientName[\\]+":(?P<quote>[\\]+)"(?P<text>.*?)[\\]+"'),
+        opening(r'QuestClientName[\\]+":(?P<quote>[\\]+)"'),
         QUEST_GROUPS[1],
         questRequest,
         jsonWrite,
     ),
     Kind(
-        finder(r'QuestLocation[\\]+":(?P<quote>[\\]+)"(?P<text>.*?)[\\]+"'),
+        opening(r'QuestLocation[\\]+":(?P<quote>[\\]+)"'),
         QUEST_GROUPS[2],
         questRequest,
         jsonWrite,
     ),
     Kind(
-        finder(r'PlaceInformation[\\]+":(?P<quote>[\\]+)"(?P<text>.*?)[\\]+"'),
+        opening(r'PlaceInformation[\\]+":(?P<quote>[\\]+)"'),
         QUEST_GROUPS[3],
         questRequest,
         jsonWrite,
     ),
     # Quest summary and goals, wrapped
     Kind(
-        finder(r'[\\]+"QuestContent[\\]+":[\\]+"(?P<quote>[\\]+)"(?P<text>.*?)[\\]+"[\\]+"'),
+        opening(r'[\\]+"QuestContent[\\]+":[\\]+"(?P<quote>[\\]+)"'),
         QUEST_GROUPS[4],
         questRequest,
         jsonWrapped,
     ),
     Kind(
-        finder(r'ObjectiveContent[\\]+":[\\]+"(?P<quote>[\\]+)"(?P<text>.*?)[\\]+"'),
+        opening(r'ObjectiveContent[\\]+":[\\]+"(?P<quote>[\\]+)"'),
         QUEST_GROUPS[5],
         questRequest,
         jsonWrapped,
     ),
     # SceneCustomMenu command labels and help
     Kind(
-        finder(r'[\\]+"Text[\\]+":(?P<quote>[\\]+)"(?P<text>.+?)[\\]+"'),
+        opening(r'[\\]+"Text[\\]+":(?P<quote>[\\]+)"'),
         MENU_TEXT,
         menuRequest,
         jsonWrite,
     ),
     Kind(
-        finder(r'[\\]+"CommonHelpText[\\]+":(?P<quote>[\\]+)"(?P<text>.+?)[\\]+"'),
+        opening(r'[\\]+"CommonHelpText[\\]+":(?P<quote>[\\]+)"'),
         MENU_COMMON_HELP,
         menuRequest,
         jsonWrite,
     ),
     Kind(
-        finder(r'[\\]+"HelpText[\\]+":(?P<quote>[\\]+)"(?P<text>.+?)[\\]+"'),
+        opening(r'[\\]+"HelpText[\\]+":(?P<quote>[\\]+)"'),
         MENU_HELP,
         menuRequest,
         jsonWrite,
     ),
     # NUUN_SaveScreen labels (現在地, プレイ時間, 所持金)
     Kind(
-        finder(r'[\\]+"ParamName[\\]+":(?P<quote>[\\]+)"(?P<text>.+?)[\\]+"'),
+        opening(r'[\\]+"ParamName[\\]+":(?P<quote>[\\]+)"'),
         SAVE_PARAM,
         menuRequest,
         jsonWrite,
     ),
     # drawTextEx brace labels (\}【口づけ】\{, \}回数：\{)
     Kind(
-        finder(r"(?P<quote>[\\]+)\}(?P<text>.+?)[\\]+\{"),
+        inside(r"(?P<quote>[\\]+)\}(?P<text>.+?)[\\]+\{"),
         DRAWN_LABEL,
         labelRequest,
         labelWrite,
@@ -596,7 +731,7 @@ KINDS = (
     ),
     # drawTextEx stat labels (\C[16]攻撃力\C[0])
     Kind(
-        finder(r"C\[\d+\](?P<text>[^C\\,`\[\]]+?)(?P<quote>[\\]+)C\[0\]"),
+        inside(r"C\[\d+\](?P<text>[^C\\,`\[\]]+?)(?P<quote>[\\]+)C\[0\]"),
         STAT_LABEL,
         statRequest,
         statWrite,
@@ -604,33 +739,27 @@ KINDS = (
     ),
 )
 
-# A drawTextEx counter after a game variable, written as English counts
-COUNTER_WORD = re.compile(r"(\$\{\$gameVariables\.value\(\d+\)\}\s*)回")
+# A drawTextEx counter after a game variable, written as English counts: 回
+# as a word of its own, not the start of a longer one such as 回復
+COUNTER_WORD = re.compile(
+    r"(\$\{\$gameVariables\.value\(\d+\)\}\s*)回(?!" + LANGREGEX + ")"
+)
 
 
 def fields(data):
     """Every field of a plugin file's lines *data*, in file order."""
-    found, region, braces = [], False, 0
+    found, regionSpans = [], regions(data)
     for index, line in enumerate(data):
-        # A disp_list region runs from its anchor to the brace that closes
-        # what it opened
-        if "data_map_name_list" in line:
-            region, braces = True, 0
-        if region:
-            braces += line.count("{") - line.count("}")
-            region = braces >= 0
-
         taken = []
         for kind in KINDS:
-            if not kind.reads(line, region):
+            scopes = kind.reads(line, regionSpans.get(index, []))
+            if not scopes:
                 continue
-            for match in kind.find(line):
-                start, end = match.span(match.re.groupindex.get("text", 1))
+            for start, end, quote in kind.find(line, scopes):
                 request = kind.request(line[start:end])
                 if request is None or any(start < last and first < end for first, last in taken):
                     continue
                 taken.append((start, end))
-                quote = match.group("quote") if "quote" in match.re.groupindex else ""
                 found.append(Field(kind, index, start, end, line[start:end], quote, request))
     return found
 
@@ -691,10 +820,13 @@ def translatePlugin(data, pbar, filename):
             last = field.end
         data[index] = "".join(parts) + line[last:]
 
-    # Hardcoded counter word: 回 → x
+    # Hardcoded counter word: 回 → x, where a drawTextEx call reads labels;
+    # the one-letter word keeps each scope's span
     for index, line in enumerate(data):
-        if "drawTextEx" in line and "$gameVariables" in line:
-            data[index] = COUNTER_WORD.sub(r"\1x", line)
+        if "$gameVariables" in line:
+            for start, end in drawing(line, []):
+                line = line[:start] + COUNTER_WORD.sub(r"\1x", line[start:end]) + line[end:]
+            data[index] = line
     return tokens
 
 

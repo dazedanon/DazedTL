@@ -1266,8 +1266,9 @@ Its translation escapes the quote of every string around it (`'\\}Kiss\'s\\{'`, 
 
 Free-floating Japanese arrays inside plugin JS (`this.disp_list = { key: { sub: ["str1","str2"] } }`) are reachable only by a greedy scan, and a global one also hits note-tag keys, switch names and `$gameVariables` lookups that code reads back, breaking game logic.
 
-Open the region on a known anchor token (`if 'data_map_name_list' in line: in_region = True; brace_count = 0`), track `brace_count += line.count('{') - line.count('}')`, and close when `brace_count < 0`, which is exactly when the enclosing object's closing brace arrives.
-Inside the region use a **narrower** Japanese class than your global one - `r'"([^"]*[一-龠ぁ-ゔァ-ヴー]+[^"]*)"'`, no fullwidth alnum, no halfwidth katakana - so identifier-like fullwidth tokens are not swept up.
+Open the region at the bracket the anchor token opens (`data_map_name_list: {`), count that bracket kind across lines, and close at the bracket that brings the count back to zero, the one closing that object.
+Count only brackets in code: skip those inside strings, such as a `\\{` control code, and on the anchor line start counting at the anchor's bracket, so neither an earlier `{` on that line nor an enclosing block keeps the region open past the object.
+Inside the region read whole string literals only, and use a **narrower** Japanese class than your global one - `r'"([^"]*[一-龠ぁ-ゔァ-ヴー]+[^"]*)"'`, no fullwidth alnum, no halfwidth katakana - so identifier-like fullwidth tokens are not swept up.
 Write back into the literal's own span, after escaping `"` in the translation, and rewrap only when the original contained `\n`.
 Region scoping is what makes the greedy pattern safe at all.
 
@@ -1294,6 +1295,13 @@ if '$gameVariables' in s: continue              # interpolated code fragment
 A plain kana/kanji class is blind to fullwidth UI labels.
 The backslash-only artifact is standard for a `(.*?)` sitting between two `[\\]+` groups, and feeding it to the model returns real English for it and shifts every later positional pop by one.
 Where a pattern spans control codes, exclude structural characters from the capture class itself so a capture can never run past a delimiter: `r'C\[\d+\]([^C\\,`\[\]]+?)[\\]+C\[0\]'`.
+
+### Bound every field to its own string
+
+A pattern that captures to "the last quote" or "the next quote" runs past its field on a packed `plugins.js` line or a minified plugin, sending keys and other settings as one string and writing the translation over all of them.
+Anchor on the key up to the field's opening quote, then end the field at that string's own closing quote: a string whose opening quote has q backslashes before it is closed by the first quote of its kind with q more than a multiple of 2(q + 1) backslashes before it (an even count at the top level), as `stringEnd` in `modules/rpgmakerplugin.py` does; quotes escaped deeper belong to its text.
+A label inside a string, such as a drawTextEx `\}…\{` or `\C[n]…\C[0]` label, must end inside the string around it, and is read only inside the string that holds its `drawTextEx` call (a plugin setting's script), or on the whole line where the call is plain code.
+A rewrite tied to a call, such as the counter `回` → `x` after a `$gameVariables` value, applies in that same scope and only to `回` as a word of its own, not the start of `回復`.
 
 ---
 
