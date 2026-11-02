@@ -1000,6 +1000,8 @@ class ImageTests(unittest.TestCase):
             (item()["state"], item()["skipReason"]),
             ("skipped", "Only decorative art."),
         )
+        with self.assertRaisesRegex(ValueError, "translation skipped every image"):
+            self.request("edit_task")
         # A revision redoes the image it names, skipped or not, and the task
         # counts it as the image it translates.
         revision, _ = self.request("revision_task")
@@ -1025,6 +1027,103 @@ class ImageTests(unittest.TestCase):
         self.assertEqual(preview["included"], 1)
         self.service.action(self.identity, "apply", {"token": preview["token"]})
         self.assertEqual(item()["state"], "applied")
+
+    def test_an_applied_image_is_revised_from_its_saved_note_and_applied_again(self):
+        self.reviewed_candidate()
+        preview = self.service.action(self.identity, "preview_apply")["preview"]
+        self.service.action(self.identity, "apply", {"token": preview["token"]})
+        # Notes on the applied image and one never translated survive a
+        # restart; the list holds only the applied one.
+        notes = {"img/A.png": "Make the title bigger.", "img/B.png": "Translate it."}
+        state = self.service.state(self.identity)
+        self.service.update(self.identity, state["revision"], {"notes": notes})
+        service = ImageService(
+            self.projects,
+            self.translation,
+            SETTINGS,
+            self.backend,
+            adapter=self.adapter,
+        )
+        saved = service.state(self.identity)["notes"]
+        self.assertEqual({key: note["text"] for key, note in saved.items()}, notes)
+        # One revision task hands out both images with their own notes, and its
+        # text says what the user asked.
+        result = service.action(self.identity, "revision_task", {"noted": True})
+        revision = read_json(Path(result["request"]))
+        self.assertEqual(
+            {asset["id"]: asset.get("revisionNotes") for asset in revision["assets"]},
+            notes,
+        )
+        self.assertIn("- img/A.png: Make the title bigger.", result["text"])
+        self.assertIn("- img/B.png: Translate it.", result["text"])
+        state = service.state(self.identity)
+        check_response("images_state", state)
+        self.assertEqual(state["selection"], ["img/A.png", "img/B.png"])
+        self.assertEqual(
+            {note.get("sentIn") for note in state["notes"].values()}, {revision["id"]}
+        )
+        # The report answers the applied image's note with a new edit; the other
+        # image's error leaves its note waiting.
+        asset = revision["assets"][0]
+        candidate = png((9, 9, 9, 100))
+        write_bytes(self.game / ".dazedtl/images/img/A.png", candidate)
+        self.recipe(asset, candidate)
+        review = {
+            "version": 1,
+            "visual": True,
+            "alpha": True,
+            "protectedPixels": True,
+            "layout": True,
+            "evidence": "Compared original/candidate at native resolution.",
+        }
+        self.service = service
+        self.report(
+            revision,
+            [
+                {
+                    "id": "img/A.png",
+                    "sourceHash": asset["sourceHash"],
+                    "candidateHash": digest(candidate),
+                    "status": "edited",
+                    "reason": "Title enlarged.",
+                    "review": review,
+                },
+                {
+                    "id": "img/B.png",
+                    "sourceHash": revision["assets"][1]["sourceHash"],
+                    "candidateHash": None,
+                    "status": "error",
+                    "reason": "Could not read it.",
+                },
+            ],
+            True,
+        )
+        self.assertEqual(list(service.state(self.identity)["notes"]), ["img/B.png"])
+        # Editing the waiting note makes it unsent until a task copies it again.
+        state = service.state(self.identity)
+        edited = {"img/B.png": "Translate the sign."}
+        state = service.update(self.identity, state["revision"], {"notes": edited})
+        self.assertNotIn("sentIn", state["notes"]["img/B.png"])
+        item = service.list(self.identity, asset_id="img/A.png")["items"][0]
+        self.assertEqual(item["state"], "ready")
+        answered = item["revisions"][-1]
+        self.assertEqual(
+            (answered["kind"], answered["note"], answered["reason"]),
+            ("revision", "Make the title bigger.", "Title enlarged."),
+        )
+        # Apply puts the revised image back in the game.
+        preview = service.action(self.identity, "preview_apply", {"ready_only": True})
+        self.assertEqual(preview["preview"]["included"], 1)
+        service.action(self.identity, "apply", {"token": preview["preview"]["token"]})
+        self.assertEqual((self.game / "img/A.png").read_bytes(), candidate)
+        listed = service.list(self.identity, asset_id="img/A.png")
+        check_response("images_list", listed)
+        item = listed["items"][0]
+        self.assertEqual(item["state"], "applied")
+        self.assertEqual(
+            [entry["kind"] for entry in item["revisions"]],
+            ["apply", "revision", "apply"],
+        )
 
     def test_applied_receipt_and_reviewed_restore_preserve_frozen_original_and_existing_copies(
         self,

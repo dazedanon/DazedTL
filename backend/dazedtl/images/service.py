@@ -52,6 +52,14 @@ REVIEW_VERSION = 1
 # Editing requests from this version on accept the assistant's review of an
 # edited image only with a current recipe and passing validation.
 RECIPE_VERSION = 1
+# The user's revision notes are kept per image id in the list state under
+# this format version, until an assistant's report answers them. Each note
+# holds up to 4,000 characters, and the cap on noted images keeps state.json
+# well under its read limit.
+NOTES_VERSION = 1
+NOTED_IMAGES = 1000
+# Each image keeps its latest answered notes, applies and restores.
+REVISIONS_KEPT = 20
 VIEW = {
     "query": "",
     "status": "all",
@@ -137,6 +145,18 @@ def _investigated(value, counts):
 def _stopped(value):
     """Whether the user stopped the investigation to choose the images."""
     return value["discovery"].get("status") == "stopped"
+
+
+def _notes(value):
+    """The user's saved revision notes, by image id. A state saved before
+    notes were kept has none."""
+    notes = value.setdefault("notes", {"version": NOTES_VERSION, "images": {}})
+    return notes["images"]
+
+
+def _remember(row, entry):
+    """Adds an entry to an image's revision history, keeping the latest."""
+    row["revisions"] = ((row.get("revisions") or []) + [entry])[-REVISIONS_KEPT:]
 
 
 def _set_aside(row):
@@ -379,14 +399,20 @@ class ImageService:
                 "discoveryScope": value["discovery"]["scope"],
                 "folders": value["discovery"].get("folders", []),
                 "imageRoot": (value.get("profile") or {}).get("imageRoot", ""),
+                "notes": {
+                    identity: note["text"]
+                    for identity, note in (value.get("notes") or {})
+                    .get("images", {})
+                    .items()
+                },
             }
         )
 
     @staticmethod
     def _observation_revision(value):
         """What scans, reports and actions changed. The user's own choices are
-        left to the preferences revision, so saving a selection or a scroll
-        position does not make the manager reload its images."""
+        left to the preferences revision, so saving a selection, a scroll
+        position or a note does not make the manager reload its images."""
         discovery = {
             key: item
             for key, item in value["discovery"].items()
@@ -397,7 +423,7 @@ class ImageService:
                 **{
                     key: item
                     for key, item in value.items()
-                    if key not in {"selection", "view", "profile", "browsed"}
+                    if key not in {"selection", "view", "profile", "browsed", "notes"}
                 },
                 "discovery": discovery,
             }
@@ -457,6 +483,7 @@ class ImageService:
                 "folders": index.folders(),
                 "selection": deepcopy(value["selection"]),
                 "view": deepcopy(value["view"]),
+                "notes": deepcopy(_notes(value)),
                 "discovery": report_view(value["discovery"]),
                 "editing": report_view(value["editing"]),
                 "receipts": [receipt_view(row) for row in value["receipts"]],
@@ -552,11 +579,13 @@ class ImageService:
             "reviewEvidence": (row.get("aiReview") or {}).get("evidence", ""),
             "candidateMetadata": row.get("candidateMetadata"),
             "applied": deepcopy(row.get("applied")),
+            "revisions": deepcopy(row.get("revisions") or []),
         }
 
     def update(self, project_id, revision, changes):
         if not isinstance(changes, dict) or set(changes) - {
             "selection",
+            "notes",
             "view",
             "discoveryScope",
             "folders",
@@ -574,6 +603,8 @@ class ImageService:
                 value["selection"] = self._ids(
                     project_id, changes["selection"], allow_empty=True
                 )
+            if "notes" in changes:
+                self._save_notes(project_id, value, changes["notes"])
             if "view" in changes:
                 view = changes["view"]
                 if not isinstance(view, dict) or set(view) - set(VIEW):
@@ -641,6 +672,36 @@ class ImageService:
             if "selection" in changes:
                 self._index(project_id).selected(value["selection"])
             return self.state(project_id)
+
+    def _save_notes(self, project_id, value, texts):
+        """Saves the user's revision notes, one text per image. A note left
+        as it was keeps its record, so a copied task still counts it as sent;
+        an edited one is unsent until a task copies it again, and an emptied
+        one is gone."""
+        if not isinstance(texts, dict) or len(texts) > NOTED_IMAGES:
+            raise ValueError(
+                f"Keep revision notes on at most {NOTED_IMAGES:,} images at once."
+            )
+        texts = {
+            identity: text(note, "A revision note")
+            for identity, note in texts.items()
+            if text(note, "A revision note").strip()
+        }
+        saved = _notes(value)
+        # Only a new or changed note must name an image the list holds, so a
+        # note on an image a rescan no longer finds never blocks the others.
+        changed = [
+            identity
+            for identity, note in texts.items()
+            if saved.get(identity, {}).get("text") != note
+        ]
+        self._ids(project_id, changed, allow_empty=True)
+        value["notes"]["images"] = {
+            identity: {"text": note, "saved": now()}
+            if identity in changed
+            else saved[identity]
+            for identity, note in texts.items()
+        }
 
     def _image_root(self, project_id, value, root, decoded=False):
         """Points a game without RPG Maker MV/MZ's img folder at the folder of
@@ -1080,6 +1141,14 @@ class ImageService:
                             row.pop("aiReview", None)
                             row.pop("userReview", None)
                             row["originalRuntimeHash"] = actual
+                        _remember(
+                            row,
+                            {
+                                "kind": journal["action"],
+                                "saved": journal["saved"],
+                                "candidateHash": frozen["candidateHash"],
+                            },
+                        )
                         row = self._inspect(project_id, row, row)
                         index.put(db, row, row.get("generation", ""))
                     elif actual == frozen["sourceHash"]:
@@ -1675,11 +1744,21 @@ class ImageService:
             raise ValueError("Finish an image scan before preparing an assistant task.")
         kind = "discovery" if action == "discovery_task" else "editing"
         own = options.get("assistant") is True
-        scope, identities = (
-            self._scope(project_id, options, value)
-            if kind == "discovery"
-            else ("selected", self._chosen(project_id, options))
-        )
+        if kind == "discovery":
+            scope, identities = self._scope(project_id, options, value)
+        elif action == "revision_task" and options.get("noted") is True:
+            # Every image with a note waiting, as the footer counts them.
+            index = self._index(project_id)
+            identities = [
+                identity
+                for identity in _notes(value)
+                if index.holds(identity) and index.get(identity)
+            ]
+            if not identities:
+                raise ValueError("No image has a revision note waiting.")
+            scope = "selected"
+        else:
+            scope, identities = "selected", self._chosen(project_id, options)
         self.refresh_assets(project_id, identities)
         value = self._load(project_id)
         rows = [self._index(project_id).get(identity) for identity in identities]
@@ -1687,14 +1766,20 @@ class ImageService:
         if kind == "editing":
             # The list's images not yet in the game. Their editable copies are
             # made here, so copying the task is the user's only step. A
-            # revision redoes the images it names, ones the translation skipped
-            # too.
-            left_out = (
-                {"applied"} if action == "revision_task" else {"applied", "skipped"}
-            )
-            rows = [row for row in rows if row["state"] not in left_out]
-            if not rows:
-                raise ValueError("Every image in your list is already in the game.")
+            # revision redoes every image it names, also one the translation
+            # skipped or one already in the game, which Apply puts back.
+            if action == "edit_task":
+                left = [
+                    row for row in rows if row["state"] not in {"applied", "skipped"}
+                ]
+                if not left:
+                    raise ValueError(
+                        "The translation skipped every image left in your list. "
+                        "Open one in Compare images to mark it reviewed or copy a revision task for it."
+                        if any(row["state"] == "skipped" for row in rows)
+                        else "Every image in your list is already in the game."
+                    )
+                rows = left
             unprepared = [
                 row["id"]
                 for row in rows
@@ -1731,6 +1816,16 @@ class ImageService:
             40_000,
         )
         guidance = self._guidance(project_id)
+        # A revision hands each image's saved note to the assistant.
+        noted = (
+            {
+                row["id"]: _notes(value)[row["id"]]["text"]
+                for row in rows
+                if row["id"] in _notes(value)
+            }
+            if action == "revision_task"
+            else {}
+        )
         previous_id = value[kind].get("requestId", "")
         # An investigation asked for again starts over: a finished one, or one
         # the user stopped, is neither handed out again nor resumed.
@@ -1742,7 +1837,7 @@ class ImageService:
             previous_path = project_path(root, previous_entry["path"])
             previous = read_json(previous_path, limit=48_000_000)
 
-            def basis(request, assets, versions):
+            def basis(request, assets, versions, notes):
                 return Basis(
                     versions,
                     {
@@ -1754,6 +1849,7 @@ class ImageService:
                             request.get(key, "")
                             for key in ("kind", "scope", "guidance", "revisionComments")
                         ]
+                        + [notes]
                     ),
                 )
 
@@ -1767,6 +1863,11 @@ class ImageService:
                         previous,
                         previous.get("assets", []),
                         (previous.get("reviewVersion"), previous.get("recipeVersion")),
+                        {
+                            asset["id"]: asset["revisionNotes"]
+                            for asset in previous.get("assets", [])
+                            if asset.get("revisionNotes")
+                        },
                     ),
                     basis(
                         {
@@ -1778,11 +1879,14 @@ class ImageService:
                         },
                         rows,
                         (REVIEW_VERSION, RECIPE_VERSION if kind == "editing" else None),
+                        noted,
                     ),
                 )
             ):
                 value[kind]["copiedAt"] = now()
                 value[kind].pop("rejected", None)
+                if action == "revision_task":
+                    self._sent(project_id, value, previous_id, noted, rows)
                 self._save(project_id, value)
                 return {
                     "state": self.state(project_id),
@@ -1827,6 +1931,7 @@ class ImageService:
             # Siblings that share this image's backdrop, with their originals
             # and how far each is translated.
             | {"family": index.family(row["id"])}
+            | ({"revisionNotes": noted[row["id"]]} if row["id"] in noted else {})
             for row in rows
         ]
         request = {
@@ -1870,6 +1975,8 @@ class ImageService:
         )
         value[kind].pop("rejected", None)
         value[kind].pop("rejectedHash", None)
+        if action == "revision_task":
+            self._sent(project_id, value, identity, noted, rows)
         self._save(project_id, value)
         return {
             "state": self.state(project_id),
@@ -1880,6 +1987,21 @@ class ImageService:
             "report": str(report),
             "handoff": self._handoff(kind, identity, report),
         }
+
+    def _sent(self, project_id, value, request_id, noted, rows):
+        """Marks the notes a revision task copied as sent in its request, and
+        puts its images in the list, so Apply to game takes them once they
+        are reviewed."""
+        for identity in noted:
+            saved = _notes(value)[identity]
+            if saved.get("sentIn") != request_id:
+                saved.update(sentIn=request_id, sentAt=now())
+        selection = list(
+            dict.fromkeys(value["selection"] + [row["id"] for row in rows])
+        )
+        if selection != value["selection"]:
+            value["selection"] = selection
+            self._index(project_id).selected(selection)
 
     @staticmethod
     def _handoff(kind, request_id, report):
@@ -1916,6 +2038,23 @@ class ImageService:
                 contract += (
                     "\nThe app has not accepted these results yet; fix them, check again and save the report again:\n- "
                     + "\n- ".join(held)
+                )
+            # What the user asked to change, also in the request as each
+            # asset's revisionNotes and the shared revisionComments.
+            asked = [
+                (asset["id"], asset["revisionNotes"])
+                for asset in request["assets"]
+                if asset.get("revisionNotes")
+            ]
+            if request.get("revisionComments", "").strip():
+                asked.append(("Every image", request["revisionComments"]))
+            if asked:
+                contract += (
+                    "\nThe user asked for these changes; make each one in that image's working copy:\n"
+                    + "\n".join(
+                        "- " + name + ": " + note.strip().replace("\n", "\n  ")
+                        for name, note in asked
+                    )
                 )
             contract += "\n\nApply the following image-only methodology within the exact request scope above. "
             contract += (
@@ -2299,6 +2438,7 @@ class ImageService:
                         )
                 else:
                     row.pop("aiReview", None)
+                self._answer(value, request, expected[identity], result, row)
             updates.append(self._status(row))
         with index.connection() as db:
             for row in updates:
@@ -2358,6 +2498,41 @@ class ImageService:
         value[kind].pop("rejectedHash", None)
         self._save(project_id, value)
         return {"state": self.state(project_id)}
+
+    @staticmethod
+    def _answer(value, request, asset, result, row):
+        """A note this request sent is answered once the report gives its
+        image a new edited copy or skips it; it then leaves the notes for
+        the image's revision history. A note edited since it was sent waits
+        for a task that sends it."""
+        note = _notes(value).get(asset["id"])
+        if (
+            not note
+            or note.get("sentIn") != request["id"]
+            or asset.get("revisionNotes") != note["text"]
+        ):
+            return
+        if result["status"] != "skipped" and not (
+            result["status"] != "error"
+            and row.get("candidateHash")
+            and result.get("candidateHash") == row["candidateHash"]
+            and row["candidateHash"] != asset.get("editableHash")
+        ):
+            return
+        _remember(
+            row,
+            {
+                "kind": "revision",
+                "note": note["text"],
+                "sent": note.get("sentAt", ""),
+                "requestId": request["id"],
+                "answered": now(),
+                "status": result["status"],
+                "reason": row["editResult"]["reason"],
+                "candidateHash": row.get("candidateHash", ""),
+            },
+        )
+        del _notes(value)[asset["id"]]
 
     def _proof(self, root, request_id, row, found, unreadable):
         """The recipe and validation of a reported edit, bound to its hashes.
@@ -2885,6 +3060,14 @@ class ImageService:
                             row.pop("aiReview", None)
                             row.pop("userReview", None)
                             row["originalRuntimeHash"] = runtime_hash
+                        _remember(
+                            row,
+                            {
+                                "kind": action,
+                                "saved": now(),
+                                "candidateHash": row.get("candidateHash", ""),
+                            },
+                        )
                         index.put(db, row, row.get("generation", ""))
             self.refresh_assets(project_id, identities)
             value = self._load(project_id)

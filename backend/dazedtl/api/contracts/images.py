@@ -68,6 +68,33 @@ class ImageApplication(TypedDict):
     recovered: NotRequired[bool]
 
 
+class ImageRevision(TypedDict):
+    """One entry of an image's revision history: a revision note a report
+    answered, or an apply or restore of the image."""
+
+    kind: Literal["revision", "apply", "restore"]
+    candidateHash: str
+    # When an apply or restore landed.
+    saved: NotRequired[str]
+    note: NotRequired[str]
+    # When a copied task sent the note, and when its report answered it.
+    sent: NotRequired[str]
+    answered: NotRequired[str]
+    requestId: NotRequired[str]
+    status: NotRequired[str]
+    reason: NotRequired[str]
+
+
+class ImageNote(TypedDict):
+    """The user's revision note on one image, kept until a report answers it."""
+
+    text: str
+    saved: str
+    # The copied request that sent this text, and when.
+    sentIn: NotRequired[str]
+    sentAt: NotRequired[str]
+
+
 class ImageAsset(TypedDict):
     id: str
     path: str
@@ -108,6 +135,7 @@ class ImageAsset(TypedDict):
     staleReason: str
     candidateMetadata: ImageMetadata | None
     applied: ImageApplication | None
+    revisions: NotRequired[list[ImageRevision]]
 
 
 class ImageCounts(TypedDict):
@@ -213,6 +241,7 @@ class ImageManagerState(TypedDict):
     folders: list[ImageFolder]
     selection: list[str]
     view: ImageView
+    notes: NotRequired[dict[str, ImageNote]]
     discovery: ImageReportState
     editing: ImageReportState
     receipts: list[ImageReceipt]
@@ -232,6 +261,8 @@ class ImageForeignWork(ForeignWork):
 
 class ImageDraft(TypedDict):
     selection: list[str]
+    # Each noted image's revision note text.
+    notes: dict[str, str]
     view: ImageView
     discoveryScope: ImageDiscoveryScope
     folders: list[str]

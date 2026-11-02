@@ -176,6 +176,7 @@ class ImagesListRequest(TypedDict):
 
 class ImageDraftChanges(TypedDict):
     selection: NotRequired[list[str]]
+    notes: NotRequired[dict[str, str]]
     view: NotRequired[ImageView]
     discoveryScope: NotRequired[ImageDiscoveryScope]
     folders: NotRequired[list[str]]

@@ -616,6 +616,28 @@ main > .image-manager {
 .image-revision-comment textarea {
   margin: 0;
 }
+.image-revision-history {
+  margin-top: var(--space-3);
+  font-size: var(--font-small);
+}
+.image-revision-history h3 {
+  font-size: var(--font-body);
+  margin: 0 0 var(--space-2);
+}
+.image-revision-history ol {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.image-revision-history li {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  overflow-wrap: anywhere;
+}
 .image-apply-files,
 .image-apply-blocked {
   margin-top: var(--space-3);
