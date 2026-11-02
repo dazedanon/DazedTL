@@ -388,7 +388,7 @@ const helper = (command, timeout) =>
       })
     : execFileSync("sh", ["-c", command], { encoding: "utf8", timeout });
 
-/** Failures the app recorded for Copy diagnostics; a clean run records none. */
+/** Failures the app recorded for its diagnostics; a clean run records none. */
 function diagnostics() {
   const folder = path.join(profile, "diagnostics");
   const records = [];

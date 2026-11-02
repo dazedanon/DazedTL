@@ -533,7 +533,7 @@ class Application:
         command list, so it goes to diagnostics instead."""
         if isinstance(error, subprocess.SubprocessError):
             self.failure(error, "workspace_snapshot")
-            return "A tool this project needs could not finish. Copy diagnostics for the details."
+            return "A tool this project needs could not finish. Use Report a problem for the details."
         return str(error)
 
     def recheck(self, project_id):

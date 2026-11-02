@@ -37,7 +37,7 @@ import { Menu, MenuItem, MenuSeparator } from "../ui/Menu";
 import { RecentProjectName } from "../features/project/RecentProject";
 import { Button } from "../ui/Button";
 import { Message } from "../ui/Feedback";
-import { DiagnosticsAction } from "./DiagnosticsAction";
+import { ProblemReportAction } from "./ProblemReportAction";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { LanguagesProvider } from "./LanguagesProvider";
 import { OriginalRecordProvider } from "../ui/OriginalRecord";
@@ -350,7 +350,7 @@ export default function App() {
             )}
           </nav>
           <div className="sidebar-bottom">
-            <DiagnosticsAction />
+            <ProblemReportAction project={project} />
             <Button
               aria-current={state?.screen === "settings" ? "page" : undefined}
               disabled={!state}

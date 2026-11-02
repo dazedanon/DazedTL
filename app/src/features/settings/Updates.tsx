@@ -127,6 +127,23 @@ export default function Updates({ running }: { running: boolean }) {
           )}
           {note && <div className="connection-panel-note">{note}</div>}
         </section>
+        <div className="actions">
+          <ActionControl
+            label="Copy full diagnostics"
+            title="Copy every recent error record, for when a short report isn't enough"
+            disabled={action.busy}
+            pending={action.busy && action.key === "diagnostics"}
+            error={action.key === "diagnostics" ? action.error : ""}
+            notice={action.key === "diagnostics" ? action.notice : ""}
+            onClick={() =>
+              void action.run(
+                () => window.dazedtl.copyDiagnostics(),
+                "Diagnostics copied.",
+                "diagnostics",
+              )
+            }
+          />
+        </div>
         {!state.revert && (
           <ReleaseNotes
             since={

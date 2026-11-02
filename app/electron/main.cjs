@@ -207,7 +207,7 @@ function startupFailed(error) {
   diagnostics?.failure("desktop.error", error, { operation: "native" });
   dialog.showErrorBox(
     "DazedTL could not start",
-    "Restart DazedTL. If this keeps happening, use Copy diagnostics after the next launch.",
+    "Restart DazedTL. If this keeps happening, use Report a problem after the next launch.",
   );
   app.exit(1);
 }
@@ -365,6 +365,19 @@ app
       } catch (error) {
         diagnostics.failure("desktop.error", error, { operation: "native" });
         throw new Error("Diagnostics could not be copied. Try again.");
+      }
+    });
+    ipcMain.handle("dazedtl:copy-problem-report", async (event, context) => {
+      trusted(event);
+      try {
+        await clipboard.writeText(
+          await diagnostics.problemReport(
+            context && typeof context === "object" ? context : {},
+          ),
+        );
+      } catch (error) {
+        diagnostics.failure("desktop.error", error, { operation: "native" });
+        throw new Error("The report could not be copied. Try again.");
       }
     });
     ipcMain.handle("dazedtl:renderer-error", (event, failure) => {

@@ -71,6 +71,12 @@ declare global {
       call(version: string, method: string, params: object): Promise<Envelope>;
       ready(): Promise<void>;
       copyDiagnostics(): Promise<void>;
+      /** Copies a bug report naming the open game, its engine and mode. */
+      copyProblemReport(context: {
+        game?: string;
+        engine?: string;
+        mode?: string;
+      }): Promise<void>;
       reportRendererError(failure: RendererFailure): Promise<void>;
       reloadInterface(): Promise<void>;
       copyText(text: string): Promise<void>;

@@ -1,6 +1,7 @@
 const { execFile } = require("node:child_process");
 const crypto = require("node:crypto");
 const fs = require("node:fs");
+const os = require("node:os");
 const { SourceMap } = require("node:module");
 const path = require("node:path");
 const { fileURLToPath } = require("node:url");
@@ -139,6 +140,69 @@ function revision(root) {
   );
 }
 
+// A Discord message holds 2,000 characters; the errors leave room for the
+// reporter's own words.
+const ERRORS_SHOWN = 8;
+const ERRORS_LENGTH = 800;
+
+/** One failure as "worker.error fit_text KeyError backend/worker.py:4". */
+function summary(record) {
+  const cause = record.causes?.[0];
+  const frame = cause?.frames?.findLast((frame) => frame.file !== "external");
+  return [
+    record.event,
+    record.operation ?? record.action,
+    record.code && record.code !== "internal" ? record.code : undefined,
+    record.reason,
+    record.exitCode !== undefined ? `exit ${record.exitCode}` : undefined,
+    record.signal,
+    record.seconds ? `${record.seconds}s` : undefined,
+    cause && cause.type !== "Error" ? cause.type : undefined,
+    // "app/" only says the file is DazedTL's own.
+    frame ? `${frame.file.replace(/^app\//, "")}:${frame.line}` : undefined,
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+/** Summary lines, a repeated failure counted on its latest line. */
+function summaryGroups(records) {
+  const groups = [];
+  for (const record of records) {
+    const text = summary(record);
+    const last = groups.at(-1);
+    if (last?.text === text)
+      Object.assign(last, { time: record.time, count: last.count + 1 });
+    else groups.push({ text, time: record.time, count: 1 });
+  }
+  return groups.map(({ text, time, count }) => ({
+    line: `${time.slice(5, 10)} ${time.slice(11, 16)}Z ${text}${count > 1 ? ` (${count} times)` : ""}`,
+    count,
+  }));
+}
+
+/** "Windows 11 (build 22631, x64)" or the Linux distribution's own name. */
+function system() {
+  const architecture = process.arch;
+  if (process.platform === "win32") {
+    const build = Number(os.release().split(".")[2]) || 0;
+    return `Windows ${build >= 22000 ? 11 : 10} (build ${build}, ${architecture})`;
+  }
+  if (process.platform === "linux") {
+    let name = "Linux";
+    try {
+      name =
+        /^PRETTY_NAME="?([\w .()/+-]{1,60})"?$/m.exec(
+          fs.readFileSync("/etc/os-release", "utf8"),
+        )?.[1] || name;
+    } catch {
+      /* Without os-release the kernel family is still useful. */
+    }
+    return `${name} (${architecture})`;
+  }
+  return `${process.platform} (${architecture})`;
+}
+
 class Diagnostics {
   constructor(directory, versions, root) {
     this.directory = directory;
@@ -275,7 +339,8 @@ class Diagnostics {
       ],
     });
   }
-  async report() {
+  /** Safe records from this run and the logs, oldest first, without repeats. */
+  async records() {
     const records = [...this.recent];
     for (const name of LOGS.flatMap((log) => [log + ".2", log + ".1", log])) {
       let file;
@@ -304,13 +369,15 @@ class Diagnostics {
         if (file !== undefined) fs.closeSync(file);
       }
     }
-    const lines = [
-      ...new Set(
-        records
-          .sort((a, b) => a.time.localeCompare(b.time))
-          .map((record) => JSON.stringify(record)),
-      ),
-    ].slice(-80);
+    const unique = new Map();
+    for (const record of records.sort((a, b) => a.time.localeCompare(b.time)))
+      unique.set(JSON.stringify(record), record);
+    return [...unique.values()];
+  }
+  async report() {
+    const lines = (await this.records())
+      .map((record) => JSON.stringify(record))
+      .slice(-80);
     while (Buffer.byteLength(lines.join("\n")) > LIMIT) lines.shift();
     return [
       "DazedTL diagnostics",
@@ -324,6 +391,59 @@ class Diagnostics {
         2,
       ),
       ...lines,
+    ].join("\n");
+  }
+  /**
+   * A bug report to paste into Discord: the facts filled in, blanks for the
+   * reporter, and the latest failures in one line each, so the whole paste
+   * stays one editable message.
+   */
+  async problemReport(context = {}) {
+    const field = (value) =>
+      typeof value === "string" && value.trim()
+        ? value
+            .replace(/\s+/g, " ")
+            .trim()
+            .slice(0, 120)
+            .replace(/[\\*_~`|]/g, "\\$&")
+        : "";
+    const { revision: name, modified } = await revision(this.root);
+    const changed = modified ? ", modified" : "";
+    const version = name.startsWith("release ")
+      ? name.slice(8) + (modified ? ", files changed" : "")
+      : name === "unknown"
+        ? this.versions.app
+        : `${this.versions.app} (dev ${name}${changed})`;
+    const game = field(context.game);
+    const engine = field(context.engine);
+    const groups = summaryGroups(await this.records());
+    const shown = [];
+    while (shown.length < ERRORS_SHOWN) {
+      const group = groups.at(-1);
+      if (!group || [group.line, ...shown].join("\n").length > ERRORS_LENGTH)
+        break;
+      shown.unshift(group.line);
+      groups.pop();
+    }
+    const hidden = groups.reduce((total, group) => total + group.count, 0);
+    return [
+      `**DazedTL version:** ${version}`,
+      `**System:** ${system()}`,
+      `**Game:** ${game}${game && engine ? ` (${engine})` : engine}`,
+      `**Mode:** ${field(context.mode)}`,
+      "",
+      "**What happened:**",
+      "",
+      "**What you expected:**",
+      "",
+      "**Steps to make it happen again:**",
+      "1.",
+      "",
+      "**Recent errors:**",
+      "```",
+      ...(shown.length ? shown : ["None recorded"]),
+      ...(hidden ? [`and ${hidden} earlier`] : []),
+      "```",
     ].join("\n");
   }
 }

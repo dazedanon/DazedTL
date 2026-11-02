@@ -222,8 +222,10 @@ Your projects, settings and API keys are kept.
 
 ## When something goes wrong
 
-Click **Copy diagnostics** in the sidebar and include it, with any message on screen, when you report the problem on [Discord](https://discord.gg/StsRWHPupu).
-If something is stuck, copy the diagnostics while it's still stuck.
-They never include API keys or game text.
+Click **Report a problem** in the sidebar and paste the report on [Discord](https://discord.gg/StsRWHPupu).
+It fills in your DazedTL version, system, open game and recent errors; add what happened, with any message on screen, and the steps that led to it.
+If something is stuck, copy the report while it's still stuck.
+If you're asked for more detail, **Settings > Updates** has **Copy full diagnostics**.
+Apart from the game's name, it never includes API keys or game text.
 
 If a page fails, its panel offers **Try again** and **Reload interface**; reloading keeps running translations going.

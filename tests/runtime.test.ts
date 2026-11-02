@@ -233,6 +233,56 @@ test("diagnostics map renderer frames to source and keep backend hang records, w
   );
 });
 
+test("the problem report fills in the open game and keeps the newest errors within one Discord message", async (t) => {
+  const checkout = fs.mkdtempSync(path.join(os.tmpdir(), "dazedtl-report-"));
+  t.after(() => fs.rmSync(checkout, { recursive: true, force: true }));
+  const diagnostics = new Diagnostics(
+    path.join(checkout, "diagnostics"),
+    { app: "fixture" },
+    checkout,
+  );
+  fs.writeFileSync(
+    path.join(checkout, "diagnostics/backend-failures.jsonl"),
+    Array.from({ length: 31 }, (_, minute) =>
+      JSON.stringify({
+        time: `2026-10-09T18:${String(minute).padStart(2, "0")}:00.000Z`,
+        event: "worker.error",
+        action: "fit_text",
+        message: "private game text",
+        causes: [
+          {
+            type: "KeyError",
+            frames: [
+              // The first two failures are the same one, a minute apart.
+              { file: "app/worker.py", line: Math.max(minute - 1, 0) },
+              { file: "external", line: 1, function: "lib" },
+            ],
+          },
+        ],
+      }),
+    ).join("\n"),
+  );
+  const report = await diagnostics.problemReport({
+    game: "Sword *Quest*\n",
+    engine: "RPG Maker MV / MZ",
+    mode: "Guided steps",
+  });
+  assert.match(report, /^\*\*DazedTL version:\*\* fixture$/m);
+  assert.match(
+    report,
+    /^\*\*Game:\*\* Sword \\\*Quest\\\* \(RPG Maker MV \/ MZ\)$/m,
+  );
+  assert.match(report, /^\*\*Mode:\*\* Guided steps$/m);
+  assert.match(
+    report,
+    /^10-09 18:30Z worker.error fit_text KeyError worker.py:29\n/m,
+  );
+  // The repeated failure is one line counted twice: 23 failures are left out.
+  assert.match(report, /^and 23 earlier$/m);
+  assert.doesNotMatch(report, /private|18:22Z/);
+  assert.ok(report.length < 1400, `${report.length} characters`);
+});
+
 test("a forced backend stop also ends workers in sessions of their own and the commands it waits on", async (t) => {
   // Stands in for the backend: a worker in its own session and a hung Git
   // command, both idle until stopped.
