@@ -87,7 +87,7 @@ Among them:
 
 - Every engine module ends a file by one rule in [translation_task](../backend/dazedtl/engine/util/translation_task.py): a parser error stops it before it writes, the output is written once and whole, and its receipt has one format.
 - A module never writes its run's `files/`, which hold the run's frozen inputs.
-- Line-walking modules send each line with the place its reply goes ([sent_lines](../backend/dazedtl/engine/util/sent_lines.py)), so two walks of a file can't disagree.
+- Line-walking modules walk a file once, sending each line with the place its reply goes ([sent_lines](../backend/dazedtl/engine/util/sent_lines.py)), and write a reply list by the one reply rule (`reply_to_write` in [translation](../backend/dazedtl/engine/util/translation.py)): a list of the wrong length writes nothing.
 - A run's evidence ledger counts each billed item once, however its file ends ([run_evidence](../backend/dazedtl/compatibility/run_evidence.py), [batch_validation](../backend/dazedtl/compatibility/batch_validation.py)), and a file's tokens, cost and time come from it by one rule (`run_receipts` in translation_task).
 
 ### Batch execution and recovery

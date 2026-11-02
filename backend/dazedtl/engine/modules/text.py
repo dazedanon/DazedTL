@@ -14,9 +14,11 @@ from dotenv import load_dotenv
 from retry import retry
 from tqdm import tqdm
 from util.languages import source_pattern
-from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost, getPricingConfig, calculateCost, found_mismatch, run_stop_errors
+from functools import partial
+from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost, getPricingConfig, calculateCost, run_stop_errors
 from util.translation_task import fail_on_parser_error, module_receipt, write_output
-from util.speakers import SPEAKER_TAG_RE, extract_dialogue_after_speaker, find_speaker, strip_speaker_prefix, to_prefixed
+from util.sent_lines import SentLines
+from util.speakers import SPEAKER_TAG_RE, extract_dialogue_after_speaker, find_speaker
 
 # Globals
 MODEL = os.getenv("model")
@@ -128,7 +130,7 @@ def parseText(readFile, filename):
         PBAR = pbar
 
         try:
-            result = translateTxt(data, filename, [])
+            result = translateTxt(data, filename)
             totalTokens[0] += result[0]
             totalTokens[1] += result[1]
         except run_stop_errors():
@@ -139,18 +141,13 @@ def parseText(readFile, filename):
     return [data, totalTokens, None]
 
 
-def translateTxt(data, filename, translatedList):
-    if translatedList:
-        stringList = translatedList[0]
-        choiceList = translatedList[1]
-    else:
-        stringList = []
-        choiceList = []
+def translateTxt(data, filename):
+    """Walks the lines once, sending each line's dialogue with the place its
+    reply goes (util/sent_lines), then writes each reply over its line."""
     tokens = [0, 0]
-    global LOCK, ESTIMATE, FILENAME, PBAR, MISMATCH
-    i = 0
+    lines = SentLines()
 
-    while i < len(data):
+    for i in range(len(data)):
         # Speaker: the line's own label, so a line without one has none. The
         # line is written whole from its reply, so the name is not written
         # back (util/speakers)
@@ -162,74 +159,26 @@ def translateTxt(data, filename, translatedList):
             tokens[0] += speakerData[1][0]
             tokens[1] += speakerData[1][1]
 
-        # Dialogue: a line of spaces alone sends nothing, so it takes no reply
+        # Dialogue
         jaString = extract_dialogue_after_speaker(data[i])
-        if jaString is not None and jaString.strip():
-
-            # Pass 1
-            if not translatedList:
-                stringList.append(to_prefixed(speaker, jaString.strip()))
-
-            # Pass 2
-            else:
-                # Get Text
-                if stringList:
-                    # Grab and Pop
-                    translatedText = stringList[0]
-                    stringList.pop(0)
-
-                    # Set to None if empty list
-                    if len(stringList) <= 0:
-                        stringList = None
-
-                    # Remove speaker
-                    translatedText = strip_speaker_prefix(translatedText, speaker)
-
-                    # # Textwrap
-                    # translatedText = dazedwrap.wrapText(translatedText, width=WIDTH)
-                    # translatedText = translatedText.replace("\n", "\\n")
-
-                    # Set Data
-                    data[i] = f"{translatedText}\n"
-
-            i += 1
-        else:
-            i += 1
+        if jaString is not None:
+            lines.send(jaString.strip(), partial(_write_line, data, i), speaker)
 
     # EOF
-    if not translatedList:
-        stringListTL = []
-        choiceListTL = []
-
-        # String List
-        if stringList:
-            PBAR.total = len(stringList)
-            PBAR.refresh()
-            response = translateAI(stringList, "Reply with the English Translation")
-            tokens[0] += response[1][0]
-            tokens[1] += response[1][1]
-            stringListTL = response[0]
-
-            if len(stringList) != len(stringListTL):
-                # Mismatch
-                with LOCK:
-                    found_mismatch(MISMATCH, FILENAME)
-
-        # Choice List
-        if choiceList:
-            response = translateAI(choiceList, "Reply with the English TL of the Dialogue Choice")
-            tokens[0] += response[1][0]
-            tokens[1] += response[1][1]
-            choiceListTL = response[0]
-
-            if len(choiceList) != len(choiceListTL):
-                # Mismatch
-                with LOCK:
-                    found_mismatch(MISMATCH, FILENAME)
-
-        # Set Strings
-        translateTxt(data, filename, [stringListTL, choiceListTL])
+    if lines:
+        PBAR.total = len(lines)
+        PBAR.refresh()
+        response = translateAI(lines.lines, "Reply with the English Translation")
+        tokens[0] += response[1][0]
+        tokens[1] += response[1][1]
+        lines.write(response[0], MISMATCH, LOCK, FILENAME)
     return tokens
+
+
+def _write_line(data, i, translatedText):
+    """Writes a reply as line *i*, whole."""
+    data[i] = f"{translatedText}\n"
+
 
 # Save some money and enter the character before translation
 def getSpeaker(speaker):

@@ -19,7 +19,7 @@ from tqdm import tqdm
 from util.languages import source_pattern
 from util.runtime_text import CONTROL_CODE
 from util.sent_lines import SentLines
-from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost, found_mismatch, run_stop_errors
+from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost, run_stop_errors
 from util.translation_task import fail_on_parser_error, module_receipt, write_output
 
 # Globals
@@ -816,12 +816,8 @@ def translatePlugin(data, pbar, filename):
         response = translateAI(lines.lines, group.history)
         tokens[0] += response[1][0]
         tokens[1] += response[1][1]
-        if len(response[0]) == len(lines):
-            lines.write(response[0])
+        if lines.write(response[0], MISMATCH, LOCK, filename):
             translated = True
-        else:
-            with LOCK:
-                found_mismatch(MISMATCH, filename)
     if not translated:
         return tokens
 

@@ -17,7 +17,7 @@ from dotenv import load_dotenv
 from retry import retry
 from tqdm import tqdm
 from util.languages import source_pattern
-from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost, found_mismatch, run_stop_errors
+from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost, run_stop_errors
 from util.translation_task import fail_on_parser_error, module_receipt, write_output
 from util.sent_lines import SentLines
 from util.speakers import find_speaker
@@ -265,7 +265,8 @@ def translateCSV(data, pbar, filename):
     global LOCK, ESTIMATE, PBAR
     PBAR = pbar
     totalTokens = [0, 0]
-    lines = SentLines()
+    # Each reply goes to the target column, beside its text (util/sent_lines)
+    lines = SentLines(over_source=False)
 
     # Translate
     for i in _collect_process_indices(data):
@@ -309,11 +310,12 @@ def translateCSV(data, pbar, filename):
                 if voMatch:
                     jaString = jaString.replace(voMatch.group(0), "")
 
-        # Remove furigana if configured. The translation replaces the text
-        # as a target holds it: as the cell does, or without its furigana.
+        # Remove furigana if configured, each ＜base＝reading＞ for its base.
+        # The translation replaces the text as a target holds it: as the
+        # cell does, or without its furigana.
         cellText = jaString
         if REMOVE_FURIGANA:
-            jaString = re.sub(r"＜(.*)＝.*＞", r"\1", jaString)
+            jaString = re.sub(FURIGANA, r"\1", jaString)
         held = (cellText, jaString)
 
         # Remove textwrap
@@ -336,18 +338,15 @@ def translateCSV(data, pbar, filename):
         translatedList = response[0]
 
         # Set Strings
-        if len(lines) == len(translatedList):
-            lines.write(translatedList)
-        # Mismatch
-        else:
-            with LOCK:
-                found_mismatch(MISMATCH, filename)
+        lines.write(translatedList, MISMATCH, LOCK, filename)
 
     return totalTokens
 
 
 # A :name[] tag: the speaker's name, then the line the speaker says
 NAME_TAG = r":name\[([^\]]+?)\]\n([\w\W]*)"
+# A furigana annotation, ＜base＝reading＞, within one pair of brackets
+FURIGANA = r"＜([^＜＞]*)＝[^＜＞]*＞"
 
 
 def _write_name(row, name, translated):

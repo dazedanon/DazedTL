@@ -4,6 +4,7 @@ import re
 import threading
 import time
 import traceback
+from functools import partial
 from pathlib import Path
 
 from colorama import Fore
@@ -11,14 +12,14 @@ from tqdm import tqdm
 
 import util.dazedwrap as dazedwrap
 from util.languages import source_pattern
-from util.speakers import strip_echoed_speaker, to_prefixed, translate_speaker
+from util.sent_lines import SentLines
+from util.speakers import strip_echoed_speaker, translate_speaker
 from util.translation import (
     TranslationConfig,
     calculateCost,
     getPricingConfig,
     translateAI as sharedtranslateAI,
     run_stop_errors,
-    found_mismatch,
 )
 from util.translation_task import fail_on_parser_error, format_receipt, module_receipt, write_output
 
@@ -238,12 +239,12 @@ def parseYuris(data, filename):
 
 
 def translateYuris(data, filename):
-    global PBAR
+    """Translates each speaker on the spot and sends each translatable
+    message with the entry its reply goes to (util/sent_lines)."""
     tokens = [0, 0]
-    entries = []
-    stringList = []
+    lines = SentLines(unlabel=_unlabel)
 
-    for index, item in enumerate(data):
+    for item in data:
         if not isinstance(item, dict):
             continue
 
@@ -261,36 +262,33 @@ def translateYuris(data, filename):
 
         cleanMessage = message.replace("\r\n", " ").replace("\n", " ").strip()
         cleanMessage = replace_yuris_problem_dashes(cleanMessage)
-        stringList.append(to_prefixed(speaker, cleanMessage))
-        entries.append((index, message, speaker))
+        lines.send(cleanMessage, partial(_write_message, item), speaker)
 
-    if not stringList:
+    if not lines:
         return tokens
 
-    PBAR.total = len(stringList)
+    PBAR.total = len(lines)
     PBAR.refresh()
 
-    response = translateAI(stringList, "Reply with the English Translation")
+    response = translateAI(lines.lines, "Reply with the English Translation")
     tokens[0] += response[1][0]
     tokens[1] += response[1][1]
-    translatedList = response[0]
-
-    if len(stringList) != len(translatedList):
-        with LOCK:
-            found_mismatch(MISMATCH, FILENAME)
-        return tokens
-
-    for (index, originalMessage, speaker), translatedText in zip(entries, translatedList):
-        if speaker:
-            translatedText = stripSpeakerPrefix(translatedText, speaker)
-        translatedText = replace_yuris_problem_dashes(translatedText)
-        translatedText = dazedwrap.wrapText(translatedText, width=WIDTH)
-        translatedText = translatedText.replace("\n", "\r\n")
-        data[index]["message"] = originalMessage.replace(originalMessage, translatedText)
-        if PBAR is not None:
-            PBAR.update(1)
-
+    if lines.write(response[0], MISMATCH, LOCK, FILENAME) and PBAR is not None:
+        PBAR.update(len(lines))
     return tokens
+
+
+def _unlabel(translatedText, speaker):
+    """A reply without the label its line was sent with (stripSpeakerPrefix);
+    a line said by no speaker is written as it came."""
+    return stripSpeakerPrefix(translatedText, speaker) if speaker else translatedText
+
+
+def _write_message(item, translatedText):
+    """Writes a reply over *item*'s message, wrapped with its line ends."""
+    translatedText = replace_yuris_problem_dashes(translatedText)
+    translatedText = dazedwrap.wrapText(translatedText, width=WIDTH)
+    item["message"] = translatedText.replace("\n", "\r\n")
 
 
 def stripSpeakerPrefix(translated_text, speaker):

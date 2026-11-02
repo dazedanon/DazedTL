@@ -14,9 +14,11 @@ from dotenv import load_dotenv
 from retry import retry
 from tqdm import tqdm
 from util.languages import source_pattern
-from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost, getPricingConfig, calculateCost, found_mismatch, run_stop_errors
+from functools import partial
+from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost, getPricingConfig, calculateCost, run_stop_errors
 from util.translation_task import fail_on_parser_error, module_receipt, write_output
-from util.speakers import find_speaker, strip_speaker_prefix, to_prefixed
+from util.sent_lines import SentLines
+from util.speakers import find_speaker
 from util.game_encoding import check_line, writable
 
 # Globals
@@ -140,7 +142,7 @@ def parseKiriKiri(readFile, filename):
         PBAR.desc = filename
 
         try:
-            result = translateKiriKiri(data, PBAR, filename, [])
+            result = translateKiriKiri(data, PBAR, filename)
             totalTokens[0] += result[0]
             totalTokens[1] += result[1]
         except run_stop_errors():
@@ -159,19 +161,14 @@ def checkLine(data, i, filename):
         check_line(data, i, "cp932", filename)
 
 
-def translateKiriKiri(data, pbar, filename, jobList):
-    # Check Job Data
-    if len(jobList) > 0:
-        stringList = jobList[0]
-        choiceList = jobList[1]
-        setData = True
-    else:
-        stringList = []
-        choiceList = []
-        setData = False
+def translateKiriKiri(data, pbar, filename):
+    """Walks the lines once, translating each speaker on the spot and
+    sending each choice and line of dialogue with the place its reply goes
+    (util/sent_lines), then writes each reply there."""
     tokens = [0, 0]
     speaker = ""
-    global LOCK, ESTIMATE
+    dialogue = SentLines()
+    choices = SentLines(unlabel=None)
     i = 0
 
     # Regex
@@ -201,22 +198,7 @@ def translateKiriKiri(data, pbar, filename, jobList):
         match = re.search(choicesRegex, data[i])
         if match and CHOICES:
             jaString = match.group(1)
-
-            # Pass 1
-            if not setData:
-                choiceList.append(jaString)
-
-            # Pass 2
-            else:
-                # Grab and Pop and Set
-                translatedText = choiceList[0]
-                choiceList.pop(0)
-
-                # Replace Quotes
-                data[i] = data[i].replace("'", '"')
-                translatedText = translatedText.replace('"', "'")
-                data[i] = data[i].replace(jaString, translatedText)
-                checkLine(data, i, filename)
+            choices.send(jaString, partial(_write_choice, data, i, jaString, filename))
 
         # Tagged dialogue lines e.g., [思考 storage="..."]text[/思考]
         tagged = re.match(taggedDialogueRegex, data[i])
@@ -230,45 +212,31 @@ def translateKiriKiri(data, pbar, filename, jobList):
             tokens[0] += resolved[1][0]
             tokens[1] += resolved[1][1]
 
-            # Pass 1: enqueue with speaker from closing tag
-            if not setData:
-                # Remove inline wrapping
-                jaString_clean = jaString.replace("[r]", " ")
-                # Remove furigana
-                matchList = re.findall(furiganaRegex, jaString_clean)
-                if matchList:
-                    for fm in matchList:
-                        jaString_clean = jaString_clean.replace(fm[0], fm[1])
+            # Remove inline wrapping
+            jaString_clean = jaString.replace("[r]", " ")
+            # Remove furigana
+            matchList = re.findall(furiganaRegex, jaString_clean)
+            if matchList:
+                for fm in matchList:
+                    jaString_clean = jaString_clean.replace(fm[0], fm[1])
 
-                stringList.append(to_prefixed(tag_speaker, jaString_clean.strip()))
-
-            # Pass 2: apply translated text back between tags
-            else:
-                if len(stringList) > 0:
-                    translatedText = stringList[0]
-                    stringList.pop(0)
-                    # Remove Speaker label if present
-                    translatedText = strip_speaker_prefix(translatedText, tag_speaker)
-                    # Wrap and convert newlines to [r]
-                    translatedText = dazedwrap.wrapText(translatedText, width=WIDTH)
-                    translatedText = translatedText.replace("\n", "[r]")
-                    # Replace quotes as per convention
-                    data[i] = data[i].replace("'", '"')
-                    translatedText = translatedText.replace('"', "'")
-                    # Replace only inner content
-                    data[i] = data[i].replace(jaString, translatedText)
-                    checkLine(data, i, filename)
+            # The reply goes between the tags
+            dialogue.send(
+                jaString_clean.strip(),
+                partial(_write_text, data, i, jaString, filename),
+                tag_speaker,
+            )
 
         # Simple narrative line handling: translate each whitespace-led, non-tag, non-command line independently.
         # This avoids reflowing or merging blocks, preventing misplaced text.
         if not re.match(r"^\[", data[i]) and not data[i].lstrip().startswith("@"):
-            if re.match(r"^[ \t\u3000]+", data[i]):
+            if re.match(r"^[ \t　]+", data[i]):
                 # Skip standalone markers like [▼]
                 if data[i].strip() == "[▼]":
                     pass
                 else:
                     # The text sent: no wrapping, glyph markers or furigana.
-                    # A line of spaces alone sends nothing, so it takes no reply.
+                    # A line of spaces alone sends nothing (util/sent_lines).
                     line_content = data[i].rstrip("\n")
                     line_content = line_content.replace("[r]", " ")
                     line_content = re.sub(r"\[▼\]", "", line_content)
@@ -276,24 +244,7 @@ def translateKiriKiri(data, pbar, filename, jobList):
                     if matchList:
                         for fm in matchList:
                             line_content = line_content.replace(fm[0], fm[1])
-                    cleaned = line_content.strip()
-                    if not cleaned:
-                        pass
-                    # Pass 1
-                    elif not setData:
-                        stringList.append(cleaned)
-                    # Pass 2
-                    else:
-                        if len(stringList) > 0:
-                            translatedText = stringList[0]
-                            stringList.pop(0)
-                            translatedText = strip_speaker_prefix(translatedText)
-                            translatedText = dazedwrap.wrapText(translatedText, width=WIDTH)
-                            translatedText = translatedText.replace("\n", "[r]")
-                            indent_match = re.match(r"^([ \t\u3000]+)", data[i])
-                            indent = indent_match.group(1) if indent_match else ""
-                            data[i] = f"{indent}{translatedText}\n"
-                            checkLine(data, i, filename)
+                    dialogue.send(line_content.strip(), partial(_write_narration, data, i, filename))
 
         # Dialogue
         match = re.search(dialogueRegex, data[i])
@@ -302,96 +253,77 @@ def translateKiriKiri(data, pbar, filename, jobList):
             if not jaString:
                 jaString = match.group(2)
 
-            # Pass 1
-            if not setData:
-                # Remove any textwrap
-                jaString = jaString.replace("[r]", " ")
+            # Remove any textwrap
+            jaString_clean = jaString.replace("[r]", " ")
 
-                # Remove Furigana
-                matchList = re.findall(furiganaRegex, jaString)
-                if matchList:
-                    for match in matchList:
-                        jaString = jaString.replace(match[0], match[1])
+            # Remove Furigana
+            matchList = re.findall(furiganaRegex, jaString_clean)
+            if matchList:
+                for fm in matchList:
+                    jaString_clean = jaString_clean.replace(fm[0], fm[1])
 
-                # Add String
-                stringList.append(to_prefixed(speaker, jaString.strip()))
-
-            # Pass 2
-            else:
-                if len(stringList) > 0:
-                    # Grab and Pop
-                    translatedText = stringList[0]
-                    stringList.pop(0)
-
-                    # Remove Speaker
-                    translatedText = strip_speaker_prefix(translatedText, speaker)
-
-                    # Textwrap
-                    translatedText = dazedwrap.wrapText(translatedText, width=WIDTH)
-                    translatedText = translatedText.replace("\n", "[r]")
-
-                    # Replace Quotes
-                    data[i] = data[i].replace("'", '"')
-                    translatedText = translatedText.replace('"', "'")
-                    data[i] = data[i].replace(jaString, translatedText)
-                    checkLine(data, i, filename)
+            dialogue.send(
+                jaString_clean.strip(),
+                partial(_write_text, data, i, jaString, filename),
+                speaker,
+            )
 
         # Next Line
         i += 1
 
     # EOF
-    stringListTL = []
-    choiceListTL = []
+    replies = []
+    for lines in (dialogue, choices):
+        if lines:
+            # Set Progress
+            pbar.total = len(lines)
+            pbar.refresh()
 
-    # Dialogue
-    if len(stringList) > 0:
-        # Set Progress
-        pbar.total = len(stringList)
-        pbar.refresh()
+            # Translate
+            response = translateAI(lines.lines, "", True)
+            tokens[0] += response[1][0]
+            tokens[1] += response[1][1]
+            replies.append((lines, response[0]))
 
-        # Translate
-        response = translateAI(
-            stringList,
-            "",
-            True,
-        )
-        tokens[0] += response[1][0]
-        tokens[1] += response[1][1]
-        stringListTL = response[0]
-
-        # Validate
-        if len(stringList) != len(stringListTL):
-            with LOCK:
-                found_mismatch(MISMATCH, filename)
-                stringListTL = stringList
-
-    # Choices
-    if len(choiceList) > 0:
-        # Set Progress
-        pbar.total = len(choiceList)
-        pbar.refresh()
-
-        # Translate
-        response = translateAI(
-            choiceList,
-            "",
-            True,
-        )
-        tokens[0] += response[1][0]
-        tokens[1] += response[1][1]
-        choiceListTL = response[0]
-
-        # Validate
-        if len(choiceList) != len(choiceListTL):
-            with LOCK:
-                found_mismatch(MISMATCH, filename)
-                choiceListTL = choiceList
-
-    # Proceed to Pass 2
-    if not setData:
-        translateKiriKiri(data, pbar, filename, [stringListTL, choiceListTL])
-
+    # A line's choice is written before its other text, as the walk reads
+    # its choice first
+    for lines, translated in reversed(replies):
+        lines.write(translated, MISMATCH, LOCK, filename)
     return tokens
+
+
+def _write_choice(data, i, jaString, filename, translatedText):
+    """Writes a choice's reply over its text, *jaString*, on line *i*."""
+    # Replace Quotes
+    data[i] = data[i].replace("'", '"')
+    translatedText = translatedText.replace('"', "'")
+    data[i] = data[i].replace(jaString, translatedText)
+    checkLine(data, i, filename)
+
+
+def _write_text(data, i, jaString, filename, translatedText):
+    """Writes a reply over the text it was sent for, *jaString*, on line *i*,
+    such as a [text] line's dialogue or the text between a tag's pair."""
+    # Textwrap
+    translatedText = dazedwrap.wrapText(translatedText, width=WIDTH)
+    translatedText = translatedText.replace("\n", "[r]")
+
+    # Replace Quotes
+    data[i] = data[i].replace("'", '"')
+    translatedText = translatedText.replace('"', "'")
+    data[i] = data[i].replace(jaString, translatedText)
+    checkLine(data, i, filename)
+
+
+def _write_narration(data, i, filename, translatedText):
+    """Writes a reply as narration line *i*, after the line's indent."""
+    translatedText = dazedwrap.wrapText(translatedText, width=WIDTH)
+    translatedText = translatedText.replace("\n", "[r]")
+    indent_match = re.match(r"^([ \t　]+)", data[i])
+    indent = indent_match.group(1) if indent_match else ""
+    data[i] = f"{indent}{translatedText}\n"
+    checkLine(data, i, filename)
+
 
 # Save some money and enter the character before translation
 def getSpeaker(speaker):

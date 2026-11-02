@@ -14,7 +14,7 @@ from dotenv import load_dotenv
 from retry import retry
 from tqdm import tqdm
 from util.languages import source_pattern
-from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost, found_mismatch, run_stop_errors
+from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost, run_stop_errors
 from util.translation_task import fail_on_parser_error, module_receipt, write_output
 from util.sent_lines import SentLines
 from util.speakers import find_speaker
@@ -143,9 +143,10 @@ def parseRegex(readFile, filename):
 # A chapter title, set as \setgamedatatitle("...") or title '...'
 SETGAMEDATATITLE = r'\\setgamedatatitle\("(.+?)"\)'
 TITLE = r"title\s'(.*)'$"
-# A speaker, said by the dialogue after it (util/speakers)
+# A speaker, said by the "text" field after it (util/speakers)
 SPEAKER = r'"name":\s?"(.+)",'
-# Dialogue: a JSON "text" field, or the lines of a \text ... \endtext block
+# Dialogue: a JSON "text" field, or the lines of a \text ... \endtext block,
+# which names no speaker
 DIALOGUE = r'\"text\":\s?\"(.+)\",'
 # Choices: the items of \sel(...), and a $menu_item's label
 SEL = r'\\sel\((.+)\)'
@@ -215,14 +216,17 @@ def translateRegex(data, filename):
             for item, write in zip(items, _sel_writers(data, i, items)):
                 choices.send(item, write)
 
-        # Dialogue: the lines of a \text block, sent as one
+        # Dialogue: the lines of a \text block, sent as one and said by no
+        # speaker, since a block names none
         if "\\text" in data[i].strip():
             i += 1
             start = i
-            while "\\endtext" not in data[i].strip():
+            while i < len(data) and "\\endtext" not in data[i].strip():
                 i += 1
+            if i == len(data):
+                raise ValueError(f"{filename}: the \\text block on line {start} has no \\endtext.")
             jaString = "".join(data[start:i]).replace("\n", "").strip()
-            dialogue.send(jaString, _block_writer(data, start, i), speaker)
+            dialogue.send(jaString, _block_writer(data, start, i))
 
         # Choices
         match = re.search(CHOICE, data[i])
@@ -246,13 +250,9 @@ def translateRegex(data, filename):
         tokens[0] += response[1][0]
         tokens[1] += response[1][1]
         replies.append((lines, response[0]))
-        if len(lines) != len(response[0]):
-            with LOCK:
-                found_mismatch(MISMATCH, FILENAME)
 
-    # A short reply list still answers the lines it reaches
     for lines, translated in replies:
-        lines.write(translated)
+        lines.write(translated, MISMATCH, LOCK, FILENAME)
     return tokens
 
 

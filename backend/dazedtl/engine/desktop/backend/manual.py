@@ -63,7 +63,10 @@ def relative_file(value):
 # after dialogue sent. Version 3 of Regex, CSV, WOLF RPG 2 and JSON sends no
 # text of spaces alone (util/sent_lines), Regex no longer sends an empty
 # \text block as the block before it, and WOLF RPG 2 reads a speaker only as
-# a message's first line.
+# a message's first line. Version 3 of Tyrano, Kirikiri and Lune sends no
+# text of spaces alone either, and Kirikiri no longer sends the replies its
+# second walk left over; version 4 of Regex sends a \text block as said by no
+# speaker, and of CSV each furigana annotation's base alone.
 #
 # Only the version that collected a Batch starts submitting it: a queue an
 # older version collected is refused before anything is sent (STALE_QUEUE),
@@ -78,17 +81,17 @@ def relative_file(value):
 # reuses the replies it saved for those built the same; refusing it would only
 # pay again for what its unfinished files already have.
 ENGINE_VERSIONS = {
-    "CSV": 3,
-    "Tyrano": 2,
-    "Kirikiri": 2,
+    "CSV": 4,
+    "Tyrano": 3,
+    "Kirikiri": 3,
     "JSON": 3,
-    "Lune": 2,
+    "Lune": 3,
     "Yuris": 2,
     "NScript": 2,
     "Wolf RPG (WolfDawn)": 2,
     "Wolf RPG": 2,
     "Wolf RPG 2": 3,
-    "Regex": 3,
+    "Regex": 4,
     "Text": 2,
     "RenPy": 2,
     "Unity": 2,

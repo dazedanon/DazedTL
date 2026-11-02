@@ -746,7 +746,8 @@ def translateDialogueSrcTl(data, filename):
     """
     global LOCK, ESTIMATE, FILENAME, PBAR, MISMATCH
     tokens = [0, 0]
-    lines = SentLines(unlabel=_unlabel)
+    # Each reply goes to its entry's tl, beside its src (util/sent_lines)
+    lines = SentLines(unlabel=_unlabel, over_source=False)
 
     # Send each entry with translatable content (util/sent_lines)
     for key, entry in data.items():
@@ -773,14 +774,7 @@ def translateDialogueSrcTl(data, filename):
         response = translateAI(lines.lines, "Reply with the English Translation")
         tokens[0] += response[1][0]
         tokens[1] += response[1][1]
-        translatedList = response[0]
-
-        if len(lines) != len(translatedList):
-            with LOCK:
-                found_mismatch(MISMATCH, FILENAME)
-
-        # A short reply list still answers the entries it reaches
-        lines.write(translatedList)
+        lines.write(response[0], MISMATCH, LOCK, FILENAME)
 
     # Translate any Japanese speaker names found in the data
     seen_speakers = {}
@@ -868,22 +862,17 @@ def translateJSON(data, filename):
     replies = [
         (lines, _translate(lines, history, tokens)) for lines, history in lists if lines
     ]
-
-    # A short reply list still answers the entries it reaches
     for lines, translated in replies:
-        lines.write(translated)
+        lines.write(translated, MISMATCH, LOCK, FILENAME)
     return tokens
 
 
 def _translate(lines, history, tokens):
     """The replies to *lines*, sent as one list with *history*; adds the
-    request's tokens to *tokens* and reports a reply list of another length."""
+    request's tokens to *tokens*."""
     response = translateAI(lines.lines, history)
     tokens[0] += response[1][0]
     tokens[1] += response[1][1]
-    if len(lines) != len(response[0]):
-        with LOCK:
-            found_mismatch(MISMATCH, FILENAME)
     return response[0]
 
 

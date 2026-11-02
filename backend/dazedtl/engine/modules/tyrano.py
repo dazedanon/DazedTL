@@ -14,9 +14,11 @@ from dotenv import load_dotenv
 from retry import retry
 from tqdm import tqdm
 from util.languages import source_pattern
-from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost, found_mismatch, run_stop_errors
+from functools import partial
+from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost, run_stop_errors
 from util.translation_task import fail_on_parser_error, module_receipt, write_output
-from util.speakers import find_speaker, strip_speaker_prefix, to_prefixed
+from util.sent_lines import SentLines
+from util.speakers import find_speaker
 
 # OpenAI initialization centralized in util/translation.py
 
@@ -130,7 +132,7 @@ def parseTyrano(readFile, filename):
         PBAR = pbar
 
         try:
-            result = translateTyrano(data, filename, [])
+            result = translateTyrano(data, filename)
             totalTokens[0] += result[0]
             totalTokens[1] += result[1]
         except run_stop_errors():
@@ -141,22 +143,17 @@ def parseTyrano(readFile, filename):
     return [data, totalTokens, None]
 
 
-def translateTyrano(data, filename, translatedList):
-    if translatedList:
-        stringList = translatedList[0]
-        choiceList = translatedList[1]
-    else:
-        stringList = []
-        choiceList = []
+def translateTyrano(data, filename):
+    """Walks the lines once, joining each message's furigana and the lines it
+    goes on over, and sends each message and choice with the place its reply
+    goes (util/sent_lines), then writes each reply there."""
     tokens = [0, 0]
     speaker = ""
-    stringListTL = []
-    choiceListTL = []
-    global LOCK, ESTIMATE, FILENAME, PBAR, MISMATCH
+    dialogue = SentLines()
+    choices = SentLines(unlabel=None)
     i = 0
 
     while i < len(data):
-        voice = False
         lineRegexNoSpeaker = r"^([^\[#;*@\n]+)\[p\]|^([^\[#;*@\n]+)\[l\]\[[rp]\]|^([^\[#;*@\n]+)\[[rpl]\]|^([^\[#;*@_\n]+)\n$"
         # "#name", or "#name:face" with a face to show, which stays
         lineRegexSpeaker = r"^#([^:\n]*)"
@@ -202,7 +199,7 @@ def translateTyrano(data, filename, translatedList):
                         break
                 except IndexError:
                     break
-            
+
             # Skip if no valid string found
             if not jaString:
                 i += 1
@@ -228,105 +225,63 @@ def translateTyrano(data, filename, translatedList):
             originalString = jaString
 
             # The text sent: no textwrap, commands, ruby or spaces around it.
-            # A line of spaces alone sends nothing, so it takes no reply.
+            # A line of spaces alone sends nothing (util/sent_lines).
             jaString = jaString.replace("[r]", " ")
             jaString = jaString.replace("[l]", "")
             furiganaList = re.findall(furiganaRegex, jaString)
             for furigana in furiganaList:
                 jaString = jaString.replace(furigana[0], furigana[1])
-            jaString = jaString.strip()
-
-            if not jaString:
-                pass
-
-            # Pass 1
-            elif not translatedList:
-                stringList.append(to_prefixed(speaker, jaString))
-
-            # Pass 2
-            else:
-                # Get Text
-                if stringList:
-                    # Grab and Pop
-                    translatedText = stringList[0]
-                    stringList.pop(0)
-
-                    # Set to None if empty list
-                    if len(stringList) <= 0:
-                        stringList = None
-
-                    # Remove speaker
-                    translatedText = strip_speaker_prefix(translatedText, speaker)
-
-                    # Avoid Crashes
-                    translatedText = translatedText.replace("[", "(")
-                    translatedText = translatedText.replace("]", ")")
-
-                    # Textwrap
-                    translatedText = dazedwrap.wrapText(translatedText, width=WIDTH)
-                    translatedText = translatedText.replace("\n", "[r]")
-
-                    # Set Data
-                    data[i] = data[i].replace(originalString, translatedText)
+            dialogue.send(jaString.strip(), partial(_write_dialogue, data, i, originalString), speaker)
 
         # Choices
         match = re.search(choiceRegex, data[i])
         if match:
-            # Pass 1
-            if not translatedList:
-                choiceList.append(match.group(1))
-                match = re.search(choiceRegex, data[i + 1])
-
-            # Pass 2
-            else:
-                # Grab and Pop
-                translatedText = choiceList[0]
-                choiceList.pop(0)
-
-                # Replace Spaces
-                translatedText = translatedText.replace(" ", "\u3000")
-
-                # Set
-                data[i] = data[i].replace(match.group(1), translatedText)
-
-            i += 1
-        else:
-            i += 1
+            choices.send(match.group(1), partial(_write_choice, data, i, match.group(1)))
+        i += 1
 
     # EOF
-    if not translatedList:
-        # String List
-        if stringList:
-            PBAR.total = len(stringList)
-            PBAR.refresh()
-            response = translateAI(stringList, "Reply with the English Translation")
-            tokens[0] += response[1][0]
-            tokens[1] += response[1][1]
-            stringListTL = response[0]
-
-            if len(stringList) != len(stringListTL):
-                # Mismatch
-                with LOCK:
-                    found_mismatch(MISMATCH, FILENAME)
-
-        # Choice List
-        if choiceList:
-            response = translateAI(choiceList, "Reply with the English TL of the Dialogue Choice")
-            tokens[0] += response[1][0]
-            tokens[1] += response[1][1]
-            choiceListTL = response[0]
-
-            if len(choiceList) != len(choiceListTL):
-                # Mismatch
-                with LOCK:
-                    found_mismatch(MISMATCH, FILENAME)
-
-        # Recursive call for Pass 2 with translated strings
-        result = translateTyrano(data, filename, [stringListTL, choiceListTL])
-        tokens[0] += result[0]
-        tokens[1] += result[1]
-    
+    if dialogue:
+        PBAR.total = len(dialogue)
+        PBAR.refresh()
+    replies = [
+        (lines, _translate(lines, history, tokens))
+        for lines, history in (
+            (dialogue, "Reply with the English Translation"),
+            (choices, "Reply with the English TL of the Dialogue Choice"),
+        )
+        if lines
+    ]
+    for lines, translated in replies:
+        lines.write(translated, MISMATCH, LOCK, FILENAME)
     return tokens
+
+
+def _translate(lines, history, tokens):
+    """The replies to *lines*, sent as one list with *history*; adds the
+    request's tokens to *tokens*."""
+    response = translateAI(lines.lines, history)
+    tokens[0] += response[1][0]
+    tokens[1] += response[1][1]
+    return response[0]
+
+
+def _write_dialogue(data, i, originalString, translatedText):
+    """Writes a message's reply over its text, *originalString*, on line *i*."""
+    # Avoid Crashes
+    translatedText = translatedText.replace("[", "(")
+    translatedText = translatedText.replace("]", ")")
+
+    # Textwrap
+    translatedText = dazedwrap.wrapText(translatedText, width=WIDTH)
+    translatedText = translatedText.replace("\n", "[r]")
+    data[i] = data[i].replace(originalString, translatedText)
+
+
+def _write_choice(data, i, sent, translatedText):
+    """Writes a choice's reply over its text, *sent*, on line *i*."""
+    translatedText = translatedText.replace(" ", "　")
+    data[i] = data[i].replace(sent, translatedText)
+
 
 # Save some money and enter the character before translation
 def getSpeaker(speaker):

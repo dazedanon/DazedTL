@@ -6,7 +6,7 @@ import re
 import socket
 import sys
 import threading
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from copy import deepcopy
 from importlib import import_module
 from io import StringIO
@@ -1847,6 +1847,107 @@ try:
                         indent=4,
                     ),
                 ),
+                (
+                    "modules.csv",
+                    "handleCSV",
+                    "Scene.csv",
+                    "Source,Target\n＜漢字＝かんじ＞と＜仮名＝かな＞だ,\n",
+                    {},
+                    [["漢字と仮名だ"]],
+                    'Source,Target\r\n＜漢字＝かんじ＞と＜仮名＝かな＞だ,"EN ""漢字と仮名だ"""\r\n',
+                ),
+                (
+                    "modules.regex",
+                    "handleRegex",
+                    "script.txt",
+                    '{\n    "name": "アリス",\n},\n\\text\n一\n\\endtext\n{\n    "text": "やあ",\n},\n',
+                    {},
+                    ["アリス", ["一", "[Alice]: やあ"]],
+                    (
+                        '\ufeff{\n    "name": "Alice",\n},\n\\text\nEN 一\n\\endtext\n'
+                        '{\n    "text": "EN \\"[Alice]: やあ\\"",\n},\n'
+                    ),
+                ),
+                (
+                    "modules.regex",
+                    "handleRegex",
+                    "script.txt",
+                    "\\text\n一\n\\endtext\n\\text\n二\n\\endtext\n",
+                    {"short": 1},
+                    [["一", "二"]],
+                    "\ufeff\\text\n一\n\\endtext\n\\text\n二\n\\endtext\n",
+                ),
+                (
+                    "modules.json",
+                    "handleJSON",
+                    "Talk.json",
+                    json.dumps([{"m_text": "やあ"}, {"m_text": "またね"}]),
+                    {"short": 1},
+                    [["やあ", "またね"]],
+                    json.dumps(
+                        [{"m_text": "やあ"}, {"m_text": "またね"}],
+                        ensure_ascii=False,
+                        indent=4,
+                    ),
+                ),
+                (
+                    "modules.kirikiri",
+                    "handleKirikiri",
+                    "scene.ks",
+                    "[text]一[r]二[KeyWait]\n",
+                    {"short": 1},
+                    [["一 二"]],
+                    "[text]一[r]二[KeyWait]\n",
+                ),
+                (
+                    "modules.kirikiri",
+                    "handleKirikiri",
+                    "scene.ks",
+                    (
+                        '[思考 storage="x"]あいう[r]えお[/思考][KeyWait]\n'
+                        '[思考 storage="a"][/思考]\n[text]次[KeyWait]\n'
+                    ),
+                    {
+                        "replies": {
+                            "[Alice]: あいう えお": "[Alice]: Thinking",
+                            "えお": "Eo",
+                            "次": "Next",
+                        }
+                    },
+                    ["思考", ["[Alice]: あいう えお", "えお", "次"]],
+                    (
+                        '[思考 storage="x"]Thinking[/思考][KeyWait]\n'
+                        '[思考 storage="a"][/思考]\n[text]Next[KeyWait]\n'
+                    ),
+                ),
+                (
+                    "modules.tyrano",
+                    "handleTyrano",
+                    "scene.ks",
+                    (
+                        "地の文\nやあ[l]\n[cm]\n"
+                        '[glink text="" target="*a"]\n[glink text="はい" target="*b"]\n[s]\n'
+                    ),
+                    {},
+                    [["地の文やあ"], ["はい"]],
+                    (
+                        'EN "地の文やあ"[cm]\n[glink text="" target="*a"]\n'
+                        '[glink text="EN\u3000"はい"" target="*b"]\n[s]\n'
+                    ),
+                ),
+                (
+                    "modules.lune",
+                    "handleLune",
+                    "scene.l",
+                    json.dumps([{"message": ""}, {"message": "やあ"}]),
+                    {},
+                    [["やあ"]],
+                    json.dumps(
+                        [{"message": ""}, {"message": 'EN "やあ"'}],
+                        ensure_ascii=False,
+                        indent=4,
+                    ),
+                ),
             ):
                 module = import_module(module_name)
                 encoding = "utf-8"
@@ -1895,6 +1996,24 @@ try:
                     output = output.replace("\n", os.linesep)
                 written = (shapes / "translated" / scene).read_bytes()
                 assert written.decode(encoding) == output, (module_name, written)
+
+            # A Regex \text block with no \endtext fails its file naming the
+            # block, where the walk ran past the file's end
+            regex = import_module("modules.regex")
+            (shapes / "files" / "open.txt").write_text("一\n\\text\n二\n", "utf-8")
+            with (
+                patch.multiple(regex, translateAI=offline),
+                redirect_stdout(StringIO()),
+                redirect_stderr(StringIO()),
+            ):
+                try:
+                    regex.handleRegex("open.txt", False)
+                except ValueError as error:
+                    assert "\\text block on line 2 has no \\endtext" in str(error), (
+                        error
+                    )
+                else:
+                    raise AssertionError("A Regex file passed an open \\text block.")
 
             # WolfDawn sends a first-line nameplate as the line's speaker
             wolfdawn = import_module("modules.wolfdawn")

@@ -15,7 +15,7 @@ from dotenv import load_dotenv
 from retry import retry
 from tqdm import tqdm
 from util.languages import source_pattern
-from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost, found_mismatch, run_stop_errors
+from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost, reply_to_write, run_stop_errors
 from util.translation_task import fail_on_parser_error, module_receipt, write_output
 from util.sent_lines import SentLines
 from util.speakers import find_speaker
@@ -221,18 +221,13 @@ def translateWOLF(data, pbar, filename):
             response = translateAI(choiceList, "This will be a dialogue option")
             tokens[0] += response[1][0]
             tokens[1] += response[1][1]
-            choiceListTL = response[0]
 
-            # Set Data
-            if len(choiceList) == len(choiceListTL):
-                for index, choice in enumerate(choiceListTL, start=initialIndex):
+            # Set Data, by the one reply rule (reply_to_write)
+            choiceListTL = reply_to_write(response[0], choiceList, MISMATCH, LOCK, filename)
+            for index, choice in enumerate(choiceListTL or [], start=initialIndex):
+                if choice is not None:
                     data[index] = f"//{choice.replace(', ', '、')}\n"
                     checkLine(data, index, filename)
-
-            # Mismatch
-            else:
-                with LOCK:
-                    found_mismatch(MISMATCH, filename)
 
             # The line that ends the options, such as a message, is read next
             continue
@@ -274,13 +269,7 @@ def translateWOLF(data, pbar, filename):
         translatedList = response[0]
 
         # Set Strings
-        if len(lines) == len(translatedList):
-            lines.write(translatedList)
-
-        # Mismatch
-        else:
-            with LOCK:
-                found_mismatch(MISMATCH, filename)
+        lines.write(translatedList, MISMATCH, LOCK, filename)
     return tokens
 
 

@@ -1,7 +1,8 @@
 # Libraries
 import json
 import os
-from util.speakers import strip_speaker_prefix, translate_speaker
+from functools import partial
+from util.speakers import translate_speaker
 import util.dazedwrap as dazedwrap
 import threading
 import time
@@ -13,8 +14,9 @@ from dotenv import load_dotenv
 from retry import retry
 from tqdm import tqdm
 from util.languages import source_pattern
-from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost, report_mismatch, run_stop_errors
+from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost, run_stop_errors
 from util.translation_task import fail_on_parser_error, module_receipt, write_output
+from util.sent_lines import SentLines
 
 # Globals
 MODEL = os.getenv("model")
@@ -137,35 +139,27 @@ TEXT_FIELDS = ("text", "text2", "help1", "help2", "help3", "like", "message", "m
 
 def translateJSON(data, pbar):
     """Walks the entries once: translates each name on the spot and sends
-    the text fields in batches of BATCHSIZE, writing each reply line to the
-    entry and field its source line came from."""
+    the text fields in batches of BATCHSIZE, each line with the entry and
+    field its reply goes to (util/sent_lines)."""
     global PBAR
     PBAR = pbar
     tokens = [0, 0]
     history = []
-    batch = []  # Source lines waiting to be sent
-    slots = []  # The (entry index, field) each line in batch came from
+    batch = SentLines()  # Lines waiting to be sent
+    entries = []  # The entry each line in batch came from
 
     def send():
-        nonlocal history, batch, slots
-        response = translateAI(batch, history)
+        nonlocal history, batch, entries
+        lines = batch.lines
+        response = translateAI(lines, history)
         tokens[0] += response[1][0]
         tokens[1] += response[1][1]
-        translatedBatch = response[0]
-        history = batch[-10:]
-
-        if len(batch) == len(translatedBatch):
-            for (index, field), translatedText in zip(slots, translatedBatch):
-                # A speaker the model added (util/speakers)
-                translatedText = strip_speaker_prefix(translatedText)
-                data[index][field] = dazedwrap.wrapText(translatedText, width=WIDTH)
+        history = lines[-10:]
 
         # Mismatch: the batch keeps its source text
-        else:
-            pbar.write(f"Mismatch: {slots[0][0]} - {slots[-1][0]}")
-            MISMATCH.append(batch)
-            report_mismatch(FILENAME)
-        batch, slots = [], []
+        if not batch.write(response[0], MISMATCH, LOCK, FILENAME):
+            pbar.write(f"Mismatch: {entries[0]} - {entries[-1]}")
+        batch, entries = SentLines(), []
 
     for index, item in enumerate(data):
         # Speaker
@@ -187,8 +181,11 @@ def translateJSON(data, pbar):
             if FIXTEXTWRAP:
                 jaString = jaString.replace("\n", " ")
 
-            batch.append(jaString)
-            slots.append((index, field))
+            # A line of spaces alone sends nothing; a speaker the model
+            # added is taken off its reply (util/speakers)
+            batch.send(jaString, partial(_write_field, item, field))
+            if len(batch) > len(entries):
+                entries.append(index)
             if len(batch) == BATCHSIZE:
                 send()
 
@@ -196,6 +193,12 @@ def translateJSON(data, pbar):
     if batch:
         send()
     return tokens
+
+
+def _write_field(item, field, translatedText):
+    """Writes a reply to *item*'s *field*, wrapped."""
+    item[field] = dazedwrap.wrapText(translatedText, width=WIDTH)
+
 
 # Save some money and enter the character before translation
 def getSpeaker(speaker):
