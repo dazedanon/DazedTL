@@ -245,6 +245,7 @@ Shortcuts come from [useShortcut](../app/src/state/useShortcut.ts), scoped to th
 - Work items say where they stand in one vocabulary, the display states in [displayStatus.ts](../app/src/ui/displayStatus.ts), each with one mark; each feature maps its own states there and keeps its specific reason in the item's detail.
 - Waiting means the work is with an assistant, never that the app is running something; Done is finished work that never writes into the game; Outdated marks a saved result whose basis changed before it went into the game, while edits after it was applied leave it as it was.
 - Action controls pair the shared pending button and status feedback with `useAction`'s guarded action key; a result or disabled reason sits beside its own control, so buttons keep their place.
+- A confirmation with nothing left to do, such as a copy, fades away by itself in [FadingNote](../app/src/ui/FadingNote.tsx); failures and results the user still acts on stay.
 - Each status shows once: a heading that shows an action's outcome names that action's key, and while it says Done or Applied the control leaves out its success; pending work and failures always stay beside the control.
   [FeedbackOwners](../app/src/ui/FeedbackOwners.tsx) links the two, and saved operations carry their action identity, so feedback stays beside the right control after navigation or restart.
 - Keep failures beside their action or in the run or file inspector; never collect historical errors into page-wide reminders or counters.
