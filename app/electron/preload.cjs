@@ -22,6 +22,7 @@ contextBridge.exposeInMainWorld("dazedtl", {
   copyDiagnostics: () => invoke("dazedtl:copy-diagnostics"),
   copyProblemReport: (context) =>
     invoke("dazedtl:copy-problem-report", context),
+  copyFixTask: (context) => invoke("dazedtl:copy-fix-task", context),
   reportRendererError: (failure) => invoke("dazedtl:renderer-error", failure),
   reloadInterface: () => invoke("dazedtl:reload-interface"),
   chooseFolder: () => invoke("dazedtl:choose-folder"),

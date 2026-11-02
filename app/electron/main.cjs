@@ -381,6 +381,19 @@ app
         throw new Error("The report could not be copied. Try again.");
       }
     });
+    ipcMain.handle("dazedtl:copy-fix-task", async (event, context) => {
+      trusted(event);
+      try {
+        await clipboard.writeText(
+          await diagnostics.fixTask(
+            context && typeof context === "object" ? context : {},
+          ),
+        );
+      } catch (error) {
+        diagnostics.failure("desktop.error", error, { operation: "native" });
+        throw new Error("The task could not be copied. Try again.");
+      }
+    });
     ipcMain.handle("dazedtl:renderer-error", (event, failure) => {
       trusted(event);
       if (!["render", "error", "unhandledrejection"].includes(failure?.reason))

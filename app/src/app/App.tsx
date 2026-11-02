@@ -41,7 +41,7 @@ import { Menu, MenuItem, MenuSeparator } from "../ui/Menu";
 import { RecentProjectName } from "../features/project/RecentProject";
 import { Button } from "../ui/Button";
 import { Message } from "../ui/Feedback";
-import { ProblemReportAction } from "./ProblemReportAction";
+import { ShareActions } from "./ShareActions";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { LanguagesProvider } from "./LanguagesProvider";
 import { OriginalRecordProvider } from "../ui/OriginalRecord";
@@ -373,7 +373,7 @@ export default function App() {
                 <BookOpen size={18} />
                 Guide
               </Button>
-              <ProblemReportAction project={project} />
+              <ShareActions project={project} />
               <Button
                 aria-current={state?.screen === "settings" ? "page" : undefined}
                 disabled={!state}

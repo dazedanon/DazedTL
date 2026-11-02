@@ -111,7 +111,8 @@
   flex-direction: column;
   gap: var(--space-1);
 }
-.sidebar button {
+/* Entries, not a link in the feedback line below them. */
+.sidebar button:not(.link-button) {
   width: 100%;
   min-height: 38px;
   justify-content: flex-start;
@@ -152,8 +153,10 @@
   padding-top: var(--space-3);
   border-top: 1px solid var(--color-border);
 }
+/* The column's gap spaces it from the entries around it, and its text starts
+   where their icons do, inside their 1px border. */
 .sidebar-feedback {
-  margin: 0 var(--space-3) var(--space-1);
+  margin: 0 calc(var(--space-3) + 1px);
   font-size: var(--font-small);
   color: var(--color-muted);
 }
@@ -185,7 +188,7 @@ main > p {
     width: var(--rail-width);
     padding-inline: var(--space-1);
   }
-  .sidebar button {
+  .sidebar button:not(.link-button) {
     flex-direction: column;
     justify-content: center;
     gap: var(--space-1);

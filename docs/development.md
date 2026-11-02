@@ -158,6 +158,14 @@ Test updater changes with both `patch.ps1` on Windows and `patch.sh` on Linux.
 
 Work on `dev`; `main` always holds the latest stable release, so a ZIP of `main` from any mirror is a release.
 
+### Contributing a change
+
+1. Fork DazedTL on any mirror in [mirrors.json](../release/mirrors.json) and branch from `dev`.
+2. Follow [Setup](#setup), make the change with its test as [AGENTS.md](../AGENTS.md) says, and run the [checks](#checks).
+3. Open a pull request against `dev` on that mirror.
+
+A fix you found in a game but didn't code can go through the guide's [Share a fix](user-guide.md#contributing) instead.
+
 ### Landing
 
 `node scripts/land.mjs --review <file.json>` lands a finished branch on `dev` from its worktree: it formats the branch, merges `dev` into it, runs the tests and build checks, fast-forwards the main checkout's `dev` and pushes it to every mirror.
