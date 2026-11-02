@@ -704,15 +704,41 @@ class ImageTests(unittest.TestCase):
         )
         self.assertEqual((self.game / unit["translation"]).read_bytes(), candidate)
 
-    def test_partial_reports_do_not_certify_detector_misses_or_replace_manual_exclusions(
-        self,
-    ):
-        request, _ = self.request("discovery_task", ["img/A.png", "img/B.png"])
-        self.service.action(
-            self.identity,
-            "exclude",
-            {"asset_ids": ["img/B.png"], "reason": "User keeps this variant."},
+    def test_an_image_a_report_excludes_is_a_finding_the_user_can_translate(self):
+        # Protect against a discovery report's exclusion reading as the
+        # translation's skip: the image stays unticked, but once the user
+        # ticks it, it is translated like any other.
+        request, _ = self.request("discovery_task", ["img/A.png"])
+        self.choose([])
+        state = self.report(
+            request,
+            [
+                {
+                    "id": "img/A.png",
+                    "sourceHash": request["assets"][0]["sourceHash"],
+                    "classification": "excluded",
+                    "method": "visual",
+                    "examined": True,
+                    "reason": "A video listing.",
+                    "evidence": "contact sheet 1, cell 1",
+                    "variants": [],
+                }
+            ],
+            True,
+        )["state"]
+        self.assertEqual(state["selection"], [])
+        item = self.service.list(self.identity, asset_id="img/A.png")["items"][0]
+        self.assertEqual(
+            (item["classification"], item["state"]), ("excluded", "not_prepared")
         )
+        self.choose(["img/A.png"])
+        counts = self.service.state(self.identity)["counts"]
+        self.assertEqual(counts["selectedSkipped"], 0)
+        editing, _ = self.request("edit_task")
+        self.assertEqual([asset["id"] for asset in editing["assets"]], ["img/A.png"])
+
+    def test_partial_reports_do_not_certify_detector_misses(self):
+        request, _ = self.request("discovery_task", ["img/A.png", "img/B.png"])
         assets = {row["id"]: row for row in request["assets"]}
         self.report(
             request,
@@ -738,35 +764,6 @@ class ImageTests(unittest.TestCase):
                 "classification"
             ],
             "not_examined",
-        )
-        self.report(
-            request,
-            [
-                {
-                    "id": "img/B.png",
-                    "sourceHash": assets["img/B.png"]["sourceHash"],
-                    "classification": "recommended",
-                    "method": "visual",
-                    "examined": True,
-                    "reason": "Japanese label",
-                    "evidence": "contact sheet 2, cell 3",
-                    "variants": [],
-                }
-            ],
-        )
-        self.assertEqual(
-            self.service.list(self.identity, asset_id="img/B.png")["items"][0][
-                "classification"
-            ],
-            "excluded",
-        )
-        self.assertEqual(self.service.state(self.identity)["counts"]["examined"], 1)
-        self.service.action(self.identity, "include", {"asset_ids": ["img/B.png"]})
-        self.assertEqual(
-            self.service.list(self.identity, asset_id="img/B.png")["items"][0][
-                "classification"
-            ],
-            "recommended",
         )
 
     def test_changed_candidates_invalidate_review_and_batch_authorization_is_one_use(
@@ -971,7 +968,7 @@ class ImageTests(unittest.TestCase):
         self.assertEqual(preview["included"], 0)
         self.assertEqual(preview["blocked"][0]["id"], "img/A.png")
 
-    def test_a_user_review_of_the_edited_copy_lifts_a_skip_or_exclusion(self):
+    def test_a_user_review_of_the_edited_copy_lifts_a_skip(self):
         # The assistant skipped an image whose edited copy the user wants.
         self.choose(["img/A.png"])
         self.service.action(self.identity, "prepare")
@@ -1012,11 +1009,6 @@ class ImageTests(unittest.TestCase):
         review = {"asset_ids": ["img/A.png"], "reviewed": False}
         self.service.action(self.identity, "user_review", review)
         self.assertEqual(item()["state"], "skipped")
-        self.service.action(
-            self.identity,
-            "exclude",
-            {"asset_ids": ["img/A.png"], "reason": "Decorative."},
-        )
         self.service.action(self.identity, "user_review", {"asset_ids": ["img/A.png"]})
         self.assertEqual(item()["state"], "ready")
         # Once in the game it stays applied, though the game's file it was

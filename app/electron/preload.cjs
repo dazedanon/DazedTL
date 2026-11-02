@@ -22,6 +22,7 @@ contextBridge.exposeInMainWorld("dazedtl", {
   copyDiagnostics: () => invoke("dazedtl:copy-diagnostics"),
   copyProblemReport: (context) =>
     invoke("dazedtl:copy-problem-report", context),
+  copyFixTask: (context) => invoke("dazedtl:copy-fix-task", context),
   reportRendererError: (failure) => invoke("dazedtl:renderer-error", failure),
   reloadInterface: () => invoke("dazedtl:reload-interface"),
   chooseFolder: () => invoke("dazedtl:choose-folder"),
@@ -29,6 +30,11 @@ contextBridge.exposeInMainWorld("dazedtl", {
   openFolder: (kind, target) => invoke("dazedtl:open-folder", kind, target),
   notify: (message) => invoke("dazedtl:notify", message),
   phone: (message) => invoke("dazedtl:phone", message),
+  guide: {
+    read: () => invoke("dazedtl:guide-read"),
+    image: (source) => invoke("dazedtl:guide-image", source),
+    open: (href) => invoke("dazedtl:guide-open", href),
+  },
   sound: {
     read: () => invoke("dazedtl:sound-read"),
     choose: () => invoke("dazedtl:sound-choose"),

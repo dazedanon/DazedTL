@@ -283,6 +283,51 @@ test("the problem report fills in the open game and keeps the newest errors with
   assert.ok(report.length < 1400, `${report.length} characters`);
 });
 
+test("Share a fix's task opens with the open game's facts and nothing else the app holds", async (t) => {
+  const checkout = fs.mkdtempSync(path.join(os.tmpdir(), "dazedtl-fix-"));
+  t.after(() => fs.rmSync(checkout, { recursive: true, force: true }));
+  const skills = path.join(checkout, "backend/dazedtl/engine/data/skills");
+  fs.mkdirSync(skills, { recursive: true });
+  fs.copyFileSync(
+    new URL(
+      "../backend/dazedtl/engine/data/skills/share_fix.md",
+      import.meta.url,
+    ),
+    path.join(skills, "share_fix.md"),
+  );
+  const diagnostics = new Diagnostics(
+    path.join(checkout, "diagnostics"),
+    { app: "fixture" },
+    checkout,
+  );
+  fs.writeFileSync(
+    path.join(checkout, "diagnostics/backend-failures.jsonl"),
+    JSON.stringify({
+      time: "2026-11-02T10:00:00.000Z",
+      event: "worker.error",
+      action: "fit_text",
+      message: "sk-ant-private",
+    }),
+  );
+  const task = await diagnostics.fixTask({
+    game: "Sword $& Quest",
+    engine: "RPG Maker MV / MZ",
+    mode: "Guided steps",
+    // Only the game's name, engine and mode are the renderer's to fill in.
+    apiKey: "sk-ant-private",
+  });
+  assert.match(task, /^\*\*DazedTL version:\*\* fixture$/m);
+  assert.match(task, /^\*\*System:\*\* \S/m);
+  assert.match(task, /^\*\*Game:\*\* Sword \$& Quest \(RPG Maker MV \/ MZ\)$/m);
+  assert.match(task, /^\*\*Mode:\*\* Guided steps$/m);
+  assert.doesNotMatch(task, /\{facts\}|sk-ant|fit_text/);
+  // With no game open, the assistant fills the game in from its folder.
+  assert.match(
+    await diagnostics.fixTask(),
+    /^\*\*DazedTL version:\*\* fixture\n\*\*System:\*\* .+\n\*\*Game:\*\* \n\*\*Mode:\*\* $/m,
+  );
+});
+
 test("a forced backend stop also ends workers in sessions of their own and the commands it waits on", async (t) => {
   // Stands in for the backend: a worker in its own session and a hung Git
   // command, both idle until stopped.

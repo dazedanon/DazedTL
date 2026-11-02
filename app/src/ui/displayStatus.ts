@@ -46,9 +46,9 @@ export const displayMarks: Record<DisplayState, StatusKind> = {
 
 /**
  * An Image Manager asset. Discovery findings stay a filter, except that an
- * image found to have nothing to translate, scene sound effects included, is
- * skipped and an uncertain one needs a decision, until the user lists the
- * image to translate.
+ * image found to have nothing to translate, scene sound effects or an
+ * exclusion included, is skipped and an uncertain one needs a decision, until
+ * the user lists the image to translate.
  */
 export function imageDisplay(
   asset: {
@@ -77,7 +77,7 @@ export function imageDisplay(
     case "error":
       return "blocked";
   }
-  if (listed && asset.classification !== "excluded") return "not_started";
+  if (listed) return "not_started";
   if (
     ["no_text", "already_english", "sound_effects", "excluded"].includes(
       asset.classification,

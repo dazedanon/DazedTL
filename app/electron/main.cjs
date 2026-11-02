@@ -19,6 +19,7 @@ const { rendererRecovery } = require("./renderer-recovery.cjs");
 const { Updates } = require("./updates.cjs");
 const { NotificationSound } = require("./sound.cjs");
 const { sendToPhone } = require("./phone.cjs");
+const { Guide } = require("./guide.cjs");
 
 app.setName("DazedTL");
 const appId = "dev.dazedtl.app";
@@ -380,6 +381,19 @@ app
         throw new Error("The report could not be copied. Try again.");
       }
     });
+    ipcMain.handle("dazedtl:copy-fix-task", async (event, context) => {
+      trusted(event);
+      try {
+        await clipboard.writeText(
+          await diagnostics.fixTask(
+            context && typeof context === "object" ? context : {},
+          ),
+        );
+      } catch (error) {
+        diagnostics.failure("desktop.error", error, { operation: "native" });
+        throw new Error("The task could not be copied. Try again.");
+      }
+    });
     ipcMain.handle("dazedtl:renderer-error", (event, failure) => {
       trusted(event);
       if (!["render", "error", "unhandledrejection"].includes(failure?.reason))
@@ -560,6 +574,19 @@ app
         );
       const error = await shell.openPath(folder);
       if (error) throw new Error(error);
+    });
+    const guide = new Guide(root);
+    ipcMain.handle("dazedtl:guide-read", (event) => {
+      trusted(event);
+      return guide.read();
+    });
+    ipcMain.handle("dazedtl:guide-image", (event, source) => {
+      trusted(event);
+      return guide.image(source);
+    });
+    ipcMain.handle("dazedtl:guide-open", async (event, href) => {
+      trusted(event);
+      await shell.openExternal(guide.link(href));
     });
     const bringBack = () => {
       if (window.isDestroyed()) return;

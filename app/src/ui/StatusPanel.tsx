@@ -1,4 +1,5 @@
 import { useId, type ReactNode } from "react";
+import type { GuideSection } from "./guideSections";
 import { HelpPopover } from "./HelpPopover";
 import type { DisplayState } from "./displayStatus";
 import { StatusMark } from "./StatusMark";
@@ -14,6 +15,7 @@ export function StatusPanel({
   progress,
   description,
   help,
+  guide,
   className = "",
   children,
 }: {
@@ -24,6 +26,8 @@ export function StatusPanel({
   description?: ReactNode;
   /** Background on what the panel shows and does not show. */
   help?: ReactNode;
+  /** The guide's section on the panel's work, linked from its help. */
+  guide?: GuideSection;
   className?: string;
   children?: ReactNode;
 }) {
@@ -37,7 +41,11 @@ export function StatusPanel({
       <div className="status-panel-header panel-header">
         <div className="status-panel-title">
           <h3 id={heading}>{title}</h3>
-          {help && <HelpPopover label={title}>{help}</HelpPopover>}
+          {help && (
+            <HelpPopover label={title} guide={guide}>
+              {help}
+            </HelpPopover>
+          )}
           <span className="status-panel-state">
             <StatusMark state={state} />
             {progress && <span>{progress}</span>}

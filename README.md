@@ -105,7 +105,7 @@ After that, open DazedTL from the Start menu or desktop shortcut, or your Linux 
 2. Open **Project**, click **Open a game**, pick the game's folder and choose how to translate it.
 3. Follow the steps, and paste each task DazedTL copies into your assistant.
 
-The [user guide](docs/user-guide.md) explains every step.
+The [user guide](docs/user-guide.md) explains every step; in DazedTL, **Guide** in the sidebar opens it.
 
 ## Updates
 

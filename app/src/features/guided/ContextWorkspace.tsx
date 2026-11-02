@@ -80,6 +80,8 @@ export function ContextWorkspace({
                   ? "Results appear here as your assistant saves them."
                   : "Your assistant finds speaker formats, running jokes and terms, and writes the glossary and game context; a local scan collects names."
         }
+        help="Speaker names tell each translation who is talking. Once your assistant saves the speaker formats, run the local scan under Speaker names, before you translate Maps & events."
+        guide="common-problems"
         results={results.map((row) => ({
           id: row.id,
           title: row.title,
