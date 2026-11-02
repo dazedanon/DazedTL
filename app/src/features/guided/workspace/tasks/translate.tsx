@@ -3,8 +3,10 @@ import type { ReactNode } from "react";
 import { api } from "../../../../api/client";
 import { Button } from "../../../../ui/Button";
 import { ExpandableText } from "../../../../ui/ExpandableText";
+import { StatusIcon } from "../../../../ui/StatusIcon";
 import { RunFailure } from "../../RunFailure";
 import { TranslateWorkspace } from "../../TranslateWorkspace";
+import { speakerNotice } from "../../contextView";
 import { nothingToTranslate } from "../../eventTextSelection";
 import { historyWhen } from "../../historyView";
 import {
@@ -253,6 +255,9 @@ export function phaseView(w: GuidedWorkspace): TaskView {
     (applyCounting && "Counting lines…") ||
     // The files' rows read Applied, so Apply has nothing to do.
     (!unappliedFiles.length && "Nothing new to apply.");
+  // Only Maps & events sends the messages speakers name, and the notice
+  // never holds up a run.
+  const speakers = phase === "dialogue" ? speakerNotice(state) : "";
   const guidance = !selectedNames.length
     ? "Select files to translate."
     : !baseline
@@ -279,11 +284,14 @@ export function phaseView(w: GuidedWorkspace): TaskView {
                     : "Earlier Batches are available in Run history. Translate starts a new estimate."
                   : noRemainingWork
                     ? "Checked these files: no new API requests are needed."
-                    : "Translate prepares an estimate for your approval.";
+                    : speakers ||
+                      "Translate prepares an estimate for your approval.";
   const footerGuidance =
     (runNotices.includes(action.key) && action.notice) ||
     translationFlow.notice ||
     guidance;
+  // The speaker notice links to the Context task that sets speakers up.
+  const speakersShown = !!speakers && footerGuidance === speakers;
   actionContext = (
     <div className="translation-action-scope">
       {/* Apply's label counts the saved files left to apply. */}
@@ -297,7 +305,17 @@ export function phaseView(w: GuidedWorkspace): TaskView {
           label="Translate guidance"
           appearance="inline"
           lines={1}
+          lead={speakersShown && <StatusIcon status="warning" size={14} />}
         />
+        {speakersShown && (
+          <Button
+            variant="link"
+            disabled={action.busy}
+            onClick={() => stepTask("names")}
+          >
+            Set up speakers
+          </Button>
+        )}
       </small>
     </div>
   );

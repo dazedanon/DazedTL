@@ -327,16 +327,27 @@
   line-height: calc(var(--control-height) / 2);
 }
 .translation-action-scope small {
-  display: block;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
   /* A guidance line shortens with the bar's room and keeps a Show more for
-     all of it; an expanded one scrolls in its own space. */
+     all of it; an expanded one scrolls in its own space. A link after it,
+     such as the speaker notice's, keeps its whole label. */
   color: var(--color-muted);
   font: inherit;
 }
 .translation-action-scope small > .expandable-text {
   display: block;
+  min-width: 0;
   max-height: 12rem;
   overflow-y: auto;
+}
+.translation-action-scope small > .link-button {
+  flex: none;
+  line-height: inherit;
+}
+.translation-action-scope .status-icon {
+  margin-inline-end: var(--space-1);
 }
 .translation-preview-check {
   font-size: var(--font-small);
