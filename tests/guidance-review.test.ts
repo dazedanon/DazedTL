@@ -5,7 +5,10 @@ import {
   guidanceAvailability,
   guidanceNames,
 } from "../app/src/features/guided/guidanceReview.ts";
-import { investigationResults } from "../app/src/features/guided/contextView.ts";
+import {
+  investigationResults,
+  speakerNotice,
+} from "../app/src/features/guided/contextView.ts";
 
 test("investigation progress retains saved artifacts through settings changes and unsuccessful rescans", () => {
   const state = {
@@ -53,6 +56,32 @@ test("investigation progress retains saved artifacts through settings changes an
     investigationResults(state).find((row) => row.id === "guidance")!.saved,
     false,
   );
+});
+
+test("Maps & events warns about speakers until a saved scan found names, whatever formats were enabled", () => {
+  const state = {
+    speakerSetup: { status: "missing", reportId: null, rules: [] },
+    speakerScan: { available: false, current: false, names: [], job: null },
+    contextSetup: { documents: {} },
+  } as unknown as Pick<
+    GuidedState,
+    "speakerSetup" | "speakerScan" | "contextSetup"
+  >;
+  assert.match(speakerNotice(state), /^Speakers aren't set up\./);
+  // Every optional format skipped, as for a game with no speakers.
+  state.speakerSetup = {
+    ...state.speakerSetup,
+    status: "applied",
+    reportId: "saved",
+  };
+  state.speakerScan.available = true;
+  assert.match(speakerNotice(state), /^No speakers found\./);
+  // MZ's own name box needs no optional format.
+  state.speakerScan.names = ["村長"];
+  assert.equal(speakerNotice(state), "");
+  // A rescan that did not finish keeps the saved names.
+  state.speakerScan.job = { status: "failed" } as never;
+  assert.equal(speakerNotice(state), "");
 });
 
 test("guidance completion follows file presence independently of old review and investigation state", () => {

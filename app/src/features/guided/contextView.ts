@@ -93,3 +93,17 @@ export function investigationResults(
     },
   ];
 }
+
+/**
+ * What Maps & events says before it sends text with no speakers set up: the
+ * speaker scan has no saved result, or found no names. A game without
+ * speakers is a valid outcome, so it never refuses the run.
+ */
+export function speakerNotice(
+  state: Pick<GuidedState, "speakerSetup" | "speakerScan" | "contextSetup">,
+) {
+  const names = investigationResults(state).find((row) => row.id === "names")!;
+  const advice = "If this game shows speaker names, set them up first.";
+  if (!names.saved) return `Speakers aren't set up. ${advice}`;
+  return state.speakerScan.names.length ? "" : `No speakers found. ${advice}`;
+}
