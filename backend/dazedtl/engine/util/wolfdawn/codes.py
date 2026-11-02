@@ -30,8 +30,6 @@ WOLF_INLINE_CODE_RE = re.compile(
     r")"
 )
 
-# Placeholder transport (same convention as util.translation.protect_script_codes).
-_PLACEHOLDER_PREFIX = "__WOLF_CODE_"
 
 # Furigana/ruby is source-language display markup. English output intentionally
 # removes it after exposing the base spelling to the translation model.
@@ -495,86 +493,6 @@ def rebuild_text_preserving_source_codes(source: str, text: str) -> str:
     txt_rest = _fix_spurious_spaces_in_codes(src_rest, txt_rest)
     txt_rest = _fix_spurious_whitespace_in_bracketed_codes(src_rest, txt_rest)
     return out_prefix + txt_rest
-
-
-def protect_wolf_codes(
-    text: str,
-    cdb_lookup: dict[str, str] | None = None,
-) -> tuple[str, dict[str, str]]:
-    """Protect inline codes while exposing ruby/CDB meaning to the model.
-
-    Ruby is replaced directly with its base spelling because English output does
-    not need furigana. Resolved ``\\cdb`` strings are placed between stable
-    context markers; those spans are restored to the original byte-exact lookup
-    code before WolfDawn injection.
-    """
-    if not text or not isinstance(text, str):
-        return text, {}
-    replacements: dict[str, str] = {}
-    counter = 0
-
-    def _sub(m: re.Match) -> str:
-        nonlocal counter
-        original = m.group(0)
-        visible = ""
-        if original.startswith(r"\r["):
-            ruby = original[3:-1]
-            # Keep the source-language spelling visible to the model and omit
-            # the ruby code from English writeback entirely.
-            return ruby.split(",", 1)[0].strip()
-        elif original.startswith(r"\cdb[") and cdb_lookup:
-            visible = cdb_lookup.get(original[5:-1], "").strip()
-
-        if visible:
-            key = f"__WOLF_CONTEXT_{counter}"
-            replacements[key] = original
-            counter += 1
-            return f"{key}_START__{visible}{key}_END__"
-
-        key = f"{_PLACEHOLDER_PREFIX}{counter}__"
-        replacements[key] = original
-        counter += 1
-        return key
-
-    protected = WOLF_INLINE_CODE_RE.sub(_sub, text)
-    return protected, replacements
-
-
-def restore_wolf_code_placeholders(text: str, replacements: dict[str, str]) -> str:
-    if not text or not replacements:
-        return text
-    out = text
-    for key, original in replacements.items():
-        if key.startswith("__WOLF_CONTEXT_"):
-            span = re.compile(
-                re.escape(f"{key}_START__")
-                + r".*?"
-                + re.escape(f"{key}_END__"),
-                re.DOTALL,
-            )
-            out = span.sub(lambda _match: original, out)
-        else:
-            out = out.replace(key, original)
-    return out
-
-
-def wolf_code_placeholders_preserved(
-    text: str, replacements: dict[str, str]
-) -> bool:
-    """Return True when every protected code marker survived exactly once."""
-    if not replacements:
-        return True
-    if not isinstance(text, str):
-        return False
-    for key in replacements:
-        if key.startswith("__WOLF_CONTEXT_"):
-            if text.count(f"{key}_START__") != 1:
-                return False
-            if text.count(f"{key}_END__") != 1:
-                return False
-        elif text.count(key) != 1:
-            return False
-    return True
 
 
 def repair_entry(entry: dict[str, Any]) -> tuple[bool, str]:

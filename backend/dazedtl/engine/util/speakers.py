@@ -2,16 +2,12 @@
 
 One home for everything speaker-related so ``util/`` does not sprawl:
 
-* **Prefix parsing** - the ``[Speaker]: line`` convention the shared prompt uses.
-  Widely imported by the engine modules to add the tag to a request's line and
-  strip it off translated text.
+* **Prefix parsing** - the ``[Speaker]: line`` convention the shared prompt uses,
+  to add the tag to a request's line and strip it off translated text.
 * **Inline speakers** - a dialogue line that starts with its speaker's name,
   which the RPG Maker MV/MZ parser reads with INLINE401SPEAKERS.
 * **WOLF first-line reshaping** - WolfDawn bakes some speaker names into line 1
-  of the source; these helpers reshape those lines into ``[Speaker]: line`` for
-  translation and restore WOLF's native ``Speaker\nline`` layout afterwards.
-* **Speakers in the plain engine modules** - finding a speaker by an engine's
-  own syntax, translating its name once, and writing back only the name.
+  of the source; these helpers split those lines for the WOLF tools.
 """
 
 from __future__ import annotations
@@ -21,9 +17,8 @@ import re
 from collections.abc import Callable
 from typing import NamedTuple
 
-from util.languages import ENGLISH, shares_kanji
+from util.languages import shares_kanji
 from util.paths import DATA_DIR
-from util.target_text import name_translated, title_case
 
 # ============================================================================
 # [Speaker]: prefix parsing
@@ -40,17 +35,6 @@ SPEAKER_BRACKET_INNER = r"(?:\\[A-Za-z]+\[[^\]]*\]|[^\]\n])+"
 # A bare [Speaker]: / [Speaker]| / [Speaker]： prefix.
 _PREFIX_PATTERN = rf"^\[{SPEAKER_BRACKET_INNER}\]\s*[|:：]\s*"
 SPEAKER_PREFIX_RE = re.compile(_PREFIX_PATTERN, re.IGNORECASE)
-
-SPEAKER_TAG_RE = re.compile(
-    rf"^\[({SPEAKER_BRACKET_INNER})\]",
-    re.IGNORECASE,
-)
-
-# Dialogue body after an optional [Speaker]: prefix (text.py lineTextRegex, etc.)
-SPEAKER_PREFIX_OPTIONAL_RE = re.compile(
-    rf"(?:{_PREFIX_PATTERN})?(.+)",
-    re.IGNORECASE,
-)
 
 
 # A names pass translates the speakers of many files together, so its requests
@@ -122,37 +106,6 @@ def strip_speaker_prefix(text: str, speaker: str = "") -> str:
     if end is not None:
         return text[end:]
     return SPEAKER_PREFIX_RE.sub("", text, count=1)
-
-
-# A Japanese name a model put before a line it translated, as in ミカ：Hello
-# or ミカ(Hello), and the closing parenthesis such a line ends with.
-_ECHOED_NAME_RE = re.compile(r"^[一-龠ぁ-ゔァ-ヴーａ-ｚＡ-Ｚ０-９\uFF61-\uFF9F]+\s*[\(（:]\s*")
-_ECHOED_CLOSE_RE = re.compile(r"\s*[)）]\s*$")
-
-
-def strip_echoed_speaker(text: str, language, speaker: str = "") -> str:
-    """A translated line without the speaker a model echoed: a
-    ``[Speaker]:`` prefix (strip_speaker_prefix, with the *speaker* the line
-    was sent with), or else, for a target written in another script than
-    Japanese, a leading Japanese name with ``(`` or ``:``. A Chinese or
-    Japanese target writes such a word as text (util/target_text)."""
-    from util.target_text import full_width
-
-    stripped = strip_speaker_prefix(text, speaker)
-    if stripped != text or full_width(language):
-        return stripped
-    echoed = _ECHOED_NAME_RE.match(text)
-    if not echoed:
-        return text
-    return _ECHOED_CLOSE_RE.sub("", text[echoed.end():])
-
-
-def extract_dialogue_after_speaker(text: str) -> str | None:
-    """Return dialogue body after an optional ``[Speaker]:`` prefix, or ``None``."""
-    if not text:
-        return None
-    m = SPEAKER_PREFIX_OPTIONAL_RE.match(text)
-    return m.group(1) if m else None
 
 
 # ============================================================================
@@ -236,9 +189,6 @@ def inline_speaker(text: str, form: str = ANY) -> InlineSpeaker | None:
 # (``data/wolf_speakers.json``), recommended by the workflow's speaker-format AI
 # prompt rather than guessed by hand.
 # ============================================================================
-
-# speaker_src values whose name is baked into line 1 of the source text.
-FIRSTLINE_SRCS = ("literal_line1", "literal_line1_lowconf")
 
 # Reliable nameplate - always reshaped, not user-configurable.
 ALWAYS_ON_SRCS = ("literal_line1",)
@@ -326,114 +276,3 @@ def split_source(source: str, speaker_src: str, config: dict | None = None):
     if not line1.strip():
         return None
     return prefix, line1, body
-
-
-def parse_prefixed(text: str, speaker: str = ""):
-    """Parse a translated ``[Speaker]: body`` string.
-
-    Returns (speaker, body). ``speaker`` is ``None`` when the model did not emit a
-    ``[Speaker]:`` prefix, in which case ``body`` is the whole string. The
-    *speaker* the line was sent with is read whatever it holds, as
-    strip_speaker_prefix reads it.
-    """
-    if not isinstance(text, str):
-        return None, text
-    end = _sent_label_end(text, speaker)
-    if end is not None:
-        return speaker, text[end:]
-    m = SPEAKER_TAG_RE.match(text)
-    if not m:
-        return None, text
-    return m.group(1).strip(), strip_speaker_prefix(text)
-
-
-def restore_source(prefix: str, speaker: str, body: str) -> str:
-    """Rebuild WOLF's native ``Speaker\nbody`` layout (with any window prefix)."""
-    return f"{prefix}{speaker}\n{body}"
-
-
-# ============================================================================
-# Speakers in the plain engine modules
-# ----------------------------------------------------------------------------
-# A plain engine module (Text, Regex, Tyrano, Kirikiri, WOLF2, CSV, Lune and
-# WOLF's wolf.py) finds a speaker by its engine's own syntax (find_speaker),
-# translates the name through translate_speaker, writes back only the name
-# (FoundSpeaker.written), sends the lines the speaker says as
-# ``[Speaker]: line`` (to_prefixed) and takes that prefix off each reply line
-# (strip_speaker_prefix with the speaker); the modules but WOLF's send and
-# write their lines through util/sent_lines, which does both. A speaker says
-# only the lines its engine's syntax gives it, never lines after them that
-# name no speaker. translate_speaker answers a name it translated, or a
-# translation it gave, from its cache at no cost, so a module that finds a
-# name again where it wrote it pays nothing for it.
-# ============================================================================
-
-
-class FoundSpeaker(NamedTuple):
-    """A speaker's *name* in *line*, from *start* to *end*."""
-
-    name: str
-    line: str
-    start: int
-    end: int
-
-    def written(self, translated: str) -> str:
-        """The line with only the name replaced by *translated*: the rest of
-        the line, such as a voice file named after the speaker, stays."""
-        return self.line[: self.start] + translated + self.line[self.end :]
-
-
-def find_speaker(syntax, line: str) -> FoundSpeaker | None:
-    """The speaker *line* names in an engine's *syntax*, a pattern whose first
-    group is the name, or None."""
-    match = re.search(syntax, line)
-    if match is None or match.group(1) is None:
-        return None
-    return FoundSpeaker(match.group(1), line, match.start(1), match.end(1))
-
-
-def name_reply(reply: str, language) -> str:
-    """A model's reply for a speaker name, as an engine writes it: its first
-    line that holds anything, as the name is written on its own line or
-    inside a tag, where more lines would add lines to the file and a model's
-    later lines are a note or the name again; title-cased for a Latin target
-    and without a stray ``Speaker: `` echo."""
-    if "\n" in reply or "\r" in reply:
-        reply = next((line.strip() for line in reply.splitlines() if line.strip()), "")
-    return title_case(reply, language).replace("'S", "'s").replace("Speaker: ", "")
-
-
-# Names every engine writes alike, and the target language each needs (None:
-# any)
-_FIXED_NAMES = {"？？？": ("???", None), "ファイン": ("Fine", ENGLISH)}
-
-
-def translate_speaker(speaker, names, language, translate):
-    """A speaker name translated once per run: ``[translated, [in, out tokens]]``.
-
-    *names* is the module's ``[original, translated]`` cache and gains each new
-    name; *translate* is its ``translateAI``. A name the cache gave as a
-    translation is answered as it is, at no cost, as a module finds it again
-    where it wrote it. A reply is read by name_reply and asked for once more
-    when it does not read as a translation.
-    """
-    if not speaker:
-        return ["", [0, 0]]
-    for original, translated in names:
-        if speaker == original:
-            return [translated, [0, 0]]
-    if any(speaker == translated for _original, translated in names):
-        return [speaker, [0, 0]]
-    fixed, fixed_language = _FIXED_NAMES.get(speaker, (None, None))
-    if fixed is not None and fixed_language in (None, language):
-        names.append([speaker, fixed])
-        return [fixed, [0, 0]]
-
-    prompt = "Reply with the " + language + " translation of the NPC name."
-    for _ in range(2):
-        response = translate(speaker, prompt, False)
-        response[0] = name_reply(response[0], language)
-        if name_translated(response[0], language):
-            break
-    names.append([speaker, response[0]])
-    return response

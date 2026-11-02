@@ -10,7 +10,7 @@ Text is inside compiled event code - decompile to reach it.
 - `tools/C++/Wolf/` - `wolf_rpg_decode` and `wolf_unpack` (Rust sources; build with `cargo build --release`), `parse_ce.py`/`analyze.py` and the `RE/` notes. The IDA `.i64` databases and decompiled CommonEvent dumps are not bundled.
 - **Wolf + Mistral pipeline** (prompt, glossary, build scripts, runtime-key locking): `tools/Reference Pipelines/Wolf RPG (Pachimon)/` - `prompt.md`, `glossary.md`, `translate_mistral.py`, and the `build_*`/`dump_db_structure.py`/`sync_runtime_lookup_terms.py` scripts that separate visible DB/UI text from protected runtime lookup keys.
 - **Wolf + Claude pipeline, with relayout + font/symbol fixes** (the mature, `wolf`-CLI + `mt-export` path): `tools/Reference Pipelines/Wolf RPG (Asuka)/` - `claude_translate.py` (2-phase Claude batch driver over the mt-export JSON, control-code multiset validation, JSON-escape repair, resumable retry), `relayout.py` (box-geometry reflow + portrait-aware width + page-splitting), `scan_all_strings.py`/`scan_display2.py` (residual-JP/symbol sweep), `fix_ui_strings.py`/`strip_ruby.py`, plus `scripts\examples\` (the event-side field-label override, DB-memo translation, cleanup patterns) and a `README.md` + `WOLFDAWN-GAPS.md`. Read this one for the font-resolution and relayout lessons.
-- **DazedTL Wolf driver** - `DAZEDTL_ROOT/modules/wolfdawn.py` (resume ladder, nameplate pre-resolution, code repair), `DAZEDTL_ROOT/util/wolfdawn/db_classify.py` (sheet tiers + archetype), `DAZEDTL_ROOT/util/wolfdawn/names.py` (glossary harvest filter). Cited by line below where it matters.
+- **DazedTL WOLF helpers** - `DAZEDTL_ROOT/util/wolfdawn/db_classify.py` (sheet tiers + archetype) and `DAZEDTL_ROOT/util/wolfdawn/names.py` (the `names.json` safety badges). The resume ladder and nameplate handling of DazedTL's former WOLF driver are written out below. Cited by line below where it matters.
 
 ## Workflow (WolfDawn CLI)
 
@@ -246,7 +246,7 @@ Peel any leading window prefix (`@<option>\n`) off both sides first and prefer t
    still differs from its counterpart, return the text untouched.
 ```
 
-**Missing, extra or reordered tokens are never guessed.** A repair that reinserts `\c[6]` at a plausible position mis-colours or hangs the line. Leave those to the guard and fix them in the JSON. (`DAZEDTL_ROOT/modules/wolfdawn.py` - repair order and bail-outs.)
+**Missing, extra or reordered tokens are never guessed.** A repair that reinserts `\c[6]` at a plausible position mis-colours or hangs the line. Leave those to the guard and fix them in the JSON.
 
 **Earn `--allow-code-drift` per document, never pass it globally.** Allow it only when the drift is font-size-only, or a safe ruby removal, or the translation merely closes a malformed source code, AND the document has no non-font code drift anywhere. Detect font-only drift by normalizing every `\f[N]` to `\f[_]` and comparing token sequences, and accept the case where wrapping added a leading font code the source never had as long as the non-font token sequence is still identical.
 
@@ -267,17 +267,17 @@ Peel any leading window prefix (`@<option>\n`) off both sides first and prefer t
 
 ## Resume: what counts as already translated
 
-**Japanese left in a nameplate or inside a control code does NOT mean the line is untranslated.** The naive test ("text still contains Japanese") retranslates the whole game forever. The ladder (`DAZEDTL_ROOT/modules/wolfdawn.py:334-346`):
+**Japanese left in a nameplate or inside a control code does NOT mean the line is untranslated.** The naive test ("text still contains Japanese") retranslates the whole game forever. The ladder:
 
 1. Empty/whitespace `text` → needs work
 2. `text == source` (fresh extract) → needs work
 3. No Japanese anywhere → done
 4. Otherwise test **only the BODY**
 
-Body test (`:311-331`): strip the `@<option>\n` window prefix, then drop line 1 when `speaker_src` is a known first-line format (`literal_line1`, `literal_line1_lowconf`, `ui`, `narration`) OR line 1 is 1-20 chars and contains Japanese (a nameplate the model echoed), and finally remove every inline control code with `WOLF_INLINE_CODE_RE` (`util/wolfdawn/codes.py`).
+Body test: strip the `@<option>\n` window prefix, then drop line 1 when `speaker_src` is a known first-line format (`literal_line1`, `literal_line1_lowconf`, `ui`, `narration`) OR line 1 is 1-20 chars and contains Japanese (a nameplate the model echoed), and finally remove every inline control code with `WOLF_INLINE_CODE_RE` (`util/wolfdawn/codes.py`).
 That last step is load-bearing: ruby like `\r[我,わ]` legitimately keeps Japanese in a fully translated English line.
 
-Because `source` stays Japanese forever, every resume decision must come from `text`. A line whose body is already English but whose nameplate is still Japanese gets the cheap `_maybe_fix_nameplate` pass (`:572-580`) instead of a full retranslation billed twice.
+Because `source` stays Japanese forever, every resume decision must come from `text`. A line whose body is already English but whose nameplate is still Japanese gets a cheap nameplate-only pass instead of a full retranslation billed twice.
 
 ## Font resolution (the #1 tofu cause)
 

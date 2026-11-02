@@ -163,18 +163,16 @@ _CJK_NAMES = re.compile(
 
 # Japanese text by each reader's own pattern. COMMON is the engines' shared
 # LANGREGEX and the translator's default; MVMZ is RPG Maker MV/MZ's, which
-# leaves out the voicing marks and full-width Latin; SRPG is SRPG Studio's;
-# IMAGETEXT is image text's, COMMON spelled with literal half-width forms.
-# The others are single readers' own: the census's runs and the letters a run
-# must hold, plugin and Ruby script text, the desktop project's database
-# records, game update text, the evaluation's segments,
-# Wolf's string commands, the quoted strings of a plugin's disp_list and the
-# release playtest's, a JavaScript pattern for what the game draws and its
-# plugins' strings.
+# leaves out the voicing marks and full-width Latin; IMAGETEXT is image
+# text's, COMMON spelled with literal half-width forms. The others are single
+# readers' own: the census's runs and the letters a run must hold, plugin and
+# Ruby script text, the desktop project's database records, game update text,
+# the evaluation's segments, the quoted strings of a plugin's disp_list and
+# the release playtest's, a JavaScript pattern for what the game draws and
+# its plugins' strings.
 JAPANESE_PATTERNS = {
     "common": r"[一-龠ぁ-ゔァ-ヴーａ-ｚＡ-Ｚ０-９\uFF61-\uFF9F]+",
     "mvmz": r"[\u3000\u3002-\u3009\u300C-\u303F\u3040-\u309A\u309C-\u30FA\u31F0-\u31FF\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF\uFF61-\uFF9F]+",
-    "srpg": r"[\u3000-\u303F\u3040-\u309F\u30A0-\u30FF\u31F0-\u31FF\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF\uFF61-\uFF9F]+",
     "imagetext": r"[一-龠ぁ-ゔァ-ヴーａ-ｚＡ-Ｚ０-９｡-ﾟ]+",
     "census_run": "[\u3000-\u303f\u3040-\u30ff\u31f0-\u31ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uff01-\uff60\uff61-\uff9f\uffe0-\uffee]+",
     "census_word": "[\u3040-\u30ff\u31f0-\u31ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uff66-\uff9f]",
@@ -182,7 +180,6 @@ JAPANESE_PATTERNS = {
     "records": r"[ぁ-ゔァ-ヴ一-龠]",
     "update_text": r"[぀-ヿ㐀-䶿一-鿿ｦ-ﾟ]",
     "evaluation": r"[一-龠々〆〤ぁ-ゔァ-ヴーａ-ｚＡ-Ｚ０-９\uFF61-\uFF9F]",
-    "wolf_strings": r"[一-龠ぁ-ゔァ-ヴーａ-ｚＡ-Ｚ０-９]+",
     "disp_list": r'"([^"]*[一-龠ぁ-ゔァ-ヴー]+[^"]*)"',
     "playtest": "[ぁ-ゔァ-ヴ一-龠々〆〤]",
 }

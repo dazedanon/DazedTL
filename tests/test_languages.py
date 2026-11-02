@@ -15,7 +15,6 @@ from util import rpgmaker_blocks as blocks
 from util import rpgmaker_qa_glossary as glossary_rules
 from util import rpgmaker_qa_lint as lint
 from util import rpgmaker_rewrap as rewrap
-from util.game_encoding import UnwritableText, writable
 from util.game_settings import (
     GameSettingsError,
     binding_bytes,
@@ -31,7 +30,7 @@ from util.qa.mechanical import evidence
 from util.qa.selection import _number_defect
 from util.rpgmaker_qa_preflight import _untranslated as preflight_untranslated
 from util.source_text import holds_source, source_left
-from util.speakers import inline_speaker, strip_echoed_speaker, translate_speaker
+from util.speakers import inline_speaker
 from util.translation import (
     CONTEXT_SOURCE,
     _context_block,
@@ -170,12 +169,7 @@ class LanguageTests(unittest.TestCase):
         self.assertEqual(
             target_text.title_case("村長 the elder", "Japanese"), "村長 the elder"
         )
-        self.assertTrue(target_text.name_translated("村長", "Japanese"))
-        self.assertEqual(
-            strip_echoed_speaker("テスト(はい)", "Japanese"), "テスト(はい)"
-        )
         # English output is written as it always was.
-        self.assertEqual(strip_echoed_speaker("ミカ: Hello", "English"), "Hello")
         self.assertEqual(
             target_text.clean_reply("「頼んだぞっ。」【村長】", "English"),
             "「頼んだぞ.」[村長]",
@@ -301,59 +295,6 @@ class LanguageTests(unittest.TestCase):
         self.assertEqual(target_text.stranded_kana("ぁ♡", "Korean"), "ぁ♡")
         self.assertEqual(target_text.translated_line("ぁ♡", "Japanese"), "ぁ♡")
 
-    def test_the_plain_engines_translate_a_speaker_name_the_same_way(self):
-        asked = []
-
-        def translate(text, prompt, history):
-            asked.append((text, prompt))
-            return (
-                ["Speaker: gran'S", [1, 1]]
-                if len(asked) == 1
-                else ["old 'S man", [1, 1]]
-            )
-
-        names = []
-        first = translate_speaker("老人", names, "English", translate)
-        self.assertEqual(first, ["Gran's", [1, 1]])
-        self.assertEqual(
-            asked, [("老人", "Reply with the English translation of the NPC name.")]
-        )
-        self.assertEqual(
-            translate_speaker("老人", names, "English", translate), ["Gran's", [0, 0]]
-        )
-        # A module that walks its lines again finds the name it wrote there.
-        self.assertEqual(
-            translate_speaker("Gran's", names, "English", translate), ["Gran's", [0, 0]]
-        )
-        self.assertEqual(len(asked), 1)
-        # A reply with no letters is asked for once more.
-        asked.clear()
-        retry = translate_speaker(
-            "店主",
-            names,
-            "English",
-            lambda *a: (
-                asked.append(a),
-                ["店主", [0, 0]] if len(asked) == 1 else ["Shop Owner", [0, 0]],
-            )[1],
-        )
-        self.assertEqual((retry[0], len(asked)), ("Shop Owner", 2))
-        self.assertEqual(
-            translate_speaker("？？？", names, "English", translate), ["???", [0, 0]]
-        )
-        asked.clear()
-        self.assertEqual(
-            translate_speaker("???", names, "English", translate), ["???", [0, 0]]
-        )
-        self.assertEqual(asked, [])
-        self.assertEqual(
-            translate_speaker("ファイン", [], "English", translate), ["Fine", [0, 0]]
-        )
-        self.assertEqual(translate_speaker("", [], "English", translate), ["", [0, 0]])
-        asked.clear()
-        translate_speaker("ファイン", [], "French", translate)
-        self.assertEqual(len(asked), 1)
-
     def test_an_inline_speaker_reads_every_form(self):
         # The MV/MZ parser reads the source form a Japanese game writes and
         # the forms a re-export or English game holds, and keeps the line
@@ -416,14 +357,6 @@ class LanguageTests(unittest.TestCase):
         self.assertTrue(_number_defect("three potions", "Potion 3", "English"))
         self.assertTrue(_number_defect("3回攻撃", "攻击5次", "Chinese"))
         self.assertFalse(_number_defect("50ゴールド", "五十金币", "Chinese"))
-        # A letter Shift-JIS can't write fails the file, naming its line; an
-        # accented one loses its accent, and a symbol such as ♥ is left out
-        # on writing as it always was.
-        self.assertEqual(
-            writable(["Ahh♥ Señor\n"], "cp932", "scene.ks"), ["Ahh♥ Senor\n"]
-        )
-        with self.assertRaisesRegex(UnwritableText, "line 2 holds 안"):
-            writable(["はい\n", "안녕\n"], "cp932", "scene.ks")
 
     def test_text_left_reads_for_the_language_pair(self):
         # Read as Japanese, a Chinese translation's hanzi were all left, so

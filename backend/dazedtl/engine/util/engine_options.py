@@ -12,29 +12,12 @@ from util.custom_patterns import KEYS as CUSTOM_LISTS, LABELS as CUSTOM_LABELS, 
 from util.id_ranges import normalize_id_ranges
 from util.paths import PROJECT_ROOT
 
-_CSV_PRESET_COMMON = {"SOURCE_COLUMN": 0, "TARGET_COLUMN": 1, "SPEAKER_COLUMN": -1,
-                      "SKIP_HEADER_ROW": False, "USE_TARGET_IF_NOT_EMPTY": False,
-                      "SKIP_IF_TARGET_TRANSLATED": False, "WRITE_TO_NEXT_COLUMN": False,
-                      "PARSE_NAME_TAGS": False, "PARSE_M_MARKERS": False,
-                      "REMOVE_FURIGANA": False, "SKIP_COMMENT_ROWS": False}
-ENGINE_PRESETS = {"csv": {
-    "Translator++": {**_CSV_PRESET_COMMON, "SKIP_HEADER_ROW": True, "USE_TARGET_IF_NOT_EMPTY": True},
-    "Simple two-column": dict(_CSV_PRESET_COMMON),
-    "Speaker & text": {**_CSV_PRESET_COMMON, "SOURCE_COLUMN": 9, "TARGET_COLUMN": 9, "SPEAKER_COLUMN": 2, "REMOVE_FURIGANA": True},
-}}
-
-ENGINE_OPTION_KEYS = {
-    "csv": ("CSV_DELIMITER", "SOURCE_COLUMN", "TARGET_COLUMN", "SPEAKER_COLUMN", "SKIP_HEADER_ROW",
-            "USE_TARGET_IF_NOT_EMPTY", "SKIP_IF_TARGET_TRANSLATED", "WRITE_TO_NEXT_COLUMN", "PARSE_NAME_TAGS",
-            "PARSE_M_MARKERS", "REMOVE_FURIGANA", "SKIP_COMMENT_ROWS"),
-    "wolf": ("CODE101", "CODE102", "CODE150", "CODE122", "CODE210", "CODE300", "CODE250", "SCENARIOFLAG",
-             "OPTIONSFLAG", "NPCFLAG", "DBNAMEFLAG", "DBVALUEFLAG", "ITEMFLAG", "STATEFLAG", "ENEMYFLAG",
-             "ARMORFLAG", "WEAPONFLAG", "SKILLFLAG"),
-    "srpg": ("FIXTEXTWRAP", "IGNORETLTEXT"),
-}
 # Free-text lists an investigation sets for the RPG Maker engine, not choices.
 WORD_LISTS = ("SPACES_356", "NBSP_356", "KEEP_356", "SPACES_108", "NBSP_108", "KEEP_108")
-ENGINE_LABELS = {"rpgmakermvmz": "RPG Maker MV/MZ", "csv": "CSV", "wolf": "Wolf RPG (legacy)", "srpg": "SRPG Studio"}
+ENGINE_LABELS = {"rpgmakermvmz": "RPG Maker MV/MZ"}
+# Engines whose modules were retired (RT1). Settings saved before keep their
+# options; they read as no options rather than unknown ones.
+RETIRED_ENGINES = frozenset({"csv", "wolf", "srpg"})
 LABELS = {
     "FIRSTLINESPEAKERS": "First dialogue line contains the speaker", "INLINE401SPEAKERS": "Detect inline speaker names",
     "FACENAME101": "Detect names from face images", "AUTONAMEPOPUP101": "Use AutoNamePopup face mapping",
@@ -55,11 +38,6 @@ LABELS = {
     "KEEP_356": "Plugin commands left untranslated", "SPACES_108": "Comment markers keeping spaces",
     "NBSP_108": "Comment markers joining words with no-break spaces", "KEEP_108": "Comments left untranslated",
     **CUSTOM_LABELS,
-    "CSV_DELIMITER": "Delimiter", "SOURCE_COLUMN": "Source column", "TARGET_COLUMN": "Target column",
-    "SPEAKER_COLUMN": "Speaker column (0 disables)", "PARSE_NAME_TAGS": "Parse :name[] tags", "PARSE_M_MARKERS": "Parse \\M markers",
-    "SCENARIOFLAG": "Scenario database", "OPTIONSFLAG": "Options database", "NPCFLAG": "NPC database", "DBNAMEFLAG": "Database names",
-    "DBVALUEFLAG": "Database values", "ITEMFLAG": "Items", "STATEFLAG": "States", "ENEMYFLAG": "Enemies",
-    "ARMORFLAG": "Armor", "WEAPONFLAG": "Weapons", "SKILLFLAG": "Skills",
 }
 
 
@@ -99,24 +77,17 @@ def _engine_options(modules):
     for engine, path_string, modified, _size in modules:
         label, path = ENGINE_LABELS[engine], Path(path_string)
         literals = _literals(path_string, modified)
-        if engine == "rpgmakermvmz":
-            integration = ConfigIntegration()
-            values = integration.read_current_config(path)
-            values.update({key: sorted(value) for key, value in integration.read_plugin_config(path).items()})
-            values.update({key: literals[key] for key in (*WORD_LISTS, *CUSTOM_LISTS) if isinstance(literals.get(key), list)})
-        else:
-            values = {key: literals[key] for key in ENGINE_OPTION_KEYS[engine] if key in literals}
+        integration = ConfigIntegration()
+        values = integration.read_current_config(path)
+        values.update({key: sorted(value) for key, value in integration.read_plugin_config(path).items()})
+        values.update({key: literals[key] for key in (*WORD_LISTS, *CUSTOM_LISTS) if isinstance(literals.get(key), list)})
         fields = []
         for key, value in values.items():
             kind = ("boolean" if isinstance(value, bool) else "integer" if isinstance(value, int) else "strings" if key in WORD_LISTS
                     else "custom" if key in CUSTOM_LISTS else "choices" if isinstance(value, list) else "string")
             field = {"key": key, "label": LABELS.get(key, key.replace("_", " ").capitalize()), "type": kind, "default": value}
-            if key in {"SOURCE_COLUMN", "TARGET_COLUMN", "SPEAKER_COLUMN"}:
-                field.update(min=-1 if key == "SPEAKER_COLUMN" else 0, max=99, display_offset=1)
-            elif kind == "integer":
+            if kind == "integer":
                 field.update(min=0, max=999999)
-            if key == "CSV_DELIMITER":
-                field.update(type="select", choices=[",", ";", "\t"])
             if key == "ENABLED_PLUGINS_357":
                 field["choices"] = sorted(literals.get("HEADER_MAPPINGS_357", {}))
             if key == "ENABLED_PATTERNS_355655":
@@ -128,10 +99,12 @@ def _engine_options(modules):
 
 def validate_engine_options(overrides, code_root=PROJECT_ROOT):
     schema = engine_options(code_root)
-    if not isinstance(overrides, dict) or set(overrides) - schema.keys():
+    if not isinstance(overrides, dict) or set(overrides) - schema.keys() - RETIRED_ENGINES:
         raise ValueError("Unknown engine configuration.")
     result = {}
     for engine, values in overrides.items():
+        if engine in RETIRED_ENGINES:
+            continue
         fields = {field["key"]: field for field in schema[engine]["fields"]}
         if not isinstance(values, dict) or set(values) - fields.keys():
             raise ValueError("Unknown engine option.")

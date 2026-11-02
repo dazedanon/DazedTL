@@ -434,6 +434,45 @@ class BatchContinuationTests(unittest.TestCase):
                 read_json(root / "log" / ARCHIVE)["results"], {**original, **new}
             )
 
+    @staticmethod
+    def saved_batch_runs(workspace, cases):
+        """Saved interrupted Batch runs, by identity: (engine, recorded
+        signature, Batch status, whether any of it was sent)."""
+        from desktop.backend.settings import SettingsStore, validate_values
+
+        SettingsStore(workspace).key_action("save", "saved-key", secret="x")
+        for identity, (engine, recorded, status, sent) in cases.items():
+            root = workspace / "manual/jobs" / identity
+            write_json(
+                root / "plan.json",
+                {
+                    "engine": engine,
+                    "signature": recorded,
+                    "mode": "batch",
+                    "files": [],
+                    "selected": ["Map001.txt"],
+                    "settings": validate_values({}),
+                    "key_name": "saved-key",
+                    "context_hashes": {},
+                },
+            )
+            write_json(
+                root / "log/batch_state.json",
+                {"status": status, "batches": [{"id": "paid"}] if sent else []},
+            )
+            write_json(
+                root / "job.json",
+                {
+                    "version": 1,
+                    "id": identity,
+                    "engine": engine,
+                    "mode": "batch",
+                    "status": "interrupted",
+                    "completed": [],
+                    "plan_hash": digest((root / "plan.json").read_bytes()),
+                },
+            )
+
     def test_only_the_engine_version_that_collected_a_batch_submits_it(self):
         # Engine changes built different requests from the same files (WOLF2's
         # choices, every plain engine's speakers) without a new version, so a
@@ -443,9 +482,9 @@ class BatchContinuationTests(unittest.TestCase):
         # submitted, in whole or in part, is still finished and collected, and
         # RPG Maker, whose request changes each run freezes, keeps version 1.
         import threading
+        from unittest.mock import patch
 
         from desktop.backend import manual
-        from desktop.backend.settings import SettingsStore, validate_values
 
         launched = []
 
@@ -456,50 +495,23 @@ class BatchContinuationTests(unittest.TestCase):
         legacy = manual.VERSION_1_SIGNATURES["RPG Maker MV/MZ"]
         stale = "dazedtl-engine-1"
         cases = {
-            "stale-queue": ("Wolf RPG 2", stale, "queued", False),
-            "stale-submitted": ("Wolf RPG 2", stale, "submitted", True),
-            "stale-sent-queue": ("Wolf RPG 2", stale, "queued", True),
-            "stale-partial": ("Text", stale, "partially_submitted", True),
-            "stale-fetched": ("JSON", stale, "fetched", True),
-            "current-queue": ("Text", manual.signature("Text"), "queued", False),
+            "stale-queue": ("Image Text", stale, "queued", False),
+            "stale-submitted": ("Image Text", stale, "submitted", True),
+            "stale-sent-queue": ("Image Text", stale, "queued", True),
+            "stale-partial": ("Image Text", stale, "partially_submitted", True),
+            "stale-fetched": ("Image Text", stale, "fetched", True),
+            "current-queue": ("Image Text", "dazedtl-engine-2", "queued", False),
             "rpgmaker-queue": ("RPG Maker MV/MZ", legacy, "queued", False),
             "rpgmaker-v1-queue": ("RPG Maker MV/MZ", stale, "queued", False),
         }
         manual.launch_worker.layer("fixture-launch", launch)
         try:
-            with TemporaryDirectory() as directory:
+            with (
+                TemporaryDirectory() as directory,
+                patch.dict(manual.ENGINE_VERSIONS, {"Image Text": 2}),
+            ):
                 workspace = Path(directory)
-                SettingsStore(workspace).key_action("save", "saved-key", secret="x")
-                for identity, (engine, recorded, status, sent) in cases.items():
-                    root = workspace / "manual/jobs" / identity
-                    write_json(
-                        root / "plan.json",
-                        {
-                            "engine": engine,
-                            "signature": recorded,
-                            "mode": "batch",
-                            "files": [],
-                            "selected": ["Map001.txt"],
-                            "settings": validate_values({}),
-                            "key_name": "saved-key",
-                            "context_hashes": {},
-                        },
-                    )
-                    write_json(
-                        root / "log/batch_state.json",
-                        {"status": status, "batches": [{"id": "paid"}] if sent else []},
-                    )
-                    write_json(
-                        root / "job.json",
-                        {
-                            "version": 1,
-                            "id": identity,
-                            "mode": "batch",
-                            "status": "interrupted",
-                            "completed": [],
-                            "plan_hash": digest((root / "plan.json").read_bytes()),
-                        },
-                    )
+                self.saved_batch_runs(workspace, cases)
                 jobs = manual.ManualJobs(
                     workspace, threading.RLock(), allow_providers=True
                 )
@@ -511,6 +523,58 @@ class BatchContinuationTests(unittest.TestCase):
         finally:
             manual.launch_worker.remove("fixture-launch")
         self.assertEqual(
-            messages["stale-queue"], manual.STALE_QUEUE.format(engine="Wolf RPG 2")
+            messages["stale-queue"], manual.STALE_QUEUE.format(engine="Image Text")
         )
         self.assertEqual(sorted(launched), sorted(set(cases) - {"stale-queue"}))
+
+    def test_a_saved_run_of_a_retired_engine_is_refused_and_sends_nothing(self):
+        # The engine modules no screen ran (CSV, Wolf RPG 2 and the others the
+        # former manual screen picked) were removed. A run one of them saved
+        # still opens, and resuming it, or consuming its Batch, names the
+        # engine without starting a worker or changing the saved run.
+        import threading
+
+        from desktop.backend import manual
+
+        launched = []
+        manual.launch_worker.layer(
+            "fixture-launch", lambda _native, arguments, **_kwargs: launched.append(1)
+        )
+        cases = {
+            "retired-queue": ("Wolf RPG 2", "dazedtl-engine-3", "queued", False),
+            "retired-sent": ("CSV", "dazedtl-engine-4", "submitted", True),
+        }
+        try:
+            with TemporaryDirectory() as directory:
+                workspace = Path(directory)
+                self.saved_batch_runs(workspace, cases)
+                saved = {
+                    identity: (
+                        workspace / "manual/jobs" / identity / "job.json"
+                    ).read_bytes()
+                    for identity in cases
+                }
+                jobs = manual.ManualJobs(
+                    workspace, threading.RLock(), allow_providers=True
+                )
+                self.assertEqual(set(jobs.jobs), set(cases))
+                for identity, (engine, *_rest) in cases.items():
+                    refusal = manual.RETIRED_ENGINE.format(engine=engine)
+                    with self.assertRaises(ValueError) as resumed:
+                        jobs.resume(identity)
+                    self.assertEqual(str(resumed.exception), refusal)
+                    with self.assertRaises(ValueError) as consumed:
+                        jobs.resume_batch(
+                            identity, {"hashes": {}, "state": "submitted"}
+                        )
+                    self.assertEqual(str(consumed.exception), refusal)
+                    self.assertIsNone(jobs.worker)
+                    self.assertEqual(
+                        (
+                            workspace / "manual/jobs" / identity / "job.json"
+                        ).read_bytes(),
+                        saved[identity],
+                    )
+        finally:
+            manual.launch_worker.remove("fixture-launch")
+        self.assertEqual(launched, [])

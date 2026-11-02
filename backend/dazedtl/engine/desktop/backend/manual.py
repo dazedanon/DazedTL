@@ -57,16 +57,7 @@ def relative_file(value):
 # build different requests from the same files; a fix to how replies are
 # written keeps it. RPG Maker MV/MZ keeps version 1: a change to its requests
 # is a request policy each run freezes (dazedtl/settings/preferences
-# FROZEN_POLICIES), so a run keeps the requests it was approved with. Version 2
-# takes in the request changes these engines made since 2.0.0 without a new
-# version, such as speakers and WOLF choices sent once and WOLF RPG 2 choices
-# after dialogue sent. Version 3 of Regex, CSV, WOLF RPG 2 and JSON sends no
-# text of spaces alone (util/sent_lines), Regex no longer sends an empty
-# \text block as the block before it, and WOLF RPG 2 reads a speaker only as
-# a message's first line. Version 3 of Tyrano, Kirikiri and Lune sends no
-# text of spaces alone either, and Kirikiri no longer sends the replies its
-# second walk left over; version 4 of Regex sends a \text block as said by no
-# speaker, and of CSV each furigana annotation's base alone.
+# FROZEN_POLICIES), so a run keeps the requests it was approved with.
 #
 # Only the version that collected a Batch starts submitting it: a queue an
 # older version collected is refused before anything is sent (STALE_QUEUE),
@@ -81,21 +72,8 @@ def relative_file(value):
 # reuses the replies it saved for those built the same; refusing it would only
 # pay again for what its unfinished files already have.
 ENGINE_VERSIONS = {
-    "CSV": 4,
-    "Tyrano": 3,
-    "Kirikiri": 3,
-    "JSON": 3,
-    "Lune": 3,
-    "Yuris": 2,
-    "NScript": 2,
-    "Wolf RPG (WolfDawn)": 2,
-    "Wolf RPG": 2,
-    "Wolf RPG 2": 3,
-    "Regex": 4,
-    "Text": 2,
-    "RenPy": 2,
-    "Unity": 2,
-    # 3: text inside a field its line already sends, such as a stat label
+    # 2: the request changes it made since 2.0.0 without a version; 3: text
+    # inside a field its line already sends, such as a stat label
     # inside a drawTextEx label or a txtSubject inside a disp_list string, is
     # no longer sent again; 4: a quest field of spaces or line breaks alone
     # sends nothing (util/sent_lines); 5: a field ends at its own string's
@@ -104,7 +82,6 @@ ENGINE_VERSIONS = {
     # txtSubject is only a key or assignment holding a string, and a drawTextEx
     # label a rejected match ran over is still read
     "RPG Maker Plugin": 6,
-    "SRPG Studio": 2,
 }
 STALE_QUEUE = (
     "An update changed how DazedTL builds {engine} requests after this Batch was "
@@ -115,24 +92,8 @@ STALE_QUEUE = (
 # hashes identify the code released as version 1.
 VERSION_1_SIGNATURES = {
     "RPG Maker MV/MZ": "b0aa0546c511a7b996fad0dad1d62619258d5eb7ec1f23e9e0ebf113bd9284aa",
-    "CSV": "feac19c75ed96e4ab8df848549a58765e5a8811af74157822a41c5fa775a62d9",
-    "Tyrano": "92b1f3d802c863b37acbdb98f36f08df2dc0f45ac908565dc6a0f32e2e7d5637",
-    "Kirikiri": "56b3ef53f3ab20dcbf8a4a145d26d7267ccb525a30beea4d0b16b48d8ee80196",
-    "JSON": "ec45802d1a7419f297c21f5f9262c2d35c3f5e7ddf47aa58752a7d424e9bc61a",
-    "Lune": "547bd97a3df9142e510c66b26868aa7ea663a7c30a4138a3ebbd5db4fc7006bd",
-    "Yuris": "3b3a3a8e63cbcaa29c90381e89c64b70b06c4aec2a7f06c32929809aa8ff42cb",
-    "NScript": "7065ec236bae36749df411802bc6563db5873e29a15f7dd53d3269880db3d773",
-    "Wolf RPG (WolfDawn)": "df296a00594525e1b7f9ee1ae74e7cde0eacf21e5a19ba18407722821aa91830",
-    "Wolf RPG": "f6dcfd847a260ab24b835f9736e89b0f46d7d3d200544e57ac7168adae677e8f",
-    "Wolf RPG 2": "8e636adf8f70439d0a47f1feb0791f4f58045822a73cb21aa1be312e85f2a48e",
-    "Regex": "c207a4851d8f8c8ccc5c552a4e1f8adae1a7b27225ebd9e2cd1552a887c8ddbb",
-    "Text": "60c69329ce7a3061662639b3668aa17dfd3f4055412aaae779d1849b266aa684",
-    "RenPy": "1ed4b6f478bfedfa275f9e95cf2e00a24c0d964e125b4bf1582a4ed6f61b5f9a",
-    "Unity": "d049c8d504ef00a7752d000b960690553d9a0c1a59b8fb505a9a3bbd4a847480",
     "Image Text": "86654651e329cf0fc086888f58b9f23549f9e77113ca6087e4becc53dc49bce1",
     "RPG Maker Plugin": "ab09c95d0dc393c3aab440bc9eb3945b012a3506ec92c567f1f28c2e6f80c3de",
-    "Aquedi4 Prepared JSON": "2cd6e880b7d35d5196927abf54d35735c1c1c8e6265dab4d6472621269131668",
-    "SRPG Studio": "a9dafa1960558e1e55f0e60c67cb48a20599455d5f62a48b456a8a37e5680437",
 }
 
 
@@ -147,6 +108,20 @@ def compatible(engine, recorded):
     return recorded == signature(engine) or (
         engine not in ENGINE_VERSIONS and recorded == VERSION_1_SIGNATURES.get(engine)
     )
+
+
+# A saved run of an engine module this version no longer has (one the former
+# manual screen ran, such as CSV or Wolf RPG) stays readable but never runs
+# again, so resuming it sends nothing.
+RETIRED_ENGINE = (
+    "This run translates {engine} files, which this version of DazedTL no longer "
+    "runs. Its saved files were kept; translate the game Assistant-led instead."
+)
+
+
+def retired(engine):
+    """Whether a saved run's engine is one this version no longer runs."""
+    return not any(spec[0] == engine for spec in TRANSLATION_MODULE_SPECS)
 
 
 # The modes a run starts or resumes in. Saved runs may still record the retired
@@ -283,8 +258,7 @@ def snapshot_context(directory, plan, workspace):
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(path, destination)
         # Read-only engine context needed for face/plugin speaker detection.
-        from util.wolfdawn.cdb_context import SIDECAR_NAME
-        for relative in ("js/plugins.js", "www/js/plugins.js", f"wolf_json/{SIDECAR_NAME}", "wolf_json/db_profile.json"):
+        for relative in ("js/plugins.js", "www/js/plugins.js"):
             path = source / relative
             if path.is_file():
                 if path.is_symlink() or not path.resolve().is_relative_to(source) or path.stat().st_size > 10_000_000:
@@ -292,8 +266,6 @@ def snapshot_context(directory, plan, workspace):
                 target = game / relative
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(path, target)
-    if (plan.get("workflow") or {}).get("wolf_speakers"):
-        atomic_json(context / "wolf_speakers.json", plan["workflow"]["wolf_speakers"])
     (metadata / "skills").mkdir(exist_ok=True)
     (metadata / "glossary.txt").touch(exist_ok=True)
     plan["context_hashes"] = {path.relative_to(directory).as_posix(): digest(path.read_bytes()) for folder in (context, game)
@@ -707,6 +679,8 @@ class ManualJobs:
                 raise ValueError("This run does not need recovery.")
             if job["mode"] not in MODES:
                 raise ValueError("This saved run's mode is no longer supported. Start a new run.")
+            if retired(job["engine"]):
+                raise ValueError(RETIRED_ENGINE.format(engine=job["engine"]))
             if job["mode"] in {"translate", "batch", "speakers"} and not self.allow_providers:
                 raise ValueError("Provider execution is disabled in this session.")
             if job.get('batch_root'):
@@ -722,6 +696,8 @@ class ManualJobs:
             job = self.jobs[identity]
             if job['mode'] != 'batch' or job['status'] in {'running', 'waiting'}:
                 raise ValueError('This saved run cannot consume batch results now.')
+            if retired(job["engine"]):
+                raise ValueError(RETIRED_ENGINE.format(engine=job["engine"]))
             job['batch_recovery'] = recovery
             self._launch(job, True)
             return json.loads(json.dumps(job))

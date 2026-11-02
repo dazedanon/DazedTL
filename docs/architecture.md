@@ -33,6 +33,8 @@ Behavior one module owns is described in its docstring and pinned by its tests; 
 The engine ships inside this package: the [runtime locator](../backend/dazedtl/compatibility/runtime.py) selects it whatever the working directory, with no external fallback.
 It was imported from `b91bede18fd2bbd5a9b99f1a866f061bc13865c1` with its [license](../backend/dazedtl/engine/LICENSE.md) and component notices.
 The compatibility layer extends it only through declared [extension points](../backend/dazedtl/engine/util/extensions.py) and engine settings: mark an engine function as a point DazedTL extends instead of wrapping it from outside.
+Its translation modules are the ones DazedTL's own flows run (`TRANSLATION_MODULE_SPECS` in [translation_task](../backend/dazedtl/engine/util/translation_task.py)): RPG Maker MV/MZ, which also translates VX Ace data, RPG Maker Plugin and Image Text; Assistant-led extracts and writes with Len's tools instead.
+A saved run of a module retired since is refused when resumed, naming its engine, and sends nothing.
 Saved manual runs record their engine's [version](../backend/dazedtl/engine/desktop/backend/manual.py) (`ENGINE_VERSIONS`); raise it when a change makes the engine build different requests from the same files, except RPG Maker MV/MZ, whose request changes are [frozen policies](#frozen-request-policies).
 
 The base translation rules in [system.md](../backend/dazedtl/engine/data/skills/system.md), the prompt templates, field instructions, base glossary and SFX reference live in the engine's [data](../backend/dazedtl/engine/data) folder.

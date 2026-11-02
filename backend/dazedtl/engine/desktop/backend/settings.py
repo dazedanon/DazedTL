@@ -10,7 +10,7 @@ from urllib.parse import urlsplit
 
 from util import system
 from util import api_keys
-from util.engine_options import ENGINE_PRESETS, engine_options, validate_engine_options
+from util.engine_options import engine_options, validate_engine_options
 from util.languages import SOURCE_ENV, source_language
 from util.paths import PROJECT_ROOT
 from .project import atomic_json
@@ -141,10 +141,11 @@ class SettingsStore:
         schemas = engine_options(self.code_root)
         engines = {engine: {item["key"]: item["default"] for item in schema["fields"]} for engine, schema in schemas.items()}
         for engine, values in saved["engines"].items():
-            engines.setdefault(engine, {}).update(values)
+            if engine in engines:
+                engines[engine].update(values)
         draft_path = self.root / "draft.json"
         draft = json.loads(draft_path.read_text(encoding="utf-8")) if draft_path.is_file() else None
-        return {**saved, "draft": draft, "presets": ENGINE_PRESETS, "values": {**validate_values({}), **saved["values"]}, "engines": engines,
+        return {**saved, "draft": draft, "values": {**validate_values({}), **saved["values"]}, "engines": engines,
                 "fields": FIELDS, "engine_schemas": schemas, "endpoints": API_URL_PRESETS, "models": ModelCatalogCore.DEFAULTS,
                 "active_key": vault["active"], "keys": [{"name": name, "endpoint": entry["endpoint"], "keyless": entry["keyless"],
                  "has_secret": bool(entry["secret"])} for name, entry in sorted(vault["keys"].items())]}

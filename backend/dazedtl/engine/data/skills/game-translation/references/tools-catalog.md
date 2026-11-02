@@ -93,21 +93,18 @@ first and go to the source for detail.
 | `data/sfx_reference/j_ono.json` (22671) | The onomatopoeia corpus itself (3,595 variants). Check `SOURCE.md`/`LICENSE.md` before shipping any of it | `sfx-onomatopoeia.md` |
 | `util/imagetools/render.py` (999) + `style.py` (1230) | Image text rendering and style derivation | `image-translation.md` |
 | `util/wolfdawn/wrap_search.py` (1702) | Wolf text fitting solved by search rather than formula | `engine-wolf.md` |
-| `modules/wolfdawn.py` (829), `util/wolfdawn/` | Wolf driver: resume ladder, nameplate pre-resolution, DB sheet tiers | `engine-wolf.md` |
-| `modules/srpg.py` (2156) | SRPG Studio, incl. `customParameters` JS literals | `engine-srpg-studio.md` |
-| `modules/csv.py` (492) | Translator++ CSV convention and the batch-aligned resume | this file, above |
-| `modules/yuris.py` (403) | Whole-file pass-through for asset-path and font-face tables | `SKILL.md` (non-negotiables) |
+| `util/wolfdawn/` | WOLF helpers: DB sheet tiers, `names.json` safety badges, archive decoding beside the bundled `wolf` CLI | `engine-wolf.md` |
 | `data/skills/*.md` | **Reusable per-game audit prompts**, directly copyable: `risky_codes.md` (which optional event codes hold text), `wrap_config.md` (derive width/faceWidth/rows), `wolf_speakers.md` (rule on low-confidence speakers), `rpgmaker_translation_qa.md` | throughout |
 | `tests/` | Encode the quirks more precisely than the source does. Each case is a real failure someone hit | - |
 
 ## Row-based / CSV formats: the resume convention
 
-`DAZEDTL_ROOT/modules/csv.py` handles the Translator++ CSV convention (source column 0, target column 1, optional speaker column where `-1` = none) and solves the resume problem in a way that generalizes to **any** row-based format.
+DazedTL's former CSV module handled the Translator++ CSV convention (source column 0, target column 1, optional speaker column where `-1` = none) and solves the resume problem in a way that generalizes to **any** row-based format.
 
-- **"Done" means no source-language characters left, not "the cell is non-empty."** `_target_is_translated` (`:224`) requires the write-target cell to be non-empty AND `re.search(LANGREGEX, target)` to fail. A non-empty target that still contains Japanese is a half-finished or echoed translation, not a finished one.
-- **Skip in BATCH-sized groups, not row by row.** `_collect_process_indices` (`:255`) walks the candidate rows in slices of exactly `BATCHSIZE`, the same size the translator uses, skips a slice entirely when every row in it is done, and otherwise keeps the slice but queues only its unfinished rows. Row-by-row filtering re-chunks the work on every resume and destroys the cache prefix.
-- **An existing target cell can be the SOURCE.** With `USE_TARGET_IF_NOT_EMPTY`, `_row_source_text` (`:235`) feeds the target cell to the model instead of the source. That is how you post-edit a machine pre-translation. `WRITE_TO_NEXT_COLUMN` shifts the write target one column right so the original is preserved for diffing.
-- **Pre-clean before the model sees the row** (`:315-340`): strip a `:name[Speaker]` prefix and its newline, translating the captured name separately and substituting it back, strip `\M` markers and their newline, strip voice markers matching `\\[vfF]+\[.+]`, and remove `＜＝＞` furigana annotations. Optionally skip rows whose first column contains "comment".
+- **"Done" means no source-language characters left, not "the cell is non-empty."** It required the write-target cell to be non-empty AND `re.search(LANGREGEX, target)` to fail. A non-empty target that still contains Japanese is a half-finished or echoed translation, not a finished one.
+- **Skip in BATCH-sized groups, not row by row.** It walked the candidate rows in slices of exactly `BATCHSIZE`, the same size the translator uses, skips a slice entirely when every row in it is done, and otherwise keeps the slice but queues only its unfinished rows. Row-by-row filtering re-chunks the work on every resume and destroys the cache prefix.
+- **An existing target cell can be the SOURCE.** With `USE_TARGET_IF_NOT_EMPTY`, it fed the target cell to the model instead of the source. That is how you post-edit a machine pre-translation. `WRITE_TO_NEXT_COLUMN` shifts the write target one column right so the original is preserved for diffing.
+- **Pre-clean before the model sees the row**: strip a `:name[Speaker]` prefix and its newline, translating the captured name separately and substituting it back, strip `\M` markers and their newline, strip voice markers matching `\\[vfF]+\[.+]`, and remove `＜＝＞` furigana annotations. Optionally skip rows whose first column contains "comment".
 
 ## Multi-engine frameworks
 

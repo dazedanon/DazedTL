@@ -6,7 +6,7 @@ import re
 import socket
 import sys
 import threading
-from contextlib import redirect_stderr, redirect_stdout
+from contextlib import redirect_stdout
 from copy import deepcopy
 from importlib import import_module
 from io import StringIO
@@ -221,7 +221,9 @@ try:
         engine = "RPG Maker MV/MZ"
         legacy = "b0aa0546c511a7b996fad0dad1d62619258d5eb7ec1f23e9e0ebf113bd9284aa"
         assert compatible(engine, legacy) and compatible(engine, signature(engine))
-        assert not compatible("CSV", legacy) and not compatible(engine, "changed")
+        assert not compatible("Image Text", legacy) and not compatible(
+            engine, "changed"
+        )
         # Engine preparation writes LF bytes, including for a file whose only
         # difference is CRLF (hidden by read_text()).
         from util.dazedformat import format_json_files
@@ -434,378 +436,31 @@ try:
         with patch.object(parser, "LANGUAGE", "Simplified chinese"):
             assert parser._speaker_translation_valid("宿屋の主人", "旅店老板")
             assert not parser._speaker_translation_valid("ミカ", "ミカ")
-        # WOLF reads speaker names by the same rule, and keeps a name mixing
-        # Latin letters with kana, such as EN_セルリア, that MV/MZ reads left.
-        from modules import wolfdawn
-
-        with patch.object(wolfdawn, "LANGUAGE", "Simplified chinese"):
-            assert wolfdawn._speaker_translation_valid("宿屋の主人", "旅店老板")
-            assert not wolfdawn._speaker_translation_valid("ミカ", "ミカ")
-        with patch.object(wolfdawn, "LANGUAGE", "English"):
-            assert wolfdawn._speaker_translation_valid("セルリア", "EN_セルリア")
-            assert not wolfdawn._speaker_translation_valid("セルリア", "セルリア")
-            assert not wolfdawn._speaker_translation_valid("セルリア", "")
-            # A colour code's letter read as Latin, so an echoed name kept
-            # its Japanese nameplate.
-            assert not wolfdawn._speaker_translation_valid("セルリア", "\\c[2]セルリア")
-            assert wolfdawn._speaker_translation_valid("セルリア", "\\c[2]EN_セルリア")
         with patch.object(parser, "LANGUAGE", "English"):
             assert not parser._speaker_translation_valid("セルリア", "EN_セルリア")
             assert parser._speaker_translation_valid("セルリア", "Cerulia")
         # Setup read saved guesses such as a cameo's 存子 "Sonko" as approved
         # spellings; they now say they were translated without their story.
         assert "Unverified nameplate" in saved_names, saved_names
-        # A WOLF map saved its progress after each page with that page's
-        # tokens, read in a `finally`: a failing first page had none yet, so
-        # an UnboundLocalError hid its error, a run's stop included, and a
-        # failing later page saved progress with the page before's tokens.
-        # handleWOLF then wrote the map with the lines the failing page had
-        # set and reported it complete; it now fails the file, as the run's
-        # other file errors do.
-        from modules import wolf
-        from util import translation as stops
-
-        wolf_fails = {}
-
-        def wolf_page(page_list, *_args):
-            text = page_list[0]["stringArgs"]
-            source, text[0] = text[0], "EN:" + text[0]
-            if wolf_fails.get(source):
-                raise wolf_fails[source]
-            return [3, 1]
-
-        def wolf_map(*fails):
-            wolf_fails.update(zip(("一頁", "二頁"), fails))
-            pages = [
-                {"list": [{"code": 101, "stringArgs": [text]}]}
-                for text in ("一頁", "二頁")
-            ]
-            return {"events": [None, {"pages": pages}]}
-
-        def wolf_file(name, document, error=None):
-            (wolf_root / "files" / name).write_text(json.dumps(document), "utf-8")
-            try:
-                wolf.handleWOLF(name, False)
-            except ValueError as raised:
-                assert raised is error, raised
-            else:
-                assert error is None, f"A WOLF file whose page failed passed: {name}"
-
-        wolf_root = temporary / "wolf-pages"
-        (wolf_root / "files").mkdir(parents=True)
-        saved = wolf_root / "translated/Map001.json"
-        directory = os.getcwd()
-        os.chdir(wolf_root)
-        try:
-            with (
-                patch.object(wolf, "searchCodes", wolf_page),
-                patch.object(wolf, "searchDB", wolf_page),
-                patch.object(stops, "RUN_STOPS", True),
-            ):
-                stop = stops.RunStoppingError("Stopped.")
-                try:
-                    wolf.parseMap(wolf_map(stop, None), "Map001.json")
-                except stops.RunStoppingError as error:
-                    assert error is stop, error
-                else:
-                    raise AssertionError("A WOLF map went on after a run's stop.")
-                failure = ValueError("Refused.")
-                result = wolf.parseMap(wolf_map(failure, None), "Map001.json")
-                assert result[1:] == [[0, 0], failure], result
-                # Each finished page was saved over translated/, so a file
-                # failing again replaced an earlier run's complete output
-                # with a partial one; a WOLF file is now written once, whole.
-                saved.parent.mkdir()
-                saved.write_text("complete", "utf-8")
-                wolf_file("Map001.json", wolf_map(None, failure), failure)
-                assert saved.read_text("utf-8") == "complete"
-                # A CommonEvent or DataBase file is one page.
-                wolf_fails["一頁"] = failure
-                wolf_file(
-                    "CommonEvent.json",
-                    {"commands": [{"stringArgs": ["一頁"]}]},
-                    failure,
-                )
-                wolf_file(
-                    "DataBase.json", {"types": [{"stringArgs": ["一頁"]}]}, failure
-                )
-                assert sorted(os.listdir("translated")) == ["Map001.json"]
-                # A file that could not be saved failed with a bare OSError,
-                # WOLF's own write, instead of OutputNotSaved naming it.
-                from util.translation_task import OutputNotSaved
-
-                Path("translated/Map002.json").mkdir()
-                try:
-                    wolf_file("Map002.json", {"events": []})
-                except OutputNotSaved as error:
-                    assert "Map002.json could not be saved" in str(error), error
-                else:
-                    raise AssertionError("A WOLF file that could not be saved passed.")
-                Path("translated/Map002.json").rmdir()
-                # A file's kind was searched for in its whole text, so a
-                # CommonEvent line holding "'events':" was parsed as a map.
-                wolf_fails.clear()
-                wolf_file(
-                    "CommonEvent.json", {"commands": [{"stringArgs": ["'events':"]}]}
-                )
-                assert json.loads(
-                    Path("translated/CommonEvent.json").read_text("utf-8")
-                ) == {"commands": [{"stringArgs": ["EN:'events':"]}]}
-        finally:
-            os.chdir(directory)
-        # A WOLF page's set-data pass translated its choices, choice window
-        # and speakers again, so each was paid for twice and a translation
-        # was translated again ("EN EN はい"); its tokens were dropped, and a
-        # 210 speaker's input tokens counted as output.
-        wolf_sent = []
-        wolf_contexts = []
-
-        def wolf_answer(text, history, *_args):
-            wolf_sent.append(text)
-            wolf_contexts.append(history)
-            if isinstance(text, list):
-                return [[f"EN {line}" for line in text], [3, 1]]
-            return ["Rin" if "NPC name" in str(history) else f"EN {text}", [3, 1]]
-
-        wolf_choices = {"code": 102, "stringArgs": ["はい", "", "いいえ"]}
-        wolf_window = {"code": 300, "stringArgs": ["選択肢/確認", "行く,残る", "宿屋"]}
-        with patch.multiple(
-            wolf,
-            CODE101=True,
-            CODE102=True,
-            CODE210=True,
-            CODE300=True,
-            NAMESLIST=[],
-            translateAI=wolf_answer,
-        ):
-            tokens = wolf.searchCodes(
-                [
-                    {"code": 101, "stringArgs": ["@1\n村人：\nこんにちは"]},
-                    wolf_choices,
-                    {"code": 210, "intArgs": [None], "stringArgs": ["", "勇者"]},
-                    wolf_window,
-                    {"code": 300, "stringArgs": ["援護文章", "@1\n店主：\nさようなら"]},
-                ],
-                SimpleNamespace(refresh=lambda: None),
-                [],
-                "Map001.json",
-            )
-        assert wolf_sent == [
-            "村人",
-            ["はい", "いいえ"],
-            "勇者",
-            "宿屋",
-            ["行く", "残る"],
-            "店主",
-            ["[Rin]: こんにちは"],
-            ["[Rin]: さようなら"],
-        ], wolf_sent
-        assert tokens == [3 * len(wolf_sent), len(wolf_sent)], tokens
-        assert wolf_choices["stringArgs"] == ["EN はい", "", "EN いいえ"], wolf_choices
-        assert wolf_window["stringArgs"][1:] == ["EN 行く,EN 残る", "EN 宿屋"], (
-            wolf_window
-        )
-        # The window's question asked for the "{LANGUAGE}" translation.
-        assert "{LANGUAGE}" not in str(wolf_contexts), wolf_contexts
-        # The set-data pass ran once any one list of the page came back
-        # whole, then wrote a list that came back short (an IndexError failed
-        # the page) or long (its extra line was sent again and written over a
-        # later command). A list, choices or window reply of the wrong length
-        # is now left in its source text, a window's question with it, and
-        # the file joins MISMATCH; a 選択肢/確認 without a question failed on
-        # its missing argument.
-
-        def wolf_odd(text, *_args):
-            if isinstance(text, str):
-                return [f"EN {text}", [3, 1]]
-            reply = [f"EN {line}" for line in text]
-            if "攻撃" in text:
-                reply.append("EN extra")
-            elif "薬草" not in text:
-                reply.pop()
-            return [reply, [3, 1]]
-
-        def wolf_misfit(*commands):
-            page = deepcopy(list(commands))
-            printed = StringIO()
-            with (
-                patch.multiple(
-                    wolf,
-                    CODE101=True,
-                    CODE102=True,
-                    CODE122=True,
-                    CODE300=True,
-                    MISMATCH=[],
-                    NAMESLIST=[],
-                    translateAI=wolf_odd,
-                ),
-                redirect_stdout(printed),
-            ):
-                wolf.searchCodes(
-                    page, SimpleNamespace(refresh=lambda: None), [], "M.json"
-                )
-                # The run counts a file's mismatches from these markers; one
-                # a module found itself only named the file in its TOTAL.
-                marked = printed.getvalue().count("MISMATCH_EVENT:M.json\n")
-                return page, wolf.MISMATCH, marked
-
-        choices = {"code": 102, "stringArgs": ["はい", "いいえ"]}
-        window = {"code": 300, "stringArgs": ["選択肢/確認", "行く,残る"]}
-        asking = {
-            "code": 300,
-            "stringArgs": ["[共]汎用ウィンドウ生成", "行く,残る", "宿屋"],
-        }
-        dialogue = {"code": 101, "stringArgs": ["こんにちは"]}
-        script = {"code": 122, "stringArgs": ["薬草"]}
-        battle = {"code": 300, "stringArgs": ["BTLメッセージ", "攻撃"]}
-        # A speaker's name is written to its nameplate alone: written over the
-        # whole message, it also renamed the speaker in a line left in its
-        # source text.
-        speaking = {"code": 101, "stringArgs": ["@1\n村人：\n村人だよ"]}
-        for commands, written, marked in (
-            ([choices], [choices], 1),
-            ([window], [window], 1),
-            ([asking], [asking], 1),
-            ([speaking], [{**speaking, "stringArgs": ["@1\nEn 村人：\n村人だよ"]}], 1),
-            (
-                [dialogue, script, battle],
-                [dialogue, {**script, "stringArgs": ["EN 薬草"]}, battle],
-                2,
-            ),
-        ):
-            got = wolf_misfit(*commands)
-            assert got == (written, ["M.json"], marked), (commands, got)
-
-        # A line translateAI kept in its source text, a whole chunk after
-        # failed validation or one line of a reply it otherwise kept, comes
-        # back as it was sent, and was written back with its line breaks
-        # turned into spaces ("勇者の 記録"). Each such line now keeps its
-        # source exactly, in a page's lists and a DataBase category, and the
-        # reply's other lines are written.
-        def wolf_keeps(text, *_args):
-            if isinstance(text, list):
-                reply = [line if "勇者の" in line else f"EN {line}" for line in text]
-                return [reply, [3, 1]]
-            return [f"EN {text}", [3, 1]]
-
-        def wolf_db(*types):
-            document = deepcopy(list(types))
-            sent = []
-            printed = StringIO()
-
-            def answer(text, *_args):
-                sent.append(text)
-                reply = wolf_keeps(text)
-                # A skill's log goes out after a stand-in user, Taro.
-                reply[0] = [line.replace("EN Taroは", "Taro ") for line in reply[0]]
-                if any("看板" in line for line in text):
-                    reply[0].pop()
-                return reply
-
-            with (
-                patch.multiple(
-                    wolf,
-                    ITEMFLAG=True,
-                    ARMORFLAG=True,
-                    WEAPONFLAG=True,
-                    STATEFLAG=True,
-                    SKILLFLAG=True,
-                    MISMATCH=[],
-                    translateAI=answer,
-                ),
-                redirect_stdout(printed),
-            ):
-                wolf.searchDB(
-                    document, SimpleNamespace(refresh=lambda: None), [], "D.json"
-                )
-                marked = printed.getvalue().count("MISMATCH_EVENT:D.json\n")
-                return document, wolf.MISMATCH, marked, sent
-
-        battle = {"code": 300, "stringArgs": ["BTLメッセージ", "勇者の\n記録"]}
-        attack = {"code": 300, "stringArgs": ["BTLメッセージ", "攻撃"]}
-        with patch.multiple(wolf, CODE300=True, MISMATCH=[], translateAI=wolf_keeps):
-            page = deepcopy([battle, attack])
-            wolf.searchCodes(page, SimpleNamespace(refresh=lambda: None), [], "M.json")
-            attacked = {**attack, "stringArgs": ["BTLメッセージ", "EN 攻撃"]}
-            assert page == [battle, attacked], page
-            assert wolf.MISMATCH == [], wolf.MISMATCH
-
-        def category(name, *fields):
-            return {
-                "name": name,
-                "data": [{"data": [{"name": k, "value": v} for k, v in fields]}],
-            }
-
-        # A DataBase category whose reply had the wrong length reached the
-        # set-data pass as empty lists once another category fit, and the
-        # file failed with an IndexError; the status effects were sent once
-        # for each of their lists that held text. Status effects after items
-        # took the items' font, the number 18, and failed on "font + text".
-        # The skill table's battle logs were written after its font size
-        # alone, "24Taro cast Fire", a literal 24 in the game's log; logs take
-        # no font, as the items' and status effects' do.
-        directory = os.getcwd()
-        os.chdir(temporary)
-        (temporary / "log").mkdir(exist_ok=True)
-        try:
-            items = category("道具", ("名前", "薬草"), ("説明", "話\n記録"))
-            armor = category("防具", ("名前", "看板"), ("説明", "宿屋"))
-            weapon = category("武器", ("名前", "剣"), ("説明", "勇者の\n記録"))
-            states = category("ステート", ("名前", "毒"), ("表示名", "毒状態"))
-            skill = category(
-                "技能",
-                ("名前", "炎"),
-                ("説明", "炎の技"),
-                ("発動時文章", "は炎を放った"),
-                ("使用時文章[戦闘](人名~", "は炎を唱えた"),
-                ("失敗時文章[(対象)～]", "は炎を避けた"),
-            )
-            written, mismatched, marked, sent = wolf_db(
-                items, states, armor, weapon, skill
-            )
-        finally:
-            os.chdir(directory)
-        values = [
-            [field["value"] for field in table["data"][0]["data"]] for table in written
-        ]
-        assert values == [
-            ["EN 薬草", "\\f[18]EN 話 記録"],
-            ["EN 毒", "EN 毒状態"],
-            ["看板", "宿屋"],
-            ["EN 剣", "勇者の\n記録"],
-            [
-                "EN 炎",
-                "\\f[24]EN 炎の技",
-                " 炎を放った",
-                " 炎を唱えた",
-                " 炎を避けた",
-            ],
-        ], values
-        assert (mismatched, marked) == (["D.json"], 1), (mismatched, marked)
-        # Nothing more of a category is sent, and paid for, once it cannot be written.
-        assert ["宿屋"] not in sent, sent
-        assert sum(any("毒" in line for line in lines) for lines in sent) == 2, sent
         # Each engine module ended a file whose parser returned an error its
         # own way: most printed a ✗ receipt and returned a TOTAL, so the run
         # read the file translated with part of it written, and its worker
         # logged a second receipt for what the file paid. Every module now
-        # raises the error before reporting the file, as RPG Maker and WOLF
-        # did, and the worker's receipt is the file's one.
+        # raises the error before reporting the file, as RPG Maker did, and
+        # the worker's receipt is the file's one.
         from util.translation_task import TRANSLATION_MODULE_SPECS
 
         refused = ValueError("Refused.")
         stubs = {
             name: lambda *_args: [{}, [3, 1], refused]
-            for name in ("openFiles", "openFilesEstimate", "parseYuris")
+            for name in ("openFiles", "openFilesEstimate")
         }
-        stubs["yuris_whole_file_pass_through_reason"] = lambda _data: None
-        stubs["refreshRuntimeConfig"] = lambda: None
         ends = temporary / "file-ends"
         for folder in ("files", "translated"):
             (ends / folder).mkdir(parents=True)
         (ends / "files/Doc.json").write_text("{}", "utf-8")
-        # Lune, Ren'Py, Unity and CSV opened translated/<file> before their
-        # parse, so a file that failed emptied an earlier complete output.
+        # Some modules opened translated/<file> before their parse, so a file
+        # that failed emptied an earlier complete output.
         complete = ends / "translated/Doc.json"
         complete.write_text("complete", "utf-8")
         directory = os.getcwd()
@@ -828,21 +483,18 @@ try:
                     assert "[Input:" not in printed.getvalue(), module_name
                     assert complete.read_text("utf-8") == "complete", module_name
             # A file whose output can't be written fails with the error: RPG
-            # Maker's returned a bare "Fail" and the plugin module's passed.
-            # WOLF writes its own file (system.write_bytes) and fails with it.
+            # Maker's returned a bare "Fail".
             from util.translation_task import OutputNotSaved
 
             finished = {
                 name: lambda *_args: [["text\n"], [3, 1], None]
-                for name in ("openFiles", "parseYuris")
+                for name in ("openFiles",)
             }
             complete.unlink()
             Path("translated").rmdir()
             Path("translated").write_text("not a folder", "utf-8")
             for *_kind, module_name, handler in TRANSLATION_MODULE_SPECS:
                 module = import_module(module_name)
-                if module_name == "modules.wolf":
-                    continue
                 its = {
                     key: stub
                     for key, stub in {**stubs, **finished}.items()
@@ -855,88 +507,6 @@ try:
                         assert str(error).startswith("Doc.json could not be saved: ")
                     else:
                         raise AssertionError(f"{module_name} passed an unsaved file.")
-        finally:
-            os.chdir(directory)
-        # Every module but RPG Maker saved its progress over translated/ as
-        # it went, which nothing read back (Resume translates a stopped file
-        # again from the translation cache), so a file translated again that
-        # failed replaced an earlier complete output with a partial one; CSV
-        # also wrote it as finished. A module writes its file once now.
-        progress = temporary / "progress-saves"
-        for folder in ("files", "translated"):
-            (progress / folder).mkdir(parents=True)
-        os.chdir(progress)
-        try:
-            for module_name, handler, scene, source, options in (
-                (
-                    "modules.lune",
-                    "handleLune",
-                    "Scene.json",
-                    '[{"name": "アリス", "message": "やあ"}]',
-                    {},
-                ),
-                (
-                    "modules.kirikiri",
-                    "handleKirikiri",
-                    "Scene.ks",
-                    "【アリス】[CR]\n[text]やあ[KeyWait]\n",
-                    {},
-                ),
-                (
-                    "modules.csv",
-                    "handleCSV",
-                    "Scene.csv",
-                    "Source,Target,Speaker\nやあ,,アリス\n",
-                    {"SPEAKER_COLUMN": 2},
-                ),
-            ):
-                module = import_module(module_name)
-                (progress / "files" / scene).write_bytes(
-                    source.encode("cp932" if scene.endswith(".ks") else "utf-8")
-                )
-                (progress / "translated" / scene).write_text("complete", "utf-8")
-                sent = []
-
-                def speaker_only(text, *_args, **_kwargs):
-                    sent.append(text)
-                    if len(sent) > 1:
-                        raise refused
-                    return ["Alice", [1, 1]]
-
-                its = {"translateAI": speaker_only, "NAMESLIST": [], **options}
-                with patch.multiple(module, **its), redirect_stdout(StringIO()):
-                    try:
-                        getattr(module, handler)(scene, False)
-                    except ValueError as error:
-                        assert error is refused, (module_name, error)
-                    else:
-                        raise AssertionError(f"{module_name} passed a failure.")
-                assert sent[0] == "アリス" and len(sent) == 2, (module_name, sent)
-                saved = (progress / "translated" / scene).read_bytes()
-                assert saved == b"complete", (module_name, saved)
-            # A line the game's Shift-JIS can't hold still fails the file at
-            # once, before the file's later requests are paid for, as those
-            # saves made it.
-            from util.game_encoding import UnwritableText
-
-            kirikiri = import_module("modules.kirikiri")
-            unwritable = []
-
-            def eng(text, *_args, **_kwargs):
-                unwritable.append(text)
-                return ["Ŋina", [1, 1]]
-
-            with (
-                patch.multiple(kirikiri, translateAI=eng, NAMESLIST=[]),
-                redirect_stdout(StringIO()),
-            ):
-                try:
-                    kirikiri.handleKirikiri("Scene.ks", False)
-                except UnwritableText as error:
-                    assert "line 1 holds Ŋ" in str(error), error
-                else:
-                    raise AssertionError("A Kirikiri file kept a line it can't write.")
-            assert unwritable == ["アリス"], unwritable
         finally:
             os.chdir(directory)
         # A run's files/<name> is a hard link to its frozen inputs/<name>.
@@ -980,103 +550,37 @@ try:
         assert frozen.read_bytes() == exported, frozen.read_text("utf-8")
         assert (image_run / "files/image_text.json").read_bytes() == exported
         prepare_inputs(image_run, image_plan)  # The run can still resume.
-        # NScripter wrote each csel choice with the dialogue line translated
-        # before it, and failed a csel before any dialogue. The plugin module
-        # took a QuestName's line break from the txtSubject before it, so it
-        # failed a QuestName with no txtSubject, or one without a line break,
-        # before it. NScripter left a file's choices in Japanese when it had no
-        # dialogue, and wrote a choice that is part of a later one, or an
-        # empty one, over the whole csel line. The plugin module read an actor
-        # code \n[1] as a line break, and sent a quest client's line break
-        # as text, and wrote a txtSubject's or QuestContent's color code \c[2]
-        # with one backslash. It sent other codes, such as \I[5], and a help
-        # text's line break as nested as their field and wrote back the
-        # reply's, and wrapped a QuestContent nested deeper than one game's
-        # with that game's line break, which ended its string. It wrote every
-        # quest field when any one field's reply had the right count, so a
-        # short reply moved its translations onto other quests; gave a
-        # drawTextEx label drawn on two lines the next label's translation;
-        # and ended a label's single-quoted string at an apostrophe. It wrote a
-        # field's translation over the same text elsewhere on its line, such as
+        # The plugin module took a QuestName's line break from the txtSubject
+        # before it, so it failed a QuestName with no txtSubject, or one
+        # without a line break, before it. It read an actor code \n[1] as a
+        # line break, sent a quest client's line break as text, and wrote a
+        # txtSubject's or QuestContent's color code \c[2] with one backslash.
+        # It sent other codes, such as \I[5], and a help text's line break as
+        # nested as their field and wrote back the reply's, and wrapped a
+        # QuestContent nested deeper than one game's with that game's line
+        # break, which ended its string. It wrote every quest field when any
+        # one field's reply had the right count, so a short reply moved its
+        # translations onto other quests; gave a drawTextEx label drawn on two
+        # lines the next label's translation; and ended a label's
+        # single-quoted string at an apostrophe. It wrote a field's
+        # translation over the same text elsewhere on its line, such as
         # another plugin's setting or a sequel quest's name; left a label's
         # quote bare in a later string of its call, a variable's string or a
         # setting's script; and sent a stat label inside a drawTextEx label,
-        # which it then wrote into that label's translation. CSV read its
-        # target column as the speaker by default, and as the name it wrote
-        # there made the row look translated, wrote each row's translation to
-        # the next row. CSV, Kirikiri, Regex, Lune, Tyrano and WOLF2 sent each
-        # speaker name again in the pass that writes the translations, as it
-        # then held its translation, and WOLF2 its choices too; Lune refused
-        # the .l files it is offered. Lune moved on once per text field, so it
-        # skipped the entry after one with two, and after a mismatch wrote the
-        # next batch one entry early. WOLF2 and CSV found the lines to write
-        # by parsing the file again, so a name translated with the parser's
-        # own mark ("/", "]") moved or dropped a translation; CSV and Kirikiri
-        # also wrote the name over the rest of its line or cell. WOLF2's
-        # last-resort reader, for a file no encoding reads whole, kept "\r\n"
-        # line ends, which joined the whole file into one line. Text and
-        # JSON's list format still sent each speaker again; Regex wrote a
-        # name over its whole line, renaming a voice file on it; a name
-        # holding "]" kept the "[Speaker]: " the request added in the game
-        # text, and Lune cut any reply starting with a word and a colon.
-        # WOLF2 read a line holding "：" as a speaker, skipped a choice right
-        # after a line of text, and failed a file ending on a speaker or a
-        # choice. CSV kept a target's :name[] tag in Japanese, and wrote the
-        # reply to a tag with no line after it between every letter of a
-        # filled target. Text, Tyrano and Kirikiri's narration took a reply
-        # for a line of spaces they sent nothing for, moving each later
-        # translation up a line, and Text and JSON's list format sent the
-        # lines after a speaker's as said by it, also after an empty name.
-        # Kirikiri left the second of two speakers in a row untranslated.
-        # Tyrano translated "#name:face" whole, face included, and a name
-        # reply on two lines added a line to the file. CSV wrote an empty
-        # target without its source's :name[] tag or \M marker, and JSON, Yuris
-        # and WolfDawn kept the label of a name holding "]". WOLF2 read a line
-        # ending in "：" inside a message as a speaker, though only a message's
-        # first line names it. Regex's \text block of spaces took the next
-        # block's reply, and an empty one sent the block before it again; CSV
-        # looked for a row's text without its furigana in a target holding
-        # them, so that target stayed Japanese and an empty one lost its
-        # :name[] tag. The plugin module read a txtSubject to its line's last
-        # quote; kept a data_map_name_list region open to the enclosing
-        # block's close, counting braces in strings; read stat labels in other
-        # settings on a packed line holding one drawTextEx script; and wrote
-        # 回 after a game variable as x where it begins 回復. It read the next
-        # statement's string as a txtSubject assigned code, and skipped a
-        # brace label a match across two strings had run over.
+        # which it then wrote into that label's translation. It read a
+        # txtSubject to its line's last quote; kept a data_map_name_list
+        # region open to the enclosing block's close, counting braces in
+        # strings; read stat labels in other settings on a packed line holding
+        # one drawTextEx script; and wrote 回 after a game variable as x where
+        # it begins 回復. It read the next statement's string as a txtSubject
+        # assigned code, and skipped a brace label a match across two strings
+        # had run over.
         shapes = temporary / "engine-shapes"
         for folder in ("files", "translated", "log"):
             (shapes / folder).mkdir(parents=True)
         os.chdir(shapes)
-        platform_line_ends = {
-            "modules.nscript",
-            "modules.regex",
-            "modules.renpy",
-            "modules.wolf2",
-        }
         try:
             for module_name, handler, scene, source, options, requests, output in (
-                (
-                    "modules.nscript",
-                    "handleOnscripter",
-                    "0.txt",
-                    '*start\ncsel "はい",*yes,"いいえ",*no\n「やあ」\n',
-                    {},
-                    [["「やあ」"], ["はい", "いいえ"]],
-                    (
-                        "*start\ncsel \"EN 'はい'\",*yes,\"EN 'いいえ'\",*no\n"
-                        "　EN '「やあ」'\\\n"
-                    ),
-                ),
-                (
-                    "modules.nscript",
-                    "handleOnscripter",
-                    "0.txt",
-                    '*start\ncsel "はい",*a,"はいはい",*b,"",*c\nend\n',
-                    {},
-                    [["はい", "はいはい"]],
-                    ('*start\ncsel "EN \'はい\'",*a,"EN \'はいはい\'",*b,"",*c\nend\n'),
-                ),
                 (
                     "modules.rpgmakerplugin",
                     "handlePlugin",
@@ -1481,485 +985,9 @@ try:
                     [["回数"]],
                     (r"this.drawTextEx('\\}' + n + '\\}EN \'回数\'\\{', 0, 0);" "\n"),
                 ),
-                (
-                    "modules.csv",
-                    "handleCSV",
-                    "Scene.csv",
-                    "Source,Target\nやあ,アリス\nまたね,\n",
-                    {},
-                    [["やあ", "またね"]],
-                    'Source,Target\r\nやあ,"EN ""やあ"""\r\nまたね,"EN ""またね"""\r\n',
-                ),
-                (
-                    "modules.csv",
-                    "handleCSV",
-                    "Scene.csv",
-                    "Source,Target\nやあ,アリス\nまたね,\n",
-                    {"SPEAKER_COLUMN": 1},
-                    ["アリス", ["[Alice]: やあ", "またね"]],
-                    (
-                        'Source,Target\r\nやあ,"EN ""[Alice]: やあ"""\r\n'
-                        'またね,"EN ""またね"""\r\n'
-                    ),
-                ),
-                (
-                    "modules.csv",
-                    "handleCSV",
-                    "Scene.csv",
-                    (
-                        'Source,Target\n":name[アリス]\nアリスだよ",'
-                        '":name[アリス]\nアリスだよ"\n":name[アリス]\nやあ",\n'
-                        '":name[アリス]\n",":name[アリス]\n"\n'
-                    ),
-                    {
-                        "PARSE_NAME_TAGS": True,
-                        "name": "Al]Ice",
-                        "replies": {"[Al]Ice]: やあ": "[Al]Ice]: Hi"},
-                    },
-                    ["アリス", ["[Al]Ice]: アリスだよ", "[Al]Ice]: やあ"]],
-                    (
-                        'Source,Target\r\n":name[Al]Ice]\nアリスだよ",'
-                        '":name[Al]Ice]\nEN ""[Al]Ice]: アリスだよ"""\r\n'
-                        '":name[Al]Ice]\nやあ",":name[Al]Ice]\nHi"\r\n'
-                        '":name[Al]Ice]\n",":name[Al]Ice]\n"\r\n'
-                    ),
-                ),
-                (
-                    "modules.kirikiri",
-                    "handleKirikiri",
-                    "scene.ks",
-                    '【アリス】[CR][voice storage="アリス01"]\n[text]やあ[KeyWait]\n',
-                    {},
-                    ["アリス", ["[Alice]: やあ"]],
-                    (
-                        '【Alice】[CR][voice storage="アリス01"]\n'
-                        "[text]EN '[Alice]: やあ'[KeyWait]\n"
-                    ),
-                ),
-                (
-                    "modules.regex",
-                    "handleRegex",
-                    "script.txt",
-                    '{\n    "name": "アリス",\n    "text": "やあ",\n},\n',
-                    {},
-                    ["アリス", ["[Alice]: やあ"]],
-                    '﻿{\n    "name": "Alice",\n    "text": "EN \\"[Alice]: やあ\\"",\n},\n',
-                ),
-                (
-                    "modules.lune",
-                    "handleLune",
-                    "scene.l",
-                    json.dumps(
-                        [
-                            {"name": "アリス", "text": "一", "message": "二"},
-                            {"message": "三"},
-                            {"message": "四"},
-                            {"message": "五"},
-                        ]
-                    ),
-                    {"BATCHSIZE": 2, "MISMATCH": [], "short": 2},
-                    ["アリス", ["一", "二"], ["三", "四"], ["五"]],
-                    json.dumps(
-                        [
-                            {"name": "Alice", "text": 'EN "一"', "message": 'EN "二"'},
-                            {"message": "三"},
-                            {"message": "四"},
-                            {"message": 'EN "五"'},
-                        ],
-                        ensure_ascii=False,
-                        indent=4,
-                    ),
-                ),
-                (
-                    "modules.tyrano",
-                    "handleTyrano",
-                    "scene.ks",
-                    "#アリス\nやあ[p]\n",
-                    {},
-                    ["アリス", ["[Alice]: やあ"]],
-                    '#Alice\nEN "(Alice): やあ"[p]\n',
-                ),
-                (
-                    "modules.wolf2",
-                    "handleWOLF2",
-                    "Map001.txt",
-                    "アリス：\nやあ\n\n//選択肢\n//はい\n//いいえ\n//はいの場合\n",
-                    {},
-                    ["アリス", ["はい", "いいえ"], ["[Alice]: やあ "]],
-                    'Alice：\nEN "[Alice]: やあ "\n\n//選択肢\n//EN "はい"\n//EN "いいえ"\n//はいの場合\n',
-                ),
-                (
-                    "modules.wolf2",
-                    "handleWOLF2",
-                    "Map001.txt",
-                    "アリス：\n「待って：ね」\n\nまたね\n",
-                    {"name": "Al/Ice"},
-                    ["アリス", ["[Al/Ice]: 「待って：ね」 ", "またね "]],
-                    'Al/Ice：\nEN "[Al/Ice]: 「待って：ね」 "\n\nEN "またね "\n',
-                ),
-                (
-                    "modules.wolf2",
-                    "handleWOLF2",
-                    "Map001.txt",
-                    "やあ\r\n\r\n".encode("cp932")
-                    + b"\x81 "
-                    + "またね\r\n".encode("cp932"),
-                    {},
-                    [["やあ ", " またね "]],
-                    'EN "やあ "\n\nEN " またね "\n',
-                ),
-                (
-                    "modules.text",
-                    "handleText",
-                    "dialogue.txt",
-                    "[アリス]: やあ\n",
-                    {"name": "Al]Ice", "replies": {"[Al]Ice]: やあ": "[Al]Ice]: Hi"}},
-                    ["アリス", ["[Al]Ice]: やあ"]],
-                    "Hi\n",
-                ),
-                (
-                    "modules.regex",
-                    "handleRegex",
-                    "script.txt",
-                    '{\n    "name": "アリス", "voice": "アリス01"\n    "text": "やあ",\n},\n',
-                    {"name": "Al]Ice", "replies": {"[Al]Ice]: やあ": "[Al]Ice]: Hi"}},
-                    ["アリス", ["[Al]Ice]: やあ"]],
-                    '﻿{\n    "name": "Al]Ice", "voice": "アリス01"\n    "text": "Hi",\n},\n',
-                ),
-                (
-                    "modules.tyrano",
-                    "handleTyrano",
-                    "scene.ks",
-                    "#アリス\nやあ[p]\n",
-                    {"name": "Al]Ice", "replies": {"[Al]Ice]: やあ": "[Al]Ice]: Hi"}},
-                    ["アリス", ["[Al]Ice]: やあ"]],
-                    "#Al]Ice\nHi[p]\n",
-                ),
-                (
-                    "modules.kirikiri",
-                    "handleKirikiri",
-                    "scene.ks",
-                    "【アリス】[CR]\n[text]やあ[KeyWait]\n【アリス】[CR]\n",
-                    {"name": "Al]Ice", "replies": {"[Al]Ice]: やあ": "[Al]Ice]: Hi"}},
-                    ["アリス", ["[Al]Ice]: やあ"]],
-                    "【Al]Ice】[CR]\n[text]Hi[KeyWait]\n【Al]Ice】[CR]\n",
-                ),
-                (
-                    "modules.renpy",
-                    "handleRenpy",
-                    "script.rpy",
-                    '    アリス "やあ"\n',
-                    {"name": "Al]Ice", "replies": {"[Al]Ice]: やあ": "[Al]Ice]: Hi"}},
-                    ["アリス", ["[Al]Ice]: やあ"]],
-                    '    アリス "Hi"\n',
-                ),
-                (
-                    "modules.lune",
-                    "handleLune",
-                    "scene.l",
-                    json.dumps([{"name": "アリス", "message": "注意：扉"}]),
-                    {"replies": {"注意：扉": "Note: the door"}},
-                    ["アリス", ["注意：扉"]],
-                    json.dumps(
-                        [{"name": "Alice", "message": "Note: the door"}],
-                        ensure_ascii=False,
-                        indent=4,
-                    ),
-                ),
-                (
-                    "modules.json",
-                    "handleJSON",
-                    "Talk.json",
-                    json.dumps([{"character_nameText": "アリス", "m_text": "やあ"}]),
-                    {"replies": {"[Alice]: やあ": "[Alice]: Hi"}},
-                    ["アリス", ["[Alice]: やあ"]],
-                    json.dumps(
-                        [{"character_nameText": "Alice", "m_text": "Hi"}],
-                        ensure_ascii=False,
-                        indent=4,
-                    ),
-                ),
-                (
-                    "modules.wolf2",
-                    "handleWOLF2",
-                    "Map001.txt",
-                    "やあ\n//選択肢\n//はい\n//いいえ\n//はいの場合\n\n「待って：ね」\n\n：さて\n",
-                    {},
-                    [["はい", "いいえ"], ["やあ ", "「待って：ね」 ", "：さて "]],
-                    (
-                        'EN "やあ "\n//選択肢\n//EN "はい"\n//EN "いいえ"\n//はいの場合\n'
-                        '\nEN "「待って：ね」 "\n\nEN "：さて "\n'
-                    ),
-                ),
-                (
-                    "modules.wolf2",
-                    "handleWOLF2",
-                    "Map001.txt",
-                    "アリス：\nやあ\n\nアリス：\n",
-                    {"name": "Al]Ice", "replies": {"[Al]Ice]: やあ ": "[Al]Ice]: Hi"}},
-                    ["アリス", ["[Al]Ice]: やあ "]],
-                    "Al]Ice：\nHi\n\nAl]Ice：\n",
-                ),
-                (
-                    "modules.wolf2",
-                    "handleWOLF2",
-                    "Map001.txt",
-                    "やあ\n\n//選択肢\n//はい\n//いいえ\n",
-                    {},
-                    [["はい", "いいえ"], ["やあ "]],
-                    'EN "やあ "\n\n//選択肢\n//EN "はい"\n//EN "いいえ"\n',
-                ),
-                (
-                    "modules.text",
-                    "handleText",
-                    "dialogue.txt",
-                    "[アリス]: やあ\n\u3000\n静かだ\n",
-                    {},
-                    ["アリス", ["[Alice]: やあ", "静かだ"]],
-                    'EN "[Alice]: やあ"\n\u3000\nEN "静かだ"\n',
-                ),
-                (
-                    "modules.tyrano",
-                    "handleTyrano",
-                    "scene.ks",
-                    "#アリス:smile\nやあ[p]\n\u3000[p]\nまたね[p]\n",
-                    {"name": "Alice\n(a name)"},
-                    ["アリス", ["[Alice]: やあ", "[Alice]: またね"]],
-                    (
-                        '#Alice:smile\nEN "(Alice): やあ"[p]\n\u3000[p]\n'
-                        'EN "(Alice): またね"[p]\n'
-                    ),
-                ),
-                (
-                    "modules.kirikiri",
-                    "handleKirikiri",
-                    "scene.ks",
-                    "【アリス】[CR]\n【ボブ】[CR]\n[text]やあ[KeyWait]\n\u3000一\n\u3000\n\u3000二\n",
-                    {},
-                    ["アリス", "ボブ", ["[Alice]: やあ", "一", "二"]],
-                    (
-                        "【Alice】[CR]\n【Alice】[CR]\n[text]EN '[Alice]: やあ'[KeyWait]\n"
-                        '\u3000EN "一"\n\u3000\n\u3000EN "二"\n'
-                    ),
-                ),
-                (
-                    "modules.wolf2",
-                    "handleWOLF2",
-                    "Map001.txt",
-                    (
-                        "アリス：\nやあ\n答えは次の通り：\n三だ\n"
-                        "//選択肢\n//はい\n//いいえ\nボブ：\nまたね\n"
-                    ),
-                    {},
-                    [
-                        "アリス",
-                        ["はい", "いいえ"],
-                        "ボブ",
-                        ["[Alice]: やあ 答えは次の通り： 三だ ", "[Alice]: またね "],
-                    ],
-                    (
-                        'Alice：\nEN "[Alice]: やあ 答えは次の通り： 三だ "\n'
-                        '//選択肢\n//EN "はい"\n//EN "いいえ"\n'
-                        'Alice：\nEN "[Alice]: またね "\n'
-                    ),
-                ),
-                (
-                    "modules.regex",
-                    "handleRegex",
-                    "script.txt",
-                    (
-                        "\\text\n一\n\\endtext\n\\text\n\\endtext\n"
-                        "\\text\n\u3000\n\\endtext\n\\text\n二\n\\endtext\n"
-                    ),
-                    {},
-                    [["一", "二"]],
-                    (
-                        "\ufeff\\text\nEN 一\n\\endtext\n\\text\n\\endtext\n"
-                        "\\text\n\u3000\n\\endtext\n\\text\nEN 二\n\\endtext\n"
-                    ),
-                ),
-                (
-                    "modules.csv",
-                    "handleCSV",
-                    "Scene.csv",
-                    'Source,Target\n"\\M[やあ]\nやあ",\n',
-                    {"PARSE_M_MARKERS": True},
-                    [["やあ"]],
-                    'Source,Target\r\n"\\M[やあ]\nやあ","\\M[やあ]\nEN ""やあ"""\r\n',
-                ),
-                (
-                    "modules.csv",
-                    "handleCSV",
-                    "Scene.csv",
-                    (
-                        'Source,Target\n":name[アリス]\n＜漢字＝かんじ＞だよ",'
-                        '":name[アリス]\n＜漢字＝かんじ＞だよ"\n'
-                        '":name[アリス]\n＜仮名＝かな＞か",\n'
-                        '":name[アリス]\n＜仮名＝かな＞だ",":name[アリス]\n仮名だ"\n'
-                    ),
-                    {"PARSE_NAME_TAGS": True},
-                    [
-                        "アリス",
-                        ["[Alice]: 漢字だよ", "[Alice]: 仮名か", "[Alice]: 仮名だ"],
-                    ],
-                    (
-                        'Source,Target\r\n":name[Alice]\n＜漢字＝かんじ＞だよ",'
-                        '":name[Alice]\nEN ""[Alice]: 漢字だよ"""\r\n'
-                        '":name[Alice]\n＜仮名＝かな＞か",'
-                        '":name[Alice]\nEN ""[Alice]: 仮名か"""\r\n'
-                        '":name[Alice]\n＜仮名＝かな＞だ",'
-                        '":name[Alice]\nEN ""[Alice]: 仮名だ"""\r\n'
-                    ),
-                ),
-                (
-                    "modules.json",
-                    "handleJSON",
-                    "Talk.json",
-                    json.dumps(
-                        [
-                            {"character_nameText": "アリス", "m_text": "やあ"},
-                            {"m_text": "静かだ"},
-                            {"character_nameText": "", "m_text": "またね"},
-                        ]
-                    ),
-                    {"name": "Al]Ice", "replies": {"[Al]Ice]: やあ": "[Al]Ice]: Hi"}},
-                    ["アリス", ["[Al]Ice]: やあ", "静かだ", "またね"]],
-                    json.dumps(
-                        [
-                            {"character_nameText": "Al]Ice", "m_text": "Hi"},
-                            {"m_text": "EN 静かだ"},
-                            {"character_nameText": "", "m_text": "EN またね"},
-                        ],
-                        ensure_ascii=False,
-                        indent=4,
-                    ),
-                ),
-                (
-                    "modules.yuris",
-                    "handleYuris",
-                    "yuris.json",
-                    json.dumps([{"name": "アリス", "message": "やあ"}]),
-                    {"name": "Al]Ice", "replies": {"[Al]Ice]: やあ": "[Al]Ice]: Hi"}},
-                    ["アリス", ["[Al]Ice]: やあ"]],
-                    json.dumps(
-                        [{"name": "Al]Ice", "message": "Hi"}],
-                        ensure_ascii=False,
-                        indent=4,
-                    ),
-                ),
-                (
-                    "modules.csv",
-                    "handleCSV",
-                    "Scene.csv",
-                    "Source,Target\n＜漢字＝かんじ＞と＜仮名＝かな＞だ,\n",
-                    {},
-                    [["漢字と仮名だ"]],
-                    'Source,Target\r\n＜漢字＝かんじ＞と＜仮名＝かな＞だ,"EN ""漢字と仮名だ"""\r\n',
-                ),
-                (
-                    "modules.regex",
-                    "handleRegex",
-                    "script.txt",
-                    '{\n    "name": "アリス",\n},\n\\text\n一\n\\endtext\n{\n    "text": "やあ",\n},\n',
-                    {},
-                    ["アリス", ["一", "[Alice]: やあ"]],
-                    (
-                        '\ufeff{\n    "name": "Alice",\n},\n\\text\nEN 一\n\\endtext\n'
-                        '{\n    "text": "EN \\"[Alice]: やあ\\"",\n},\n'
-                    ),
-                ),
-                (
-                    "modules.regex",
-                    "handleRegex",
-                    "script.txt",
-                    "\\text\n一\n\\endtext\n\\text\n二\n\\endtext\n",
-                    {"short": 1},
-                    [["一", "二"]],
-                    "\ufeff\\text\n一\n\\endtext\n\\text\n二\n\\endtext\n",
-                ),
-                (
-                    "modules.json",
-                    "handleJSON",
-                    "Talk.json",
-                    json.dumps([{"m_text": "やあ"}, {"m_text": "またね"}]),
-                    {"short": 1},
-                    [["やあ", "またね"]],
-                    json.dumps(
-                        [{"m_text": "やあ"}, {"m_text": "またね"}],
-                        ensure_ascii=False,
-                        indent=4,
-                    ),
-                ),
-                (
-                    "modules.kirikiri",
-                    "handleKirikiri",
-                    "scene.ks",
-                    "[text]一[r]二[KeyWait]\n",
-                    {"short": 1},
-                    [["一 二"]],
-                    "[text]一[r]二[KeyWait]\n",
-                ),
-                (
-                    "modules.kirikiri",
-                    "handleKirikiri",
-                    "scene.ks",
-                    (
-                        '[思考 storage="x"]あいう[r]えお[/思考][KeyWait]\n'
-                        '[思考 storage="a"][/思考]\n[text]次[KeyWait]\n'
-                    ),
-                    {
-                        "replies": {
-                            "[Alice]: あいう えお": "[Alice]: Thinking",
-                            "えお": "Eo",
-                            "次": "Next",
-                        }
-                    },
-                    ["思考", ["[Alice]: あいう えお", "えお", "次"]],
-                    (
-                        '[思考 storage="x"]Thinking[/思考][KeyWait]\n'
-                        '[思考 storage="a"][/思考]\n[text]Next[KeyWait]\n'
-                    ),
-                ),
-                (
-                    "modules.tyrano",
-                    "handleTyrano",
-                    "scene.ks",
-                    (
-                        "地の文\nやあ[l]\n[cm]\n"
-                        '[glink text="" target="*a"]\n[glink text="はい" target="*b"]\n[s]\n'
-                    ),
-                    {},
-                    [["地の文やあ"], ["はい"]],
-                    (
-                        'EN "地の文やあ"[cm]\n[glink text="" target="*a"]\n'
-                        '[glink text="EN\u3000"はい"" target="*b"]\n[s]\n'
-                    ),
-                ),
-                (
-                    "modules.lune",
-                    "handleLune",
-                    "scene.l",
-                    json.dumps([{"message": ""}, {"message": "やあ"}]),
-                    {},
-                    [["やあ"]],
-                    json.dumps(
-                        [{"message": ""}, {"message": 'EN "やあ"'}],
-                        ensure_ascii=False,
-                        indent=4,
-                    ),
-                ),
             ):
                 module = import_module(module_name)
-                encoding = "utf-8"
-                if module_name in (
-                    "modules.nscript",
-                    "modules.kirikiri",
-                    "modules.wolf2",
-                ):
-                    encoding = "cp932"
-                if isinstance(source, str):
-                    source = source.encode(encoding)
-                (shapes / "files" / scene).write_bytes(source)
+                (shapes / "files" / scene).write_text(source, "utf-8")
                 sent = []
                 # The reply to a name, which list reply leaves out its last
                 # line (a mismatch), counting from 1, and replies to some
@@ -1983,75 +1011,12 @@ try:
                         return [lines, [1, 1]]
                     return [reply, [1, 1]]
 
-                # Each run starts with an empty speaker name cache
                 its = {"translateAI": shape_reply, **options}
-                if hasattr(module, "NAMESLIST"):
-                    its["NAMESLIST"] = []
                 with patch.multiple(module, **its), redirect_stdout(StringIO()):
                     getattr(module, handler)(scene, False)
                 assert sent == requests, (module_name, sent)
-                # These modules write the platform's line ends (write_output's
-                # newline=None); the expected text spells them "\n".
-                if module_name in platform_line_ends:
-                    output = output.replace("\n", os.linesep)
-                written = (shapes / "translated" / scene).read_bytes()
-                assert written.decode(encoding) == output, (module_name, written)
-
-            # A Regex \text block with no \endtext fails its file naming the
-            # block, where the walk ran past the file's end
-            regex = import_module("modules.regex")
-            (shapes / "files" / "open.txt").write_text("一\n\\text\n二\n", "utf-8")
-            with (
-                patch.multiple(regex, translateAI=offline),
-                redirect_stdout(StringIO()),
-                redirect_stderr(StringIO()),
-            ):
-                try:
-                    regex.handleRegex("open.txt", False)
-                except ValueError as error:
-                    assert "\\text block on line 2 has no \\endtext" in str(error), (
-                        error
-                    )
-                else:
-                    raise AssertionError("A Regex file passed an open \\text block.")
-
-            # WolfDawn sends a first-line nameplate as the line's speaker
-            wolfdawn = import_module("modules.wolfdawn")
-            dawn = {
-                "kind": "map",
-                "scenes": [
-                    {
-                        "lines": [
-                            {
-                                "source": "アリス\nやあ",
-                                "text": "アリス\nやあ",
-                                "speaker": "アリス",
-                                "speaker_src": "literal_line1",
-                            }
-                        ]
-                    }
-                ],
-            }
-
-            def dawn_reply(text, *_args, **_kwargs):
-                if isinstance(text, list):
-                    assert text == ["[Al]Ice]: やあ"], text
-                    return [["[Al]Ice]: Hi"], [1, 1]]
-                return ["Al]Ice", [1, 1]]
-
-            with (
-                patch.multiple(
-                    wolfdawn,
-                    translateAI=dawn_reply,
-                    NAMESLIST=[],
-                    VOCAB="",
-                    _speakerCache={},
-                ),
-                redirect_stdout(StringIO()),
-            ):
-                wolfdawn.parseDocument(dawn, "Map001.json")
-            written = dawn["scenes"][0]["lines"][0]["text"]
-            assert written == "Al]Ice\nHi", written
+                written = (shapes / "translated" / scene).read_text("utf-8")
+                assert written == output, (module_name, written)
         finally:
             os.chdir(directory)
         # A name a registered reference game already translated is reused
@@ -2115,7 +1080,6 @@ try:
         # A database pass translates only the names still in Japanese. It used
         # to replace the whole glossary section with them, which erased about
         # 1,100 rows of a game after a patch added a few items.
-        from modules import srpg
         from util.paths import ensure_game_glossary
         from util.vocab import BASE_SEPARATOR
 
@@ -2154,22 +1118,6 @@ try:
                     game_text.replace("毒 (Poison)\n", "毒 (Poison)\n新薬 (EN:新薬)\n")
                     + base_text
                 ), text
-                # SRPG Studio fills the same sections; its characters stay as
-                # curated, while a name translated again takes its new spelling.
-                # A name a hand-written row lists as a variant gained a
-                # conflicting row, and Assistant-led's import then refused.
-                srpg.update_vocab_section(
-                    "Game Characters",
-                    [("サンク", "Sunk"), ("ネーナ", "Nena"), ("新人", "Newbie")],
-                    curated=True,
-                )
-                srpg.update_vocab_section("Items", [("毒", "Venom")])
-                text = glossary.read_text(encoding="utf-8")
-                expected = game_text.replace(
-                    "毒 (Poison)", "毒 (Venom)\n新薬 (EN:新薬)"
-                )
-                expected = expected.replace("(Nina)\n", "(Nina)\n新人 (Newbie)\n")
-                assert text == expected + base_text, text
                 from util.len_translation import LenProject, import_glossary
 
                 imported = import_glossary(
@@ -4490,7 +3438,7 @@ try:
             "c.json": "Fail",
             "d.json": "Stopped",
         }
-        json_task = TranslationTask(temporary, ("JSON", (".json",), None))
+        json_task = TranslationTask(temporary, ("Image Text", (".json",), None))
         finished = []
         json_task.file_finished_signal.connect(finished.append)
         with (
@@ -4633,12 +3581,6 @@ try:
                 {"displayName": "", "events": [None, stop_event]},
                 ensure_ascii=False,
             )
-        texts = ["Text1.json", "Text2.json"]
-        stop_texts = {}
-        for number, text_file in enumerate(texts, 1):
-            stop_texts[text_file] = json.dumps(
-                {f"村人{number}の話を聞いてくれ。": "TODO"}, ensure_ascii=False
-            )
         # The stand-in rejects requests as the provider's SDK does, without
         # importing the SDK, which took most of each worker's start-up: the
         # engine must read its error exactly as it reads the SDK's own.
@@ -4745,12 +3687,11 @@ try:
         }
 
         def stop_run(name, module, refusal, policy, selected, pays=False):
-            """One run's task and what it handed, sent, logged and wrote."""
+            """One run's task and what it handed, sent and logged."""
             folder = stop_root / name
             (folder / "files").mkdir(parents=True)
             (folder / "translated").mkdir()
-            game = stop_maps | (stop_texts if module == "JSON" else {})
-            for file_name, text in game.items():
+            for file_name, text in stop_maps.items():
                 (folder / "files" / file_name).write_text(text, encoding="utf-8")
             (folder / "stand-in.json").write_text(
                 json.dumps({"refuses": refusal, "policy": policy, "pays": pays}),
@@ -4765,10 +3706,7 @@ try:
             task.log_signal.connect(logged.append)
             result = task._run_files(selected, False)
             requests = (folder / "sent.txt").read_text(encoding="utf-8").split()
-            written = sorted(
-                path.name for path in (folder / "translated").glob("Text*.json")
-            )
-            return task, result, errors, handed, logged, requests, written
+            return task, result, errors, handed, logged, requests
 
         from dazedtl.compatibility.process_view import paid_receipts
 
@@ -4784,12 +3722,9 @@ try:
             ("effort", "0", maps[:2], maps[:2], None),
             ("model", "1", maps, maps[:3], True),
         )
-        # Under the policy the stand-in answers the first request, which the
-        # file pays for before the stop leaves its handler.
-        text_runs = (("1", 2), ("0", 2))
         with (
             patch.dict(os.environ, stop_environment),
-            ThreadPoolExecutor(len(mvmz_runs) + len(text_runs)) as runs,
+            ThreadPoolExecutor(len(mvmz_runs)) as runs,
         ):
             mvmz_futures = [
                 runs.submit(
@@ -4801,22 +3736,10 @@ try:
                 )
                 for number, run in enumerate(mvmz_runs)
             ]
-            text_futures = [
-                runs.submit(
-                    stop_run,
-                    f"text-{policy}",
-                    "JSON",
-                    "effort",
-                    policy,
-                    texts,
-                    policy == "1",
-                )
-                for policy, _ in text_runs
-            ]
         for (refusal, policy, selected, files, stopped), future in zip(
             mvmz_runs, mvmz_futures
         ):
-            stop_task, result, errors, handed, logged, requests, _ = future.result()
+            stop_task, result, errors, handed, logged, requests = future.result()
             case = (refusal, policy, errors)
             assert result == "Fail", (case, result)
             assert handed == files, (case, handed)
@@ -4860,37 +3783,6 @@ try:
             else:
                 assert errors == [("Map001.json", stopped)], case
                 assert stop_task.run_stop == stopped, case
-        # Outside RPG Maker the stop leaves the module's parse and file
-        # handlers too, so the stopped file fails instead of being written
-        # out as finished; a run frozen before the policy goes on, each
-        # refused file failing alone as RPG Maker's do, where it was written
-        # untranslated and read translated. A file the per-file executor
-        # started before the stop meets it without sending.
-        for (policy, sends), future in zip(text_runs, text_futures):
-            stop_task, result, errors, handed, logged, requests, written = (
-                future.result()
-            )
-            case = (policy, result, errors)
-            assert handed == texts[: len(handed)], (case, handed)
-            assert len(requests) == sends, (case, requests)
-            # A response paid for before the run stop reaches the ledger too.
-            paid = paid_tokens(stop_task)
-            assert paid == ({"Text1.json": (11, 3)} if policy == "1" else {}), (
-                case,
-                paid,
-            )
-            if policy == "1":
-                assert result == "Fail", case
-                assert errors[0] == ("Text1.json", refused_effort), case
-                assert errors == [(name, refused_effort) for name in handed], case
-                assert stop_task.run_stop == refused_effort, case
-                assert written == [], (case, written)
-            else:
-                assert result == "Fail", case
-                assert handed == texts, case
-                assert errors == [(name, refused_effort) for name in texts], case
-                assert stop_task.run_stop is None, case
-                assert written == [], (case, written)
         # That worker saves a Batch's files one after another; a file missing
         # a result must not keep the files after it from saving theirs. Each
         # file reports only its own exact cost.

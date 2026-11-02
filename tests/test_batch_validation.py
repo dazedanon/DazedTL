@@ -245,7 +245,7 @@ class BatchValidationTests(unittest.TestCase):
                     root / "plan.json",
                     {
                         "mode": "batch",
-                        "engine": "JSON",
+                        "engine": "RPG Maker MV/MZ",
                         "settings": {"model": config.model, "batchsize": 20},
                         "legacy_origin": {"root": "original", "batch_id": "b1"},
                     },
