@@ -3,6 +3,12 @@
 Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 [release.mjs](scripts/release.mjs) writes each entry from [release/notes.md](release/notes.md).
 
+## [2.53.1] - 2026-11-02
+
+### Fixed
+
+- **Plugin files:** a plugin's quest subject, map names and drawn labels are translated in their own text only, so other settings and code on the same line of plugins.js are no longer sent or overwritten, and 回 in a word such as 回復 is no longer written as x.
+
 ## [2.53.0] - 2026-10-31
 
 ### Added
@@ -1503,6 +1509,7 @@ Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachan
 - The first release of DazedTL as a desktop app, installed from a ZIP with a START launcher and updated from inside the app.
 - **Guided steps** for RPG Maker MV, MZ and VX Ace games, and **Assistant-led** for any game.
 
+[2.53.1]: https://github.com/dazedanon/DazedTL/compare/v2.53.0...v2.53.1
 [2.53.0]: https://github.com/dazedanon/DazedTL/compare/v2.52.9...v2.53.0
 [2.52.9]: https://github.com/dazedanon/DazedTL/compare/v2.52.8...v2.52.9
 [2.52.8]: https://github.com/dazedanon/DazedTL/compare/v2.52.7...v2.52.8
