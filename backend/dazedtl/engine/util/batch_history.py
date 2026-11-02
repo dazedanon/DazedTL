@@ -33,7 +33,6 @@ from util.translation import (
     batch_usage_cost,
 )
 from util.batch_providers import (
-    OWN_API_URLS,
     PROVIDER_GEMINI,
     PROVIDER_KIMI,
     cancel_batch as provider_cancel_batch,
@@ -136,17 +135,17 @@ def _require_run_connection(entry: dict, provider: str) -> None:
     provider's own API counting as that API; otherwise the run's key would
     go where it does not belong, or the Batch be asked for where it is not,
     so it is refused before anything is sent."""
-    from dazedtl.settings.providers import absolute, own_api
+    from dazedtl.settings.providers import OWN_APIS, absolute, own_api
 
     def connection(address):
         if own_api(provider, address):
-            return OWN_API_URLS[provider]
+            return OWN_APIS[provider]
         return absolute(address).rstrip("/").lower() if address else ""
 
-    recorded = str(entry.get("endpoint") or "").strip() or OWN_API_URLS[provider]
+    recorded = str(entry.get("endpoint") or "").strip() or OWN_APIS[provider]
     # With no address set, the run sends to its protocol's own API.
     protocol = os.getenv("API_PROVIDER", "openai").strip().lower()
-    current = os.getenv("api", "").strip() or OWN_API_URLS.get(protocol, "")
+    current = os.getenv("api", "").strip() or OWN_APIS.get(protocol, "")
     if connection(current) and connection(current) == connection(recorded):
         return
     raise ValueError(
@@ -679,7 +678,6 @@ def download_batch_results(
     *,
     client=None,
     provider="anthropic",
-    google_client=None,
 ) -> tuple[dict, list, dict]:
     """Download one ended batch into a cache-key -> result map.
 
@@ -687,8 +685,7 @@ def download_batch_results(
     """
     if provider != "anthropic":
         return provider_download_results(
-            provider, batch_id, custom_ids, client=client,
-            google_client=google_client,
+            provider, batch_id, custom_ids, client=client
         )
     client = client or _get_anthropic_client()
     results, errored = {}, []

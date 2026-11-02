@@ -48,8 +48,6 @@ from util.provider_costs import (
 )
 from util import claude_tokens, request_debug
 from util.batch_providers import (
-    GEMINI_API_URL,
-    OWN_API_URLS,
     live_price_route,
     openai_usage,
     rejects_response_format,
@@ -81,6 +79,7 @@ from util.prompt_pair import (
 )
 from util.source_text import source_left
 from util import system
+from dazedtl.settings.providers import OWN_APIS
 from util.target_text import (
     BRACKETS,
     SKIPPED,
@@ -724,12 +723,8 @@ def _is_map_name_batch(request_instructions) -> bool:
 load_dotenv()
 api_provider = os.getenv("API_PROVIDER", "openai").lower()
 env_api = os.getenv("api", "").strip()
-if api_provider == "gemini" and not env_api:
-    # Use Google Generative Language compatibility endpoint only as fallback.
-    openai.base_url = GEMINI_API_URL
-    openai.organization = None
-elif api_provider == "mistral" and not env_api:
-    openai.base_url = "https://api.mistral.ai/v1/"
+if api_provider in ("gemini", "mistral") and not env_api:
+    openai.base_url = _normalize_openai_base_url(OWN_APIS[api_provider])
     openai.organization = None
 else:
     if env_api:
@@ -3084,7 +3079,7 @@ def _submit_translation_batches_unlocked(file_set=None, cost_estimate=None):
     )
 
     current_key_name = active_key_name_for_environment()
-    current_endpoint = os.getenv("api", "").strip() or OWN_API_URLS.get(provider, "")
+    current_endpoint = os.getenv("api", "").strip() or OWN_APIS.get(provider, "")
     existing_key_names = {
         str(info.get("key_name") or key_name_for_batch(info.get("id", "")))
         for info in batches
@@ -5408,10 +5403,8 @@ def translateText(system, user, history, penalty, formatType, model, numLines=No
     _live_api = os.getenv("api", "").strip()
     _live_key = os.getenv("key", "").strip()
     _live_provider = os.getenv("API_PROVIDER", "openai").lower()
-    if _live_provider == "gemini" and not _live_api:
-        openai.base_url = GEMINI_API_URL
-    elif _live_provider == "mistral" and not _live_api:
-        openai.base_url = "https://api.mistral.ai/v1/"
+    if _live_provider in ("gemini", "mistral") and not _live_api:
+        openai.base_url = _normalize_openai_base_url(OWN_APIS[_live_provider])
     elif _live_api:
         openai.base_url = _normalize_openai_base_url(_live_api)
     _live_key_optional = os.getenv("API_KEY_OPTIONAL", "").strip().lower() in ("1", "true", "yes")

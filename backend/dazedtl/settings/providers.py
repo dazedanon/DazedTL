@@ -12,6 +12,23 @@ import httpx
 
 from . import effort
 
+# Each provider's own API, the one address of each: its preset's, where its
+# key goes when no address is set (engine batch_providers get_client and the
+# Live sends), and by its host (OWN_HOSTS) the only server that is it. Saved
+# connections and runs compare addresses by route(), which reads a trailing
+# slash as none.
+# https://ai.google.dev/gemini-api/docs/openai
+# https://platform.kimi.ai/docs/api/overview
+OWN_APIS = {
+    "openai": "https://api.openai.com/v1",
+    "openrouter": "https://openrouter.ai/api/v1",
+    "anthropic": "https://api.anthropic.com",
+    "gemini": "https://generativelanguage.googleapis.com/v1beta/openai/",
+    "mistral": "https://api.mistral.ai/v1",
+    "kimi": "https://api.moonshot.ai/v1",
+    "deepseek": "https://api.deepseek.com",
+}
+
 # A preset declares its transport protocol independently of its identity. Kimi,
 # DeepSeek and OpenRouter keep OpenAI's Live request formats under their own
 # identity, so Kimi's Batches carry its eligible models and price factor (engine
@@ -25,40 +42,40 @@ PROVIDERS = {
         # Test scenarios point OpenAI at a local stand-in to run Batch offline;
         # see "Test scenarios" in docs/development.md.
         "endpoint": os.environ.get("DAZEDTL_TEST_OPENAI_ENDPOINT")
-        or "https://api.openai.com/v1",
+        or OWN_APIS["openai"],
     },
     # Test scenarios check these presets against the stand-in's model lists.
     "openrouter": {
         "label": "OpenRouter",
         "protocol": "openai",
         "endpoint": os.environ.get("DAZEDTL_TEST_OPENROUTER_ENDPOINT")
-        or "https://openrouter.ai/api/v1",
+        or OWN_APIS["openrouter"],
     },
     "anthropic": {
         "label": "Anthropic",
         "protocol": "anthropic",
         "endpoint": os.environ.get("DAZEDTL_TEST_ANTHROPIC_ENDPOINT")
-        or "https://api.anthropic.com",
+        or OWN_APIS["anthropic"],
     },
     "gemini": {
         "label": "Google Gemini",
         "protocol": "gemini",
-        "endpoint": "https://generativelanguage.googleapis.com/v1beta/openai",
+        "endpoint": OWN_APIS["gemini"],
     },
     "mistral": {
         "label": "Mistral",
         "protocol": "mistral",
-        "endpoint": "https://api.mistral.ai/v1",
+        "endpoint": OWN_APIS["mistral"],
     },
     "kimi": {
         "label": "Kimi",
         "protocol": "openai",
-        "endpoint": "https://api.moonshot.ai/v1",
+        "endpoint": OWN_APIS["kimi"],
     },
     "deepseek": {
         "label": "DeepSeek",
         "protocol": "openai",
-        "endpoint": "https://api.deepseek.com",
+        "endpoint": OWN_APIS["deepseek"],
     },
     "custom": {"label": "Custom / local", "protocol": "openai", "endpoint": ""},
 }
@@ -118,26 +135,6 @@ def validate_model_name(model, endpoint, *, created=False):
     )
 
 
-# The host only a provider's own API serves, unlike others that serve its models.
-OWN_HOSTS = {
-    "anthropic": "api.anthropic.com",
-    "openai": "api.openai.com",
-    "kimi": "api.moonshot.ai",
-    "deepseek": "api.deepseek.com",
-    "gemini": "generativelanguage.googleapis.com",
-}
-# The hosts of the presets' own APIs, whose error answers are the provider's
-# own, OpenRouter's for the providers it routes to; on any other host, a local
-# one included, an error may be a gateway's in front of the model.
-PRESET_HOSTS = frozenset(
-    {
-        *OWN_HOSTS.values(),
-        "api.mistral.ai",
-        "openrouter.ai",
-    }
-)
-
-
 def absolute(address):
     """A server *address* as a URL: one typed without a scheme, such as
     "api.anthropic.com/v1", reads as HTTPS. hostname and the Claude
@@ -158,6 +155,15 @@ def hostname(address):
         return urlsplit(absolute(address)).hostname
     except ValueError:
         return None
+
+
+# The host only a provider's own API serves, unlike others that serve its
+# models: its own API's (OWN_APIS).
+OWN_HOSTS = {identity: hostname(url) for identity, url in OWN_APIS.items()}
+# The hosts of the presets' own APIs, whose error answers are the provider's
+# own, OpenRouter's for the providers it routes to; on any other host, a local
+# one included, an error may be a gateway's in front of the model.
+PRESET_HOSTS = frozenset(OWN_HOSTS.values())
 
 
 def address_path(address):
@@ -189,14 +195,23 @@ STAND_INS = {
 
 
 def own_api(identity, endpoint):
-    """Whether `endpoint` is the provider `identity`'s own API: Anthropic's,
-    with Message Batches and only Claude's own IDs; OpenAI's, whose Batches
-    share one enqueued-token window; Kimi's, with its own Batches;
-    DeepSeek's, with its own output ceiling and JSON mode; or Gemini's, with
-    its own Batches and model list. The one rule the app
-    and the engine ask; in test scenarios the OpenAI and Anthropic presets'
+    """Whether `endpoint` is the provider `identity`'s own API, at its host
+    (OWN_HOSTS): Anthropic's, with Message Batches and only Claude's own IDs;
+    OpenAI's, whose Batches share one enqueued-token window; Kimi's, with its
+    own Batches; DeepSeek's, with its own output ceiling and JSON mode;
+    Gemini's, with its own Batches and model list; OpenRouter's, with its own
+    Batches and prices; or Mistral's. The one rule the app and the engine
+    ask; in test scenarios the OpenAI, Anthropic and OpenRouter presets'
     stand-ins (STAND_INS) count as their APIs, paths under them included."""
     return hostname(endpoint) == OWN_HOSTS[identity] or _stand_in(identity, endpoint)
+
+
+def on_own_api(identity, address):
+    """Whether a request that `identity`'s own client sends to `address`
+    reaches `identity`'s own API: with no address set, where that client
+    sends (OWN_APIS), or one at its host (own_api). The one rule for "no
+    address set" the app and the engine ask."""
+    return not str(address or "").strip() or own_api(identity, address)
 
 
 def _stand_in(identity, endpoint):
@@ -219,7 +234,7 @@ def completion_field(protocol, endpoint):
     if protocol == "kimi":
         return True
     return protocol == "openai" and (
-        not endpoint or own_api("openai", endpoint) or own_api("kimi", endpoint)
+        on_own_api("openai", endpoint) or own_api("kimi", endpoint)
     )
 
 
@@ -259,9 +274,12 @@ def response_format(protocol, endpoint, model, schema, name, *, batch=False):
 
 
 def route(protocol, url):
+    """A connection's route, compared to tell whether two connections or a
+    connection and a saved run are the same: its protocol and address
+    without a trailing slash, Anthropic's own API with or without "/v1"."""
     value = url.rstrip("/")
-    if protocol == "anthropic" and value == "https://api.anthropic.com/v1":
-        value = "https://api.anthropic.com"
+    if protocol == "anthropic" and value == OWN_APIS["anthropic"] + "/v1":
+        value = OWN_APIS["anthropic"]
     return protocol, value
 
 

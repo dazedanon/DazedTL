@@ -13,12 +13,12 @@ from urllib.parse import quote
 import httpx
 
 from dazedtl.settings.openrouter import MAX_BYTES, MAX_REQUESTS, validate_policy
-from dazedtl.settings.providers import PROVIDERS, openrouter_host
+from dazedtl.settings.providers import OWN_APIS, PROVIDERS, openrouter_host
 from dazedtl.storage import write_json
 from dazedtl.translation.files import decode_json, digest, project_path, read_json
 from dazedtl.translation.refusals import refusal_reason, refused
 
-BASE_URL = "https://openrouter.ai/api/v1"
+BASE_URL = OWN_APIS["openrouter"]
 TERMINAL = {"completed", "failed", "expired", "cancelled"}
 MAX_RESPONSE_BYTES = 64_000_000
 _worker_policy = None
@@ -73,9 +73,10 @@ def error_reason(body, secret):
 
 
 def is_route(endpoint):
-    """Whether ``endpoint`` is OpenRouter's API, or the OpenRouter preset's
-    address, which test scenarios point at their stand-in
-    (settings/providers PROVIDERS)."""
+    """Whether ``endpoint`` is exactly OpenRouter's API address, or the
+    OpenRouter preset's, which test scenarios point at their stand-in
+    (settings/providers PROVIDERS): stricter than its host (own_api), so a
+    Batch's key goes only over HTTPS to the path its transport sends to."""
     endpoint = str(endpoint or "").rstrip("/")
     return endpoint in {BASE_URL, PROVIDERS["openrouter"]["endpoint"].rstrip("/")}
 

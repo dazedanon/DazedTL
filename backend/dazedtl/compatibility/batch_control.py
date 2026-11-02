@@ -110,21 +110,24 @@ def binding(batch):
 
 @contextmanager
 def connection(batch, resolve, *, receipt_root=None):
+    """The saved connection a Batch already created is followed through,
+    its refusal clarification included: the Batch's own key at the server
+    it was created on (batch_providers.batch_client)."""
+    from util.batch_providers import batch_client
+
     value = resolve(batch)
     provider = TranslationProvider(
         {**value, "protocol": batch["provider"], "mode": "batch"},
         value["secret"] or "not-needed",
         receipt_root=receipt_root,
     )
+    provider.client = batch_client(provider.provider, provider.client)
     try:
         yield provider
     finally:
         close = getattr(provider.client, "close", None)
         if close:
             close()
-        google = getattr(provider, "google", None)
-        if google:
-            google.close()
 
 
 def cancel(root, identity, expected, resolve):

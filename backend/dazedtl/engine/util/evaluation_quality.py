@@ -115,6 +115,10 @@ def _connection(value: dict, label: str) -> dict:
     execution = str(value.get("execution") or "batch").lower()
     if execution not in ("batch", "live"):
         raise ValueError(f"{label}: execution is batch or live")
+    try:
+        evaluation.require_runnable(provider, endpoint, execution)
+    except ValueError as error:
+        raise ValueError(f"{label}: {error}") from None
     effort = value.get("effort")
     if effort is not None:
         levels, _default = reasoning_profile({"provider": provider, "model": model})
@@ -477,18 +481,16 @@ class ProviderTransport:
         return self._client
 
     def submit(self, rows: list[dict]) -> str:
-        google = batch_api.google_files_client(self.secret) if self.connection["provider"] == "gemini" else None
         return batch_api.submit_batch(
-            self.connection["provider"], rows, client=self.client(), google_client=google
+            self.connection["provider"], rows, client=self.client()
         )["id"]
 
     def status(self, batch_id: str) -> dict:
         return batch_api.retrieve_batch(self.connection["provider"], batch_id, client=self.client())
 
     def results(self, batch_id: str, custom_ids: dict) -> tuple[dict, list, dict]:
-        google = batch_api.google_files_client(self.secret) if self.connection["provider"] == "gemini" else None
         return batch_api.download_results(
-            self.connection["provider"], batch_id, custom_ids, client=self.client(), google_client=google
+            self.connection["provider"], batch_id, custom_ids, client=self.client()
         )
 
     def live(self, params: dict) -> dict:

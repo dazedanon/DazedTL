@@ -3,7 +3,7 @@
 import json
 import time
 from collections.abc import Callable
-from contextlib import AbstractContextManager, nullcontext
+from contextlib import AbstractContextManager, contextmanager, nullcontext
 from copy import deepcopy
 from functools import partial
 from pathlib import Path
@@ -181,6 +181,34 @@ def advance_guided(
 LAYER = "refusals"
 
 
+@contextmanager
+def pinned_connection(batch, _resolve):
+    """The worker's connection for a Batch already created, its refusal
+    clarification included: the original run's pinned credential, exactly
+    as native fetch reads it (batch_history.client_for_batch), at the server
+    the Batch was created on (batch_providers.batch_client)."""
+    from util.batch_history import client_for_batch
+    from util.batch_providers import batch_client
+
+    from .batch_control import TranslationProvider
+
+    provider = object.__new__(TranslationProvider)
+    provider.provider = batch["provider"]
+    provider.client = batch_client(
+        batch["provider"],
+        client_for_batch(
+            batch["id"],
+            batch["provider"],
+            str(batch.get("key_name") or ""),
+            str(batch.get("endpoint") or ""),
+        ).with_options(max_retries=0, timeout=45),
+    )
+    try:
+        yield provider
+    finally:
+        provider.client.close()
+
+
 def install_worker(root, plan):
     if (
         plan.get("mode") != "batch"
@@ -194,8 +222,6 @@ def install_worker(root, plan):
     install()
     from util import translation
 
-    from .batch_control import TranslationProvider
-
     def result(native, payload, *args, **kwargs):
         value = native(payload, *args, **kwargs)
         try:
@@ -208,7 +234,6 @@ def install_worker(root, plan):
 
     def files(native, task, matching_files, estimate_only, batch_phase=None):
         if batch_phase == "consume":
-            from contextlib import contextmanager
 
             @contextmanager
             def active():
@@ -216,38 +241,12 @@ def install_worker(root, plan):
                     raise InterruptedError("Stopped before Batch clarification.")
                 yield
 
-            # Use the original run's pinned connection, exactly as native fetch.
-            from util.batch_history import client_for_batch
-            from util.batch_providers import google_files_client
-
-            @contextmanager
-            def connection(batch, _resolve):
-                provider = object.__new__(TranslationProvider)
-                provider.provider = batch["provider"]
-                provider.client = client_for_batch(
-                    batch["id"],
-                    batch["provider"],
-                    str(batch.get("key_name") or ""),
-                    str(batch.get("endpoint") or ""),
-                ).with_options(max_retries=0, timeout=45)
-                provider.google = (
-                    google_files_client(provider.client.api_key)
-                    if batch["provider"] == "gemini"
-                    else None
-                )
-                try:
-                    yield provider
-                finally:
-                    provider.client.close()
-                    if provider.google:
-                        provider.google.close()
-
             # Pass the worker connection factory explicitly; no global SDK or
             # connection mutation while other file threads may be active.
             waited = False
             while not task.should_stop:
                 outcome = advance_guided(
-                    root, plan, None, commit=active, connection=connection
+                    root, plan, None, commit=active, connection=pinned_connection
                 )
                 if outcome["ready"]:
                     translation._batch_results = None

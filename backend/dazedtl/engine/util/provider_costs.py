@@ -169,12 +169,11 @@ def is_claude_native(model: str, address: str | None) -> bool:
 
 def on_anthropic_api(address: str | None) -> bool:
     """Whether a native Claude request to ``address`` reaches Anthropic's own
-    API: no address set, or one at its host (settings/providers own_api). A
-    proxy path holding "anthropic" is sent Live natively but is not
-    Anthropic's API."""
-    from dazedtl.settings.providers import own_api
+    API (settings/providers on_own_api). A proxy path holding "anthropic" is
+    sent Live natively but is not Anthropic's API."""
+    from dazedtl.settings.providers import on_own_api
 
-    return not str(address or "").strip() or own_api("anthropic", address)
+    return on_own_api("anthropic", address)
 
 
 def foreign_claude_name(model: str, address: str | None) -> bool:

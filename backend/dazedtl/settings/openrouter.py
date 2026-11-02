@@ -227,7 +227,7 @@ def describe(connection, model):
 
 def live_prices(model, host=""):
     """Resolve public prices for an explicit lookup; no key or inference call."""
-    from .providers import openrouter_host
+    from .providers import OWN_APIS, openrouter_host
 
     host = openrouter_host(host)
     model = text(model, "OpenRouter model ID", required=True)
@@ -242,7 +242,7 @@ def live_prices(model, host=""):
             httpx.Client(timeout=3, follow_redirects=False) as client,
             client.stream(
                 "GET",
-                "https://openrouter.ai/api/v1" + path,
+                OWN_APIS["openrouter"] + path,
                 headers={"Accept": "application/json", "Accept-Encoding": "identity"},
             ) as response,
         ):

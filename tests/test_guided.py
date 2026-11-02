@@ -3626,6 +3626,7 @@ class GuidedTests(unittest.TestCase):
         # Exercise the real adapter instead of mocking away that contract.
         provider.provider = "openai"
         native = ModuleType("util.batch_providers")
+        native.batch_client = lambda _provider, client: client
         native.cancel_batch = Mock(
             return_value={
                 "id": batch["id"],

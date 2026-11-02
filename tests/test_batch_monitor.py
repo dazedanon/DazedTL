@@ -201,6 +201,7 @@ class BatchMonitorTests(unittest.TestCase):
                 module = ModuleType("util.batch_providers")
                 module.batch_limits = lambda _: (50, 100_000)
                 module._openai_batch_body = lambda provider, params: params
+                module.batch_client = lambda _provider, client: client
                 with (
                     patch.object(
                         batch_control, "TranslationProvider", return_value=provider

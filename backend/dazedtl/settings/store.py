@@ -567,10 +567,7 @@ class Settings:
             and not result["batch_supported"]
         ):
             result["batch_reason"] = "Kimi's Batch runs only K2.6 and K2.7 Code."
-        elif (
-            values.get("api", "").rstrip("/")
-            == providers.PROVIDERS["openrouter"]["endpoint"]
-        ):
+        elif providers.own_api("openrouter", values.get("api", "")):
             result.update(
                 batch_supported=False,
                 batch_reason="Choose the OpenRouter connection preset for Batch.",

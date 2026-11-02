@@ -13,6 +13,7 @@ import json
 import os
 import re
 import tempfile
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
@@ -20,31 +21,16 @@ from util import system
 from util import extensions
 from util.provider_costs import is_claude_model, is_openai_model, on_anthropic_api
 
+# Each provider's own API, where its key goes when no address is set and
+# where a Batch recorded without one was sent.
+from dazedtl.settings.providers import OWN_APIS
+
 
 PROVIDER_ANTHROPIC = "anthropic"
 PROVIDER_OPENAI = "openai"
 PROVIDER_GEMINI = "gemini"
 PROVIDER_KIMI = "kimi"
 
-# OpenAI's own API, where its SDK sends when no address is set.
-OPENAI_API_URL = "https://api.openai.com/v1"
-# Kimi's international platform (platform.kimi.ai) serves its
-# OpenAI-compatible API from Moonshot AI's host.
-# https://platform.kimi.ai/docs/api/overview
-KIMI_API_URL = "https://api.moonshot.ai/v1"
-# Gemini's OpenAI-compatible API on Google's own host.
-# https://ai.google.dev/gemini-api/docs/openai
-GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
-# Anthropic's own API, where a Claude request with no address set goes.
-ANTHROPIC_API_URL = "https://api.anthropic.com"
-# Each Batch provider's own API, where its key goes when no address is set
-# and where a Batch recorded without one was sent.
-OWN_API_URLS = {
-    PROVIDER_ANTHROPIC: ANTHROPIC_API_URL,
-    PROVIDER_OPENAI: OPENAI_API_URL,
-    PROVIDER_GEMINI: GEMINI_API_URL,
-    PROVIDER_KIMI: KIMI_API_URL,
-}
 # Kimi K3 has no Batch API.
 # https://platform.kimi.ai/docs/guide/use-batch-api
 KIMI_BATCH_MODELS = frozenset({"kimi-k2.6", "kimi-k2.7-code"})
@@ -82,16 +68,15 @@ def _route(api_url: str | None, api_provider: str | None) -> tuple[str, str]:
 
 
 def on_gemini_api(address: str | None) -> bool:
-    """Whether a Gemini request to *address* reaches Google's own API: none
-    set, where get_client sends it (GEMINI_API_URL), or one at Google's host
-    (settings/providers own_api). The only address a Gemini Batch runs at:
-    its files move through Google's own Files API, which no other server's
-    address names, with its key (_gemini_files), so a Custom
+    """Whether a Gemini request to *address* reaches Google's own API
+    (settings/providers on_own_api). The only address a Gemini Batch runs
+    at: its files move through Google's own Files API, which no other
+    server's address names, with its key (_gemini_files), so a Custom
     Gemini-compatible proxy is offered no Batch (detect_batch_provider) and
     one is refused before its key is sent (require_gemini_api)."""
-    from dazedtl.settings.providers import own_api
+    from dazedtl.settings.providers import on_own_api
 
-    return not str(address or "").strip() or own_api("gemini", address)
+    return on_own_api(PROVIDER_GEMINI, address)
 
 
 def require_gemini_api(address: str | None) -> None:
@@ -109,16 +94,15 @@ def require_gemini_api(address: str | None) -> None:
 def detect_batch_provider(model: str = "", api_url: str | None = None,
                           api_provider: str | None = None) -> str | None:
     """Return the supported batch backend for the current route."""
-    from dazedtl.settings.providers import own_api
+    from dazedtl.settings.providers import on_own_api, own_api
 
     model_l = str(model or "").lower()
     address, provider = _route(api_url, api_provider)
-    url = address.lower()
 
     # Stricter than a Live send's native route (provider_costs.is_claude_native),
     # which also takes a proxy path holding "anthropic": Message Batches need
     # Anthropic's own API.
-    if is_claude_model(model) and on_anthropic_api(url):
+    if is_claude_model(model) and on_anthropic_api(address):
         return PROVIDER_ANTHROPIC
     # A Gemini-compatible connection elsewhere, such as a Custom proxy, runs
     # Live only (on_gemini_api).
@@ -129,7 +113,7 @@ def detect_batch_provider(model: str = "", api_url: str | None = None,
         return PROVIDER_GEMINI
     if provider == "openai" and own_api("kimi", address):
         return PROVIDER_KIMI if model_l in KIMI_BATCH_MODELS else None
-    if provider == "openai" and (not url or own_api("openai", address)):
+    if provider == "openai" and on_own_api(PROVIDER_OPENAI, address):
         return PROVIDER_OPENAI
     return None
 
@@ -238,7 +222,7 @@ def get_client(provider: str, *, api_key: str | None = None,
         # Read as the provider's own API is (own_api), without a scheme as HTTPS.
         kwargs = dict(
             api_key=key,
-            base_url=absolute(address) if address else OWN_API_URLS[provider],
+            base_url=absolute(address) if address else OWN_APIS[provider],
         )
         if max_retries is not None:
             kwargs["max_retries"] = max_retries
@@ -279,7 +263,7 @@ def anthropic_base_url(address: str | None) -> str:
     base_url = str(address or "").strip().rstrip("/")
     if base_url[-3:].lower() == "/v1":
         base_url = base_url[:-3].rstrip("/")
-    return absolute(base_url) if base_url else ANTHROPIC_API_URL
+    return absolute(base_url) if base_url else OWN_APIS[PROVIDER_ANTHROPIC]
 
 
 def anthropic_client(api_key: str, address: str | None, **options):
@@ -293,44 +277,58 @@ def anthropic_client(api_key: str, address: str | None, **options):
     )
 
 
-def google_files_client(api_key: str | None = None):
-    """The google-genai client a Gemini Batch's JSONL files move through,
-    always at Google's own API, with *api_key*, else the run's key; every one
-    is made here. It sends each request once: a lost create response is
-    reconciled through the submission journal, never repeated under it by
-    the SDK."""
+def google_files_client(api_key: str):
+    """The google-genai client that sends *api_key*'s requests to Google's
+    own Files API; every one is made here. A key is required: none given
+    is refused before anything is sent, as get_client refuses it, never
+    replaced by the run's, another connection's key. It sends each request
+    once: a lost create response is reconciled through the submission
+    journal, never repeated under it by the SDK."""
+    key = str(api_key or "").strip()
+    if not key:
+        raise RuntimeError(f"{batch_provider_label(PROVIDER_GEMINI)} requires an API key")
     try:
         from google import genai
     except ImportError as exc:
         raise RuntimeError(
             "Gemini batching requires google-genai. Install project requirements first."
         ) from exc
-    return genai.Client(
-        api_key=(api_key or "").strip() or _api_key(),
-        http_options={"retry_options": {"attempts": 1}},
-    )
+    return genai.Client(api_key=key, http_options={"retry_options": {"attempts": 1}})
 
 
-def _gemini_files(client, google_client=None):
+@contextmanager
+def _gemini_files(client):
     """The Google Files client a Gemini Batch moves its JSONL files through,
-    with the key of *client*, the Batch's own OpenAI-compatible client, when
-    none is given. A new Batch is refused before it unless its address is
-    Google's own (require_gemini_api), so its key never goes to Google from
-    another connection; one already created reads its files there, as it
-    is read (_gemini_batch)."""
-    return google_client or google_files_client(getattr(client, "api_key", None))
+    with the key of *client*, the Batch's own OpenAI-compatible client, and
+    no other, so no caller pairs its files with another key. A new Batch is
+    refused before it unless its address is Google's own
+    (require_gemini_api), so its key never goes to Google from another
+    connection; one already created reads its files there, as it is read
+    (batch_client). The client is closed once its files have moved, and
+    kept alive until then: google-genai's Client.__del__ closes its HTTP
+    transport, so a collected owner fails a download with "Cannot send a
+    request, as the client has been closed"."""
+    files = google_files_client(getattr(client, "api_key", ""))
+    try:
+        yield files
+    finally:
+        files.close()
 
 
-def _gemini_batch(client):
-    """The client a Gemini Batch already created is read and cancelled
-    through: *client*, the Batch's own, at Google's own API. A Gemini Batch
-    exists only there, as its input file does (_gemini_files), so one whose
-    record names another address, such as one sent on a Custom
-    Gemini-compatible proxy before those were refused, is read there too,
-    with its own key, which went there with its files."""
-    if on_gemini_api(str(getattr(client, "base_url", "") or "")):
+def batch_client(provider: str, client):
+    """The client a Batch already created is read, cancelled and collected
+    through, and its refusal clarification sent through as a new Batch:
+    *client*, the Batch's own, with its key, at the server the Batch was
+    created on. A Gemini Batch exists only at Google's own API, as its input
+    file does (_gemini_files), so one whose record names another address,
+    such as one sent on a Custom Gemini-compatible proxy before those were
+    refused, is followed there, with its own key, which went there with its
+    files; any other Batch is at its client's address."""
+    if provider != PROVIDER_GEMINI or on_gemini_api(
+        str(getattr(client, "base_url", "") or "")
+    ):
         return client
-    return client.with_options(base_url=GEMINI_API_URL)
+    return client.with_options(base_url=OWN_APIS[PROVIDER_GEMINI])
 
 
 def _write_jsonl(requests: Iterable[dict]) -> Path:
@@ -398,8 +396,7 @@ def _openai_batch_body(provider: str, params: dict) -> dict:
 
 
 @extensions.point
-def submit_batch(provider: str, requests: list[dict], *, client=None,
-                 google_client=None) -> dict:
+def submit_batch(provider: str, requests: list[dict], *, client=None) -> dict:
     """Submit normalized ``{custom_id, params}`` requests and return metadata."""
     client = client or get_client(provider)
     if provider == PROVIDER_ANTHROPIC:
@@ -424,15 +421,15 @@ def submit_batch(provider: str, requests: list[dict], *, client=None,
     try:
         if provider == PROVIDER_GEMINI:
             require_gemini_api(str(getattr(client, "base_url", "") or ""))
-            google_client = _gemini_files(client, google_client)
-            try:
-                from google.genai import types
-                config = types.UploadFileConfig(
-                    display_name=path.name, mime_type="jsonl"
-                )
-            except (ImportError, AttributeError):
-                config = {"display_name": path.name, "mime_type": "jsonl"}
-            uploaded = google_client.files.upload(file=str(path), config=config)
+            with _gemini_files(client) as files:
+                try:
+                    from google.genai import types
+                    config = types.UploadFileConfig(
+                        display_name=path.name, mime_type="jsonl"
+                    )
+                except (ImportError, AttributeError):
+                    config = {"display_name": path.name, "mime_type": "jsonl"}
+                uploaded = files.files.upload(file=str(path), config=config)
             input_file_id = uploaded.name
         else:
             with open(path, "rb") as stream:
@@ -502,9 +499,7 @@ def _batch_errors(batch: Any) -> list[dict]:
 
 @extensions.point
 def retrieve_batch(provider: str, batch_id: str, *, client=None) -> dict:
-    client = client or get_client(provider)
-    if provider == PROVIDER_GEMINI:
-        client = _gemini_batch(client)
+    client = batch_client(provider, client or get_client(provider))
     if provider == PROVIDER_ANTHROPIC:
         batch = client.messages.batches.retrieve(batch_id)
         raw_status = getattr(batch, "processing_status", "") or ""
@@ -536,9 +531,7 @@ def retrieve_batch(provider: str, batch_id: str, *, client=None) -> dict:
 
 @extensions.point
 def cancel_batch(provider: str, batch_id: str, *, client=None) -> dict:
-    client = client or get_client(provider)
-    if provider == PROVIDER_GEMINI:
-        client = _gemini_batch(client)
+    client = batch_client(provider, client or get_client(provider))
     if provider == PROVIDER_ANTHROPIC:
         batch = client.messages.batches.cancel(batch_id)
         status = getattr(batch, "processing_status", "canceling") or "canceling"
@@ -652,19 +645,12 @@ def _openai_result(
     return {"text": text, **openai_usage(usage, provider)}, None
 
 
-def _download_file_text(provider: str, file_id: str, *, client=None,
-                        google_client=None) -> str:
+def _download_file_text(provider: str, file_id: str, *, client=None) -> str:
     if not file_id:
         return ""
     if provider == PROVIDER_GEMINI:
-        # Keep the owning Client alive until the download finishes.  ``Files``
-        # does not retain that owner, and google-genai's Client.__del__ closes
-        # its HTTP transport.  Calling ``google_files_client().files.download(...)``
-        # can therefore collect the temporary Client before ``download`` sends
-        # the request, producing: "Cannot send a request, as the client has
-        # been closed."
-        google_client = _gemini_files(client or get_client(provider), google_client)
-        data = google_client.files.download(file=file_id)
+        with _gemini_files(client or get_client(provider)) as files:
+            data = files.files.download(file=file_id)
         return data.decode("utf-8") if isinstance(data, bytes) else str(data)
     content = client.files.content(file_id)
     text = getattr(content, "text", None)
@@ -676,11 +662,9 @@ def _download_file_text(provider: str, file_id: str, *, client=None,
 
 @extensions.point
 def download_results(provider: str, batch_id: str, custom_ids: dict,
-                     *, client=None, google_client=None) -> tuple[dict, list, dict]:
+                     *, client=None) -> tuple[dict, list, dict]:
     """Return ``(cache-key results, errors, aggregate usage)``."""
-    client = client or get_client(provider)
-    if provider == PROVIDER_GEMINI:
-        client = _gemini_batch(client)
+    client = batch_client(provider, client or get_client(provider))
     if provider == PROVIDER_ANTHROPIC:
         return _download_anthropic(client, batch_id, custom_ids)
 
@@ -708,19 +692,18 @@ def download_results(provider: str, batch_id: str, custom_ids: dict,
         error_id,
         custom_ids,
         client=client,
-        google_client=google_client,
     )
 
 
 def read_openai_results(provider: str, output_id: str | None,
-                        error_id: str | None, custom_ids: dict, *, client=None,
-                        google_client=None) -> tuple[dict, list, dict]:
+                        error_id: str | None, custom_ids: dict, *,
+                        client=None) -> tuple[dict, list, dict]:
     """An OpenAI-compatible Batch's result files as ``(cache-key results,
     errors, aggregate usage)``, whether it completed or was stopped and kept
     its paid rows."""
     results, errors, totals = {}, [], _empty_usage()
     for line in _download_file_text(
-        provider, output_id or "", client=client, google_client=google_client
+        provider, output_id or "", client=client
     ).splitlines():
         if not line.strip():
             continue
@@ -747,7 +730,7 @@ def read_openai_results(provider: str, output_id: str | None,
         ]
         totals["thinking_tokens"] += result.get("thinking_tokens", 0)
     for line in _download_file_text(
-        provider, error_id or "", client=client, google_client=google_client
+        provider, error_id or "", client=client
     ).splitlines():
         if line.strip():
             row = json.loads(line)

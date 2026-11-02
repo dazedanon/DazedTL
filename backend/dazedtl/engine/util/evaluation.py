@@ -75,6 +75,8 @@ from util.translation import (
 )
 from util import system
 
+from dazedtl.settings.providers import OWN_APIS
+
 
 EVALUATION_VERSION = 9
 EVALUATION_ARCHIVE_VERSION = 1
@@ -103,7 +105,7 @@ MAX_OUTPUT_TOKENS_PER_REQUEST = DEFAULT_MAX_OUTPUT_TOKENS
 LIVE_REQUEST_MAX_ATTEMPTS = 3
 JAPANESE_RE = re.compile(source_pattern("evaluation"))
 LANGUAGE_REGEX = source_pattern()
-OPENROUTER_MODEL_API = "https://openrouter.ai/api/v1/model/"
+OPENROUTER_MODEL_API = OWN_APIS["openrouter"] + "/model/"
 OPENROUTER_PRICING_TTL_SECONDS = 300
 _openrouter_pricing_cache: dict[
     str, tuple[float, dict[str, float] | None]
@@ -116,9 +118,9 @@ class _EvaluationRunBusyError(RuntimeError):
 
 
 DEFAULT_CANDIDATES = (
-    {"provider": "openai", "endpoint": "https://api.openai.com/v1", "model": "gpt-5.6-terra", "label": "GPT-5.6 Terra", "execution": "batch"},
-    {"provider": "gemini", "endpoint": batch_api.GEMINI_API_URL, "model": "gemini-3.6-flash", "label": "Gemini 3.6 Flash", "execution": "batch"},
-    {"provider": "anthropic", "endpoint": "https://api.anthropic.com", "model": "claude-sonnet-5", "label": "Claude Sonnet 5", "execution": "batch"},
+    {"provider": "openai", "endpoint": OWN_APIS["openai"], "model": "gpt-5.6-terra", "label": "GPT-5.6 Terra", "execution": "batch"},
+    {"provider": "gemini", "endpoint": OWN_APIS["gemini"], "model": "gemini-3.6-flash", "label": "Gemini 3.6 Flash", "execution": "batch"},
+    {"provider": "anthropic", "endpoint": OWN_APIS["anthropic"], "model": "claude-sonnet-5", "label": "Claude Sonnet 5", "execution": "batch"},
 )
 
 _DATABASE_FIELDS = {
@@ -508,12 +510,11 @@ def pricing_for(model: str, provider: str = "") -> dict[str, float]:
 
 
 def is_openrouter_endpoint(endpoint: str) -> bool:
-    """Return whether an API base URL belongs to OpenRouter, with or without
-    a scheme (settings/providers hostname)."""
-    from dazedtl.settings.providers import hostname
+    """Return whether an API base URL is OpenRouter's own API, with or
+    without a scheme (settings/providers own_api)."""
+    from dazedtl.settings.providers import own_api
 
-    host = hostname(endpoint) or ""
-    return host == "openrouter.ai" or host.endswith(".openrouter.ai")
+    return own_api("openrouter", endpoint)
 
 
 def _openrouter_pricing_for(model: str) -> dict[str, float] | None:
@@ -1546,6 +1547,26 @@ def _candidate_rates(candidate: dict) -> dict[str, float]:
     return rates
 
 
+def require_runnable(provider: str, endpoint: str, execution: str) -> None:
+    """Refuses a connection row that would send a Batch to a server that
+    runs none, before it is priced or sent: OpenRouter's API, which has no
+    OpenAI Batch API, and a Gemini-compatible server other than Google's own
+    API (batch_providers.on_gemini_api). The one rule Evaluation's rows and
+    the quality comparison's connections are checked by."""
+    if execution != "batch":
+        return
+    if is_openrouter_endpoint(endpoint):
+        raise ValueError(
+            "OpenRouter does not provide the OpenAI Batch API used by "
+            "Evaluation. Change the OpenRouter row to Live."
+        )
+    if provider == "gemini" and not batch_api.on_gemini_api(endpoint):
+        raise ValueError(
+            "Gemini Batches run only on Google's own API. Change the row "
+            "for this Gemini-compatible server to Live."
+        )
+
+
 def _validate_candidates(candidates: list[dict]) -> None:
     if len(candidates) < 2:
         raise ValueError("Add at least two models to compare")
@@ -1561,20 +1582,7 @@ def _validate_candidates(candidates: list[dict]) -> None:
         endpoint = str(candidate.get("endpoint") or "").strip()
         if not endpoint:
             raise ValueError(f"API URL is required for {provider}")
-        if is_openrouter_endpoint(endpoint) and execution == "batch":
-            raise ValueError(
-                "OpenRouter does not provide the OpenAI Batch API used by "
-                "Evaluation. Change the OpenRouter row to Live."
-            )
-        if (
-            provider == "gemini"
-            and execution == "batch"
-            and not batch_api.on_gemini_api(endpoint)
-        ):
-            raise ValueError(
-                "Gemini Batches run only on Google's own API. Change the row "
-                "for this Gemini-compatible server to Live."
-            )
+        require_runnable(provider, endpoint, execution)
         if not str(candidate.get("model") or "").strip():
             raise ValueError(f"Model is required for {provider}")
         settings = generation_settings(candidate)
@@ -2455,18 +2463,16 @@ def _provider_params(candidate: dict, request: dict) -> dict:
     return params
 
 
-def _clients(candidate: dict, secret: str, *, max_retries: int | None = None):
-    provider = candidate["provider"]
-    client = batch_api.get_client(
-        provider,
+def _client(candidate: dict, secret: str, *, max_retries: int | None = None):
+    """The row's own client, *secret* paired with its address; a Gemini
+    Batch's files move with that client's key (batch_providers
+    _gemini_files)."""
+    return batch_api.get_client(
+        candidate["provider"],
         api_key=secret,
         api_url=candidate.get("endpoint") or None,
         max_retries=max_retries,
     )
-    google_client = (
-        batch_api.google_files_client(secret) if provider == "gemini" else None
-    )
-    return client, google_client
 
 
 _USAGE_FIELDS = (
@@ -2606,7 +2612,7 @@ def _execute_live_candidate(
 ) -> tuple[bool, Path]:
     # The evaluator owns the retry/checkpoint policy. Disable the SDKs' hidden
     # retries so LIVE_REQUEST_MAX_ATTEMPTS is the actual network-attempt cap.
-    client, _google_client = _clients(candidate, secret, max_retries=0)
+    client = _client(candidate, secret, max_retries=0)
     candidate_id = str(candidate.get("id") or "")
     if (
         not re.fullmatch(r"[A-Za-z0-9._-]+", candidate_id)
@@ -2900,11 +2906,10 @@ def _submit_candidate(
             "custom_id": custom_id,
             "params": _provider_params(candidate, request),
         })
-    client, google_client = _clients(candidate, secret)
+    client = _client(candidate, secret)
     log(f"Submitting {len(batch_requests)} requests to {candidate['label']}…")
     submitted = batch_api.submit_batch(
-        candidate["provider"], batch_requests,
-        client=client, google_client=google_client,
+        candidate["provider"], batch_requests, client=client
     )
     candidate.update({
         "batch_id": submitted["id"],
@@ -3296,7 +3301,7 @@ def _refresh_run_unlocked(run_dir: str | Path, credentials: dict[str, str],
         secret = str(credentials.get(candidate["id"]) or "").strip()
         if not secret and not candidate.get("keyless"):
             raise ValueError(f"No API key is available for {candidate['label']}")
-        client, google_client = _clients(candidate, secret)
+        client = _client(candidate, secret)
         status = batch_api.retrieve_batch(candidate["provider"], batch_id, client=client)
         candidate["api_status"] = status["api_status"]
         candidate["counts"] = status["counts"]
@@ -3317,8 +3322,7 @@ def _refresh_run_unlocked(run_dir: str | Path, credentials: dict[str, str],
             continue
 
         raw_results, errors, usage = batch_api.download_results(
-            candidate["provider"], batch_id, candidate["custom_ids"],
-            client=client, google_client=google_client,
+            candidate["provider"], batch_id, candidate["custom_ids"], client=client
         )
         summary = _complete_candidate(
             root, manifest, candidate, raw_results, errors, usage

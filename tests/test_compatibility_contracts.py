@@ -629,13 +629,27 @@ class CompatibilityContracts(unittest.TestCase):
         # Custom proxy's estimates and quotes showed Batch prices a user
         # approved before the submit refused it: its files go only through
         # Google's own Files API, where the proxy's key does not belong.
+        from dazedtl.settings.providers import infer_provider, route
         from dazedtl.translation.requests import price
         from dazedtl.translation.service import Translation, changed_since
-        from util import evaluation
-        from util.batch_providers import detect_batch_provider, live_price_route
+        from util import evaluation, evaluation_quality
+        from util.batch_providers import (
+            detect_batch_provider,
+            get_client,
+            live_price_route,
+        )
 
         model = "gemini-3-flash"
         proxy = "https://proxy.example/v1beta/openai"
+        # The Settings preset held its own copy of Google's address, without
+        # the trailing slash of the one a key with no address set is sent
+        # to; it is that one, and a connection or run saved with the old
+        # form still reads as the same route and provider.
+        preset = PROVIDERS["gemini"]["endpoint"]
+        self.assertEqual(str(get_client("gemini", api_key="k").base_url), preset)
+        saved = "https://generativelanguage.googleapis.com/v1beta/openai"
+        self.assertEqual(route("gemini", saved), route("gemini", preset))
+        self.assertEqual(infer_provider("gemini", saved), "gemini")
         for address, batch in (
             ("", "gemini"),
             ("https://generativelanguage.googleapis.com/v1beta/openai", "gemini"),
@@ -715,6 +729,19 @@ class CompatibilityContracts(unittest.TestCase):
                 evaluation._validate_candidates(rows)
             evaluation._validate_candidates(
                 [*rows[:1], {**rows[1], "execution": "live"}]
+            )
+        # The quality comparison's connections took one, which its submit
+        # then refused; they are checked by the Evaluation rows' rule.
+        connection = rows[1]
+        with self.assertRaisesRegex(ValueError, "^Variant: .*to Live"):
+            evaluation_quality._connection(connection, "Variant")
+        for value in (
+            {**connection, "execution": "live"},
+            {**connection, "endpoint": ""},
+        ):
+            self.assertEqual(
+                evaluation_quality._connection(value, "Variant")["provider"],
+                "gemini",
             )
 
     def test_engine_extension_layers_reach_aliases_and_reconfigure_in_place(self):
@@ -2721,6 +2748,14 @@ class CompatibilityContracts(unittest.TestCase):
                             [(url.split("?")[0], key) for url, key in sent],
                             [reached],
                         )
+            # The Google Files client took the run's key, another
+            # connection's, when given none, such as a keyless Evaluation
+            # Gemini row's; none is refused before anything is sent.
+            sent.clear()
+            with self.assertRaisesRegex(RuntimeError, "requires an API key"):
+                files = batch_providers.google_files_client("")
+                files.files.download(file="files/out")
+            self.assertEqual(sent, [])
             # A Gemini or Kimi Batch recorded without a saved key's name is
             # read with the run's key, so only on the connection it was sent
             # on: one recording no address was sent to its provider's own
@@ -2767,6 +2802,160 @@ class CompatibilityContracts(unittest.TestCase):
                     self.assertEqual(
                         [(url.split("?")[0], key) for url, key in sent],
                         [reached] if reached else [],
+                    )
+
+    def test_a_proxy_gemini_batchs_clarification_follows_it_to_google(self):
+        # A Gemini Batch sent on a Custom Gemini-compatible proxy before such
+        # Batches were refused exists at Google, where it is read with its
+        # own key. Its refusal clarification was sent as a new Batch on the
+        # proxy, which the submit refused after the clarification was
+        # recorded as sending, so every later consume stopped for provider
+        # reconciliation. It goes where its Batch is, with the Batch's key,
+        # for the app's monitor and the worker's consume alike.
+        import os
+
+        import httpx
+        import httpx2
+        from dazedtl.compatibility import batch_refusals
+        from dazedtl.translation.refusals import POLICY
+        from util import api_keys, translation
+
+        google = "https://generativelanguage.googleapis.com"
+        proxy = "https://proxy.example/v1beta/openai"
+        sent = []
+
+        def answering(module):
+            def handle(_transport, request):
+                url = str(request.url)
+                key = request.headers.get("authorization") or request.headers.get(
+                    "x-goog-api-key"
+                )
+                sent.append((url.split("?")[0], key))
+                command = request.headers.get("x-goog-upload-command", "")
+                if command == "start":
+                    return module.Response(
+                        200,
+                        headers={"x-goog-upload-url": google + "/upload/session"},
+                        json={},
+                    )
+                if "upload" in command:
+                    return module.Response(
+                        200,
+                        headers={"x-goog-upload-status": "final"},
+                        json={"file": {"name": "files/in"}},
+                    )
+                return module.Response(
+                    200,
+                    json={
+                        "id": "batches/retry",
+                        "object": "batch",
+                        "endpoint": "/v1/chat/completions",
+                        "input_file_id": "files/in",
+                        "completion_window": "24h",
+                        "status": "validating",
+                        "created_at": 1,
+                    },
+                )
+
+            return handle
+
+        params = {
+            "model": "gemini-3-flash",
+            "messages": [{"role": "user", "content": "薬"}],
+        }
+        plan = {
+            "mode": "batch",
+            "settings": {"api": proxy, "model": "gemini-3-flash"},
+            "dazedtl_request_policy": {"refusalRetry": POLICY},
+        }
+        workspace = Path(self.enterContext(TemporaryDirectory()))
+        vault = workspace / "api_keys.json"
+        api_keys.save_vault(
+            {
+                "active": "",
+                "keys": {
+                    "Proxy": {
+                        "secret": "proxy-key",
+                        "endpoint": proxy,
+                        "keyless": False,
+                    }
+                },
+            },
+            vault,
+        )
+
+        def run(name):
+            root = workspace / name
+            write_json(root / "log/batch_requests.json", {"k1": {"params": params}})
+            write_json(
+                root / "log/batch_results.json",
+                {
+                    "k1": {
+                        "text": "I cannot help with this translation.",
+                        "refusal": True,
+                    }
+                },
+            )
+            write_json(
+                root / "log/batch_history.json",
+                {
+                    "batches": [
+                        {
+                            "id": "batches/paid",
+                            "provider": "gemini",
+                            "key_name": "Proxy",
+                            "endpoint": proxy,
+                            "api_status": "completed",
+                            "custom_ids": {"req-000000": "k1"},
+                        }
+                    ]
+                },
+            )
+            return root
+
+        def resolve(_batch):
+            return {
+                "secret": "proxy-key",
+                "keyless": False,
+                "endpoint": proxy,
+                "organization": "",
+            }
+
+        with (
+            patch.object(httpx.HTTPTransport, "handle_request", answering(httpx)),
+            patch.object(httpx2.HTTPTransport, "handle_request", answering(httpx2)),
+            patch.object(api_keys, "API_KEYS_PATH", vault),
+            patch.object(
+                translation,
+                "tiktoken",
+                SimpleNamespace(encoding_for_model=lambda _model: Characters()),
+            ),
+            patch.dict(os.environ, {"api": proxy, "key": "run-key"}),
+        ):
+            # The worker's consume reads the run's saved key from the vault.
+            for name, connection in (
+                ("monitor", None),
+                ("worker", batch_refusals.pinned_connection),
+            ):
+                with self.subTest(path=name):
+                    root = run(name)
+                    sent.clear()
+                    outcome = batch_refusals.advance_guided(
+                        root, plan, resolve, connection=connection
+                    )
+                    self.assertFalse(outcome.get("uncertain"))
+                    self.assertEqual(
+                        [batch["id"] for batch in outcome["batches"]],
+                        ["batches/retry"],
+                    )
+                    self.assertEqual(
+                        sent,
+                        [
+                            (google + "/upload/v1beta/files", "proxy-key"),
+                            # The upload session's address authorizes it.
+                            (google + "/upload/session", None),
+                            (google + "/v1beta/openai/batches", "Bearer proxy-key"),
+                        ],
                     )
 
     def test_a_failed_claude_count_is_asked_again(self):
@@ -3086,7 +3275,6 @@ class CompatibilityContracts(unittest.TestCase):
 
         provider = TranslationProvider.__new__(TranslationProvider)
         provider.provider, provider.client = "openai", client("cancelled")
-        provider.google = None
         results, errors, usage = provider.collect_terminal("b", {"a": "key"})
         self.assertEqual((list(results), errors), (["key"], {}))
         completed = download_results(

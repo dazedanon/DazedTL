@@ -5,6 +5,7 @@ import shutil
 from pathlib import Path
 
 from dazedtl import system
+from dazedtl.settings.providers import OWN_APIS
 from dazedtl.storage import write_json
 from dazedtl.translation.files import digest, project_path
 from dazedtl.translation.speaker_setup import SCAN_VERSION
@@ -56,7 +57,7 @@ def configure_environment(widths):
             "model": "gpt-6-luna",
             "API_PROVIDER": "openai",
             "key": "desktop-broker-only",
-            "api": "https://api.openai.com/v1",
+            "api": OWN_APIS["openai"],
             "language": "English",
             "timeout": "45",
             "width": str(widths["width"]),

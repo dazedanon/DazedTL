@@ -1438,7 +1438,7 @@ class TranslationProvider:
         from .provider_responses import install
 
         install()
-        from util.batch_providers import get_client, google_files_client
+        from util.batch_providers import get_client
 
         self.configuration = configuration
         # One of several provider SDK clients, chosen by configuration.
@@ -1456,7 +1456,6 @@ class TranslationProvider:
                 policy=configuration.get("openrouterBatch"),
                 receipt_root=receipt_root,
             )
-            self.google = None
             return
         # A saved Batch names its provider as the protocol.
         identity = configuration.get("provider", configuration["protocol"])
@@ -1476,12 +1475,9 @@ class TranslationProvider:
         extra: dict[str, Any] = {"timeout": 45, "max_retries": 0}
         if configuration.get("organization") and self.provider != "anthropic":
             extra["organization"] = configuration["organization"]
+        # A Gemini Batch's files move with this client's key
+        # (batch_providers._gemini_files).
         self.client = self.client.with_options(**extra)
-        self.google = (
-            google_files_client(secret)
-            if self.provider == "gemini" and configuration["mode"] == "batch"
-            else None
-        )
 
     @provider_errors
     def live(self, params):
@@ -1541,9 +1537,7 @@ class TranslationProvider:
     def submit(self, requests):
         from util.batch_providers import submit_batch
 
-        return submit_batch(
-            self.provider, requests, client=self.client, google_client=self.google
-        )
+        return submit_batch(self.provider, requests, client=self.client)
 
     def input_tokens(self, params):
         from util.translation import _estimate_openai_batch_input_tokens
@@ -1571,11 +1565,7 @@ class TranslationProvider:
         from util.batch_providers import download_results
 
         results, errors, usage = download_results(
-            self.provider,
-            identity,
-            mapping,
-            client=self.client,
-            google_client=self.google,
+            self.provider, identity, mapping, client=self.client
         )
         return results, {str(item[0]): str(item[1]) for item in errors}, usage
 
@@ -1593,7 +1583,6 @@ class TranslationProvider:
             batch["error_file_id"],
             mapping,
             client=self.client,
-            google_client=self.google,
         )
         return results, {str(item[0]): str(item[1]) for item in errors}, usage
 

@@ -1,18 +1,19 @@
 """Provider model discovery shared by Qt and desktop jobs."""
 
 from util.api_errors import concise_api_error
-from util.batch_providers import GEMINI_API_URL
 from util.translation_task import TaskSignal
+
+from dazedtl.settings.providers import OWN_APIS
 
 
 API_URL_PRESETS = (
-    ("OpenAI", "https://api.openai.com/v1"),
-    ("Claude (Anthropic)", "https://api.anthropic.com/v1"),
-    ("Gemini", GEMINI_API_URL),
-    ("DeepSeek", "https://api.deepseek.com/v1/"),
-    ("Mistral", "https://api.mistral.ai/v1/"),
+    ("OpenAI", OWN_APIS["openai"]),
+    ("Claude (Anthropic)", OWN_APIS["anthropic"]),
+    ("Gemini", OWN_APIS["gemini"]),
+    ("DeepSeek", OWN_APIS["deepseek"]),
+    ("Mistral", OWN_APIS["mistral"]),
     ("Nvidia", "https://integrate.api.nvidia.com/v1/"),
-    ("OpenRouter", "https://openrouter.ai/api/v1"),
+    ("OpenRouter", OWN_APIS["openrouter"]),
 )
 
 
@@ -108,7 +109,7 @@ class ModelCatalogCore:
 
     def _fetch_gemini(self):
         import openai
-        base = self.api_url or GEMINI_API_URL
+        base = self.api_url or OWN_APIS["gemini"]
         client = openai.OpenAI(api_key=self.api_key, base_url=base, timeout=15, max_retries=0)
         return sorted(
             m.id for m in client.models.list()
