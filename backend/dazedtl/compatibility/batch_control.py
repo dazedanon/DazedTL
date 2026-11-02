@@ -9,11 +9,11 @@ from dazedtl.storage import write_json
 from dazedtl.translation.files import digest, live_path
 
 from .batch_evidence import extends
-from .process_view import batch_results, evidence_root, queue, saved
+from .process_view import BATCH_ENDED, batch_results, evidence_root, queue, saved
 from .provider_responses import NO_REASON
 from .translation import TranslationProvider
 
-TERMINAL = {"completed", "ended", "failed", "expired", "cancelled", "canceled"}
+TERMINAL = BATCH_ENDED
 PROVIDERS = {"openai", "anthropic", "gemini", "kimi", "openrouter"}
 
 

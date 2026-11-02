@@ -97,6 +97,7 @@ Among them:
 - Explicit stops, provider cancellations, newer overlapping runs, changed scope and uncertain submissions stop automatic continuation.
 - A request reads as never sent only with evidence from the [submission journal](../backend/dazedtl/compatibility/batch_continuation.py) or the [transport observer](../backend/dazedtl/compatibility/transmission.py), and a Live request reads failed rather than uncertain only when no try of it can have been billed.
 - Results are consumed automatically only with a durable fetched marker and receipts for every prepared request.
+- Results download only once every Batch of a run has ended, so its files fill in together; [`batch_waiting_message`](../backend/dazedtl/compatibility/process_view.py) is the one waiting line, and it says so with the requests done and failed out of those sent.
 - The [OpenAI Batch window](../backend/dazedtl/compatibility/batch_window.py) gives each job at most a quarter of the token allowance, and both methods' jobs on one connection share it.
 - Provider reads and downloads run outside the API lock.
 

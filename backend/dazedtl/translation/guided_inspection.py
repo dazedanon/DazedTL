@@ -217,12 +217,13 @@ class RunInspection:
                 status="running",
                 phase=monitoring.get("phase", "poll_status"),
                 approval=None,
-                message=monitoring.get("message")
-                or (
-                    "Downloading Batch results."
-                    if monitoring["state"] == "collecting"
-                    else "Waiting for provider results. Monitoring continues automatically."
-                ),
+            )
+            # The monitor names only its own exceptions; the waiting line
+            # comes from the one definition, read from the refreshed rows.
+            job["message"] = (
+                monitoring.get("message")
+                or phase_feedback(job).get("message")
+                or job.get("message")
             )
         if job["temporary"]:
             # Collection can write local scratch JSON before any paid request.

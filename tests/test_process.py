@@ -2845,24 +2845,44 @@ class ProcessTests(unittest.TestCase):
             status="running",
             phase="poll_status",
             approval=None,
-            process={"batches": [{"counts": {"succeeded": 7, "processing": 1}}]},
+            # A finished Batch's requests and its failures count once, against
+            # the requests sent, beside a Batch still running.
+            process={
+                "batches": [
+                    {
+                        "status": "completed",
+                        "total": 150,
+                        "counts": {"processing": 0, "succeeded": 148, "errored": 2},
+                    },
+                    {
+                        "status": "in_progress",
+                        "total": 154,
+                        "counts": {"processing": 27, "succeeded": 127},
+                    },
+                ]
+            },
         )
         polling = process_view.phase_feedback(job)
-        self.assertIn("7 completed, 1 processing", polling["message"])
+        self.assertIn(
+            "277 of 304 requests done (2 failed), 1 of 2 Batches finished",
+            polling["message"],
+        )
+        self.assertIn("Files fill in when every Batch finishes", polling["message"])
         self.assertIsNone(polling["progress"])
         job["status"] = "stopped"
         self.assertEqual(process_view.phase_feedback(job), polling)
-        job["process"]["batches"][0]["status"] = "completed"
+        job["process"]["batches"][1]["status"] = "completed"
         self.assertIn(
-            "Provider work has finished", process_view.phase_feedback(job)["message"]
+            "of 304 requests, 2 failed", process_view.phase_feedback(job)["message"]
         )
+        del job["process"]["batches"][0]
         # A refusal clarification still waits after its original Batch ended.
         clarification = {"status": "in_progress", "counts": {}, "clarification": True}
         job["process"]["batches"].append(clarification)
         self.assertIn("clarification", process_view.phase_feedback(job)["message"])
         clarification["status"] = "completed"
         self.assertIn(
-            "Provider work has finished", process_view.phase_feedback(job)["message"]
+            "The Batch has finished", process_view.phase_feedback(job)["message"]
         )
         job.update(status="failed", message="Actual provider failure")
         self.assertEqual(process_view.phase_feedback(job), {})

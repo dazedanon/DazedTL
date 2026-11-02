@@ -709,8 +709,7 @@ class CompatibilityContracts(unittest.TestCase):
             },
             {"provider": "gemini", "endpoint": proxy, "model": model},
         ]
-        # Pricing the rows reads the offline price table: a checkout without
-        # a fresh price cache fetched it, past the suite's budget.
+        # Pricing the OpenAI row reads the shipped table, never the network.
         with patch.dict(os.environ, {"DAZEDTL_TEST_OFFLINE": "1"}):
             with self.assertRaisesRegex(ValueError, "to Live"):
                 evaluation._validate_candidates(rows)
