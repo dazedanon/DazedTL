@@ -1,5 +1,7 @@
 """Frozen public execution choices and worker-only credential resolution."""
 
+from typing import NamedTuple
+
 from dazedtl.translation.files import read_json
 from dazedtl.translation.refusals import POLICY as REFUSAL_POLICY
 
@@ -42,18 +44,21 @@ def runnable_mode(settings, mode, live):
     return live if mode == "batch" and batch_unavailable(settings) else mode
 
 
+def _entries(options):
+    return options["entriesPerRequest"] or preferences.DEFAULT_ENTRIES_PER_REQUEST
+
+
 def entries_per_request(settings):
     """The active model's entries per request, or the default without a
     connection, so requests organized in any mode also fit a later API run."""
     connection = settings._connection(settings._read())
-    selected = (
+    return _entries(
         connection["model_options"].get(
             connection["model"], preferences.DEFAULT_OPTIONS
         )
         if connection
         else preferences.DEFAULT_OPTIONS
     )
-    return selected["entriesPerRequest"] or preferences.DEFAULT_ENTRIES_PER_REQUEST
 
 
 # What a model's looked-up defaults decide, which a snapshot reading cached
@@ -61,16 +66,108 @@ def entries_per_request(settings):
 LOOKED_UP = ("rates", "maxOutputTokens", "openrouterBatch", openrouter.UNREAD)
 
 
+class _Frozen(NamedTuple):
+    """What a new run freezes from the active connection, read once for both
+    shapes it is saved in (``configuration`` and ``request_policy``)."""
+
+    connection: dict
+    entries: int
+    max_output: int | None
+    effort: dict
+    rates: dict
+    updated_at: str | None
+    batch: dict | None
+    # The request settings both shapes end with, in order.
+    requests: dict
+
+
+def _frozen(settings, mode, *, cached_only, unpriced):
+    """An OpenRouter Batch policy no lookup could read yet
+    (openrouter.Unread) is frozen as not read yet in a Live mode, and a Batch
+    refuses it before anything else is priced (openrouter.frozen).
+    ``unpriced`` reads unknown rates instead of refusing, and leaves such a
+    Batch's policy out."""
+    connection = settings._connection(settings._read())
+    if not settings._configured(connection) or not connection["model"].strip():
+        raise ValueError(
+            "Choose a connection and model in Settings before preparing API requests."
+        )
+    model = connection["model"]
+    # The preserved engine's route validation, before anything is priced.
+    settings.adapter.validate_route(
+        {
+            "model": model,
+            "API_PROVIDER": connection["protocol"],
+            "api": providers.address(connection),
+        }
+    )
+    providers.validate_model_name(model, providers.address(connection))
+    selected = connection["model_options"].get(model, preferences.DEFAULT_OPTIONS)
+    custom = selected["pricing"] == "custom"
+    batch = {}
+    if connection["provider"] == "openrouter":
+        try:
+            batch = openrouter.frozen(
+                connection, model, selected, required=mode == "batch"
+            )
+        except openrouter.Unread:
+            if not unpriced:
+                raise
+    defaults = settings.model_defaults(
+        connection["id"], model, cached_only=cached_only or custom
+    )
+    # Cached defaults are empty until the model's prices are first looked up.
+    rates = {
+        "input": selected["inputRate"] if custom else defaults.get("inputRate"),
+        "output": selected["outputRate"] if custom else defaults.get("outputRate"),
+        "source": "custom" if custom else defaults.get("source"),
+    }
+    if (rates["input"] is None or rates["output"] is None) and not unpriced:
+        raise ValueError(
+            "No price is available for this model. Enter custom rates in Settings; use 0 for a free model."
+        )
+    max_output = preferences.output_allowance(
+        selected.get("maxOutputTokens"), defaults.get("maxOutputTokens")
+    )
+    policy = batch.get("openrouterBatch")
+    if policy and mode == "batch":
+        max_output = preferences.output_allowance(max_output, policy.get("max_output"))
+    requests = {}
+    if connection["provider"] == "openrouter":
+        requests["openrouterStructuredOutputs"] = openrouter.STRUCTURED_OUTPUTS
+    # A Batch's policy not read yet stays out, so it reads as a price not
+    # known rather than as no Batch (translation/repricing.priced).
+    requests.update(batch)
+    if (
+        connection["provider"] == "openai"
+        or selected.get("batchInputTokens") is not None
+    ):
+        requests["batchInputTokens"] = (
+            preferences.batch_input_tokens(selected.get("batchInputTokens"))
+            or preferences.DEFAULT_BATCH_INPUT_TOKENS
+        )
+    if connection["provider"] == "openrouter" and connection.get("openrouter_host"):
+        requests["openrouterHost"] = connection["openrouter_host"]
+    return _Frozen(
+        connection=connection,
+        entries=_entries(selected),
+        max_output=max_output,
+        effort=effort.frozen(
+            connection["provider"], model, selected, effort.record(connection, model)
+        ),
+        rates=rates,
+        updated_at=None if custom else defaults.get("updatedAt"),
+        batch=policy,
+        requests=requests,
+    )
+
+
 def configuration(settings, mode, *, cached_only=False, unpriced=False, pair=None):
-    """The settings a run freezes, translating between the game's language
-    *pair* (settings/language_pair), Japanese into Settings' target when
-    none is given. An OpenRouter Batch policy no lookup could read yet
-    (openrouter.Unread) is frozen as not read yet in a Live mode, and a
-    Batch refuses it before anything else is priced (openrouter.frozen).
-    ``unpriced`` returns them with unknown rates instead of refusing, and
-    leaves such a Batch's policy out, for comparisons that read cached
-    prices only."""
-    state = settings._read()
+    """The settings an estimate or an Assistant-led run freezes (``_frozen``),
+    translating between the game's language *pair* (settings/language_pair),
+    Japanese into Settings' target when none is given. ``unpriced`` returns
+    them with unknown rates instead of refusing, for comparisons that read
+    cached prices only."""
     languages = language_pair.frozen({}, pair or language_pair.default(settings))
     if mode == "agent":
         return {
@@ -80,44 +177,12 @@ def configuration(settings, mode, *, cached_only=False, unpriced=False, pair=Non
             "connection_id": "",
             "entries_per_request": None,
         }
-    connection = settings._connection(state)
-    if not settings._configured(connection) or not connection["model"].strip():
-        raise ValueError(
-            "Choose a connection and model in Settings before preparing API requests."
-        )
-    selected = connection["model_options"].get(
-        connection["model"], preferences.DEFAULT_OPTIONS
-    )
-    frozen = {}
-    if connection["provider"] == "openrouter":
-        try:
-            frozen = openrouter.frozen(
-                connection, connection["model"], selected, required=mode == "batch"
-            )
-        except openrouter.Unread:
-            if not unpriced:
-                raise
-    defaults = settings.model_defaults(
-        connection["id"],
-        connection["model"],
-        cached_only=cached_only or selected["pricing"] == "custom",
-    )
-    # Cached defaults are empty until the model's prices are first looked up.
-    input_rate = (
-        selected["inputRate"]
-        if selected["pricing"] == "custom"
-        else defaults.get("inputRate")
-    )
-    output_rate = (
-        selected["outputRate"]
-        if selected["pricing"] == "custom"
-        else defaults.get("outputRate")
-    )
-    if (input_rate is None or output_rate is None) and not unpriced:
-        raise ValueError(
-            "Model pricing is unknown. Set explicit rates in Settings before estimating."
-        )
-    value = {
+    read = _frozen(settings, mode, cached_only=cached_only, unpriced=unpriced)
+    connection = read.connection
+    rates = dict(read.rates)
+    if read.batch:
+        rates.update(batch_input=read.batch["input"], batch_output=read.batch["output"])
+    return {
         "mode": mode,
         **languages,
         "model": connection["model"],
@@ -127,59 +192,37 @@ def configuration(settings, mode, *, cached_only=False, unpriced=False, pair=Non
         "endpoint": providers.address(connection),
         "organization": connection["organization"],
         "generationParameters": preferences.GENERATION_PARAMETERS,
-        "maxOutputTokens": preferences.output_allowance(
-            selected.get("maxOutputTokens"), defaults.get("maxOutputTokens")
-        ),
-        **effort.frozen(
-            connection["provider"],
-            connection["model"],
-            selected,
-            effort.record(connection, connection["model"]),
-        ),
+        "maxOutputTokens": read.max_output,
+        **read.effort,
         "refusalRetry": REFUSAL_POLICY,
-        "entries_per_request": entries_per_request(settings),
-        "rates": {
-            "input": input_rate,
-            "output": output_rate,
-            "source": "custom"
-            if selected["pricing"] == "custom"
-            else defaults.get("source"),
-        },
+        "entries_per_request": read.entries,
+        "rates": rates,
+        **read.requests,
     }
-    if connection["provider"] == "openrouter":
-        value["openrouterStructuredOutputs"] = openrouter.STRUCTURED_OUTPUTS
-    # A Batch's policy not read yet stays out, so it reads as a price not
-    # known rather than as no Batch (translation/repricing.priced).
-    value.update(frozen)
-    policy = frozen.get("openrouterBatch")
-    if policy:
-        value["rates"].update(
-            batch_input=policy["input"], batch_output=policy["output"]
-        )
-        if mode == "batch":
-            value["maxOutputTokens"] = preferences.output_allowance(
-                value["maxOutputTokens"], policy.get("max_output")
-            )
-    if (
-        connection["provider"] == "openai"
-        or selected.get("batchInputTokens") is not None
-    ):
-        value["batchInputTokens"] = (
-            preferences.batch_input_tokens(selected.get("batchInputTokens"))
-            or preferences.DEFAULT_BATCH_INPUT_TOKENS
-        )
-    if connection["provider"] == "openrouter" and connection.get("openrouter_host"):
-        value["openrouterHost"] = connection["openrouter_host"]
-    # Keep the same route validation as the preserved engine before building requests.
-    settings.adapter.validate_route(
-        {
-            "model": value["model"],
-            "API_PROVIDER": value["protocol"],
-            "api": value["endpoint"],
-        }
-    )
-    providers.validate_model_name(value["model"], value["endpoint"])
-    return value
+
+
+def request_policy(settings, mode):
+    """The request policy a new Guided or image run's engine freezes into its
+    plan: the settings ``configuration`` freezes (``_frozen``) with the
+    policies only the engine reads."""
+    read = _frozen(settings, mode, cached_only=False, unpriced=False)
+    return {
+        "version": 1,
+        "model": read.connection["model"],
+        "generationParameters": preferences.GENERATION_PARAMETERS,
+        "maxOutputTokens": read.max_output,
+        **read.effort,
+        "refusalRetry": REFUSAL_POLICY,
+        "stateGrouping": "compatible-states-v1",
+        **preferences.FROZEN_POLICIES,
+        **preferences.REPLY_POLICIES,
+        "entriesPerRequest": read.entries,
+        "inputRate": read.rates["input"],
+        "outputRate": read.rates["output"],
+        "source": read.rates["source"],
+        "updatedAt": read.updated_at,
+        **read.requests,
+    }
 
 
 def saved_connections(workspace):
