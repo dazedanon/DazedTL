@@ -271,14 +271,28 @@ export function ImageCompare({
                     {revisionEvent(entry)}{" "}
                     {historyWhen(entry.answered || entry.saved)}
                   </span>
-                  {entry.note && (
-                    <ExpandableText
-                      text={entry.note}
-                      label="Revision note"
-                      appearance="inline"
-                    />
+                  {(entry.note || entry.reason) && (
+                    <dl className="image-evidence">
+                      {entry.note && (
+                        <>
+                          <dt>You asked</dt>
+                          <dd>
+                            <ExpandableText
+                              text={entry.note}
+                              label="Revision note"
+                              appearance="inline"
+                            />
+                          </dd>
+                        </>
+                      )}
+                      {entry.reason && (
+                        <>
+                          <dt>Assistant</dt>
+                          <dd>{entry.reason}</dd>
+                        </>
+                      )}
+                    </dl>
                   )}
-                  {entry.reason && <span>{entry.reason}</span>}
                 </li>
               ))}
             </ol>

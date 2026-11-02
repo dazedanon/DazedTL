@@ -627,7 +627,7 @@ main > .image-manager {
 .image-revision-history ol {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: var(--space-4);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -637,6 +637,9 @@ main > .image-manager {
   flex-direction: column;
   gap: var(--space-1);
   overflow-wrap: anywhere;
+}
+.image-revision-history .image-evidence {
+  margin: 0;
 }
 .image-apply-files,
 .image-apply-blocked {
