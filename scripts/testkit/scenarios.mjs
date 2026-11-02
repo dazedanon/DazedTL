@@ -1217,7 +1217,10 @@ const reorganized = [
     async ({ page, state }) => {
       await assistant(page, state, "organize", "--complete");
       const estimate = await organizedRun(page, state);
+      // The page opened on Options before the assistant first used the
+      // project, and stays there: a background change never moves the user.
       await page.click("Translation");
+      await page.click("Progress");
       await page.click("Approve and start Live");
       const run = await until(
         "the Live run to end",
