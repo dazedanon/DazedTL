@@ -413,7 +413,7 @@ class GuidedTests(unittest.TestCase):
             }
             if cached_only and self.uncached:
                 if not unpriced:
-                    raise ValueError("Model pricing is unknown.")
+                    raise ValueError("No price is available for this model.")
                 configuration["rates"] = {"input": None, "output": None}
             # Live freezes it as not read yet; a Batch read with unknown
             # prices leaves it out, and a full one, which a Batch run or
