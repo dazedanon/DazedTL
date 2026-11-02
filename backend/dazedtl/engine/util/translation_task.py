@@ -313,8 +313,8 @@ def _should_prepare_speakers_automatically(
 ) -> bool:
     """Decide whether translation should resolve speakers before file work.
 
-    RPG Maker normally relies on Workflow "Collect names", but batch collect/consume cannot live-translate
-    speakers - unresolved FIRSTLINESPEAKERS (and other nameplates) would stay
+    RPG Maker normally relies on Workflow "Collect names", but batch
+    collect/consume cannot live-translate speakers - unresolved FIRSTLINESPEAKERS (and other nameplates) would stay
     Japanese while dialogue is batched. Fresh RPG Maker batches therefore run
     the same unresolved-speaker preflight.
     """

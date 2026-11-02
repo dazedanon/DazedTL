@@ -10,7 +10,7 @@ from urllib.parse import urlsplit
 
 from util import system
 from util import api_keys
-from util.engine_options import engine_options, validate_engine_options
+from util.engine_options import RETIRED_ENGINES, engine_options, validate_engine_options
 from util.languages import SOURCE_ENV, source_language
 from util.paths import PROJECT_ROOT
 from .project import atomic_json
@@ -178,6 +178,7 @@ class SettingsStore:
         if set(values) - {item["key"] for item in FIELDS}:
             raise ValueError("Unknown settings draft field.")
         schemas = engine_options(self.code_root)
+        engines = {key: value for key, value in engines.items() if key not in RETIRED_ENGINES}
         if set(engines) - schemas.keys() or any(not isinstance(value, dict) or set(value) - {item["key"] for item in schemas[key]["fields"]} for key, value in engines.items()):
             raise ValueError("Unknown engine draft field.")
         draft = {"revision": revision, "values": values, "engines": engines}

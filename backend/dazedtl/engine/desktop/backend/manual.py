@@ -85,19 +85,6 @@ VERSION_1_SIGNATURES = {
 }
 
 
-def signature(engine):
-    if not any(spec[0] == engine for spec in TRANSLATION_MODULE_SPECS):
-        raise ValueError("Unsupported engine.")
-    return f"dazedtl-engine-{ENGINE_VERSIONS.get(engine, 1)}"
-
-
-def compatible(engine, recorded):
-    """Whether a plan's recorded engine identity is its engine's version running now."""
-    return recorded == signature(engine) or (
-        engine not in ENGINE_VERSIONS and recorded == VERSION_1_SIGNATURES.get(engine)
-    )
-
-
 # A saved run of an engine module this version no longer has (one the former
 # manual screen ran, such as CSV or Wolf RPG) stays readable but never runs
 # again, so resuming it sends nothing.
@@ -110,6 +97,19 @@ RETIRED_ENGINE = (
 def retired(engine):
     """Whether a saved run's engine is one this version no longer runs."""
     return not any(spec[0] == engine for spec in TRANSLATION_MODULE_SPECS)
+
+
+def signature(engine):
+    if retired(engine):
+        raise ValueError("Unsupported engine.")
+    return f"dazedtl-engine-{ENGINE_VERSIONS.get(engine, 1)}"
+
+
+def compatible(engine, recorded):
+    """Whether a plan's recorded engine identity is its engine's version running now."""
+    return recorded == signature(engine) or (
+        engine not in ENGINE_VERSIONS and recorded == VERSION_1_SIGNATURES.get(engine)
+    )
 
 
 # The modes a run starts or resumes in. Saved runs may still record the retired
