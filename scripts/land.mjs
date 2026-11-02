@@ -37,8 +37,8 @@ const icon = path.join(import.meta.dirname, "..", "resources", "icon.png");
 const reviewLevels = ["low", "medium", "high", "xhigh", "max", "ultra"];
 const reviewShape =
   '{"level": "medium", "findings": [{"summary": "...", "outcome": "fixed"}, {"summary": "...", "outcome": "dismissed", "reason": "..."}]}, or {"skipped": "why"}';
-/** Where landed reviews are recorded, one JSON line each, beside the lock. */
-export const reviewLog = "dazedtl-reviews.jsonl";
+/** Where landed reviews are recorded, one JSON line each, in the shared Git directory. */
+const reviewLog = "dazedtl-reviews.jsonl";
 
 /**
  * Reads a landing's review record: the code-review level and what became of
@@ -293,12 +293,17 @@ export async function land(cwd, deps, reviewFile) {
     git,
     { branch, worktree: top },
     () =>
-      underLock(deps, { top, main, branch }, time, tell, (range) =>
-        fs.appendFileSync(
-          path.join(common, reviewLog),
-          `${JSON.stringify({ landed: new Date(deps.now?.() ?? Date.now()).toISOString(), branch, range, ...review })}\n`,
-        ),
-      ),
+      underLock(deps, { top, main, branch }, time, tell, (range) => {
+        // dev has moved by now, so a lost record never stops the pushes.
+        try {
+          fs.appendFileSync(
+            path.join(common, reviewLog),
+            `${JSON.stringify({ landed: new Date(deps.now?.() ?? Date.now()).toISOString(), branch, range, ...review })}\n`,
+          );
+        } catch (error) {
+          log(`Could not record the review: ${reason(error)}`);
+        }
+      }),
     { log, notify: tell, onStop: deps.onStop },
   );
   for (const line of report) log(line);
