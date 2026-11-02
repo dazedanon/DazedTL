@@ -13,7 +13,6 @@ import traceback
 import copy
 from contextlib import contextmanager
 from pathlib import Path
-import shutil
 from colorama import Fore
 from dotenv import load_dotenv
 from retry import retry
@@ -7567,15 +7566,7 @@ def finalizeSpeakerParse():
             content, newly_translated
         )
 
-        tmp_path = vocab_path.with_suffix(vocab_path.suffix + f".{os.getpid()}.{threading.get_ident()}.tmp")
-        tmp_path.write_text(new_content, encoding="utf-8", newline="\n")
-        try:
-            system.replace(tmp_path, vocab_path)
-        except Exception:
-            try:
-                shutil.move(str(tmp_path), str(vocab_path))
-            except Exception:
-                return False
+        system.write_text(vocab_path, new_content)
         _reload_vocab()
         return True
     except Exception:

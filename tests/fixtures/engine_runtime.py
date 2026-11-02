@@ -3572,18 +3572,26 @@ try:
         # reply whatever its length: a short one failed the page with an
         # IndexError and a long one wrote its first lines.
         galge = '["{\\"label\\":\\"はい\\"}","{\\"label\\":\\"いいえ\\"}"]'
-        window = command(
+        galge_window = command(
             357,
-            ["LL_GalgeChoiceWindow", "", "", {"messageText": "行く？", "choices": galge}],
+            [
+                "LL_GalgeChoiceWindow",
+                "",
+                "",
+                {"messageText": "行く？", "choices": galge},
+            ],
         )
 
-        english = {"行く？": "Go?", "はい": "Yes", "いいえ": "No"}
+        galge_english = {"行く？": "Go?", "はい": "Yes", "いいえ": "No"}
 
         def galge_reply(change):
             def reply(text, *_args, **_kwargs):
                 if isinstance(text, str):
-                    return [english.get(text, text), [0, 0]]
-                return [change([english.get(line, line) for line in text]), [0, 0]]
+                    return [galge_english.get(text, text), [0, 0]]
+                return [
+                    change([galge_english.get(line, line) for line in text]),
+                    [0, 0],
+                ]
 
             return reply
 
@@ -3593,7 +3601,7 @@ try:
             (lambda reply: [*reply, "Maybe"], galge),
         ):
             written, mismatched, marked = mv_page(
-                [window], galge_reply(change), CODE357=True
+                [galge_window], galge_reply(change), CODE357=True
             )
             assert written[0][3] == {"messageText": "Go?", "choices": choices}, written
             failed = choices == galge
@@ -3616,6 +3624,43 @@ try:
         finally:
             os.chdir(directory)
         assert not any((saves / "translated/Map001.json").iterdir())
+
+        # The speaker pass's glossary save fell back to a move, which on
+        # Windows copies over the glossary, when its atomic replace failed.
+        # It saves through system.write_text now, so the glossary is written
+        # whole or not at all.
+        from dazedtl import system as platform
+        from util import system as engine_system
+
+        speaker_glossary = saves / "glossary.txt"
+        speaker_glossary.write_text("# Game Characters\n", "utf-8")
+
+        def finalize(*replaced):
+            parser._speakerCache.clear()
+            with (
+                patch.multiple(
+                    parser,
+                    SPEAKER_PARSE_MODE=True,
+                    SPEAKER_COLLECTED=["アリス"],
+                    NAMESLIST=[],
+                    active_glossary_path=lambda: speaker_glossary,
+                    translateAI=lambda *_args, **_kwargs: [["Alice"], [0, 0]],
+                ),
+                patch.object(platform, "replace", *replaced),
+                patch.object(engine_system, "replace", *replaced),
+                redirect_stdout(StringIO()),
+            ):
+                saved = parser.finalizeSpeakerParse()
+            parser._speakerCache.clear()
+            left = sorted(path.name for path in saves.iterdir())
+            assert left == ["glossary.txt", "translated"], left
+            return saved, "Alice" in speaker_glossary.read_text("utf-8")
+
+        def held(*_args):
+            raise PermissionError("The glossary is held.")
+
+        assert finalize(held) == (False, False)
+        assert finalize(platform.replace) == (True, True)
 
         # New lines get the QA lint fixes that need no reviewer, keeping codes,
         # line breaks and a dakuten apostrophe; a collect pass's untranslated
