@@ -3,6 +3,16 @@
 Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 [release.mjs](scripts/release.mjs) writes each entry from [release/notes.md](release/notes.md).
 
+## [2.57.0] - 2026-11-02
+
+### Changed
+
+- **Sidebar:** the "Report copied." and "Task copied." notes under Report a problem and Share a fix now fade away after a few seconds, and stay while you point at them or tab to Learn more; a note that the copy failed still stays.
+
+### Fixed
+
+- **Maps & events:** an LL_GalgeChoiceWindowMV choice translated with a comma, such as "Sure, sure", no longer becomes two choices in the game and moves the choices after it onto the wrong branches, and the plugin command keeps its other text as it was; in a run started after updating, its choices are sent with the question their menu shows.
+
 ## [2.56.1] - 2026-11-02
 
 ### Fixed
@@ -1557,6 +1567,7 @@ Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachan
 - The first release of DazedTL as a desktop app, installed from a ZIP with a START launcher and updated from inside the app.
 - **Guided steps** for RPG Maker MV, MZ and VX Ace games, and **Assistant-led** for any game.
 
+[2.57.0]: https://github.com/dazedanon/DazedTL/compare/v2.56.1...v2.57.0
 [2.56.1]: https://github.com/dazedanon/DazedTL/compare/v2.56.0...v2.56.1
 [2.56.0]: https://github.com/dazedanon/DazedTL/compare/v2.55.1...v2.56.0
 [2.55.1]: https://github.com/dazedanon/DazedTL/compare/v2.55.0...v2.55.1
