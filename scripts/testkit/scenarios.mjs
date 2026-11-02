@@ -5,7 +5,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { python } from "../dependencies.mjs";
-import { until } from "./cdp.mjs";
+import { Page, until } from "./cdp.mjs";
 import {
   contentFolder,
   gameName,
@@ -1703,6 +1703,318 @@ function releasing({ patch = false } = {}) {
 }
 
 /**
+ * Clicks the control named `name`, which copies a task, and returns the text
+ * it copied: the app's main process, at the inspector port, hands it over
+ * instead of the clipboard.
+ */
+async function copyTask(page, state, name) {
+  const main = await Page.connect(state.app.inspect, {
+    root: state.root,
+    node: true,
+  });
+  try {
+    await main.evaluate(`(() => {
+      const { clipboard } = process.mainModule.require("electron");
+      globalThis.scenarioCopies = [];
+      clipboard.writeText = (text) => void globalThis.scenarioCopies.push(text);
+    })()`);
+    await page.click(name);
+    return await until(`"${name}" to copy its task`, () =>
+      main.evaluate("globalThis.scenarioCopies[0]"),
+    );
+  } finally {
+    main.close();
+  }
+}
+
+/** Ticks an image's tile in Images to translate, as a click on its box. */
+async function tickImage(page, filename) {
+  const at = await page.evaluate(`(() => {
+    const box = document.querySelector(${JSON.stringify(`input[aria-label="Select ${filename}"]`)});
+    box.scrollIntoView({ block: "center" });
+    const { x, y, width, height } = box.getBoundingClientRect();
+    return { x: x + width / 2, y: y + height / 2 };
+  })()`);
+  for (const type of ["mousePressed", "mouseReleased"])
+    await page.send("Input.dispatchMouseEvent", {
+      type,
+      ...at,
+      button: "left",
+      clickCount: 1,
+    });
+}
+
+/** The lettered images of the lettered-images game and the notes the user
+ * writes on them. */
+const lettered = ["text_0000.png", "text_0001.png"];
+const revisionNotes = {
+  "img/pictures/text_0000.png": "Make the title twice as big.",
+  "img/pictures/text_0001.png": "Translate the sign's lettering too.",
+};
+const notesField = 'dialog textarea[aria-label="Image revision notes"]';
+
+/** Opens `filename` in Compare images from every image's view. */
+async function compareImage(page, filename) {
+  await page.click(/^All images/);
+  await page.click(`Compare ${filename}`);
+  await until(`Compare images to show ${filename}`, () =>
+    page.evaluate(
+      `!!document.querySelector(${JSON.stringify(notesField)})?.getClientRects().length && document.querySelector("dialog").innerText.includes(${JSON.stringify(filename)})`,
+    ),
+  );
+}
+
+const compareText = (page) =>
+  page.evaluate(`document.querySelector("dialog").innerText`);
+
+async function closeCompare(page) {
+  await page.click("Close");
+  await until(
+    "Compare images to close",
+    async () =>
+      !(await page.evaluate(
+        `!!document.querySelector(${JSON.stringify(notesField)})?.getClientRects().length`,
+      )),
+  );
+}
+
+/** The revision note Compare images shows for `filename`. */
+async function shownNote(page, filename) {
+  await compareImage(page, filename);
+  const note = await page.evaluate(
+    `document.querySelector(${JSON.stringify(notesField)}).value`,
+  );
+  await closeCompare(page);
+  return note;
+}
+
+/** Fails unless Compare images shows each image's revision note. */
+async function notesShown(page, when) {
+  for (const [id, note] of Object.entries(revisionNotes)) {
+    const shown = await shownNote(page, path.basename(id));
+    if (shown !== note)
+      throw new Error(
+        `${when}, Compare images shows ${JSON.stringify(shown)} as ${id}'s note.`,
+      );
+  }
+}
+
+const imagesProject = async (page) =>
+  (await page.call("workspace_snapshot")).application.project.id;
+
+/** The image `id` as the Images list reads it. */
+async function imageRow(page, id) {
+  const { items } = await page.call("images_list", {
+    project_id: await imagesProject(page),
+    asset_id: id,
+    limit: 1,
+  });
+  return items[0];
+}
+
+/** Answers the copied image task `text` as the scripted assistant, giving
+ * an error for the images whose IDs are in `errors`. */
+function editImages(state, text, errors = []) {
+  const request = /using request (.+?\.json)\./.exec(text)?.[1];
+  if (!request) throw new Error("The copied task names no request.");
+  runPython(
+    pythonCommand(
+      state,
+      path.join(import.meta.dirname, "assistant.py"),
+      "edit-images",
+      "--game",
+      state.game,
+      "--request",
+      request,
+      ...errors.flatMap((id) => ["--error", id]),
+    ),
+  );
+  return JSON.parse(fs.readFileSync(request, "utf8"));
+}
+
+/** The working copy of image `id` that `request` names, as it holds now. */
+const editedCopy = (state, request, id) =>
+  fs.readFileSync(
+    path.join(
+      state.game,
+      request.assets.find((asset) => asset.id === id).editable,
+    ),
+  );
+
+/** Applies the images ready to apply through Guided's review of them. */
+async function applyImages(page, count) {
+  const images = count === 1 ? "1 image" : `${count} images`;
+  await page.click(`Apply to game (${count})`);
+  await page.click(`Apply ${images}`);
+  await page.idle();
+}
+
+/** The steps of the images-revised scenario. */
+const imagesRevised = () => {
+  // The revision task the footer copied, which the assistant answers.
+  let revisionTask = "";
+  // The editing request of that task, naming each image's working copy.
+  let revision;
+  return [
+    [
+      "Translate a lettered image and apply it",
+      async ({ page, state }) => {
+        await page.click("3Translate");
+        await page.click(/^Images\b/);
+        await page.waitText(lettered[1]);
+        await tickImage(page, lettered[0]);
+        const request = editImages(
+          state,
+          await copyTask(page, state, "Copy translation task (1)"),
+        );
+        await applyImages(page, 1);
+        const [id] = Object.keys(revisionNotes);
+        await until(
+          "the image to read Applied",
+          async () => (await imageRow(page, id))?.state === "applied",
+        );
+        if (
+          !fs
+            .readFileSync(path.join(state.game, id))
+            .equals(editedCopy(state, request, id))
+        )
+          throw new Error("The game's image is not the edited copy.");
+      },
+    ],
+    [
+      "Write revision notes on it and on an image never translated in Compare images",
+      async ({ page, state }) => {
+        for (const [id, note] of Object.entries(revisionNotes)) {
+          await compareImage(page, path.basename(id));
+          await page.type(notesField, note);
+          if (id.endsWith(lettered[0])) {
+            await until("the note's hint", async () =>
+              (await compareText(page)).includes(
+                "Kept with this image until your assistant's report answers it.",
+              ),
+            );
+            await page.shot(path.join(state.work, "logs/compare-note.png"));
+          }
+          await closeCompare(page);
+        }
+        // The notes save with the list.
+        await until("the notes to save", async () => {
+          const { notes } = await page.call("images_state", {
+            project_id: await imagesProject(page),
+          });
+          return Object.entries(revisionNotes).every(
+            ([id, note]) => notes?.[id]?.text === note,
+          );
+        });
+      },
+    ],
+    [
+      "The notes stay after leaving Images and restarting the app",
+      async ({ page, state, restart }) => {
+        await notesShown(page, "After closing Compare images");
+        await page.click("Database files");
+        await page.waitText("Names, descriptions and interface text.");
+        await page.click(/^Images\b/);
+        await notesShown(page, "After leaving Images");
+        page = await restart(async () => {});
+        await page.click("Translation");
+        await page.click(/^Images\b/);
+        await notesShown(page, "After a restart");
+        await until("the footer's revision task", () =>
+          page.locate("Copy revision task (2)"),
+        );
+        await page.shot(path.join(state.work, "logs/footer-revision-task.png"));
+      },
+    ],
+    [
+      "Copy revision task (2) in the footer sends both notes in one task",
+      async ({ page, state }) => {
+        const text = await copyTask(page, state, "Copy revision task (2)");
+        const request = /using request (.+?\.json)\./.exec(text)?.[1];
+        const { assets } = JSON.parse(fs.readFileSync(request, "utf8"));
+        const sent = Object.fromEntries(
+          assets.map((asset) => [asset.id, asset.revisionNotes]),
+        );
+        if (JSON.stringify(sent) !== JSON.stringify(revisionNotes))
+          throw new Error(`The revision task sent ${JSON.stringify(sent)}.`);
+        for (const [id, note] of Object.entries(revisionNotes))
+          if (!text.includes(`- ${id}: ${note}`))
+            throw new Error(`The copied task does not list ${id}'s note.`);
+        revisionTask = text;
+        await compareImage(page, lettered[0]);
+        await until("the sent note's hint", async () =>
+          (await compareText(page)).includes("Sent to your assistant"),
+        );
+        await page.shot(path.join(state.work, "logs/compare-sent.png"));
+        await closeCompare(page);
+      },
+    ],
+    [
+      "The assistant revises the applied image and fails the other; the answered note joins its revision history",
+      async ({ page, state }) => {
+        const [revised, failed] = Object.keys(revisionNotes);
+        revision = editImages(state, revisionTask, [failed]);
+        await until("the revised image to read Ready to apply", async () => {
+          return (await imageRow(page, revised))?.state === "ready";
+        });
+        await compareImage(page, lettered[0]);
+        const history = await until(
+          "Compare images to show the answered note in Revision history",
+          async () => {
+            const note = await page.evaluate(
+              `document.querySelector(${JSON.stringify(notesField)}).value`,
+            );
+            const text = await compareText(page);
+            const shown = text.split("Revision history\n")[1] || "";
+            return !note && shown.includes(revisionNotes[revised]) && shown;
+          },
+        );
+        // Newest first: the revision, then the first apply.
+        if (!/^Revised .*\n.*\n[^]*Applied to the game /.test(history))
+          throw new Error(`Revision history reads ${JSON.stringify(history)}.`);
+        await page.shot(path.join(state.work, "logs/compare-history.png"));
+        await closeCompare(page);
+        // The failed image's note waits for another task.
+        const note = await shownNote(page, lettered[1]);
+        if (note !== revisionNotes[failed])
+          throw new Error(
+            `The failed image's note reads ${JSON.stringify(note)}.`,
+          );
+      },
+    ],
+    [
+      "Apply to game puts the revised image back in the game",
+      async ({ page, state }) => {
+        const id = Object.keys(revisionNotes)[0];
+        const before = fs.readFileSync(path.join(state.game, id));
+        await applyImages(page, 1);
+        const row = await until(
+          "the revised image to read Applied",
+          async () => {
+            const found = await imageRow(page, id);
+            return found?.state === "applied" && found;
+          },
+        );
+        const game = fs.readFileSync(path.join(state.game, id));
+        if (
+          game.equals(before) ||
+          !game.equals(editedCopy(state, revision, id))
+        )
+          throw new Error("The game's image is not the revised copy.");
+        const kinds = row.revisions.map((entry) => entry.kind).join(", ");
+        if (kinds !== "apply, revision, apply")
+          throw new Error(`The image's revisions read ${kinds}.`);
+        await compareImage(page, lettered[0]);
+        const text = await compareText(page);
+        if (!/^Applied\n/m.test(text.split("Zoom")[0]))
+          throw new Error("Compare images does not read Applied.");
+        await closeCompare(page);
+      },
+    ],
+  ];
+};
+
+/**
  * @type {Record<string, { description: string, game?: string,
  *   from?: "previous", upgrade?: boolean,
  *   steps: () => [string, (context: any) => Promise<unknown>][] }>}
@@ -1792,6 +2104,12 @@ export const scenarios = {
         },
       ],
     ],
+  },
+  "images-revised": {
+    description:
+      "A Guided project on the lettered-images game: one lettered image translated by a scripted assistant and applied, revision notes written on it and on the other in Compare images, kept through leaving Images and a restart and sent in one revision task from the footer; the assistant revises the applied image and fails the other, whose note waits, and Apply to game puts the revised image back.",
+    game: "lettered-images",
+    steps: () => [open, setup[0], ...imagesRevised()],
   },
   "images-archived": {
     description:

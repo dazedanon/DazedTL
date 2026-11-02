@@ -1,0 +1,19 @@
+{
+  "description": "Three small pictures in img/pictures, two named text_ that hold lettering and one CG without; the images-revised scenario translates and revises them.",
+  "images": [
+    {
+      "folder": "img/pictures",
+      "name": "text",
+      "count": 2,
+      "width": 320,
+      "height": 120
+    },
+    {
+      "folder": "img/pictures",
+      "name": "cg",
+      "count": 1,
+      "width": 320,
+      "height": 180
+    }
+  ]
+}
