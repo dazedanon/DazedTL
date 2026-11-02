@@ -40,7 +40,6 @@
   grid-template-columns: auto minmax(0, 1fr);
   align-items: baseline;
   gap: var(--space-3);
-  margin: 0;
   font-size: var(--font-control);
   line-height: 1.5;
   color: var(--color-muted);

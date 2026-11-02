@@ -46,18 +46,17 @@ export default function CreditsTab() {
           <div key={name}>
             <dt>{name}</dt>
             <dd>
-              {v2 && (
-                <div>
-                  <span className="badge">V2</span>
-                  {v2}
-                </div>
-              )}
-              {v1 && (
-                <div>
-                  <span className="badge">V1</span>
-                  {v1}
-                </div>
-              )}
+              {(["V2", "V1"] as const).map((version) => {
+                const work = version === "V2" ? v2 : v1;
+                return (
+                  work && (
+                    <div key={version}>
+                      <span className="badge">{version}</span>
+                      {work}
+                    </div>
+                  )
+                );
+              })}
             </dd>
           </div>
         ))}
