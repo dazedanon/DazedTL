@@ -696,6 +696,8 @@ try:
             def answer(text, *_args):
                 sent.append(text)
                 reply = wolf_keeps(text)
+                # A skill's log goes out after a stand-in user, Taro.
+                reply[0] = [line.replace("EN Taroは", "Taro ") for line in reply[0]]
                 if any("看板" in line for line in text):
                     reply[0].pop()
                 return reply
@@ -707,6 +709,7 @@ try:
                     ARMORFLAG=True,
                     WEAPONFLAG=True,
                     STATEFLAG=True,
+                    SKILLFLAG=True,
                     MISMATCH=[],
                     translateAI=answer,
                 ),
@@ -738,6 +741,9 @@ try:
         # file failed with an IndexError; the status effects were sent once
         # for each of their lists that held text. Status effects after items
         # took the items' font, the number 18, and failed on "font + text".
+        # The skill table's battle logs were written after its font size
+        # alone, "24Taro cast Fire", a literal 24 in the game's log; logs take
+        # no font, as the items' and status effects' do.
         directory = os.getcwd()
         os.chdir(temporary)
         (temporary / "log").mkdir(exist_ok=True)
@@ -746,7 +752,17 @@ try:
             armor = category("防具", ("名前", "看板"), ("説明", "宿屋"))
             weapon = category("武器", ("名前", "剣"), ("説明", "勇者の\n記録"))
             states = category("ステート", ("名前", "毒"), ("表示名", "毒状態"))
-            written, mismatched, marked, sent = wolf_db(items, states, armor, weapon)
+            skill = category(
+                "技能",
+                ("名前", "炎"),
+                ("説明", "炎の技"),
+                ("発動時文章", "は炎を放った"),
+                ("使用時文章[戦闘](人名~", "は炎を唱えた"),
+                ("失敗時文章[(対象)～]", "は炎を避けた"),
+            )
+            written, mismatched, marked, sent = wolf_db(
+                items, states, armor, weapon, skill
+            )
         finally:
             os.chdir(directory)
         values = [
@@ -757,6 +773,13 @@ try:
             ["EN 毒", "EN 毒状態"],
             ["看板", "宿屋"],
             ["EN 剣", "勇者の\n記録"],
+            [
+                "EN 炎",
+                "\\f[24]EN 炎の技",
+                " 炎を放った",
+                " 炎を唱えた",
+                " 炎を避けた",
+            ],
         ], values
         assert (mismatched, marked) == (["D.json"], 1), (mismatched, marked)
         # Nothing more of a category is sent, and paid for, once it cannot be written.
@@ -3532,15 +3555,80 @@ try:
             got = mv_page(commands, mv_reply(change))
             mismatched = ["Map001.json"] if marked else []
             assert got == (written, mismatched, marked), (commands, got)
-        got = mv_page(
-            [name("アリス"), command(401, ["やあ"])],
-            mv_reply(
-                lambda _reply, sent: [line.replace("やあ", "Hi") for line in sent]
-            ),
-            SPEAKER_CONTEXT=True,
-            getSpeaker=lambda _name: ["Al]Ice", [0, 0]],
+        # Without the speaker-context policy, as projects from before
+        # event-speaker-context-v1 run, pass 2 read no speaker once pass 1
+        # wrote the translated name, and left the label there.
+        for context in (True, False):
+            got = mv_page(
+                [name("アリス"), command(401, ["やあ"])],
+                mv_reply(
+                    lambda _reply, sent: [line.replace("やあ", "Hi") for line in sent]
+                ),
+                SPEAKER_CONTEXT=context,
+                getSpeaker=lambda _name: ["Al]Ice", [0, 0]],
+            )
+            assert got[0][1] == ["Hi"], (context, got)
+
+        # LL_GalgeChoiceWindow's choices (code 357) were written from the
+        # reply whatever its length: a short one failed the page with an
+        # IndexError and a long one wrote its first lines.
+        galge = '["{\\"label\\":\\"はい\\"}","{\\"label\\":\\"いいえ\\"}"]'
+        galge_window = command(
+            357,
+            [
+                "LL_GalgeChoiceWindow",
+                "",
+                "",
+                {"messageText": "行く？", "choices": galge},
+            ],
         )
-        assert got[0][1] == ["Hi"], got
+
+        galge_english = {
+            "行く？": "Go?",
+            "はい": "Yes",
+            "いいえ": "No",
+            "はいはい": "Sure, sure",
+        }
+        galge_sent = []
+
+        def galge_reply(change):
+            def reply(text, *_args, **_kwargs):
+                if isinstance(text, str):
+                    return [galge_english.get(text, text), [0, 0]]
+                galge_sent.append(list(text))
+                return [
+                    change([galge_english.get(line, line) for line in text]),
+                    [0, 0],
+                ]
+
+            return reply
+
+        for change, choices in (
+            (lambda reply: reply, galge.replace("はい", "Yes").replace("いいえ", "No")),
+            (lambda reply: reply[:-1], galge),
+            (lambda reply: [*reply, "Maybe"], galge),
+        ):
+            galge_sent.clear()
+            written, mismatched, marked = mv_page(
+                [galge_window], galge_reply(change), CODE357=True
+            )
+            assert written[0][3] == {"messageText": "Go?", "choices": choices}, written
+            failed = choices == galge
+            assert (mismatched, bool(marked)) == (["Map001.json"] * failed, failed)
+            # Pass 2 sent the choices a failed reply kept again, a second
+            # paid request for the same text.
+            assert galge_sent == [["はい", "いいえ"]], galge_sent
+        # Each reply was written with str.replace over the whole choices, so
+        # はい's reply landed inside はいはい and はいはい's found nothing.
+        nested = '["{\\"label\\":\\"はい\\"}","{\\"label\\":\\"はいはい\\"}"]'
+        nested_window = deepcopy(galge_window)
+        nested_window["parameters"][3]["choices"] = nested
+        written, _mismatched, _marked = mv_page(
+            [nested_window], galge_reply(lambda reply: reply), CODE357=True
+        )
+        assert written[0][3]["choices"] == (
+            '["{\\"label\\":\\"Yes\\"}","{\\"label\\":\\"Sure, sure\\"}"]'
+        ), written
 
         # A final save over a folder "succeeded": RPG Maker's own atomic
         # write fell back to moving the save into the folder. It saves
@@ -3559,6 +3647,43 @@ try:
         finally:
             os.chdir(directory)
         assert not any((saves / "translated/Map001.json").iterdir())
+
+        # The speaker pass's glossary save fell back to a move, which on
+        # Windows copies over the glossary, when its atomic replace failed.
+        # It saves through system.write_text now, so the glossary is written
+        # whole or not at all.
+        from dazedtl import system as platform
+        from util import system as engine_system
+
+        speaker_glossary = saves / "glossary.txt"
+        speaker_glossary.write_text("# Game Characters\n", "utf-8")
+
+        def finalize(*replaced):
+            parser._speakerCache.clear()
+            with (
+                patch.multiple(
+                    parser,
+                    SPEAKER_PARSE_MODE=True,
+                    SPEAKER_COLLECTED=["アリス"],
+                    NAMESLIST=[],
+                    active_glossary_path=lambda: speaker_glossary,
+                    translateAI=lambda *_args, **_kwargs: [["Alice"], [0, 0]],
+                ),
+                patch.object(platform, "replace", *replaced),
+                patch.object(engine_system, "replace", *replaced),
+                redirect_stdout(StringIO()),
+            ):
+                saved = parser.finalizeSpeakerParse()
+            parser._speakerCache.clear()
+            left = sorted(path.name for path in saves.iterdir())
+            assert left == ["glossary.txt", "translated"], left
+            return saved, "Alice" in speaker_glossary.read_text("utf-8")
+
+        def held(*_args):
+            raise PermissionError("The glossary is held.")
+
+        assert finalize(held) == (False, False)
+        assert finalize(platform.replace) == (True, True)
 
         # New lines get the QA lint fixes that need no reviewer, keeping codes,
         # line breaks and a dakuten apostrophe; a collect pass's untranslated
@@ -4365,7 +4490,7 @@ try:
             "translation.translateText.layer('stand-in', provider)\n"
             "from modules import rpgmakermvmz\n"
             "evidence = Evidence(folder, 'translate')\n"
-            "evidence.install(translation, rpgmakermvmz)\n"
+            "evidence.install(translation)\n"
             "configure_builders(translation, GENERATION_PARAMETERS, evidence.record, provider='openai', thinking_effort='high')\n"
             "policy = {'runStops': RUN_STOPS} if stand_in['policy'] == '1' else None\n"
             "run_stops.configure(translation, policy, folder)\n"

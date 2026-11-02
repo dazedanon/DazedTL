@@ -394,11 +394,11 @@ class Diagnostics {
     ].join("\n");
   }
   /**
-   * A bug report to paste into Discord: the facts filled in, blanks for the
-   * reporter, and the latest failures in one line each, so the whole paste
-   * stays one editable message.
+   * The facts both shared reports open with, filled in by DazedTL: its
+   * version, the system, and the open game with its engine and mode, which
+   * the renderer passes in. A fact it can't name stays blank.
    */
-  async problemReport(context = {}) {
+  async facts(context = {}) {
     const field = (value) =>
       typeof value === "string" && value.trim()
         ? value
@@ -416,6 +416,19 @@ class Diagnostics {
         : `${this.versions.app} (dev ${name}${changed})`;
     const game = field(context.game);
     const engine = field(context.engine);
+    return [
+      `**DazedTL version:** ${version}`,
+      `**System:** ${system()}`,
+      `**Game:** ${game}${game && engine ? ` (${engine})` : engine}`,
+      `**Mode:** ${field(context.mode)}`,
+    ];
+  }
+  /**
+   * A bug report to paste into Discord: the facts filled in, blanks for the
+   * reporter, and the latest failures in one line each, so the whole paste
+   * stays one editable message.
+   */
+  async problemReport(context = {}) {
     const groups = summaryGroups(await this.records());
     const shown = [];
     while (shown.length < ERRORS_SHOWN) {
@@ -427,10 +440,7 @@ class Diagnostics {
     }
     const hidden = groups.reduce((total, group) => total + group.count, 0);
     return [
-      `**DazedTL version:** ${version}`,
-      `**System:** ${system()}`,
-      `**Game:** ${game}${game && engine ? ` (${engine})` : engine}`,
-      `**Mode:** ${field(context.mode)}`,
+      ...(await this.facts(context)),
       "",
       "**What happened:**",
       "",
@@ -445,6 +455,19 @@ class Diagnostics {
       ...(hidden ? [`and ${hidden} earlier`] : []),
       "```",
     ].join("\n");
+  }
+  /**
+   * The task Share a fix copies: the user's assistant writes up a fix it made
+   * in the game for DazedTL's developers, opening with the same facts. The
+   * task's text is the engine's assistant prompt in share_fix.md.
+   */
+  async fixTask(context = {}) {
+    const task = fs.readFileSync(
+      path.join(this.root, "backend/dazedtl/engine/data/skills/share_fix.md"),
+      "utf8",
+    );
+    const facts = (await this.facts(context)).join("\n");
+    return task.replace("{facts}", () => facts);
   }
 }
 

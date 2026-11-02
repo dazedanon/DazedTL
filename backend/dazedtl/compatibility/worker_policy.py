@@ -304,7 +304,7 @@ def install(*, coordinator=False):
                 source_aware=SOURCE_TEXT_LEVELS.get(str(policy.get("sourceText")), 0)
                 >= 2,
             )
-            evidence.install(translation, sys.modules.get("modules.rpgmakermvmz"))
+            evidence.install(translation)
             record = evidence.record
         keep_paid_items(translation, root, plan, evidence)
         configure_builders(

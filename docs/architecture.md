@@ -12,7 +12,7 @@ Behavior one module owns is described in its docstring and pinned by its tests; 
 | [app/src/ui](../app/src/ui), [styles](../app/src/styles) | Shared presentation, design tokens, and layout |
 | [app/src/state](../app/src/state) | Action feedback, serialized drafts, and leave guards |
 | [app/src/api](../app/src/api) | Typed contracts, transport, and named application operations |
-| [app/electron](../app/electron) | Native dialogs, approved folder opening, close handshake, Python process and update controller |
+| [app/electron](../app/electron) | Native dialogs, approved folder opening, close handshake, Python process, update controller and the [user guide's](../app/electron/guide.cjs) file and links |
 | [backend/dazedtl](../backend/dazedtl) | Project identity, settings, workflow actions, and run ownership |
 | [compatibility](../backend/dazedtl/compatibility) | The only boundary allowed to import the bundled engine |
 | [engine](../backend/dazedtl/engine) | Preserved parsers, worker implementation, native tools and translation toolkit |
@@ -208,6 +208,8 @@ Use the flat, compact [Settings](../app/src/features/settings/Settings.tsx) and 
 #### Places and surfaces
 
 The sidebar has three places: the Project page holds everything about the game, Translation holds the work, and Settings holds the app.
+Beside them, the [Guide](../app/src/features/guide/Guide.tsx) shows the user guide from the install, through the main process so it opens while Python is busy or down; help that a guide section covers links to it with Learn more ([guideSections](../app/src/ui/guideSections.ts)).
+It draws the guide with marked's lexer and its own React components, so no HTML from the file reaches the page, and anchors come from github-slugger, so they match the forge's.
 Each game has one translation method, chosen in [MethodDialog](../app/src/features/project/MethodDialog.tsx); changing it keeps the other method's work, and the Project page's Status, History and Checkpoints tabs serve both.
 Screens use four kinds of surface, each with one job:
 
@@ -343,6 +345,7 @@ Drafts and actions:
   Other records find the game through the registry, and no saved key names the game folder: estimates, Text QA context and bindings name the game's files relative to it, so a move changes one record, outdates nothing and needs no new approval.
 - Diagnostics record only fixed metadata and code locations, never messages, payloads or raw stderr; a [watchdog](../backend/dazedtl/watchdog.py) records hangs, workers report through the [diagnostics](../backend/dazedtl/diagnostics.py) hooks, and the report names the checkout revision.
   **Report a problem** copies a Discord-sized summary of the same records with the open game's name, engine and mode, which the renderer passes in.
+  **Share a fix** copies a [task](../backend/dazedtl/engine/data/skills/share_fix.md) for the user's assistant that opens with the same facts and asks for a report on a fix the assistant made in the game, with no secrets or long game text.
 - Connections and preferences share one atomic record, the workspace's `settings/settings.json`, with the languages new games start in.
   A game records its pair in `.dazedtl/settings.json` at Set up, and every run freezes it ([language_pair](../backend/dazedtl/settings/language_pair.py)); a pair whose languages share a script is refused, since letters couldn't tell translated text from text left.
 - A Japanese source names no source in frozen settings, the translation cache, Batch keys or the census, so work saved before languages became a setting stays current.

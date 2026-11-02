@@ -325,3 +325,13 @@ If you're asked for more detail, **Settings > Updates** has **Copy full diagnost
 Apart from the game's name, it never includes API keys or game text.
 
 If a page fails, its panel offers **Try again** and **Reload interface**; reloading keeps running translations going.
+
+## Contributing
+
+If you and your assistant fixed something in your game that DazedTL got wrong, such as speaker names it missed or plugin text it skipped, share it so DazedTL can handle games like it by itself.
+Click **Share a fix** in the sidebar with the game open and paste the task into the assistant chat where you made the fix.
+It fills in your DazedTL version, system and game, and your assistant writes a short report: the problem, what changed, how you tested it in the game and whether other games share the pattern.
+Read it over, then post it on [Discord](https://discord.gg/StsRWHPupu).
+It leaves out API keys and long stretches of game text.
+
+If you know Git, [Development](development.md#contributing-a-change) says how to send a change.

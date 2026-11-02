@@ -63,6 +63,8 @@ export type ReleaseNotes = {
   date: string;
   sections: { kind: string; items: string[] }[];
 };
+/** The open game a shared report names, which DazedTL fills in. */
+export type ReportContext = { game?: string; engine?: string; mode?: string };
 declare global {
   interface Window {
     dazedtl: {
@@ -72,11 +74,9 @@ declare global {
       ready(): Promise<void>;
       copyDiagnostics(): Promise<void>;
       /** Copies a bug report naming the open game, its engine and mode. */
-      copyProblemReport(context: {
-        game?: string;
-        engine?: string;
-        mode?: string;
-      }): Promise<void>;
+      copyProblemReport(context: ReportContext): Promise<void>;
+      /** Copies Share a fix's task for the user's assistant, with the same facts. */
+      copyFixTask(context: ReportContext): Promise<void>;
       reportRendererError(failure: RendererFailure): Promise<void>;
       reloadInterface(): Promise<void>;
       copyText(text: string): Promise<void>;
@@ -99,6 +99,14 @@ declare global {
         title: string;
         body: string;
       }): Promise<void>;
+      /** The user guide in docs/user-guide.md, with the images it shows. */
+      guide: {
+        read(): Promise<string>;
+        /** An image the guide shows, from docs/media, as a data URL. */
+        image(source: string): Promise<string>;
+        /** Opens a link of the guide that leads out of it in the browser. */
+        open(href: string): Promise<void>;
+      };
       /** The user's own notification sound, kept in the profile. */
       sound: {
         read(): Promise<NotificationSound | null>;

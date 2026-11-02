@@ -13,7 +13,6 @@ import traceback
 import copy
 from contextlib import contextmanager
 from pathlib import Path
-import shutil
 from colorama import Fore
 from dotenv import load_dotenv
 from retry import retry
@@ -4799,7 +4798,9 @@ def _searchCodes(page, pbar, jobList, filename):
                                         # Reassemble: restore outer quotes and formatting codes
                                         params_obj["Text:json"] = f'"{prefix}{translatedText}{suffix}"'
 
-                if headerString == "LL_GalgeChoiceWindow":
+                # Sent and written in pass 1 alone, so choices a failed reply
+                # left in Japanese are not sent and paid for again in pass 2.
+                if headerString == "LL_GalgeChoiceWindow" and setData:
                     ### Message Text First
                     jaString = codeList[i]["parameters"][3]["messageText"]
 
@@ -4822,8 +4823,9 @@ def _searchCodes(page, pbar, jobList, filename):
 
                     ### Choices
                     jaString = codeList[i]["parameters"][3]["choices"]
-                    matchList = re.findall(r'"label[\\]*":[\\]*"(.*?)[\\]', jaString)
-                    if matchList != None:
+                    labels = list(re.finditer(r'"label[\\]*":[\\]*"(.*?)[\\]', jaString))
+                    matchList = [label.group(1) for label in labels]
+                    if matchList:
                         # Give choices the original Japanese question, never
                         # the translated text written back above.
                         response = translateAI(
@@ -4838,9 +4840,17 @@ def _searchCodes(page, pbar, jobList, filename):
                         totalTokens[1] += response[1][1]
                         translatedText = jaString
 
-                        # Replace Strings
-                        for j in range(len(matchList)):
-                            translatedText = translatedText.replace(matchList[j], response[0][j].replace('"', ''))
+                        # Each reply goes in its own label's place, last first
+                        # so earlier places hold, and a label inside another
+                        # one (はい in はいはい) is never written there.
+                        replies = reply_to_write(response[0], matchList, MISMATCH, LOCK, filename)
+                        for label, reply in reversed(list(zip(labels, replies or []))):
+                            if reply is not None:
+                                translatedText = (
+                                    translatedText[: label.start(1)]
+                                    + reply.replace('"', "")
+                                    + translatedText[label.end(1) :]
+                                )
 
                         # Set Data
                         codeList[i]["parameters"][3]["choices"] = translatedText
@@ -5027,9 +5037,12 @@ def _searchCodes(page, pbar, jobList, filename):
                     sourceName if _scalar_original(codeList[i]) is not None else None
                 )
                 currentName = _101_speaker_name(_101_name_current(codeList[i], isVar))
-                if SPEAKER_CONTEXT:
+                if SPEAKER_CONTEXT or not setData:
                     # Retain the current display name even when skip-translated
-                    # prevents getSpeaker from running below.
+                    # prevents getSpeaker from running below. Pass 2 sends
+                    # nothing with it, so runs without the policy read it there
+                    # too: the name pass 1 wrote is the label its lines were
+                    # sent with, which pass 2 strips (strip_speaker_prefix).
                     speaker = currentName
                 if sourceName and (
                     _text_needs_translation(sourceName)
@@ -7562,15 +7575,7 @@ def finalizeSpeakerParse():
             content, newly_translated
         )
 
-        tmp_path = vocab_path.with_suffix(vocab_path.suffix + f".{os.getpid()}.{threading.get_ident()}.tmp")
-        tmp_path.write_text(new_content, encoding="utf-8", newline="\n")
-        try:
-            system.replace(tmp_path, vocab_path)
-        except Exception:
-            try:
-                shutil.move(str(tmp_path), str(vocab_path))
-            except Exception:
-                return False
+        system.write_text(vocab_path, new_content)
         _reload_vocab()
         return True
     except Exception:

@@ -13,6 +13,7 @@
 @import "../features/guided/translation.css" layer(features);
 @import "../features/translation/translation.css" layer(features);
 @import "../features/plugins/plugins.css" layer(features);
+@import "../features/guide/guide.css" layer(features);
 @import "../features/images/images.css" layer(features);
 @import "../features/images/image-editor.css" layer(features);
 @import "../features/guided/guided.css" layer(features);

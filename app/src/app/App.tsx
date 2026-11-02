@@ -1,5 +1,6 @@
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import {
+  BookOpen,
   Bot,
   Gamepad2,
   Route,
@@ -17,6 +18,9 @@ import type { GuidedStep, Screen, TranslationMethod } from "../api/contracts";
 import { useApplication } from "./ApplicationProvider";
 import Settings, { type SettingsSection } from "../features/settings/Settings";
 import Updates from "../features/settings/Updates";
+import Guide from "../features/guide/Guide";
+import { GuideOpener } from "../ui/GuideLink";
+import type { GuideSection } from "../ui/guideSections";
 import { PageHeader, PageLayout, PageMessages } from "../ui/PageLayout";
 import { CatMark } from "../ui/CatMark";
 import GuidedWorkflow from "../features/guided/GuidedWorkflow";
@@ -37,7 +41,7 @@ import { Menu, MenuItem, MenuSeparator } from "../ui/Menu";
 import { RecentProjectName } from "../features/project/RecentProject";
 import { Button } from "../ui/Button";
 import { Message } from "../ui/Feedback";
-import { ProblemReportAction } from "./ProblemReportAction";
+import { ShareActions } from "./ShareActions";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { LanguagesProvider } from "./LanguagesProvider";
 import { OriginalRecordProvider } from "../ui/OriginalRecord";
@@ -57,6 +61,12 @@ export default function App() {
     section: SettingsSection;
   }>();
   if (state?.screen === "settings" && !settingsOpened) setSettingsOpened(true);
+  // The Guide too, so it keeps its place; each request opens it at a section.
+  const [guideOpened, setGuideOpened] = useState(false);
+  const [guideRequest, setGuideRequest] = useState<{
+    section?: GuideSection;
+  }>();
+  if (state?.screen === "guide" && !guideOpened) setGuideOpened(true);
   const [projectTab, setProjectTab] = useState<ProjectTab>("status");
   const [historyQuery, setHistoryQuery] = useState<string>();
   const [historyTab, setHistoryTab] = useState<HistoryTab>("runs");
@@ -150,6 +160,10 @@ export default function App() {
     if (section) setSettingsRequest({ section });
     void navigate("settings");
   };
+  const openGuide = (section?: GuideSection) => {
+    setGuideRequest({ section });
+    void navigate("guide");
+  };
   // The one Translation entry opens the method the game uses, or asks.
   const [translationView, setTranslationView] = useState<TranslationView>();
   const openTranslation = (view?: TranslationView) => {
@@ -238,268 +252,292 @@ export default function App() {
   const workspace = !!state && workspaces.includes(state.screen);
   const updates = useUpdates();
   return (
-    <div className="app">
-      <header className="topbar">
-        <div className="brand">
-          <CatMark drawing="head" className="brand-mark" />
-          <span>
-            Dazed<span className="brand-accent">TL</span>
-          </span>
-        </div>
-        {project && (
-          <Menu
-            variant="quiet"
-            className="current-project"
-            title={project.name}
-            label="Switch project"
-            align="start"
-            disabled={action.busy}
-            trigger={
-              <>
-                <FolderOpen size={17} aria-hidden="true" />
-                <span>{project.name}</span>
-                <ChevronDown size={14} aria-hidden="true" />
-              </>
-            }
-          >
-            {recent.map((item) => (
-              <div key={item.id} className="project-menu-row">
-                <MenuItem
-                  className="project-menu-item"
-                  current={item.id === project.id}
-                  onSelect={() => {
-                    if (item.id !== project.id) void select(item.id);
-                  }}
-                >
-                  <FolderOpen size={16} aria-hidden="true" />
-                  <RecentProjectName project={item} />
-                  {item.id === project.id && (
-                    <Check size={15} aria-label="Open now" />
-                  )}
-                </MenuItem>
-                <MenuItem
-                  className="project-menu-remove"
-                  aria-label={`Remove ${item.name} from the list`}
-                  title={removeHint}
-                  keepOpen={item.id !== project.id}
-                  onSelect={() => remove(item.id)}
-                >
-                  <X size={15} aria-hidden="true" />
-                </MenuItem>
-              </div>
-            ))}
-            <MenuSeparator />
-            <MenuItem onSelect={() => void open()}>Open a game…</MenuItem>
-          </Menu>
-        )}
-        {project?.available && assistantTasks.length > 0 && (
-          <Button
-            variant="quiet"
-            className="assistant-count"
-            // Results to review stand out from tasks still with the assistant.
-            data-attention={
-              assistantTasks.some((task) => task.state !== "waiting") ||
-              undefined
-            }
-            disabled={action.busy}
-            onClick={openAssistantTasks}
-          >
-            <Bot size={16} aria-hidden="true" />
+    <GuideOpener value={openGuide}>
+      <div className="app">
+        <header className="topbar">
+          <div className="brand">
+            <CatMark drawing="head" className="brand-mark" />
             <span>
-              {assistantTasks.length}
-              <span className="assistant-count-label">
-                {" "}
-                assistant {assistantTasks.length === 1 ? "task" : "tasks"}
-              </span>
+              Dazed<span className="brand-accent">TL</span>
             </span>
-          </Button>
-        )}
-        <span className="connection" title={connection}>
-          <i
-            className={application.stopped || unopened ? "disconnected" : ""}
-          />
-          <span className="connection-label">{connection}</span>
-        </span>
-      </header>
-      <div className="app-body">
-        <aside className="sidebar">
-          <nav aria-label="Main navigation">
-            {/* Pages open once the workspace is observed; until then the
-                top bar says it is starting. */}
-            <Button
-              aria-current={state?.screen === "project" ? "page" : undefined}
-              disabled={!state}
-              onClick={() => navigate("project")}
-            >
-              <Gamepad2 size={18} />
-              Project
-            </Button>
-            {project && (
-              <Button
-                aria-current={workspace ? "page" : undefined}
-                disabled={action.busy || !project.available}
-                onClick={() => openTranslation()}
-              >
-                {project.method === "len" ? (
-                  <Route size={18} />
-                ) : (
-                  <ListChecks size={18} />
-                )}
-                Translation
-              </Button>
-            )}
-          </nav>
-          <div className="sidebar-bottom">
-            <ProblemReportAction project={project} />
-            <Button
-              aria-current={state?.screen === "settings" ? "page" : undefined}
-              disabled={!state}
-              onClick={() => navigate("settings")}
-            >
-              <Settings2 size={18} />
-              Settings
-              {settingsDirty && state?.screen !== "settings" ? (
-                <span
-                  className="unsaved-dot"
-                  role="img"
-                  aria-label="Unsaved changes"
-                />
-              ) : (
-                updateAttention(updates) &&
-                state?.screen !== "settings" && (
-                  <span
-                    className="update-dot"
-                    role="img"
-                    aria-label={
-                      updates?.status === "ready"
-                        ? "Update ready"
-                        : "Update failed"
-                    }
-                  />
-                )
-              )}
-            </Button>
           </div>
-        </aside>
-        <main>
-          {/* Before a workspace opens, its page says why instead. */}
-          <PageMessages>
-            <Message
-              message={state ? error : ""}
-              onDismiss={
-                application.stopped
-                  ? undefined
-                  : () => {
-                      action.clear();
-                      application.clearError();
-                    }
+          {project && (
+            <Menu
+              variant="quiet"
+              className="current-project"
+              title={project.name}
+              label="Switch project"
+              align="start"
+              disabled={action.busy}
+              trigger={
+                <>
+                  <FolderOpen size={17} aria-hidden="true" />
+                  <span>{project.name}</span>
+                  <ChevronDown size={14} aria-hidden="true" />
+                </>
               }
-            />
-          </PageMessages>
-          {(settingsOpened || state?.screen === "settings") && (
-            <div
-              hidden={state?.screen !== "settings"}
-              style={{ display: "contents" }}
             >
-              <ErrorBoundary label="Settings">
-                <Settings
-                  onDirty={setSettingsDirty}
-                  request={settingsRequest}
-                />
-              </ErrorBoundary>
-            </div>
+              {recent.map((item) => (
+                <div key={item.id} className="project-menu-row">
+                  <MenuItem
+                    className="project-menu-item"
+                    current={item.id === project.id}
+                    onSelect={() => {
+                      if (item.id !== project.id) void select(item.id);
+                    }}
+                  >
+                    <FolderOpen size={16} aria-hidden="true" />
+                    <RecentProjectName project={item} />
+                    {item.id === project.id && (
+                      <Check size={15} aria-label="Open now" />
+                    )}
+                  </MenuItem>
+                  <MenuItem
+                    className="project-menu-remove"
+                    aria-label={`Remove ${item.name} from the list`}
+                    title={removeHint}
+                    keepOpen={item.id !== project.id}
+                    onSelect={() => remove(item.id)}
+                  >
+                    <X size={15} aria-hidden="true" />
+                  </MenuItem>
+                </div>
+              ))}
+              <MenuSeparator />
+              <MenuItem onSelect={() => void open()}>Open a game…</MenuItem>
+            </Menu>
           )}
-          <ErrorBoundary
-            resetKey={`${project?.id}:${state?.screen}`}
-            label="This view"
-          >
-            <LanguagesProvider project={project}>
-              <OriginalRecordProvider
-                record={project?.originals}
-                stop={() =>
-                  project ? api.stopOriginals(project.id) : Promise.resolve()
-                }
+          {project?.available && assistantTasks.length > 0 && (
+            <Button
+              variant="quiet"
+              className="assistant-count"
+              // Results to review stand out from tasks still with the assistant.
+              data-attention={
+                assistantTasks.some((task) => task.state !== "waiting") ||
+                undefined
+              }
+              disabled={action.busy}
+              onClick={openAssistantTasks}
+            >
+              <Bot size={16} aria-hidden="true" />
+              <span>
+                {assistantTasks.length}
+                <span className="assistant-count-label">
+                  {" "}
+                  assistant {assistantTasks.length === 1 ? "task" : "tasks"}
+                </span>
+              </span>
+            </Button>
+          )}
+          <span className="connection" title={connection}>
+            <i
+              className={application.stopped || unopened ? "disconnected" : ""}
+            />
+            <span className="connection-label">{connection}</span>
+          </span>
+        </header>
+        <div className="app-body">
+          <aside className="sidebar">
+            <nav aria-label="Main navigation">
+              {/* Pages open once the workspace is observed; until then the
+                top bar says it is starting. */}
+              <Button
+                aria-current={state?.screen === "project" ? "page" : undefined}
+                disabled={!state}
+                onClick={() => navigate("project")}
               >
-                {!state ? (
-                  error ? (
-                    // The reason says what to do; when it is a workspace this
-                    // version cannot open, an update is the way out, so the
-                    // updates stay reachable without it.
-                    <PageLayout
-                      variant="editor"
-                      aria-label="Workspace unavailable"
-                    >
-                      <PageHeader
-                        title="Workspace unavailable"
-                        description={error}
-                      />
-                      <Updates running={false} />
-                    </PageLayout>
+                <Gamepad2 size={18} />
+                Project
+              </Button>
+              {project && (
+                <Button
+                  aria-current={workspace ? "page" : undefined}
+                  disabled={action.busy || !project.available}
+                  onClick={() => openTranslation()}
+                >
+                  {project.method === "len" ? (
+                    <Route size={18} />
                   ) : (
-                    <p className="muted">Opening your workspace…</p>
-                  )
-                ) : state.screen === "settings" ? null : workspace &&
-                  project?.method === "guided" ? (
-                  <GuidedWorkflow
-                    key={project.id}
-                    project={project}
-                    opening={action.busy}
-                    settings={openSettings}
-                    openProject={openProject}
-                    intent={intent}
-                    intentHandled={() => setIntent(null)}
-                  />
-                ) : workspace && project?.method === "len" ? (
-                  <Translation
-                    key={project.id}
-                    project={project}
-                    settings={openSettings}
-                    openProject={openProject}
-                    view={translationView}
+                    <ListChecks size={18} />
+                  )}
+                  Translation
+                </Button>
+              )}
+            </nav>
+            <div className="sidebar-bottom">
+              <Button
+                aria-current={state?.screen === "guide" ? "page" : undefined}
+                disabled={!state}
+                onClick={() => openGuide()}
+              >
+                <BookOpen size={18} />
+                Guide
+              </Button>
+              <ShareActions project={project} />
+              <Button
+                aria-current={state?.screen === "settings" ? "page" : undefined}
+                disabled={!state}
+                onClick={() => navigate("settings")}
+              >
+                <Settings2 size={18} />
+                Settings
+                {settingsDirty && state?.screen !== "settings" ? (
+                  <span
+                    className="unsaved-dot"
+                    role="img"
+                    aria-label="Unsaved changes"
                   />
                 ) : (
-                  <ProjectPage
-                    state={state}
-                    busy={action.busy}
-                    open={open}
-                    select={select}
-                    recent={recent}
-                    remove={remove}
-                    report={action.report}
-                    progress={progress}
-                    amounts={amounts}
-                    tab={projectTab}
-                    onTab={(tab) =>
-                      void action.run(async () => {
-                        await flushDrafts();
-                        setProjectTab(tab);
-                        setHistoryQuery(undefined);
-                      })
-                    }
-                    historyQuery={historyQuery}
-                    historyTab={historyTab}
-                    onHistoryTab={setHistoryTab}
-                    openTask={openTask}
-                    openTranslation={openTranslation}
-                    chooseMethod={() => setMethodOpen(true)}
-                    settings={openSettings}
-                    openGuided={openGuided}
-                  />
+                  updateAttention(updates) &&
+                  state?.screen !== "settings" && (
+                    <span
+                      className="update-dot"
+                      role="img"
+                      aria-label={
+                        updates?.status === "ready"
+                          ? "Update ready"
+                          : "Update failed"
+                      }
+                    />
+                  )
                 )}
-              </OriginalRecordProvider>
-            </LanguagesProvider>
-          </ErrorBoundary>
-        </main>
+              </Button>
+            </div>
+          </aside>
+          <main>
+            {/* Before a workspace opens, its page says why instead. */}
+            <PageMessages>
+              <Message
+                message={state ? error : ""}
+                onDismiss={
+                  application.stopped
+                    ? undefined
+                    : () => {
+                        action.clear();
+                        application.clearError();
+                      }
+                }
+              />
+            </PageMessages>
+            {(settingsOpened || state?.screen === "settings") && (
+              <div
+                hidden={state?.screen !== "settings"}
+                style={{ display: "contents" }}
+              >
+                <ErrorBoundary label="Settings">
+                  <Settings
+                    onDirty={setSettingsDirty}
+                    request={settingsRequest}
+                  />
+                </ErrorBoundary>
+              </div>
+            )}
+            {(guideOpened || state?.screen === "guide") && (
+              <div
+                hidden={state?.screen !== "guide"}
+                style={{ display: "contents" }}
+              >
+                <ErrorBoundary label="Guide">
+                  <Guide
+                    visible={state?.screen === "guide"}
+                    request={guideRequest}
+                  />
+                </ErrorBoundary>
+              </div>
+            )}
+            <ErrorBoundary
+              resetKey={`${project?.id}:${state?.screen}`}
+              label="This view"
+            >
+              <LanguagesProvider project={project}>
+                <OriginalRecordProvider
+                  record={project?.originals}
+                  stop={() =>
+                    project ? api.stopOriginals(project.id) : Promise.resolve()
+                  }
+                >
+                  {!state ? (
+                    error ? (
+                      // The reason says what to do; when it is a workspace this
+                      // version cannot open, an update is the way out, so the
+                      // updates stay reachable without it.
+                      <PageLayout
+                        variant="editor"
+                        aria-label="Workspace unavailable"
+                      >
+                        <PageHeader
+                          title="Workspace unavailable"
+                          description={error}
+                        />
+                        <Updates running={false} />
+                      </PageLayout>
+                    ) : (
+                      <p className="muted">Opening your workspace…</p>
+                    )
+                  ) : state.screen === "settings" ||
+                    state.screen === "guide" ? null : workspace &&
+                    project?.method === "guided" ? (
+                    <GuidedWorkflow
+                      key={project.id}
+                      project={project}
+                      opening={action.busy}
+                      settings={openSettings}
+                      openProject={openProject}
+                      intent={intent}
+                      intentHandled={() => setIntent(null)}
+                    />
+                  ) : workspace && project?.method === "len" ? (
+                    <Translation
+                      key={project.id}
+                      project={project}
+                      settings={openSettings}
+                      openProject={openProject}
+                      view={translationView}
+                    />
+                  ) : (
+                    <ProjectPage
+                      state={state}
+                      busy={action.busy}
+                      open={open}
+                      select={select}
+                      recent={recent}
+                      remove={remove}
+                      report={action.report}
+                      progress={progress}
+                      amounts={amounts}
+                      tab={projectTab}
+                      onTab={(tab) =>
+                        void action.run(async () => {
+                          await flushDrafts();
+                          setProjectTab(tab);
+                          setHistoryQuery(undefined);
+                        })
+                      }
+                      historyQuery={historyQuery}
+                      historyTab={historyTab}
+                      onHistoryTab={setHistoryTab}
+                      openTask={openTask}
+                      openTranslation={openTranslation}
+                      chooseMethod={() => setMethodOpen(true)}
+                      settings={openSettings}
+                      openGuided={openGuided}
+                    />
+                  )}
+                </OriginalRecordProvider>
+              </LanguagesProvider>
+            </ErrorBoundary>
+          </main>
+        </div>
+        {methodOpen && project && (
+          <MethodDialog
+            key={project.id}
+            project={project}
+            busy={action.busy}
+            choose={chooseMethod}
+            close={() => setMethodOpen(false)}
+          />
+        )}
       </div>
-      {methodOpen && project && (
-        <MethodDialog
-          key={project.id}
-          project={project}
-          busy={action.busy}
-          choose={chooseMethod}
-          close={() => setMethodOpen(false)}
-        />
-      )}
-    </div>
+    </GuideOpener>
   );
 }
