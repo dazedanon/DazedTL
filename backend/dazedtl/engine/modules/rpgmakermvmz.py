@@ -4839,8 +4839,10 @@ def _searchCodes(page, pbar, jobList, filename):
                         translatedText = jaString
 
                         # Replace Strings
-                        for j in range(len(matchList)):
-                            translatedText = translatedText.replace(matchList[j], response[0][j].replace('"', ''))
+                        replies = reply_to_write(response[0], matchList, MISMATCH, LOCK, filename)
+                        for choice, reply in zip(matchList, replies or []):
+                            if reply is not None:
+                                translatedText = translatedText.replace(choice, reply.replace('"', ''))
 
                         # Set Data
                         codeList[i]["parameters"][3]["choices"] = translatedText

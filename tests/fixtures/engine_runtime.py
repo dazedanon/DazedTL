@@ -3564,6 +3564,37 @@ try:
         )
         assert got[0][1] == ["Hi"], got
 
+        # LL_GalgeChoiceWindow's choices (code 357) were written from the
+        # reply whatever its length: a short one failed the page with an
+        # IndexError and a long one wrote its first lines.
+        galge = '["{\\"label\\":\\"はい\\"}","{\\"label\\":\\"いいえ\\"}"]'
+        window = command(
+            357,
+            ["LL_GalgeChoiceWindow", "", "", {"messageText": "行く？", "choices": galge}],
+        )
+
+        english = {"行く？": "Go?", "はい": "Yes", "いいえ": "No"}
+
+        def galge_reply(change):
+            def reply(text, *_args, **_kwargs):
+                if isinstance(text, str):
+                    return [english.get(text, text), [0, 0]]
+                return [change([english.get(line, line) for line in text]), [0, 0]]
+
+            return reply
+
+        for change, choices in (
+            (lambda reply: reply, galge.replace("はい", "Yes").replace("いいえ", "No")),
+            (lambda reply: reply[:-1], galge),
+            (lambda reply: [*reply, "Maybe"], galge),
+        ):
+            written, mismatched, marked = mv_page(
+                [window], galge_reply(change), CODE357=True
+            )
+            assert written[0][3] == {"messageText": "Go?", "choices": choices}, written
+            failed = choices == galge
+            assert (mismatched, bool(marked)) == (["Map001.json"] * failed, failed)
+
         # A final save over a folder "succeeded": RPG Maker's own atomic
         # write fell back to moving the save into the folder. It saves
         # through write_output now, which fails the file with OutputNotSaved.
@@ -4387,7 +4418,7 @@ try:
             "translation.translateText.layer('stand-in', provider)\n"
             "from modules import rpgmakermvmz\n"
             "evidence = Evidence(folder, 'translate')\n"
-            "evidence.install(translation, rpgmakermvmz)\n"
+            "evidence.install(translation)\n"
             "configure_builders(translation, GENERATION_PARAMETERS, evidence.record, provider='openai', thinking_effort='high')\n"
             "policy = {'runStops': RUN_STOPS} if stand_in['policy'] == '1' else None\n"
             "run_stops.configure(translation, policy, folder)\n"
