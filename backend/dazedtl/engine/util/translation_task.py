@@ -331,7 +331,6 @@ TRANSLATION_MODULE_SPECS = (
     # filename rather than ".json" so it never offers up a folder of RPG Maker
     # data - the match below is endswith, so both forms work here.
     ("Image Text", ("image_text.json",), "modules.imagetext", "handleImageText"),
-    ("RPG Maker Plugin", (".js",), "modules.rpgmakerplugin", "handlePlugin"),
 )
 
 def _lazy_module_handler(module_name, handler_name):

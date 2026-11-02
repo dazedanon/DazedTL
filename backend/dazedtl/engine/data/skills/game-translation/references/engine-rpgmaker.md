@@ -1260,7 +1260,7 @@ translatedText = re.sub(r"([^\\'])'", r"\1\\'", translatedText)
 
 That `[^\\']` class is load-bearing: it leaves already-escaped `\'` and doubled `''` alone, so the pass is idempotent and safe to re-run over a partially processed file.
 A drawTextEx label can sit in any string of its line, such as a later concatenated one or a variable's, and in a plugin setting's script it sits inside the setting's own string too.
-Its translation escapes the quote of every string around it (`'\\}Kiss\'s\\{'`, and `\"` as well inside a setting), as `literalText` in `modules/rpgmakerplugin.py` does.
+Its translation escapes the quote of every string around it (`'\\}Kiss\'s\\{'`, and `\"` as well inside a setting).
 
 ### Scope a greedy scan to a brace-counted region
 

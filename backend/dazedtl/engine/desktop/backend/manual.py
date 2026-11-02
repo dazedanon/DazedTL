@@ -71,18 +71,7 @@ def relative_file(value):
 # file without a Live request. A Live run's resume builds its requests anew and
 # reuses the replies it saved for those built the same; refusing it would only
 # pay again for what its unfinished files already have.
-ENGINE_VERSIONS = {
-    # 2: the request changes it made since 2.0.0 without a version; 3: text
-    # inside a field its line already sends, such as a stat label
-    # inside a drawTextEx label or a txtSubject inside a disp_list string, is
-    # no longer sent again; 4: a quest field of spaces or line breaks alone
-    # sends nothing (util/sent_lines); 5: a field ends at its own string's
-    # closing quote, a disp_list region at the bracket closing what its anchor
-    # opens, and a drawTextEx label inside the string holding its call; 6: a
-    # txtSubject is only a key or assignment holding a string, and a drawTextEx
-    # label a rejected match ran over is still read
-    "RPG Maker Plugin": 6,
-}
+ENGINE_VERSIONS = {}
 STALE_QUEUE = (
     "An update changed how DazedTL builds {engine} requests after this Batch was "
     "collected, so this version does not submit it. Translate these files again "
@@ -93,7 +82,6 @@ STALE_QUEUE = (
 VERSION_1_SIGNATURES = {
     "RPG Maker MV/MZ": "b0aa0546c511a7b996fad0dad1d62619258d5eb7ec1f23e9e0ebf113bd9284aa",
     "Image Text": "86654651e329cf0fc086888f58b9f23549f9e77113ca6087e4becc53dc49bce1",
-    "RPG Maker Plugin": "ab09c95d0dc393c3aab440bc9eb3945b012a3506ec92c567f1f28c2e6f80c3de",
 }
 
 
