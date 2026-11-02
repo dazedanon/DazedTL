@@ -748,7 +748,14 @@ def _download_anthropic(client, batch_id: str, custom_ids: dict):
         result = row.result
         if result.type != "succeeded":
             err = getattr(result, "error", None)
-            errors.append((row.custom_id, f"{result.type}: {str(err or '')[:400]}"))
+            # The provider's error object as Python text, as an OpenAI row's
+            # (provider_responses stored_reason reads its message).
+            errors.append((
+                row.custom_id,
+                str(err.model_dump())[:500]
+                if hasattr(err, "model_dump")
+                else f"{result.type}: {str(err or '')[:400]}",
+            ))
             continue
         message = result.message
         text = "".join(getattr(block, "text", "") or "" for block in message.content)

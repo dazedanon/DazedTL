@@ -334,17 +334,19 @@ class BatchMonitor:
     def _finish_empty(self, identity):
         """Ends a run whose provider answered none of its Batch requests with
         the one message (process_view empty_batch), unless its worker already
-        ended it so, which needs no second ending."""
+        ended it, so with that message or, when it could not read its records,
+        its own: a run ends once."""
         from dazedtl.compatibility.process_view import (
             NO_SUCCESSFUL_RESPONSES,
             empty_batch,
         )
 
         job = self.backend.manual.jobs[identity]
-        message = (
-            empty_batch(self.backend.manual.folder(identity)) or NO_SUCCESSFUL_RESPONSES
-        )
-        if job["status"] != "failed" or job.get("message") != message:
+        if job["status"] != "failed":
+            message = (
+                empty_batch(self.backend.manual.folder(identity))
+                or NO_SUCCESSFUL_RESPONSES
+            )
             job.update(status="failed", phase="failed", approval=None, message=message)
             self.backend.manual.save(job)
             self.backend.manual.failed_run(identity)
