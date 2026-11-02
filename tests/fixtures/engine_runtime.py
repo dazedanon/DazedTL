@@ -741,8 +741,9 @@ try:
         # file failed with an IndexError; the status effects were sent once
         # for each of their lists that held text. Status effects after items
         # took the items' font, the number 18, and failed on "font + text".
-        # The skill table's battle log texts were written after its font
-        # size alone, "24Taro cast Fire", a literal 24 in the game's log.
+        # The skill table's battle logs were written after its font size
+        # alone, "24Taro cast Fire", a literal 24 in the game's log; logs take
+        # no font, as the items' and status effects' do.
         directory = os.getcwd()
         os.chdir(temporary)
         (temporary / "log").mkdir(exist_ok=True)
@@ -775,9 +776,9 @@ try:
             [
                 "EN 炎",
                 "\\f[24]EN 炎の技",
-                "\\f[24] 炎を放った",
-                "\\f[24] 炎を唱えた",
-                "\\f[24] 炎を避けた",
+                " 炎を放った",
+                " 炎を唱えた",
+                " 炎を避けた",
             ],
         ], values
         assert (mismatched, marked) == (["D.json"], 1), (mismatched, marked)
