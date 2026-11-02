@@ -15,6 +15,7 @@ import { ActionBar } from "../../ui/ActionBar";
 import { ActionControl } from "../../ui/ActionControl";
 import { ActionList, ActionRow } from "../../ui/ActionList";
 import { Button } from "../../ui/Button";
+import { CatMark } from "../../ui/CatMark";
 import { HelpPopover } from "../../ui/HelpPopover";
 import { JobStatus } from "../../ui/JobStatus";
 import { Notice } from "../../ui/Notice";
@@ -819,7 +820,7 @@ function NoProject({
         <ActionRow
           label={
             <span className="project-welcome">
-              <span className="project-welcome-cat" aria-hidden="true" />
+              <CatMark drawing="full" className="project-welcome-cat" />
               <span>
                 <strong>No project open</strong>
                 <small>

@@ -2,12 +2,7 @@
 
 ### Added
 
-- **Releases:** each new version is also published as a GitHub Release with its notes, so the GitHub page shows the latest version and what changed.
-
-### Changed
-
-- **User guide:** a third of its old length, each step in a few lines: what to click, what to paste into your assistant and what comes next.
-- **GitHub page:** the README shows DazedTL at work: a game translated from Japanese to English, a live translation, handing tasks to your assistant, Text QA's corrections and what a game typically costs, with links to the Discord and to support DazedTL.
+- **Top bar and Project page:** the dazed cat twinkles its sparkles and turns its eyes when it appears and while you point at it, and stays still when your system asks for reduced motion.
 
 ### Fixed
 

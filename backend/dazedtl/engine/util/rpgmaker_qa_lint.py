@@ -74,9 +74,19 @@ FAMILIES: dict[str, dict[str, str]] = {
 ORDER = tuple(FAMILIES)
 # The target a game without a recorded language pair translates into.
 DEFAULT_TARGET = "English"
-# Families whose fix was right on every line it matched in released games and
-# keeps the line's breaks and codes. The rest need a reviewer, the whole game,
-# or a change of line structure; see docs/architecture.md.
+# Families whose fix was right on every line it matched in ten released games
+# and keeps the line's breaks and codes. The rest need a reviewer: an
+# apostrophe can be a moan's or a slur's, a title needs the whole game's
+# titles, list and label fixes change line breaks, and level-tag spacing
+# matched no real defect. On eleven released games with their Japanese kept,
+# 59 inline-speaker lines had no colon and 9 had one, while 5 labels such as
+# Change Battle BGM: "Forest" rightly kept theirs; fixing only a capitalized
+# name or a name code before speech matched those 9 and no label. A line that
+# also dropped its quotes stays, as one game's 6 notification popups did,
+# since quotes would widen them. The glossary family replaced Guided's
+# Glossary check, which flagged 7,631 lines on ten games, and QA's database
+# glossary check; about one in ten of the 150 fixes it proposed there was a
+# judgment call, so it is never automatic.
 AUTOMATIC = ("lint:inline-speaker", "lint:heart-spacing", "lint:stray-sokuon")
 
 # A name a line starts with, a colon, and the quote that opens what follows,

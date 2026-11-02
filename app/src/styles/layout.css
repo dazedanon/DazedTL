@@ -40,13 +40,11 @@
 .brand-accent {
   color: var(--color-accent);
 }
-/* The dazed cat's head as an accent outline; the window icon, shown beside
-   it by many title bars, keeps the filled teal tile. */
+/* The dazed cat's head as an accent outline (CatMark); the window icon, shown
+   beside it by many title bars, keeps the filled teal tile. */
 .brand-mark {
   width: 31px;
   height: 28px;
-  background: var(--color-accent);
-  mask: url("../assets/brand/cat-head-outline.png") center / contain no-repeat;
 }
 /* The project switcher and the sidebar below size themselves as chrome
    instead of taking --control-height. */

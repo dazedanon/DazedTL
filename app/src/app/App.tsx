@@ -18,6 +18,7 @@ import { useApplication } from "./ApplicationProvider";
 import Settings, { type SettingsSection } from "../features/settings/Settings";
 import Updates from "../features/settings/Updates";
 import { PageHeader, PageLayout, PageMessages } from "../ui/PageLayout";
+import { CatMark } from "../ui/CatMark";
 import GuidedWorkflow from "../features/guided/GuidedWorkflow";
 import { guidedProgress, projectAmounts } from "../features/guided/progress";
 import type { GuidedIntent } from "../features/guided/workspace/model";
@@ -240,7 +241,7 @@ export default function App() {
     <div className="app">
       <header className="topbar">
         <div className="brand">
-          <span className="brand-mark" aria-hidden="true" />
+          <CatMark drawing="head" className="brand-mark" />
           <span>
             Dazed<span className="brand-accent">TL</span>
           </span>
