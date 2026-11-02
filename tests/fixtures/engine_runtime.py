@@ -1018,7 +1018,9 @@ try:
         # quote; kept a data_map_name_list region open to the enclosing
         # block's close, counting braces in strings; read stat labels in other
         # settings on a packed line holding one drawTextEx script; and wrote
-        # 回 after a game variable as x where it begins 回復.
+        # 回 after a game variable as x where it begins 回復. It read the next
+        # statement's string as a txtSubject assigned code, and skipped a
+        # brace label a match across two strings had run over.
         shapes = temporary / "engine-shapes"
         for folder in ("files", "translated", "log"):
             (shapes / folder).mkdir(parents=True)
@@ -1431,6 +1433,30 @@ try:
                         r"this.drawTextEx(`${$gameVariables.value(6)}回復`, 0, 36);"
                         "\n"
                     ),
+                ),
+                (
+                    "modules.rpgmakerplugin",
+                    "handlePlugin",
+                    "Quest.js",
+                    (
+                        'this.txtSubject = q.subject; var t = "依頼";\n'
+                        "var txtSubject = String(parameters['txtSubject'] || 'クエスト');\n"
+                    ),
+                    {},
+                    [["クエスト"]],
+                    (
+                        'this.txtSubject = q.subject; var t = "依頼";\n'
+                        "var txtSubject = String(parameters['txtSubject'] || 'EN ՚クエスト՚');\n"
+                    ),
+                ),
+                (
+                    "modules.rpgmakerplugin",
+                    "handlePlugin",
+                    "Tracker.js",
+                    (r"this.drawTextEx('\\}' + n + '\\}回数\\{', 0, 0);" "\n"),
+                    {},
+                    [["回数"]],
+                    (r"this.drawTextEx('\\}' + n + '\\}EN \'回数\'\\{', 0, 0);" "\n"),
                 ),
                 (
                     "modules.csv",

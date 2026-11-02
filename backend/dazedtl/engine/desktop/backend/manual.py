@@ -97,8 +97,10 @@ ENGINE_VERSIONS = {
     # no longer sent again; 4: a quest field of spaces or line breaks alone
     # sends nothing (util/sent_lines); 5: a field ends at its own string's
     # closing quote, a disp_list region at the bracket closing what its anchor
-    # opens, and a drawTextEx label inside the string holding its call
-    "RPG Maker Plugin": 5,
+    # opens, and a drawTextEx label inside the string holding its call; 6: a
+    # txtSubject is only a key or assignment holding a string, and a drawTextEx
+    # label a rejected match ran over is still read
+    "RPG Maker Plugin": 6,
     "SRPG Studio": 2,
 }
 STALE_QUEUE = (

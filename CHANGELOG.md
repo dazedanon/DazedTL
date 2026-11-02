@@ -3,6 +3,18 @@
 Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 [release.mjs](scripts/release.mjs) writes each entry from [release/notes.md](release/notes.md).
 
+## [2.55.1] - 2026-11-02
+
+### Fixed
+
+- **Plugin files:** a quest subject set by code (`this.txtSubject = …`) no longer sends the next string on its line as the subject, and a drawn label such as `\\}回数\\{` after another drawn label in the same `drawTextEx` call is translated instead of left in Japanese.
+
+## [2.55.0] - 2026-11-02
+
+### Changed
+
+- **Sidebar:** Copy diagnostics is now **Report a problem**, which copies a bug report for Discord with your version, system, open game and recent errors already filled in; the full diagnostics moved to **Settings > Updates**.
+
 ## [2.54.0] - 2026-11-02
 
 ### Added
@@ -1522,6 +1534,8 @@ Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachan
 - The first release of DazedTL as a desktop app, installed from a ZIP with a START launcher and updated from inside the app.
 - **Guided steps** for RPG Maker MV, MZ and VX Ace games, and **Assistant-led** for any game.
 
+[2.55.1]: https://github.com/dazedanon/DazedTL/compare/v2.55.0...v2.55.1
+[2.55.0]: https://github.com/dazedanon/DazedTL/compare/v2.54.0...v2.55.0
 [2.54.0]: https://github.com/dazedanon/DazedTL/compare/v2.53.1...v2.54.0
 [2.53.1]: https://github.com/dazedanon/DazedTL/compare/v2.53.0...v2.53.1
 [2.53.0]: https://github.com/dazedanon/DazedTL/compare/v2.52.9...v2.53.0
