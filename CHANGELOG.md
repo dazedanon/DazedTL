@@ -3,6 +3,15 @@
 Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 [release.mjs](scripts/release.mjs) writes each entry from [release/notes.md](release/notes.md).
 
+## [2.56.1] - 2026-11-02
+
+### Fixed
+
+- **Translate:** while a Batch runs, its waiting line now says how many requests are done or failed out of those sent and how many Batches have finished, and that the files fill in when every Batch finishes.
+- **Translate:** a reply with too few or too many lines for a Text, Tyrano, Kirikiri, Regex or JSON file now keeps those lines in Japanese and reports the mismatch, where it wrote its translations onto the wrong lines and a Tyrano file with choices failed; a line that comes back untranslated keeps its original text instead of being rewritten with its line breaks turned into spaces.
+- **Translate:** an empty Tyrano choice or Kirikiri tag pair no longer gets a translation between every letter of its line, an empty Lune field is no longer filled, a Tyrano or Kirikiri line read two ways no longer leaves later lines untranslated, moves their translations or pays to send them again, and a Tyrano file ending in a choice no longer fails.
+- **Translate:** a CSV cell with two furigana, such as `＜漢字＝かんじ＞と＜仮名＝かな＞だ`, is now sent as `漢字と仮名だ`; a Regex `\text` block after a `"name"` line is no longer sent as said by that speaker, and one with no `\endtext` now fails its file with a message naming the block.
+
 ## [2.56.0] - 2026-11-02
 
 ### Added
@@ -1548,6 +1557,7 @@ Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachan
 - The first release of DazedTL as a desktop app, installed from a ZIP with a START launcher and updated from inside the app.
 - **Guided steps** for RPG Maker MV, MZ and VX Ace games, and **Assistant-led** for any game.
 
+[2.56.1]: https://github.com/dazedanon/DazedTL/compare/v2.56.0...v2.56.1
 [2.56.0]: https://github.com/dazedanon/DazedTL/compare/v2.55.1...v2.56.0
 [2.55.1]: https://github.com/dazedanon/DazedTL/compare/v2.55.0...v2.55.1
 [2.55.0]: https://github.com/dazedanon/DazedTL/compare/v2.54.0...v2.55.0
