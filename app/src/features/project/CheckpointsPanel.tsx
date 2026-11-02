@@ -164,7 +164,7 @@ export function CheckpointsPanel({
                 <>
                   <StatusIcon status="done" size={14} />
                   All changes saved
-                  <HelpPopover label="Checkpoints">
+                  <HelpPopover label="Checkpoints" guide="checkpoints-and-undo">
                     Every change DazedTL makes to the game is saved here as a
                     checkpoint in the game folder’s Git. Edits made outside
                     DazedTL are saved too, before its next change.

@@ -2824,7 +2824,7 @@ export type PluginActionResult = {
 };
 
 export type Screen =
-  "project" | "translation" | "guided" | "manual" | "settings";
+  "project" | "translation" | "guided" | "manual" | "settings" | "guide";
 
 export type TranslationMethod = "guided" | "len";
 

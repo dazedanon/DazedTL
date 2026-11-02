@@ -103,6 +103,7 @@ export default function GameUpdateSettings({
           <FieldRow
             id="gameupdate-owner"
             label="Owner"
+            guide="publishing-with-gameupdate"
             help="The user or group your patch repositories belong to. Leave it empty if you don't publish with GameUpdate."
           >
             {(control) => (

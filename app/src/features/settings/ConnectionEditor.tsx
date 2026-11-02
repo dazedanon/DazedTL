@@ -246,6 +246,7 @@ export default function ConnectionEditor({
               <FieldRow
                 id="connection-secret"
                 label="API key"
+                guide="api-keys-and-models"
                 help={
                   keepKey
                     ? "Leave blank to keep the saved key."

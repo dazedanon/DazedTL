@@ -99,6 +99,14 @@ declare global {
         title: string;
         body: string;
       }): Promise<void>;
+      /** The user guide in docs/user-guide.md, with the images it shows. */
+      guide: {
+        read(): Promise<string>;
+        /** An image the guide shows, from docs/media, as a data URL. */
+        image(source: string): Promise<string>;
+        /** Opens a link of the guide that leads out of it in the browser. */
+        open(href: string): Promise<void>;
+      };
       /** The user's own notification sound, kept in the profile. */
       sound: {
         read(): Promise<NotificationSound | null>;

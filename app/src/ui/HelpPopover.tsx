@@ -1,5 +1,7 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { CircleHelp } from "lucide-react";
+import { GuideLink } from "./GuideLink";
+import type { GuideSection } from "./guideSections";
 import { placeOnOpen, placePopover } from "./popoverPlacement";
 
 /** The right edge of the room a button's page offers: its scrolling
@@ -25,10 +27,13 @@ export function HelpPopover({
   label,
   children,
   id,
+  guide,
 }: {
   label: string;
   children: ReactNode;
   id?: string;
+  /** The guide's section on the topic, for a Learn more link. */
+  guide?: GuideSection;
 }) {
   const generatedId = useId();
   const contentId = id || generatedId;
@@ -74,6 +79,14 @@ export function HelpPopover({
         onToggle={(event) => setOpen(event.newState === "open")}
       >
         {children}
+        {guide && (
+          <p className="help-popover-guide">
+            <GuideLink
+              section={guide}
+              onOpen={() => popover.current?.hidePopover()}
+            />
+          </p>
+        )}
       </div>
     </>
   );
