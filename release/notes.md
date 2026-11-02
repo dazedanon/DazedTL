@@ -6,6 +6,7 @@
 
 ### Fixed
 
+- **Plugin files:** a quest subject set by code (`this.txtSubject = …`) no longer sends the next string on its line as the subject, and a drawn label such as `\\}回数\\{` after another drawn label in the same `drawTextEx` call is translated instead of left in Japanese.
 - **Images:** Copy revision task no longer refuses an image already in the game with "Every image in your list is already in the game."; the revised image can be applied again.
 - **Images:** the copied revision task now spells out your Revision notes, so your assistant can't miss them.
 - **Images:** Mark user reviewed no longer files your Revision notes as the review's reason, and is no longer offered on an image already in the game.
