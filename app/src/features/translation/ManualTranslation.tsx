@@ -127,7 +127,10 @@ function Workspace({
     run && estimateOutdated(run) ? redoneEstimate(attempt, run) : undefined;
   // The estimate being prepared, or the last one if it failed.
   const latest = attempt.find(
-    (job) => job.kind === "operation" && job.id !== redo?.id,
+    (job) =>
+      job.kind === "operation" &&
+      job.action === "organize" &&
+      job.id !== redo?.id,
   );
   const preparing = latest?.status === "complete" ? undefined : latest;
   const disabled = state.active || action.busy || draft.committing;

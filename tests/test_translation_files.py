@@ -61,6 +61,13 @@ class TranslationFileTests(unittest.TestCase):
         # decides the scope, and DazedTL never writes the game.
         self.engine.git_status = lambda *_args: {}
         self.projects.choose_method(self.identity, "manual")
+        # Options Assistant-led saved as Assistant only, which Manual lacks.
+        selected = self.project.read()
+        self.service.save(
+            self.identity,
+            selected["revision"],
+            {**selected["options"], "mode": "agent"},
+        )
         manual = Manual(self.service)
         source = self.file(
             "extracted.json",
@@ -89,6 +96,11 @@ class TranslationFileTests(unittest.TestCase):
         )
         _job, plan = self.service.jobs.store.load(run, self.identity)
         self.assertEqual(plan["method"], "manual")
+        # Its estimate reads current, so Approve takes it.
+        view = next(
+            job for job in self.service.state(self.identity)["jobs"] if job["id"] == run
+        )
+        self.assertFalse(view["settings_changed"] or view["pricing_changed"])
         self.service.validate_current(self.identity, plan, compiled=False)
         # Estimating again after a settings change prepares a Manual run again.
         self.settings_data["connections"][0]["endpoint"] = "https://other.invalid/v1"

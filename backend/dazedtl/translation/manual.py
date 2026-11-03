@@ -57,22 +57,11 @@ class Manual:
         the terms of the file's it lacks."""
         project = self._project(project_id)
         self.translation.idle(project_id)
-        self.translation.clean_drafts(project_id)
         root = project.root
         pair = language_pair.pair(self.translation.settings, root)
         value = translation_file.read(path)
         translation_file.check_languages(value["languages"], pair)
         units = translation_file.units(value["lines"])
-        relative = project_path(root, MANUAL_UNITS, exists=False)
-        document = {
-            "version": 1,
-            "units": [
-                {key: item for key, item in line.items() if key != "translation"}
-                for line in value["lines"]
-            ],
-        }
-        if not relative.is_file() or read_json(relative) != document:
-            write_json(relative, document)
         lines = UnitLines(
             self.translation.jobs.store,
             project_id,
@@ -88,6 +77,8 @@ class Manual:
         write, summary = translation_file.matched(
             value["lines"], current, lines.problems
         )
+        # The file's translations are saved before its lines replace the
+        # units, so a failed import leaves the project as it was.
         if write:
             lines.save(write, Path(path).name)
         added, glossary = glossary_counts(root, value["glossary"])
@@ -95,6 +86,16 @@ class Manual:
             from util.vocab import append_vocab_rows
 
             append_vocab_rows(added, game_root=root)
+        relative = project_path(root, MANUAL_UNITS, exists=False)
+        document = {
+            "version": 1,
+            "units": [
+                {key: item for key, item in line.items() if key != "translation"}
+                for line in value["lines"]
+            ],
+        }
+        if not relative.is_file() or read_json(relative) != document:
+            write_json(relative, document)
         loaded = {
             "name": Path(path).name,
             "path": str(Path(path)),
@@ -124,5 +125,5 @@ class Manual:
         if not project_path(project.root, MANUAL_UNITS, exists=False).is_file():
             raise ValueError("Load your text file first.")
         units_file(project.root, MANUAL_UNITS)
-        mode = self.translation.manual_mode(project)
+        mode = self.translation.run_mode(project, "manual")
         return self.translation.organize_manual(project_id, MANUAL_UNITS, mode)

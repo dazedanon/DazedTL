@@ -288,9 +288,12 @@ class Translation:
     def options(self, project):
         return project.read(self.default_mode())
 
-    def run_mode(self, project):
+    def run_mode(self, project, method=None):
         """The mode the project runs in: a saved Batch the connection cannot
-        run is Live, which the page shows from the same rule."""
+        run is Live, which the page shows from the same rule. A Manual
+        project's (*method* MANUAL) is manual_mode."""
+        if method == MANUAL:
+            return self.manual_mode(project)
         return runnable_mode(
             self.settings, self.options(project)["options"]["mode"], "live"
         )
@@ -517,7 +520,11 @@ class Translation:
             "originalsRecorded": originals.available(
                 self.workspace, project_id, project.root, saved_lifecycle
             ),
-            "jobs": self.job_views(saved_jobs, self.run_mode(project), project.root),
+            "jobs": self.job_views(
+                saved_jobs,
+                self.run_mode(project, record.get("method")),
+                project.root,
+            ),
             "active": self.jobs.running(project_id),
             "warnings": warnings,
             "checkoutIssue": refused,
@@ -859,7 +866,7 @@ Additional project instructions:
             raise ValueError("Only an estimate waiting for approval can be redone.")
         _record, project = self.project(project_id)
         method = plan.get("method")
-        mode = self.manual_mode(project) if method == MANUAL else self.run_mode(project)
+        mode = self.run_mode(project, method)
         if mode == "agent":
             raise ValueError(
                 "Choose API Batch or Live API in Options to estimate this run again."
@@ -1426,7 +1433,7 @@ Additional project instructions:
             mode = priced_mode(
                 plan.get("finishes"),
                 plan["configuration"]["mode"],
-                self.run_mode(project),
+                self.run_mode(project, plan.get("method")),
             )
             current, _provider = self.api_configuration(mode, project.root)
             change = changed_since(

@@ -108,8 +108,15 @@ class GuidedLines:
         found = {}
         with reading_game(self.native["source"]):
             for name, phase in self.files.items():
-                document = decode_json(system.read_bytes(self.inputs.newest(name)))
-                original = self.inputs.original_document(name)
+                raw = system.read_bytes(self.inputs.newest(name))
+                document = decode_json(raw)
+                # A copy translation never touched keeps the original's
+                # places, so only a translated one reads the original's.
+                original = (
+                    self.inputs.original_document(name)
+                    if b'"_original"' in raw
+                    else None
+                )
                 places = _Places(document, original)
 
                 def read_original(value=original):
