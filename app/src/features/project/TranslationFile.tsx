@@ -77,16 +77,14 @@ export function TranslationFile({
             pendingText="Exporting…"
             error={action.key === "export" ? action.error : ""}
             notice={action.key === "export" ? action.notice : ""}
-            onClick={() =>
-              void action.run(
-                async () => {
-                  const message = await exportTranslation(project);
-                  if (message) action.succeed(message, "export");
-                },
+            onClick={async () => {
+              const done = await action.run(
+                () => exportTranslation(project),
                 "",
                 "export",
-              )
-            }
+              );
+              if (done.ok && done.value) action.succeed(done.value, "export");
+            }}
           />
           <ActionControl
             label="Import…"
@@ -123,11 +121,39 @@ export function ImportSummary({
   value: TranslationFileImport;
   project: Project;
 }) {
+  // Each count with its verb for one or for more.
   const rows = [
-    [value.added, "get a translation"],
-    [value.replaced, "replace the translation they have"],
-    [value.unchanged, "have this translation already"],
-    [value.empty, "have no translation in the file"],
+    [value.added, "line", "gets a translation", "get a translation"],
+    [
+      value.replaced,
+      "line",
+      "replaces the translation it has",
+      "replace the translation they have",
+    ],
+    [
+      value.unchanged,
+      "line",
+      "has this translation already",
+      "have this translation already",
+    ],
+    [
+      value.empty,
+      "line",
+      "has no translation in the file",
+      "have no translation in the file",
+    ],
+    [
+      value.glossary.added,
+      "glossary term",
+      "joins the game's glossary",
+      "join the game's glossary",
+    ],
+    [
+      value.glossary.differs,
+      "glossary term",
+      "differs from the game's glossary, which keeps its own",
+      "differ from the game's glossary, which keeps its own",
+    ],
   ] as const;
   const skipped = value.unknown + value.changed + value.refused;
   return (
@@ -135,23 +161,11 @@ export function ImportSummary({
       <ul className="translation-import-counts">
         {rows
           .filter(([amount]) => amount > 0)
-          .map(([amount, text]) => (
-            <li key={text}>
-              <strong>{count(amount, "line")}</strong> {text}
+          .map(([amount, noun, one, many]) => (
+            <li key={many}>
+              <strong>{count(amount, noun)}</strong> {amount === 1 ? one : many}
             </li>
           ))}
-        {value.glossary.added > 0 && (
-          <li>
-            <strong>{count(value.glossary.added, "glossary term")}</strong> join
-            the game's glossary
-          </li>
-        )}
-        {value.glossary.differs > 0 && (
-          <li>
-            <strong>{count(value.glossary.differs, "glossary term")}</strong>{" "}
-            differ from the game's glossary, which keeps its own
-          </li>
-        )}
       </ul>
       {skipped > 0 && (
         <Notice tone="warning">

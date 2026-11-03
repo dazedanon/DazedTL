@@ -38,6 +38,21 @@ export async function chooseFolder({ root, inspect }, folder) {
   main.close();
 }
 
+/**
+ * Makes the next native file dialog, to open a file or to save one, answer
+ * `file`, as a user's choice there would.
+ * @param {{ root: string, inspect: number }} app
+ */
+export async function chooseFile({ root, inspect }, file) {
+  const main = await Page.connect(inspect, { root, node: true });
+  await main.evaluate(`(() => {
+    const { dialog } = process.mainModule.require("electron");
+    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [${JSON.stringify(file)}] });
+    dialog.showSaveDialog = async () => ({ canceled: false, filePath: ${JSON.stringify(file)} });
+  })()`);
+  main.close();
+}
+
 /** Sets up the open game as untranslated, with its version. */
 export async function setUp(page, version = "1.0") {
   await page.type("#guided-version", version);

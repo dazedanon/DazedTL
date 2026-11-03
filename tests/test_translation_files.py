@@ -5,6 +5,7 @@ import json
 import unittest
 from pathlib import Path
 
+from dazedtl.api.contracts.validation import check_response
 from dazedtl.storage import write_json
 from dazedtl.translation import translation_file, unit_results
 from dazedtl.translation.exchange import Exchange
@@ -70,6 +71,7 @@ class TranslationFileTests(unittest.TestCase):
             ],
         )
         loaded = manual.load(self.identity, str(source))
+        check_response("manual_load", loaded)
         self.assertEqual(
             (loaded["added"], loaded["empty"], loaded["loaded"]["lines"]), (1, 2, 3)
         )
@@ -100,6 +102,7 @@ class TranslationFileTests(unittest.TestCase):
         self.assertFalse((self.game / WORK / "progress-report.json").exists())
         exchange = Exchange(self.service, None)
         exported = exchange.export(self.identity, str(self.root / "out.json"))
+        check_response("project_translation_export", exported)
         self.assertEqual((exported["lines"], exported["translated"]), (3, 3))
         written = read_json(self.root / "out.json")
         self.assertEqual(
@@ -175,6 +178,7 @@ class TranslationFileTests(unittest.TestCase):
         path = self.root / "edited.json"
         path.write_text(json.dumps(shared, ensure_ascii=False), encoding="utf-8")
         preview = exchange.preview(self.identity, str(path))
+        check_response("project_translation_preview", preview)
         self.assertEqual(
             {
                 key: preview[key]
@@ -189,7 +193,10 @@ class TranslationFileTests(unittest.TestCase):
         self.assertEqual(preview["glossary"], {"added": 1, "same": 1, "differs": 0})
         with self.assertRaisesRegex(ValueError, "changed after it was checked"):
             exchange.apply(self.identity, str(path), "0" * 64)
-        exchange.apply(self.identity, str(path), preview["sha256"])
+        check_response(
+            "project_translation_import",
+            exchange.apply(self.identity, str(path), preview["sha256"]),
+        )
         exchange.export(self.identity, str(self.root / "after.json"))
         exported = {
             row["id"]: row["translation"]

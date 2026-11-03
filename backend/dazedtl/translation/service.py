@@ -47,7 +47,7 @@ from .compilation import verify_compilation
 from .files import digest, evidence, project_path, read_json, verify_evidence
 from .game_update import GameUpdate
 from .helper_command import LOOPBACK_NOTE, helper_command, windows_note
-from .jobs import Jobs, declined_message, now
+from .jobs import Jobs, declined_message, finished_message, now
 from .operations import (
     census_stale,
     checkout_issue,
@@ -1563,10 +1563,7 @@ Additional project instructions:
         job["states"][batch_id] = {"state": "accepted", "message": ""}
         finished = all(row["state"] == "accepted" for row in job["states"].values())
         if finished:
-            job.update(
-                status="complete",
-                message="Translations saved. Injection and runtime QA remain separate.",
-            )
+            job.update(status="complete", message=finished_message(job))
         self.jobs.store.save(job)
         self.receipt_saved(project_id, plan, finished)
         return self.jobs.store.view(job)

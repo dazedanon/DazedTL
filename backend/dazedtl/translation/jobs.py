@@ -24,6 +24,7 @@ from dazedtl.storage import WorkspaceError, WorkspaceLock, write_bytes, write_js
 
 from . import plan_file
 from .files import digest, read_json
+from .project import MANUAL
 from .results import Results
 
 REPLACED = "Replaced by a newer estimate; no requests were sent."
@@ -45,6 +46,15 @@ def declined_units(job):
         for identity, count in job["unit_counts"].items()
         if job["states"][identity]["state"] == "declined"
     )
+
+
+def finished_message(job):
+    """What a run says once every request has a saved translation: the
+    assistant injects them next, while a Manual project's own tools write
+    them once they are exported."""
+    if job.get("method") == MANUAL:
+        return "Every line is translated. Export the translations for your tools to write into the game."
+    return "Translations saved. Injection and runtime QA remain separate."
 
 
 def declined_message(job):
@@ -224,6 +234,8 @@ class RunStore:
             if plan["kind"] == "operation"
             else None,
             "finishes": plan.get("finishes"),
+            # A Manual run's, whose user's own tools write its translations.
+            "method": plan.get("method"),
             "unit_counts": {
                 row["id"]: len(row["sources"]) for row in plan.get("requests", [])
             },
@@ -398,10 +410,7 @@ class RunStore:
             },
         }
         if all(row["state"] == "accepted" for row in value["states"].values()):
-            value.update(
-                status="complete",
-                message="Translations saved. Injection and runtime QA remain separate.",
-            )
+            value.update(status="complete", message=finished_message(value))
         else:
             value["message"] = declined_message(value)
         return value

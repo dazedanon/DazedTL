@@ -125,10 +125,11 @@ function Workspace({
   const run = latestApiRun(attempt);
   const redo =
     run && estimateOutdated(run) ? redoneEstimate(attempt, run) : undefined;
-  // The estimate being prepared, or the last one that failed.
-  const preparing = attempt.find(
+  // The estimate being prepared, or the last one if it failed.
+  const latest = attempt.find(
     (job) => job.kind === "operation" && job.id !== redo?.id,
   );
+  const preparing = latest?.status === "complete" ? undefined : latest;
   const disabled = state.active || action.busy || draft.committing;
   const edit = <K extends keyof TranslationOptions>(
     key: K,
@@ -152,21 +153,24 @@ function Workspace({
       Continue
     </Button>
   );
-  const choose = (path: string | null, key = "load") =>
-    action.run(
+  const choose = async (path: string | null, key = "load") => {
+    const done = await action.run(
       async () => {
         const chosen = path ?? (await window.dazedtl.chooseTranslationFile());
-        if (!chosen) return;
+        if (!chosen) return null;
         const result = await api.translation.manualLoad(project.id, chosen);
         setLoad(result);
-        action.succeed(
-          `Loaded ${result.loaded.lines.toLocaleString()} lines.`,
-          key,
-        );
+        return result;
       },
       "",
       key,
     );
+    if (done.ok && done.value)
+      action.succeed(
+        `Loaded ${done.value.loaded.lines.toLocaleString()} lines.`,
+        key,
+      );
+  };
   const saveOptions = () =>
     void action.run(draft.save, "Project options saved.");
   const optionsBody = useRef<HTMLDivElement>(null);
@@ -178,10 +182,12 @@ function Workspace({
   );
   const quote = awaitingQuote(run);
   const finished = run?.status === "complete";
+  // An estimate is the next step until one waits, runs or has finished.
+  const working = !!run && ["running", "waiting"].includes(run.status);
   const estimate = (
     <ActionControl
       label={run ? "Estimate again" : "Estimate cost"}
-      variant={quote || finished || !loaded ? "default" : "primary"}
+      variant={quote || finished || working || !loaded ? "default" : "primary"}
       disabled={disabled || !loaded}
       disabledReason={
         !loaded
@@ -217,16 +223,14 @@ function Workspace({
       pendingText="Exporting…"
       error={action.key === "export" ? action.error : ""}
       notice={action.key === "export" ? action.notice : ""}
-      onClick={() =>
-        void action.run(
-          async () => {
-            const message = await exportTranslation(project);
-            if (message) action.succeed(message, "export");
-          },
+      onClick={async () => {
+        const done = await action.run(
+          () => exportTranslation(project),
           "",
           "export",
-        )
-      }
+        );
+        if (done.ok && done.value) action.succeed(done.value, "export");
+      }}
     />
   );
   const skipped = load && load.unknown + load.changed + load.refused > 0;

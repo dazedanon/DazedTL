@@ -18,7 +18,7 @@ from dazedtl.settings import language_pair
 from dazedtl.storage import write_json
 
 from . import translation_file
-from .exchange import MANUAL_UNITS, UnitLines, units_file
+from .exchange import MANUAL_UNITS, UnitLines, glossary_counts, units_file
 from .files import project_path, read_json
 from .jobs import now
 
@@ -53,7 +53,8 @@ class Manual:
         """Makes the translation file at *path* the project's text: its lines
         become the units estimates organize, replacing any loaded before, and
         the translations it holds are imported. Lines whose ID and source
-        stay the same keep their translations."""
+        stay the same keep their translations, and the game's glossary gains
+        the terms of the file's it lacks."""
         project = self._project(project_id)
         self.translation.idle(project_id)
         self.translation.clean_drafts(project_id)
@@ -89,6 +90,11 @@ class Manual:
         )
         if write:
             lines.save(write, Path(path).name)
+        added, glossary = glossary_counts(root, value["glossary"])
+        if added:
+            from util.vocab import append_vocab_rows
+
+            append_vocab_rows(added, game_root=root)
         loaded = {
             "name": Path(path).name,
             "path": str(Path(path)),
@@ -102,7 +108,13 @@ class Manual:
             + summary["replaced"],
         }
         write_json(project_path(root, LOADED, exists=False), loaded)
-        return {**summary, "loaded": loaded}
+        return {
+            **summary,
+            "name": loaded["name"],
+            "sha256": value["sha256"],
+            "glossary": glossary,
+            "loaded": loaded,
+        }
 
     def estimate(self, project_id):
         """Starts the estimate of the loaded lines without a translation, as

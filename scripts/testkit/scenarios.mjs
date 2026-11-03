@@ -15,6 +15,7 @@ import {
 } from "./games.mjs";
 import { model, recordedRequests, translated } from "./provider.mjs";
 import {
+  chooseFile,
   chooseFolder,
   connect,
   openGame,
@@ -605,6 +606,210 @@ const assistantLed = [
         await assistant(page, state, "translate", "--requests", "1"),
       );
       console.log(`\n  Run ${run.id}: ${run.status}, ${run.message || ""}`);
+    },
+  ],
+];
+
+/** Runs the Manual project's own tools (manual_tools.py), as its user does. */
+const manualTools = (state, ...args) =>
+  runPython(
+    pythonCommand(
+      state,
+      path.join(import.meta.dirname, "manual_tools.py"),
+      ...args,
+      "--game",
+      state.game,
+    ),
+  );
+
+/** The open project's latest translation run. */
+async function latestRun(page) {
+  const project_id = (await page.call("workspace_snapshot")).application.project
+    .id;
+  return (await page.call("translation_state", { project_id })).jobs.find(
+    (job) => job.kind === "translation",
+  );
+}
+
+const manualLed = [
+  [
+    "Open the game Manual and connect the stand-in provider",
+    async ({ page, state }) => {
+      await openGame(page, {
+        root: state.root,
+        inspect: state.app.inspect,
+        game: state.game,
+        method: "Manual",
+      });
+      await connect(page, state.provider.url);
+    },
+  ],
+  [
+    "Your own extractor writes the game's text into a file, which Text loads",
+    async ({ page, state }) => {
+      const file = path.join(state.work, "extracted.json");
+      manualTools(state, "extract", "--out", file);
+      await chooseFile({ root: state.root, inspect: state.app.inspect }, file);
+      await page.click("Load text file…");
+      await page.waitText("Loaded ");
+      await page.shot(path.join(state.work, "logs", "manual-text.png"));
+    },
+  ],
+  [
+    "Progress estimates the lines, the Live estimate is approved and the run translates them",
+    async ({ page, state }) => {
+      await page.click("Progress");
+      await page.click("Estimate cost");
+      await page.waitText("Nothing is sent until you approve this estimate.");
+      await page.shot(path.join(state.work, "logs", "manual-estimate.png"));
+      await page.click("Approve and start Live");
+      const run = await until(
+        "the Live run to end",
+        async () => {
+          const job = await latestRun(page);
+          return job?.approved &&
+            ["complete", "failed", "uncertain"].includes(job.status)
+            ? job
+            : null;
+        },
+        5 * 60_000,
+      );
+      if (run.status !== "complete")
+        throw new Error(`Run ${run.id}: ${run.status}, ${run.message}`);
+      await page.waitText("lines saved");
+      await page.shot(path.join(state.work, "logs", "manual-progress.png"));
+    },
+  ],
+  [
+    "Export the translations, and your own injector writes them into the game",
+    async ({ page, state }) => {
+      const file = path.join(state.work, "translated.json");
+      await chooseFile({ root: state.root, inspect: state.app.inspect }, file);
+      await page.click("Export translations…");
+      await page.waitText("Saved ");
+      const exported = JSON.parse(fs.readFileSync(file, "utf8"));
+      const left = exported.lines.filter((line) => !line.translation);
+      if (left.length)
+        throw new Error(`The export leaves ${left.length} lines untranslated.`);
+      manualTools(state, "inject", "--file", file);
+      const data = path.join(contentFolder(state.variants, state.game), "data");
+      const map = fs.readFileSync(path.join(data, "Map001.json"), "utf8");
+      if (!map.includes("Tested"))
+        throw new Error("The injector wrote no translation into Map001.json.");
+    },
+  ],
+  [
+    "The Project page imports a translation edited by hand, after reviewing it",
+    async ({ page, state }) => {
+      const exported = JSON.parse(
+        fs.readFileSync(path.join(state.work, "translated.json"), "utf8"),
+      );
+      exported.lines[0].translation = "Edited by hand.";
+      const file = path.join(state.work, "edited.json");
+      fs.writeFileSync(file, JSON.stringify(exported));
+      await page.click("Project");
+      await chooseFile({ root: state.root, inspect: state.app.inspect }, file);
+      await page.click("Import…");
+      await page.waitText("Import translations?");
+      await page.shot(path.join(state.work, "logs", "manual-import.png"));
+      await page.click("Import 1 translation");
+      await page.waitText("Imported 1 translation");
+      const again = path.join(state.work, "again.json");
+      const project_id = (await page.call("workspace_snapshot")).application
+        .project.id;
+      await page.call("project_translation_export", {
+        project_id,
+        path: again,
+      });
+      const first = JSON.parse(fs.readFileSync(again, "utf8")).lines[0];
+      if (first.translation !== "Edited by hand.")
+        throw new Error(`The import left "${first.translation}".`);
+    },
+  ],
+];
+
+/** Each message's and choice's text in a game's map, whitespace collapsed,
+ * in play order: what players read, however its rows are laid out. */
+function shownText(state, game) {
+  const data = path.join(contentFolder(state.variants, game), "data");
+  const map = JSON.parse(
+    fs.readFileSync(path.join(data, "Map001.json"), "utf8"),
+  );
+  const shown = [];
+  for (const event of map.events)
+    for (const page of event?.pages ?? []) {
+      let message = null;
+      for (const command of [...page.list, { code: 0 }]) {
+        if (command.code === 401) {
+          message = [...(message ?? []), command.parameters[0]];
+          continue;
+        }
+        if (message) shown.push(message.join(" ").replace(/\s+/g, " ").trim());
+        message = command.code === 101 ? [] : null;
+        if (command.code === 102) shown.push(...command.parameters[0]);
+      }
+    }
+  return shown.filter(Boolean);
+}
+
+const sharedFile = [
+  [
+    "Export the translated game's translation file on the Project page",
+    async ({ page, state }) => {
+      state.shared = path.join(state.work, "shared.json");
+      await page.click("Project");
+      await chooseFile(
+        { root: state.root, inspect: state.app.inspect },
+        state.shared,
+      );
+      await page.click("Export…");
+      await page.waitText("Saved ");
+      const { lines } = JSON.parse(fs.readFileSync(state.shared, "utf8"));
+      if (
+        !lines.some(
+          (line) => line.id.startsWith("Map001.json#") && line.translation,
+        )
+      )
+        throw new Error("The export holds no translated map line.");
+    },
+  ],
+  [
+    "Open an untranslated copy of the game with Guided steps and set it up",
+    async ({ page, state }) => {
+      state.guidedGame = state.game;
+      state.game = path.join(path.dirname(state.game), "コピー");
+      await makeGame(state.variants, state.game);
+      await openFolder(page, state, state.game, "Guided steps");
+      await setUp(page);
+    },
+  ],
+  [
+    "Import the file on the Project page, then apply it in Translate: the copy shows the same text",
+    async ({ page, state }) => {
+      await page.click("Project");
+      await chooseFile(
+        { root: state.root, inspect: state.app.inspect },
+        state.shared,
+      );
+      await page.click("Import…");
+      await page.waitText("Import translations?");
+      await page.shot(path.join(state.work, "logs", "shared-import.png"));
+      await page.click(/^Import [\d,]+ translations?$/);
+      await page.waitText("Imported ");
+      await page
+        .click("Open Guided steps", 5_000)
+        .catch(() => page.click("Translation"));
+      await page.click("3Translate");
+      for (const task of ["Database files", "Maps & events"]) {
+        await page.click(task);
+        await applyTask(page, task);
+      }
+      const theirs = shownText(state, state.guidedGame);
+      const mine = shownText(state, state.game);
+      if (JSON.stringify(mine) !== JSON.stringify(theirs))
+        throw new Error(
+          `The copy shows ${JSON.stringify(mine)}, the translated game ${JSON.stringify(theirs)}.`,
+        );
     },
   ],
 ];
@@ -2517,6 +2722,16 @@ export const scenarios = {
       "A long English message translated and applied, then the Line widths narrowed so it pages; the game must show every word.",
     game: "long-dialogue",
     steps: () => [open, ...setup, ...translateAll, narrowWidths],
+  },
+  shared: {
+    description:
+      "Translated and applied with Guided steps, exported from the Project page as a translation file, and imported into an untranslated copy of the game, where Translate applies it: the copy shows the same text.",
+    steps: () => [open, ...setup, ...translateAll, ...sharedFile],
+  },
+  manual: {
+    description:
+      "A game translated Manually: a stand-in for the user's own extractor writes its text into a translation file, which Text loads and a Live run translates, its own injector writes the export into the game, and the Project page imports a translation edited by hand.",
+    steps: () => manualLed,
   },
   playtested: {
     description:

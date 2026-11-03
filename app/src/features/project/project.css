@@ -358,3 +358,6 @@
 .translation-import-skipped span {
   color: var(--color-muted);
 }
+.translation-import p {
+  margin: 0;
+}

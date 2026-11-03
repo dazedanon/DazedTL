@@ -18,6 +18,7 @@ from dazedtl.storage import write_json
 
 from .batch_refusals import advance, outline, started
 from .files import digest, read_json
+from .jobs import finished_message
 from .organize import DELIVERED
 from .refusals import (
     MESSAGE as REFUSAL_MESSAGE,
@@ -1006,10 +1007,7 @@ class Runner:
     def finish(self):
         states = {row["state"] for row in self.job["states"].values()}
         if states <= {"accepted"}:
-            self.save(
-                "complete",
-                "All requested translations are saved. Injection and runtime QA remain separate checkpoints.",
-            )
+            self.save("complete", finished_message(self.job))
         elif "uncertain" in states:
             self.save("uncertain", "Review unresolved requests before continuing.")
         else:
