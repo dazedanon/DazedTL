@@ -57,6 +57,41 @@ def finished_message(job):
     return "Translations saved. Injection and runtime QA remain separate."
 
 
+def unsaved_message(job, canceled=False):
+    """What a run says once it ends with requests not saved: the assistant
+    reviews them with its project helper, while a Manual project's user is
+    told why and what to do next, from Progress."""
+    if job.get("method") != MANUAL:
+        return (
+            "Canceled. Completed results are saved; review unresolved requests before continuing."
+            if canceled
+            else "Review unresolved requests before continuing."
+        )
+    rows = [row for row in job["states"].values() if row["state"] != "accepted"]
+    unsure = sum(row["state"] == "uncertain" for row in rows)
+    if unsure:
+        return (
+            f"The app can't tell whether {unsure} {'request' if unsure == 1 else 'requests'} "
+            f"reached the provider. Check {'it' if unsure == 1 else 'them'} under History "
+            "on the Project page, then estimate again."
+        )
+    if canceled:
+        return "Canceled. Completed results are saved; estimate again to translate the rest."
+    reasons = list(dict.fromkeys(row["message"] for row in rows if row["message"]))
+    return " ".join(
+        [
+            f"{len(rows)} {'request was' if len(rows) == 1 else 'requests were'} not saved.",
+            *reasons[:1],
+            *(
+                ["History on the Project page lists the other reasons."]
+                if len(reasons) > 1
+                else []
+            ),
+            f"Estimate again to retry {'its' if len(rows) == 1 else 'their'} lines.",
+        ]
+    )
+
+
 def declined_message(job):
     lines = declined_units(job)
     return f"{lines} declined {'line needs' if lines == 1 else 'lines need'} another translator."

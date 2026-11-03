@@ -18,7 +18,7 @@ from dazedtl.storage import write_json
 
 from .batch_refusals import advance, outline, started
 from .files import digest, read_json
-from .jobs import finished_message
+from .jobs import finished_message, unsaved_message
 from .organize import DELIVERED
 from .refusals import (
     MESSAGE as REFUSAL_MESSAGE,
@@ -1009,13 +1009,11 @@ class Runner:
         if states <= {"accepted"}:
             self.save("complete", finished_message(self.job))
         elif "uncertain" in states:
-            self.save("uncertain", "Review unresolved requests before continuing.")
+            self.save("uncertain", unsaved_message(self.job))
         else:
             self.save(
                 "failed",
-                "Canceled. Completed results are saved; review unresolved requests before continuing."
-                if self.store.cancel_requested(self.job["id"])
-                else "Review unresolved requests before continuing.",
+                unsaved_message(self.job, self.store.cancel_requested(self.job["id"])),
             )
 
     def step(self, recover=True):

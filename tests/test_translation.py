@@ -132,7 +132,7 @@ class TranslationTests(unittest.TestCase):
         register(self.root / "profile", "project", self.game)
         self.store = RunStore(self.root / "profile")
 
-    def run_record(self, mode="live", requests=None):
+    def run_record(self, mode="live", requests=None, method=None):
         rows = deepcopy(requests or [request()])
         for row in rows:
             row["params"] = {"model": "fixture", "messages": []}
@@ -144,6 +144,7 @@ class TranslationTests(unittest.TestCase):
             "requests": rows,
             "configuration": {"mode": mode, "model": "fixture"},
             "batch_limits": [50, 100000],
+            **({"method": method} if method else {}),
         }
         job = self.store.create("project", plan, {"cost": 1})
         self.store.authorize(job)
@@ -410,6 +411,26 @@ class TranslationTests(unittest.TestCase):
         index.write_text(json.dumps(document), "utf-8")
         result_files._PARTS.clear()
         self.assertTrue(exported()[1])
+
+    def test_a_manual_run_says_why_a_request_was_not_saved_and_what_to_do(self):
+        # A Manual run whose reply broke a line's max_lines ended Blocked
+        # with "Review unresolved requests", which named no reason, and a
+        # Manual project has no assistant to review them.
+        job, _plan = self.run_record(method="manual")
+
+        class TooLong(LiveProvider):
+            def live(self, _params):
+                return {
+                    "text": '{"line":"Yes.\\nYes. ⟦P0⟧"}',
+                    "prompt_tokens": 5,
+                    "completion_tokens": 4,
+                }
+
+        Runner(self.store, job["id"], TooLong(), lambda: None).step()
+        current, _plan = self.store.load(job["id"])
+        self.assertEqual(current["status"], "failed")
+        self.assertIn("max_lines", current["message"])
+        self.assertIn("Estimate again", current["message"])
 
     def test_a_batch_keeps_the_passing_lines_of_a_reply_and_goes_on(self):
         # One failing line failed its packed Batch request, which stopped the

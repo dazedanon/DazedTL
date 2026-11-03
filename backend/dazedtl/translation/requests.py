@@ -598,9 +598,9 @@ def result_value(request, result):
         if Counter(MASKS.findall(text)) != Counter(MASKS.findall(sources[identity])):
             raise ValueError("The response added or removed a protected mask.")
         if "max_lines" in rule and len(text.split("\n")) > rule["max_lines"]:
-            raise ValueError("The response exceeds its declared line bound.")
+            raise ValueError("The response has more rows than its max_lines allows.")
         if "max_characters" in rule and len(text) > rule["max_characters"]:
-            raise ValueError("The response exceeds its declared character bound.")
+            raise ValueError("The response is longer than its max_characters allows.")
     return dict(result)
 
 

@@ -217,7 +217,7 @@ def units_input(value):
             raise _named("A scene belongs to one group", [scene])
         if len({unit["field"] for unit in members}) > 1:
             raise _named(
-                "A field template applies to a whole scene; give mid-scene choices kind ui instead",
+                "Give every line of a scene the same field, or none; mark a choice inside a scene with kind ui instead of a field",
                 [scene],
             )
     return result

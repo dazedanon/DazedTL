@@ -895,7 +895,7 @@ class WorkflowTests(unittest.TestCase):
                 {"a/1": "Yeah.", "a/2": "Nope."},
                 value["result_sha256"],
             )
-        with self.assertRaisesRegex(ValueError, "character bound"):
+        with self.assertRaisesRegex(ValueError, "max_characters"):
             accept(
                 second,
                 earlier,
