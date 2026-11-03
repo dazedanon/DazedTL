@@ -76,7 +76,10 @@ def _multipliers(cost):
     take at any hour, its peak (None when none raises it), and the date
     multipliers. An hour-of-day multiplier, such as DeepSeek's peak hours,
     counts at its peak, and so does one whose condition DazedTL doesn't read,
-    so estimates err high; one that lowers the price counts only by date."""
+    so estimates err high; one that lowers the price counts only by date.
+    Several such multipliers count at the largest, since a condition split
+    into several entries, such as one per peak window, would otherwise count
+    more than once."""
     peak, dated = None, []
     items = cost.get("multipliers")
     for item in items if isinstance(items, list) else ():
@@ -167,12 +170,12 @@ def validate_catalog(value):
             raise ValueError("Invalid OpenCode Go catalog entry.")
 
 
-def factor(row, now=None):
+def factor(row, now=None, peak=None):
     """What *row*'s listed prices are multiplied by for an estimate made
-    *now*: its peak (_multipliers) and each date multiplier in effect on
-    that day."""
+    *now*: *peak*, or else its own (_multipliers), and each date multiplier
+    in effect on that day."""
     today = (now or datetime.now(UTC)).astimezone(UTC).date().isoformat()
-    value = row["peak"] or 1
+    value = peak or row["peak"] or 1
     for item in row["dated"]:
         if (item["from"] is None or item["from"] <= today) and (
             item["until"] is None or today < item["until"]
@@ -184,14 +187,20 @@ def factor(row, now=None):
 def describe(connection, model, now=None):
     """*model*'s Live defaults on an OpenCode Go connection, from the catalog
     its last verified check kept (settings/catalogs): its listed rates times
-    factor, so a DeepSeek model's are its peak rates, which its usage
-    records at half outside DeepSeek's peak hours (engine provider_costs
-    time_price_factor), as on DeepSeek's own API."""
+    factor. A model billed as on DeepSeek's own API (providers
+    deepseek_route) takes DeepSeek's peak factor, not its row's, since its
+    usage records at DeepSeek's off-peak multiple of the frozen rate outside
+    DeepSeek's peak hours (engine provider_costs time_price_factor)."""
+    from util.provider_costs import DEEPSEEK_OFF_PEAK
+
+    from .providers import address, deepseek_route
+
     model = text(model, "model ID", required=True)
     row = checked(connection).get(model)
     if not row:
         return described(connection, model, {})
-    multiple = factor(row, now)
+    deepseek = deepseek_route(model, address(connection))
+    multiple = factor(row, now, 1 / DEEPSEEK_OFF_PEAK if deepseek else None)
     return described(
         connection,
         model,

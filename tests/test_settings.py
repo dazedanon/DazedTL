@@ -792,6 +792,20 @@ class SettingsTests(unittest.TestCase):
                 )
             # Another provider's address gets no OpenCode headers.
             self.assertEqual(providers.gateway_headers("https://api.deepseek.com"), {})
+            # A DeepSeek model freezes at DeepSeek's peak rate, which its
+            # off-peak usage records half of, even if Go's row lists no peak.
+            listed = {
+                **stored,
+                "catalog": {
+                    "deepseek-v4.1-flash": {
+                        **stored["catalog"]["deepseek-v4.1-flash"],
+                        "peak": None,
+                    }
+                },
+            }
+            self.assertEqual(
+                opencode.describe(listed, "deepseek-v4.1-flash")["inputRate"], 0.3
+            )
             for invalid in (
                 {"peak": 1},
                 {"input": 2_000_000},

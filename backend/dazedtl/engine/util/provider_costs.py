@@ -68,6 +68,12 @@ def time_priced_route(endpoint: str | None, model: str | None) -> str | None:
     return "deepseek" if deepseek_route(model, endpoint) else None
 
 
+# DeepSeek's off-peak price as a multiple of its peak price (time_price_factor),
+# the one factor its peak and off-peak prices differ by, on its own API and on
+# OpenCode Go (settings/opencode describe).
+DEEPSEEK_OFF_PEAK = 0.5
+
+
 def time_price_factor(route: str | None, received: str | None) -> float:
     """Usage's price at the time it arrived as a multiple of the peak price
     its run froze, on a ``route`` from time_priced_route.
@@ -91,7 +97,7 @@ def time_price_factor(route: str | None, received: str | None) -> float:
         return 1.0
     when = when.astimezone(UTC)
     peak = when.weekday() < 5 and (1 <= when.hour < 4 or 6 <= when.hour < 10)
-    return 1.0 if peak else 0.5
+    return 1.0 if peak else DEEPSEEK_OFF_PEAK
 
 
 def joined_received_at(route: str | None, *times: str | None) -> str | None:
