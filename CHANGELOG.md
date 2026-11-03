@@ -3,6 +3,16 @@
 Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 [release.mjs](scripts/release.mjs) writes each entry from [release/notes.md](release/notes.md).
 
+## [2.60.0] - 2026-11-03
+
+### Changed
+
+- **Release:** an Assistant-led patch ZIP no longer waits for your assistant's QA or translation to finish: its review lists what's left, and **Build anyway** saves it.
+
+### Fixed
+
+- **Release:** a progress report the assistant's project helper refused ("The current phase must be active or blocked.") no longer stops every patch ZIP with that message, or leaves "Saved records or source inputs need rechecking" behind; the refusal now tells the assistant to leave the phase out once every phase is done.
+
 ## [2.59.4] - 2026-11-03
 
 ### Fixed
@@ -1635,6 +1645,7 @@ Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachan
 - The first release of DazedTL as a desktop app, installed from a ZIP with a START launcher and updated from inside the app.
 - **Guided steps** for RPG Maker MV, MZ and VX Ace games, and **Assistant-led** for any game.
 
+[2.60.0]: https://github.com/dazedanon/DazedTL/compare/v2.59.4...v2.60.0
 [2.59.4]: https://github.com/dazedanon/DazedTL/compare/v2.59.3...v2.59.4
 [2.59.3]: https://github.com/dazedanon/DazedTL/compare/v2.59.2...v2.59.3
 [2.59.2]: https://github.com/dazedanon/DazedTL/compare/v2.59.1...v2.59.2
