@@ -89,7 +89,10 @@ PROVIDERS = {
         "protocol": "openai",
         "endpoint": OWN_APIS["deepseek"],
     },
-    # Console serves every Go text model through Chat Completions.
+    # Both routes send Chat Completions to every model, Claude's and Gemini's
+    # too: Console lists each model with its native API but translates
+    # every text model's requests from the others
+    # (https://opencode.ai/v2/docs/console/models/).
     "opencode-go": {
         "label": "OpenCode Go",
         "protocol": "openai",
