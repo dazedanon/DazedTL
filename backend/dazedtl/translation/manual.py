@@ -15,7 +15,6 @@ translation file comes back out with Export (exchange).
 from pathlib import Path
 
 from dazedtl.settings import language_pair
-from dazedtl.settings.execution import runnable_mode
 from dazedtl.storage import write_json
 
 from . import translation_file
@@ -107,17 +106,11 @@ class Manual:
 
     def estimate(self, project_id):
         """Starts the estimate of the loaded lines without a translation, as
-        organize packs them, in the project's API mode: a Manual project has
-        no Assistant only, so a mode Assistant-led saved as such reads as
-        the connection's default."""
+        organize packs them, in the project's API mode
+        (Translation.manual_mode)."""
         project = self._project(project_id)
         if not project_path(project.root, MANUAL_UNITS, exists=False).is_file():
             raise ValueError("Load your text file first.")
         units_file(project.root, MANUAL_UNITS)
-        saved = self.translation.options(project)["options"]["mode"]
-        mode = runnable_mode(
-            self.translation.settings,
-            saved if saved in {"batch", "live"} else "batch",
-            "live",
-        )
+        mode = self.translation.manual_mode(project)
         return self.translation.organize_manual(project_id, MANUAL_UNITS, mode)

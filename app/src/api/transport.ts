@@ -82,6 +82,9 @@ declare global {
       copyText(text: string): Promise<void>;
       chooseFolder(): Promise<string | null>;
       chooseEditor(): Promise<string | null>;
+      chooseTranslationFile(): Promise<string | null>;
+      /** Asks where to save a translation file, suggesting *name*. */
+      saveTranslationFile(name: string): Promise<string | null>;
       openFolder(
         kind: "project" | "workspace" | "projectWorkspace" | "output",
         path?: string,

@@ -295,6 +295,15 @@ class Translation:
             self.settings, self.options(project)["options"]["mode"], "live"
         )
 
+    def manual_mode(self, project):
+        """The API mode a Manual project runs in: Manual has no Assistant
+        only, so a project whose options Assistant-led saved so reads as
+        Batch, and a Batch the connection cannot run as Live."""
+        saved = self.options(project)["options"]["mode"]
+        return runnable_mode(
+            self.settings, saved if saved in {"batch", "live"} else "batch", "live"
+        )
+
     def idle(self, identity, kind=None):
         if self.jobs.running(identity, kind):
             raise ValueError(
@@ -849,7 +858,8 @@ Additional project instructions:
         ):
             raise ValueError("Only an estimate waiting for approval can be redone.")
         _record, project = self.project(project_id)
-        mode = self.run_mode(project)
+        method = plan.get("method")
+        mode = self.manual_mode(project) if method == MANUAL else self.run_mode(project)
         if mode == "agent":
             raise ValueError(
                 "Choose API Batch or Live API in Options to estimate this run again."
@@ -879,7 +889,13 @@ Additional project instructions:
                 "DazedTL has no record of how this estimate was prepared. Ask your assistant for a new one."
             )
         _job, steps = self.jobs.store.load(preparation["id"], project_id)
-        return self._prepare(project_id, steps["action"], steps["arguments"])
+        return self._prepare(
+            project_id,
+            steps["action"],
+            steps["arguments"],
+            mode=mode if method == MANUAL else None,
+            method=method,
+        )
 
     def backups(self, project_id):
         _record, project = self.project(project_id)

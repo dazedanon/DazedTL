@@ -136,6 +136,29 @@ Progress then offers the user an API estimate or a prompt for another assistant 
 - Results missing from a finished OpenRouter Batch wait for Retry collection and are never sent again automatically, and results DazedTL downloaded stay after OpenRouter deletes its copy.
 - An uncertain request is never sent again automatically: attach its Batch job with `attach-batch`, or for a Live call check the provider first, then `resolve-uncertain --retry-reviewed` allows a new quote for the remaining work.
 
+## Translation files
+
+A translation file carries a project's lines out of DazedTL and back in every method: the Project page's Export and Import, and a Manual project's input.
+[translation_file](../backend/dazedtl/translation/translation_file.py) holds the reader, the writer and the import rule, and [exchange](../backend/dazedtl/translation/exchange.py) each method's lines.
+
+- JSON: `format` `"dazedtl-translation"`, `version` 1, `languages` with `source` and `target`, `lines`, and optionally `glossary` entries of `section`, `source`, `translation` and `note`; `game` and `exported` only describe it.
+- A line has the fields of a [source unit](#source-units) and `translation`, text or null.
+  Manual checks each line as organize checks a unit; an import needs only `id` and `source`.
+- CSV: a UTF-8 header row naming `id`, `scene`, `group`, `kind`, `speaker`, `source`, `translation`, `field`, `max_lines` or `max_characters`, at least `id` and `source`; an empty cell is null, and tokens and the glossary need JSON.
+- A plain units file reads as a translation file without translations.
+
+IDs are the units' own in Assistant-led and Manual.
+Guided names a line `<file>#<JSON pointer>` into the original game file: a value's own, and for a message, scrolling text or comment its first command's, with `/parameters/4` after it for a name box and `~<n>` for a later part, so translated and untranslated copies of one game version share IDs ([guided_lines](../backend/dazedtl/translation/guided_lines.py)).
+
+An import writes a line only where the project's source at its ID is the file's exactly and its translation passes the checks `accept` applies; a file naming another language pair is refused, and the import must read the bytes its preview read.
+
+- Assistant-led and Manual save the imported lines as one accepted receipt of their own (`save_import` in [unit_results](../backend/dazedtl/translation/unit_results.py)), which later organizes and exports read as a run's; the assistant writes them after its next organize.
+- Guided writes them into its working copies with their sources in `_original` and Guided's punctuation, and Apply fits them; choice help and note labels aren't imported yet.
+- The glossary gains the terms a section lacks and keeps every row it has.
+
+A Manual project's loaded file becomes its units ([manual](../backend/dazedtl/translation/manual.py)), and its estimate organizes the lines without a translation in Batch or Live.
+Its runs freeze `method: manual`: the user's extractor decides the scope and DazedTL never writes the game, so they need no census, Git baseline or progress report.
+
 ## Delivery and future versions
 
 - Report progress in the maintained format after the first state read, after saved milestones and before waits or a handoff; reports are refused only while an operation changes the game.

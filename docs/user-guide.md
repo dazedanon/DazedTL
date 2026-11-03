@@ -26,7 +26,7 @@ Wherever it runs, open the game folder in it and give it access to the DazedTL f
 
 - **Projects.** Each game folder you open is a project: click **Open a game** on the Project page.
   A game you move or rename keeps its project; open it from its new folder.
-- **Two methods.** A new game asks how to translate it: [Guided steps](#guided-steps) for RPG Maker MV, MZ and VX Ace, or [Assistant-led](#assistant-led) for any game; see [Choosing a method](#choosing-a-method).
+- **Three methods.** A new game asks how to translate it: [Guided steps](#guided-steps) for RPG Maker MV, MZ and VX Ace, [Assistant-led](#assistant-led) or [Manual](#manual) for any game; see [Choosing a method](#choosing-a-method).
   **Change method** on the Project page switches later and keeps your work.
 - **Assistant tasks.** Some steps copy a task for your assistant.
   Paste it in and keep DazedTL open: the results show up by themselves.
@@ -58,6 +58,7 @@ Tasks use the same words everywhere:
 Pick Guided steps for an RPG Maker game: you see and control each step.
 Pick Assistant-led for other engines, such as WOLF RPG or TyranoScript, for a game whose text mostly sits in unusual plugins or scripts, or if you have no API key.
 In Assistant-led your assistant follows Len's game-translation skills and writes its own tools for the game, so it can reach text in formats the Guided steps don't read.
+Pick Manual if you have your own tools that extract a game's text and write it back.
 
 ## Good habits
 
@@ -179,6 +180,24 @@ For RPG Maker games your assistant also fits the text to the game's windows and 
 To try again from scratch, stop your assistant and choose **Start over…** on **Progress**; the old attempt stays under Checkpoints.
 
 Your assistant uses its own plan in every mode, so on a limited plan pick a smaller model or lower reasoning effort.
+
+## Manual
+
+Your own tools extract the game's text into a translation file and write the translations back; DazedTL translates the file with your API key.
+
+1. On **Text**, load the file your tools wrote: JSON or CSV, one line per message with an ID, its source text and an empty translation.
+   The [translation contract](translation-contract.md#translation-files) describes the format; lines already translated in the file are kept.
+2. Check **Options**, and the glossary on **Context**.
+3. On **Progress**, click **Estimate cost**, then approve the estimate.
+4. Click **Export translations…** and let your tools write the file into the game.
+
+After the game changes, load a new extraction: lines whose ID and source stay the same keep their translation.
+
+## Translation files
+
+Under **Translation file** on the Project page, **Export…** saves every line with its translation as JSON, with the glossary, or as CSV for a spreadsheet.
+**Import…** shows what a file changes, then takes its translations for the lines whose ID and source text match; the glossary only gains the terms it lacks.
+In Guided steps the translations go into your working copies, so apply them in Translate.
 
 ## Playtest checklist
 

@@ -11,6 +11,7 @@ import { PathText } from "../../ui/PathText";
 export const methodLabels: Record<TranslationMethod, string> = {
   guided: "Guided steps",
   len: "Assistant-led",
+  manual: "Manual",
 };
 export const guidedEngines = ["MVMZ", "ACE"];
 
@@ -32,13 +33,17 @@ export function MethodDialog({
   const guidedSupported = guidedEngines.includes(project.engine);
   const recommended: TranslationMethod = guidedSupported ? "guided" : "len";
   const current = project.method;
-  // Changing starts on the other method; a first choice on the recommended one.
+  // Changing starts on another method; a first choice on the recommended one.
   const [method, setMethod] = useState<TranslationMethod>(
     current === "guided"
       ? "len"
-      : current === "len" && guidedSupported
+      : current && guidedSupported
         ? "guided"
-        : recommended,
+        : current === "len"
+          ? "manual"
+          : current
+            ? "len"
+            : recommended,
   );
   const other = current && current !== method ? current : null;
   return (
@@ -80,6 +85,12 @@ export function MethodDialog({
               badge: recommended === "len" ? "Recommended" : undefined,
               description:
                 "Your coding assistant translates through the app from one starting prompt, using Len's game-translation skills. Any engine.",
+            },
+            {
+              value: "manual",
+              title: methodLabels.manual,
+              description:
+                "Your own tools extract the text into a file and write it back; DazedTL translates the file with your API key. Any engine.",
             },
           ]}
         />

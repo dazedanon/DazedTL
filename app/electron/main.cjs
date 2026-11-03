@@ -541,6 +541,34 @@ app
       });
       return selected.canceled ? null : selected.filePaths[0];
     });
+    // Translation files: the JSON file and the CSV view of its lines.
+    const translationFiles = [
+      { name: "Translation file", extensions: ["json", "csv"] },
+    ];
+    ipcMain.handle("dazedtl:choose-translation-file", async (event) => {
+      trusted(event);
+      const selected = await dialog.showOpenDialog(window, {
+        title: "Choose a translation file",
+        properties: ["openFile"],
+        filters: translationFiles,
+      });
+      return selected.canceled ? null : selected.filePaths[0];
+    });
+    ipcMain.handle("dazedtl:save-translation-file", async (event, name) => {
+      trusted(event);
+      const selected = await dialog.showSaveDialog(window, {
+        title: "Save the translation file",
+        defaultPath: path.join(
+          app.getPath("documents"),
+          String(name || "translation.json").replace(/[\\/:*?"<>|]/g, "_"),
+        ),
+        filters: [
+          { name: "Translation file (JSON)", extensions: ["json"] },
+          { name: "Lines as CSV", extensions: ["csv"] },
+        ],
+      });
+      return selected.canceled ? null : selected.filePath;
+    });
     ipcMain.handle("dazedtl:choose-editor", async (event) => {
       trusted(event);
       const selected = await dialog.showOpenDialog(window, {

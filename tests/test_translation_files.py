@@ -88,6 +88,14 @@ class TranslationFileTests(unittest.TestCase):
         _job, plan = self.service.jobs.store.load(run, self.identity)
         self.assertEqual(plan["method"], "manual")
         self.service.validate_current(self.identity, plan, compiled=False)
+        # Estimating again after a settings change prepares a Manual run again.
+        self.settings_data["connections"][0]["endpoint"] = "https://other.invalid/v1"
+        run = self.prepared(self.service.reestimate(self.identity, run))["run"]["id"]
+        _job, plan = self.service.jobs.store.load(run, self.identity)
+        self.assertEqual(
+            (plan["method"], plan["configuration"]["endpoint"]),
+            ("manual", "https://other.invalid/v1"),
+        )
         self.accept(run, {"b/1": "No."})
         self.assertFalse((self.game / WORK / "progress-report.json").exists())
         exchange = Exchange(self.service, None)

@@ -27,6 +27,8 @@ contextBridge.exposeInMainWorld("dazedtl", {
   reloadInterface: () => invoke("dazedtl:reload-interface"),
   chooseFolder: () => invoke("dazedtl:choose-folder"),
   chooseEditor: () => invoke("dazedtl:choose-editor"),
+  chooseTranslationFile: () => invoke("dazedtl:choose-translation-file"),
+  saveTranslationFile: (name) => invoke("dazedtl:save-translation-file", name),
   openFolder: (kind, target) => invoke("dazedtl:open-folder", kind, target),
   notify: (message) => invoke("dazedtl:notify", message),
   phone: (message) => invoke("dazedtl:phone", message),

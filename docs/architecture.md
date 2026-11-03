@@ -214,7 +214,7 @@ Use the flat, compact [Settings](../app/src/features/settings/Settings.tsx) and 
 The sidebar has three places: the Project page holds everything about the game, Translation holds the work, and Settings holds the app.
 Beside them, the [Guide](../app/src/features/guide/Guide.tsx) shows the user guide from the install, through the main process so it opens while Python is busy or down; help that a guide section covers links to it with Learn more ([guideSections](../app/src/ui/guideSections.ts)).
 It draws the guide with marked's lexer and its own React components, so no HTML from the file reaches the page, and anchors come from github-slugger, so they match the forge's.
-Each game has one translation method, chosen in [MethodDialog](../app/src/features/project/MethodDialog.tsx); changing it keeps the other method's work, and the Project page's Status, History and Checkpoints tabs serve both.
+Each game has one translation method, chosen in [MethodDialog](../app/src/features/project/MethodDialog.tsx); changing it keeps the other methods' work, and the Project page's Status, History and Checkpoints tabs serve all three.
 Screens use four kinds of surface, each with one job:
 
 - A page is somewhere you work or browse, reached from the sidebar and kept when you leave and return.
@@ -284,6 +284,11 @@ Resync archives a file's working copy, staged outputs and cache, and advances it
 - New games start on API Batch, since the assistant's own plan pays for every turn.
 - In both methods, a Batch the connection can't run shows and runs as Live, with the reason beside the choice ([runnable_mode](../backend/dazedtl/settings/execution.py)), and the saved choice stays.
 - Start over is one checkpoint back to the original game's current version, so the attempt stays in Git history; what Git doesn't keep moves to `.dazedtl/archived`, settings and skills stay, the glossary and notes stay unless the user lets them go, and only the user can start it.
+
+#### Manual and translation files
+
+- [Manual](../app/src/features/translation/ManualTranslation.tsx) runs on Assistant-led's machinery: its loaded file becomes the units organize packs, the API run panel's button is the only approval, and History lists its runs; the [translation contract](translation-contract.md#translation-files) says what its runs leave out.
+- A [translation file](../backend/dazedtl/translation/exchange.py) exports and imports a project's lines in every method through one line set per method; an import never writes the game itself, only accepted results or Guided's working copies, which Apply publishes.
 
 #### Publication
 

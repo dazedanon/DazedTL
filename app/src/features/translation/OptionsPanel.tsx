@@ -19,19 +19,37 @@ export const modeLabels: Record<Mode, string> = {
   agent: "Assistant only",
 };
 
+/** Whether requests carry DazedTL's base glossary below the game's own. */
+export function BaseGlossaryField({
+  options,
+  edit,
+}: {
+  options: TranslationOptions;
+  edit: (key: "include_glossary_base", value: boolean) => void;
+}) {
+  return (
+    <CheckField
+      id="translation-glossary"
+      label="DazedTL's base glossary"
+      description="Common Japanese honorifics and interface words, added below the game's own glossary. Japanese games only."
+      checked={options.include_glossary_base}
+      onChange={(checked) => edit("include_glossary_base", checked)}
+    />
+  );
+}
+
 /**
- * How the assistant works on this game. The mode decides who pays for the
- * translation: the user's API key, or the assistant's own plan.
+ * Who translates and pays: the user's API key in one Batch job or Live
+ * requests, or, for Assistant-led (*agent*), the assistant itself.
  */
-export function OptionsPanel({
-  project,
+export function TranslationModeField({
   state,
   options,
   edit,
   disabled,
   settings,
+  agent,
 }: {
-  project: Project;
   state: TranslationState;
   options: TranslationOptions;
   edit: <K extends keyof TranslationOptions>(
@@ -40,6 +58,8 @@ export function OptionsPanel({
   ) => void;
   disabled: boolean;
   settings: (section?: SettingsSection) => void;
+  /** Whether Assistant only is offered. */
+  agent: boolean;
 }) {
   // Batch unless the connection cannot run it, the default new projects get.
   // `options` reads such a Batch as Live already (runnableMode), so the
@@ -65,13 +85,91 @@ export function OptionsPanel({
       description:
         "Your API key sends one request at a time at the full price. Translations save as each reply arrives, and you can pause between requests.",
     },
-    {
-      value: "agent",
-      title: modeLabels.agent,
-      description:
-        "No API key. Your assistant translates every line itself, which uses far more of its plan; a full game can run past a $20 plan's limits.",
-    },
+    ...(agent
+      ? [
+          {
+            value: "agent" as const,
+            title: modeLabels.agent,
+            description:
+              "No API key. Your assistant translates every line itself, which uses far more of its plan; a full game can run past a $20 plan's limits.",
+          },
+        ]
+      : []),
   ];
+  return (
+    <div
+      className="field-row"
+      role="group"
+      aria-labelledby="translation-mode-label"
+    >
+      <span className="field-label" id="translation-mode-label">
+        Translation mode
+      </span>
+      <div className="field-control field-control--wide">
+        <OptionCards
+          label="Translation mode"
+          value={options.mode}
+          options={cards}
+          onChange={(mode) => edit("mode", mode)}
+        />
+        {options.mode !== "agent" &&
+          (state.connection ? (
+            <dl className="translation-facts" aria-label="API connection">
+              <div>
+                <dt>Connection</dt>
+                <dd>{state.connection.name}</dd>
+              </div>
+              <div>
+                <dt>Model</dt>
+                <dd>
+                  <ModelMenu
+                    model={state.connection.model}
+                    connection={state.connection.name}
+                    disabled={disabled}
+                    manage={() => settings("api")}
+                  />
+                </dd>
+              </div>
+            </dl>
+          ) : (
+            <Notice>
+              <span>
+                {agent
+                  ? "No API connection yet. Your assistant prepares the game without one and asks for it before translating."
+                  : "No API connection yet. Add one before you estimate the cost."}
+              </span>
+              <Button variant="link" onClick={() => settings("api")}>
+                Add a connection
+              </Button>
+            </Notice>
+          ))}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * How the assistant works on this game. The mode decides who pays for the
+ * translation: the user's API key, or the assistant's own plan.
+ */
+export function OptionsPanel({
+  project,
+  state,
+  options,
+  edit,
+  disabled,
+  settings,
+}: {
+  project: Project;
+  state: TranslationState;
+  options: TranslationOptions;
+  edit: <K extends keyof TranslationOptions>(
+    key: K,
+    value: TranslationOptions[K],
+  ) => void;
+  disabled: boolean;
+  settings: (section?: SettingsSection) => void;
+}) {
   return (
     <fieldset className="lens-options" disabled={disabled}>
       <p className="muted lens-options-note">
@@ -81,53 +179,14 @@ export function OptionsPanel({
         saved work.
       </p>
       <GameLanguagesRow projectId={project.id} disabled={disabled} />
-      <div
-        className="field-row"
-        role="group"
-        aria-labelledby="translation-mode-label"
-      >
-        <span className="field-label" id="translation-mode-label">
-          Translation mode
-        </span>
-        <div className="field-control field-control--wide">
-          <OptionCards
-            label="Translation mode"
-            value={options.mode}
-            options={cards}
-            onChange={(mode) => edit("mode", mode)}
-          />
-          {options.mode !== "agent" &&
-            (state.connection ? (
-              <dl className="translation-facts" aria-label="API connection">
-                <div>
-                  <dt>Connection</dt>
-                  <dd>{state.connection.name}</dd>
-                </div>
-                <div>
-                  <dt>Model</dt>
-                  <dd>
-                    <ModelMenu
-                      model={state.connection.model}
-                      connection={state.connection.name}
-                      disabled={disabled}
-                      manage={() => settings("api")}
-                    />
-                  </dd>
-                </div>
-              </dl>
-            ) : (
-              <Notice>
-                <span>
-                  No API connection yet. Your assistant prepares the game
-                  without one and asks for it before translating.
-                </span>
-                <Button variant="link" onClick={() => settings("api")}>
-                  Add a connection
-                </Button>
-              </Notice>
-            ))}
-        </div>
-      </div>
+      <TranslationModeField
+        state={state}
+        options={options}
+        edit={edit}
+        disabled={disabled}
+        settings={settings}
+        agent
+      />
       <FieldRow
         id="translation-instructions"
         label="Instructions for your assistant"
@@ -151,13 +210,7 @@ export function OptionsPanel({
           checked={options.include_images}
           onChange={(checked) => edit("include_images", checked)}
         />
-        <CheckField
-          id="translation-glossary"
-          label="DazedTL's base glossary"
-          description="Common Japanese honorifics and interface words, added below the game's own glossary. Japanese games only."
-          checked={options.include_glossary_base}
-          onChange={(checked) => edit("include_glossary_base", checked)}
-        />
+        <BaseGlossaryField options={options} edit={edit} />
       </CheckGroup>
       {/* Your assistant installs or takes out each tool when it prepares
           the game. */}

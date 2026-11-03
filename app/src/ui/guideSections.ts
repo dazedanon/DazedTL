@@ -8,6 +8,7 @@ export const guideSections = [
   "checkpoints-and-undo",
   "common-problems",
   "contributing",
+  "manual",
   "publishing-with-gameupdate",
 ] as const;
 export type GuideSection = (typeof guideSections)[number];

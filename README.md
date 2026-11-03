@@ -34,11 +34,14 @@ DazedTL translates a game's text with your AI provider and writes it back into t
   <img src="docs/media/game.webp" width="880" alt="The same scene of an RPG Maker game before and after: the village chief's line in Japanese, then in English with his name translated">
 </p>
 
-### Two ways to translate
+### Three ways to translate
 
 - **Guided steps**, for RPG Maker MV, MZ and VX Ace games: DazedTL leads you through five stages.
   Your API key translates the dialogue and database text, and your assistant handles names, plugins, images and other text it has to look into.
 - **Assistant-led**, for any game: your assistant does the whole translation from one starting prompt, either by itself or through your API key.
+- **Manual**, for any game: your own tools extract the text into a file, your API key translates it, and your tools write it back.
+
+Every method can export its translation as a file to edit or share, and import one back.
 
 <p align="center">
   <img src="docs/media/project.webp" width="880" alt="The Project page: lines translated, files applied and cost so far, and the tasks of the five stages with the next step highlighted">

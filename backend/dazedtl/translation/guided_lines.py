@@ -119,8 +119,13 @@ class GuidedLines:
                 for line in file_lines.read(
                     name, document, phase, self.markers, read_original
                 ):
-                    named = line.kind in {"message", "scroll", "help"} and line.start
-                    head = places.of(line.start) if named else None
+                    # A block names its texts by the command it starts at.
+                    head = (
+                        places.of(line.start)
+                        if line.kind in {"message", "scroll", "help"} and line.start
+                        else None
+                    )
+                    named = head is not None
                     speaker = None
                     part = 0
                     for (text, source), paths in zip(
@@ -130,10 +135,10 @@ class GuidedLines:
                         name_box = named and paths[0][-2:] == ("parameters", 4)
                         if not holds_source(shown):
                             continue
-                        if name_box:
+                        if head is not None and name_box:
                             identity = _pointer((*head, "parameters", 4))
                             speaker = shown
-                        elif named:
+                        elif head is not None:
                             identity = _pointer(head) + (f"~{part}" if part else "")
                             part += 1
                         else:

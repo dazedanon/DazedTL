@@ -9,6 +9,7 @@ import {
   ChevronDown,
   ListChecks,
   Check,
+  FileJson,
   X,
 } from "lucide-react";
 import { api } from "../api/client";
@@ -37,6 +38,7 @@ import { useAssistantTasks } from "../features/assistant/useAssistantTasks";
 import Translation, {
   type TranslationView,
 } from "../features/translation/Translation";
+import ManualTranslation from "../features/translation/ManualTranslation";
 import { Menu, MenuItem, MenuSeparator } from "../ui/Menu";
 import { RecentProjectName } from "../features/project/RecentProject";
 import { Button } from "../ui/Button";
@@ -357,6 +359,8 @@ export default function App() {
                 >
                   {project.method === "len" ? (
                     <Route size={18} />
+                  ) : project.method === "manual" ? (
+                    <FileJson size={18} />
                   ) : (
                     <ListChecks size={18} />
                   )}
@@ -493,6 +497,12 @@ export default function App() {
                       settings={openSettings}
                       openProject={openProject}
                       view={translationView}
+                    />
+                  ) : workspace && project?.method === "manual" ? (
+                    <ManualTranslation
+                      key={project.id}
+                      project={project}
+                      settings={openSettings}
                     />
                   ) : (
                     <ProjectPage

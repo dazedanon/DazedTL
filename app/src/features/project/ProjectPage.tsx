@@ -41,7 +41,8 @@ import { RequestsPanel } from "../translation/RequestsPanel";
 import { VersionsPanel } from "../translation/VersionsPanel";
 import type { SettingsSection } from "../settings/Settings";
 import { CheckpointsPanel } from "./CheckpointsPanel";
-import { guidedEngines, methodLabels } from "./MethodDialog";
+import { methodLabels } from "./MethodDialog";
+import { TranslationFile } from "./TranslationFile";
 
 export type ProjectTab = "status" | "history" | "checkpoints";
 /** What removing a game from the recent list does, wherever it is offered. */
@@ -129,11 +130,9 @@ export default function ProjectPage({
         }
         actions={
           <div className="actions">
-            {/* Only RPG Maker MV/MZ and Ace games have another method to
-                switch to once Assistant-led is chosen. */}
-            {(project.method === "guided" ||
-              (project.method === "len" &&
-                guidedEngines.includes(project.engine))) && (
+            {/* Every game has another method to switch to: Assistant-led
+                and Manual take any engine. */}
+            {project.method && (
               <Button
                 variant="quiet"
                 disabled={busy || !available}
@@ -287,7 +286,7 @@ function ProjectStatus({
               description={
                 !project.available
                   ? project.detail
-                  : "Guided steps walk through each stage with estimates; Assistant-led hands the whole game to your coding assistant."
+                  : "Guided steps walk through each stage with estimates; Assistant-led hands the whole game to your coding assistant; Manual translates a file your own tools extracted."
               }
             />
           </ActionList>
@@ -431,6 +430,9 @@ function ProjectStatus({
           </ActionList>
         )}
         {project.method && project.method !== "guided" && assistantList}
+        {project.available && project.method && (
+          <TranslationFile project={project} disabled={busy} />
+        )}
         {beside && !active && (
           <p className="project-activity">
             Last activity: {beside.label}

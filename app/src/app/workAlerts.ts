@@ -102,8 +102,8 @@ function operation(job: {
 
 /**
  * The open game's work that the user starts and then waits for. In Guided
- * that is every run and step; an Assistant-led game's helper steps are its
- * assistant's, so only API runs and Start over count there.
+ * and Manual that is every run and step; an Assistant-led game's helper
+ * steps are its assistant's, so only API runs and Start over count there.
  */
 function userWork(snapshot: WorkspaceSnapshot, projectId: string): Work[] {
   const method = snapshot.application.project?.method;
@@ -118,6 +118,7 @@ function userWork(snapshot: WorkspaceSnapshot, projectId: string): Work[] {
           : job.action === "start_over",
       )
       .map(operation);
+  if (method === "manual") return jobs.map(operation);
   if (method !== "guided") return [];
   const guided =
     snapshot.guided?.projectId === projectId ? snapshot.guided : null;

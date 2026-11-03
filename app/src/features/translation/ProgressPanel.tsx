@@ -437,15 +437,19 @@ const runStates: Record<string, DisplayState> = {
   complete: "done",
 };
 
-/** The latest API run the app holds for the assistant, with its spending. */
-function ApiRun({
+/**
+ * The latest API run the app holds, with its spending: the assistant's, or a
+ * Manual project's own.
+ */
+export function ApiRun({
   run,
   redo,
   state,
   options,
   action,
-  untold,
-  resume,
+  untold = false,
+  resume = null,
+  waiting = "Your assistant's estimate appears here, and nothing is sent until you approve it.",
 }: {
   run: TranslationJob | undefined;
   /** The preparation estimating an outdated run again, if one started. */
@@ -453,16 +457,14 @@ function ApiRun({
   state: TranslationState;
   options: TranslationOptions;
   action: ReturnType<typeof useAction>;
-  untold: boolean;
-  resume: ReactNode;
+  untold?: boolean;
+  resume?: ReactNode;
+  /** What the panel says before there is an estimate. */
+  waiting?: string;
 }) {
   if (!run)
     return (
-      <StatusPanel
-        title="API run"
-        state="not_started"
-        description="Your assistant's estimate appears here, and nothing is sent until you approve it."
-      />
+      <StatusPanel title="API run" state="not_started" description={waiting} />
     );
   const mode = run.mode === "live" ? "live" : "batch";
   const charged = run.usage.openrouter_cost;

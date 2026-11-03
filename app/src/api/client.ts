@@ -123,6 +123,16 @@ export const api = {
       request("translation_update_task", { project_id }),
     checkpoints: (project_id: string) =>
       request("project_checkpoints", { project_id }),
+    exportFile: (project_id: string, path: string) =>
+      request("project_translation_export", { project_id, path }),
+    previewFile: (project_id: string, path: string) =>
+      request("project_translation_preview", { project_id, path }),
+    importFile: (project_id: string, path: string, sha256: string) =>
+      request("project_translation_import", { project_id, path, sha256 }),
+    manualLoad: (project_id: string, path: string) =>
+      request("manual_load", { project_id, path }),
+    manualEstimate: (project_id: string) =>
+      request("manual_estimate", { project_id }),
     checkpointChanges: (project_id: string, commit: string) =>
       request("project_checkpoint_changes", { project_id, commit }),
     checkpoint: (
