@@ -27,7 +27,7 @@ import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Iterable, Optional, Sequence, Union
-from util import system
+from util import gitgud, system
 
 __all__ = [
     "WolfDawnError",
@@ -194,9 +194,9 @@ def parse_inject_cli_error(stdout: str, stderr: str = "") -> str | None:
 _PACKAGE_DIR = Path(__file__).resolve().parent
 _BUNDLED_DIR = _PACKAGE_DIR / "bin"
 
-# WolfDawn upstream project on gitgud.io (a GitLab instance). The numeric project
-# id is used for the uploads URL because the human-readable project path sits
-# behind a Cloudflare challenge, while ``/-/project/<id>/uploads/...`` does not.
+# WolfDawn upstream project on gitgud.io (a GitLab instance), reached with the
+# headers GitGud lets past its Cloudflare challenge (util.gitgud); release
+# uploads are named by the numeric project id.
 _GITGUD_HOST = "https://gitgud.io"
 _WOLFDAWN_PROJECT_ID = 48753
 _RELEASES_API = f"{_GITGUD_HOST}/api/v4/projects/{_WOLFDAWN_PROJECT_ID}/releases"
@@ -208,10 +208,6 @@ _RELEASE_ASSET_MATCH = {
     "linux": "linux",
     "macos": "mac",
 }
-_DOWNLOAD_UA = (
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
-    "DazedTL WolfDawn-fetch"
-)
 
 PathLike = Union[str, Path]
 
@@ -341,8 +337,7 @@ def _latest_release_asset(platform: str) -> Optional[tuple[str, str]]:
     match = _RELEASE_ASSET_MATCH.get(platform)
     if not match:
         return None
-    req = urllib.request.Request(_RELEASES_API, headers={"User-Agent": _DOWNLOAD_UA})
-    with urllib.request.urlopen(req, timeout=30) as resp:
+    with urllib.request.urlopen(gitgud.request(_RELEASES_API), timeout=30) as resp:
         releases = json.loads(resp.read().decode("utf-8"))
     link_re = re.compile(r"\[([^\]]+)\]\((/uploads/[0-9a-f]+/[^)]+)\)")
     for release in releases:
@@ -421,8 +416,7 @@ def download_wolf_binary(platform: Optional[str] = None, log_fn=print) -> Path:
         )
     _log(f"Downloading WolfDawn binary from {url} ...", log_fn)
     try:
-        req = urllib.request.Request(url, headers={"User-Agent": _DOWNLOAD_UA})
-        with urllib.request.urlopen(req, timeout=120) as resp:
+        with urllib.request.urlopen(gitgud.request(url), timeout=120) as resp:
             zip_bytes = resp.read()
     except (urllib.error.URLError, TimeoutError) as exc:
         raise WolfDawnError(f"Failed to download WolfDawn binary: {exc}") from exc

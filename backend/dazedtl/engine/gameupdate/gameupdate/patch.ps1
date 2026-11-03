@@ -279,6 +279,11 @@ function Resolve-PatchForge {
 function New-PatchApiHeaders {
     param([Parameter(Mandatory = $true)][hashtable]$Resolved)
     $headers = @{ 'User-Agent' = 'DazedMTL-Patcher-1.0' }
+    if ($Resolved.kind -eq 'gitlab') {
+        # GitGud lets an app's request past its Cloudflare challenge when it
+        # carries this header, whatever its value; GitLab itself ignores it.
+        $headers['X-Gitlab-Token'] = 'dazedtl-gameupdate'
+    }
     if ($Resolved.kind -eq 'github') {
         $headers['Accept'] = 'application/vnd.github+json'
     }

@@ -116,6 +116,11 @@ case "$FORGE_KIND" in
 esac
 
 API_HEADERS=( -H "User-Agent: GameUpdate/1.0" )
+if [ "$FORGE_KIND" = "gitlab" ]; then
+    # GitGud lets an app's request past its Cloudflare challenge when it
+    # carries this header, whatever its value; GitLab itself ignores it.
+    API_HEADERS+=( -H "X-Gitlab-Token: dazedtl-gameupdate" )
+fi
 if [ "$FORGE_KIND" = "github" ]; then
     API_HEADERS+=( -H "Accept: application/vnd.github+json" )
 fi

@@ -478,6 +478,7 @@ Users download the repository as a ZIP and run a START launcher; there is no ins
 A release is a `v` tag on every mirror in [mirrors.json](../release/mirrors.json), whose commit carries `release/manifest.json`, the SHA-256 of every tracked file, signed with Ed25519 in `release/manifest.sig`.
 
 - [update.mjs](../scripts/update.mjs) lists tags through each mirror's Git ref advertisement and takes the newest version any reachable mirror has.
+- GitGud answers requests without one of the headers its Cloudflare rule looks for with a challenge, so every request to a GitLab host carries `X-Gitlab-Token`, whose value GitLab ignores: `mirrorHeaders` here, [gitgud](../backend/dazedtl/engine/util/gitgud.py) for the maintainer tools, and GameUpdate's scripts; never a real token, which would ship to every install.
 - An archive is accepted only when the signature verifies with a key in the installed `release/keys` and its files match the manifest exactly, so a compromised or stale mirror can withhold releases but never alter one; [release.mjs](../scripts/release.mjs) proves each tag against its own `git archive` before pushing.
 - The [update controller](../app/electron/updates.cjs) runs the updater in a child process, so verifying never blocks the window.
 - The launcher applies a staged update before setup and before anything loads the files it replaces, as a journaled, backed-up swap that finishes after a crash and restores on failure, then hands over to the new launcher; START.bat stays one line ([bootstrap.ps1](../scripts/bootstrap.ps1) says why).

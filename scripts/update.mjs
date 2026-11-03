@@ -140,17 +140,20 @@ export function mirrors(root = checkout) {
  * the browser header "Sec-Fetch-Mode: cors", which GitLab answers with 406 for
  * archives, so this uses the plain HTTP client instead.
  * @param {string} url
- * @param {{ limit: number, timeout: number, progress?: (received: number, total: number) => void }} options
+ * @param {{ limit: number, timeout: number, progress?: (received: number, total: number) => void, headers?: Record<string, string> }} options
  * @returns {Promise<Buffer>}
  */
 function get(url, options, redirects = 0) {
-  const { limit, timeout, progress } = options;
+  const { limit, timeout, progress, headers = {} } = options;
   const { host, protocol } = new URL(url);
   return new Promise((resolve, reject) => {
     const client = protocol === "http:" ? http : https;
     const request = client.get(
       url,
-      { headers: { "User-Agent": "DazedTL", Accept: "*/*" }, timeout: 60_000 },
+      {
+        headers: { "User-Agent": "DazedTL", Accept: "*/*", ...headers },
+        timeout: 60_000,
+      },
       (response) => {
         const status = response.statusCode ?? 0;
         const location = response.headers.location;
@@ -245,6 +248,7 @@ export async function latest({ root = checkout, channel }) {
         await get(`${mirror.url}.git/info/refs?service=git-upload-pack`, {
           limit: 4_000_000,
           timeout: 20_000,
+          headers: mirrorHeaders(mirror),
         }),
       ),
     })),
@@ -279,15 +283,33 @@ export function choose(found, channel, current) {
   return best && compare(best.version, current) > 0 ? best : null;
 }
 
-/** @param {Mirror} mirror */
+/**
+ * A GitLab mirror's release archive comes through its API: GitGud answers
+ * the web archive and the API with a Cloudflare challenge unless a request
+ * carries one of the headers its rule looks for (mirrorHeaders).
+ * @param {Mirror} mirror
+ */
 export function archiveUrl(mirror, version) {
   const tag = `v${version}`;
   if (mirror.type === "github")
     return `${mirror.url}/archive/refs/tags/${tag}.tar.gz`;
-  if (mirror.type === "gitlab")
-    return `${mirror.url}/-/archive/${tag}/${mirror.url.split("/").pop()}-${tag}.tar.gz`;
+  if (mirror.type === "gitlab") {
+    const { origin, pathname } = new URL(mirror.url);
+    const project = encodeURIComponent(pathname.replace(/^\/|\/$/g, ""));
+    return `${origin}/api/v4/projects/${project}/repository/archive.tar.gz?sha=${encodeURIComponent(tag)}`;
+  }
   return `${mirror.url}/archive/${tag}.tar.gz`;
 }
+
+/**
+ * The headers a mirror's requests carry. GitGud's admin exempts from its
+ * challenge any request with an X-Gitlab-Token header, whatever its value,
+ * which GitLab itself ignores, so DazedTL names itself there and public
+ * requests stay anonymous; a real token would ship to every install.
+ * @param {Mirror} mirror
+ */
+export const mirrorHeaders = (mirror) =>
+  mirror.type === "gitlab" ? { "X-Gitlab-Token": "dazedtl-updater" } : {};
 
 /**
  * Checks a release archive against its signed manifest: every file it holds
@@ -373,6 +395,7 @@ export async function stage({ root = checkout, version, sources, progress }) {
         limit: 500_000_000,
         timeout: 30 * 60_000,
         progress,
+        headers: mirrorHeaders(mirror),
       });
       writeStaged(root, verifyArchive(archive, version, keys).files);
       return;

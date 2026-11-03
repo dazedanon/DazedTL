@@ -12,15 +12,14 @@ from pathlib import Path
 
 from util.wolfdawn import (
     WolfDawnError,
-    _DOWNLOAD_UA,
     _GITGUD_HOST,
     bundled_binary_path,
 )
-from util import system
+from util import gitgud, system
 
 WOLFDAWN_PROJECT = "zero64801/wolfdawn"
 WOLFDAWN_BRANCH = "master"
-GITGUD_API = "https://gitgud.io/api/v4"
+GITGUD_API = gitgud.API
 CLONE_URL = f"{_GITGUD_HOST}/{WOLFDAWN_PROJECT}.git"
 
 _BUILD_TARGETS: dict[str, dict[str, str | None]] = {
@@ -52,8 +51,7 @@ def _project_id() -> str:
 
 def upstream_commit() -> str:
     url = f"{GITGUD_API}/projects/{_project_id()}/repository/commits/{WOLFDAWN_BRANCH}"
-    req = urllib.request.Request(url, headers={"User-Agent": _DOWNLOAD_UA})
-    with urllib.request.urlopen(req, timeout=60) as resp:
+    with urllib.request.urlopen(gitgud.request(url), timeout=60) as resp:
         data = json.loads(resp.read().decode("utf-8"))
     commit = data.get("id") or data.get("sha") or ""
     if not commit:

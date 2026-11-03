@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import fs from "node:fs";
+import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -10,6 +11,8 @@ import {
   choose,
   installed,
   requestRevert,
+  stage,
+  stagedVersion,
   tags,
   verifyArchive,
   writeStaged,
@@ -145,6 +148,46 @@ test("the newest tag on any mirror wins, and stable skips prereleases", () => {
   });
   assert.equal(choose(found, "beta", "2.0.0")?.version, "2.1.0-beta.10");
   assert.equal(choose(found, "stable", "2.0.0"), null);
+});
+
+test("a GitLab mirror's release downloads through its API, naming the app as GitGud asks", async (t) => {
+  // GitGud answers requests without one of the headers its Cloudflare rule
+  // looks for with a challenge page; GitLab ignores X-Gitlab-Token itself.
+  const files = release("2.0.0", { "a.txt": "two" });
+  const served = archive(files);
+  const server = http.createServer((request, response) => {
+    const url = new URL(request.url ?? "", "http://mirror");
+    if (!request.headers["x-gitlab-token"]) response.writeHead(403).end();
+    else if (
+      url.pathname ===
+        "/api/v4/projects/Owner%2FDazedTL/repository/archive.tar.gz" &&
+      url.searchParams.get("sha") === "v2.0.0"
+    )
+      response.writeHead(200).end(served);
+    else response.writeHead(404).end();
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => server.close());
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "dazedtl-gitlab-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(root, "release", "keys"), { recursive: true });
+  fs.writeFileSync(
+    path.join(root, "release", "keys", "test.pem"),
+    keys.publicKey.export({ type: "spki", format: "pem" }),
+  );
+  const { port } = server.address() as { port: number };
+  await stage({
+    root,
+    version: "2.0.0",
+    sources: [
+      {
+        name: "GitGud",
+        type: "gitlab",
+        url: `http://127.0.0.1:${port}/Owner/DazedTL`,
+      },
+    ],
+  });
+  assert.equal(stagedVersion(root), "2.0.0");
 });
 
 test("an update swaps tracked files in place, and Go back or a failure restores them", (t) => {

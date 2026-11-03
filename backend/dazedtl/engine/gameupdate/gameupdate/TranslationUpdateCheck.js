@@ -227,6 +227,17 @@
         };
     }
 
+    function requestHeaders(forge) {
+        var headers = {
+            "User-Agent": "DazedTL-TranslationUpdateCheck/1.0",
+            "Accept": "application/json"
+        };
+        // GitGud lets an app's request past its Cloudflare challenge when it
+        // carries this header, whatever its value; GitLab itself ignores it.
+        if (forge === "gitlab") headers["X-Gitlab-Token"] = "dazedtl-gameupdate";
+        return headers;
+    }
+
     function latestShaFromResponse(forge, payload) {
         if (!payload || typeof payload !== "object") return "";
         if (forge === "github") return String(payload.sha || "").trim();
@@ -247,10 +258,7 @@
                 hostname: remote.hostname,
                 port: remote.port,
                 path: remote.path,
-                headers: {
-                    "User-Agent": "DazedTL-TranslationUpdateCheck/1.0",
-                    "Accept": "application/json"
-                }
+                headers: requestHeaders(remote.forge)
             }, function(response) {
                 try {
                     if (response.statusCode !== 200) {

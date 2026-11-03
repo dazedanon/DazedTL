@@ -20,6 +20,8 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
+from util import gitgud
+
 _PKG_ROOT = Path(__file__).resolve().parent
 UPSTREAM_DIR = _PKG_ROOT / "upstream"
 
@@ -30,9 +32,8 @@ PLUGIN_BY_ENGINE = {
 
 FORGE_PROJECT = "zero64801/forge-mvmz"
 FORGE_BRANCH = "master"
-GITGUD_API = "https://gitgud.io/api/v4"
+GITGUD_API = gitgud.API
 VERSION_FILE = _PKG_ROOT / ".forge_version.json"
-USER_AGENT = "DazedTL"
 
 
 def upstream_plugin_path(engine: str) -> Path:
@@ -56,8 +57,7 @@ def _save_versions(data: dict) -> None:
 
 
 def _api_json(url: str) -> dict | list:
-    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-    with urllib.request.urlopen(req, timeout=60) as resp:
+    with urllib.request.urlopen(gitgud.request(url), timeout=60) as resp:
         return json.loads(resp.read().decode("utf-8"))
 
 
@@ -102,8 +102,7 @@ def _install_unified_bytes(data: bytes) -> None:
 
 
 def _download_bytes(url: str) -> bytes:
-    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-    with urllib.request.urlopen(req, timeout=600) as resp:
+    with urllib.request.urlopen(gitgud.request(url), timeout=600) as resp:
         return resp.read()
 
 
