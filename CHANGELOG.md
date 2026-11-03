@@ -3,6 +3,12 @@
 Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 [release.mjs](scripts/release.mjs) writes each entry from [release/notes.md](release/notes.md).
 
+## [2.59.2] - 2026-11-03
+
+### Changed
+
+- **GameUpdate:** when the patch site refuses GameUpdate's download, as GitGud's bot check did, players' GameUpdate and the game's update warning get the newest version through Git instead; Windows players without Git get a checked copy of Git for Windows once, and Linux players are shown how to install Git.
+
 ## [2.59.1] - 2026-11-03
 
 ### Fixed
@@ -1609,6 +1615,7 @@ Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachan
 - The first release of DazedTL as a desktop app, installed from a ZIP with a START launcher and updated from inside the app.
 - **Guided steps** for RPG Maker MV, MZ and VX Ace games, and **Assistant-led** for any game.
 
+[2.59.2]: https://github.com/dazedanon/DazedTL/compare/v2.59.1...v2.59.2
 [2.59.1]: https://github.com/dazedanon/DazedTL/compare/v2.59.0...v2.59.1
 [2.59.0]: https://github.com/dazedanon/DazedTL/compare/v2.58.1...v2.59.0
 [2.58.1]: https://github.com/dazedanon/DazedTL/compare/v2.58.0...v2.58.1
