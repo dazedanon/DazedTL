@@ -199,7 +199,7 @@ _BUNDLED_DIR = _PACKAGE_DIR / "bin"
 # uploads are named by the numeric project id.
 _GITGUD_HOST = "https://gitgud.io"
 _WOLFDAWN_PROJECT_ID = 48753
-_RELEASES_API = f"{_GITGUD_HOST}/api/v4/projects/{_WOLFDAWN_PROJECT_ID}/releases"
+_RELEASES_API = f"{gitgud.API}/projects/{_WOLFDAWN_PROJECT_ID}/releases"
 # Substring that identifies each platform's prebuilt zip in a release. Only the
 # assets the upstream maintainer publishes can be pulled; unpublished platforms
 # fall back to the committed offline binary.
