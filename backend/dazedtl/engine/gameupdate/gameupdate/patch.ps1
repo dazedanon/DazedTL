@@ -15,7 +15,19 @@ else {
 
 $PatchBundleRoot = $PSScriptRoot
 
+# Git for Windows' portable MinGit, the version DazedTL installs for itself,
+# for players without Git when the forge's API refuses GameUpdate. Written by
+# scripts/runtimes.mjs from scripts/mingit-version; the script carries the pin
+# itself, so it works wherever a patch puts it.
+$MinGitUrl = 'https://github.com/git-for-windows/git/releases/download/v2.56.0.windows.2/MinGit-2.56.0.2-64-bit.zip'
+$MinGitSha256 = 'da35e72aa21c005a5a0d298cfbae110bc1609a815730ea0dde84b01a1b3cd3be'
+
 function Wait-ConsolePause {
+    # Nobody can press a key for a run whose input is redirected, such as an
+    # automated one; ReadKey would wait on the console forever.
+    if ([Console]::IsInputRedirected) {
+        return
+    }
     Write-Host ''
     Write-Host 'Press any key to close this window...'
     try {
@@ -335,6 +347,140 @@ function Get-PatchArchiveUrl {
         }
         'forgejo' {
             return "$($Resolved.apiBase)/repos/$ownerEnc/$repoEnc/archive/$shaEnc.zip"
+        }
+    }
+}
+
+function Get-PatchGitUrl {
+    param([Parameter(Mandatory = $true)][hashtable]$Resolved)
+    return "$($Resolved.webBase)/$($Resolved.username)/$($Resolved.repo).git"
+}
+
+function Expand-VerifiedMinGit {
+    <#
+    Unpacks a downloaded MinGit ZIP into $Destination only when its SHA-256 is
+    the pinned one, and marks the folder with it so later runs reuse it.
+    #>
+    param(
+        [Parameter(Mandatory = $true)][string]$ZipPath,
+        [Parameter(Mandatory = $true)][string]$Sha256,
+        [Parameter(Mandatory = $true)][string]$Destination
+    )
+    $actual = (Get-FileHash -LiteralPath $ZipPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($actual -ne $Sha256.ToLowerInvariant()) {
+        throw ('PATCH_ERR:GIT:The Git for Windows download does not match its pinned checksum (got {0}); it was not used.' -f $actual)
+    }
+    $partial = $Destination + '.partial'
+    if (Test-Path -LiteralPath $partial) {
+        Remove-FileOrDirectoryViaCmd -LiteralPath $partial
+    }
+    Expand-Archive -LiteralPath $ZipPath -DestinationPath $partial -Force
+    Set-Content -LiteralPath (Join-Path $partial 'dazedtl-mingit.sha256') -Value $Sha256 -Encoding Ascii
+    if (Test-Path -LiteralPath $Destination) {
+        Remove-FileOrDirectoryViaCmd -LiteralPath $Destination
+    }
+    Rename-Item -LiteralPath $partial -NewName ([IO.Path]::GetFileName($Destination))
+}
+
+function Get-PatchGit {
+    <#
+    The Git that fetches the patch when the forge's API or archive download
+    fails: Git on PATH, else the pinned MinGit, downloaded and checked once
+    into gameupdate\mingit and reused after that.
+    #>
+    param([Parameter(Mandatory = $true)][string]$BundleRoot)
+    $onPath = Get-Command git -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($onPath) {
+        return $onPath.Source
+    }
+    $folder = Join-Path $BundleRoot 'mingit'
+    $git = Join-Path $folder 'cmd\git.exe'
+    $marker = Join-Path $folder 'dazedtl-mingit.sha256'
+    if ((Test-Path -LiteralPath $git -PathType Leaf) -and (Test-Path -LiteralPath $marker -PathType Leaf) -and
+        ((Get-Content -LiteralPath $marker -Raw).Trim() -eq $MinGitSha256)) {
+        return $git
+    }
+    Write-Host 'Git is not installed; downloading Git for Windows (MinGit) once for GameUpdate...'
+    $zip = Join-Path ([IO.Path]::GetTempPath()) ('gu_mingit_' + [Guid]::NewGuid().ToString('N') + '.zip')
+    $prevPref = $ProgressPreference
+    try {
+        $ProgressPreference = 'SilentlyContinue'
+        Invoke-WithRetry -Name 'Download Git for Windows' -Attempts (Get-EnvInt -Name 'GAMEUPDATE_DL_ATTEMPTS' -Default 2) -Action {
+            Invoke-WebRequest -Uri $MinGitUrl -OutFile $zip -Headers @{ 'User-Agent' = 'DazedMTL-Patcher-1.0' } -UseBasicParsing
+        } | Out-Null
+        Expand-VerifiedMinGit -ZipPath $zip -Sha256 $MinGitSha256 -Destination $folder
+    }
+    finally {
+        $ProgressPreference = $prevPref
+        if (Test-Path -LiteralPath $zip) {
+            Remove-FileOrDirectoryViaCmd -LiteralPath $zip
+        }
+    }
+    return $git
+}
+
+function Invoke-PatchGit {
+    # No prompt for a login a public patch never needs: a missing repository
+    # fails instead of waiting on a credential helper.
+    param(
+        [Parameter(Mandatory = $true)][string]$Git,
+        [Parameter(Mandatory = $true)][string[]]$Arguments
+    )
+    $env:GIT_TERMINAL_PROMPT = '0'
+    $env:GCM_INTERACTIVE = 'never'
+    # Windows PowerShell turns Git's messages on a redirected stderr into
+    # errors; the exit code alone says whether it worked.
+    $ErrorActionPreference = 'Continue'
+    $output = & $Git -c credential.helper= @Arguments
+    if ($LASTEXITCODE -ne 0) {
+        throw ('PATCH_ERR:GIT:git {0} failed with exit code {1}.' -f $Arguments[0], $LASTEXITCODE)
+    }
+    return $output
+}
+
+function Get-GitLatestSha {
+    param(
+        [Parameter(Mandatory = $true)][string]$Git,
+        [Parameter(Mandatory = $true)][hashtable]$Resolved
+    )
+    $url = Get-PatchGitUrl -Resolved $Resolved
+    $line = @(Invoke-PatchGit -Git $Git -Arguments @('ls-remote', $url, ('refs/heads/' + $Resolved.branch)))[0]
+    $sha = if ($line) { ([string]$line).Split("`t")[0].Trim() } else { '' }
+    if ($sha -notmatch '^[0-9a-f]{40,64}$') {
+        throw ("PATCH_ERR:GIT:Could not read branch '{0}' from {1}." -f $Resolved.branch, $url)
+    }
+    return $sha
+}
+
+function Save-GitPatchZip {
+    <#
+    Fetches only the branch's newest commit into a temporary repository and
+    packs its files the way the forges' archives do: git archive, so
+    export-ignore rules apply, under one root folder, with no line-ending
+    conversion. Returns the commit it packed.
+    #>
+    param(
+        [Parameter(Mandatory = $true)][string]$Git,
+        [Parameter(Mandatory = $true)][hashtable]$Resolved,
+        [Parameter(Mandatory = $true)][string]$OutFile
+    )
+    $repoDir = Join-Path ([IO.Path]::GetTempPath()) ('gu_git_' + [Guid]::NewGuid().ToString('N'))
+    try {
+        Invoke-PatchGit -Git $Git -Arguments @('init', '-q', $repoDir) | Out-Null
+        Invoke-PatchGit -Git $Git -Arguments @(
+            '-C', $repoDir, 'fetch', '-q', '--depth', '1', '--no-tags',
+            (Get-PatchGitUrl -Resolved $Resolved), ('refs/heads/' + $Resolved.branch)
+        ) | Out-Null
+        $sha = ([string](Invoke-PatchGit -Git $Git -Arguments @('-C', $repoDir, 'rev-parse', 'FETCH_HEAD'))).Trim()
+        Invoke-PatchGit -Git $Git -Arguments @(
+            '-C', $repoDir, '-c', 'core.autocrlf=false', '-c', 'core.eol=lf',
+            'archive', '--format=zip', '--prefix=patch/', '-o', $OutFile, 'FETCH_HEAD'
+        ) | Out-Null
+        return $sha
+    }
+    finally {
+        if (Test-Path -LiteralPath $repoDir) {
+            Remove-FileOrDirectoryViaCmd -LiteralPath $repoDir
         }
     }
 }
@@ -786,7 +932,8 @@ function Invoke-PatchDownloadExtract {
     param(
         [Parameter(Mandatory = $true)][string]$Root,
         [Parameter(Mandatory = $true)][string]$StateFilePath,
-        [Parameter(Mandatory = $true)][hashtable]$Resolved
+        [Parameter(Mandatory = $true)][hashtable]$Resolved,
+        [Parameter(Mandatory = $true)][string]$BundleRoot
     )
 
     if ($PSVersionTable.PSEdition -ne 'Core') {
@@ -801,11 +948,23 @@ function Invoke-PatchDownloadExtract {
     $headers = New-PatchApiHeaders -Resolved $Resolved
     $dlAttempts = Get-EnvInt -Name 'GAMEUPDATE_DL_ATTEMPTS' -Default 2
 
-    $latestSha = Invoke-WithRetry -Name 'Resolve latest patch SHA' -Attempts $dlAttempts -Action {
-        Get-PatchLatestSha -Resolved $Resolved -Headers $headers
+    # The forge's API first; Git when the API fails, such as with a 403 or a
+    # challenge page in place of its answer.
+    $git = $null
+    try {
+        $latestSha = Invoke-WithRetry -Name 'Resolve latest patch SHA' -Attempts $dlAttempts -Action {
+            $sha = ([string](Get-PatchLatestSha -Resolved $Resolved -Headers $headers)).Trim()
+            if ($sha -notmatch '^[0-9a-f]{40,64}$') { throw 'PATCH_ERR:API:Latest commit SHA response was empty.' }
+            $sha
+        }
     }
-    if (-not $latestSha) { throw 'PATCH_ERR:API:Latest commit SHA response was empty.' }
-    $latestSha = ([string]$latestSha).Trim()
+    catch {
+        Write-Host ('Resolve latest patch SHA failed ({0}); asking Git instead.' -f $_.Exception.Message)
+        $git = Get-PatchGit -BundleRoot $BundleRoot
+        $latestSha = Invoke-WithRetry -Name 'Ask Git for the latest patch commit' -Attempts $dlAttempts -Action {
+            Get-GitLatestSha -Git $git -Resolved $Resolved
+        }
+    }
 
     $previousSha = ''
     if (Test-Path -LiteralPath $StateFilePath) {
@@ -823,38 +982,58 @@ function Invoke-PatchDownloadExtract {
     $stage = Join-Path ([IO.Path]::GetTempPath()) ('gu_' + [Guid]::NewGuid().ToString('N'))
     $archiveUrl = Get-PatchArchiveUrl -Resolved $Resolved -Sha $latestSha
 
-    $dlSw = [System.Diagnostics.Stopwatch]::StartNew()
-    Invoke-WithRetry -Name 'Download archive with Invoke-WebRequest' -Attempts $dlAttempts -Action {
-        Invoke-PatchArchiveDownload -Url $archiveUrl -OutFile $zipPath -Headers $headers
-    } | Out-Null
-    $dlSw.Stop()
-    $bytes = (Get-Item -LiteralPath $zipPath).Length
-    if ($bytes -eq 0) {
-        $hint = Get-InvalidZipDownloadHint -LiteralPath $zipPath
-        Remove-DownloadedRepoZip -LiteralPath $zipPath
-        throw "PATCH_ERR:ZIP:Download is empty (0 bytes). $hint"
-    }
+    if (-not $git) {
+        try {
+            $dlSw = [System.Diagnostics.Stopwatch]::StartNew()
+            Invoke-WithRetry -Name 'Download archive with Invoke-WebRequest' -Attempts $dlAttempts -Action {
+                Invoke-PatchArchiveDownload -Url $archiveUrl -OutFile $zipPath -Headers $headers
+            } | Out-Null
+            $dlSw.Stop()
+            $bytes = (Get-Item -LiteralPath $zipPath).Length
+            if ($bytes -eq 0) {
+                $hint = Get-InvalidZipDownloadHint -LiteralPath $zipPath
+                Remove-DownloadedRepoZip -LiteralPath $zipPath
+                throw "PATCH_ERR:ZIP:Download is empty (0 bytes). $hint"
+            }
 
-    $secs = [Math]::Max($dlSw.Elapsed.TotalSeconds, 0.001)
-    $mbps = ($bytes / 1MB) / $secs
-    Write-Host ("Download complete: {0:N1} MB in {1:N1}s ({2:N1} MB/s)" -f ($bytes / 1MB), $secs, $mbps)
+            $secs = [Math]::Max($dlSw.Elapsed.TotalSeconds, 0.001)
+            $mbps = ($bytes / 1MB) / $secs
+            Write-Host ("Download complete: {0:N1} MB in {1:N1}s ({2:N1} MB/s)" -f ($bytes / 1MB), $secs, $mbps)
 
-    $zipHeaderBad = $false
-    $zipHeaderHint = ''
-    $fs = [System.IO.File]::OpenRead($zipPath)
-    try {
-        $hdr = New-Object byte[] 4
-        if ($fs.Read($hdr, 0, 4) -lt 4 -or $hdr[0] -ne 0x50 -or $hdr[1] -ne 0x4B) {
-            $zipHeaderBad = $true
-            $zipHeaderHint = Get-InvalidZipDownloadHint -LiteralPath $zipPath
+            $zipHeaderBad = $false
+            $zipHeaderHint = ''
+            $fs = [System.IO.File]::OpenRead($zipPath)
+            try {
+                $hdr = New-Object byte[] 4
+                if ($fs.Read($hdr, 0, 4) -lt 4 -or $hdr[0] -ne 0x50 -or $hdr[1] -ne 0x4B) {
+                    $zipHeaderBad = $true
+                    $zipHeaderHint = Get-InvalidZipDownloadHint -LiteralPath $zipPath
+                }
+            }
+            finally {
+                $fs.Dispose()
+            }
+            if ($zipHeaderBad) {
+                Remove-DownloadedRepoZip -LiteralPath $zipPath
+                throw "PATCH_ERR:ZIP:Download is not a valid ZIP (missing PK header). $zipHeaderHint"
+            }
+        }
+        catch {
+            Write-Host ('Downloading the archive failed ({0}); trying Git instead.' -f $_.Exception.Message)
+            if (Test-Path -LiteralPath $zipPath) {
+                Remove-DownloadedRepoZip -LiteralPath $zipPath
+            }
+            $git = Get-PatchGit -BundleRoot $BundleRoot
         }
     }
-    finally {
-        $fs.Dispose()
-    }
-    if ($zipHeaderBad) {
-        Remove-DownloadedRepoZip -LiteralPath $zipPath
-        throw "PATCH_ERR:ZIP:Download is not a valid ZIP (missing PK header). $zipHeaderHint"
+    if ($git) {
+        Write-Host 'Downloading patch with Git...'
+        $latestSha = Invoke-WithRetry -Name 'Fetch the patch with Git' -Attempts $dlAttempts -Action {
+            if (Test-Path -LiteralPath $zipPath) {
+                Remove-DownloadedRepoZip -LiteralPath $zipPath
+            }
+            Save-GitPatchZip -Git $git -Resolved $Resolved -OutFile $zipPath
+        }
     }
 
     if (Test-Path -LiteralPath $stage) {
@@ -1041,7 +1220,7 @@ try {
     $patchDlExit = 1
     try {
         $patchDlExit = Invoke-PatchDownloadExtract -Root $GameRoot -StateFilePath $stateFile `
-            -Resolved $resolved
+            -Resolved $resolved -BundleRoot $PatchBundleRoot
     }
     catch {
         Write-Host ''

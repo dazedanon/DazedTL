@@ -223,6 +223,13 @@
             hostname: hostname,
             port: port,
             path: apiPath,
+            // Git's smart HTTP, on the web host, answers when the API does not.
+            gitHostname: hostParts[0],
+            gitPath: "/" + webOwner + "/" + encodeURIComponent(config.repo) +
+                ".git/info/refs?service=git-upload-pack",
+            // pkt-line lengths count bytes, so the advertisement is read as
+            // latin1 and the branch's name as its UTF-8 bytes.
+            branchRef: unescape(encodeURIComponent("refs/heads/" + config.branch)),
             repoUrl: repoUrl
         };
     }
@@ -244,7 +251,27 @@
         return String(payload.commit && payload.commit.id || "").trim();
     }
 
-    function requestLatestSha(https, remote, callback) {
+    // The commit *ref* points at in a Git smart HTTP ref advertisement, a
+    // series of pkt-lines: four hex digits of length, then "<sha> <ref>".
+    function shaFromAdvertisement(body, ref) {
+        var offset = 0;
+        while (offset + 4 <= body.length) {
+            var size = parseInt(body.slice(offset, offset + 4), 16);
+            if (!(size >= 0) || (size > 0 && size < 4)) return "";
+            if (size === 0) {
+                offset += 4;
+                continue;
+            }
+            var line = body.slice(offset + 4, offset + size).split("\0")[0].trim();
+            offset += size;
+            var match = /^([0-9a-f]{40,64}) (\S+)$/.exec(line);
+            if (match && match[2] === ref) return match[1];
+        }
+        return "";
+    }
+
+    // GETs *path* and passes *parse* the body, or "" on any failure.
+    function requestText(https, hostname, port, path, headers, encoding, parse, callback) {
         var finished = false;
         function finish(value) {
             if (finished) return;
@@ -255,10 +282,10 @@
         try {
             request = https.get({
                 protocol: "https:",
-                hostname: remote.hostname,
-                port: remote.port,
-                path: remote.path,
-                headers: requestHeaders(remote.forge)
+                hostname: hostname,
+                port: port,
+                path: path,
+                headers: headers
             }, function(response) {
                 try {
                     if (response.statusCode !== 200) {
@@ -267,7 +294,7 @@
                         return;
                     }
                     var body = "";
-                    response.setEncoding("utf8");
+                    response.setEncoding(encoding);
                     response.on("data", function(chunk) {
                         body += chunk;
                         if (body.length > MAX_RESPONSE_BYTES) {
@@ -277,8 +304,8 @@
                     });
                     response.on("end", function() {
                         try {
-                            finish(latestShaFromResponse(remote.forge, JSON.parse(body)));
-                        } catch (_jsonError) {
+                            finish(parse(body));
+                        } catch (_parseError) {
                             finish("");
                         }
                     });
@@ -295,6 +322,26 @@
         } catch (_requestError) {
             finish("");
         }
+    }
+
+    // The forge's API first; when it fails, such as with GitGud's challenge
+    // page, the branch's commit from Git's own ref advertisement.
+    function requestLatestSha(https, remote, callback) {
+        requestText(https, remote.hostname, remote.port, remote.path, requestHeaders(remote.forge), "utf8",
+            function(body) {
+                return latestShaFromResponse(remote.forge, JSON.parse(body));
+            },
+            function(latest) {
+                if (/^[0-9a-f]{40,64}$/i.test(latest)) {
+                    callback(latest);
+                    return;
+                }
+                requestText(https, remote.gitHostname, remote.port, remote.gitPath, {
+                    "User-Agent": "DazedTL-TranslationUpdateCheck/1.0"
+                }, "latin1", function(body) {
+                    return shaFromAdvertisement(body, remote.branchRef);
+                }, callback);
+            });
     }
 
     function sameCommit(installed, latest) {

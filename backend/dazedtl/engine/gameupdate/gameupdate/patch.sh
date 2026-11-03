@@ -166,6 +166,42 @@ archive_url_for_sha() {
     esac
 }
 
+# Git's own smart HTTP serves the same branch when the forge's API or archive
+# download is refused, as GitGud's Cloudflare rule did on 2026-11-02.
+GIT_URL="${WEB_BASE}/${username}/${repo}.git"
+
+# No prompt for a login a public patch never needs: a missing repository
+# fails instead of waiting on a credential helper.
+git_quiet() {
+    GIT_TERMINAL_PROMPT=0 GCM_INTERACTIVE=never git -c credential.helper= "$@"
+}
+
+require_git() {
+    if command -v git > /dev/null 2>&1; then
+        return 0
+    fi
+    local install="your package manager's git package"
+    if command -v apt-get > /dev/null 2>&1; then
+        install="sudo apt install git"
+    elif command -v dnf > /dev/null 2>&1; then
+        install="sudo dnf install git"
+    elif command -v pacman > /dev/null 2>&1; then
+        install="sudo pacman -S git"
+    elif command -v zypper > /dev/null 2>&1; then
+        install="sudo zypper install git"
+    elif command -v pkg > /dev/null 2>&1; then
+        install="pkg install git"
+    fi
+    echo "ERROR: GameUpdate needs Git to download this patch, and Git is not installed."
+    echo "       Install it with: $install"
+    echo "       Then run GameUpdate again."
+    exit 1
+}
+
+git_latest_sha() {
+    git_quiet ls-remote "$GIT_URL" "refs/heads/${branch}" | awk 'NR == 1 { print $1 }'
+}
+
 echo "Pulling patch from ${WEB_BASE}/${username}/${repo} (${FORGE_KIND}, branch: ${branch})"
 
 RETRIES="${GAMEUPDATE_DL_ATTEMPTS:-2}"
@@ -182,35 +218,44 @@ retry_cmd() {
             return 0
         fi
         if [ "$attempt" -ge "$RETRIES" ]; then
-            echo "$name failed after $attempt attempt(s)."
+            echo "$name failed after $attempt attempt(s)." >&2
             return 1
         fi
-        echo "$name failed ($attempt/$RETRIES), retrying..."
+        echo "$name failed ($attempt/$RETRIES), retrying..." >&2
         attempt=$((attempt + 1))
         sleep 2
     done
 }
 
-# Get the latest hash
+# Get the latest hash: the forge's API first, Git when the API fails.
 echo "Getting latest commit SHA hash"
 latest_patch_sha=""
+download_method=archive
 attempt=1
 while true; do
     if latest_patch_sha="$(resolve_latest_sha)"; then
-        break
+        latest_patch_sha="$(printf '%s' "$latest_patch_sha" | tr -d '[:space:]')"
+        if [ -n "$latest_patch_sha" ] && [ "$latest_patch_sha" != "null" ]; then
+            break
+        fi
     fi
     if [ "$attempt" -ge "$RETRIES" ]; then
-        echo "Resolve latest patch SHA failed after $attempt attempt(s)."
-        exit 1
+        echo "Resolve latest patch SHA failed after $attempt attempt(s); asking Git instead."
+        download_method=git
+        break
     fi
     echo "Resolve latest patch SHA failed ($attempt/$RETRIES), retrying..."
     attempt=$((attempt + 1))
     sleep 2
 done
-latest_patch_sha="$(printf '%s' "$latest_patch_sha" | tr -d '[:space:]')"
-if [ -z "$latest_patch_sha" ] || [ "$latest_patch_sha" = "null" ]; then
-    echo "PATCH_ERR:API:Latest commit SHA response was empty."
-    exit 1
+if [ "$download_method" = "git" ]; then
+    require_git
+    latest_patch_sha="$(retry_cmd "Ask Git for the latest patch commit" git_latest_sha)" || true
+    latest_patch_sha="$(printf '%s' "$latest_patch_sha" | tr -d '[:space:]')"
+    if ! [[ "$latest_patch_sha" =~ ^[0-9a-f]{40,64}$ ]]; then
+        echo "PATCH_ERR:GIT:Could not read branch '${branch}' from ${GIT_URL}."
+        exit 1
+    fi
 fi
 
 # --------------------------------------------------------
@@ -369,7 +414,7 @@ if [ -f "$ROOT_DIR/data.dts" ]; then
     fi
 fi
 
-download_extract() {
+download_archive() {
     echo "Downloading latest patch..."
     archive_url="$(archive_url_for_sha "$latest_patch_sha")"
     if ! retry_cmd "Download archive with curl" \
@@ -378,6 +423,50 @@ download_extract() {
         -o "$ROOT_DIR/repo.zip"; then
         echo "Download failed!"
         rm -f "$ROOT_DIR/repo.zip"
+        return 1
+    fi
+    # A challenge or error page in place of the archive.
+    if [ "$(head -c 2 "$ROOT_DIR/repo.zip")" != "PK" ]; then
+        echo "The download is not a ZIP archive."
+        rm -f "$ROOT_DIR/repo.zip"
+        return 1
+    fi
+}
+
+# Fetches only the branch's newest commit and packs its files the way the
+# forges' archives do: git archive, so export-ignore rules apply, under one
+# root folder, with no line-ending conversion.
+download_with_git() {
+    echo "Downloading latest patch with Git..."
+    local repo_dir
+    repo_dir=$(mktemp -d)
+    if ! git_quiet init -q "$repo_dir" \
+        || ! retry_cmd "Fetch the patch with Git" \
+            git_quiet -C "$repo_dir" fetch -q --depth 1 --no-tags "$GIT_URL" "refs/heads/${branch}"; then
+        echo "Git download failed!"
+        rm -rf "$repo_dir"
+        return 1
+    fi
+    local fetched
+    fetched="$(git_quiet -C "$repo_dir" rev-parse FETCH_HEAD)"
+    if ! git_quiet -C "$repo_dir" -c core.autocrlf=false -c core.eol=lf \
+        archive --format=zip --prefix=patch/ -o "$ROOT_DIR/repo.zip" FETCH_HEAD; then
+        echo "Git could not pack the patch!"
+        rm -rf "$repo_dir"
+        rm -f "$ROOT_DIR/repo.zip"
+        return 1
+    fi
+    rm -rf "$repo_dir"
+    latest_patch_sha="$fetched"
+}
+
+download_extract() {
+    if [ "$download_method" = "archive" ] && ! download_archive; then
+        echo "Downloading the archive failed; trying Git instead."
+        require_git
+        download_method=git
+    fi
+    if [ "$download_method" = "git" ] && ! download_with_git; then
         return 1
     fi
 

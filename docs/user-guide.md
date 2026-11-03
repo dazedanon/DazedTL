@@ -266,7 +266,7 @@ Upload only what you may store: a private repository isn't permission to share s
 
 ## Publishing with GameUpdate
 
-GameUpdate lets players update to your latest translation from a public Git repository on GitGud, GitHub or a Forgejo server such as Codeberg.
+GameUpdate updates players to your latest translation from a public Git repository on GitGud, GitHub or a Forgejo server such as Codeberg.
 Set up adds it to the game: `GameUpdate.bat`, `GameUpdate_linux.sh`, the `gameupdate` folder and a `README.md` for players.
 
 1. In **Settings > GameUpdate**, choose the site and enter the owner of your repositories, such as `dazed-translations`.
@@ -275,6 +275,7 @@ Set up adds it to the game: `GameUpdate.bat`, `GameUpdate_linux.sh`, the `gameup
 3. Push the translation to that repository before you build a ZIP; see [Make a remote repository](#make-a-remote-repository), and make it public when you release.
    Otherwise GameUpdate stays off in that ZIP, since it can't tell which version players start from.
 
+If the site refuses its download, GameUpdate uses Git, which Linux players must install.
 GameUpdate can't update an encrypted VX Ace game, so share a new patch for each update instead.
 
 DazedTL saves the repository in the game's `gameupdate/patch-config.txt`:

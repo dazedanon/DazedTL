@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import shutil
 
 from util.ace import rgssad
@@ -19,6 +19,9 @@ GAMEUPDATE_PRESERVE_EXISTING = frozenset({"README.md"})
 GAMEUPDATE_LAUNCHER = "GameUpdate.bat"
 GAMEUPDATE_CONFIG = "gameupdate/patch-config.txt"
 GAMEUPDATE_STATE = "gameupdate/previous_patch_sha.txt"
+# patch.ps1 unpacks Git for Windows here, and beside it while unpacking, in a
+# game on a computer without Git; it is that computer's, never a patch's.
+GAMEUPDATE_GIT_FOLDERS = frozenset({"mingit", "mingit.partial"})
 
 
 def format_plugins_js(path: str | Path) -> int:
@@ -70,6 +73,12 @@ def copy_files(src: str | Path, dst: str | Path, *, skip_names=frozenset(),
         except Exception as exc:
             errors.append(f"{relative}: {exc}")
     return copied, errors
+
+
+def gameupdate_git(relative: str) -> bool:
+    """Whether the game-relative *relative* is in GameUpdate's own Git."""
+    parts = [part.casefold() for part in PurePosixPath(relative).parts[:2]]
+    return len(parts) == 2 and parts[0] == "gameupdate" and parts[1] in GAMEUPDATE_GIT_FOLDERS
 
 
 def install_gameupdate(game_root: str | Path, *, wolf: bool = False, source: str | Path | None = None,

@@ -80,6 +80,7 @@ class ReleaseTests(unittest.TestCase):
                 ".dazedtl/backups/current.json",
                 "Data/backups/Actors.rvdata2",
                 "gameupdate/previous_patch_sha.txt",
+                "gameupdate/mingit/cmd/git.exe",
             }
             for name in included | private | {"gameupdate/patch-config.txt"}:
                 path = root / name
