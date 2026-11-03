@@ -1,13 +1,17 @@
-"""OpenCode Go's model catalog, as its connection check keeps it, and the Live
-rates a Go model is estimated and frozen at.
+"""The model catalog of OpenCode's routes (settings/providers OPENCODE), as
+their connection check keeps it, and the Live rates a model on them is
+estimated and frozen at.
 
-Go's model list (GET /inference/go/v1/models, settings/providers check)
-prices each model in USD per million tokens, the listed price, with
-multipliers on top: DeepSeek's models cost twice their listed price in
-DeepSeek's peak hours, as on DeepSeek's own API, and a model may cost more
-from a date on. Go bills a subscription's usage at these prices against its
-allowance; https://opencode.ai/v2/docs/console/go/. The list says which
-thinking efforts each model takes too, which settings/effort reads from it.
+Each route's model list (GET /inference/go/v1/models for Go and
+/inference/v1/models for pay-as-you-go, settings/providers check) prices
+each model in USD per million tokens, the listed price, with any
+multipliers on top: on Go, DeepSeek's models cost twice their listed price
+in DeepSeek's peak hours, as on DeepSeek's own API, and a model may cost
+more from a date on. Go bills a subscription's usage at these prices against
+its allowance (https://opencode.ai/v2/docs/console/go/), and pay-as-you-go
+bills the Console balance at its own, which carry no multipliers. The list
+says which thinking efforts each model takes too, which settings/effort
+reads from it.
 """
 
 import math
@@ -100,6 +104,21 @@ def _object(value, key):
     return item if isinstance(item, dict) else {}
 
 
+def paid(rows):
+    """*rows* without the free models, whose input and output both list at
+    no cost, such as "deepseek-v4.1-flash-free": OpenCode serves them only
+    to its own app and answers any other client with HTTP 429
+    (FreeUsageLimitError, retry after hours), so a Guided run would retry
+    each file in vain. They are left out of the check's models and catalog;
+    a free model's ID typed in Preferences is still sent."""
+
+    def price(row, kind):
+        cost = _object(_object(_object(row, "cost"), "text"), kind)
+        return amount(cost.get("price"))
+
+    return [row for row in rows if not price(row, "input") == price(row, "output") == 0]
+
+
 def catalog(rows):
     """{model ID: what DazedTL keeps of its row}, bounded: its listed input,
     output and cache read prices, its context and output limits, whether it
@@ -137,7 +156,7 @@ def catalog(rows):
 
 def validate_catalog(value):
     if not isinstance(value, dict) or len(value) > MAX_MODELS:
-        raise ValueError("Invalid OpenCode Go catalog.")
+        raise ValueError("Invalid OpenCode catalog.")
     for model, row in value.items():
         text(model, "model ID", required=True)
         if (
@@ -167,7 +186,7 @@ def validate_catalog(value):
                 for item in row["dated"]
             )
         ):
-            raise ValueError("Invalid OpenCode Go catalog entry.")
+            raise ValueError("Invalid OpenCode catalog entry.")
 
 
 def factor(row, now=None, peak=None):
@@ -185,10 +204,11 @@ def factor(row, now=None, peak=None):
 
 
 def describe(connection, model, now=None):
-    """*model*'s Live defaults on an OpenCode Go connection, from the catalog
-    its last verified check kept (settings/catalogs): its listed rates times
-    factor. A model billed as on DeepSeek's own API (providers
-    deepseek_route) takes DeepSeek's peak factor, not its row's, since its
+    """*model*'s Live defaults on a connection to one of OpenCode's routes,
+    from the catalog its last verified check kept (settings/catalogs): its
+    listed rates times factor. A model billed as on DeepSeek's own API, a
+    DeepSeek model on Go (providers deepseek_route), takes DeepSeek's peak
+    factor, not its row's, since its
     usage records at DeepSeek's off-peak multiple of the frozen rate outside
     DeepSeek's peak hours (engine provider_costs time_price_factor)."""
     from util.provider_costs import DEEPSEEK_OFF_PEAK

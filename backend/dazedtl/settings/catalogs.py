@@ -1,7 +1,7 @@
 """The model catalog a connection check keeps for the presets whose own model
-list prices each model, OpenRouter's (settings/openrouter) and OpenCode Go's
-(settings/opencode): which saved catalog counts, how a model's Live defaults
-read from it, and the bounds both catalogs' values keep."""
+list prices each model, OpenRouter's (settings/openrouter) and OpenCode's
+routes' (settings/opencode): which saved catalog counts, how a model's Live
+defaults read from it, and the bounds both catalogs' values keep."""
 
 import math
 from datetime import UTC, datetime

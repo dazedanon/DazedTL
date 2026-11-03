@@ -625,15 +625,20 @@ class SettingsTests(unittest.TestCase):
                 self.assertIsNone(result["models"])
             self.assertEqual(len(requests), 4)
 
-    def test_an_opencode_go_check_prices_and_offers_efforts_from_go_s_own_list(self):
-        # An OpenCode Go key could not be checked or priced: the preset's
-        # address lists no models under it, Go answers a request without a
-        # session with HTTP 400, and other hosts' prices for its models are
-        # not Go's. The check lists Go's models beside its API with a session
-        # of its own, verifies the key, and keeps the catalog Settings prices
-        # each model from: a DeepSeek model at its peak rate, as DeepSeek's
-        # own API is estimated, another model at its listed rate times any
-        # date multiplier in effect.
+    def test_an_opencode_check_prices_and_offers_efforts_from_its_route_s_own_list(
+        self,
+    ):
+        # An OpenCode Go or pay-as-you-go key could not be checked or priced:
+        # neither preset's address lists models under it, Go answers a
+        # request without a session with HTTP 400, and other hosts' prices for
+        # their models are not OpenCode's. The check lists each route's
+        # models beside its API with a session of its own, verifies the key,
+        # and keeps the catalog Settings prices each model from: on Go, a
+        # DeepSeek model at its peak rate, as DeepSeek's own API is estimated,
+        # another model at its listed rate times any date multiplier in
+        # effect; on pay-as-you-go, every model at its listed rate. Free
+        # models, which answer only OpenCode's own app, are left out, and a
+        # DeepSeek model's thinking turns off as on DeepSeek's own API.
         from dazedtl.settings import effort, opencode
 
         def row(model, price, output, effort=None, multipliers=()):
@@ -668,6 +673,7 @@ class SettingsTests(unittest.TestCase):
                 [{"when": {"date": {"gte": "2026-12-01"}}, "factor": 2}],
             ),
             row("kimi-k2.7-code", 0.95, 4),
+            row("deepseek-v4.1-flash-free", 0, 0, ["low", "high", "max"]),
         ]
         requests = []
 
@@ -722,6 +728,13 @@ class SettingsTests(unittest.TestCase):
                             "provider": "custom",
                             "endpoint": providers.OWN_APIS["opencode-go"],
                         },
+                        {
+                            **connection,
+                            "id": "paid",
+                            "runtime_name": "paid-key",
+                            "name": "OpenCode",
+                            "provider": "opencode",
+                        },
                     ],
                 },
             )
@@ -733,11 +746,15 @@ class SettingsTests(unittest.TestCase):
                     transport=httpx.MockTransport(respond), **kwargs
                 ),
             ):
-                for identity in ("go", "go", "custom-go"):
+                for identity in ("go", "go", "custom-go", "paid"):
                     settings.check_connection(settings.describe()["revision"], identity)
             first, second = (request.headers for request in requests[:2])
             self.assertEqual(
-                str(requests[0].url), "https://opencode.ai/inference/go/v1/models"
+                [str(request.url) for request in requests[2:]],
+                [
+                    "https://opencode.ai/inference/go/v1/models",
+                    "https://opencode.ai/inference/v1/models",
+                ],
             )
             self.assertEqual(first["Authorization"], "Bearer fixture-go-key")
             self.assertEqual(first["User-Agent"], providers.user_agent())
@@ -749,7 +766,7 @@ class SettingsTests(unittest.TestCase):
             saved = Settings(temporary, adapter)
             self.assertEqual(
                 [item["check"]["status"] for item in saved.describe()["connections"]],
-                ["verified", "verified"],
+                ["verified", "verified", "verified"],
             )
             flash = saved.model_defaults("go", "deepseek-v4.1-flash")
             self.assertEqual(
@@ -759,7 +776,7 @@ class SettingsTests(unittest.TestCase):
             self.assertEqual(flash["maxOutputTokens"], 384000)
             self.assertEqual(
                 [option["label"] for option in flash["thinkingEffort"]["options"]],
-                ["Provider default", "Low", "High", "Maximum"],
+                ["Provider default", "Off", "Low", "High", "Maximum"],
             )
             # A model that reasons with no levels listed takes none.
             self.assertEqual(
@@ -768,18 +785,33 @@ class SettingsTests(unittest.TestCase):
                 ],
                 [{"value": None, "label": "Provider default"}],
             )
-            stored = saved._read()["connections"][0]
-            # Runs send a listed level as Go's OpenAI-compatible API takes it.
-            self.assertEqual(
-                effort.apply(
-                    {"temperature": 0},
-                    "opencode-go",
-                    "deepseek-v4.1-flash",
-                    "high",
-                    stored["efforts"]["deepseek-v4.1-flash"],
+            stored, _custom, paid = saved._read()["connections"]
+            for kept in (stored, paid):
+                self.assertNotIn("deepseek-v4.1-flash-free", kept["models"])
+                self.assertNotIn("deepseek-v4.1-flash-free", kept["catalog"])
+            # Runs send a listed level as OpenCode's OpenAI-compatible APIs
+            # take it, and "Off" to a DeepSeek model as its `thinking` field.
+            for kept, level, sent in (
+                (stored, "high", {"reasoning_effort": "high"}),
+                (
+                    paid,
+                    "none",
+                    {
+                        "temperature": 0,
+                        "extra_body": {"thinking": {"type": "disabled"}},
+                    },
                 ),
-                {"reasoning_effort": "high"},
-            )
+            ):
+                self.assertEqual(
+                    effort.apply(
+                        {"temperature": 0},
+                        kept["provider"],
+                        "deepseek-v4.1-flash",
+                        level,
+                        kept["efforts"]["deepseek-v4.1-flash"],
+                    ),
+                    sent,
+                )
             # Its multiplier holds from December 1st on.
             for day, rate in (
                 (datetime(2026, 11, 30, tzinfo=UTC), 2),
@@ -789,20 +821,22 @@ class SettingsTests(unittest.TestCase):
                     opencode.describe(stored, "gemini-4-argon", day)["inputRate"],
                     rate,
                 )
-            # A DeepSeek model freezes at DeepSeek's peak rate, which its
-            # off-peak usage records half of, even if Go's row lists no peak.
-            listed = {
-                **stored,
-                "catalog": {
-                    "deepseek-v4.1-flash": {
-                        **stored["catalog"]["deepseek-v4.1-flash"],
-                        "peak": None,
-                    }
-                },
+            # A DeepSeek model on Go freezes at DeepSeek's peak rate, which
+            # its off-peak usage records half of, even if Go's row lists no
+            # peak; pay-as-you-go prices it flat.
+            flat = {
+                "deepseek-v4.1-flash": {
+                    **stored["catalog"]["deepseek-v4.1-flash"],
+                    "peak": None,
+                }
             }
-            self.assertEqual(
-                opencode.describe(listed, "deepseek-v4.1-flash")["inputRate"], 0.3
-            )
+            for connection, rate in ((stored, 0.3), (paid, 0.15)):
+                self.assertEqual(
+                    opencode.describe(
+                        {**connection, "catalog": flat}, "deepseek-v4.1-flash"
+                    )["inputRate"],
+                    rate,
+                )
             for invalid in (
                 {"peak": 1},
                 {"input": 2_000_000},

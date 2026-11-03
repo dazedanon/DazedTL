@@ -148,7 +148,7 @@ class Settings:
                     # Read as the check that kept it chose (providers.listing).
                     (
                         opencode
-                        if providers.listing(connection) == "opencode-go"
+                        if providers.listing(connection) in providers.OPENCODE
                         else openrouter
                     ).validate_catalog(connection["catalog"])
                 if "efforts" in connection:
@@ -625,7 +625,7 @@ class Settings:
                     effort.kept(active),
                 ),
             }
-        if active and active["provider"] == "opencode-go":
+        if active and active["provider"] in providers.OPENCODE:
             return {
                 **opencode.describe(active, model),
                 "thinkingEffort": self._effort(active, model),
@@ -1214,7 +1214,9 @@ class Settings:
             "models": old["models"] if old and unchanged else [],
             **(
                 {"catalog": old.get("catalog", {})}
-                if unchanged and old and provider in {"openrouter", "opencode-go"}
+                if unchanged
+                and old
+                and (provider == "openrouter" or provider in providers.OPENCODE)
                 else {}
             ),
             **(

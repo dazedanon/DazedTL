@@ -52,11 +52,12 @@
 // under /api.anthropic.com and /openrouter.ai/api, with the effort data
 // each provider's own list carries (`claudeModels`, `routedModels`), and
 // GLM 6 runs OpenRouter's Batch at half its Live price on one endpoint.
-// Under /opencode.ai/ it answers as OpenCode Go's gateway does:
-// /opencode.ai/inference/go/v1/models lists Go's model rows (`goModels`),
-// with or without a session, any other model list is not found, and any
-// other request without an `x-opencode-session` header gets OpenCode's
-// HTTP 400.
+// Under /opencode.ai/ it answers as OpenCode's gateway does:
+// /opencode.ai/inference/go/v1/models lists Go's model rows (`goModels`)
+// and /opencode.ai/inference/v1/models pay-as-you-go's (`paidModels`), with
+// or without a session, any other model list is not found, and any other
+// Go request without an `x-opencode-session` header gets OpenCode's HTTP
+// 400; pay-as-you-go takes requests without one.
 //
 //   node scripts/testkit/provider.mjs --folder <dir> [--port <n>]
 //
@@ -153,7 +154,13 @@ const batchEndpoints = [
  * hours, Gemini 4 Argon twice from a date on, and GLM 5.3 Flash lists its
  * efforts without a multiplier.
  */
-const goModel = (id, [input, cache, output], effort, more = {}) => ({
+const goModel = (
+  id,
+  [input, cache, output],
+  effort,
+  more = {},
+  base = "https://opencode.ai/inference/go/openai/v1",
+) => ({
   id,
   object: "model",
   owned_by: "opencode",
@@ -172,9 +179,7 @@ const goModel = (id, [input, cache, output], effort, more = {}) => ({
     ...(more.multipliers && { multipliers: more.multipliers }),
   },
   api: {
-    "chat-completions": {
-      base_url: "https://opencode.ai/inference/go/openai/v1",
-    },
+    "chat-completions": { base_url: base },
   },
 });
 const hours = (gte, lt) => ({
@@ -198,7 +203,18 @@ export const goModels = [
     multipliers: [{ when: { date: { gte: "2026-12-01" } }, factor: 2 }],
   }),
 ];
-/** OpenCode's answer to a request without a session. */
+/**
+ * OpenCode pay-as-you-go's GET /inference/v1/models rows: the same models at
+ * flat prices, and a free one, which serves only OpenCode's own app.
+ */
+export const paidModels = [
+  ["deepseek-v4.1-flash", [0.3, 0.006, 1.2], ["low", "high", "max"]],
+  ["glm-5.3-flash", [0.15, 0.03, 0.5], ["low", "high", "max"]],
+  ["deepseek-v4.1-flash-free", [0, 0, 0], ["low", "high", "max"]],
+].map(([id, prices, effort]) =>
+  goModel(id, prices, effort, {}, "https://opencode.ai/inference/openai/v1"),
+);
+/** OpenCode Go's answer to a request without a session. */
 const missingSession = {
   type: "error",
   error: {
@@ -639,17 +655,24 @@ export async function startProvider({ folder, port = 0 }) {
           );
           return reply(200, { id: crypto.randomUUID(), event: "message" });
         }
-        // OpenCode lists Go's models only beside its OpenAI-compatible API,
-        // and without a session, which only its other requests need.
+        // OpenCode lists each route's models only beside its
+        // OpenAI-compatible API, and without a session, which only Go's
+        // other requests need.
         if (url.includes("/opencode.ai/")) {
           if (
             request.method === "GET" &&
             url.endsWith("/opencode.ai/inference/go/v1/models")
           )
             return reply(200, { object: "list", data: goModels });
+          if (
+            request.method === "GET" &&
+            url.endsWith("/opencode.ai/inference/v1/models")
+          )
+            return reply(200, { object: "list", data: paidModels });
           if (route === "/models")
             return reply(404, { error: { message: "Not in the stand-in." } });
-          if (!session) return reply(400, missingSession);
+          if (!session && url.includes("/opencode.ai/inference/go/"))
+            return reply(400, missingSession);
         }
         if (
           request.method === "GET" &&

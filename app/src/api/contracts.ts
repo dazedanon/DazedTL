@@ -2174,6 +2174,7 @@ export type Provider =
   | "kimi"
   | "deepseek"
   | "opencode-go"
+  | "opencode"
   | "custom";
 
 export type ProviderProtocol = "openai" | "anthropic" | "gemini" | "mistral";

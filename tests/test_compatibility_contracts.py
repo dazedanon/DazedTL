@@ -1609,7 +1609,8 @@ class CompatibilityContracts(unittest.TestCase):
             ("https://api.deepseek.com", "deepseek-v4-flash", "deepseek"),
             (go, "deepseek-v4.1-flash", "deepseek"),
             (go, "glm-5.3-flash", None),
-            ("https://opencode.ai/inference/v1", "deepseek-v4.1-flash", None),
+            # Pay-as-you-go prices DeepSeek's models flat.
+            ("https://opencode.ai/inference/openai/v1", "deepseek-v4.1-flash", None),
             ("https://openrouter.ai/api/v1", "deepseek/deepseek-v4-flash", None),
         ):
             self.assertEqual(time_priced_route(endpoint, model), route, endpoint)
@@ -2094,6 +2095,16 @@ class CompatibilityContracts(unittest.TestCase):
                 None,
                 reads + 0.9 * 3 * 0.10,
             ),
+            # Pay-as-you-go reads DeepSeek's cache at its own price, which
+            # isn't DeepSeek's.
+            (
+                "deepseek-v4.1-flash",
+                "opencode",
+                "https://opencode.ai/inference/openai/v1",
+                "openai",
+                None,
+                reads + 0.9 * 3 * 0.10,
+            ),
         ):
             with self.subTest(model):
                 self.assertAlmostEqual(
@@ -2360,6 +2371,32 @@ class CompatibilityContracts(unittest.TestCase):
             with self.subTest(identity=identity, address=address):
                 self.assertTrue(own_api(identity, address))
                 self.assertFalse(own_api(identity, "proxy.example/" + address))
+        # OpenCode serves Go under its pay-as-you-go API's path, and neither
+        # route, nor either stand-in, is ever taken for the other.
+        from dazedtl.settings.providers import OWN_APIS, opencode_route
+
+        go, paid = OWN_APIS["opencode-go"], OWN_APIS["opencode"]
+        local = "http://127.0.0.1:9/opencode.ai/inference/"
+        with patch.dict(
+            os.environ,
+            {
+                "DAZEDTL_TEST_OPENCODE_GO_ENDPOINT": local + "go/openai/v1",
+                "DAZEDTL_TEST_OPENCODE_ENDPOINT": local + "openai/v1",
+            },
+        ):
+            for address, route in (
+                (go, "opencode-go"),
+                ("opencode.ai/inference/go", "opencode-go"),
+                (paid, "opencode"),
+                ("https://OpenCode.ai/inference/v1/models", "opencode"),
+                ("https://opencode.ai/inference-go/v1", None),
+                ("https://opencode.ai/zen/v1", None),
+                ("https://proxy.example/inference/openai/v1", None),
+                (local + "go/openai/v1/chat/completions", "opencode-go"),
+                (local + "openai/v1/chat/completions", "opencode"),
+            ):
+                with self.subTest(address=address):
+                    self.assertEqual(opencode_route(address), route)
         # Claude's cache reads take each model's rate in any host's form of
         # its name.
         for model, read in (

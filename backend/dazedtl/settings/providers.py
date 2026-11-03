@@ -13,7 +13,7 @@ from urllib.parse import quote, urlsplit
 
 import httpx
 
-from . import effort
+from . import effort, opencode
 
 # Each provider's own API, the one address of each: its preset's, where its
 # key goes when no address is set (engine batch_providers get_client and the
@@ -32,15 +32,21 @@ OWN_APIS = {
     "kimi": "https://api.moonshot.ai/v1",
     "deepseek": "https://api.deepseek.com",
     "opencode-go": "https://opencode.ai/inference/go/openai/v1",
+    "opencode": "https://opencode.ai/inference/openai/v1",
 }
+# OpenCode's two routes, its Go subscription's and its pay-as-you-go API's,
+# behind one gateway (gateway_headers) with one model list format, which
+# prices each model and says which efforts it takes (settings/opencode and
+# effort): the one list of them every OpenCode rule reads.
+OPENCODE = ("opencode-go", "opencode")
 
 # A preset declares its transport protocol independently of its identity. Kimi,
-# DeepSeek, OpenRouter and OpenCode Go keep OpenAI's Live request formats under
-# their own identity, so Kimi's Batches carry its eligible models and price
-# factor (engine batch_providers and provider_costs), DeepSeek gets JSON mode
-# instead of strict schemas, OpenRouter has its own Batch transport
-# (compatibility/openrouter_batch.py), and OpenRouter and OpenCode Go price
-# their models from their own model lists (settings/openrouter, opencode).
+# DeepSeek, OpenRouter and OpenCode's routes keep OpenAI's Live request formats
+# under their own identity, so Kimi's Batches carry its eligible models and
+# price factor (engine batch_providers and provider_costs), DeepSeek gets JSON
+# mode instead of strict schemas, OpenRouter has its own Batch transport
+# (compatibility/openrouter_batch.py), and OpenRouter and OpenCode price their
+# models from their own model lists (settings/openrouter, opencode).
 PROVIDERS = {
     "openai": {
         "label": "OpenAI",
@@ -89,6 +95,13 @@ PROVIDERS = {
         "protocol": "openai",
         "endpoint": os.environ.get("DAZEDTL_TEST_OPENCODE_GO_ENDPOINT")
         or OWN_APIS["opencode-go"],
+    },
+    # The same models billed from the Console balance at their listed prices.
+    "opencode": {
+        "label": "OpenCode pay-as-you-go",
+        "protocol": "openai",
+        "endpoint": os.environ.get("DAZEDTL_TEST_OPENCODE_ENDPOINT")
+        or OWN_APIS["opencode"],
     },
     "custom": {"label": "Custom / local", "protocol": "openai", "endpoint": ""},
 }
@@ -174,8 +187,10 @@ def hostname(address):
 # models: its own API's (OWN_APIS).
 OWN_HOSTS = {identity: hostname(url) for identity, url in OWN_APIS.items()}
 # The path a provider's own API lies under where its host serves other APIs
-# too: OpenCode's pay-as-you-go API is at /inference/ beside Go's.
-OWN_PATHS = {"opencode-go": "/inference/go/"}
+# too: OpenCode's pay-as-you-go API is at /inference/ and Go's under it, at
+# /inference/go/. An address at such a host is the API whose path is the
+# longest that holds it (own_api).
+OWN_PATHS = {"opencode-go": "/inference/go/", "opencode": "/inference/"}
 # The hosts of the presets' own APIs, whose error answers are the provider's
 # own, OpenRouter's and OpenCode's for the providers they route to; on any
 # other host, a local one included, an error may be a gateway's in front of
@@ -209,25 +224,31 @@ STAND_INS = {
     "anthropic": "DAZEDTL_TEST_ANTHROPIC_ENDPOINT",
     "openrouter": "DAZEDTL_TEST_OPENROUTER_ENDPOINT",
     "opencode-go": "DAZEDTL_TEST_OPENCODE_GO_ENDPOINT",
+    "opencode": "DAZEDTL_TEST_OPENCODE_ENDPOINT",
 }
 
 
 def own_api(identity, endpoint):
     """Whether `endpoint` is the provider `identity`'s own API, at its host
-    (OWN_HOSTS) and under its path there (OWN_PATHS): Anthropic's, with
-    Message Batches and only Claude's own IDs; OpenAI's, whose Batches share
-    one enqueued-token window; Kimi's, with its own Batches; DeepSeek's, with
-    its own output ceiling and JSON mode; Gemini's, with its own Batches and
-    model list; OpenRouter's, with its own Batches and prices; OpenCode
-    Go's, with its own prices; or Mistral's. The one rule the app and the
-    engine ask; in test scenarios the OpenAI, Anthropic, OpenRouter and
-    OpenCode Go presets' stand-ins (STAND_INS) count as their APIs, paths
-    under them included."""
+    (OWN_HOSTS) and under its path there (OWN_PATHS), the longest one that
+    holds it: Anthropic's, with Message Batches and only Claude's own IDs;
+    OpenAI's, whose Batches share one enqueued-token window; Kimi's, with
+    its own Batches; DeepSeek's, with its own output ceiling and JSON mode;
+    Gemini's, with its own Batches and model list; OpenRouter's, with its own
+    Batches and prices; OpenCode Go's or OpenCode's pay-as-you-go API, with
+    their own prices; or Mistral's. The one rule the app and the engine ask;
+    in test scenarios the presets' stand-ins (STAND_INS) count as their APIs,
+    paths under them included."""
+    host = hostname(endpoint)
     path = address_path(endpoint).rstrip("/") + "/"
-    return (
-        hostname(endpoint) == OWN_HOSTS[identity]
-        and path.startswith(OWN_PATHS.get(identity, "/"))
-    ) or _stand_in(identity, endpoint)
+    owners = [
+        (len(OWN_PATHS.get(name, "/")), name)
+        for name, own_host in OWN_HOSTS.items()
+        if own_host == host and path.startswith(OWN_PATHS.get(name, "/"))
+    ]
+    return (bool(owners) and max(owners)[1] == identity) or _stand_in(
+        identity, endpoint
+    )
 
 
 def on_own_api(identity, address):
@@ -247,18 +268,27 @@ def _stand_in(identity, endpoint):
     return bool(stand_in) and (value == stand_in or value.startswith(stand_in + "/"))
 
 
+def opencode_route(endpoint):
+    """The OpenCode route (OPENCODE) whose own API *endpoint* is, or None."""
+    return next((name for name in OPENCODE if own_api(name, endpoint)), None)
+
+
+def opencode_deepseek(model):
+    """Whether *model* is one of DeepSeek's models by the ID OpenCode's routes
+    give it, such as "deepseek-v4.1-flash"."""
+    return str(model or "").strip().lower().startswith("deepseek-")
+
+
 def deepseek_route(model, endpoint):
-    """Whether a request for *model* to *endpoint* is served and billed as
-    DeepSeek's own API serves and bills it: on DeepSeek's own API, or a
-    DeepSeek model on OpenCode Go, which prices DeepSeek's models exactly as
-    DeepSeek does, peak hours and cache reads included, and takes replies as
-    long. The one rule for DeepSeek's cache read prices (engine
-    batch_providers live_price_route), its off-peak price (provider_costs
-    time_priced_route) and its full output ceiling (engine
-    buildOpenAIRequest)."""
+    """Whether a request for *model* to *endpoint* is billed as DeepSeek's own
+    API bills it: on DeepSeek's own API, or a DeepSeek model on OpenCode Go,
+    which prices DeepSeek's models exactly as DeepSeek does, peak hours and
+    cache reads included. OpenCode's pay-as-you-go API prices them flat, at
+    its own cache read price. The one rule for DeepSeek's cache read prices
+    (engine batch_providers live_price_route) and its off-peak price
+    (provider_costs time_priced_route)."""
     return own_api("deepseek", endpoint) or (
-        own_api("opencode-go", endpoint)
-        and str(model or "").strip().lower().startswith("deepseek-")
+        own_api("opencode-go", endpoint) and opencode_deepseek(model)
     )
 
 
@@ -295,7 +325,7 @@ def user_agent():
 def gateway_headers(address, session=None):
     """The headers a request to *address* adds for the gateway in front of
     its models: on OpenCode's, at its host on any path (a Custom connection
-    there included) or a test scenario's OpenCode Go stand-in, its
+    there included) or a test scenario's stand-in for one of its routes, its
     `x-opencode-session`, *session* or a new one, and DazedTL's own
     User-Agent; nothing anywhere else. The one rule of every sender, each
     sending one stream of requests with one session, so its shared prompt
@@ -305,7 +335,9 @@ def gateway_headers(address, session=None):
     worker keeps for its run, and the Guided engine one per process. They go
     on the client or the call, never into a request's params, which Batch
     files, saved plans and Inspect keep."""
-    if hostname(address) != OPENCODE_HOST and not _stand_in("opencode-go", address):
+    if hostname(address) != OPENCODE_HOST and not any(
+        _stand_in(name, address) for name in OPENCODE
+    ):
         return {}
     return {
         "x-opencode-session": session or gateway_session(),
@@ -525,10 +557,11 @@ def check(connection):
         if openrouter
         else base + "/v1/models?limit=250"
         if protocol == "anthropic"
-        # OpenCode Go lists its models beside its OpenAI-compatible API, at
-        # /inference/go/v1/models, which answers a rejected key with 401.
+        # OpenCode lists each route's models beside its OpenAI-compatible
+        # API, at /inference/go/v1/models and /inference/v1/models, which
+        # answer a rejected key with 401.
         else base.removesuffix("/openai/v1") + "/v1/models"
-        if identity == "opencode-go" and base.endswith("/openai/v1")
+        if identity in OPENCODE and base.endswith("/openai/v1")
         else base + "/models"
     )
     byte_limit = 8_000_000 if openrouter else 2_000_000
@@ -608,6 +641,8 @@ def check(connection):
                 "unsupported",
                 "The server replied with an unsupported model list. Check the provider and base URL.",
             )
+        if identity in OPENCODE:
+            rows = opencode.paid(rows)
         models = sorted(
             {
                 row["id"]
@@ -623,14 +658,13 @@ def check(connection):
             if name != "custom"
         )
         if official and not connection["keyless"]:
-            from . import opencode
             from .openrouter import catalog, check_endpoints
 
             known = (
                 catalog(rows)
                 if openrouter
                 else opencode.catalog(rows)
-                if identity == "opencode-go"
+                if identity in OPENCODE
                 else None
             )
             value = result(

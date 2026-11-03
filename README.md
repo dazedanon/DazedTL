@@ -88,7 +88,7 @@ Every change DazedTL makes to the game is a checkpoint you can undo, and a new v
 
 - An AI coding assistant, such as Claude Code or Codex.
   DazedTL gives you tasks to paste into it.
-- An API key from OpenAI, Anthropic, Google Gemini, Mistral, Kimi, DeepSeek, OpenRouter or OpenCode Go, or a local model, for translating the game text.
+- An API key from OpenAI, Anthropic, Google Gemini, Mistral, Kimi, DeepSeek, OpenRouter, OpenCode Go or OpenCode pay-as-you-go, or a local model, for translating the game text.
 
 ## Install
 

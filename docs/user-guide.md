@@ -297,11 +297,11 @@ For OpenAI, raise **Batch token allowance** to your account's limit from [OpenAI
 - **OpenRouter:** enter the full model ID, such as `anthropic/claude-sonnet-4.5`; **Host** pins one hosting provider.
   Its Batches can take up to 24 hours and can't be cancelled once sent.
 - **Kimi:** Batch works with Kimi K2.6 and K2.7 Code, at 40% off; Kimi K3 translates Live only.
-- **DeepSeek** and **OpenCode Go:** no Batch, so they translate Live; DeepSeek costs half outside its [peak hours](https://api-docs.deepseek.com/quick_start/pricing), on Go too.
-- **OpenCode Go:** runs use your plan's allowance at Go's prices; DazedTL sends the session header itself.
-  A used-up 5-hour, weekly or monthly limit fails requests until it resets, unless Extra Usage is on.
+- **DeepSeek** and **OpenCode:** Live only; DeepSeek costs half outside its [peak hours](https://api-docs.deepseek.com/quick_start/pricing), on Go too.
+- **OpenCode Go** bills your plan's allowance; a used-up limit fails requests until it resets or Extra Usage is on.
   DeepSeek needs **Global** regions and Muse Spark **Allow paid endpoints that train on request data** in the workspace's Privacy settings.
-- Kimi and DeepSeek models think before they answer, which is billed as output and isn't in the estimate.
+- **OpenCode pay-as-you-go** bills your Console balance; free models work only in OpenCode's app, so they aren't listed.
+- Kimi and DeepSeek models think first, billed as output the estimate leaves out; thinking effort **Off** saves most of DeepSeek's.
 
 ## Notifications
 

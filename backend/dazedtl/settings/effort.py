@@ -26,8 +26,10 @@ Rows were read on 2026-10-28 from each provider's own reference:
 - Mistral: docs.mistral.ai/capabilities/reasoning.
 - OpenRouter: openrouter.ai/docs/use-cases/reasoning-tokens and its public
   model list (``reasoning.supported_efforts`` and ``default_effort``).
-- OpenCode Go: its model list (``capabilities.reasoning.effort``), which
-  sends ``reasoning_effort`` on to each model.
+- OpenCode Go and pay-as-you-go: their model lists
+  (``capabilities.reasoning.effort``), which send ``reasoning_effort`` on
+  to each model; a DeepSeek model there also turns thinking off as on
+  DeepSeek's own API (``opencode_record``).
 Custom and local servers send a level only once a check passed it, since
 DazedTL cannot know what they accept. scripts/effort_check.py sends each row
 of the table to its provider, so the rows stay true as providers change; each
@@ -379,13 +381,15 @@ def model_id(model):
 # The providers whose own model list, which the connection check downloads,
 # says which efforts each model takes: Anthropic's GET /v1/models
 # (`capabilities.effort` and `capabilities.thinking.types`), OpenRouter's
-# GET /models/user (`reasoning`) and OpenCode Go's GET /v1/models
-# (`capabilities.reasoning`). The lists of OpenAI, Gemini, DeepSeek, Kimi
-# and Mistral say nothing about effort, so their models keep the notes above.
+# GET /models/user (`reasoning`) and OpenCode's routes' GET /v1/models
+# (`capabilities.reasoning`, settings/providers OPENCODE). The lists of
+# OpenAI, Gemini, DeepSeek, Kimi and Mistral say nothing about effort, so
+# their models keep the notes above.
 LISTED = {
     "anthropic": "Anthropic",
     "openrouter": "OpenRouter",
     "opencode-go": "OpenCode Go",
+    "opencode": "OpenCode",
 }
 # A connection keeps at most as many records as its OpenRouter catalog.
 MAX_LISTED = 2000
@@ -474,12 +478,28 @@ def openrouter_record(row):
     )
 
 
-def opencode_record(row):
-    """The record one row of OpenCode Go's model list gives: the levels its
-    `capabilities.reasoning.effort` lists, written as `reasoning_effort`
-    (``apply``). A model that doesn't reason, or reasons with no levels
-    listed, such as one that only turns thinking on or off, takes no effort.
-    The list names no default level."""
+def thinking_switch(provider, model):
+    """Whether "none" turns *model*'s thinking off on *provider* with the
+    `thinking` field (``apply``): on Kimi's and DeepSeek's own APIs, and for
+    a DeepSeek model on OpenCode's routes, which pass the field on to it
+    (settings/providers opencode_deepseek). There DeepSeek V4.1 Flash thinks
+    by default, most of its output, which `reasoning_effort` "low" left
+    unchanged and `thinking` disabled removed (real requests, 2026-11-03)."""
+    from .providers import OPENCODE, opencode_deepseek
+
+    return provider in ("deepseek", "kimi") or (
+        provider in OPENCODE and opencode_deepseek(model)
+    )
+
+
+def opencode_record(row, provider):
+    """The record one row of an OpenCode route's model list gives: the
+    levels its `capabilities.reasoning.effort` lists, written as
+    `reasoning_effort` (``apply``), and "none" where the `thinking` field
+    turns thinking off (``thinking_switch``), which the list doesn't name.
+    Any other model that doesn't reason, or reasons with no levels listed,
+    such as one that only turns thinking on or off, takes no effort. The
+    list names no default level."""
     capabilities = row.get("capabilities")
     reasoning = (
         capabilities.get("reasoning") if isinstance(capabilities, dict) else None
@@ -489,18 +509,25 @@ def opencode_record(row):
         if isinstance(reasoning, dict) and _supported(reasoning)
         else None
     )
-    return _record(listed if isinstance(listed, list) else ())
+    levels = list(listed) if isinstance(listed, list) else []
+    if thinking_switch(provider, row.get("id")):
+        levels.append("none")
+    return _record(levels)
 
 
 def model_list(provider, rows):
     """{model ID: record} from the rows of *provider*'s model list, for each
     model whose row says which efforts it takes; empty for a provider whose
     list doesn't."""
-    read = {
-        "anthropic": anthropic_record,
-        "openrouter": openrouter_record,
-        "opencode-go": opencode_record,
-    }.get(provider)
+    from .providers import OPENCODE
+
+    read = (
+        (lambda row: opencode_record(row, provider))
+        if provider in OPENCODE
+        else {"anthropic": anthropic_record, "openrouter": openrouter_record}.get(
+            provider
+        )
+    )
     result = {}
     if read is None:
         return result
@@ -836,8 +863,7 @@ def apply(params, provider, model, level, listed=None):
     if provider == "openrouter":
         extra["reasoning"] = {"effort": level}
         unsampled(params)
-    elif level == "none" and provider in ("deepseek", "kimi"):
-        # Both turn thinking off with their `thinking` field.
+    elif level == "none" and thinking_switch(provider, model):
         extra["thinking"] = {"type": "disabled"}
     else:
         params["reasoning_effort"] = level
