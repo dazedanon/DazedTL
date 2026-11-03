@@ -2671,7 +2671,8 @@ try:
                         raise AssertionError("A gateway's timeout was answered.")
                 assert send.call_count == sent, (resends, send.call_count)
             # DeepSeek's own models think within max_tokens by default, so a
-            # long request gets the full ceiling there and the cap elsewhere.
+            # long request gets the full ceiling there and on OpenCode Go,
+            # which takes replies as long, and the cap elsewhere.
             for model, endpoint, ceiling in (
                 (
                     "deepseek/fixture",
@@ -2681,6 +2682,11 @@ try:
                 (
                     "deepseek-flash",
                     "https://api.deepseek.com",
+                    translation.MAX_TRANSLATION_OUTPUT_TOKENS,
+                ),
+                (
+                    "deepseek-v4.1-flash",
+                    "https://opencode.ai/inference/go/openai/v1",
                     translation.MAX_TRANSLATION_OUTPUT_TOKENS,
                 ),
             ):

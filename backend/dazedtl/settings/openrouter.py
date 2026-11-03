@@ -15,6 +15,7 @@ from urllib.parse import quote
 
 import httpx
 
+from .catalogs import amount, checked, described, positive_integer
 from .preferences import text
 
 TRANSPORT = "openrouter-batch-v1"
@@ -29,10 +30,9 @@ def rate(value):
     if isinstance(value, bool) or not isinstance(value, (str, float, int)):
         return None
     try:
-        amount = float(Decimal(str(value)) * 1_000_000)
+        return amount(float(Decimal(str(value)) * 1_000_000))
     except ValueError, OverflowError, DecimalException:
         return None
-    return amount if math.isfinite(amount) and 0 <= amount <= 1_000_000 else None
 
 
 def catalog(rows):
@@ -78,10 +78,6 @@ def catalog(rows):
     return result
 
 
-def positive_integer(value):
-    return value if type(value) is int and 0 < value <= 9_007_199_254_740_991 else None
-
-
 def endpoint_output_limit(rows):
     limits = [
         positive_integer(row.get("max_completion_tokens"))
@@ -115,22 +111,11 @@ def validate_catalog(value):
                 for key in ("context", "max_output")
             )
             or any(
-                row[key] is not None
-                and (
-                    type(row[key]) not in (int, float)
-                    or not math.isfinite(row[key])
-                    or not 0 <= row[key] <= 1_000_000
-                )
+                row[key] is not None and amount(row[key]) is None
                 for key in ("input", "output", "cache_read", "cache_write")
             )
         ):
             raise ValueError("Invalid OpenRouter catalog entry.")
-
-
-def _catalog(connection):
-    """The models a verified check loaded, none before one or after a failure."""
-    checked = connection.get("check", {})
-    return connection.get("catalog", {}) if checked.get("status") == "verified" else {}
 
 
 class Batch(NamedTuple):
@@ -151,7 +136,7 @@ def batch(connection, model):
     that failed or hasn't run, or an endpoint read not made for this model
     and host or that failed, leaves it not looked up, unlike a model checked
     to have no Batch."""
-    known = _catalog(connection)
+    known = checked(connection)
     row = known.get(model + ":batch", {}) if ":" not in model else {}
     if not known:
         return Batch(
@@ -193,31 +178,14 @@ def batch(connection, model):
 
 def describe(connection, model):
     model = text(model, "model ID", required=True)
-    checked = connection.get("check", {})
-    live = _catalog(connection).get(model, {})
+    live = checked(connection).get(model, {})
     available = batch(connection, model)
-    host = connection.get("openrouter_host", "")
     # Model-wide prices do not establish a selected host's Live rates. The
     # public resolver supplies those separately, without inferring eligibility.
-    if host:
+    if connection.get("openrouter_host", ""):
         live = {}
-    stamp = checked.get("checkedAt")
-    try:
-        stale = (
-            not stamp
-            or (datetime.now(UTC) - datetime.fromisoformat(stamp)).total_seconds()
-            > 86400
-        )
-    except ValueError, TypeError:
-        stale = True
     return {
-        "model": model,
-        "inputRate": live.get("input"),
-        "outputRate": live.get("output"),
-        "maxOutputTokens": live.get("max_output"),
-        "source": "catalog" if live else "unavailable",
-        "updatedAt": stamp,
-        "stale": stale,
+        **described(connection, model, live),
         "batchSupported": available.supported,
         "batchReason": available.reason,
         "batchInputRate": available.rates.get("input"),
@@ -463,15 +431,7 @@ def validate_endpoints(value):
     if rates is not None and (
         not isinstance(rates, dict)
         or set(rates) != {"input", "output", "cache_read", "cache_write"}
-        or any(
-            amount is not None
-            and (
-                type(amount) not in (int, float)
-                or not math.isfinite(amount)
-                or not 0 <= amount <= 1_000_000
-            )
-            for amount in rates.values()
-        )
+        or any(price is not None and amount(price) is None for price in rates.values())
     ):
         raise ValueError("Invalid OpenRouter endpoint prices.")
 

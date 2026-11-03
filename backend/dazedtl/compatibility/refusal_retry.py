@@ -56,7 +56,7 @@ def send_once(translation, evidence, params):
     provider = "anthropic" if "system" in params else "openai"
     # The SDK client type depends on the provider chosen above; the request
     # goes to the run's address, as its Live send did, which went to OpenAI's
-    # own API when the run set none.
+    # own API when the run set none, in the engine's gateway session.
     client: Any = get_client(
         provider,
         api_key=translation.openai.api_key,
@@ -64,6 +64,7 @@ def send_once(translation, evidence, params):
         if provider == "anthropic"
         else str(translation.openai.base_url or OWN_APIS["openai"]),
         max_retries=0,
+        session=getattr(translation, "GATEWAY_SESSION", None),
     )
     options: dict[str, Any] = {"timeout": 45, "max_retries": 0}
     organization = getattr(translation.openai, "organization", None)
@@ -243,7 +244,7 @@ class RefusalRetry:
             from util.provider_costs import joined_received_at
 
             local.received_at = joined_received_at(
-                translation._time_priced_route(),
+                translation._time_priced_route(params.get("model")),
                 refused_at,
                 getattr(local, "received_at", None),
             )

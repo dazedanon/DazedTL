@@ -79,7 +79,7 @@ from util.prompt_pair import (
 )
 from util.source_text import source_left
 from util import system
-from dazedtl.settings.providers import OWN_APIS
+from dazedtl.settings.providers import OWN_APIS, gateway_headers, gateway_session
 from util.target_text import (
     BRACKETS,
     SKIPPED,
@@ -718,6 +718,11 @@ def _is_map_name_batch(request_instructions) -> bool:
     return "rpg location name" in lowered
 
 
+# One OpenCode session for this engine process, a Guided file or a reused
+# worker's sequence of files, whose requests go out one after another and
+# share their prompt's cached prefix (settings/providers gateway_headers).
+GATEWAY_SESSION = gateway_session()
+
 # Load .env, strip accidental whitespace, set base URL / org / API key.
 # Gemini/Mistral use their endpoints only when no custom API URL is set.
 load_dotenv()
@@ -733,6 +738,8 @@ else:
     org = os.getenv("organization") or os.getenv("org")
     if org:
         openai.organization = org.strip()
+# The module client's own headers, a gateway's at its address.
+openai.default_headers = gateway_headers(env_api, GATEWAY_SESSION)
 
 # The SDK itself requires a non-empty value even when a local compatible server
 # does not authenticate requests. Only use the placeholder for an explicitly
@@ -5264,7 +5271,7 @@ def buildOpenAIRequest(system, user, history, penalty, formatType, model,
 
     provider = (api_provider or os.getenv("API_PROVIDER", "openai")).lower()
     from dazedtl.settings.providers import completion_field as uses_completion_field
-    from dazedtl.settings.providers import own_api, response_format
+    from dazedtl.settings.providers import deepseek_route, response_format
 
     endpoint = os.getenv("api", "") if api_url is None else str(api_url or "")
     model_l = str(model or "").lower()
@@ -5311,9 +5318,9 @@ def buildOpenAIRequest(system, user, history, penalty, formatType, model,
     # Batch requests name Kimi's Batch provider instead of the OpenAI protocol.
     completion_field = uses_completion_field(provider, endpoint)
     # DeepSeek's own API allows far longer replies than other DeepSeek hosts,
-    # and its models think by default within max_tokens.
+    # as OpenCode Go does, and its models think by default within max_tokens.
     # https://api-docs.deepseek.com/api/create-chat-completion
-    deepseek_api = own_api("deepseek", endpoint)
+    deepseek_api = deepseek_route(model, endpoint)
     if is_deepseek and not deepseek_api:
         completion_ceiling = COMPAT_TRANSLATION_OUTPUT_TOKENS
     elif completion_field or provider == "gemini" or deepseek_api:
@@ -5407,6 +5414,7 @@ def translateText(system, user, history, penalty, formatType, model, numLines=No
         openai.base_url = _normalize_openai_base_url(OWN_APIS[_live_provider])
     elif _live_api:
         openai.base_url = _normalize_openai_base_url(_live_api)
+    openai.default_headers = gateway_headers(_live_api, GATEWAY_SESSION)
     _live_key_optional = os.getenv("API_KEY_OPTIONAL", "").strip().lower() in ("1", "true", "yes")
     openai.api_key = _live_key or ("not-needed" if _live_key_optional else "")
 
@@ -5445,7 +5453,10 @@ def translateText(system, user, history, penalty, formatType, model, numLines=No
         # The run's address, where its Batches, model list and token counts
         # go too.
         ant_client = anthropic_client(
-            openai.api_key, _live_api, max_retries=sdk_retries(anthropic)
+            openai.api_key,
+            _live_api,
+            session=GATEWAY_SESSION,
+            max_retries=sdk_retries(anthropic),
         )
         try:
             ant_resp = create_anthropic_message(ant_client, ant_kwargs)
@@ -5664,10 +5675,10 @@ _FILE_COST_COUNTERS = (
 )
 
 
-def _time_priced_route():
-    """The configured route when its Live price depends on when each
-    response arrived (provider_costs time_priced_route), or None."""
-    return time_priced_route(os.getenv("api", ""))
+def _time_priced_route(model):
+    """The configured route of *model* when its Live price depends on when
+    each response arrived (provider_costs time_priced_route), or None."""
+    return time_priced_route(os.getenv("api", ""), model)
 
 
 def _live_usage(usage, route):
@@ -5709,7 +5720,7 @@ def _record_live_cost(usage, model):
         pricing["inputAPICost"] / 1_000_000,
         pricing["outputAPICost"] / 1_000_000,
         time_price_factor(
-            _time_priced_route(), getattr(_thread_local, "received_at", None)
+            _time_priced_route(model), getattr(_thread_local, "received_at", None)
         ),
     )
     _thread_local.file_live_cost = getattr(_thread_local, "file_live_cost", 0) + cost

@@ -338,8 +338,10 @@ class Runner:
         self.job["usage"] = dict(self.request_totals)
         # The time that prices the row (estimate_prices.usage_cost); a row
         # without one, as rows saved before they held one, reads as peak.
+        configuration = self.plan["configuration"]
         when = joined_received_at(
-            time_priced_route(self.plan["configuration"].get("endpoint")), *times
+            time_priced_route(configuration.get("endpoint"), configuration["model"]),
+            *times,
         )
         rows[identity] = {**row, "received_at": when} if when else row
 

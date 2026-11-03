@@ -140,6 +140,7 @@ type Provider = Literal[
     "mistral",
     "kimi",
     "deepseek",
+    "opencode-go",
     "custom",
 ]
 

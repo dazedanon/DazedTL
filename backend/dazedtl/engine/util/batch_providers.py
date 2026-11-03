@@ -133,9 +133,11 @@ def live_price_route(model: str = "", api_url: str | None = None,
     OpenAI model on any host, as OpenRouter passes on their own cache
     prices; a Batch provider's on its own API; Gemini's on any
     Gemini-compatible server, which answers with Gemini's usage, a proxy
-    that runs no Batch included; Kimi's or DeepSeek's on theirs; otherwise
-    none, the default rates. The current route is the engine's settings."""
-    from dazedtl.settings.providers import own_api
+    that runs no Batch included; Kimi's on its own API; DeepSeek's where
+    its models are billed as on its own API (settings/providers
+    deepseek_route); otherwise none, the default rates. The current route
+    is the engine's settings."""
+    from dazedtl.settings.providers import deepseek_route, own_api
 
     if is_claude_model(model):
         return PROVIDER_ANTHROPIC
@@ -147,9 +149,10 @@ def live_price_route(model: str = "", api_url: str | None = None,
     address, provider = _route(api_url, api_provider)
     if provider == PROVIDER_GEMINI:
         return PROVIDER_GEMINI
-    for identity in ("kimi", "deepseek"):
-        if own_api(identity, address):
-            return identity
+    if own_api("kimi", address):
+        return "kimi"
+    if deepseek_route(model, address):
+        return "deepseek"
     return ""
 
 
@@ -188,7 +191,8 @@ def _api_key() -> str:
 
 @extensions.point
 def get_client(provider: str, *, api_key: str | None = None,
-               api_url: str | None = None, max_retries: int | None = None):
+               api_url: str | None = None, max_retries: int | None = None,
+               session: str | None = None):
     """Create the SDK client needed for status/create/cancel operations.
 
     ``api_key`` and ``api_url`` let isolated workflows (notably model
@@ -202,6 +206,10 @@ def get_client(provider: str, *, api_key: str | None = None,
     an OpenAI-compatible key, which may belong to any host, is refused, and
     a Gemini or Kimi key goes to its provider's own API. A Gemini Batch and
     its files are only at Google's own API (on_gemini_api).
+
+    A client for a gateway's address carries its headers
+    (settings/providers gateway_headers): OpenCode's session, ``session``
+    or one of the client's own, which its copies (``with_options``) keep.
     """
     if api_key is None:
         key = _api_key()
@@ -223,9 +231,12 @@ def get_client(provider: str, *, api_key: str | None = None,
     # worker's startup, seconds on Windows.
     if provider == PROVIDER_ANTHROPIC:
         options = {} if max_retries is None else {"max_retries": max_retries}
-        return anthropic_client(key, address, **options)
+        return anthropic_client(key, address, session=session, **options)
     import openai
 
+    from dazedtl.settings.providers import gateway_headers
+
+    headers = gateway_headers(address, session)
     if provider in (PROVIDER_GEMINI, PROVIDER_KIMI):
         from dazedtl.settings.providers import absolute
 
@@ -236,6 +247,8 @@ def get_client(provider: str, *, api_key: str | None = None,
         )
         if max_retries is not None:
             kwargs["max_retries"] = max_retries
+        if headers:
+            kwargs["default_headers"] = headers
         return openai.OpenAI(**kwargs)
     if provider == PROVIDER_OPENAI:
         if not address and api_key is not None:
@@ -246,6 +259,8 @@ def get_client(provider: str, *, api_key: str | None = None,
         kwargs = {"api_key": key}
         if max_retries is not None:
             kwargs["max_retries"] = max_retries
+        if headers:
+            kwargs["default_headers"] = headers
         # The run's key with no address set is on OpenAI's own API
         # (detect_batch_provider), the SDK's default.
         if address:
@@ -276,12 +291,20 @@ def anthropic_base_url(address: str | None) -> str:
     return absolute(base_url) if base_url else OWN_APIS[PROVIDER_ANTHROPIC]
 
 
-def anthropic_client(api_key: str, address: str | None, **options):
+def anthropic_client(api_key: str, address: str | None, *,
+                     session: str | None = None, **options):
     """The Anthropic SDK client that sends *api_key*'s Claude requests to
-    *address* (anthropic_base_url); *options* are the SDK's, such as
-    max_retries. Every SDK client for Claude is made here."""
+    *address* (anthropic_base_url), with a gateway's headers there
+    (settings/providers gateway_headers), OpenCode's ``session`` or one of
+    its own; *options* are the SDK's, such as max_retries. Every SDK client
+    for Claude is made here."""
     import anthropic
 
+    from dazedtl.settings.providers import gateway_headers
+
+    headers = gateway_headers(address, session)
+    if headers:
+        options["default_headers"] = headers
     return anthropic.Anthropic(
         api_key=api_key, base_url=anthropic_base_url(address), **options
     )

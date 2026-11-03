@@ -560,7 +560,9 @@ def detect(native, model="", api_url=None, api_provider=None):
     return batch_route(native, model, endpoint, protocol, _worker_policy)
 
 
-def client(native, provider, *, api_key=None, api_url=None, max_retries=None):
+def client(
+    native, provider, *, api_key=None, api_url=None, max_retries=None, session=None
+):
     if provider == "openrouter":
         return Client(
             api_key if api_key is not None else os.getenv("key", ""),
@@ -568,7 +570,13 @@ def client(native, provider, *, api_key=None, api_url=None, max_retries=None):
             policy=_worker_policy,
             receipt_root=_worker_root,
         )
-    return native(provider, api_key=api_key, api_url=api_url, max_retries=max_retries)
+    return native(
+        provider,
+        api_key=api_key,
+        api_url=api_url,
+        max_retries=max_retries,
+        session=session,
+    )
 
 
 def limits(native, provider):

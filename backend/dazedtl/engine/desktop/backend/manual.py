@@ -329,15 +329,12 @@ def prepare_inputs(directory, plan, stopped=lambda: False, *, link=False):
 def worker_environment(workspace, plan):
     """A run worker's environment: local runs get no credential and no network."""
     # The app's diagnostics folder, where the worker records a crash.
-    # A test scenario's OpenAI preset names its stand-in, which counts as
-    # OpenAI's own API (settings/providers.own_api); its Anthropic and
-    # OpenRouter presets name it too, and a run's provider is read from them.
-    env = system_environment(
-        "DAZEDTL_DIAGNOSTICS",
-        "DAZEDTL_TEST_OPENAI_ENDPOINT",
-        "DAZEDTL_TEST_ANTHROPIC_ENDPOINT",
-        "DAZEDTL_TEST_OPENROUTER_ENDPOINT",
-    )
+    # A test scenario's presets name its stand-in, which counts as their own
+    # APIs (settings/providers.own_api), and a run's provider is read from
+    # them.
+    from dazedtl.settings.providers import STAND_INS
+
+    env = system_environment("DAZEDTL_DIAGNOSTICS", *STAND_INS.values())
     if plan["mode"] == "estimate":
         env.update({key: str(value).lower() if isinstance(value, bool) else str(value) for key, value in plan["settings"].items()})
         env.update(key="local-run-no-credential", API_KEY_OPTIONAL="true", DAZEDTL_TEST_OFFLINE="1")

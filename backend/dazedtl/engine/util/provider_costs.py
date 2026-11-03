@@ -58,21 +58,25 @@ def received_at(created=None) -> str:
     return datetime.now(UTC).isoformat()
 
 
-def time_priced_route(endpoint: str | None) -> str | None:
-    """The route at ``endpoint`` whose Live price depends on when each
-    response arrived, DeepSeek's own API, or None; see time_price_factor."""
-    from dazedtl.settings.providers import own_api
+def time_priced_route(endpoint: str | None, model: str | None) -> str | None:
+    """The route of ``model`` at ``endpoint`` whose Live price depends on
+    when each response arrived, DeepSeek's where its models are billed as on
+    its own API (settings/providers deepseek_route), or None; see
+    time_price_factor."""
+    from dazedtl.settings.providers import deepseek_route
 
-    return "deepseek" if own_api("deepseek", endpoint) else None
+    return "deepseek" if deepseek_route(model, endpoint) else None
 
 
 def time_price_factor(route: str | None, received: str | None) -> float:
-    """Usage's price at the time it arrived as a multiple of the list price,
-    on a ``route`` from time_priced_route.
+    """Usage's price at the time it arrived as a multiple of the peak price
+    its run froze, on a ``route`` from time_priced_route.
 
     DeepSeek's own API bills half outside its peak hours, 01:00-04:00 and
     06:00-10:00 UTC Monday to Friday
-    (https://api-docs.deepseek.com/quick_start/pricing). Its Chinese public
+    (https://api-docs.deepseek.com/quick_start/pricing), and OpenCode Go
+    bills its DeepSeek models at their listed price then, half the peak
+    price a Go run froze (settings/opencode). DeepSeek's Chinese public
     holidays are off-peak too but count as peak here, which errs high, as
     does usage recorded without a time, such as rows saved before times were.
     Every other route bills the same at any hour.

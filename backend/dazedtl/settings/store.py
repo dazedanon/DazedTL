@@ -10,7 +10,7 @@ from typing import Any, TypeGuard
 
 from dazedtl.storage import WorkspaceError, read_versioned_json, write_json
 
-from . import effort, language_pair, openrouter, preferences, providers
+from . import effort, language_pair, opencode, openrouter, preferences, providers
 
 
 def efforts(connection, state, configured):
@@ -145,7 +145,11 @@ class Settings:
             try:
                 preferences.model_options(connection.get("model_options"))
                 if "catalog" in connection:
-                    openrouter.validate_catalog(connection["catalog"])
+                    (
+                        opencode
+                        if connection["provider"] == "opencode-go"
+                        else openrouter
+                    ).validate_catalog(connection["catalog"])
                 if "efforts" in connection:
                     effort.valid_list(connection["efforts"])
                 if "effort_checks" in connection:
@@ -619,6 +623,11 @@ class Settings:
                     effort.record(active, model),
                     effort.kept(active),
                 ),
+            }
+        if active and active["provider"] == "opencode-go":
+            return {
+                **opencode.describe(active, model),
+                "thinkingEffort": self._effort(active, model),
             }
         if cached_only:
             cached = getattr(
@@ -1204,7 +1213,7 @@ class Settings:
             "models": old["models"] if old and unchanged else [],
             **(
                 {"catalog": old.get("catalog", {})}
-                if unchanged and old and provider == "openrouter"
+                if unchanged and old and provider in {"openrouter", "opencode-go"}
                 else {}
             ),
             **(
@@ -1279,9 +1288,10 @@ class Settings:
             latest["models"] = result["models"]
         if "efforts" in result:
             latest["efforts"] = result["efforts"]
+        if "batch_endpoints" in result:
+            latest["batch_endpoints"] = result["batch_endpoints"]
         if "catalog" in result:
             latest["catalog"] = result["catalog"]
-            latest["batch_endpoints"] = result.get("batch_endpoints", {})
             # A new authenticated catalog supersedes earlier public quotes.
             self._openrouter_prices = {
                 key: value

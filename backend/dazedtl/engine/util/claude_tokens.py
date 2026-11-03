@@ -46,13 +46,20 @@ class CountClient:
     but without importing the SDK, which takes seconds on Windows; ``count``
     uses it as ``client.messages.count_tokens(**fields).input_tokens``.
     *address* is the one *api_key* was set with, read as every Claude
-    client reads one (batch_providers.anthropic_base_url)."""
+    client reads one (batch_providers.anthropic_base_url), and a gateway
+    there gets its headers (settings/providers gateway_headers)."""
 
     def __init__(self, api_key, address, *, timeout=30.0):
         from util.batch_providers import anthropic_base_url
 
+        from dazedtl.settings.providers import gateway_headers
+
         self.url = anthropic_base_url(address) + "/v1/messages/count_tokens"
-        self.headers = {"x-api-key": api_key, "anthropic-version": "2023-06-01"}
+        self.headers = {
+            "x-api-key": api_key,
+            "anthropic-version": "2023-06-01",
+            **gateway_headers(address),
+        }
         self.client = http_client(timeout)
         self.messages = self
 

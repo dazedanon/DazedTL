@@ -214,7 +214,7 @@ def usage_cost(usage, configuration, provider, rows=None):
 
     if batch:
         return price(usage, batch_price_factor(provider))
-    timed = time_priced_route(configuration.get("endpoint"))
+    timed = time_priced_route(configuration.get("endpoint"), configuration["model"])
     if timed and rows:
         return sum(
             price(row, time_price_factor(timed, row.get("received_at"))) for row in rows

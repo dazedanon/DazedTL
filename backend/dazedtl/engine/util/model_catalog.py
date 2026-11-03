@@ -3,7 +3,7 @@
 from util.api_errors import concise_api_error
 from util.translation_task import TaskSignal
 
-from dazedtl.settings.providers import OWN_APIS
+from dazedtl.settings.providers import OWN_APIS, gateway_headers
 
 
 API_URL_PRESETS = (
@@ -86,7 +86,11 @@ class ModelCatalogCore:
 
         # The SDK requires a non-empty value even when a local server ignores
         # authentication entirely.
-        kwargs = {"api_key": self.api_key or "not-needed", "timeout": 15, "max_retries": 0}
+        kwargs = {
+            "api_key": self.api_key or "not-needed", "timeout": 15, "max_retries": 0,
+            # A gateway's own headers (settings/providers gateway_headers).
+            "default_headers": gateway_headers(self.api_url) or None,
+        }
         if self.api_url:
             kwargs["base_url"] = self.api_url
         client = openai.OpenAI(**kwargs)
@@ -110,7 +114,10 @@ class ModelCatalogCore:
     def _fetch_gemini(self):
         import openai
         base = self.api_url or OWN_APIS["gemini"]
-        client = openai.OpenAI(api_key=self.api_key, base_url=base, timeout=15, max_retries=0)
+        client = openai.OpenAI(
+            api_key=self.api_key, base_url=base, timeout=15, max_retries=0,
+            default_headers=gateway_headers(base) or None,
+        )
         return sorted(
             m.id for m in client.models.list()
             if "gemini" in m.id.lower()

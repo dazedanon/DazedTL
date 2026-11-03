@@ -4,8 +4,11 @@ import ipaddress
 import json
 import os
 import re
+import secrets
 import time
 from datetime import UTC, datetime
+from functools import cache
+from pathlib import Path
 from urllib.parse import quote, urlsplit
 
 import httpx
@@ -19,6 +22,7 @@ from . import effort
 # slash as none.
 # https://ai.google.dev/gemini-api/docs/openai
 # https://platform.kimi.ai/docs/api/overview
+# https://opencode.ai/v2/docs/console/go/
 OWN_APIS = {
     "openai": "https://api.openai.com/v1",
     "openrouter": "https://openrouter.ai/api/v1",
@@ -27,14 +31,16 @@ OWN_APIS = {
     "mistral": "https://api.mistral.ai/v1",
     "kimi": "https://api.moonshot.ai/v1",
     "deepseek": "https://api.deepseek.com",
+    "opencode-go": "https://opencode.ai/inference/go/openai/v1",
 }
 
 # A preset declares its transport protocol independently of its identity. Kimi,
-# DeepSeek and OpenRouter keep OpenAI's Live request formats under their own
-# identity, so Kimi's Batches carry its eligible models and price factor (engine
-# batch_providers and provider_costs), DeepSeek gets JSON mode instead of strict
-# schemas, and OpenRouter has its own Batch transport
-# (compatibility/openrouter_batch.py).
+# DeepSeek, OpenRouter and OpenCode Go keep OpenAI's Live request formats under
+# their own identity, so Kimi's Batches carry its eligible models and price
+# factor (engine batch_providers and provider_costs), DeepSeek gets JSON mode
+# instead of strict schemas, OpenRouter has its own Batch transport
+# (compatibility/openrouter_batch.py), and OpenRouter and OpenCode Go price
+# their models from their own model lists (settings/openrouter, opencode).
 PROVIDERS = {
     "openai": {
         "label": "OpenAI",
@@ -76,6 +82,13 @@ PROVIDERS = {
         "label": "DeepSeek",
         "protocol": "openai",
         "endpoint": OWN_APIS["deepseek"],
+    },
+    # Console serves every Go text model through Chat Completions.
+    "opencode-go": {
+        "label": "OpenCode Go",
+        "protocol": "openai",
+        "endpoint": os.environ.get("DAZEDTL_TEST_OPENCODE_GO_ENDPOINT")
+        or OWN_APIS["opencode-go"],
     },
     "custom": {"label": "Custom / local", "protocol": "openai", "endpoint": ""},
 }
@@ -160,9 +173,13 @@ def hostname(address):
 # The host only a provider's own API serves, unlike others that serve its
 # models: its own API's (OWN_APIS).
 OWN_HOSTS = {identity: hostname(url) for identity, url in OWN_APIS.items()}
+# The path a provider's own API lies under where its host serves other APIs
+# too: OpenCode's pay-as-you-go API is at /inference/ beside Go's.
+OWN_PATHS = {"opencode-go": "/inference/go/"}
 # The hosts of the presets' own APIs, whose error answers are the provider's
-# own, OpenRouter's for the providers it routes to; on any other host, a local
-# one included, an error may be a gateway's in front of the model.
+# own, OpenRouter's and OpenCode's for the providers they route to; on any
+# other host, a local one included, an error may be a gateway's in front of
+# the model.
 PRESET_HOSTS = frozenset(OWN_HOSTS.values())
 
 
@@ -191,19 +208,26 @@ STAND_INS = {
     "openai": "DAZEDTL_TEST_OPENAI_ENDPOINT",
     "anthropic": "DAZEDTL_TEST_ANTHROPIC_ENDPOINT",
     "openrouter": "DAZEDTL_TEST_OPENROUTER_ENDPOINT",
+    "opencode-go": "DAZEDTL_TEST_OPENCODE_GO_ENDPOINT",
 }
 
 
 def own_api(identity, endpoint):
     """Whether `endpoint` is the provider `identity`'s own API, at its host
-    (OWN_HOSTS): Anthropic's, with Message Batches and only Claude's own IDs;
-    OpenAI's, whose Batches share one enqueued-token window; Kimi's, with its
-    own Batches; DeepSeek's, with its own output ceiling and JSON mode;
-    Gemini's, with its own Batches and model list; OpenRouter's, with its own
-    Batches and prices; or Mistral's. The one rule the app and the engine
-    ask; in test scenarios the OpenAI, Anthropic and OpenRouter presets'
-    stand-ins (STAND_INS) count as their APIs, paths under them included."""
-    return hostname(endpoint) == OWN_HOSTS[identity] or _stand_in(identity, endpoint)
+    (OWN_HOSTS) and under its path there (OWN_PATHS): Anthropic's, with
+    Message Batches and only Claude's own IDs; OpenAI's, whose Batches share
+    one enqueued-token window; Kimi's, with its own Batches; DeepSeek's, with
+    its own output ceiling and JSON mode; Gemini's, with its own Batches and
+    model list; OpenRouter's, with its own Batches and prices; OpenCode
+    Go's, with its own prices; or Mistral's. The one rule the app and the
+    engine ask; in test scenarios the OpenAI, Anthropic, OpenRouter and
+    OpenCode Go presets' stand-ins (STAND_INS) count as their APIs, paths
+    under them included."""
+    path = address_path(endpoint).rstrip("/") + "/"
+    return (
+        hostname(endpoint) == OWN_HOSTS[identity]
+        and path.startswith(OWN_PATHS.get(identity, "/"))
+    ) or _stand_in(identity, endpoint)
 
 
 def on_own_api(identity, address):
@@ -221,6 +245,72 @@ def _stand_in(identity, endpoint):
     stand_in = os.environ.get(STAND_INS.get(identity, ""), "")
     stand_in = stand_in.strip().rstrip("/").lower()
     return bool(stand_in) and (value == stand_in or value.startswith(stand_in + "/"))
+
+
+def deepseek_route(model, endpoint):
+    """Whether a request for *model* to *endpoint* is served and billed as
+    DeepSeek's own API serves and bills it: on DeepSeek's own API, or a
+    DeepSeek model on OpenCode Go, which prices DeepSeek's models exactly as
+    DeepSeek does, peak hours and cache reads included, and takes replies as
+    long. The one rule for DeepSeek's cache read prices (engine
+    batch_providers live_price_route), its off-peak price (provider_costs
+    time_priced_route) and its full output ceiling (engine
+    buildOpenAIRequest)."""
+    return own_api("deepseek", endpoint) or (
+        own_api("opencode-go", endpoint)
+        and str(model or "").strip().lower().startswith("deepseek-")
+    )
+
+
+# OpenCode's gateway routes a request only with a session, which keeps a
+# conversation on one backend for its prompt cache, and asks each client to
+# name itself; https://opencode.ai/v2/docs/console/harnesses/
+OPENCODE_HOST = "opencode.ai"
+
+
+def gateway_session():
+    """A new OpenCode session ID, such as "ses_0f3c...", for one stream of
+    requests sent one after another (gateway_headers)."""
+    return "ses_" + secrets.token_hex(16)
+
+
+@cache
+def user_agent():
+    """DazedTL's own User-Agent, such as "DazedTL/2.59.4": the version in
+    app/package.json, which a release sets (scripts/release.mjs) and the
+    app shows (Electron's app.getVersion)."""
+    try:
+        version = json.loads(
+            (Path(__file__).resolve().parents[3] / "app/package.json").read_text(
+                encoding="utf-8"
+            )
+        ).get("version")
+    except OSError, ValueError, AttributeError:
+        version = None
+    if isinstance(version, str) and re.fullmatch(r"[0-9A-Za-z.+-]{1,64}", version):
+        return "DazedTL/" + version
+    return "DazedTL"
+
+
+def gateway_headers(address, session=None):
+    """The headers a request to *address* adds for the gateway in front of
+    its models: on OpenCode's, at its host on any path (a Custom connection
+    there included) or a test scenario's OpenCode Go stand-in, its
+    `x-opencode-session`, *session* or a new one, and DazedTL's own
+    User-Agent; nothing anywhere else. The one rule of every sender, each
+    sending one stream of requests with one session, so its shared prompt
+    prefix stays cached while parallel streams get their own: the connection
+    check and an effort check each start one (_headers), engine
+    batch_providers get_client one per client, which an Assistant-led run's
+    worker keeps for its run, and the Guided engine one per process. They go
+    on the client or the call, never into a request's params, which Batch
+    files, saved plans and Inspect keep."""
+    if hostname(address) != OPENCODE_HOST and not _stand_in("opencode-go", address):
+        return {}
+    return {
+        "x-opencode-session": session or gateway_session(),
+        "User-Agent": user_agent(),
+    }
 
 
 def completion_field(protocol, endpoint):
@@ -377,11 +467,16 @@ def openrouter_hosts(model=""):
 
 def _headers(connection):
     """The headers that reach *connection*'s server as its key allows: its
-    key, Anthropic's API version, and an OpenAI organization where the
-    route is not OpenRouter's."""
+    key, Anthropic's API version, an OpenAI organization where the route is
+    not OpenRouter's, and a gateway's own (gateway_headers), with a new
+    session for each check."""
     protocol = connection["protocol"]
     base = route(protocol, address(connection))[1]
-    headers = {"Accept": "application/json", "Accept-Encoding": "identity"}
+    headers = {
+        "Accept": "application/json",
+        "Accept-Encoding": "identity",
+        **gateway_headers(base),
+    }
     if not connection["keyless"]:
         if protocol == "anthropic":
             headers.update(
@@ -407,19 +502,25 @@ def check(connection):
     https://docs.mistral.ai/api/endpoint/models
     https://api-docs.deepseek.com/api/list-models
     https://openrouter.ai/docs/api/api-reference/models/list-models-filtered-by-user-provider-preferences-privacy-settings-and-guardrails
+    https://opencode.ai/v2/docs/console/go/
     """
     protocol = connection["protocol"]
     base = route(protocol, address(connection))[1]
-    openrouter = infer_provider(protocol, base) == "openrouter"
+    identity = infer_provider(protocol, base)
+    openrouter = identity == "openrouter"
     headers = _headers(connection)
     # OpenRouter's public catalog cannot verify a key. Its account-filtered
     # list requires authentication and defaults to text-output models.
-    url = base + (
-        "/models/user"
+    url = (
+        base + "/models/user"
         if openrouter
-        else "/v1/models?limit=250"
+        else base + "/v1/models?limit=250"
         if protocol == "anthropic"
-        else "/models"
+        # OpenCode Go lists its models beside its OpenAI-compatible API, at
+        # /inference/go/v1/models, which answers a rejected key with 401.
+        else base.removesuffix("/openai/v1") + "/v1/models"
+        if identity == "opencode-go" and base.endswith("/openai/v1")
+        else base + "/models"
     )
     byte_limit = 8_000_000 if openrouter else 2_000_000
     model_limit = 2000 if openrouter else 250
@@ -513,9 +614,16 @@ def check(connection):
             if name != "custom"
         )
         if official and not connection["keyless"]:
+            from . import opencode
             from .openrouter import catalog, check_endpoints
 
-            known = catalog(rows) if openrouter else None
+            known = (
+                catalog(rows)
+                if openrouter
+                else opencode.catalog(rows)
+                if identity == "opencode-go"
+                else None
+            )
             value = result(
                 "verified",
                 "Authentication verified. Model availability and usage limits can still vary.",
@@ -525,7 +633,6 @@ def check(connection):
             if openrouter:
                 value["batch_endpoints"] = check_endpoints(connection, known)
             # Which efforts each model takes, where the list says (EF2).
-            identity = infer_provider(protocol, base)
             if identity in effort.LISTED:
                 value["efforts"] = effort.model_list(identity, rows)
             return value

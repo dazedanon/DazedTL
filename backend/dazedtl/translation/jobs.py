@@ -20,6 +20,7 @@ from typing import Any
 from dazedtl import system
 from dazedtl.diagnostics import FOLDER
 from dazedtl.projects import location
+from dazedtl.settings.providers import STAND_INS
 from dazedtl.storage import WorkspaceError, WorkspaceLock, write_bytes, write_json
 
 from . import plan_file
@@ -849,12 +850,9 @@ class Jobs:
                 "GIT_CONFIG_GLOBAL",
                 "GIT_CONFIG_NOSYSTEM",
                 "GIT_ATTR_NOSYSTEM",
-                # A test scenario's OpenAI preset names its stand-in, which
-                # counts as OpenAI's own API (settings/providers.own_api); its
-                # Anthropic and OpenRouter presets name it too.
-                "DAZEDTL_TEST_OPENAI_ENDPOINT",
-                "DAZEDTL_TEST_ANTHROPIC_ENDPOINT",
-                "DAZEDTL_TEST_OPENROUTER_ENDPOINT",
+                # A test scenario's presets name its stand-in, which counts
+                # as their own APIs (settings/providers.own_api).
+                *STAND_INS.values(),
                 FOLDER,
             }
         }

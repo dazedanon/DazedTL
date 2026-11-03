@@ -40,9 +40,10 @@
 //   can't be read.
 //
 // Every request is recorded in <folder>/requests.jsonl as its time, method,
-// route, status and, for a JSON body, that body, so a check can confirm a
-// field such as `reasoning_effort` reached the server (`recordedRequests`
-// reads it); headers, and with them any credential, are never recorded.
+// route, status, its User-Agent and OpenCode session header, and for a JSON
+// body that body, so a check can confirm a field such as `reasoning_effort`
+// reached the server (`recordedRequests` reads it); no other header, and
+// with them no credential, is ever recorded.
 // Uploaded files and Batches are kept in <folder>/batches. It also stands in
 // for ntfy.sh at /ntfy.sh/ and keeps each phone notification, whose body the
 // record leaves out, in <folder>/phone.jsonl.
@@ -51,6 +52,9 @@
 // under /api.anthropic.com and /openrouter.ai/api, with the effort data
 // each provider's own list carries (`claudeModels`, `routedModels`), and
 // GLM 6 runs OpenRouter's Batch at half its Live price on one endpoint.
+// Under /opencode.ai/ it answers as OpenCode Go's gateway does: a request
+// without an `x-opencode-session` header gets OpenCode's HTTP 400, and
+// /opencode.ai/inference/go/v1/models lists Go's model rows (`goModels`).
 //
 //   node scripts/testkit/provider.mjs --folder <dir> [--port <n>]
 //
@@ -141,6 +145,66 @@ const batchEndpoints = [
     supported_parameters: ["response_format", "structured_outputs"],
   },
 ];
+/**
+ * OpenCode Go's GET /inference/go/v1/models rows, as its real list writes
+ * them: DeepSeek V4.1 Flash costs twice its listed price in DeepSeek's peak
+ * hours, Gemini 4 Argon twice from a date on, and GLM 5.3 Flash lists its
+ * efforts without a multiplier.
+ */
+const goModel = (id, [input, cache, output], effort, more = {}) => ({
+  id,
+  object: "model",
+  owned_by: "opencode",
+  name: id,
+  capabilities: {
+    reasoning: { supported: true, effort },
+    structured_output: true,
+    temperature: true,
+  },
+  limit: { context: 1000000, output: more.output || 131072 },
+  cost: {
+    text: {
+      input: { price: input, cache: { read: cache } },
+      output: { price: output },
+    },
+    ...(more.multipliers && { multipliers: more.multipliers }),
+  },
+  api: {
+    "chat-completions": {
+      base_url: "https://opencode.ai/inference/go/openai/v1",
+    },
+  },
+});
+const hours = (gte, lt) => ({
+  all: [{ utc_hours: { gte } }, { utc_hours: { lt } }],
+});
+export const goModels = [
+  goModel("deepseek-v4.1-flash", [0.15, 0.003, 0.6], ["low", "high", "max"], {
+    output: 384000,
+    multipliers: [
+      {
+        when: {
+          utc_days: { in: ["mon", "tue", "wed", "thu", "fri"] },
+          any: [hours("01:00", "04:00"), hours("06:00", "10:00")],
+        },
+        factor: 2,
+      },
+    ],
+  }),
+  goModel("glm-5.3-flash", [0.15, 0.03, 0.5], ["low", "high", "max"]),
+  goModel("gemini-4-argon", [2, 0.1, 10], ["low", "medium", "high"], {
+    multipliers: [{ when: { date: { gte: "2026-12-01" } }, factor: 2 }],
+  }),
+];
+/** OpenCode's answer to a request without a session. */
+const missingSession = {
+  type: "error",
+  error: {
+    type: "MissingSessionID",
+    message:
+      "Request is missing x-opencode-session and cannot be routed efficiently. Please see https://opencode.ai/v2/docs/console/go/#where-can-i-use-it",
+  },
+};
 /** What the app sends when it asks again after a refusal. */
 const clarification = "Context clarification from the project owner";
 
@@ -546,6 +610,7 @@ export async function startProvider({ folder, port = 0 }) {
       } catch {
         sent = undefined;
       }
+      const session = request.headers["x-opencode-session"];
       const reply = (status, value, raw) => {
         record.write(
           JSON.stringify({
@@ -553,6 +618,8 @@ export async function startProvider({ folder, port = 0 }) {
             method: request.method,
             route,
             status,
+            userAgent: request.headers["user-agent"],
+            ...(session !== undefined && { session }),
             body: sent,
           }) + "\n",
         );
@@ -570,6 +637,15 @@ export async function startProvider({ folder, port = 0 }) {
           );
           return reply(200, { id: crypto.randomUUID(), event: "message" });
         }
+        // OpenCode's gateway routes nothing without a session.
+        if (url.includes("/opencode.ai/") && !session)
+          return reply(400, missingSession);
+        if (
+          request.method === "GET" &&
+          url.includes("/opencode.ai/inference/go/") &&
+          route === "/models"
+        )
+          return reply(200, { object: "list", data: goModels });
         if (
           request.method === "GET" &&
           /\/(api\.anthropic\.com|openrouter\.ai\/api)\//.test(url) &&

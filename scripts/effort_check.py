@@ -33,6 +33,7 @@ KEYS = {
     "kimi": "MOONSHOT_API_KEY",
     "mistral": "MISTRAL_API_KEY",
     "openrouter": "OPENROUTER_API_KEY",
+    "opencode-go": "OPENCODE_API_KEY",
 }
 # The cap assumes no request reads more input tokens, and no model charges
 # more per million tokens, than these.

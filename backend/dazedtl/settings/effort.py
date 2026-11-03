@@ -26,6 +26,8 @@ Rows were read on 2026-10-28 from each provider's own reference:
 - Mistral: docs.mistral.ai/capabilities/reasoning.
 - OpenRouter: openrouter.ai/docs/use-cases/reasoning-tokens and its public
   model list (``reasoning.supported_efforts`` and ``default_effort``).
+- OpenCode Go: its model list (``capabilities.reasoning.effort``), which
+  sends ``reasoning_effort`` on to each model.
 Custom and local servers send a level only once a check passed it, since
 DazedTL cannot know what they accept. scripts/effort_check.py sends each row
 of the table to its provider, so the rows stay true as providers change; each
@@ -376,10 +378,15 @@ def model_id(model):
 
 # The providers whose own model list, which the connection check downloads,
 # says which efforts each model takes: Anthropic's GET /v1/models
-# (`capabilities.effort` and `capabilities.thinking.types`) and OpenRouter's
-# GET /models/user (`reasoning`). The lists of OpenAI, Gemini, DeepSeek, Kimi
+# (`capabilities.effort` and `capabilities.thinking.types`), OpenRouter's
+# GET /models/user (`reasoning`) and OpenCode Go's GET /v1/models
+# (`capabilities.reasoning`). The lists of OpenAI, Gemini, DeepSeek, Kimi
 # and Mistral say nothing about effort, so their models keep the notes above.
-LISTED = {"anthropic": "Anthropic", "openrouter": "OpenRouter"}
+LISTED = {
+    "anthropic": "Anthropic",
+    "openrouter": "OpenRouter",
+    "opencode-go": "OpenCode Go",
+}
 # A connection keeps at most as many records as its OpenRouter catalog.
 MAX_LISTED = 2000
 _OFF = (None, "disabled", "between_tools")
@@ -467,13 +474,33 @@ def openrouter_record(row):
     )
 
 
+def opencode_record(row):
+    """The record one row of OpenCode Go's model list gives: the levels its
+    `capabilities.reasoning.effort` lists, written as `reasoning_effort`
+    (``apply``). A model that doesn't reason, or reasons with no levels
+    listed, such as one that only turns thinking on or off, takes no effort.
+    The list names no default level."""
+    capabilities = row.get("capabilities")
+    reasoning = (
+        capabilities.get("reasoning") if isinstance(capabilities, dict) else None
+    )
+    listed = (
+        reasoning.get("effort")
+        if isinstance(reasoning, dict) and _supported(reasoning)
+        else None
+    )
+    return _record(listed if isinstance(listed, list) else ())
+
+
 def model_list(provider, rows):
     """{model ID: record} from the rows of *provider*'s model list, for each
     model whose row says which efforts it takes; empty for a provider whose
     list doesn't."""
-    read = {"anthropic": anthropic_record, "openrouter": openrouter_record}.get(
-        provider
-    )
+    read = {
+        "anthropic": anthropic_record,
+        "openrouter": openrouter_record,
+        "opencode-go": opencode_record,
+    }.get(provider)
     result = {}
     if read is None:
         return result
@@ -535,10 +562,10 @@ def kept(connection):
 # Providers that take the OpenAI-compatible `reasoning_effort`, where a model
 # the notes don't hold, and every model of a custom or local server, may send
 # a level once a check on its connection passed it (settings/providers
-# check_effort, on the user's click in Settings). Anthropic's and
-# OpenRouter's own model lists say which efforts their models take, and
-# OpenRouter maps a level a model doesn't list to another without saying so,
-# so a check there would prove nothing.
+# check_effort, on the user's click in Settings). The LISTED providers' own
+# model lists say which efforts their models take, and OpenRouter maps a
+# level a model doesn't list to another without saying so, so a check there
+# would prove nothing.
 CHECKED = frozenset({"openai", "gemini", "mistral", "kimi", "deepseek", "custom"})
 # A connection keeps checks for at most this many models.
 MAX_CHECKED = 200

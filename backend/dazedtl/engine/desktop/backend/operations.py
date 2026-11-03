@@ -13,6 +13,8 @@ from .project import atomic_json, digest
 from .manual import system_environment, timestamp
 from util import extensions, system
 
+from dazedtl.settings.providers import STAND_INS
+
 
 @extensions.point
 def launch_worker(arguments, **kwargs):
@@ -74,12 +76,9 @@ class Operations:
                 # Text QA and the release playtest run the game in the app's
                 # Electron.
                 "DAZEDTL_ELECTRON",
-                # A test scenario's OpenAI preset names its stand-in, which
-                # counts as OpenAI's own API (settings/providers.own_api); its
-                # Anthropic and OpenRouter presets name it too.
-                "DAZEDTL_TEST_OPENAI_ENDPOINT",
-                "DAZEDTL_TEST_ANTHROPIC_ENDPOINT",
-                "DAZEDTL_TEST_OPENROUTER_ENDPOINT",
+                # A test scenario's presets name its stand-in, which counts
+                # as their own APIs (settings/providers.own_api).
+                *STAND_INS.values(),
             )
             environment.update(DAZEDTL_DESKTOP_WORKSPACE=str(self.root.parent), PYTHONUTF8="1", PYTHONIOENCODING="utf-8", PYTHONNOUSERSITE="1", PYTHON_DOTENV_DISABLED="1")
             if os.getenv('DAZEDTL_TEST_OFFLINE') == '1':

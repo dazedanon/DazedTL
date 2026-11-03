@@ -1601,10 +1601,18 @@ class CompatibilityContracts(unittest.TestCase):
             (None, 1.0),
         ):
             self.assertEqual(time_price_factor("deepseek", when), factor, when)
-        # Only DeepSeek's own API bills by the hour, not a host serving its
-        # models at its own prices.
-        self.assertEqual(time_priced_route("https://api.deepseek.com"), "deepseek")
-        self.assertIsNone(time_priced_route("https://openrouter.ai/api/v1"))
+        # DeepSeek's own API bills by the hour, as OpenCode Go bills
+        # DeepSeek's models, not a host serving them at its own prices, nor
+        # Go's other models or OpenCode's other APIs.
+        go = "https://opencode.ai/inference/go/openai/v1"
+        for endpoint, model, route in (
+            ("https://api.deepseek.com", "deepseek-v4-flash", "deepseek"),
+            (go, "deepseek-v4.1-flash", "deepseek"),
+            (go, "glm-5.3-flash", None),
+            ("https://opencode.ai/inference/v1", "deepseek-v4.1-flash", None),
+            ("https://openrouter.ai/api/v1", "deepseek/deepseek-v4-flash", None),
+        ):
+            self.assertEqual(time_priced_route(endpoint, model), route, endpoint)
         self.assertEqual(time_price_factor(None, at(31, 7).isoformat()), 1.0)
         ten = at(26, 10).timestamp()
         self.assertEqual(received_at(ten), at(26, 10).isoformat())
@@ -2064,6 +2072,24 @@ class CompatibilityContracts(unittest.TestCase):
                 "mistral-medium-3-5",
                 "custom",
                 "https://api.mistral.ai/v1/",
+                "openai",
+                None,
+                reads + 0.9 * 3 * 0.10,
+            ),
+            # OpenCode Go bills DeepSeek's models as DeepSeek does, and its
+            # other models at the default.
+            (
+                "deepseek-v4.1-flash",
+                "opencode-go",
+                "https://opencode.ai/inference/go/openai/v1",
+                "openai",
+                None,
+                reads + 0.9 * 3 * 0.006 / 0.30,
+            ),
+            (
+                "glm-5.3-flash",
+                "opencode-go",
+                "https://opencode.ai/inference/go/openai/v1",
                 "openai",
                 None,
                 reads + 0.9 * 3 * 0.10,
@@ -2575,6 +2601,149 @@ class CompatibilityContracts(unittest.TestCase):
             ):
                 self.assertTrue(own_server(stand_in + "/chat/completions"))
                 self.assertFalse(own_server("http://127.0.0.1:9/other"))
+
+    def test_every_opencode_request_names_one_session_per_stream_on_its_client(
+        self,
+    ):
+        # OpenCode's gateway answers every request without an
+        # x-opencode-session header with HTTP 400, so no OpenCode Go request
+        # could succeed. Each stream of requests sent one after another names
+        # one session, which keeps its prompt prefix cached, and DazedTL as
+        # its User-Agent: on the client, never in the params that Batch
+        # files, saved plans and Inspect keep, and to no other host.
+        import os
+        from unittest.mock import MagicMock
+
+        import httpx
+        import httpx2
+        from dazedtl.compatibility import refusal_retry
+        from util import translation
+        from util.batch_providers import anthropic_client, get_client
+        from util.model_catalog import ModelCatalogCore
+
+        go = "https://opencode.ai/inference/go/openai/v1"
+        sent = []
+        completion = {
+            "id": "chatcmpl-1",
+            "object": "chat.completion",
+            "created": 1,
+            "model": "deepseek-v4.1-flash",
+            "choices": [
+                {
+                    "index": 0,
+                    "finish_reason": "stop",
+                    "message": {"role": "assistant", "content": '{"Line1": "Potion"}'},
+                }
+            ],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+        }
+
+        def answering(module):
+            def handle(_transport, request):
+                url = str(request.url)
+                sent.append(
+                    (
+                        url,
+                        request.headers.get("x-opencode-session"),
+                        request.headers.get("user-agent"),
+                        request.content.decode(),
+                    )
+                )
+                return module.Response(
+                    200,
+                    json=completion
+                    if url.endswith("/chat/completions")
+                    else {"object": "list", "data": [], "has_more": False},
+                )
+
+            return handle
+
+        def sessions(send, host="opencode.ai"):
+            """The session of each request *send* makes, which all go to
+            *host* naming DazedTL, their bodies without it."""
+            sent.clear()
+            send()
+            for url, session, agent, body in sent:
+                self.assertIn(f"//{host}/", url)
+                self.assertEqual(agent, providers.user_agent())
+                self.assertNotIn(session, body)
+            return [session for _url, session, *_ in sent]
+
+        def guided():
+            translation.translateText(
+                "Translate.",
+                '```json\n{"Line1": "薬"}\n```',
+                [],
+                0,
+                "json",
+                "deepseek-v4.1-flash",
+                1,
+            )
+
+        from dazedtl.settings import providers
+
+        clarified = {"model": "deepseek-v4.1-flash", "messages": []}
+        with (
+            patch.object(httpx.HTTPTransport, "handle_request", answering(httpx)),
+            patch.object(httpx2.HTTPTransport, "handle_request", answering(httpx2)),
+            # translateText configures the shared OpenAI module for every
+            # provider.
+            patch.multiple(
+                translation.openai,
+                base_url=translation.openai.base_url,
+                api_key=translation.openai.api_key,
+                default_headers=translation.openai.default_headers,
+            ),
+            patch.dict(
+                os.environ, {"api": go, "key": "run-key", "API_PROVIDER": "openai"}
+            ),
+        ):
+            # An Assistant-led run's worker keeps one client, and its copies
+            # the client's session; another client is another stream.
+            client = get_client("openai", api_key="key", api_url=go, max_retries=0)
+            copy = client.with_options(timeout=45, max_retries=0)
+            first = sessions(
+                lambda: [
+                    copy.chat.completions.create(model="glm-5.3-flash", messages=[])
+                    for _ in range(2)
+                ]
+            )
+            self.assertEqual(len(set(first)), 1)
+            self.assertTrue(first[0].startswith("ses_"))
+            other = sessions(get_client("openai").models.list)
+            self.assertNotIn(other[0], first)
+            # A Guided engine process is one stream, its clarifications
+            # included, and so is a Claude client on OpenCode's own path.
+            engine = sessions(lambda: [guided(), guided()])
+            engine += sessions(
+                lambda: refusal_retry.send_once(translation, MagicMock(), clarified)
+            )
+            self.assertEqual(engine, [translation.GATEWAY_SESSION] * 3)
+            claude = anthropic_client("key", "https://opencode.ai/inference/go")
+            self.assertEqual(len(sessions(claude.models.list)), 1)
+            catalog = ModelCatalogCore()
+            catalog.initialize("key", go, "openai")
+            self.assertEqual(len(sessions(catalog._fetch_openai)), 1)
+            # A Custom connection at OpenCode's other APIs gets them too, and
+            # every other host, the same engine's next address included, none.
+            self.assertEqual(
+                len(
+                    sessions(
+                        get_client(
+                            "openai",
+                            api_key="key",
+                            api_url="https://opencode.ai/zen/v1",
+                        ).models.list
+                    )
+                ),
+                1,
+            )
+            with patch.dict(os.environ, {"api": "https://api.deepseek.com"}):
+                sent.clear()
+                guided()
+                get_client("openai").models.list()
+            self.assertEqual([session for _url, session, *_ in sent], [None, None])
+            self.assertNotIn("DazedTL", str([agent for _u, _s, agent, _b in sent]))
 
     def test_a_given_key_goes_only_to_the_address_saved_with_it(self):
         # An OpenAI-compatible client given a key but no address sent it to

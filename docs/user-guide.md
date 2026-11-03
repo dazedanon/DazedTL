@@ -64,7 +64,6 @@ Pick Manual if you have your own tools that extract a game's text and write it b
 
 DazedTL already does the safekeeping inside the game folder:
 
-- Every change it makes is a [checkpoint](#checkpoints-and-undo) you can undo, and edits you make outside DazedTL get one of their own, so there is nothing to save by hand.
 - Before it first changes the game, it records the original files in the game folder's Git repository.
 - A new version of the game merges into your checkpoints through [Game updates](#game-updates).
 
@@ -77,7 +76,6 @@ That record lives only in this game folder on this computer, so two things are s
 Also:
 
 - Work in one game folder: a copy of it opens as a new project.
-- Translate a little and [playtest](#playtest-checklist) it before you translate the rest.
 
 ## Guided steps
 
@@ -88,7 +86,7 @@ On the Project page, **Continue** opens the next unfinished task; optional tasks
 ### 1. Set up
 
 Click **Set up this game** and answer its two questions: the game's version, and whether it already has translations.
-DazedTL prepares the game files and keeps a copy of the originals, so every change can be undone and later versions of the game can be merged in.
+DazedTL prepares the game files and records their originals.
 For VX Ace games, it also converts the game's data, unpacking an encrypted `Game.rgss3a`, so it can be translated.
 
 **Languages** shows what the game translates from and into.
@@ -299,7 +297,10 @@ For OpenAI, raise **Batch token allowance** to your account's limit from [OpenAI
 - **OpenRouter:** enter the full model ID, such as `anthropic/claude-sonnet-4.5`; **Host** pins one hosting provider.
   Its Batches can take up to 24 hours and can't be cancelled once sent.
 - **Kimi:** Batch works with Kimi K2.6 and K2.7 Code, at 40% off; Kimi K3 translates Live only.
-- **DeepSeek:** no Batch, so it translates Live; outside its [peak hours](https://api-docs.deepseek.com/quick_start/pricing) it costs half.
+- **DeepSeek** and **OpenCode Go:** no Batch, so they translate Live; DeepSeek costs half outside its [peak hours](https://api-docs.deepseek.com/quick_start/pricing), on Go too.
+- **OpenCode Go:** runs use your plan's allowance at Go's prices; DazedTL sends the session header itself.
+  A used-up 5-hour, weekly or monthly limit fails requests until it resets, unless Extra Usage is on.
+  DeepSeek needs **Global** regions and Muse Spark **Allow paid endpoints that train on request data** in the workspace's Privacy settings.
 - Kimi and DeepSeek models think before they answer, which is billed as output and isn't in the estimate.
 
 ## Notifications

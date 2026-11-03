@@ -625,6 +625,172 @@ class SettingsTests(unittest.TestCase):
                 self.assertIsNone(result["models"])
             self.assertEqual(len(requests), 4)
 
+    def test_an_opencode_go_check_prices_and_offers_efforts_from_go_s_own_list(self):
+        # An OpenCode Go key could not be checked or priced: the preset's
+        # address lists no models under it, Go answers a request without a
+        # session with HTTP 400, and other hosts' prices for its models are
+        # not Go's. The check lists Go's models beside its API with a session
+        # of its own, verifies the key, and keeps the catalog Settings prices
+        # each model from: a DeepSeek model at its peak rate, as DeepSeek's
+        # own API is estimated, another model at its listed rate times any
+        # date multiplier in effect.
+        from dazedtl.settings import effort, opencode
+
+        def row(model, price, output, effort=None, multipliers=()):
+            reasoning = {"supported": True, **({"effort": effort} if effort else {})}
+            return {
+                "id": model,
+                "capabilities": {"reasoning": reasoning, "structured_output": True},
+                "limit": {"context": 1000000, "output": 384000},
+                "cost": {
+                    "text": {
+                        "input": {"price": price, "cache": {"read": price / 50}},
+                        "output": {"price": output},
+                    },
+                    "multipliers": list(multipliers),
+                },
+            }
+
+        peak = {
+            "when": {
+                "utc_days": {"in": ["mon", "tue", "wed", "thu", "fri"]},
+                "any": [{"all": [{"utc_hours": {"gte": "01:00"}}]}],
+            },
+            "factor": 2,
+        }
+        rows = [
+            row("deepseek-v4.1-flash", 0.15, 0.6, ["low", "high", "max"], [peak]),
+            row(
+                "gemini-4-argon",
+                2,
+                10,
+                ["low", "medium", "high"],
+                [{"when": {"date": {"gte": "2026-12-01"}}, "factor": 2}],
+            ),
+            row("kimi-k2.7-code", 0.95, 4),
+        ]
+        requests = []
+
+        def respond(request):
+            requests.append(request)
+            body = json.dumps({"object": "list", "data": rows}).encode()
+            return httpx.Response(200, stream=httpx.ByteStream(body))
+
+        client = httpx.Client
+        connection = {
+            "id": "go",
+            "runtime_name": "go-key",
+            "name": "OpenCode Go",
+            "provider": "opencode-go",
+            "protocol": "openai",
+            "endpoint": "",
+            "secret": "fixture-go-key",
+            "keyless": False,
+            "organization": "",
+            "model": "deepseek-v4.1-flash",
+            "model_options": {},
+            "models": [],
+            "check": providers.unchecked(),
+        }
+        adapter = SimpleNamespace(
+            settings_metadata=lambda: {
+                "values": {"language": "English", "model": "deepseek-v4.1-flash"}
+            },
+            allow_providers=True,
+        )
+        with TemporaryDirectory() as temporary:
+            write_json(
+                Path(temporary) / "settings/settings.json",
+                {
+                    "version": 3,
+                    "revision": 0,
+                    "sourceLanguage": "Japanese",
+                    "values": {"language": "English", "model": "deepseek-v4.1-flash"},
+                    "legacy": {"values": {}, "engines": {}, "draft": None},
+                    "model_options": {},
+                    "active": "go",
+                    "draft": None,
+                    "connections": [connection],
+                },
+            )
+            settings = Settings(temporary, adapter)
+            with patch.object(
+                providers.httpx,
+                "Client",
+                side_effect=lambda **kwargs: client(
+                    transport=httpx.MockTransport(respond), **kwargs
+                ),
+            ):
+                for _ in range(2):
+                    settings.check_connection(settings.describe()["revision"], "go")
+            first, second = (request.headers for request in requests)
+            self.assertEqual(
+                str(requests[0].url), "https://opencode.ai/inference/go/v1/models"
+            )
+            self.assertEqual(first["Authorization"], "Bearer fixture-go-key")
+            self.assertEqual(first["User-Agent"], providers.user_agent())
+            self.assertRegex(providers.user_agent(), r"^DazedTL/\d")
+            # Each check is a stream of its own.
+            self.assertNotEqual(
+                first["x-opencode-session"], second["x-opencode-session"]
+            )
+            saved = Settings(temporary, adapter)
+            self.assertEqual(
+                saved.describe()["connections"][0]["check"]["status"], "verified"
+            )
+            flash = saved.model_defaults("go", "deepseek-v4.1-flash")
+            self.assertEqual(
+                (flash["inputRate"], flash["outputRate"], flash["source"]),
+                (0.3, 1.2, "catalog"),
+            )
+            self.assertEqual(flash["maxOutputTokens"], 384000)
+            self.assertEqual(
+                [option["label"] for option in flash["thinkingEffort"]["options"]],
+                ["Provider default", "Low", "High", "Maximum"],
+            )
+            self.assertIn("OpenCode Go's model list", flash["thinkingEffort"]["source"])
+            # A model that reasons with no levels listed takes none.
+            self.assertEqual(
+                saved.model_defaults("go", "kimi-k2.7-code")["thinkingEffort"][
+                    "options"
+                ],
+                [{"value": None, "label": "Provider default"}],
+            )
+            stored = saved._read()["connections"][0]
+            # Runs send a listed level as Go's OpenAI-compatible API takes it.
+            self.assertEqual(
+                effort.apply(
+                    {"temperature": 0},
+                    "opencode-go",
+                    "deepseek-v4.1-flash",
+                    "high",
+                    stored["efforts"]["deepseek-v4.1-flash"],
+                ),
+                {"reasoning_effort": "high"},
+            )
+            # Its multiplier holds from December 1st on.
+            for day, rate in (
+                (datetime(2026, 11, 30, tzinfo=UTC), 2),
+                (datetime(2026, 12, 1, tzinfo=UTC), 4),
+            ):
+                self.assertEqual(
+                    opencode.describe(stored, "gemini-4-argon", day)["inputRate"],
+                    rate,
+                )
+            # Another provider's address gets no OpenCode headers.
+            self.assertEqual(providers.gateway_headers("https://api.deepseek.com"), {})
+            for invalid in (
+                {"peak": 1},
+                {"input": 2_000_000},
+                {"dated": [{"from": "December", "until": None, "factor": 2}]},
+                {"dated": [{"from": None, "until": None, "factor": 0}]},
+                {"json": None},
+            ):
+                with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                    opencode.validate_catalog(
+                        {"model": {**stored["catalog"]["gemini-4-argon"], **invalid}}
+                    )
+
     def test_openrouter_batch_catalog_survives_reopen_and_host_changes_cannot_reprice_saved_work(
         self,
     ):
