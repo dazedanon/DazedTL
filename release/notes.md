@@ -2,4 +2,4 @@
 
 ### Added
 
-- **Settings:** OpenCode Go is a new provider: paste a Go key to translate Live with Go's models, priced at Go's own rates, with each model's thinking efforts from Go's model list.
+- **Settings:** OpenCode Go and OpenCode pay-as-you-go are new providers: paste an OpenCode key to translate Live with OpenCode's models at its own prices, with each model's thinking efforts from its model list, and DeepSeek's thinking can be turned **Off**, which saves most of its output cost.
