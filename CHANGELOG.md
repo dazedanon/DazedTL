@@ -3,6 +3,14 @@
 Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 [release.mjs](scripts/release.mjs) writes each entry from [release/notes.md](release/notes.md).
 
+## [2.59.1] - 2026-11-03
+
+### Fixed
+
+- **Settings:** the Model menu no longer says "Settings has unsaved changes" after you change a Translation default and change it back, when there was nothing to save or revert.
+- **GameUpdate:** players' GameUpdate and the in-game update check reach GitGud again; since 2 November GitGud answered them with "403" unless they sent a header it now asks apps for. A game set up before needs its GameUpdate files again, with **Recreate GameUpdate files** in Guided steps or by asking your assistant to install GameUpdate again, then a push; players whose GameUpdate still fails download that patch once from the repository page.
+- **Updates:** DazedTL can download its own updates from GitGud again when GitHub can't be reached.
+
 ## [2.59.0] - 2026-11-03
 
 ### Added
@@ -1601,6 +1609,7 @@ Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachan
 - The first release of DazedTL as a desktop app, installed from a ZIP with a START launcher and updated from inside the app.
 - **Guided steps** for RPG Maker MV, MZ and VX Ace games, and **Assistant-led** for any game.
 
+[2.59.1]: https://github.com/dazedanon/DazedTL/compare/v2.59.0...v2.59.1
 [2.59.0]: https://github.com/dazedanon/DazedTL/compare/v2.58.1...v2.59.0
 [2.58.1]: https://github.com/dazedanon/DazedTL/compare/v2.58.0...v2.58.1
 [2.58.0]: https://github.com/dazedanon/DazedTL/compare/v2.57.0...v2.58.0
