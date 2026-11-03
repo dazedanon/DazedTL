@@ -28,6 +28,7 @@ export function ActionControl({
   inline = false,
   feedbackKey,
   disabledReason = "",
+  note = "",
   job: reported,
   icon,
   ...button
@@ -49,6 +50,9 @@ export function ActionControl({
   inline?: boolean;
   /** Shown beside the control while it is disabled for this reason. */
   disabledReason?: string;
+  /** Shown beside the enabled control, with no result to show, for what to
+   * know before using it. */
+  note?: string;
   job?: Pick<Job, "label" | "status" | "message" | "updated">;
 }) {
   // Each status shows once: a success that a status heading for this action
@@ -104,6 +108,8 @@ export function ActionControl({
       <Feedback notice={notice} />
     ) : button.disabled && disabledReason ? (
       <span className="action-control-reason">{disabledReason}</span>
+    ) : !button.disabled && note ? (
+      <span className="action-control-reason">{note}</span>
     ) : null;
   return (
     <div

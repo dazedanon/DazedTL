@@ -27,6 +27,7 @@ from dazedtl.translation import (
     progress_report,
     publication,
 )
+from dazedtl.translation.assistant_release import PackageRefusal
 from dazedtl.translation.compilation import compile_requests
 from dazedtl.translation.files import digest, evidence, read_json
 from dazedtl.translation.game_update import ABSENT
@@ -37,6 +38,7 @@ from dazedtl.translation.operations import (
     execute,
     lifecycle,
     lifecycle_path,
+    release_plan_path,
     require_baseline,
     take_census,
 )
@@ -1868,6 +1870,44 @@ class WorkflowTests(unittest.TestCase):
         kept.unlink()
         self.service.sync_images(self.identity)
         self.assertEqual(self.engine.reports[-1]["phases"]["patch"], "active")
+
+    def test_the_users_patch_builds_without_the_checks_its_review_listed(self):
+        # The user's patch waited for the assistant's QA, however long it
+        # took; it builds with what the review listed unfinished, while the
+        # assistant's own package keeps every check.
+        qa = PackageRefusal(
+            "Complete and record current QA evidence before packaging the translation.",
+            "The patch waits for your assistant's QA.",
+        )
+
+        def reviewed(unfinished):
+            path = release_plan_path(self.profile, self.identity, "patch")
+            payload = {
+                "version": 1,
+                "project_id": self.identity,
+                "kind": "patch",
+                "unfinished": unfinished,
+            }
+            write_json(path, payload)
+            return {
+                "plan": path.relative_to(self.profile).as_posix(),
+                "sha256": digest(payload),
+            }
+
+        with (
+            patch.object(self.service, "unfinished", return_value=[qa]),
+            patch.object(
+                self.service.game_update, "sync", side_effect=RuntimeError("built")
+            ),
+        ):
+            with self.assertRaisesRegex(ValueError, "^Complete and record"):
+                self.service.operation(self.identity, "package", {})
+            with self.assertRaisesRegex(ValueError, "changed since the review"):
+                self.service.user_operation(self.identity, "package", reviewed([]))
+            with self.assertRaisesRegex(RuntimeError, "built"):
+                self.service.user_operation(
+                    self.identity, "package", reviewed([qa.reason])
+                )
 
     def test_an_api_run_answers_its_approval_and_keeps_later_questions(self):
         selected = self.project.read()

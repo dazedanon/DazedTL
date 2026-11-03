@@ -455,13 +455,16 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
             raise ValueError(
                 "Register the patch's runtime manifest with Git setup first."
             )
-        require_patch(source, manifest_path)
         # Release saves the patch where the user chose, as its review read it.
         planned = (
             release_plan(workspace, job["project_id"], arguments, "patch")
             if arguments.get("plan")
             else None
         )
+        if planned is None:
+            # The user's build may go without QA's record, which its review
+            # listed and the service checked against it.
+            require_patch(source, manifest_path)
         if planned and (
             git_identity(engine.git_status(source, options)) != planned["git"]
         ):

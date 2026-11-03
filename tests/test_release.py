@@ -583,7 +583,7 @@ class ReleaseTests(unittest.TestCase):
                 checkpoint=Mock(return_value="after"),
                 package=package,
             )
-            ready = Mock()
+            ready = Mock(return_value=[])
             releases = AssistantRelease(
                 SimpleNamespace(
                     workspace=workspace,
@@ -594,7 +594,7 @@ class ReleaseTests(unittest.TestCase):
                     ),
                     game_update=SimpleNamespace(require_ready=Mock()),
                     idle=Mock(),
-                    package_ready=ready,
+                    unfinished_reasons=ready,
                 )
             )
             self.assertEqual(releases.form("owner")["directory"], str(root))
@@ -607,12 +607,7 @@ class ReleaseTests(unittest.TestCase):
                     "action": "release" if kind == "game" else "package",
                     "arguments": {"plan": preview["plan"], "sha256": preview["sha256"]},
                 }
-                # The runtime manifest's QA is recorded.
-                with patch(
-                    "dazedtl.translation.delivery.verify",
-                    return_value={"files": ["patch-files.json"]},
-                ):
-                    return execute(engine, workspace, job, plan, lambda: False)
+                return execute(engine, workspace, job, plan, lambda: False)
 
             output = str(root / "Game-game.zip")
             preview = releases.preview("owner", "game", output)
@@ -641,21 +636,26 @@ class ReleaseTests(unittest.TestCase):
                         "Game-game/" + image,
                     ],
                 )
-            # The patch is the assistant's package, with its checks, saved
-            # where the user chose; a file that appeared there after the
-            # review is not replaced.
+            # The patch is the assistant's package saved where the user
+            # chose; a file that appeared there after the review is not
+            # replaced.
             patch_output = str(root / "Game-patch.zip")
-            # A patch that isn't ready says why in the user's terms; the
+            # A patch that can't exist says why in the user's terms; the
             # helper keeps the assistant's.
             ready.side_effect = PackageRefusal(
-                "Run organize --complete first.", "Your assistant finishes first."
+                "Register the manifest first.", "Your assistant sets up first."
             )
-            with self.assertRaisesRegex(ValueError, "^Your assistant finishes first.$"):
+            with self.assertRaisesRegex(ValueError, "^Your assistant sets up first.$"):
                 releases.preview("owner", "patch", patch_output)
             ready.side_effect = None
+            # One the assistant hasn't finished, with no QA recorded, is
+            # built anyway: its review lists what's left. It waited for QA
+            # however long the assistant took, and Guided's patch never does.
+            ready.return_value = ["The patch waits for your assistant's QA."]
             preview = releases.preview("owner", "patch", patch_output)
             self.assertEqual(ready.call_count, 2)
             self.assertEqual(preview["paths"], [name, image])
+            self.assertEqual(preview["unfinished"], ready.return_value)
             Path(patch_output).write_bytes(b"someone else's file")
             with self.assertRaisesRegex(ValueError, "destination changed"):
                 build("patch", preview)

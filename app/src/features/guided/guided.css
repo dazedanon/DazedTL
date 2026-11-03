@@ -1414,6 +1414,10 @@
 .release-exclusions {
   display: grid;
 }
+.release-unfinished ul {
+  margin: var(--space-1) 0;
+  padding-inline-start: var(--space-5);
+}
 /* Each row is one list item: the path and its reason above one divider. */
 .release-exclusions p {
   display: grid;

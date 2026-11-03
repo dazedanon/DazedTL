@@ -404,6 +404,9 @@ class ReleasePreview(TypedDict):
     package: PackageSummary
     overwrite: bool
     game_version: str | None
+    # Why the patch isn't of a finished translation, in the user's terms,
+    # which a patch is built without; empty for a game ZIP.
+    unfinished: list[str]
     plan: str
     sha256: str
 

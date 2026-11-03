@@ -226,7 +226,7 @@ class AssistantRelease:
             extra = {"scope": scope}
         else:
             with users_terms():
-                self.translation.package_ready(project_id)
+                unfinished = self.translation.unfinished_reasons(project_id)
             status = engine.git_status(root, options)
             manifest = runtime_manifest(root, state["runtime_manifest"])
             contents = engine.patch_files(root, manifest)
@@ -240,7 +240,8 @@ class AssistantRelease:
                 ace_archive(root),
             )
             game_version = status.get("original_version")
-            extra = {"git": git_identity(status)}
+            # The build checks the patch is no less finished than this.
+            extra = {"git": git_identity(status), "unfinished": unfinished}
         payload = {
             "version": 1,
             "project_id": project_id,
@@ -260,6 +261,7 @@ class AssistantRelease:
             "package": package,
             "overwrite": payload["output_hash"] is not None,
             "game_version": game_version,
+            "unfinished": extra.get("unfinished", []),
             "plan": plan.relative_to(self.translation.workspace).as_posix(),
             "sha256": digest(payload),
         }

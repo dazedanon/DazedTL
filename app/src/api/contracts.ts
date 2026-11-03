@@ -1787,6 +1787,7 @@ export type ReleasePreview = {
   package: PackageSummary;
   overwrite: boolean;
   game_version: string | null;
+  unfinished: string[];
   plan: string;
   sha256: string;
 };
