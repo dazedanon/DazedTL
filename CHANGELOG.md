@@ -3,6 +3,12 @@
 Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 [release.mjs](scripts/release.mjs) writes each entry from [release/notes.md](release/notes.md).
 
+## [2.58.1] - 2026-11-02
+
+### Fixed
+
+- **Translate:** a Batch that cannot be sent, such as a Gemini Batch, or the Batch that asks its refused lines again, when google-genai is missing, now fails the run with what to fix instead of "check_submit failed (RuntimeError)", and no longer leaves the run waiting to be reconciled, such as at "Reconcile the clarification Batch submission."; nothing was sent, so it is sent once the cause is fixed.
+
 ## [2.58.0] - 2026-11-02
 
 ### Added
@@ -1588,6 +1594,7 @@ Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachan
 - The first release of DazedTL as a desktop app, installed from a ZIP with a START launcher and updated from inside the app.
 - **Guided steps** for RPG Maker MV, MZ and VX Ace games, and **Assistant-led** for any game.
 
+[2.58.1]: https://github.com/dazedanon/DazedTL/compare/v2.58.0...v2.58.1
 [2.58.0]: https://github.com/dazedanon/DazedTL/compare/v2.57.0...v2.58.0
 [2.57.0]: https://github.com/dazedanon/DazedTL/compare/v2.56.1...v2.57.0
 [2.56.1]: https://github.com/dazedanon/DazedTL/compare/v2.56.0...v2.56.1
