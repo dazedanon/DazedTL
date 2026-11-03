@@ -710,7 +710,19 @@ class SettingsTests(unittest.TestCase):
                     "model_options": {},
                     "active": "go",
                     "draft": None,
-                    "connections": [connection],
+                    # A Custom connection at Go's address, as one made before
+                    # the preset was, is checked and kept as Go's.
+                    "connections": [
+                        connection,
+                        {
+                            **connection,
+                            "id": "custom-go",
+                            "runtime_name": "custom-go-key",
+                            "name": "Custom Go",
+                            "provider": "custom",
+                            "endpoint": providers.OWN_APIS["opencode-go"],
+                        },
+                    ],
                 },
             )
             settings = Settings(temporary, adapter)
@@ -721,9 +733,9 @@ class SettingsTests(unittest.TestCase):
                     transport=httpx.MockTransport(respond), **kwargs
                 ),
             ):
-                for _ in range(2):
-                    settings.check_connection(settings.describe()["revision"], "go")
-            first, second = (request.headers for request in requests)
+                for identity in ("go", "go", "custom-go"):
+                    settings.check_connection(settings.describe()["revision"], identity)
+            first, second = (request.headers for request in requests[:2])
             self.assertEqual(
                 str(requests[0].url), "https://opencode.ai/inference/go/v1/models"
             )
@@ -736,7 +748,8 @@ class SettingsTests(unittest.TestCase):
             )
             saved = Settings(temporary, adapter)
             self.assertEqual(
-                saved.describe()["connections"][0]["check"]["status"], "verified"
+                [item["check"]["status"] for item in saved.describe()["connections"]],
+                ["verified", "verified"],
             )
             flash = saved.model_defaults("go", "deepseek-v4.1-flash")
             self.assertEqual(

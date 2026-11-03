@@ -145,9 +145,10 @@ class Settings:
             try:
                 preferences.model_options(connection.get("model_options"))
                 if "catalog" in connection:
+                    # Read as the check that kept it chose (providers.listing).
                     (
                         opencode
-                        if connection["provider"] == "opencode-go"
+                        if providers.listing(connection) == "opencode-go"
                         else openrouter
                     ).validate_catalog(connection["catalog"])
                 if "efforts" in connection:

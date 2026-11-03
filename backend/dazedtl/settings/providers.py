@@ -493,6 +493,15 @@ def _headers(connection):
     return headers
 
 
+def listing(connection):
+    """The preset whose own model list a check of *connection* reads, by its
+    address: the preset itself, a Custom connection at a preset's address
+    that preset, None or "custom" otherwise (infer_provider). The one rule
+    for which catalog a check keeps and which reader validates it."""
+    protocol = connection["protocol"]
+    return infer_provider(protocol, route(protocol, address(connection))[1])
+
+
 def check(connection):
     """A bounded model-list request; no inference, retries, or redirects.
 
@@ -506,7 +515,7 @@ def check(connection):
     """
     protocol = connection["protocol"]
     base = route(protocol, address(connection))[1]
-    identity = infer_provider(protocol, base)
+    identity = listing(connection)
     openrouter = identity == "openrouter"
     headers = _headers(connection)
     # OpenRouter's public catalog cannot verify a key. Its account-filtered
