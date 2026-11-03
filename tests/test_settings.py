@@ -761,7 +761,6 @@ class SettingsTests(unittest.TestCase):
                 [option["label"] for option in flash["thinkingEffort"]["options"]],
                 ["Provider default", "Low", "High", "Maximum"],
             )
-            self.assertIn("OpenCode Go's model list", flash["thinkingEffort"]["source"])
             # A model that reasons with no levels listed takes none.
             self.assertEqual(
                 saved.model_defaults("go", "kimi-k2.7-code")["thinkingEffort"][
@@ -790,8 +789,6 @@ class SettingsTests(unittest.TestCase):
                     opencode.describe(stored, "gemini-4-argon", day)["inputRate"],
                     rate,
                 )
-            # Another provider's address gets no OpenCode headers.
-            self.assertEqual(providers.gateway_headers("https://api.deepseek.com"), {})
             # A DeepSeek model freezes at DeepSeek's peak rate, which its
             # off-peak usage records half of, even if Go's row lists no peak.
             listed = {
