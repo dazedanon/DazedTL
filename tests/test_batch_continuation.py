@@ -145,7 +145,7 @@ class BatchContinuationTests(unittest.TestCase):
             translation.submitTranslationBatches = point(lambda steps: steps())
             create = Mock(side_effect=[{"id": "first"}, {"id": "second"}])
             providers.submit_batch = point(create)
-            providers.get_client = Mock(
+            providers.submission_client = Mock(
                 return_value=SimpleNamespace(with_options=lambda **_: object())
             )
             task.TranslationTask = type(
@@ -242,7 +242,7 @@ class BatchContinuationTests(unittest.TestCase):
             create = Mock(side_effect=[failure(402), failure(500)])
             providers.submit_batch = point(create)
             client = SimpleNamespace(with_options=lambda **_: object())
-            providers.get_client = Mock(
+            providers.submission_client = Mock(
                 side_effect=[
                     RuntimeError("Could not determine home directory."),
                     client,
@@ -340,7 +340,7 @@ class BatchContinuationTests(unittest.TestCase):
             translation.submitTranslationBatches = point(lambda steps: steps())
             create = Mock(return_value={"id": "paid"})
             providers.submit_batch = point(create)
-            providers.get_client = lambda _: SimpleNamespace(
+            providers.submission_client = lambda *_: SimpleNamespace(
                 with_options=lambda **_: object()
             )
 

@@ -317,8 +317,9 @@ def install_worker(root, plan):
             raise BatchContinuationError(
                 "This Batch request already has a provider receipt."
             )
-        # A client that cannot be built fails before the journal, never sent.
-        client = kwargs.get("client") or providers.get_client(provider)
+        # A client that cannot create the Batch fails before the journal,
+        # never sent (submission_client).
+        client = providers.submission_client(provider, kwargs.get("client"))
         kwargs["client"] = client.with_options(max_retries=0)
         path = live_path(root, "log/" + JOURNAL, exists=False)
         state = saved(root, "batch_state.json")

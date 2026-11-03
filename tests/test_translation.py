@@ -68,6 +68,9 @@ class BatchProvider:
         self.ended = False
         self.unrelated = False
 
+    def check_submit(self):
+        pass
+
     def submit(self, items):
         self.calls += 1
         self.items = items
@@ -1935,7 +1938,7 @@ class TranslationTests(unittest.TestCase):
             "refused": {"text": "I cannot translate explicit sexual content."},
         }
 
-        class Provider:
+        class Provider(BatchProvider):
             def submit(self, _items):
                 return {"id": "clarification"}
 
@@ -1961,6 +1964,26 @@ class TranslationTests(unittest.TestCase):
                 if key not in {"version", "keys"}
             }
             write_json(path, {**record, "requests": requests})
+
+    def test_a_batch_its_connection_cannot_create_stays_unsent(self):
+        # A Gemini Batch without google-genai is refused before anything is
+        # sent; it was saved as maybe sent, so the run waited on a
+        # reconciliation of a Batch that never existed.
+        class Unready(BatchProvider):
+            # submit_batch asks the same check (submission_client).
+            def check_submit(self):
+                raise RuntimeError("Gemini batching requires google-genai.")
+
+            def submit(self, items):
+                self.check_submit()
+
+        job, _plan = self.run_record("batch")
+        with self.assertRaises(RuntimeError):
+            Runner(self.store, job["id"], Unready(), lambda: None).step()
+        provider = BatchProvider()
+        Runner(self.store, job["id"], provider, lambda: None).step()
+        self.assertEqual(provider.calls, 1)
+        self.assertNotEqual(self.store.load(job["id"])[0]["status"], "uncertain")
 
     def test_unknown_batch_submission_and_wrong_job_results_stay_blocked(self):
         for failure in (True, False):

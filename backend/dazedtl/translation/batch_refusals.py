@@ -111,6 +111,8 @@ def advance(
     provider's shared token window while it is sent, answering whether they
     fit; each workflow passes its window's rule, which says yes for providers
     without one.
+    `provider.check_submit()` refuses, before anything is sent, a
+    clarification Batch the connection cannot create.
     `sources` maps each request key to its source lines, which excuse a note
     that its own source explains; without them, every such note is a refusal.
     """
@@ -207,6 +209,10 @@ def advance(
                 batch["state"] = "failed"
                 save(path, record)
                 continue
+            # A connection that cannot create the Batch refuses before it is
+            # recorded as maybe sent, so it stays pending and is sent once it
+            # can be.
+            provider.check_submit()
             with reserve(batch["items"]) as available:
                 if not available:
                     return unfinished(waiting_capacity=True)

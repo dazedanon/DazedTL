@@ -1621,6 +1621,14 @@ class TranslationProvider:
         return result
 
     @provider_errors
+    def check_submit(self):
+        """Refuses a new Batch this connection cannot create, before anything
+        is sent (batch_providers.submission_client)."""
+        from util.batch_providers import submission_client
+
+        submission_client(self.provider, self.client)
+
+    @provider_errors
     def submit(self, requests):
         from util.batch_providers import submit_batch
 

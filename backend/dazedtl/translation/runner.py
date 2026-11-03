@@ -844,6 +844,9 @@ class Runner:
     def submit(self, chunk):
         """Sends the unsent chunk once the window has room, and whether the
         pass goes on; a chunk without room stays queued, sending nothing."""
+        # A connection that cannot create the Batch refuses before the chunk
+        # is recorded as maybe sent, so it stays unsent.
+        self.provider.check_submit()
         with self.room(chunk) as available:
             pass
         if available:

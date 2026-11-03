@@ -2966,7 +2966,30 @@ class CompatibilityContracts(unittest.TestCase):
             ):
                 with self.subTest(path=name):
                     root = run(name)
+                    # A clarification whose Files client cannot be made, here
+                    # without google-genai, is refused before anything is
+                    # sent, so it stays unsent and goes on once it can be.
+                    import google as package
+
                     sent.clear()
+                    with (
+                        patch.dict(sys.modules, {"google.genai": None}),
+                        patch.dict(package.__dict__),
+                    ):
+                        package.__dict__.pop("genai", None)
+                        with self.assertRaises(RuntimeError):
+                            batch_refusals.advance_guided(
+                                root, plan, resolve, connection=connection
+                            )
+                    self.assertEqual(sent, [])
+                    self.assertEqual(
+                        [
+                            batch["state"]
+                            for record in batch_refusals.records(root)
+                            for batch in record["batches"]
+                        ],
+                        ["pending"],
+                    )
                     outcome = batch_refusals.advance_guided(
                         root, plan, resolve, connection=connection
                     )

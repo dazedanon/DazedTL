@@ -296,6 +296,20 @@ def google_files_client(api_key: str):
     return genai.Client(api_key=key, http_options={"retry_options": {"attempts": 1}})
 
 
+def submission_client(provider: str, client=None):
+    """The client a new Batch of *provider* is created through, *client* or
+    the run's (get_client), once all it needs before its first request is
+    there: a Gemini Batch's address is Google's own (require_gemini_api) and
+    its Files client can be made (google_files_client). Each refusal comes
+    before anything is sent, so a caller that records a create as maybe sent
+    asks this first, and a refusal leaves its requests unsent."""
+    client = client or get_client(provider)
+    if provider == PROVIDER_GEMINI:
+        require_gemini_api(str(getattr(client, "base_url", "") or ""))
+        google_files_client(getattr(client, "api_key", "")).close()
+    return client
+
+
 @contextmanager
 def _gemini_files(client):
     """The Google Files client a Gemini Batch moves its JSONL files through,
@@ -398,7 +412,7 @@ def _openai_batch_body(provider: str, params: dict) -> dict:
 @extensions.point
 def submit_batch(provider: str, requests: list[dict], *, client=None) -> dict:
     """Submit normalized ``{custom_id, params}`` requests and return metadata."""
-    client = client or get_client(provider)
+    client = submission_client(provider, client)
     if provider == PROVIDER_ANTHROPIC:
         batch = client.messages.batches.create(requests=[
             {"custom_id": item["custom_id"], "params": item["params"]}
@@ -420,7 +434,6 @@ def submit_batch(provider: str, requests: list[dict], *, client=None) -> dict:
     path = _write_jsonl(rows)
     try:
         if provider == PROVIDER_GEMINI:
-            require_gemini_api(str(getattr(client, "base_url", "") or ""))
             with _gemini_files(client) as files:
                 try:
                     from google.genai import types
