@@ -2111,6 +2111,72 @@ class CompatibilityContracts(unittest.TestCase):
                     spent(model, provider, endpoint, protocol, batch) or 0, cost
                 )
 
+    def test_opencode_cache_reads_count_from_either_usage_field(self):
+        # OpenCode's pay-as-you-go API reports cache reads as
+        # cache_read_input_tokens, with prompt_tokens_details.cached_tokens
+        # beside it on some answers only, so an answer with the first alone
+        # read as uncached. Real answers of two requests in one session:
+        from util.batch_providers import openai_usage
+
+        first = {
+            "prompt_tokens": 2015,
+            "completion_tokens": 16,
+            "total_tokens": 2031,
+            "cache_read_input_tokens": 0,
+            "completion_tokens_details": {"reasoning_tokens": 16},
+            "cost": 0.0006237,
+            "opencode": {
+                "billing_source": "balance",
+                "list_cost": 0.0006237,
+                "tokens": {
+                    "input": 2015,
+                    "output": 16,
+                    "reasoning": 16,
+                    "cache_read": 0,
+                    "cache_write_5m": 0,
+                    "cache_write_1h": 0,
+                },
+            },
+        }
+        second = {
+            "prompt_tokens": 2015,
+            "completion_tokens": 3,
+            "total_tokens": 2018,
+            "cache_read_input_tokens": 1920,
+            "prompt_tokens_details": {"cached_tokens": 1920},
+            "completion_tokens_details": {"reasoning_tokens": 0},
+            "cost": 4.362e-05,
+            "opencode": {
+                "billing_source": "balance",
+                "list_cost": 4.362e-05,
+                "tokens": {
+                    "input": 95,
+                    "output": 3,
+                    "reasoning": 0,
+                    "cache_read": 1920,
+                    "cache_write_5m": 0,
+                    "cache_write_1h": 0,
+                },
+            },
+        }
+        alone = {
+            key: value
+            for key, value in second.items()
+            if key != "prompt_tokens_details"
+        }
+        for usage, reads in ((first, 0), (second, 1920), (alone, 1920)):
+            with self.subTest(reads=reads, details="prompt_tokens_details" in usage):
+                self.assertEqual(
+                    openai_usage(usage),
+                    {
+                        "prompt_tokens": 2015,
+                        "completion_tokens": usage["completion_tokens"],
+                        "cache_read_input_tokens": reads,
+                        "cache_creation_input_tokens": 0,
+                        "thinking_tokens": 0,
+                    },
+                )
+
     def test_each_claude_route_rule_routes_a_model_and_address_alike(self):
         # The Claude name test and the native-Anthropic route test were copied
         # into the Live send, the estimate, Batch detection, Live pricing,

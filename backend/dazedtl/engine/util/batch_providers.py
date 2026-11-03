@@ -638,10 +638,12 @@ def openai_usage(usage: Mapping, provider: str = PROVIDER_OPENAI) -> dict:
         prompt_details.get("cached_tokens")
         or prompt_details.get("cachedTokens")
         or usage.get("cachedContentTokenCount")
-        # Kimi also reports its cache reads beside the prompt total, and
-        # DeepSeek as its cache hits.
+        # Kimi also reports its cache reads beside the prompt total,
+        # DeepSeek as its cache hits, and OpenCode's pay-as-you-go API in
+        # Anthropic's name, the only field some of its answers carry.
         or usage.get("cached_tokens")
         or usage.get("prompt_cache_hit_tokens")
+        or usage.get("cache_read_input_tokens")
         or 0
     )
     cache_write = int(
