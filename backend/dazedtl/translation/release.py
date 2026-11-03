@@ -64,8 +64,6 @@ _PRIVATE_FILES = {
     ".editorconfig",
     ".pre-commit-config.yaml",
     "previous_patch_sha.txt",
-    "patch2.ps1",
-    "patch2.sh",
 }
 _WORK_FILES = {
     "agents.md",

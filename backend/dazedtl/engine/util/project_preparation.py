@@ -20,9 +20,11 @@ GAMEUPDATE_LAUNCHER = "GameUpdate.bat"
 GAMEUPDATE_CONFIG = "gameupdate/patch-config.txt"
 GAMEUPDATE_STATE = "gameupdate/previous_patch_sha.txt"
 # What GameUpdate keeps in gameupdate/ on a player's computer, never in a
-# patch: patch.ps1's Git for Windows, the folder it unpacks it in first, and
-# the lock one run holds.
-GAMEUPDATE_LOCAL_NAMES = frozenset({"mingit", "mingit.partial", "gameupdate.lock"})
+# patch: patch.ps1's Git for Windows, the folder it unpacks it in first, the
+# lock one run holds, and the copies of the scripts the launchers run.
+GAMEUPDATE_LOCAL_NAMES = frozenset(
+    {"mingit", "mingit.partial", "gameupdate.lock", "patch2.ps1", "patch2.sh"}
+)
 
 
 def format_plugins_js(path: str | Path) -> int:
@@ -138,8 +140,8 @@ def remove_gameupdate(game_root: str | Path, *, source: str | Path | None = None
                     log(f"  removed {name}")
         except (OSError, ValueError) as exc:
             errors.append(f"{name}: {exc}")
-    # GameUpdate's local Git and lock go too, though no patch holds them, so
-    # the folder can go with them.
+    # GameUpdate's local files go too, though no patch holds them, so the
+    # folder can go with them.
     for name in sorted(GAMEUPDATE_LOCAL_NAMES):
         target = root / "gameupdate" / name
         try:

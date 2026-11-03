@@ -27,7 +27,7 @@ GIT = shutil.which("git")
 # A stand-in curl that answers as curl does (-f fails on an HTTP error, -w
 # prints the status, 000 when nothing answered) with what each environment
 # variable sets: API (GitGud's challenge without the header by default),
-# ARCHIVE ("ok", a status or "corrupt") and REFS (a status, or a file holding
+# ARCHIVE ("ok", a status, "corrupt" or "lfs") and REFS (a status, or a file holding
 # the ref advertisement); "offline" for any of them answers nothing.
 CURL = """
 import json, os, sys, zipfile
@@ -67,13 +67,23 @@ if "/repository/archive.zip" in url:
     archive = os.environ.get("ARCHIVE", "ok")
     if archive == "corrupt":
         answer(200, b"PK not really a ZIP")
-    if archive != "ok":
+    if archive not in ("ok", "lfs"):
         answer(archive)
     with zipfile.ZipFile(out, "w") as zipped:
         zipped.writestr("Game-SHA/www/data/Map001.json", '{"translated": true}')
+        if archive == "lfs":
+            # As GitHub's zipballs carry a file kept in Git LFS.
+            zipped.writestr("Game-SHA/img/Title.png", LFS_POINTER)
     answer(200, open(out, "rb").read())
 answer(404)
-""".replace("SHA", SHA)
+""".replace("SHA", SHA).replace(
+    "LFS_POINTER",
+    repr(
+        "version https://git-lfs.github.com/spec/v1\noid sha256:"
+        + "0" * 64
+        + "\nsize 9\n"
+    ),
+)
 
 POSIX_TOOLS = sys.platform != "win32" and all(
     shutil.which(tool) for tool in ("bash", "git", "jq", "unzip")
@@ -270,15 +280,29 @@ class GameUpdateRequestTests(unittest.TestCase):
     def test_patch_sh_tells_players_without_git_how_to_install_it(self):
         self.stand_in_curl()
         path = self.without_git()
-        # SteamOS's read-only system needs more than pacman.
-        for manager, install in (
-            ("dnf", "sudo dnf install git"),
-            ("steamos-readonly", "sudo steamos-readonly disable"),
+        newer = self.root / "refs"
+        newer.write_bytes(advertisement([("b" * 40, "refs/heads/main")]))
+        # SteamOS's read-only system needs more than pacman; and a newer
+        # version read from the ref advertisement still needs Git to fetch.
+        for name, manager, install, answers in (
+            ("dnf", "dnf", "sudo dnf install git", {"API": "403"}),
+            (
+                "steamos",
+                "steamos-readonly",
+                "sudo steamos-readonly disable",
+                {"API": "403"},
+            ),
+            (
+                "advertised",
+                "dnf",
+                "sudo dnf install git",
+                {"API": "403", "REFS": str(newer)},
+            ),
         ):
-            with self.subTest(manager):
-                game = self.game(name=manager)
+            with self.subTest(name):
+                game = self.game(name=name)
                 self.command(manager)
-                result = self.patch_sh(game, {**os.environ, "API": "403"}, path=path)
+                result = self.patch_sh(game, {**os.environ, **answers}, path=path)
                 (self.bin / manager).unlink()
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn(install, result.stdout)
@@ -326,6 +350,8 @@ class GameUpdateRequestTests(unittest.TestCase):
                 result = self.patch_sh(game, {**os.environ, **answers}, path=path)
                 self.assertIn(said, result.stdout, result.stdout + result.stderr)
                 self.assertNotIn("Install it with", result.stdout)
+                # The script's own error tags stay out of what players read.
+                self.assertNotIn("PATCH_ERR", result.stdout)
                 self.assertEqual(name == "current", result.returncode == 0)
 
     @unittest.skipUnless(
@@ -333,15 +359,40 @@ class GameUpdateRequestTests(unittest.TestCase):
         "patch.sh runs where bash, git, jq and unzip do; Windows players run patch.ps1",
     )
     def test_patch_sh_refuses_a_patch_kept_in_git_lfs(self):
-        # Git would bring only LFS's pointer files, which break the game.
-        game = self.game()
+        # Git, and a forge's archive that leaves LFS out, bring only LFS's
+        # pointer files, which break the game.
         self.stand_in_curl()
         config, _head = self.patch_repository(lfs=True)
-        result = self.patch_sh(game, {**git_env(self.root, **config), "API": "403"})
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("Git LFS", result.stdout)
-        self.assertFalse((game / "img").exists())
-        self.assertFalse((game / "gameupdate/previous_patch_sha.txt").exists())
+        env = git_env(self.root, **config)
+        for name, answers in (("git", {"API": "403"}), ("archive", {"ARCHIVE": "lfs"})):
+            with self.subTest(name):
+                game = self.game(name=name)
+                result = self.patch_sh(game, {**env, **answers})
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("Git LFS", result.stdout)
+                self.assertFalse((game / "img").exists())
+                self.assertFalse((game / "www").exists())
+                self.assertFalse((game / "gameupdate/previous_patch_sha.txt").exists())
+
+    @unittest.skipUnless(
+        POSIX_TOOLS,
+        "patch.sh runs where bash, git, jq and unzip do; Windows players run patch.ps1",
+    )
+    def test_the_linux_launcher_removes_its_script_copy_when_closed(self):
+        # A patch.sh that closes the terminal mid-run.
+        game = self.game()
+        shutil.copy(GAMEUPDATE / "GameUpdate_linux.sh", game)
+        (game / "gameupdate/patch.sh").write_text(
+            "kill -HUP $PPID\nsleep 0.2\n", encoding="utf-8"
+        )
+        subprocess.run(
+            ["bash", str(game / "GameUpdate_linux.sh")],
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            check=False,
+            timeout=60,
+        )
+        self.assertFalse((game / "gameupdate/patch2.sh").exists())
 
     @unittest.skipUnless(
         POSIX_TOOLS,
@@ -511,17 +562,37 @@ class PatchPs1Tests(unittest.TestCase):
                 self.assertNotIn("Git was asked for", output)
 
     def test_patch_ps1_refuses_a_patch_kept_in_git_lfs(self):
-        game = self.game()
-        config, _head = self.patch_repository(lfs=True)
-        output = self.update(
-            game,
-            "function Get-PatchLatestSha { throw '403' }; "
+        # Git, and a forge's archive that leaves LFS out, bring only LFS's
+        # pointer files; another attempt cannot change that.
+        config, head = self.patch_repository(lfs=True)
+        pointer = self.root / "pointer.zip"
+        with zipfile.ZipFile(pointer, "w") as zipped:
+            zipped.writestr(f"Game-{SHA}/www/data/Map001.json", "{}")
+            zipped.writestr(
+                f"Game-{SHA}/img/Title.png",
+                (self.root / "work/img/Title.png").read_text(encoding="utf-8"),
+            )
+        cases = {
+            "git": "function Get-PatchLatestSha { throw '403' }; "
             "function Invoke-PatchHttpGet { @{ Status = 403 } }; ",
-            git_env(self.root, **config),
-        )
-        self.assertIn("Git LFS", output)
-        self.assertFalse((game / "img").exists())
-        self.assertFalse((game / "gameupdate/previous_patch_sha.txt").exists())
+            "archive": f"function Get-PatchLatestSha {{ '{head}' }}; "
+            "function Invoke-PatchArchiveDownload { param($Url, $OutFile) "
+            f"Copy-Item -LiteralPath '{pointer}' -Destination $OutFile }}; ",
+        }
+        for name, stand_ins in cases.items():
+            with self.subTest(name):
+                game = self.game(name=name)
+                output = self.update(
+                    game,
+                    stand_ins,
+                    {**git_env(self.root, **config), "GAMEUPDATE_DL_ATTEMPTS": "2"},
+                )
+                # Once: no retry of the fetch, and no Git after the archive.
+                self.assertEqual(output.count("Git LFS"), 1, output)
+                self.assertNotIn("trying Git instead", output)
+                self.assertFalse((game / "img").exists())
+                self.assertFalse((game / "www").exists())
+                self.assertFalse((game / "gameupdate/previous_patch_sha.txt").exists())
 
     def test_patch_ps1_unpacks_without_the_archives_root_folder(self):
         # GitLab's <repo>-<sha>-<sha> root put deep patch paths past 260 characters.
@@ -530,9 +601,38 @@ class PatchPs1Tests(unittest.TestCase):
             zipped.writestr(f"Game-{SHA}-{SHA}/www/data/Map001.json", "{}")
         stage = self.root / "stage"
         output = self.powershell(
-            f"Expand-PatchZip -ZipPath '{archive}' -Destination '{stage}'"
+            f"Expand-PatchZip -ZipPath '{archive}' -Destination '{stage}' -GameRoot '{self.root}'"
         )
         self.assertTrue((stage / "www/data/Map001.json").is_file(), output)
+
+    def test_patch_ps1_refuses_a_patch_too_deep_for_the_game_folder(self):
+        # Windows' path limit, here as short as this game's folder needs: the
+        # copy used to stop partway, leaving the game half patched.
+        game = self.game()
+        output = self.update(
+            game,
+            f"function Get-PatchPathLimit {{ {len(str(game)) + len('/www/data')} }}; "
+            # An unpack folder shorter than the game's, as a usual %TEMP% is.
+            f"function New-GameUpdateTempPath {{ param($Kind) '{self.root / 'x'}' }}; "
+            "function Get-PatchLatestSha { '" + SHA + "' }; "
+            "function Invoke-PatchArchiveDownload { param($Url, $OutFile) "
+            "Add-Type -AssemblyName System.IO.Compression.FileSystem; "
+            "$zip = [IO.Compression.ZipFile]::Open($OutFile, 'Create'); "
+            "foreach ($name in 'Game/a.txt', 'Game/www/data/Map001.json') { "
+            "$writer = New-Object IO.StreamWriter($zip.CreateEntry($name).Open()); $writer.Write('{}'); $writer.Dispose() }; "
+            "$zip.Dispose() }; ",
+            {},
+        )
+        self.assertIn("Move the game to a shorter folder", output)
+        self.assertNotIn("trying Git instead", output)
+        self.assertFalse((game / "a.txt").exists())
+        self.assertFalse((game / "gameupdate/previous_patch_sha.txt").exists())
+
+    def test_patch_ps1_names_the_git_command_that_failed(self):
+        output = self.powershell(
+            f"Invoke-PatchGit -Git '{GIT}' -Arguments @('-C', '{self.root}', 'fetch', 'nowhere')"
+        )
+        self.assertIn("git fetch failed", output)
 
     def mingit(self):
         """PowerShell that hides Git on PATH and serves a stand-in MinGit ZIP,
@@ -605,6 +705,8 @@ class PatchPs1Tests(unittest.TestCase):
         )
         self.assertIn("fetched", output)
         self.assertEqual(count.read_text(encoding="utf-8").split(), ["1", "1"])
+        # The second download replaces a Git that is installed.
+        self.assertEqual(output.count("Git is not installed"), 1)
 
     def test_patch_ps1_lets_one_gameupdate_run_at_a_time(self):
         bundle = self.root / "gameupdate"
@@ -628,15 +730,15 @@ class PatchPs1Tests(unittest.TestCase):
         self.assertFalse(folder.exists())
         self.assertFalse(folder.with_name("mingit.partial").exists())
 
-    def test_patch_ps1_runs_unattended_and_falls_back_to_git(self):
-        # The whole script, with the API and every web request refused and
-        # its input redirected, so it must not wait for a key.
-        game = self.game()
-        config, head = self.patch_repository()
+    def script(self, game, prelude, env, status=403):
+        """Runs the whole patch.ps1 on *game* after *prelude*, with the API
+        refused and every other web request answered *status*, and its input
+        redirected, so it must not wait for a key."""
         script = (
-            "function Invoke-RestMethod { throw 'The remote server returned an error: (403) Forbidden.' }; "
+            prelude
+            + "function Invoke-RestMethod { throw 'The remote server returned an error: (403) Forbidden.' }; "
             "function Invoke-WebRequest { [pscustomobject]@{ "
-            "StatusCode = 403; RawContentStream = [IO.MemoryStream]::new() } }; "
+            f"StatusCode = {status}; RawContentStream = [IO.MemoryStream]::new() }} }}; "
             f"& '{game / 'gameupdate/patch.ps1'}' -GameRoot '{game}'; exit $LASTEXITCODE"
         )
         result = subprocess.run(
@@ -648,16 +750,40 @@ class PatchPs1Tests(unittest.TestCase):
                 "-Command",
                 script,
             ],
-            env={**git_env(self.root, **config), "GAMEUPDATE_DL_ATTEMPTS": "1"},
+            env={**env, "GAMEUPDATE_DL_ATTEMPTS": "1"},
             stdin=subprocess.DEVNULL,
             capture_output=True,
             encoding="utf-8",
             check=False,
             timeout=120,
         )
-        self.assert_applied(game, result.stdout + result.stderr, head)
+        return result.stdout + result.stderr
+
+    def test_patch_ps1_runs_unattended_and_falls_back_to_git(self):
+        game = self.game()
+        config, head = self.patch_repository()
+        output = self.script(game, "", git_env(self.root, **config))
+        self.assert_applied(game, output, head)
         self.assertFalse((game / ".dazedtl").exists())
         self.assertFalse((game / "gameupdate/gameupdate.lock").exists())
+
+    def test_patch_ps1_shows_players_its_errors_without_their_tags(self):
+        output = self.script(self.game(), "", os.environ, status=404)
+        self.assertIn("ERROR: https://gitgud.io/Owner/Game was not found", output)
+        self.assertNotIn("PATCH_ERR", output)
+
+    def test_patch_ps1_waits_for_the_lock_before_touching_the_game(self):
+        # A second window must not delete the first run's download.
+        game = self.game()
+        download = game / "dazedmtl_patch_running.zip"
+        download.write_bytes(b"PK")
+        output = self.script(
+            game,
+            f"$held = [IO.File]::Open('{game / 'gameupdate/gameupdate.lock'}', 'OpenOrCreate', 'ReadWrite', 'None'); ",
+            os.environ,
+        )
+        self.assertIn("Another GameUpdate is already running", output)
+        self.assertTrue(download.exists())
 
 
 if __name__ == "__main__":

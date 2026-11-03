@@ -20,10 +20,12 @@ GAME_ROOT="$1"
 PATCH_DIR="$GAME_ROOT/gameupdate"
 REEXEC_PATH="$0"
 
+# The copies go however the run ends, a closed terminal included.
 cleanup_reexec() {
-    rm -f "$REEXEC_PATH"
+    rm -f "$REEXEC_PATH" "$PATCH_DIR/patch2.sh"
 }
 trap cleanup_reexec EXIT
+trap 'exit 130' INT TERM HUP
 
 cd "$GAME_ROOT"
 cp "$PATCH_DIR/patch.sh" "$PATCH_DIR/patch2.sh"
@@ -31,7 +33,6 @@ set +e
 bash "$PATCH_DIR/patch2.sh"
 patch_exit=$?
 set -e
-rm -f "$PATCH_DIR/patch2.sh"
 
 if [ "$patch_exit" -ne 0 ]; then
     echo "GameUpdate failed (exit $patch_exit)."

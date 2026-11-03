@@ -241,21 +241,21 @@ read_advertised_sha() {
                     exit
                 }')"
             if ! [[ "$latest_patch_sha" =~ ^[0-9a-f]{40,64}$ ]]; then
-                echo "PATCH_ERR:REPO:Branch '${branch}' was not found in ${WEB_BASE}/${username}/${repo}."
+                echo "ERROR: Branch '${branch}' was not found in ${WEB_BASE}/${username}/${repo}."
                 exit 1
             fi
             return 0
             ;;
         401|404)
-            echo "PATCH_ERR:REPO:${WEB_BASE}/${username}/${repo} was not found or is not public. GameUpdate needs no account; ask the translator to check the repository."
+            echo "ERROR: ${WEB_BASE}/${username}/${repo} was not found or is not public. GameUpdate needs no account; ask the translator to check the repository."
             exit 1
             ;;
         ''|000)
-            echo "PATCH_ERR:NETWORK:Could not reach ${HOST_NAME}. Check your internet connection, then run GameUpdate again."
+            echo "ERROR: Could not reach ${HOST_NAME}. Check your internet connection, then run GameUpdate again."
             exit 1
             ;;
         5??)
-            echo "PATCH_ERR:NETWORK:${HOST_NAME} is having problems (HTTP ${code}). Try GameUpdate again later."
+            echo "ERROR: ${HOST_NAME} is having problems (HTTP ${code}). Try GameUpdate again later."
             exit 1
             ;;
     esac
@@ -300,7 +300,7 @@ while true; do
         fi
     fi
     if [ "$attempt" -ge "$RETRIES" ]; then
-        echo "Resolve latest patch SHA failed after $attempt attempt(s); asking Git instead."
+        echo "Resolve latest patch SHA failed after $attempt attempt(s); reading the branch from the repository instead."
         download_method=git
         break
     fi
@@ -313,7 +313,7 @@ if [ "$download_method" = "git" ] && ! read_advertised_sha; then
     latest_patch_sha="$(retry_cmd "Ask Git for the latest patch commit" git_latest_sha)" || true
     latest_patch_sha="$(printf '%s' "$latest_patch_sha" | tr -d '[:space:]')"
     if ! [[ "$latest_patch_sha" =~ ^[0-9a-f]{40,64}$ ]]; then
-        echo "PATCH_ERR:GIT:Git could not read branch '${branch}' from ${GIT_URL}."
+        echo "ERROR: Git could not read branch '${branch}' from ${GIT_URL}."
         exit 1
     fi
 fi
@@ -510,14 +510,10 @@ download_with_git() {
     fi
     local fetched
     fetched="$(git_quiet -C "$repo_dir" rev-parse FETCH_HEAD)"
-    # Git LFS keeps such files outside the commit, so the download would hold
-    # only their pointer files; never put those in a game.
-    if git_quiet -C "$repo_dir" grep -q -e 'filter=lfs' FETCH_HEAD -- .gitattributes '*/.gitattributes'; then
-        echo "PATCH_ERR:LFS:This patch keeps files in Git LFS, which GameUpdate can't download with Git. Download it from ${WEB_BASE}/${username}/${repo} instead."
-        rm -rf "$repo_dir"
-        exit 1
-    fi
+    # Git LFS's own filter stays off, so its files come out as the pointer
+    # files the unpacked patch is checked for.
     if ! git_quiet -C "$repo_dir" -c core.autocrlf=false -c core.eol=lf \
+        -c filter.lfs.smudge= -c filter.lfs.process= -c filter.lfs.required=false \
         archive --format=zip --prefix=patch/ -o "$ROOT_DIR/repo.zip" FETCH_HEAD; then
         echo "Git could not pack the patch!"
         rm -rf "$repo_dir"
@@ -549,8 +545,11 @@ download_extract() {
             download_method=git
         fi
     fi
-    if [ "$download_method" = "git" ] && { ! download_with_git || ! extract_zip; }; then
-        return 1
+    if [ "$download_method" = "git" ]; then
+        require_git
+        if ! download_with_git || ! extract_zip; then
+            return 1
+        fi
     fi
 
     inner=""
@@ -565,6 +564,15 @@ download_extract() {
         rm -rf "$TMP_EX"
         rm -f "$ROOT_DIR/repo.zip"
         return 1
+    fi
+
+    # Files kept in Git LFS arrive as small pointer files from Git, and from
+    # a forge whose archives leave LFS out; never put those in a game.
+    lfs_pointer="$(find "$inner" -type f -size -1024c \
+        -exec grep -l -x -F 'version https://git-lfs.github.com/spec/v1' {} + 2>/dev/null | head -n 1)" || true
+    if [ -n "$lfs_pointer" ]; then
+        echo "ERROR: This patch keeps files in Git LFS, such as ${lfs_pointer#"$inner"/}, which GameUpdate can't download. Download it from ${WEB_BASE}/${username}/${repo} instead."
+        exit 1
     fi
 
     wolf_patch=0

@@ -81,6 +81,7 @@ class ReleaseTests(unittest.TestCase):
                 "Data/backups/Actors.rvdata2",
                 "gameupdate/previous_patch_sha.txt",
                 "gameupdate/mingit/cmd/git.exe",
+                "gameupdate/patch2.sh",
             }
             for name in included | private | {"gameupdate/patch-config.txt"}:
                 path = root / name
@@ -817,9 +818,11 @@ class ReleaseTests(unittest.TestCase):
                 (game / "gameupdate/patch-config.txt").write_text(
                     "repo=x", encoding="utf-8"
                 )
-                # A Windows run's own Git goes too.
+                # A Windows run's own Git goes too, and the copy of the
+                # script a closed window leaves.
                 (game / "gameupdate/mingit/cmd").mkdir(parents=True)
                 (game / "gameupdate/mingit/cmd/git.exe").write_bytes(b"")
+                (game / "gameupdate/patch2.ps1").write_bytes(b"")
                 self.assertIn("take it out", engine.setup_mismatch(game, off)[0])
                 written.clear()
                 engine.gameupdate(game, off)

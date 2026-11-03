@@ -549,7 +549,12 @@ function Get-PatchGit {
         ((Get-Content -LiteralPath $marker -Raw).Trim() -eq $MinGitSha256)) {
         return $git
     }
-    Write-Host 'Git is not installed; downloading Git for Windows (MinGit, about 35 MB) once for GameUpdate...'
+    if ($Reinstall) {
+        Write-Host 'Downloading Git for Windows (MinGit, about 35 MB) again...'
+    }
+    else {
+        Write-Host 'Git is not installed; downloading Git for Windows (MinGit, about 35 MB) once for GameUpdate...'
+    }
     # Windows PowerShell's Expand-Archive takes only a file named .zip.
     $zip = (New-GameUpdateTempPath -Kind 'mingit') + '.zip'
     $prevPref = $ProgressPreference
@@ -591,10 +596,10 @@ function Invoke-WithPatchGit {
         return Invoke-WithRetry -Name $Name -Attempts $attempts -Action { & $patchWork $patchGit }
     }
     catch {
-        if ($_.Exception.Message -like 'PATCH_ERR:LFS:*' -or -not (Test-GameUpdateMinGit -Git $patchGit -BundleRoot $BundleRoot)) {
+        if ((Test-FinalPatchError -Message $_.Exception.Message) -or -not (Test-GameUpdateMinGit -Git $patchGit -BundleRoot $BundleRoot)) {
             throw
         }
-        Write-Host ('Git for Windows failed ({0}); downloading it again...' -f $_.Exception.Message)
+        Write-Host ('Git for Windows failed ({0}); downloading it again...' -f (Format-PatchMessage -Message $_.Exception.Message))
     }
     $patchGit = Get-PatchGit -BundleRoot $BundleRoot -Reinstall
     try {
@@ -620,7 +625,14 @@ function Invoke-PatchGit {
     $ErrorActionPreference = 'Continue'
     $output = & $Git -c credential.helper= -c core.longpaths=true @Arguments
     if ($LASTEXITCODE -notin $ExitCodes) {
-        throw ('PATCH_ERR:GIT:git {0} failed with exit code {1}.' -f $Arguments[0], $LASTEXITCODE)
+        # The command's name, past options such as -C <folder>.
+        $command = ''
+        for ($i = 0; $i -lt $Arguments.Count; $i++) {
+            if ($Arguments[$i] -in '-C', '-c') { $i++; continue }
+            $command = $Arguments[$i]
+            break
+        }
+        throw ('PATCH_ERR:GIT:git {0} failed with exit code {1}.' -f $command, $LASTEXITCODE)
     }
     return $output
 }
@@ -659,17 +671,11 @@ function Save-GitPatchZip {
             (Get-PatchGitUrl -Resolved $Resolved), ('refs/heads/' + $Resolved.branch)
         ) | Out-Null
         $sha = ([string](Invoke-PatchGit -Git $Git -Arguments @('-C', $repoDir, 'rev-parse', 'FETCH_HEAD'))).Trim()
-        # Git LFS keeps such files outside the commit, so the download would
-        # hold only their pointer files; never put those in a game.
-        $lfs = Invoke-PatchGit -Git $Git -ExitCodes 0, 1 -Arguments @(
-            '-C', $repoDir, 'grep', '-l', '-e', 'filter=lfs', 'FETCH_HEAD', '--', '.gitattributes', '*/.gitattributes'
-        )
-        if ($lfs) {
-            throw ('PATCH_ERR:LFS:This patch keeps files in Git LFS, which GameUpdate can''t download with Git. Download it from {0}/{1}/{2} instead.' -f `
-                $Resolved.webBase, $Resolved.username, $Resolved.repo)
-        }
+        # Git LFS's own filter stays off, so its files come out as the pointer
+        # files the unpacked patch is checked for.
         Invoke-PatchGit -Git $Git -Arguments @(
             '-C', $repoDir, '-c', 'core.autocrlf=false', '-c', 'core.eol=lf',
+            '-c', 'filter.lfs.smudge=', '-c', 'filter.lfs.process=', '-c', 'filter.lfs.required=false',
             'archive', '--format=zip', '--prefix=patch/', '-o', $OutFile, 'FETCH_HEAD'
         ) | Out-Null
         return $sha
@@ -681,15 +687,33 @@ function Save-GitPatchZip {
     }
 }
 
+function Get-PatchPathLimit {
+    <#
+    The longest full path a patch file may have. Windows allows 259
+    characters, unless long paths are on and the shell is PowerShell 7, which
+    can use them; Windows PowerShell never can.
+    #>
+    if ($PSVersionTable.PSEdition -eq 'Core') {
+        $long = Get-ItemProperty -LiteralPath 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem' -Name LongPathsEnabled -ErrorAction SilentlyContinue
+        if ($long -and $long.LongPathsEnabled -eq 1) {
+            return [int]::MaxValue
+        }
+    }
+    return 259
+}
+
 function Expand-PatchZip {
     <#
     Unpacks a patch archive's files into $Destination without the archive's
     own root folder, such as GitLab's <repo>-<sha>-<sha>, which would push deep
-    patch paths past Windows' 260-character limit.
+    patch paths past Windows' 260-character limit. Refuses before unpacking
+    anything when a file would not fit in $GameRoot, so a patch is never
+    applied halfway.
     #>
     param(
         [Parameter(Mandatory = $true)][string]$ZipPath,
-        [Parameter(Mandatory = $true)][string]$Destination
+        [Parameter(Mandatory = $true)][string]$Destination,
+        [Parameter(Mandatory = $true)][string]$GameRoot
     )
     Add-Type -AssemblyName System.IO.Compression, System.IO.Compression.FileSystem
     $archive = [IO.Compression.ZipFile]::OpenRead($ZipPath)
@@ -699,23 +723,61 @@ function Expand-PatchZip {
             throw ('PATCH_ERR:ZIP:Expected one root folder in archive, found {0}.' -f $roots.Count)
         }
         $base = [IO.Path]::GetFullPath($Destination).TrimEnd('\', '/') + [IO.Path]::DirectorySeparatorChar
-        foreach ($entry in $archive.Entries) {
+        $game = $GameRoot.TrimEnd('\', '/')
+        $folder = [Math]::Max($base.Length - 1, $game.Length)
+        $limit = Get-PatchPathLimit
+        $files = foreach ($entry in $archive.Entries) {
             $relative = $entry.FullName.Replace('\', '/').Substring($roots[0].Length).TrimStart('/')
             if (-not $relative) { continue }
-            $target = [IO.Path]::GetFullPath((Join-Path $base $relative))
-            if (-not $target.StartsWith($base, [StringComparison]::OrdinalIgnoreCase)) {
-                throw ('PATCH_ERR:ZIP:The archive holds a path outside its folder: {0}' -f $entry.FullName)
+            if ($folder + 1 + $relative.TrimEnd('/').Length -gt $limit) {
+                if ($game.Length -lt $base.Length - 1) {
+                    throw ('PATCH_ERR:PATH:This patch has files too deep for Windows'' temporary folder, such as {0} ({1} characters there; Windows allows {2}). Set the TEMP variable to a shorter folder, such as C:\Temp, then run GameUpdate again.' -f `
+                        $relative, ($base.Length + $relative.Length), $limit)
+                }
+                throw ('PATCH_ERR:PATH:This patch has files too deep for this folder, such as {0} ({1} characters with the game''s folder; Windows allows {2}). Move the game to a shorter folder, such as C:\Games\{3}, then run GameUpdate again.' -f `
+                    $relative, ($game.Length + 1 + $relative.Length), $limit, (Split-Path -Leaf $game))
             }
-            if ($entry.FullName.EndsWith('/')) {
+            @{ Entry = $entry; Relative = $relative }
+        }
+        foreach ($file in $files) {
+            $target = [IO.Path]::GetFullPath((Join-Path $base $file.Relative))
+            if (-not $target.StartsWith($base, [StringComparison]::OrdinalIgnoreCase)) {
+                throw ('PATCH_ERR:ZIP:The archive holds a path outside its folder: {0}' -f $file.Entry.FullName)
+            }
+            if ($file.Entry.FullName.EndsWith('/')) {
                 [void][IO.Directory]::CreateDirectory($target)
                 continue
             }
             [void][IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($target))
-            [IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $target, $true)
+            [IO.Compression.ZipFileExtensions]::ExtractToFile($file.Entry, $target, $true)
         }
     }
     finally {
         $archive.Dispose()
+    }
+}
+
+function Assert-NoLfsPointers {
+    <#
+    Files kept in Git LFS arrive as small pointer files from Git, and from a
+    forge whose archives leave LFS out; never put those in a game.
+    #>
+    param(
+        [Parameter(Mandatory = $true)][string]$Folder,
+        [Parameter(Mandatory = $true)][hashtable]$Resolved
+    )
+    foreach ($file in Get-ChildItem -LiteralPath $Folder -Recurse -File -Force | Where-Object { $_.Length -lt 1024 }) {
+        $reader = New-Object IO.StreamReader($file.FullName)
+        try {
+            $first = $reader.ReadLine()
+        }
+        finally {
+            $reader.Dispose()
+        }
+        if ($first -ceq 'version https://git-lfs.github.com/spec/v1') {
+            throw ('PATCH_ERR:LFS:This patch keeps files in Git LFS, such as {0}, which GameUpdate can''t download. Download it from {1}/{2}/{3} instead.' -f `
+                $file.FullName.Substring($Folder.TrimEnd('\', '/').Length + 1), $Resolved.webBase, $Resolved.username, $Resolved.repo)
+        }
     }
 }
 
@@ -961,6 +1023,19 @@ function Get-EnvInt {
     return $Default
 }
 
+function Test-FinalPatchError {
+    # Errors that another attempt or another way of downloading cannot change.
+    param([string]$Message)
+    return $Message -match '^PATCH_ERR:(LFS|PATH|REPO):'
+}
+
+function Format-PatchMessage {
+    # GameUpdate's own errors carry a PATCH_ERR:<kind>: tag for the script;
+    # players see the message after it.
+    param([string]$Message)
+    return $Message -replace '^PATCH_ERR:[A-Z]+:', ''
+}
+
 function Invoke-WithRetry {
     param(
         [Parameter(Mandatory = $true)][scriptblock]$Action,
@@ -975,8 +1050,11 @@ function Invoke-WithRetry {
         }
         catch {
             $lastErr = $_
+            if (Test-FinalPatchError -Message $_.Exception.Message) {
+                throw
+            }
             if ($i -lt $Attempts) {
-                Write-Host ("{0} failed ({1}/{2}): {3} Retrying..." -f $Name, $i, $Attempts, $_.Exception.Message)
+                Write-Host ("{0} failed ({1}/{2}): {3} Retrying..." -f $Name, $i, $Attempts, (Format-PatchMessage -Message $_.Exception.Message))
                 Start-Sleep -Seconds $DelaySeconds
             }
         }
@@ -1194,7 +1272,7 @@ function Invoke-PatchDownloadExtract {
         }
     }
     catch {
-        Write-Host ('Resolve latest patch SHA failed ({0}); asking Git''s own protocol instead.' -f $_.Exception.Message)
+        Write-Host ('Resolve latest patch SHA failed ({0}); reading the branch from the repository instead.' -f (Format-PatchMessage -Message $_.Exception.Message))
         $useGit = $true
         $latestSha = Get-AdvertisedSha -Resolved $Resolved
         if (-not $latestSha) {
@@ -1254,10 +1332,13 @@ function Invoke-PatchDownloadExtract {
                 if ($zipHeaderBad) {
                     throw "PATCH_ERR:ZIP:Download is not a valid ZIP (missing PK header). $zipHeaderHint"
                 }
-                Expand-PatchZip -ZipPath $zipPath -Destination $stage
+                Expand-PatchZip -ZipPath $zipPath -Destination $stage -GameRoot $Root
             }
             catch {
-                Write-Host ('The archive could not be downloaded or unpacked ({0}); trying Git instead.' -f $_.Exception.Message)
+                if (Test-FinalPatchError -Message $_.Exception.Message) {
+                    throw
+                }
+                Write-Host ('The archive could not be downloaded or unpacked ({0}); trying Git instead.' -f (Format-PatchMessage -Message $_.Exception.Message))
                 $useGit = $true
                 Remove-SettledItem -LiteralPath $stage
             }
@@ -1276,9 +1357,10 @@ function Invoke-PatchDownloadExtract {
                 }
                 Save-GitPatchZip -Git $git -Resolved $Resolved -OutFile $zipPath
             }
-            Expand-PatchZip -ZipPath $zipPath -Destination $stage
+            Expand-PatchZip -ZipPath $zipPath -Destination $stage -GameRoot $Root
             Remove-DownloadedRepoZip -LiteralPath $zipPath
         }
+        Assert-NoLfsPointers -Folder $stage -Resolved $Resolved
 
         Write-Host 'Applying patch...'
         $isWolfGame = Test-WolfGameRoot -Root $Root
@@ -1403,6 +1485,10 @@ try {
 
     Write-AsciiHeader
 
+    # Before anything touches the game, so a second run changes nothing the
+    # first is using; held until the process ends.
+    $gameUpdateLock = Enter-GameUpdateLock -BundleRoot $PatchBundleRoot
+    Remove-StaleGameUpdateTemp
     Remove-StalePatchZipArtifactsInGameRoot -Root $GameRoot
 
     $configPath = Join-Path $PatchBundleRoot 'patch-config.txt'
@@ -1434,17 +1520,13 @@ try {
         $resolved = Resolve-PatchForge -Cfg $cfg
     }
     catch {
-        Write-Host $_.Exception.Message
+        Write-Host ('ERROR: ' + (Format-PatchMessage -Message $_.Exception.Message))
         Wait-ConsolePause
         exit 1
     }
 
     Write-Host ('Pulling patch from {0}/{1}/{2} ({3}, branch: {4})' -f `
         $resolved.webBase, $resolved.username, $resolved.repo, $resolved.kind, $resolved.branch)
-
-    # Held until the process ends.
-    $gameUpdateLock = Enter-GameUpdateLock -BundleRoot $PatchBundleRoot
-    Remove-StaleGameUpdateTemp
 
     Invoke-WolfPreSetup -Root $GameRoot
     Invoke-SrpgPreSetup -Root $GameRoot
@@ -1458,7 +1540,7 @@ try {
     }
     catch {
         Write-Host ''
-        Write-Host $_.Exception.Message
+        Write-Host ('ERROR: ' + (Format-PatchMessage -Message $_.Exception.Message))
         # GameUpdate's own errors say what happened; a script position helps
         # only with an unexpected one.
         if ($_.Exception.Message -notlike 'PATCH_ERR:*' -and $_.InvocationInfo.PositionMessage) {
@@ -1496,7 +1578,7 @@ try {
 }
 catch {
     Write-Host ''
-    Write-Host $_.Exception.Message
+    Write-Host ('ERROR: ' + (Format-PatchMessage -Message $_.Exception.Message))
     Wait-ConsolePause
     exit 1
 }
