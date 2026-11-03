@@ -135,8 +135,10 @@ def live_price_route(model: str = "", api_url: str | None = None,
     Gemini-compatible server, which answers with Gemini's usage, a proxy
     that runs no Batch included; Kimi's on its own API; DeepSeek's where
     its models are billed as on its own API (settings/providers
-    deepseek_route); otherwise none, the default rates. The current route
-    is the engine's settings."""
+    deepseek_route); otherwise none, the default rates. A run that froze
+    its route's own cache read price, on OpenCode's routes, reads its cache
+    at that instead (settings/opencode cache_read_multiple). The current
+    route is the engine's settings."""
     from dazedtl.settings.providers import deepseek_route, own_api
 
     if is_claude_model(model):

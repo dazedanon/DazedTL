@@ -18,6 +18,7 @@ from dazedtl.settings import openrouter, preferences, providers
 from dazedtl.settings.execution import (
     batch_reasons,
     configuration,
+    request_policy,
     runnable_mode,
     worker_secret,
 )
@@ -638,18 +639,20 @@ class SettingsTests(unittest.TestCase):
         # another model at its listed rate times any date multiplier in
         # effect; on pay-as-you-go, every model at its listed rate. Free
         # models, which answer only OpenCode's own app, are left out, and a
-        # DeepSeek model's thinking turns off as on DeepSeek's own API.
+        # DeepSeek model's thinking turns off as on DeepSeek's own API. A
+        # run reads its cache at the route's own price, not at 0.1x.
         from dazedtl.settings import effort, opencode
 
-        def row(model, price, output, effort=None, multipliers=()):
+        def row(model, price, output, effort=None, multipliers=(), read=None):
             reasoning = {"supported": True, **({"effort": effort} if effort else {})}
+            read = price / 50 if read is None else read
             return {
                 "id": model,
                 "capabilities": {"reasoning": reasoning, "structured_output": True},
                 "limit": {"context": 1000000, "output": 384000},
                 "cost": {
                     "text": {
-                        "input": {"price": price, "cache": {"read": price / 50}},
+                        "input": {"price": price, "cache": {"read": read}},
                         "output": {"price": output},
                     },
                     "multipliers": list(multipliers),
@@ -672,7 +675,7 @@ class SettingsTests(unittest.TestCase):
                 ["low", "medium", "high"],
                 [{"when": {"date": {"gte": "2026-12-01"}}, "factor": 2}],
             ),
-            row("kimi-k2.7-code", 0.95, 4),
+            row("kimi-k2.7-code", 0.95, 4, read=0.19),
             row("deepseek-v4.1-flash-free", 0, 0, ["low", "high", "max"]),
         ]
         requests = []
@@ -703,6 +706,7 @@ class SettingsTests(unittest.TestCase):
                 "values": {"language": "English", "model": "deepseek-v4.1-flash"}
             },
             allow_providers=True,
+            validate_route=lambda _route: None,
         )
         with TemporaryDirectory() as temporary:
             write_json(
@@ -786,6 +790,24 @@ class SettingsTests(unittest.TestCase):
                 [{"value": None, "label": "Provider default"}],
             )
             stored, _custom, paid = saved._read()["connections"]
+            # A run freezes its route's own cache read price, Kimi K2.7 Code's
+            # $0.19 of $0.95 on Go, beside its rates; a DeepSeek model on Go
+            # reads at DeepSeek's own (provider_costs), and pay-as-you-go at
+            # its row's.
+            self.assertAlmostEqual(
+                opencode.cache_read_multiple(stored, "kimi-k2.7-code") or 0, 0.2
+            )
+            self.assertNotIn(
+                "cache_read_multiple", configuration(saved, "live")["rates"]
+            )
+            self.assertNotIn("cacheReadMultiple", request_policy(saved, "live"))
+            saved.select(saved.describe()["revision"], "paid")
+            self.assertAlmostEqual(
+                configuration(saved, "live")["rates"]["cache_read_multiple"], 0.02
+            )
+            self.assertAlmostEqual(
+                request_policy(saved, "live")["cacheReadMultiple"], 0.02
+            )
             for kept in (stored, paid):
                 self.assertNotIn("deepseek-v4.1-flash-free", kept["models"])
                 self.assertNotIn("deepseek-v4.1-flash-free", kept["catalog"])

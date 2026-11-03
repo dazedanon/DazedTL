@@ -2077,8 +2077,7 @@ class CompatibilityContracts(unittest.TestCase):
                 None,
                 reads + 0.9 * 3 * 0.10,
             ),
-            # OpenCode Go bills DeepSeek's models as DeepSeek does, and its
-            # other models at the default.
+            # OpenCode Go bills DeepSeek's models as DeepSeek does.
             (
                 "deepseek-v4.1-flash",
                 "opencode-go",
@@ -2087,28 +2086,49 @@ class CompatibilityContracts(unittest.TestCase):
                 None,
                 reads + 0.9 * 3 * 0.006 / 0.30,
             ),
-            (
-                "glm-5.3-flash",
-                "opencode-go",
-                "https://opencode.ai/inference/go/openai/v1",
-                "openai",
-                None,
-                reads + 0.9 * 3 * 0.10,
-            ),
-            # Pay-as-you-go reads DeepSeek's cache at its own price, which
-            # isn't DeepSeek's.
-            (
-                "deepseek-v4.1-flash",
-                "opencode",
-                "https://opencode.ai/inference/openai/v1",
-                "openai",
-                None,
-                reads + 0.9 * 3 * 0.10,
-            ),
         ):
             with self.subTest(model):
                 self.assertAlmostEqual(
                     spent(model, provider, endpoint, protocol, batch) or 0, cost
+                )
+        # OpenCode's other models read at the multiple their route's model
+        # list sets, which the run froze (settings/opencode
+        # cache_read_multiple), such as GLM 5.3 Flash's 0.2 on either route
+        # and DeepSeek V4.1 Flash's 0.02 on pay-as-you-go, not at 0.1x.
+        for model, provider, endpoint, multiple in (
+            (
+                "glm-5.3-flash",
+                "opencode-go",
+                "https://opencode.ai/inference/go/openai/v1",
+                0.2,
+            ),
+            (
+                "glm-5.3-flash",
+                "opencode",
+                "https://opencode.ai/inference/openai/v1",
+                0.2,
+            ),
+            (
+                "deepseek-v4.1-flash",
+                "opencode",
+                "https://opencode.ai/inference/openai/v1",
+                0.02,
+            ),
+        ):
+            with self.subTest(model, provider=provider):
+                self.assertAlmostEqual(
+                    spent(
+                        model,
+                        provider,
+                        endpoint,
+                        rates={
+                            "input": 3.0,
+                            "output": 15.0,
+                            "cache_read_multiple": multiple,
+                        },
+                    )
+                    or 0,
+                    reads + 0.9 * 3 * multiple,
                 )
 
     def test_opencode_cache_reads_count_from_either_usage_field(self):
@@ -2176,6 +2196,52 @@ class CompatibilityContracts(unittest.TestCase):
                         "thinking_tokens": 0,
                     },
                 )
+        # Both methods record the second answer at what OpenCode billed for
+        # it, its cache reads at the $0.006 of $0.30 its model list sets,
+        # which the run froze, where 0.1x recorded twice as much.
+        import os
+        import threading
+
+        from dazedtl.compatibility.estimate_prices import usage_cost
+        from dazedtl.compatibility.worker_policy import configure_cache_reads
+        from openai.types import CompletionUsage
+        from util import translation
+        from util.provider_costs import uncached_usage
+
+        model = "deepseek-v4.1-flash"
+        endpoint = "https://opencode.ai/inference/openai/v1"
+        with (
+            patch.dict(os.environ, {"api": endpoint, "API_PROVIDER": "openai"}),
+            patch.object(
+                translation,
+                "getPricingConfig",
+                return_value={"inputAPICost": 0.30, "outputAPICost": 1.20},
+            ),
+            patch.object(translation, "_thread_local", threading.local()),
+            patch.object(translation, "_global_accurate_cost", 0.0),
+            patch.object(translation, "LIVE_CACHE_READ_MULTIPLE", None),
+        ):
+            configure_cache_reads(translation, {"cacheReadMultiple": 0.006 / 0.30})
+            translation._record_live_cost(CompletionUsage(**second), model)
+            self.assertAlmostEqual(
+                translation._thread_local.file_live_cost, second["cost"]
+            )
+        spent = usage_cost(
+            uncached_usage(openai_usage(second)),
+            {
+                "mode": "live",
+                "model": model,
+                "endpoint": endpoint,
+                "protocol": "openai",
+                "rates": {
+                    "input": 0.30,
+                    "output": 1.20,
+                    "cache_read_multiple": 0.006 / 0.30,
+                },
+            },
+            None,
+        )
+        self.assertAlmostEqual(spent or 0, second["cost"])
 
     def test_each_claude_route_rule_routes_a_model_and_address_alike(self):
         # The Claude name test and the native-Anthropic route test were copied

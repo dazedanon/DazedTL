@@ -361,20 +361,28 @@ def uncached_usage(counts: dict) -> dict:
 
 
 def usage_cost(usage: dict, provider: str, model: str, input_rate: float,
-               output_rate: float, factor: float = 1.0) -> float:
+               output_rate: float, factor: float = 1.0,
+               read_multiple: float | None = None) -> float:
     """Price billed usage at per-token rates with the route's cache
     multipliers, then ``factor``: the Batch discount, or 1 for Live.
 
     ``usage`` holds uncached ``input_tokens``, ``output_tokens``, cache reads
     and writes as Anthropic names them, and ``thinking_tokens`` billed as
     output; see batch_write_weight for the one-hour writes beside them.
+    ``read_multiple`` is the cache read multiple a Live run froze from its
+    route's own model list (settings/opencode cache_read_multiple), which
+    replaces cache_read_multiplier's.
     """
     def count(key: str) -> float:
         return usage.get(key, 0) or 0
 
     raw = (
         count("cache_read_input_tokens") * input_rate
-        * cache_read_multiplier(provider, model)
+        * (
+            cache_read_multiplier(provider, model)
+            if read_multiple is None
+            else read_multiple
+        )
         + batch_write_weight(
             provider, model, count("cache_creation_input_tokens"),
             usage.get("cache_creation_1h_input_tokens"),

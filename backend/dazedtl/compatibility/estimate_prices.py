@@ -169,7 +169,9 @@ def usage_cost(usage, configuration, provider, rows=None):
 
     A Batch is priced at its Batch ``provider``'s cache prices, a Live run at
     those of its route as Guided prices Live responses
-    (batch_providers.live_price_route). On a route priced by the time
+    (batch_providers.live_price_route), its cache reads at the multiple it
+    froze from its route's model list where it froze one
+    (settings/opencode cache_read_multiple). On a route priced by the time
     (provider_costs time_priced_route), a Live run's ``rows``, each request's
     usage and the time it arrived, whose sum is ``usage``, are priced one by
     one at that time's price."""
@@ -210,6 +212,7 @@ def usage_cost(usage, configuration, provider, rows=None):
             rates["input"] / 1_000_000,
             rates["output"] / 1_000_000,
             factor,
+            None if batch else rates.get("cache_read_multiple"),
         )
 
     if batch:

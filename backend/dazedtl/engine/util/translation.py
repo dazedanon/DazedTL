@@ -249,6 +249,11 @@ CONTENT_TEXT = True
 # stranded_kana). Workers of runs frozen before the small-kana policy
 # (settings/preferences SMALL_KANA) keep them, as they did when approved.
 SMALL_KANA = True
+# The cache read multiple a run froze from its route's own model list
+# (settings/opencode cache_read_multiple), which prices its Live responses'
+# cache reads in place of the route's rule (provider_costs usage_cost); None
+# for every other run.
+LIVE_CACHE_READ_MULTIPLE = None
 
 # Thread-local per-file token breakdown; read by calculateCost() for Claude.
 _thread_local = threading.local()
@@ -5724,6 +5729,7 @@ def _record_live_cost(usage, model):
         time_price_factor(
             _time_priced_route(model), getattr(_thread_local, "received_at", None)
         ),
+        LIVE_CACHE_READ_MULTIPLE,
     )
     _thread_local.file_live_cost = getattr(_thread_local, "file_live_cost", 0) + cost
     _add_priced_cost(cost)

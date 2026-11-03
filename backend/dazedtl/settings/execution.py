@@ -5,7 +5,7 @@ from typing import NamedTuple
 from dazedtl.translation.files import read_json
 from dazedtl.translation.refusals import POLICY as REFUSAL_POLICY
 
-from . import effort, language_pair, openrouter, preferences, providers
+from . import effort, language_pair, opencode, openrouter, preferences, providers
 
 
 def connection_summary(settings):
@@ -122,6 +122,10 @@ def _frozen(settings, mode, *, cached_only, unpriced):
         "output": selected["outputRate"] if custom else defaults.get("outputRate"),
         "source": "custom" if custom else defaults.get("source"),
     }
+    # The route's own cache read price, where it lists one per model.
+    read = opencode.cache_read_multiple(connection, model)
+    if read is not None:
+        rates["cache_read_multiple"] = read
     if (rates["input"] is None or rates["output"] is None) and not unpriced:
         raise ValueError(
             "No price is available for this model. Enter custom rates in Settings; use 0 for a free model."
@@ -219,6 +223,11 @@ def request_policy(settings, mode):
         "entriesPerRequest": read.entries,
         "inputRate": read.rates["input"],
         "outputRate": read.rates["output"],
+        **(
+            {"cacheReadMultiple": read.rates["cache_read_multiple"]}
+            if "cache_read_multiple" in read.rates
+            else {}
+        ),
         "source": read.rates["source"],
         "updatedAt": read.updated_at,
         **read.requests,

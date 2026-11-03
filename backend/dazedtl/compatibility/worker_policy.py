@@ -71,6 +71,13 @@ def configure_small_kana(translation, policy):
     translation.SMALL_KANA = bool(policy and policy.get("smallKana") == SMALL_KANA)
 
 
+def configure_cache_reads(translation, policy):
+    """A run's Live cache reads cost the multiple it froze from its route's
+    own model list (settings/opencode cache_read_multiple), or its route's
+    rule without one."""
+    translation.LIVE_CACHE_READ_MULTIPLE = (policy or {}).get("cacheReadMultiple")
+
+
 def configure_states(plan, root, policy):
     module = sys.modules.get("modules.rpgmakermvmz")
     if module is not None and plan.get("engine") in {"MVMZ", "RPG Maker MV/MZ"}:
@@ -211,6 +218,7 @@ def install(*, coordinator=False):
             translation.STRICT_STRUCTURED_OUTPUTS = False
             configure_short_outputs(translation, None)
             configure_small_kana(translation, None)
+            configure_cache_reads(translation, None)
             run_stops.configure(translation, None, root)
             resends.configure(translation, None)
             configure_states(plan, grouping_root, None)
@@ -252,6 +260,12 @@ def install(*, coordinator=False):
                 or not math.isfinite(policy[key])
                 or policy[key] < 0
                 for key in ("inputRate", "outputRate")
+            )
+            or "cacheReadMultiple" in policy
+            and (
+                type(policy["cacheReadMultiple"]) not in (int, float)
+                or not math.isfinite(policy["cacheReadMultiple"])
+                or policy["cacheReadMultiple"] < 0
             )
         ):
             raise ValueError(
@@ -296,6 +310,7 @@ def install(*, coordinator=False):
         translation.STRICT_STRUCTURED_OUTPUTS = bool(strict_router)
         configure_short_outputs(translation, policy)
         configure_small_kana(translation, policy)
+        configure_cache_reads(translation, policy)
         record = evidence = None
         if policy.get("generationParameters") and plan.get("mode") in {
             "estimate",

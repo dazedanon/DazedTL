@@ -35,6 +35,9 @@ class QuoteRates(TypedDict):
     # prices them; the renderer shows none of them.
     batch_input: NotRequired[float]
     batch_output: NotRequired[float]
+    # A cache read's price as a multiple of input, where the route's own
+    # model list sets it (settings/opencode cache_read_multiple).
+    cache_read_multiple: NotRequired[float]
     # Only in quotes of older runs, which froze the Batch discount;
     # compatibility/estimate_prices decides it now.
     batch_factor: NotRequired[float | None]

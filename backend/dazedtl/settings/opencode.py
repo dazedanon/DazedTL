@@ -230,3 +230,27 @@ def describe(connection, model, now=None):
             "max_output": row["max_output"],
         },
     )
+
+
+def cache_read_multiple(connection, model):
+    """What a Live cache read of *model* on *connection* costs as a multiple
+    of its input price, on one of OpenCode's routes: its catalog row's cache
+    read price over its input price (catalog). Each route lists it per model,
+    from 0.02 for DeepSeek V4.1 Flash to 1 for GPT-5.5 Pro, where the
+    engine's rules by provider (provider_costs cache_read_multiplier) would
+    read most at 0.1. None off OpenCode's routes, for a model the catalog
+    doesn't price, and for a model billed as on DeepSeek's own API, a
+    DeepSeek model on Go (providers deepseek_route), which reads at
+    DeepSeek's own cache prices. Each run freezes it beside its rates
+    (settings/execution), and both methods' recorded spend reads it
+    (provider_costs usage_cost)."""
+    from .providers import OPENCODE, address, deepseek_route
+
+    if connection.get("provider") not in OPENCODE or deepseek_route(
+        model, address(connection)
+    ):
+        return None
+    row = checked(connection).get(model) or {}
+    if not row.get("input") or row.get("cache_read") is None:
+        return None
+    return row["cache_read"] / row["input"]
