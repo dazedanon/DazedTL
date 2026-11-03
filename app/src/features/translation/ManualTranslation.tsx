@@ -121,11 +121,7 @@ function Workspace({
   const [view, setView] = useState<View>(loaded ? "progress" : "text");
   const [load, setLoad] = useState<ManualLoad | null>(null);
   const attempt = attemptJobs(state);
-  // A run of an earlier file that has finished is History's; one still under
-  // way stays here, to pause or resume it.
-  const newest = latestApiRun(attempt);
-  const run =
-    newest?.status === "complete" && newest.file_changed ? undefined : newest;
+  const run = latestApiRun(attempt);
   // The estimate being prepared, or the last one if it failed.
   const latest = attempt.find(
     (job) => job.kind === "operation" && job.action === "organize",

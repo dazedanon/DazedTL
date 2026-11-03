@@ -288,7 +288,7 @@ Resync archives a file's working copy, staged outputs and cache, and advances it
 #### Manual and translation files
 
 - [Manual](../app/src/features/translation/ManualTranslation.tsx) runs on Assistant-led's machinery: its loaded file becomes the units organize packs, the API run panel's button is the only approval, and History lists its runs; the [translation contract](translation-contract.md#translation-files) says what its runs leave out.
-- Each method's pages show only its own runs (`own` in `job_views`), and a Manual run of an earlier file only while it is still under way.
+- Each method's pages show only its current runs (`own` in `job_views`): not another method's, one an import superseded, or a finished Manual run of an earlier file.
 - A [translation file](../backend/dazedtl/translation/exchange.py) exports and imports a project's lines in every method through one line set per method; an import never writes the game itself, only accepted results or Guided's working copies, which Apply publishes.
 
 #### Publication

@@ -24,6 +24,9 @@ from .requests import result_value, source_language, target_language
 from .results import Results, indexed, line_problems, unsent_line, untranslated
 
 INDEX = WORK + "/work/accepted-units.json"
+# The requests of lines imported from translation files, by fingerprint, as
+# run plans hold their runs' requests (save_import).
+IMPORTS = WORK + "/work/imported"
 # Raise when an entry would record something else of the same request.
 VERSION = 1
 # Organize under this policy leaves each unit with a current translation out
@@ -77,7 +80,7 @@ def entries(store, project_id, source, listing):
     receipts = {key for key, (path, _stamp) in listing.items() if path}
     found = {key: value for key, value in saved.items() if key in receipts}
     for fingerprint, request in held(
-        store, project_id, receipts - set(found), source, listing
+        store, project_id, receipts - set(found), source
     ).items():
         found[fingerprint] = entry(request)
     if found != saved:
@@ -88,13 +91,12 @@ def entries(store, project_id, source, listing):
     return found
 
 
-def held(store, project_id, fingerprints, source=None, listing=None):
+def held(store, project_id, fingerprints, source=None):
     """The compiled requests of fingerprints, by fingerprint: each read from
-    a run plan of the project that holds it or, in the game at *source*, from
-    the receipt of lines imported from a translation file, which holds its
-    own request (save_import). Plans are read only for the requests they
-    hold, and one that can't be read is passed over; *listing* is the
-    game's receipts (Results.listing) when its caller has read them."""
+    a run plan of the project that holds it or, in the game at *source*, as
+    a request of lines imported from a translation file (save_import).
+    Plans are read only for the requests they hold, and one that can't be
+    read is passed over."""
     missing, found = set(fingerprints), {}
     for job in store.list(project_id) if missing else ():
         if job["kind"] != "translation" or missing.isdisjoint(
@@ -112,10 +114,8 @@ def held(store, project_id, fingerprints, source=None, listing=None):
         if not missing:
             break
     if missing and source is not None:
-        listing = Results(source).listing() if listing is None else listing
         for fingerprint in sorted(missing):
-            path = (listing.get(fingerprint) or (None, None))[0]
-            request = _imported(path) if path else None
+            request = _imported(source, fingerprint)
             if request is not None:
                 found[fingerprint] = request
     return found
@@ -196,16 +196,18 @@ def record(units, answered, found):
     }
 
 
-def _imported(path):
-    """The request an imported receipt at *path* answers, or None for
-    another receipt or one that can't be read."""
+def _imported(source, fingerprint):
+    """The request of lines imported from a translation file with
+    *fingerprint*, in the game at *source*, or None for another request or
+    one that can't be read."""
+    if not all(char in "0123456789abcdef" for char in fingerprint):
+        return None
     try:
-        provenance = read_json(path).get("provenance")
-    except OSError, ValueError, AttributeError:
+        value = read_json(
+            project_path(source, f"{IMPORTS}/{fingerprint}.json", exists=False)
+        )
+    except OSError, ValueError:
         return None
-    if not isinstance(provenance, dict) or provenance.get("kind") != IMPORTED:
-        return None
-    value = provenance.get("request")
     if (
         not isinstance(value, dict)
         or not isinstance(value.get("id"), str)
@@ -214,7 +216,7 @@ def _imported(path):
         or not isinstance(value.get("context"), dict)
     ):
         return None
-    return value
+    return value if value.get("fingerprint") == fingerprint else None
 
 
 def translations(store, project_id, source, units, language, target, quotes=True):
@@ -318,10 +320,15 @@ def save_import(source, units, translations, language, target, file):
     passed import_problems."""
     request = _request(units, translations, language, target, now())
     value = entry(request)
+    # Saved first, so a receipt never answers a request nothing holds.
+    write_json(
+        project_path(source, f"{IMPORTS}/{request['fingerprint']}.json", exists=False),
+        request,
+    )
     Results(source).accept(
         request,
         translations,
-        {"kind": IMPORTED, "file": file, "request": request},
+        {"kind": IMPORTED, "file": file},
     )
     saved = _saved(source)
     saved[request["fingerprint"]] = value

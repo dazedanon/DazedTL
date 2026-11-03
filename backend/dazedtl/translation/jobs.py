@@ -398,21 +398,52 @@ class RunStore:
         job.update(status="canceled", message=message)
         self.save(job)
 
-    def retire_estimates(self, project_id):
-        """Discards the project's estimates waiting for approval once its
-        translations changed outside a run, such as by an imported file, so
-        no approval pays again for lines it now holds or replaces them."""
+    def check_settled(self, project_id):
+        """Refuses a change to the project's translations outside a run, such
+        as an imported file, while an API run's provider may still answer a
+        request it sent, whose reply would then replace the changed lines:
+        one sending, queued at the provider or of uncertain outcome."""
         for job in self.list(project_id):
-            if (
-                job["kind"] == "translation"
-                and job["status"] == "ready"
-                and job["quote"] is not None
-                and not self.authorized(job)
+            if job["kind"] == "translation" and any(
+                row["state"] in {"sending", "queued", "uncertain"}
+                for row in job["states"].values()
             ):
-                self.discard(
-                    job,
-                    "Your translations changed after this estimate; no requests were sent.",
+                raise ValueError(
+                    "A translation run's requests may still be answered by the provider, "
+                    "and its replies would replace these lines. Resume that run, or "
+                    "check it under History on the Project page, first."
                 )
+
+    def retire(self, project_id):
+        """Ends the API runs that would send lines again once the project's
+        translations changed outside a run (check_settled): estimates
+        waiting for approval are discarded, and approved runs that stopped
+        before finishing are retired, so no approval or Resume pays for
+        those lines again or replaces them. Assistant only runs stay: the
+        assistant's later receipt replaces a line on purpose, as any newer
+        receipt does (unit_results.current)."""
+        for job in self.list(project_id):
+            if job["kind"] != "translation" or job["mode"] == "agent":
+                continue
+            approved = self.authorized(job)
+            if not approved:
+                if job["status"] == "ready" and job["quote"] is not None:
+                    self.discard(
+                        job,
+                        "Your translations changed after this estimate; no requests were sent.",
+                    )
+            elif job["status"] not in {
+                "complete",
+                "running",
+                "waiting",
+            } and not job.get("superseded"):
+                job.update(
+                    status="failed",
+                    superseded=True,
+                    message="Your translations changed after this run stopped, so it "
+                    "sends nothing more. A new estimate translates the rest.",
+                )
+                self.save(job)
 
     def list(self, project_id):
         result = []
@@ -564,6 +595,7 @@ class RunStore:
                 "usage",
             )
         } | {
+            "superseded": bool(job.get("superseded")),
             # Retired terminal labels do not alter stored receipts or retry guards.
             "status": job["status"]
             if job["status"]

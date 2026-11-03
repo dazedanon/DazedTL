@@ -154,6 +154,7 @@ export function RequestsPanel({ state }: { state: TranslationState }) {
                 <Button onClick={() => inspect(job.id)}>Inspect run</Button>
               )}
               {job.mode !== "agent" &&
+                !job.superseded &&
                 (job.approved
                   ? !["complete", "uncertain"].includes(job.status)
                   : job.status === "ready") && (

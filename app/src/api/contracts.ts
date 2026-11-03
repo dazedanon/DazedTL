@@ -1540,7 +1540,7 @@ export type TranslationJob = {
   settings_changed?: boolean;
   pricing_changed?: boolean;
   own?: boolean;
-  file_changed?: boolean;
+  superseded: boolean;
   result: Record<string, unknown> | null;
   usage: Record<string, number>;
   usage_cost?: number | null;

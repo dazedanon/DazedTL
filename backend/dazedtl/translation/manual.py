@@ -97,21 +97,23 @@ class Manual:
         write, summary = translation_file.matched(
             value["lines"], current, lines.problems
         )
-        # The file's translations are saved before its lines replace the
-        # units, so a failed import leaves the project as it was.
+        added, glossary = glossary_counts(root, value["glossary"])
+        changed = not relative.is_file() or read_json(relative) != document
+        if write or added or changed:
+            # As an import does (Exchange.apply): what can refuse first, then
+            # the runs that would send the lines again end, then the file's
+            # translations are saved before its lines replace the units.
+            store = self.translation.jobs.store
+            store.check_settled(project_id)
+            if added:
+                self.translation.engine.glossary_add(
+                    root, added, "Load the text file's glossary terms"
+                )
+            store.retire(project_id)
         if write:
             lines.save(write, Path(path).name)
-        added, glossary = glossary_counts(root, value["glossary"])
-        if added:
-            self.translation.engine.glossary_add(
-                root, added, "Load the text file's glossary terms"
-            )
-        changed = not relative.is_file() or read_json(relative) != document
         if changed:
             write_json(relative, document)
-        if write or added or changed:
-            # An estimate of the lines before reads the text they replaced.
-            self.translation.jobs.store.retire_estimates(project_id)
         loaded = {
             # What a Manual run's estimate read, so a run of another file
             # reads as one (Translation.job_views).

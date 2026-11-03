@@ -738,12 +738,12 @@ Additional project instructions:
         can't be priced again by. An estimate for declined requests keeps its
         own mode, whatever the project's. A run's recorded usage is priced at
         the rates it froze, a Live run's requests each at the price of the
-        time it arrived. A run is the project's own when it is of its
-        *method*: Manual's, or Assistant-led's for every other; pages show
-        only those, and History every run."""
+        time it arrived. A run is the project's own when its pages show it:
+        one of its *method*, Manual's or Assistant-led's for every other."""
         current = {}
         views = []
-        # The units of the file a Manual project has loaded now.
+        # The units of the file a Manual project has loaded now, which its
+        # runs record (jobs.create).
         units = (
             (manual.loaded(root) or {}).get("units_sha256")
             if any(job.get("method") == MANUAL for job in jobs)
@@ -806,11 +806,19 @@ Additional project instructions:
                 view["settings_changed"] = (
                     not reading.current and not view["pricing_changed"]
                 )
-            view["own"] = (job.get("method") == MANUAL) == (method == MANUAL)
-            if job.get("method") == MANUAL and job["kind"] == "translation":
-                # A run estimated from another file than the one loaded now:
-                # its estimate can't be approved and its end is History's.
-                view["file_changed"] = job.get("units_sha256") != units
+            # Its method's pages show it, unless a change to the translations
+            # superseded it or it is a Manual run of another file than the
+            # one loaded now that has ended; History lists every run.
+            view["own"] = (
+                (job.get("method") == MANUAL) == (method == MANUAL)
+                and not job.get("superseded")
+                and not (
+                    job.get("method") == MANUAL
+                    and job["kind"] == "translation"
+                    and job.get("units_sha256") != units
+                    and view["status"] in {"complete", "failed", "canceled"}
+                )
+            )
             views.append(view)
         return views
 
@@ -1415,6 +1423,8 @@ Additional project instructions:
         job, plan = self.jobs.store.load(run_id, project_id)
         if plan["kind"] != "translation":
             raise ValueError("Use the project operation controls for this job.")
+        if job.get("superseded"):
+            raise ValueError(job["message"])
         if not self.jobs.store.authorized(job):
             # Spending is the user's decision, made with the app's own button;
             # the helper only resumes runs the user approved there.

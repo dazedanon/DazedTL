@@ -11,6 +11,7 @@ from dazedtl.translation import translation_file, unit_results
 from dazedtl.translation.exchange import Exchange
 from dazedtl.translation.files import read_json
 from dazedtl.translation.manual import Manual
+from dazedtl.translation.manual import loaded as loaded_file
 from dazedtl.translation.project import WORK
 from dazedtl.translation.results import Results
 
@@ -152,23 +153,59 @@ class TranslationFileTests(unittest.TestCase):
         self.assertEqual(
             (again["run"]["requests"], again["summary"]["translated"]), (1, 1)
         )
-        # Progress leaves the earlier file's run to History.
+        store = self.service.jobs.store
+        # The new file discarded the first file's estimate, and Progress
+        # leaves that run to History.
+        self.assertEqual(store.record(run, self.identity)["status"], "canceled")
         views = {job["id"]: job for job in self.service.state(self.identity)["jobs"]}
-        self.assertTrue(views[run]["file_changed"])
-        self.assertFalse(views[again["run"]["id"]]["file_changed"])
-        # A line translated in the file retires the estimate waiting to send
-        # it, so approving it can't pay for the line again or replace it.
-        manual.load(
-            self.identity,
-            str(
-                self.file(
-                    "mine.json",
-                    [line("a/1", "はい。"), line("b/1", "いいや。", "Nope, mine.")],
-                )
-            ),
+        self.assertFalse(views[run]["own"])
+        self.assertTrue(views[again["run"]["id"]]["own"])
+        # An approved run stopped before it finished. While the provider may
+        # still answer one of its requests, a load that changes its lines is
+        # refused before it writes anything.
+        stopped = store.record(again["run"]["id"], self.identity)
+        store.authorize(stopped)
+        stopped = store.record(again["run"]["id"], self.identity)
+        request = next(iter(stopped["states"]))
+        stopped["states"][request]["state"] = "queued"
+        stopped["status"] = "stopped"
+        store.save(stopped)
+        mine = self.file(
+            "mine.json", [line("a/1", "はい。"), line("b/1", "いいや。", "Nope, mine.")]
         )
-        retired = self.service.jobs.store.record(again["run"]["id"], self.identity)
-        self.assertEqual(retired["status"], "canceled")
+        with self.assertRaisesRegex(ValueError, "may still be answered"):
+            manual.load(self.identity, str(mine))
+        self.assertEqual(loaded_file(self.game)["name"], "again.json")
+        # So is one whose glossary the game-write gateway refuses, such as
+        # during a stopped game update.
+        stopped["states"][request]["state"] = "pending"
+        store.save(stopped)
+
+        def refused(*_args):
+            raise ValueError("Finish or cancel the game update first.")
+
+        self.engine.glossary_add = refused
+        glossary = [{"section": "Game Terms", "source": "村", "translation": "Village"}]
+        with self.assertRaisesRegex(ValueError, "game update"):
+            manual.load(
+                self.identity,
+                str(
+                    self.file(
+                        "terms.json",
+                        [line("a/1", "はい。"), line("b/1", "いいや。", "Nope, mine.")],
+                        glossary=glossary,
+                    )
+                ),
+            )
+        self.assertEqual(loaded_file(self.game)["name"], "again.json")
+        self.assertNotIn("superseded", store.record(again["run"]["id"], self.identity))
+        del self.engine.glossary_add
+        # Once it holds none, the load supersedes it, so neither its approval
+        # nor Resume pays for the line again or replaces it.
+        manual.load(self.identity, str(mine))
+        self.assertTrue(store.record(again["run"]["id"], self.identity)["superseded"])
+        with self.assertRaisesRegex(ValueError, "sends nothing more"):
+            self.service.start(self.identity, again["run"]["id"])
         # Assistant-led's pages leave Manual's runs to History.
         self.projects.choose_method(self.identity, "len")
         views = {job["id"]: job for job in self.service.state(self.identity)["jobs"]}
@@ -310,12 +347,32 @@ class TranslationFileTests(unittest.TestCase):
             if value["id"].startswith("imported-")
         ]
         self.assertTrue(imported)
+        fingerprint = imported[0]
         self.assertTrue(
-            self.service.request(self.identity, again, request_sha256=imported[0])
+            self.service.request(self.identity, again, request_sha256=fingerprint)
         )
-        # An imported translation is read like a run's, even after the index
-        # beside the receipts is lost.
+        # A correction through that run keeps the request, even once the
+        # index beside the receipts is lost.
+        held = unit_results.held(
+            self.service.jobs.store, self.identity, {fingerprint}, self.game
+        )[fingerprint]
+        fix = WORK + "/work/fix.json"
+        write_json(
+            self.game / fix,
+            {
+                "request_sha256": fingerprint,
+                "translations": {"a/2": "Nah, fixed."},
+                "replaces_sha256": Results(self.game).get(held)["result_sha256"],
+            },
+        )
+        self.service.accept(
+            self.identity, again, plan["reused"]["requests"][fingerprint]["id"], fix
+        )
         (self.game / unit_results.INDEX).unlink()
+        self.assertTrue(
+            self.service.request(self.identity, again, request_sha256=fingerprint)
+        )
+        # The corrected import is read like a run's with the index lost.
         self.assertEqual(
             unit_results.translations(
                 self.service.jobs.store,
@@ -333,7 +390,7 @@ class TranslationFileTests(unittest.TestCase):
                 "Japanese",
                 "English",
             ),
-            {"a/2": "Nope."},
+            {"a/2": "Nah, fixed."},
         )
 
 

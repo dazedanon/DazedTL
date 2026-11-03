@@ -127,12 +127,12 @@ class TranslationJob(TypedDict):
     # can't be priced again by (translation/repricing).
     settings_changed: NotRequired[bool]
     pricing_changed: NotRequired[bool]
-    # Only in a project's state: it is of the project's method, Manual's or
-    # Assistant-led's, so its pages show it (Translation.job_views).
+    # Only in a project's state: the project's pages show it, as one of its
+    # method that is still current (Translation.job_views).
     own: NotRequired[bool]
-    # Only on a Manual run in a project's state: it was estimated from
-    # another file than the one loaded now.
-    file_changed: NotRequired[bool]
+    # A change to the translations ended it, so it can't be resumed
+    # (RunStore.retire).
+    superseded: bool
     result: dict[str, object] | None
     usage: dict[str, float]
     # The recorded usage priced at the run's rates in a project's state;

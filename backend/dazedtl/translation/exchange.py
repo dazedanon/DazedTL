@@ -277,12 +277,17 @@ class Exchange:
                 "The file changed after it was checked. Check it again before importing."
             )
         lines.idle()
-        if write:
-            lines.save(write, summary["name"])
+        if not (write or added):
+            return summary
+        # What can refuse goes first, so a refusal writes nothing: a run the
+        # provider may still answer, then the game-write gateway. Requests
+        # read the lines and the glossary, so the runs that would send them
+        # again end before the lines change.
+        store = self.translation.jobs.store
+        store.check_settled(project_id)
         if added:
             self.translation.engine.glossary_add(root, added, "Import glossary terms")
-        if write or added:
-            # Requests read both, so no waiting estimate pays for lines the
-            # file translated or replaces them with its reply.
-            self.translation.jobs.store.retire_estimates(project_id)
+        store.retire(project_id)
+        if write:
+            lines.save(write, summary["name"])
         return summary

@@ -369,10 +369,8 @@ class Application:
                         and not job["approved"]
                     ):
                         # A prepared run is not working; it waits for the user.
-                        outdated = (
-                            job.get("settings_changed")
-                            or job.get("pricing_changed")
-                            or job.get("file_changed")
+                        outdated = job.get("settings_changed") or job.get(
+                            "pricing_changed"
                         )
                         project.update(
                             status="Estimate is out of date"

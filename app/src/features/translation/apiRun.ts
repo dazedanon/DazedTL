@@ -6,9 +6,9 @@ import type {
 import { batchStatus } from "../guided/batchView.ts";
 
 /**
- * The current attempt's jobs of the project's method, Manual's or
- * Assistant-led's; Run history keeps another method's and those from before
- * the last start over.
+ * The current attempt's jobs its method's pages show (`own`); Run history
+ * keeps every other, such as another method's and those from before the
+ * last start over.
  */
 export function attemptJobs(state: TranslationState) {
   const since = state.lifecycle.started_over?.at;
@@ -53,20 +53,16 @@ export const priceRange = (
 /**
  * An estimate priced with settings or a mode that have changed since, or
  * under price rules a pricing fix changed in a way its counts can't follow,
- * or counted by an output rule a later release changed, or a Manual one of
- * another file than the one loaded now.
+ * or counted by an output rule a later release changed.
  */
 export const estimateOutdated = (run: TranslationJob | undefined) =>
-  !!awaitingQuote(run) &&
-  !!(run?.settings_changed || run?.pricing_changed || run?.file_changed);
+  !!awaitingQuote(run) && !!(run?.settings_changed || run?.pricing_changed);
 
 /** What changed after an outdated estimate, as a sentence's start. */
 export const outdatedBy = (run: TranslationJob) =>
-  run.file_changed
-    ? "You loaded another text file"
-    : run.settings_changed
-      ? "API settings or the translation mode changed"
-      : "DazedTL corrected its prices";
+  run.settings_changed
+    ? "API settings or the translation mode changed"
+    : "DazedTL corrected its prices";
 
 /**
  * The preparation estimating an outdated run again with the current
