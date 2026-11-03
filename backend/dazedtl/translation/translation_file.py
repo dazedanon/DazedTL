@@ -415,8 +415,8 @@ def matched(lines, current, problems):
 
 
 REASONS = {
-    "unknown": "No line of this game has this ID",
-    "changed": "The game's source text for this ID is different",
+    "unknown": "No line of this game has this ID.",
+    "changed": "The game's source text for this ID is different.",
 }
 
 

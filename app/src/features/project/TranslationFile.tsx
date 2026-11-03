@@ -9,8 +9,8 @@ import { ActionList, ActionRow } from "../../ui/ActionList";
 import { Button } from "../../ui/Button";
 import { DialogBody, DialogHeader } from "../../ui/Dialog";
 import { Modal } from "../../ui/Modal";
-import { Notice } from "../../ui/Notice";
 import { PathText } from "../../ui/PathText";
+import { StatusIcon } from "../../ui/StatusIcon";
 
 const count = (value: number, one: string, many = one + "s") =>
   `${value.toLocaleString()} ${value === 1 ? one : many}`;
@@ -166,16 +166,18 @@ export function ImportSummary({
               <strong>{count(amount, noun)}</strong> {amount === 1 ? one : many}
             </li>
           ))}
+        {skipped > 0 && (
+          <li className="translation-import-warning">
+            <StatusIcon status="warning" size={14} />
+            <span>
+              <strong>{count(skipped, "line")}</strong>{" "}
+              {skipped === 1 ? "is" : "are"} skipped
+              {value.skipped.length < skipped &&
+                `, the first ${value.skipped.length} listed below`}
+            </span>
+          </li>
+        )}
       </ul>
-      {skipped > 0 && (
-        <Notice tone="warning">
-          <span>
-            {count(skipped, "line")} {skipped === 1 ? "is" : "are"} skipped.
-            {value.skipped.length < skipped &&
-              ` The first ${value.skipped.length} are listed.`}
-          </span>
-        </Notice>
-      )}
       {value.skipped.length > 0 && (
         <ul className="translation-import-skipped" aria-label="Skipped lines">
           {value.skipped.map((row) => (

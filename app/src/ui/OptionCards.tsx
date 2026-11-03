@@ -7,7 +7,7 @@ export interface OptionCard<T extends string> {
   description: ReactNode;
   /** A short mark beside the title, such as "Recommended". */
   badge?: string;
-  /** Unavailable here; the description then says why. */
+  /** Unavailable here; the description or badge then says why. */
   disabled?: boolean;
 }
 

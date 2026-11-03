@@ -1327,6 +1327,7 @@ pre {
   order: 1;
   flex-basis: 100%;
   margin-top: 0;
+  text-wrap: balance;
 }
 .action-row-actions
   > .action-control:not(.action-control--inline)

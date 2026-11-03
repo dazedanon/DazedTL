@@ -14,6 +14,7 @@ export const methodLabels: Record<TranslationMethod, string> = {
   manual: "Manual",
 };
 export const guidedEngines = ["MVMZ", "ACE"];
+const methods: TranslationMethod[] = ["guided", "len", "manual"];
 
 /**
  * Chooses how a game is translated. A new game asks once; the Project page
@@ -33,19 +34,23 @@ export function MethodDialog({
   const guidedSupported = guidedEngines.includes(project.engine);
   const recommended: TranslationMethod = guidedSupported ? "guided" : "len";
   const current = project.method;
-  // Changing starts on another method; a first choice on the recommended one.
+  // Changing starts on the first other method the game can use; a first
+  // choice on the recommended one.
   const [method, setMethod] = useState<TranslationMethod>(
-    current === "guided"
-      ? "len"
-      : current && guidedSupported
-        ? "guided"
-        : current === "len"
-          ? "manual"
-          : current
-            ? "len"
-            : recommended,
+    current
+      ? methods.find(
+          (other) =>
+            other !== current && (other !== "guided" || guidedSupported),
+        )!
+      : recommended,
   );
-  const other = current && current !== method ? current : null;
+  // The current method is marked and can't be chosen again.
+  const badge = (value: TranslationMethod) =>
+    value === current
+      ? "Current"
+      : value === recommended
+        ? "Recommended"
+        : undefined;
   return (
     <Modal
       label="Choose a translation method"
@@ -73,8 +78,8 @@ export function MethodDialog({
             {
               value: "guided",
               title: methodLabels.guided,
-              badge: recommended === "guided" ? "Recommended" : undefined,
-              disabled: !guidedSupported,
+              badge: badge("guided"),
+              disabled: !guidedSupported || current === "guided",
               description: guidedSupported
                 ? "Prepare, translate, apply and release in stages, with an estimate before any paid work."
                 : "Available for RPG Maker MV, MZ and Ace games.",
@@ -82,13 +87,16 @@ export function MethodDialog({
             {
               value: "len",
               title: methodLabels.len,
-              badge: recommended === "len" ? "Recommended" : undefined,
+              badge: badge("len"),
+              disabled: current === "len",
               description:
                 "Your coding assistant translates through the app from one starting prompt, using Len's game-translation skills. Any engine.",
             },
             {
               value: "manual",
               title: methodLabels.manual,
+              badge: badge("manual"),
+              disabled: current === "manual",
               description:
                 "Your own tools extract the text into a file and write it back; DazedTL translates the file with your API key. Any engine.",
             },
@@ -98,8 +106,8 @@ export function MethodDialog({
       <ActionBar
         feedback={
           <span className="method-note">
-            {other
-              ? `Your ${methodLabels[other]} work stays and returns if you switch back.`
+            {current
+              ? `Your ${methodLabels[current]} work stays and returns if you switch back.`
               : "You can change this later on the Project page."}
           </span>
         }
@@ -107,12 +115,7 @@ export function MethodDialog({
         <Button disabled={busy} onClick={close}>
           Cancel
         </Button>
-        <Button
-          variant="primary"
-          pending={busy}
-          disabled={method === current}
-          onClick={() => choose(method)}
-        >
+        <Button variant="primary" pending={busy} onClick={() => choose(method)}>
           {current
             ? `Switch to ${methodLabels[method]}`
             : `Start with ${methodLabels[method]}`}
