@@ -2671,8 +2671,8 @@ try:
                         raise AssertionError("A gateway's timeout was answered.")
                 assert send.call_count == sent, (resends, send.call_count)
             # DeepSeek's own models think within max_tokens by default, so a
-            # long request gets the full ceiling there and on OpenCode Go,
-            # which takes replies as long, and the cap elsewhere.
+            # long request gets the full ceiling there and the cap elsewhere;
+            # OpenCode's routes take replies as long from every model.
             for model, endpoint, ceiling in (
                 (
                     "deepseek/fixture",
@@ -2689,6 +2689,11 @@ try:
                     "https://opencode.ai/inference/go/openai/v1",
                     translation.MAX_TRANSLATION_OUTPUT_TOKENS,
                 ),
+                (
+                    "glm-5.3-flash",
+                    "https://opencode.ai/inference/openai/v1",
+                    translation.MAX_TRANSLATION_OUTPUT_TOKENS,
+                ),
             ):
                 params = translation.buildOpenAIRequest(
                     "Translate.",
@@ -2701,7 +2706,9 @@ try:
                     api_url=endpoint,
                 )
                 assert params["max_tokens"] == ceiling, (model, params["max_tokens"])
-                assert params["response_format"] == {"type": "json_object"}
+                assert ("deepseek" in model) == (
+                    params["response_format"] == {"type": "json_object"}
+                ), params["response_format"]
         # Namespaced Claude/GPT IDs retain OpenRouter's transport identity;
         # Batch must never use native OpenAI/Anthropic upload endpoints.
         for model in ("anthropic/claude-sonnet-4.5", "openai/gpt-4.1"):

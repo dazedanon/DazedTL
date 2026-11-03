@@ -5271,7 +5271,7 @@ def buildOpenAIRequest(system, user, history, penalty, formatType, model,
 
     provider = (api_provider or os.getenv("API_PROVIDER", "openai")).lower()
     from dazedtl.settings.providers import completion_field as uses_completion_field
-    from dazedtl.settings.providers import deepseek_route, response_format
+    from dazedtl.settings.providers import opencode_route, own_api, response_format
 
     endpoint = os.getenv("api", "") if api_url is None else str(api_url or "")
     model_l = str(model or "").lower()
@@ -5318,12 +5318,14 @@ def buildOpenAIRequest(system, user, history, penalty, formatType, model,
     # Batch requests name Kimi's Batch provider instead of the OpenAI protocol.
     completion_field = uses_completion_field(provider, endpoint)
     # DeepSeek's own API allows far longer replies than other DeepSeek hosts,
-    # as OpenCode Go does, and its models think by default within max_tokens.
+    # and its models think by default within max_tokens.
     # https://api-docs.deepseek.com/api/create-chat-completion
-    deepseek_api = deepseek_route(model, endpoint)
-    if is_deepseek and not deepseek_api:
+    # OpenCode's routes list an output limit far above the ceiling for every
+    # model they serve, DeepSeek's included (settings/opencode catalog).
+    full_ceiling = own_api("deepseek", endpoint) or opencode_route(endpoint) is not None
+    if is_deepseek and not full_ceiling:
         completion_ceiling = COMPAT_TRANSLATION_OUTPUT_TOKENS
-    elif completion_field or provider == "gemini" or deepseek_api:
+    elif completion_field or provider == "gemini" or full_ceiling:
         completion_ceiling = MAX_TRANSLATION_OUTPUT_TOKENS
     elif is_mistral:
         completion_ceiling = MISTRAL_TRANSLATION_OUTPUT_TOKENS
