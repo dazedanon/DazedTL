@@ -16,10 +16,11 @@ whose receipt is gone, as after Start over, is dropped.
 
 from dazedtl.storage import write_json
 
-from .files import project_path, read_json
+from . import organize
+from .files import digest, project_path, read_json
 from .project import WORK
 from .requests import result_value, source_language, target_language
-from .results import Results, indexed, untranslated
+from .results import Results, indexed, line_problems, unsent_line, untranslated
 
 INDEX = WORK + "/work/accepted-units.json"
 # Raise when an entry would record something else of the same request.
@@ -28,6 +29,10 @@ VERSION = 1
 # of its requests (run_compiler); the operation's compile record freezes it,
 # so an organize started before keeps every unit.
 POLICY = "unit-results-v1"
+# The provenance of a receipt of lines imported from a translation file
+# (save_import), which holds its own index entry, since no run plan holds
+# its request.
+IMPORTED = "translation-file"
 
 
 def entry(request):
@@ -72,6 +77,10 @@ def entries(store, project_id, source, listing):
     found = {key: value for key, value in saved.items() if key in receipts}
     for fingerprint, request in held(store, project_id, receipts - set(found)).items():
         found[fingerprint] = entry(request)
+    for fingerprint in receipts - set(found):
+        imported = _imported(listing[fingerprint][0])
+        if imported is not None:
+            found[fingerprint] = imported
     if found != saved:
         write_json(
             project_path(source, INDEX, exists=False),
@@ -176,3 +185,103 @@ def record(units, answered, found):
             for fingerprint in dict.fromkeys(answered.values())
         },
     }
+
+
+def _imported(path):
+    """The index entry an imported receipt at *path* holds, or None for
+    another receipt or one that can't be read."""
+    try:
+        provenance = read_json(path).get("provenance")
+    except OSError, ValueError, AttributeError:
+        return None
+    if not isinstance(provenance, dict) or provenance.get("kind") != IMPORTED:
+        return None
+    value = provenance.get("entry")
+    if (
+        not isinstance(value, dict)
+        or set(value) != {"id", "sources", "language", "target"}
+        or not isinstance(value["sources"], dict)
+    ):
+        return None
+    return value
+
+
+def translations(store, project_id, source, units, language, target, quotes=True):
+    """Each of *units*' current translation as the game gets it, by unit ID:
+    its newest saved receipt's (current), else, for a line without source
+    letters, what DazedTL writes for it (organize.unsent). A unit with
+    neither is left out."""
+    results = Results(source)
+    listing = results.listing()
+    found = entries(store, project_id, source, listing)
+    answered = current(source, units, language, target, found, listing)
+    value = {}
+    if answered:
+        reused = record(units, answered, found)
+        for row in results.reused_units(reused, list(reused["units"]), listing, quotes):
+            if "translation" in row:
+                value[row["source_id"]] = row["translation"]
+    left = [unit for unit in units if unit["id"] not in value]
+    for identity, unit in organize.unsent(left, language, target, quotes).items():
+        value[identity] = unsent_line(unit["source"], target, quotes)
+    return value
+
+
+def import_problems(units, translations, language, target):
+    """Why each of *translations*, by unit ID, would not be kept as its
+    unit's translation: the checks a saved translation passes
+    (results.line_problems), or that it is its source text, which reads as
+    no translation (results.untranslated)."""
+    request = _request(units, translations, language, target)
+    problems = line_problems(request, translations)
+    for identity, text in translations.items():
+        if identity not in problems and untranslated(
+            units[identity]["source"], text, language, target
+        ):
+            problems[identity] = "It is the line's source text, not a translation."
+    return problems
+
+
+def _request(units, translations, language, target):
+    """The request a receipt of *translations* answers: their units' source
+    text and constraints, in the language pair."""
+    sources = {identity: units[identity]["source"] for identity in translations}
+    return {
+        "id": "imported-" + digest([sources, translations])[:12],
+        "fingerprint": digest(
+            {
+                "kind": IMPORTED,
+                "sources": sources,
+                "translations": translations,
+                "language": language,
+                "target": target,
+            }
+        ),
+        "sources": sources,
+        "constraints": {
+            identity: units[identity]["constraints"] for identity in translations
+        },
+        "context": {"source_language": language, "target_language": target},
+    }
+
+
+def save_import(source, units, translations, language, target, file):
+    """Saves *translations*, by unit ID, imported from the translation file
+    named *file*, as the receipt of a request holding just those lines, so
+    each unit keeps its imported translation as it would a run's: the newest
+    receipt wins (current). Its index entry is saved beside the others and
+    inside the receipt, since no run plan holds the request. Every line
+    passed import_problems."""
+    request = _request(units, translations, language, target)
+    value = entry(request)
+    Results(source).accept(
+        request,
+        translations,
+        {"kind": IMPORTED, "file": file, "entry": value},
+    )
+    saved = _saved(source)
+    saved[request["fingerprint"]] = value
+    write_json(
+        project_path(source, INDEX, exists=False),
+        {"version": VERSION, "requests": saved},
+    )

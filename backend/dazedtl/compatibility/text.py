@@ -955,6 +955,19 @@ def engine_json(document, *, newline=False):
     return (text + "\n" if newline else text).encode("utf-8")
 
 
+def imported_document(before, staged, name, target):
+    """*staged*, a copy of the working copy *before* with a translation
+    file's lines set in place, as Guided's own output keeps it: each changed
+    value's source in `_original` and each message written with Guided's
+    full stops and spacing for *target*, as Assistant-led's writer writes
+    them (util/len_originals). Apply fits it to the Line widths."""
+    from util.len_originals import preserve_originals, write_messages
+
+    result = preserve_originals(before, staged, filename=name, language=target)
+    write_messages(before, result, target)
+    return result
+
+
 def unfitted(document, name, layout):
     """The translated values in *document* that do not fit the Line widths
     even wrapped again, such as help that needs more rows than its window

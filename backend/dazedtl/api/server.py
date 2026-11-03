@@ -31,15 +31,17 @@ from dazedtl.plugins.service import receipt_label
 from dazedtl.projects import location
 from dazedtl.projects.languages import ProjectLanguages
 from dazedtl.projects.location import Locations, RecentFolders
-from dazedtl.projects.store import Projects
+from dazedtl.projects.store import Projects, working_method
 from dazedtl.settings import language_pair, preferences
 from dazedtl.settings.store import Settings
 from dazedtl.storage import WorkspaceLock
 from dazedtl.system import private_stdin
 from dazedtl.translation import derived
 from dazedtl.translation.assistant_tasks import AssistantTasks
+from dazedtl.translation.exchange import Exchange
 from dazedtl.translation.files import read_json
 from dazedtl.translation.guided import Guided
+from dazedtl.translation.manual import Manual
 from dazedtl.translation.playtest import Playtest
 from dazedtl.translation.service import Translation, assistant_request
 from dazedtl.translation.text_qa import TextQA
@@ -95,6 +97,8 @@ class Application:
         self.guided = Guided(
             self.backend, self.projects, self.settings, self.translation
         )
+        self.manual = Manual(self.translation)
+        self.exchange = Exchange(self.translation, self.guided.translation_lines)
         self.images = ImageService(
             self.projects, self.translation, self.settings, self.backend
         )
@@ -344,17 +348,12 @@ class Application:
         if project and project["available"]:
             try:
                 current = self.translation.state(project["id"])
-                # A game opened before the method choice keeps the method it
-                # already has work in; the choice itself is never inferred later.
-                if project["method"] not in {"guided", "len"}:
-                    project["method"] = (
-                        "guided"
-                        if project.get("backend_id")
-                        else "len"
-                        if current["jobs"]
-                        or (current["progress"] or {}).get("updated_at")
-                        else "translation"
-                    )
+                project["method"] = working_method(
+                    project,
+                    bool(
+                        current["jobs"] or (current["progress"] or {}).get("updated_at")
+                    ),
+                )
                 project["next_label"] = "Open translation"
                 project["engine_label"] = current["engine"]
                 project["engine"] = self.translation.engine.detect(project["source"])
@@ -1083,6 +1082,17 @@ def routes(app):
         app.translation.checkpoints,
         lambda value, _params: value,
     )
+    for name, function in (
+        ("export", app.exchange.export),
+        ("preview", app.exchange.preview),
+        ("import", app.exchange.apply),
+    ):
+        methods["project_translation_" + name] = (
+            function,
+            lambda value, _params: value,
+        )
+    methods["manual_load"] = (app.manual.load, lambda value, _params: value)
+    methods["manual_estimate"] = (app.manual.estimate, lambda value, _params: value)
     methods["project_checkpoint_changes"] = (
         app.translation.checkpoint_changes,
         lambda value, _params: value,

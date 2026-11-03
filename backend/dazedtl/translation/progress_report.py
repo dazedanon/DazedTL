@@ -15,7 +15,7 @@ from typing import Any
 from dazedtl.compatibility.checkpoint_commits import Change
 from dazedtl.storage import exclusive, write_json
 from dazedtl.translation.files import project_path, read_json, verify_evidence
-from dazedtl.translation.project import WORK
+from dazedtl.translation.project import MANUAL, WORK
 from dazedtl.translation.results import Results
 
 REPORT = WORK + "/progress-report.json"
@@ -147,6 +147,13 @@ def follow(workspace, project_id, engine, source, undone):
     return reopen(workspace, project_id, engine, source, options, earliest)
 
 
+def reports(plan):
+    """Whether the run *plan* reports to the assistant's progress report and
+    checkpoints the game's work; a Manual run (project MANUAL) has no
+    assistant and writes nothing into the game."""
+    return plan.get("method") != MANUAL
+
+
 def refresh(workspace, project_id, engine, plan, *, started=False):
     """Republishes the last report with counts from the plan's saved results.
 
@@ -154,6 +161,8 @@ def refresh(workspace, project_id, engine, plan, *, started=False):
     starts or resumes answers the question the assistant last stopped on,
     such as approving this run; a question it reports during the run stays.
     """
+    if not reports(plan):
+        return
     verify_evidence(plan["source"], plan["evidence"])
     engine.verify_bindings(plan["source"], plan["original_bindings"])
     with _lock(workspace, project_id):

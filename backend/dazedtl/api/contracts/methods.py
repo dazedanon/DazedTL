@@ -83,12 +83,15 @@ from dazedtl.api.contracts.translation import (
     CheckpointChanges,
     CheckpointTimeline,
     GameUpdateStatus,
+    ManualLoad,
     PreparedHandoff,
     ProjectOptions,
     ReleaseInspection,
     ReleasePreview,
     RequestPreview,
     RunRequestState,
+    TranslationFileExport,
+    TranslationFileImport,
     TranslationJob,
     TranslationOptions,
     TranslationProgress,
@@ -352,6 +355,18 @@ class TranslationReleaseRequest(TypedDict):
 class InputPathRequest(TypedDict):
     project_id: str
     input_path: str
+
+
+class TranslationFileRequest(TypedDict):
+    project_id: str
+    path: str
+
+
+class TranslationFileImportRequest(TypedDict):
+    project_id: str
+    path: str
+    # The digest its preview read, so a file changed since is checked again.
+    sha256: str
 
 
 class TranslationOrganizeRequest(TypedDict):
@@ -861,6 +876,19 @@ METHODS: dict[str, Method] = {
     "translation_progress": Method(InputPathRequest, TranslationProgress),
     "translation_operation": Method(TranslationOperationRequest, TranslationJob),
     "project_start_over": Method(StartOverRequest, TranslationJob),
+    # Translation files, for every method (translation/exchange), and the
+    # Manual method's loaded file and estimate (translation/manual).
+    "project_translation_export": Method(
+        TranslationFileRequest, TranslationFileExport, refresh=False
+    ),
+    "project_translation_preview": Method(
+        TranslationFileRequest, TranslationFileImport, refresh=False
+    ),
+    "project_translation_import": Method(
+        TranslationFileImportRequest, TranslationFileImport
+    ),
+    "manual_load": Method(TranslationFileRequest, ManualLoad),
+    "manual_estimate": Method(ProjectRequest, TranslationJob),
     # The Checkpoints tab: its timeline, one checkpoint's changes, and go
     # back, undo and save a copy, which only the user starts.
     "project_checkpoints": Method(ProjectRequest, CheckpointTimeline, refresh=False),

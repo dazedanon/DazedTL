@@ -259,6 +259,40 @@ def _checked(request, translations, keep):
     )
 
 
+def line_problems(request, translations):
+    """Why each line of translations would not be saved, by unit ID: a
+    changed protected token, mask or layout bound (requests `result_value`),
+    a refusal note in place of game text, or a failed content or control-code
+    check (`_content_failures`), each checked by itself, so the other lines
+    can be saved, as an imported translation file's are."""
+    problems = {}
+    passing = {}
+    for identity, text in translations.items():
+        try:
+            passing.update(
+                result_value(
+                    {**request, "sources": {identity: request["sources"][identity]}},
+                    {identity: text},
+                )
+            )
+        except ValueError as error:
+            reason = str(error)
+            problems[identity] = (
+                "It " + reason.removeprefix("The response ")
+                if reason.startswith("The response ")
+                else reason
+            )
+            continue
+        if text != request["sources"][identity] and line_refusal(
+            text, request["sources"][identity]
+        ):
+            problems[identity] = "It holds a refusal note instead of a translation."
+            del passing[identity]
+    for identity, reason in _content_failures(request, passing).items():
+        problems[identity] = reason[0].upper() + reason[1:] + "."
+    return problems
+
+
 def translated(request, translations):
     """The result's translations, refusing any line that holds a refusal note
     in place of game text, whoever wrote it, or that fails the content

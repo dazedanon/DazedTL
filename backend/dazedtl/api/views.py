@@ -7,6 +7,7 @@ from pathlib import Path
 from dazedtl.api.contracts import ContractViolation
 from dazedtl.api.contracts.runs import RunEstimate
 from dazedtl.compatibility.original_record import RecordPending
+from dazedtl.projects.store import CHOSEN
 
 ESTIMATE_FIELDS = RunEstimate.__required_keys__ | RunEstimate.__optional_keys__
 
@@ -20,9 +21,7 @@ def project(value):
         return None
     value = {
         **value,
-        "method": value.get("method")
-        if value.get("method") in {"guided", "len"}
-        else None,
+        "method": value.get("method") if value.get("method") in CHOSEN else None,
     }
     return pick(
         value,

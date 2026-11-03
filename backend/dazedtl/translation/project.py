@@ -7,6 +7,10 @@ from dazedtl.storage import write_json
 from .files import digest, project_path, read_json
 
 WORK = ".dazedtl/len-method"
+# The method of a Manual project's runs, which its plans name: the user's own
+# tools extract and write the game's text, so DazedTL never writes the game,
+# needs no Git baseline and keeps no assistant's progress report for them.
+MANUAL = "manual"
 MODES = {"agent", "live", "batch"}
 DEFAULTS = {
     "mode": "batch",

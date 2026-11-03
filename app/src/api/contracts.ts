@@ -1789,6 +1789,63 @@ export type ReleasePreview = {
   sha256: string;
 };
 
+/** The translation file a Manual project last loaded
+(translation/manual). */
+export type ManualFile = {
+  name: string;
+  path: string;
+  sha256: string;
+  loaded: string;
+  lines: number;
+  scenes: number;
+  translations: number;
+};
+
+export type ManualState = {
+  loaded: ManualFile | null;
+};
+
+export type SkippedLine = {
+  id: string;
+  reason: string;
+};
+
+export type GlossaryImport = {
+  added: number;
+  same: number;
+  differs: number;
+};
+
+/** What importing a translation file does, or did
+(translation_file.matched): its lines, those that add or replace a
+translation, those it holds unchanged or holds none for, and those
+skipped, up to 20 named with why. */
+export type TranslationFileImport = {
+  name: string;
+  sha256: string;
+  lines: number;
+  added: number;
+  replaced: number;
+  unchanged: number;
+  empty: number;
+  unknown: number;
+  changed: number;
+  refused: number;
+  skipped: SkippedLine[];
+  glossary: GlossaryImport;
+};
+
+export type TranslationFileExport = {
+  path: string;
+  lines: number;
+  translated: number;
+  glossary: number;
+};
+
+export type ManualLoad = TranslationFileImport & {
+  loaded: ManualFile;
+};
+
 export type TranslationState = ProjectOptions & {
   engine: string;
   legacyRun: LegacyRun | null;
@@ -1815,6 +1872,7 @@ export type TranslationState = ProjectOptions & {
   batchUnavailable: string;
   batchUnread: string;
   legacyAvailable: boolean;
+  manual: ManualState | null;
 };
 
 export type UpdateTask = {
@@ -2830,7 +2888,7 @@ export type PluginActionResult = {
 export type Screen =
   "project" | "translation" | "guided" | "manual" | "settings" | "guide";
 
-export type TranslationMethod = "guided" | "len";
+export type TranslationMethod = "guided" | "len" | "manual";
 
 export type ProjectOperation = {
   label: string;
@@ -3138,6 +3196,17 @@ export type TranslationReleaseRequest = {
 export type InputPathRequest = {
   project_id: string;
   input_path: string;
+};
+
+export type TranslationFileRequest = {
+  project_id: string;
+  path: string;
+};
+
+export type TranslationFileImportRequest = {
+  project_id: string;
+  path: string;
+  sha256: string;
 };
 
 export type TranslationOrganizeRequest = {
@@ -3697,6 +3766,20 @@ export type RpcContract = {
     response: TranslationJob;
   };
   project_start_over: { request: StartOverRequest; response: TranslationJob };
+  project_translation_export: {
+    request: TranslationFileRequest;
+    response: TranslationFileExport;
+  };
+  project_translation_preview: {
+    request: TranslationFileRequest;
+    response: TranslationFileImport;
+  };
+  project_translation_import: {
+    request: TranslationFileImportRequest;
+    response: TranslationFileImport;
+  };
+  manual_load: { request: TranslationFileRequest; response: ManualLoad };
+  manual_estimate: { request: ProjectRequest; response: TranslationJob };
   project_checkpoints: {
     request: ProjectRequest;
     response: CheckpointTimeline;

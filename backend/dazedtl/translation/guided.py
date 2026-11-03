@@ -390,6 +390,13 @@ class Guided:
             self.settings, self.preferences(native)["values"]["mode"], "translate"
         )
 
+    def translation_lines(self, project_id, pair):
+        """The project's lines for its translation file (guided_lines), in
+        the language pair *pair*."""
+        from .guided_lines import GuidedLines
+
+        return GuidedLines(self, project_id, pair)
+
     def supported_files(self, native):
         return set(self.backend.phase_files(native, "database")) | set(
             self.backend.phase_files(native, "dialogue")

@@ -1,5 +1,5 @@
 {
-  "version": "a0f28884a0d7a1bb",
+  "version": "16d1adabc8a94016",
   "methods": {
     "workspace_snapshot": {
       "refresh": false,
@@ -358,6 +358,26 @@
       "duringClose": false
     },
     "project_start_over": {
+      "refresh": true,
+      "duringClose": false
+    },
+    "project_translation_export": {
+      "refresh": false,
+      "duringClose": false
+    },
+    "project_translation_preview": {
+      "refresh": false,
+      "duringClose": false
+    },
+    "project_translation_import": {
+      "refresh": true,
+      "duringClose": false
+    },
+    "manual_load": {
+      "refresh": true,
+      "duringClose": false
+    },
+    "manual_estimate": {
       "refresh": true,
       "duringClose": false
     },

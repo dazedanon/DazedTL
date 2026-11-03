@@ -66,6 +66,11 @@ class Line(NamedTuple):
     texts: tuple[str, ...]
     sources: tuple[str, ...]
     units: tuple[tuple[str, str | None], ...] = ()
+    # The paths of the values each of *units* covers, in its order.
+    unit_paths: tuple[tuple[tuple, ...], ...] = ()
+    # The path of the command an event text block starts at, its window
+    # command for a message; () for any other line.
+    start: tuple = ()
 
     def sent(self) -> tuple[tuple[str, str | None], ...]:
         """The text the engine sends as one, each with its source."""
@@ -74,6 +79,14 @@ class Line(NamedTuple):
         if len(self.texts) == 1:
             return ((self.texts[0], self.sources[0] if self.sources else None),)
         return tuple((text, None) for text in self.texts)
+
+    def places(self) -> tuple[tuple[tuple, ...], ...]:
+        """The paths of the values each text sent() gives covers."""
+        if self.units:
+            return self.unit_paths
+        if len(self.texts) == 1:
+            return (self.paths,)
+        return tuple((path,) for path in self.paths)
 
     def shown_source(self) -> str:
         """The Japanese a person compares the line with: each sent text's
@@ -175,6 +188,7 @@ def lines(
             texts: list[str] = []
             sources: list[str] = []
             units: list[tuple[str, str | None]] = []
+            places: list[tuple[tuple, ...]] = []
             head = commands[block.head] if block.head is not None else None
             parameters = (
                 head.get("parameters")
@@ -192,6 +206,7 @@ def lines(
                 named = tuple(map(speaker_name, _command_original(head)))
                 sources.extend(named)
                 units.append((texts[-1], named[0] if named else None))
+                places.append((paths[-1],))
             for row in block.rows:
                 paths.append((*listed, row, "parameters", 0))
                 texts.append(blocks.text(commands[row]))
@@ -201,9 +216,20 @@ def lines(
                     sources.append(source)
                 rows = (blocks.text(commands[row]) for row in part.rows)
                 units.append(("\n".join(row for row in rows if row.strip()), source))
+                places.append(
+                    tuple((*listed, row, "parameters", 0) for row in part.rows)
+                )
             if paths:
                 listing.append(
-                    Line(kind, tuple(paths), tuple(texts), tuple(sources), tuple(units))
+                    Line(
+                        kind,
+                        tuple(paths),
+                        tuple(texts),
+                        tuple(sources),
+                        tuple(units),
+                        tuple(places),
+                        (*listed, block.start),
+                    )
                 )
         # In file order: by the command each line starts at.
         listing.sort(key=lambda line: line.paths[0][len(listed)])
@@ -366,6 +392,18 @@ def _read(
         return found
     sourced = _unkept(document, theirs)
     return [next(sourced) if line.kind in _UNKEPT else line for line in found]
+
+
+def read(
+    name: str,
+    document: Any,
+    phase: str,
+    markers: frozenset[str],
+    original: Callable[[], Any],
+) -> list[Line]:
+    """lines() of a file as counts read it: a map name or note label keeping
+    no source of its own takes the original game file's (`_read`)."""
+    return _read(name, document, phase, markers, original)
 
 
 def state(line: Line, notes: frozenset[str]) -> str | None:

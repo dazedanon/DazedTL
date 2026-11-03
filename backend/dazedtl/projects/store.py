@@ -9,9 +9,11 @@ from dazedtl.storage import WorkspaceError, read_versioned_json, write_json
 from dazedtl.translation.files import read_json
 
 # "translation" records a game whose method has not been chosen yet.
-METHODS = {"guided", "len", "translation"}
+METHODS = {"guided", "len", "manual", "translation"}
+# The methods a user chooses: Guided steps, Assistant-led and Manual.
+CHOSEN = METHODS - {"translation"}
 SCREENS = {"project", "translation", "guided", "manual", "settings", "guide"}
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 # What the engine detection names a folder it recognizes no game in
 # (TranslationEngine.detect).
 UNRECOGNIZED = "Investigation pending"
@@ -54,7 +56,19 @@ def upgrade_v4(value):
     return upgraded
 
 
-UPGRADES = {1: upgrade_v1, 2: upgrade_v2, 3: upgrade_v3, 4: upgrade_v4}
+def upgrade_v5(value):
+    # Manual joined the methods; a registry naming it can't be read by an
+    # app that doesn't know it, so it says it needs a newer one.
+    return deepcopy(value)
+
+
+UPGRADES = {
+    1: upgrade_v1,
+    2: upgrade_v2,
+    3: upgrade_v3,
+    4: upgrade_v4,
+    5: upgrade_v5,
+}
 
 
 def validate(value):
@@ -87,6 +101,18 @@ def validate(value):
     current = value.get("current_id")
     if not isinstance(current, str) or (current and current not in identities):
         raise invalid
+
+
+def working_method(project, assistant_work):
+    """The method a game translates in: the one chosen, else, for a game
+    opened before the choice, the one it has work in: Guided steps with a
+    Guided workspace, Assistant-led with *assistant_work*, or none yet
+    ("translation"). The choice itself is never inferred."""
+    if project["method"] in CHOSEN:
+        return project["method"]
+    if project.get("backend_id"):
+        return "guided"
+    return "len" if assistant_work else "translation"
 
 
 def engine(project, detected):
@@ -240,8 +266,8 @@ class Projects:
 
     def choose_method(self, project_id, method):
         """Record the method chosen for a game; the other method's work stays."""
-        if method not in {"guided", "len"}:
-            raise ValueError("Choose Guided steps or Assistant-led.")
+        if method not in CHOSEN:
+            raise ValueError("Choose Guided steps, Assistant-led or Manual.")
         data = deepcopy(self.data)
         self._get(data, project_id)["method"] = method
         self._commit(data)

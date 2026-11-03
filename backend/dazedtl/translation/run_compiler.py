@@ -27,9 +27,9 @@ from .operations import (
     counted_census,
     lifecycle,
     names_census,
-    require_baseline,
+    require_run_baseline,
 )
-from .project import WORK, ProjectWorkspace, scope
+from .project import MANUAL, WORK, ProjectWorkspace, scope
 from .requests import plan_input, quote
 from .results import QUOTES, Results
 from .runner import SHARED_PAYLOADS, askers
@@ -264,10 +264,13 @@ def _organize(engine, workspace, job, plan, progress):
     # The units' bytes as read, which the compiled run must still find.
     read = evidence(root, [input_path])
     units = organize.units_input(read_json(ProjectWorkspace(root).artifact(input_path)))
-    progress("Checking the units against the census")
-    coverage, messages = scope_coverage(engine, workspace, project_id, root, units)
-    require_whole_messages(messages)
-    if complete:
+    coverage = None
+    if frozen.get("method") != MANUAL:
+        # A Manual project's own extractor decides its scope.
+        progress("Checking the units against the census")
+        coverage, messages = scope_coverage(engine, workspace, project_id, root, units)
+        require_whole_messages(messages)
+    if complete and frozen.get("method") != MANUAL:
         require_coverage(coverage)
         write_json(
             inventory_path(workspace, project_id),
@@ -389,7 +392,10 @@ def compile_run(
     frozen = plan["compile"]
     cfg = frozen["configuration"]
     finishes = plan.get("finishes")
-    require_baseline(engine, root, selected, lifecycle(workspace, project_id))
+    method = {"method": frozen["method"]} if frozen.get("method") else {}
+    require_run_baseline(
+        engine, root, {**method, "options": selected}, lifecycle(workspace, project_id)
+    )
     # Every line a plan of organize's holds may have a translation already.
     raw = plan_input(
         read_json(ProjectWorkspace(root).artifact(input_path)),
@@ -481,6 +487,7 @@ def compile_run(
         "input_path": input_path,
         "batch_limits": limits,
         QUOTES: frozen.get(QUOTES, True),
+        **method,
     }
     if limits:
         # Its chunks wait for room in the provider's Batch window, each a

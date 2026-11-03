@@ -31,6 +31,7 @@ from . import (
     backups,
     checkpoint_records,
     delivery,
+    manual,
     name_codes,
     organize,
     originals,
@@ -53,10 +54,11 @@ from .operations import (
     lifecycle,
     names_census,
     require_baseline,
+    require_run_baseline,
     runtime_manifest,
 )
 from .playtest import game_fixes, layout_check
-from .project import ADDED, WORK, ProjectWorkspace, options, scope
+from .project import ADDED, MANUAL, WORK, ProjectWorkspace, options, scope
 from .requests import (
     LINE_KEYS,
     counted,
@@ -538,6 +540,9 @@ class Translation:
             "legacyAvailable": bool(
                 record.get("backend_id") in self.settings.adapter.workflows.projects
             ),
+            "manual": {"loaded": manual.loaded(project.root)}
+            if record.get("method") == MANUAL
+            else None,
         }
 
     def prepare(self, project_id):
@@ -953,12 +958,16 @@ Additional project instructions:
     def compile(self, project_id, input_path):
         return self._prepare(project_id, "compile", {"input_path": input_path})
 
-    def _prepare(self, project_id, action, arguments, *, mode=None, finishes=None):
+    def _prepare(
+        self, project_id, action, arguments, *, mode=None, finishes=None, method=None
+    ):
         """Starts the operation that compiles a run. Only drafts, ownership
         and the settings the run freezes are read here: compiling, pricing and
         saving a big game's requests take a worker tens of seconds, which must
         not hold the dispatch the interface and the helper share. A run that
-        finishes another run's declined requests uses the API mode given."""
+        finishes another run's declined requests uses the API mode given, as
+        does a Manual project's (*method* MANUAL), which runs in it whatever
+        mode Assistant-led saved."""
         if self.jobs.running(project_id, "operation"):
             # An assistant whose command timed out may organize again.
             preparing = next(
@@ -995,6 +1004,8 @@ Additional project instructions:
                     "This plan is organize's own, without the lines it kept from earlier requests. Run organize --input with your units file again; it compiles the plan itself."
                 )
         selected = project.read()["options"]
+        if method == MANUAL:
+            selected = {**selected, "mode": mode}
         cfg, batch_provider = self.api_configuration(
             mode or self.run_mode(project), project.root
         )
@@ -1008,6 +1019,8 @@ Additional project instructions:
             # Its translations write corner brackets as Guided's would.
             QUOTES: self.settings.convert_quotes(),
         }
+        if method == MANUAL:
+            frozen["method"] = MANUAL
         if action == "organize":
             from util.request_packing import SHARED_LINES
 
@@ -1091,6 +1104,18 @@ Additional project instructions:
             project_id, "organize", {"input_path": input_path, "complete": complete}
         )
 
+    def organize_manual(self, project_id, input_path, mode):
+        """Starts organizing a Manual project's units (translation/manual)
+        into a run in the API *mode*, complete by the user's word: their own
+        extractor decides the scope, so no census checks it."""
+        return self._prepare(
+            project_id,
+            "organize",
+            {"input_path": input_path, "complete": True},
+            mode=mode,
+            method=MANUAL,
+        )
+
     def require_inventory(self, project_id, translated):
         """A patch holds the whole census: it counted the game's current
         version, organize --complete accepted the units against it, and the
@@ -1170,11 +1195,8 @@ Additional project instructions:
             )
         verify_evidence(project.root, plan["evidence"])
         self.engine.verify_bindings(project.root, plan["original_bindings"])
-        require_baseline(
-            self.engine,
-            project.root,
-            plan["options"],
-            lifecycle(self.workspace, project_id),
+        require_run_baseline(
+            self.engine, project.root, plan, lifecycle(self.workspace, project_id)
         )
         if compiled:
             verify_compilation(self.engine, self.workspace, project_id, plan, index)
@@ -1537,7 +1559,7 @@ Additional project instructions:
         """Brings Progress up to a saved receipt, and checkpoints the game
         once the run has every request's."""
         self.refresh_progress(project_id, plan)
-        if finished:
+        if finished and progress_report.reports(plan):
             progress_report.checkpoint(
                 self.engine, self.workspace, project_id, plan["source"]
             )

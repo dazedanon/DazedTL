@@ -402,6 +402,66 @@ class ReleasePreview(TypedDict):
     sha256: str
 
 
+class ManualFile(TypedDict):
+    """The translation file a Manual project last loaded
+    (translation/manual)."""
+
+    name: str
+    path: str
+    sha256: str
+    loaded: str
+    lines: int
+    scenes: int
+    # The file's translations the project holds since it loaded.
+    translations: int
+
+
+class ManualState(TypedDict):
+    loaded: ManualFile | None
+
+
+class SkippedLine(TypedDict):
+    id: str
+    reason: str
+
+
+class GlossaryImport(TypedDict):
+    added: int
+    same: int
+    differs: int
+
+
+class TranslationFileImport(TypedDict):
+    """What importing a translation file does, or did
+    (translation_file.matched): its lines, those that add or replace a
+    translation, those it holds unchanged or holds none for, and those
+    skipped, up to 20 named with why."""
+
+    name: str
+    sha256: str
+    lines: int
+    added: int
+    replaced: int
+    unchanged: int
+    empty: int
+    unknown: int
+    changed: int
+    refused: int
+    skipped: list[SkippedLine]
+    glossary: GlossaryImport
+
+
+class TranslationFileExport(TypedDict):
+    path: str
+    lines: int
+    translated: int
+    glossary: int
+
+
+class ManualLoad(TranslationFileImport):
+    loaded: ManualFile
+
+
 class TranslationState(ProjectOptions):
     engine: str
     legacyRun: LegacyRun | None
@@ -442,6 +502,8 @@ class TranslationState(ProjectOptions):
     # Batch and estimates wait.
     batchUnread: str
     legacyAvailable: bool
+    # A Manual project's loaded file; None for another method's.
+    manual: ManualState | None
 
 
 class UpdateTask(TypedDict):

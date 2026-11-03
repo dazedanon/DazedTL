@@ -29,7 +29,7 @@ from dazedtl.translation import progress_report
 from dazedtl.translation.compilation import verify_compilation
 from dazedtl.translation.files import verify_evidence
 from dazedtl.translation.jobs import RunStore
-from dazedtl.translation.operations import execute, lifecycle, require_baseline
+from dazedtl.translation.operations import execute, lifecycle, require_run_baseline
 from dazedtl.translation.ownership import alive
 from dazedtl.translation.project import ProjectWorkspace, scope
 from dazedtl.translation.runner import Runner
@@ -154,11 +154,8 @@ def run_locked(workspace, identity, store):
                     )
                 verify_evidence(project.root, plan["evidence"])
                 engine.verify_bindings(project.root, plan["original_bindings"])
-                require_baseline(
-                    engine,
-                    project.root,
-                    plan["options"],
-                    lifecycle(workspace, job["project_id"]),
+                require_run_baseline(
+                    engine, project.root, plan, lifecycle(workspace, job["project_id"])
                 )
                 if not compiled:
                     verify_compilation(engine, workspace, job["project_id"], plan)
@@ -220,7 +217,7 @@ def run_locked(workspace, identity, store):
         job.update(status="failed", message=message)
         store.save(job)
     finally:
-        if plan["kind"] == "translation":
+        if plan["kind"] == "translation" and progress_report.reports(plan):
             ended(engine, workspace, job["project_id"], plan)
 
 

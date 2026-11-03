@@ -9,7 +9,7 @@ from dazedtl.api.contracts.settings import SourceLanguage
 from dazedtl.api.contracts.translation import TranslationState
 
 type Screen = Literal["project", "translation", "guided", "manual", "settings", "guide"]
-type TranslationMethod = Literal["guided", "len"]
+type TranslationMethod = Literal["guided", "len", "manual"]
 
 
 class ProjectOperation(TypedDict):
