@@ -429,7 +429,9 @@ function ProjectStatus({
             />
           </ActionList>
         )}
-        {project.method && project.method !== "guided" && assistantList}
+        {/* A Manual game has no assistant; another method's tasks return
+            with it. */}
+        {project.method === "len" && assistantList}
         {project.available && project.method && (
           <TranslationFile project={project} disabled={busy} />
         )}

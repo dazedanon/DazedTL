@@ -384,25 +384,35 @@ def run_quotes(plan):
     return plan.get(QUOTES, True)
 
 
-def exported_line(request, identity, text, quotes=True):
-    """A line's saved translation as the game gets it: as Guided writes every
-    line of a reply (util/target_text `translated_line`), corner brackets as
-    quotes when *quotes*, the line's protected tokens kept as they are, then
-    with a slash its source holds before text no code names escaped, as
-    Guided restores it (util/runtime_text `escaped_orphan_backslashes`), then
-    with the automatic lint fixes Guided gives a new translation
-    (rpgmaker_qa_lint `normalize`). A line given back as its source stays
-    as it is, as Guided keeps such a line."""
+def game_line(source, text, target, quotes=True, protected=()):
+    """A translation *text* of *source* into *target* as the game gets it: as
+    Guided writes every line of a reply (util/target_text `translated_line`),
+    corner brackets as quotes when *quotes*, *protected* tokens kept as they
+    are, then with a slash its source holds before text no code names
+    escaped, as Guided restores it (util/runtime_text
+    `escaped_orphan_backslashes`), then with the automatic lint fixes Guided
+    gives a new translation (rpgmaker_qa_lint `normalize`). A line given
+    back as its source stays as it is, as Guided keeps such a line."""
     from util.rpgmaker_qa_lint import normalize
     from util.runtime_text import escaped_orphan_backslashes
     from util.target_text import translated_line
 
-    source = request["sources"][identity]
     if text == source:
         return text
-    target = target_language(request["context"])
-    line = translated_line(text, target, quotes, protected_tokens(request, identity))
+    line = translated_line(text, target, quotes, protected)
     return normalize(source, escaped_orphan_backslashes(source, line), target)
+
+
+def exported_line(request, identity, text, quotes=True):
+    """A line's saved translation as the game gets it (game_line), the
+    line's protected tokens kept as they are."""
+    return game_line(
+        request["sources"][identity],
+        text,
+        target_language(request["context"]),
+        quotes,
+        protected_tokens(request, identity),
+    )
 
 
 def unsent_line(source, target, quotes=True):

@@ -18,6 +18,7 @@ from dazedtl.storage import write_json
 
 from . import organize
 from .files import digest, project_path, read_json
+from .jobs import now
 from .project import WORK
 from .requests import result_value, source_language, target_language
 from .results import Results, indexed, line_problems, unsent_line, untranslated
@@ -75,12 +76,10 @@ def entries(store, project_id, source, listing):
     saved = _saved(source)
     receipts = {key for key, (path, _stamp) in listing.items() if path}
     found = {key: value for key, value in saved.items() if key in receipts}
-    for fingerprint, request in held(store, project_id, receipts - set(found)).items():
+    for fingerprint, request in held(
+        store, project_id, receipts - set(found), source, listing
+    ).items():
         found[fingerprint] = entry(request)
-    for fingerprint in receipts - set(found):
-        imported = _imported(listing[fingerprint][0])
-        if imported is not None:
-            found[fingerprint] = imported
     if found != saved:
         write_json(
             project_path(source, INDEX, exists=False),
@@ -89,10 +88,13 @@ def entries(store, project_id, source, listing):
     return found
 
 
-def held(store, project_id, fingerprints):
-    """The compiled requests of fingerprints, by fingerprint, each read from
-    a run plan of the project that holds it; plans are read only for the
-    requests they hold, and one that can't be read is passed over."""
+def held(store, project_id, fingerprints, source=None, listing=None):
+    """The compiled requests of fingerprints, by fingerprint: each read from
+    a run plan of the project that holds it or, in the game at *source*, from
+    the receipt of lines imported from a translation file, which holds its
+    own request (save_import). Plans are read only for the requests they
+    hold, and one that can't be read is passed over; *listing* is the
+    game's receipts (Results.listing) when its caller has read them."""
     missing, found = set(fingerprints), {}
     for job in store.list(project_id) if missing else ():
         if job["kind"] != "translation" or missing.isdisjoint(
@@ -109,6 +111,13 @@ def held(store, project_id, fingerprints):
                 missing.discard(request["fingerprint"])
         if not missing:
             break
+    if missing and source is not None:
+        listing = Results(source).listing() if listing is None else listing
+        for fingerprint in sorted(missing):
+            path = (listing.get(fingerprint) or (None, None))[0]
+            request = _imported(path) if path else None
+            if request is not None:
+                found[fingerprint] = request
     return found
 
 
@@ -188,7 +197,7 @@ def record(units, answered, found):
 
 
 def _imported(path):
-    """The index entry an imported receipt at *path* holds, or None for
+    """The request an imported receipt at *path* answers, or None for
     another receipt or one that can't be read."""
     try:
         provenance = read_json(path).get("provenance")
@@ -196,11 +205,13 @@ def _imported(path):
         return None
     if not isinstance(provenance, dict) or provenance.get("kind") != IMPORTED:
         return None
-    value = provenance.get("entry")
+    value = provenance.get("request")
     if (
         not isinstance(value, dict)
-        or set(value) != {"id", "sources", "language", "target"}
-        or not isinstance(value["sources"], dict)
+        or not isinstance(value.get("id"), str)
+        or not isinstance(value.get("sources"), dict)
+        or not isinstance(value.get("constraints"), dict)
+        or not isinstance(value.get("context"), dict)
     ):
         return None
     return value
@@ -227,36 +238,69 @@ def translations(store, project_id, source, units, language, target, quotes=True
     return value
 
 
+# What a spreadsheet program writes in place of a cell it read as a broken
+# formula, such as a translation starting with "-" or "=" saved from Excel.
+SPREADSHEET_ERRORS = frozenset(
+    {
+        "#BLOCKED!",
+        "#BUSY!",
+        "#CALC!",
+        "#CONNECT!",
+        "#DIV/0!",
+        "#ERROR!",
+        "#FIELD!",
+        "#GETTING_DATA",
+        "#N/A",
+        "#NAME?",
+        "#NULL!",
+        "#NUM!",
+        "#REF!",
+        "#SPILL!",
+        "#UNKNOWN!",
+        "#VALUE!",
+    }
+)
+
+
 def import_problems(units, translations, language, target):
     """Why each of *translations*, by unit ID, would not be kept as its
     unit's translation: the checks a saved translation passes
-    (results.line_problems), or that it is its source text, which reads as
-    no translation (results.untranslated)."""
+    (results.line_problems), that it is its source text, which reads as no
+    translation (results.untranslated), or a spreadsheet's error value."""
     request = _request(units, translations, language, target)
     problems = line_problems(request, translations)
     for identity, text in translations.items():
-        if identity not in problems and untranslated(
-            units[identity]["source"], text, language, target
-        ):
+        if identity in problems:
+            continue
+        if text.strip().upper() in SPREADSHEET_ERRORS:
+            problems[identity] = (
+                "It is a spreadsheet's error value, not a translation; "
+                "a cell starting with - or = can read as a formula."
+            )
+        elif untranslated(units[identity]["source"], text, language, target):
             problems[identity] = "It is the line's source text, not a translation."
     return problems
 
 
-def _request(units, translations, language, target):
+def _request(units, translations, language, target, imported=""):
     """The request a receipt of *translations* answers: their units' source
-    text and constraints, in the language pair."""
+    text and constraints, in the language pair. Each import is a request of
+    its own, named by when it was *imported*, so the newest one's receipt
+    wins (current) even when an earlier import gave the same lines."""
     sources = {identity: units[identity]["source"] for identity in translations}
+    fingerprint = digest(
+        {
+            "kind": IMPORTED,
+            "sources": sources,
+            "translations": translations,
+            "language": language,
+            "target": target,
+            "imported": imported,
+        }
+    )
     return {
-        "id": "imported-" + digest([sources, translations])[:12],
-        "fingerprint": digest(
-            {
-                "kind": IMPORTED,
-                "sources": sources,
-                "translations": translations,
-                "language": language,
-                "target": target,
-            }
-        ),
+        "id": "imported-" + fingerprint[:12],
+        "fingerprint": fingerprint,
         "sources": sources,
         "constraints": {
             identity: units[identity]["constraints"] for identity in translations
@@ -272,12 +316,12 @@ def save_import(source, units, translations, language, target, file):
     receipt wins (current). Its index entry is saved beside the others and
     inside the receipt, since no run plan holds the request. Every line
     passed import_problems."""
-    request = _request(units, translations, language, target)
+    request = _request(units, translations, language, target, now())
     value = entry(request)
     Results(source).accept(
         request,
         translations,
-        {"kind": IMPORTED, "file": file, "entry": value},
+        {"kind": IMPORTED, "file": file, "request": request},
     )
     saved = _saved(source)
     saved[request["fingerprint"]] = value

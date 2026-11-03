@@ -12,15 +12,17 @@ the game, so no Git baseline is either (project MANUAL). The project's
 translation file comes back out with Export (exchange).
 """
 
+import json
 from pathlib import Path
 
 from dazedtl.settings import language_pair
 from dazedtl.storage import write_json
 
 from . import translation_file
-from .exchange import MANUAL_UNITS, UnitLines, glossary_counts, units_file
-from .files import project_path, read_json
+from .exchange import UnitLines, glossary_counts, units_file
+from .files import JSON_LIMIT, evidence, project_path, read_json
 from .jobs import now
+from .project import MANUAL_UNITS
 
 # What the user last loaded: the file's name, path and digest, when, and
 # its counts, beside the units it became.
@@ -62,6 +64,24 @@ class Manual:
         value = translation_file.read(path)
         translation_file.check_languages(value["languages"], pair)
         units = translation_file.units(value["lines"])
+        relative = project_path(root, MANUAL_UNITS, exists=False)
+        document = {
+            "version": 1,
+            "units": [
+                {key: item for key, item in line.items() if key != "translation"}
+                for line in value["lines"]
+            ],
+        }
+        # Estimates and exports read the units file back as JSON, as
+        # write_json writes it, so its size is checked before anything.
+        if (
+            len(json.dumps(document, ensure_ascii=False, indent=2).encode("utf-8"))
+            >= JSON_LIMIT
+        ):
+            raise ValueError(
+                "That file holds more text than a Manual project keeps: its lines "
+                "take more than 128 MB as JSON."
+            )
         lines = UnitLines(
             self.translation.jobs.store,
             project_id,
@@ -83,20 +103,19 @@ class Manual:
             lines.save(write, Path(path).name)
         added, glossary = glossary_counts(root, value["glossary"])
         if added:
-            from util.vocab import append_vocab_rows
-
-            append_vocab_rows(added, game_root=root)
-        relative = project_path(root, MANUAL_UNITS, exists=False)
-        document = {
-            "version": 1,
-            "units": [
-                {key: item for key, item in line.items() if key != "translation"}
-                for line in value["lines"]
-            ],
-        }
-        if not relative.is_file() or read_json(relative) != document:
+            self.translation.engine.glossary_add(
+                root, added, "Load the text file's glossary terms"
+            )
+        changed = not relative.is_file() or read_json(relative) != document
+        if changed:
             write_json(relative, document)
+        if write or added or changed:
+            # An estimate of the lines before reads the text they replaced.
+            self.translation.jobs.store.retire_estimates(project_id)
         loaded = {
+            # What a Manual run's estimate read, so a run of another file
+            # reads as one (Translation.job_views).
+            "units_sha256": evidence(root, [MANUAL_UNITS])[MANUAL_UNITS],
             "name": Path(path).name,
             "path": str(Path(path)),
             "sha256": value["sha256"],

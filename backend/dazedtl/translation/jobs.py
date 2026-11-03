@@ -24,7 +24,7 @@ from dazedtl.storage import WorkspaceError, WorkspaceLock, write_bytes, write_js
 
 from . import plan_file
 from .files import digest, read_json
-from .project import MANUAL
+from .project import MANUAL, MANUAL_UNITS
 from .results import Results
 
 REPLACED = "Replaced by a newer estimate; no requests were sent."
@@ -51,8 +51,17 @@ def declined_units(job):
 def finished_message(job):
     """What a run says once every request has a saved translation: the
     assistant injects them next, while a Manual project's own tools write
-    them once they are exported."""
+    them once they are exported, unless a request's line kept its source
+    text (runner.kept_message), which then has no translation yet."""
     if job.get("method") == MANUAL:
+        if any(
+            row["state"] == "accepted" and row["message"]
+            for row in job["states"].values()
+        ):
+            return (
+                "Translations saved, but some lines kept their source text, so "
+                "they have no translation yet. Estimate again to retry them."
+            )
         return "Every line is translated. Export the translations for your tools to write into the game."
     return "Translations saved. Injection and runtime QA remain separate."
 
@@ -269,8 +278,12 @@ class RunStore:
             if plan["kind"] == "operation"
             else None,
             "finishes": plan.get("finishes"),
-            # A Manual run's, whose user's own tools write its translations.
-            "method": plan.get("method"),
+            # A Manual run's or its estimate's, whose user's own tools write
+            # its translations, with the loaded units it was estimated from.
+            "method": plan.get("method") or (plan.get("compile") or {}).get("method"),
+            "units_sha256": (plan.get("evidence") or {}).get(MANUAL_UNITS)
+            if plan.get("method") == MANUAL
+            else None,
             "unit_counts": {
                 row["id"]: len(row["sources"]) for row in plan.get("requests", [])
             },
@@ -372,6 +385,34 @@ class RunStore:
                 ).hexdigest(),
             )
         )
+
+    def discard(
+        self, job, message="Canceled before submission; no requests were sent."
+    ):
+        """Cancels the estimate *job*, which nobody approved, so it sent
+        nothing: its requests read as canceled before submission and it can
+        no longer be approved."""
+        for row in job["states"].values():
+            if row["state"] == "pending":
+                row.update(state="failed", message="Canceled before submission.")
+        job.update(status="canceled", message=message)
+        self.save(job)
+
+    def retire_estimates(self, project_id):
+        """Discards the project's estimates waiting for approval once its
+        translations changed outside a run, such as by an imported file, so
+        no approval pays again for lines it now holds or replaces them."""
+        for job in self.list(project_id):
+            if (
+                job["kind"] == "translation"
+                and job["status"] == "ready"
+                and job["quote"] is not None
+                and not self.authorized(job)
+            ):
+                self.discard(
+                    job,
+                    "Your translations changed after this estimate; no requests were sent.",
+                )
 
     def list(self, project_id):
         result = []

@@ -1539,6 +1539,8 @@ export type TranslationJob = {
   app_approved_at: string | null;
   settings_changed?: boolean;
   pricing_changed?: boolean;
+  own?: boolean;
+  file_changed?: boolean;
   result: Record<string, unknown> | null;
   usage: Record<string, number>;
   usage_cost?: number | null;
@@ -1799,6 +1801,7 @@ export type ManualFile = {
   lines: number;
   scenes: number;
   translations: number;
+  units_sha256?: string;
 };
 
 export type ManualState = {

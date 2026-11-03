@@ -216,6 +216,23 @@ class TranslationEngine:
         ):
             return document_save(source, name, revision, text)
 
+    def glossary_add(self, source, sections, summary):
+        """Adds *sections*' rows to the game glossary as append_vocab_rows
+        does, in one write to the game named *summary*."""
+        from desktop.backend.guidance import written
+        from util.vocab import append_vocab_rows
+
+        from .game_write import write_game
+
+        with write_game(
+            source,
+            pack=False,
+            paths=written(source, ["glossary"]),
+            summary=summary,
+            stage="Context",
+        ):
+            append_vocab_rows(sections, game_root=Path(source))
+
     def valid_document(self, name):
         from desktop.backend.guidance import valid_document_name
 

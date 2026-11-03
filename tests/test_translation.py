@@ -431,6 +431,26 @@ class TranslationTests(unittest.TestCase):
         self.assertEqual(current["status"], "failed")
         self.assertIn("max_lines", current["message"])
         self.assertIn("Estimate again", current["message"])
+        # A reply whose failing line keeps its source text saves the rest,
+        # which leaves that line untranslated, not every line translated.
+        sources = {"line": "今日はとても良い天気ですね。", "moan": "ん♥っ…"}
+        job, _plan = self.run_record(
+            requests=[logical_request({"id": "partly", "sources": sources}, {})],
+            method="manual",
+        )
+
+        class Repeats(LiveProvider):
+            def live(self, _params):
+                return {
+                    "text": json.dumps({"line": "a" * 50, "moan": "Mm♥Ah"}),
+                    "prompt_tokens": 5,
+                    "completion_tokens": 4,
+                }
+
+        Runner(self.store, job["id"], Repeats(), lambda: None).step()
+        current, _plan = self.store.load(job["id"])
+        self.assertEqual(current["status"], "complete")
+        self.assertIn("Estimate again", current["message"])
 
     def test_a_batch_keeps_the_passing_lines_of_a_reply_and_goes_on(self):
         # One failing line failed its packed Batch request, which stopped the

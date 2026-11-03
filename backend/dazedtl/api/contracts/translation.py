@@ -127,6 +127,12 @@ class TranslationJob(TypedDict):
     # can't be priced again by (translation/repricing).
     settings_changed: NotRequired[bool]
     pricing_changed: NotRequired[bool]
+    # Only in a project's state: it is of the project's method, Manual's or
+    # Assistant-led's, so its pages show it (Translation.job_views).
+    own: NotRequired[bool]
+    # Only on a Manual run in a project's state: it was estimated from
+    # another file than the one loaded now.
+    file_changed: NotRequired[bool]
     result: dict[str, object] | None
     usage: dict[str, float]
     # The recorded usage priced at the run's rates in a project's state;
@@ -414,6 +420,8 @@ class ManualFile(TypedDict):
     scenes: int
     # The file's translations the project holds since it loaded.
     translations: int
+    # The digest of the units it became, which runs are compared with.
+    units_sha256: NotRequired[str]
 
 
 class ManualState(TypedDict):

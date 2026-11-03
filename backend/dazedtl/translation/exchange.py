@@ -20,8 +20,7 @@ from dazedtl.settings import language_pair
 
 from . import organize, translation_file, unit_results
 from .files import project_path, read_json
-
-MANUAL_UNITS = ".dazedtl/manual/units.json"
+from .project import MANUAL_UNITS
 
 
 class UnitLines:
@@ -65,6 +64,9 @@ class UnitLines:
         return unit_results.import_problems(
             self.by_id, translations, self.pair["source"], self.pair["target"]
         )
+
+    def idle(self):
+        """Nothing beyond the Translation service's own check (idle)."""
 
     def save(self, translations, name):
         unit_results.save_import(
@@ -133,22 +135,30 @@ def glossary_entries(root):
 
 
 def glossary_counts(root, entries):
-    """What importing glossary *entries* adds: the terms the game glossary
-    lacks, by section, and how many it holds already, the same or not."""
+    """What importing glossary *entries* adds: the terms whose sources no row
+    of the game glossary covers, in any section or as a slash variant
+    (util.vocab glossary_row_sources), by section, so an imported name never
+    competes with one the game has, such as a character row outranking a
+    speaker's; and how many it covers already, the same or not."""
+    from util.vocab import glossary_row_sources
+
     held = {}
     for entry in glossary_entries(root):
-        held.setdefault((entry["section"], entry["source"]), entry["translation"])
+        for source in glossary_row_sources(entry["source"], entry["section"]):
+            held.setdefault(source, entry["translation"])
     added: dict[str, list] = {}
     counts = {"added": 0, "same": 0, "differs": 0}
     for entry in entries:
-        key = (entry["section"], entry["source"])
-        if key not in held:
-            held[key] = entry["translation"]
+        sources = glossary_row_sources(entry["source"], entry["section"])
+        known = {held[source] for source in sources if source in held}
+        if not known:
+            for source in sources:
+                held[source] = entry["translation"]
             added.setdefault(entry["section"], []).append(
                 (entry["source"], entry["translation"], entry["note"])
             )
             counts["added"] += 1
-        elif held[key] == entry["translation"]:
+        elif known == {entry["translation"]}:
             counts["same"] += 1
         else:
             counts["differs"] += 1
@@ -168,21 +178,25 @@ class Exchange:
         root = project.root
         settings = self.translation.settings
         pair = language_pair.pair(settings, root)
+        # A game whose method was never chosen reads as Assistant-led's.
         method = working_method(record, True)
         if method == "guided":
-            return record, root, pair, self.guided_lines(project_id, pair)
+            return (
+                record,
+                root,
+                pair,
+                self.guided_lines(project_id, pair, settings.convert_quotes()),
+            )
         if method == "manual":
             if not project_path(root, MANUAL_UNITS, exists=False).is_file():
                 raise ValueError("Load your text file first.")
             units = units_file(root, MANUAL_UNITS)
-        elif method == "len":
+        else:
             units = assistant_units(self.translation.jobs.store, project_id, root)
             if units is None:
                 raise ValueError(
                     "Your assistant hasn't organized the game's text yet, so there are no lines to export or import."
                 )
-        else:
-            raise ValueError("Choose how to translate this game first.")
         lines = UnitLines(
             self.translation.jobs.store,
             project_id,
@@ -262,10 +276,13 @@ class Exchange:
             raise ValueError(
                 "The file changed after it was checked. Check it again before importing."
             )
+        lines.idle()
         if write:
             lines.save(write, summary["name"])
         if added:
-            from util.vocab import append_vocab_rows
-
-            append_vocab_rows(added, game_root=root)
+            self.translation.engine.glossary_add(root, added, "Import glossary terms")
+        if write or added:
+            # Requests read both, so no waiting estimate pays for lines the
+            # file translated or replaces them with its reply.
+            self.translation.jobs.store.retire_estimates(project_id)
         return summary

@@ -34,7 +34,7 @@ import {
 } from "../../ui/PageLayout";
 import { StatusPanel } from "../../ui/StatusPanel";
 import { TabPanel, Tabs, type Tab } from "../../ui/Tabs";
-import { timeAgo, unavailableReason } from "../../ui/displayText";
+import { plural, timeAgo, unavailableReason } from "../../ui/displayText";
 import { GameLanguagesRow } from "../project/GameLanguages";
 import { ImportSummary, exportTranslation } from "../project/TranslationFile";
 import type { SettingsSection } from "../settings/Settings";
@@ -43,7 +43,6 @@ import {
   awaitingQuote,
   estimateOutdated,
   latestApiRun,
-  redoneEstimate,
 } from "./apiRun";
 import { ContextPanel } from "./ContextPanel";
 import { BaseGlossaryField, TranslationModeField } from "./OptionsPanel";
@@ -122,15 +121,14 @@ function Workspace({
   const [view, setView] = useState<View>(loaded ? "progress" : "text");
   const [load, setLoad] = useState<ManualLoad | null>(null);
   const attempt = attemptJobs(state);
-  const run = latestApiRun(attempt);
-  const redo =
-    run && estimateOutdated(run) ? redoneEstimate(attempt, run) : undefined;
+  // A run of an earlier file that has finished is History's; one still under
+  // way stays here, to pause or resume it.
+  const newest = latestApiRun(attempt);
+  const run =
+    newest?.status === "complete" && newest.file_changed ? undefined : newest;
   // The estimate being prepared, or the last one if it failed.
   const latest = attempt.find(
-    (job) =>
-      job.kind === "operation" &&
-      job.action === "organize" &&
-      job.id !== redo?.id,
+    (job) => job.kind === "operation" && job.action === "organize",
   );
   const preparing = latest?.status === "complete" ? undefined : latest;
   const disabled = state.active || action.busy || draft.committing;
@@ -169,10 +167,7 @@ function Workspace({
       key,
     );
     if (done.ok && done.value)
-      action.succeed(
-        `Loaded ${done.value.loaded.lines.toLocaleString()} lines.`,
-        key,
-      );
+      action.succeed(`Loaded ${plural(done.value.loaded.lines, "line")}.`, key);
   };
   const saveOptions = () =>
     void action.run(draft.save, "Project options saved.");
@@ -184,21 +179,42 @@ function Workspace({
     { inFields: true },
   );
   const quote = awaitingQuote(run);
+  const outdated = estimateOutdated(run);
   const finished = run?.status === "complete";
-  // An estimate is the next step until one waits, runs or has finished.
   const working = !!run && ["running", "waiting"].includes(run.status);
+  // A paused or interrupted run resumes: estimating again would send the
+  // lines it still holds a second time. One whose requests may have reached
+  // the provider is checked in History first.
+  const resumable =
+    !!run?.approved &&
+    ["stopped", "interrupted", "canceled"].includes(run.status);
+  const unsure = run?.status === "uncertain";
+  const contextDraft = Object.keys(state.drafts.documents).length > 0;
+  // An estimate is the next step until one waits, runs or has finished.
+  const estimateNext =
+    !!loaded &&
+    !finished &&
+    !working &&
+    !resumable &&
+    !unsure &&
+    (!quote || outdated);
+  const estimateBlocked = !loaded
+    ? "Load your text file first."
+    : state.active
+      ? "Wait for the current work to finish."
+      : resumable
+        ? "Resume the run first, so its lines aren't sent twice."
+        : unsure
+          ? "Check the run under History on the Project page first."
+          : contextDraft
+            ? "Save or discard your changes on Context first."
+            : "";
   const estimate = (
     <ActionControl
       label={run ? "Estimate again" : "Estimate cost"}
-      variant={quote || finished || working || !loaded ? "default" : "primary"}
-      disabled={disabled || !loaded}
-      disabledReason={
-        !loaded
-          ? "Load your text file first."
-          : state.active
-            ? "Wait for the current work to finish."
-            : ""
-      }
+      variant={estimateNext ? "primary" : "default"}
+      disabled={disabled || !!estimateBlocked}
+      disabledReason={estimateBlocked}
       pending={action.busy && action.key === "estimate"}
       pendingText="Estimating…"
       error={action.key === "estimate" ? action.error : ""}
@@ -213,6 +229,29 @@ function Workspace({
           },
           "",
           "estimate",
+        )
+      }
+    />
+  );
+  const resume = resumable && run && (
+    <ActionControl
+      variant="primary"
+      label="Resume"
+      disabled={disabled}
+      disabledReason={
+        state.active ? "Wait for the current work to finish." : ""
+      }
+      pending={action.busy && action.key === "resume"}
+      pendingText="Resuming…"
+      error={action.key === "resume" ? action.error : ""}
+      onClick={() =>
+        void action.run(
+          async () => {
+            await flushDrafts();
+            await api.translation.start(project.id, run.id);
+          },
+          "",
+          "resume",
         )
       }
     />
@@ -272,7 +311,7 @@ function Workspace({
   return (
     <PageLayout
       variant="editor"
-      className="lens-method manual-method"
+      className="lens-method"
       aria-label="Manual workspace"
     >
       <PageHeader title="Manual" />
@@ -294,6 +333,7 @@ function Workspace({
               "reload",
               "example",
               "estimate",
+              "resume",
               "export",
               "approve",
               "pause",
@@ -326,7 +366,7 @@ function Workspace({
                   <ActionRow
                     title={<FileName name={loaded.name} />}
                     description={[
-                      `${loaded.lines.toLocaleString()} lines in ${loaded.scenes.toLocaleString()} scenes`,
+                      `${plural(loaded.lines, "line")} in ${plural(loaded.scenes, "scene")}`,
                       `loaded ${timeAgo(loaded.loaded, now)}`,
                       ...(loaded.translations
                         ? [
@@ -338,6 +378,11 @@ function Workspace({
                     <ActionControl
                       label="Load again"
                       disabled={disabled}
+                      disabledReason={
+                        state.active
+                          ? "Wait for the current work to finish."
+                          : ""
+                      }
                       title={loaded.path}
                       pending={action.busy && action.key === "reload"}
                       pendingText="Loading…"
@@ -366,6 +411,9 @@ function Workspace({
                 label={loaded ? "Load another file…" : "Load text file…"}
                 variant={loaded ? "default" : "primary"}
                 disabled={disabled}
+                disabledReason={
+                  state.active ? "Wait for the current work to finish." : ""
+                }
                 pending={action.busy && action.key === "load"}
                 pendingText="Loading…"
                 error={action.key === "load" ? action.error : ""}
@@ -436,10 +484,12 @@ function Workspace({
               )}
               <ApiRun
                 run={run}
-                redo={redo}
+                redo={undefined}
                 state={state}
                 options={options}
                 action={action}
+                actions={resume}
+                reestimate={false}
                 waiting="Estimate the cost of the lines without a translation. Nothing is sent until you approve the estimate."
               />
             </PageBody>

@@ -153,9 +153,10 @@ Guided names a line `<file>#<JSON pointer>` into the original game file: a value
 
 An import writes a line only where the project's source at its ID is the file's exactly and its translation passes the checks `accept` applies; a file naming another language pair is refused, and the import must read the bytes its preview read.
 
-- Assistant-led and Manual save the imported lines as one accepted receipt of their own (`save_import` in [unit_results](../backend/dazedtl/translation/unit_results.py)), which later organizes and exports read as a run's; the assistant writes them after its next organize.
-- Guided writes them into its working copies with their sources in `_original` and Guided's punctuation, and Apply fits them; choice help and note labels aren't imported yet.
-- The glossary gains the terms a section lacks and keeps every row it has.
+- Assistant-led and Manual save each import's lines as an accepted receipt of its own, holding its request (`save_import` in [unit_results](../backend/dazedtl/translation/unit_results.py)), which later organizes read as a run's; waiting estimates are discarded.
+- Guided writes them into its working copies as it writes a reply's lines (`game_line`), with their sources in `_original`, and Apply fits them; choice help and note labels aren't imported yet.
+- A spreadsheet error value, such as `#NAME?`, is skipped.
+- The glossary gains, through the game-write gateway, the terms no row of it covers.
 
 A Manual project's loaded file becomes its units ([manual](../backend/dazedtl/translation/manual.py)), and its estimate organizes the lines without a translation in Batch or Live.
 Its runs freeze `method: manual`: the user's extractor decides the scope and DazedTL never writes the game, so they need no census, Git baseline or progress report.

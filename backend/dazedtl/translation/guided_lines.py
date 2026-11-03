@@ -28,6 +28,7 @@ from dazedtl.languages import reading_game
 
 from . import comment_text, file_lines
 from .files import decode_json
+from .results import game_line
 
 # The kind each line is read as, beside its speaker (organize KINDS).
 _KINDS = {"message": "dialogue", "scroll": "narration"}
@@ -81,10 +82,10 @@ class _Places:
 class GuidedLines:
     """The lines of a Guided project's game data files (file_lines)."""
 
-    def __init__(self, guided, project_id, pair):
+    def __init__(self, guided, project_id, pair, quotes):
         self.guided = guided
         _project, self.native = guided.record(project_id)
-        self.pair = pair
+        self.pair, self.quotes = pair, quotes
         self.inputs = guided.inputs(self.native)
         database = set(guided.backend.phase_files(self.native, "database"))
         self.files = {
@@ -227,16 +228,25 @@ class GuidedLines:
         )
         return problems
 
+    def idle(self):
+        """Refuses while a run or tool operation is working on the game."""
+        self.guided.idle()
+
     def save(self, translations, _name):
         """Writes *translations* into their files' working copies, each file
-        whole, once no run or tool operation is working on the game."""
+        whole, as Guided writes a reply's lines (results.game_line)."""
         from util import rpgmaker_blocks as blocks
 
-        self.guided.idle()
         units = self._units()
         by_file = defaultdict(list)
         for identity, text in translations.items():
-            by_file[units[identity]["file"]].append((units[identity], text))
+            unit = units[identity]
+            by_file[unit["file"]].append(
+                (
+                    unit,
+                    game_line(unit["source"], text, self.pair["target"], self.quotes),
+                )
+            )
         written = {}
         with reading_game(self.native["source"]):
             for name, rows in by_file.items():

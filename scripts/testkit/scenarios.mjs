@@ -665,13 +665,31 @@ const manualLed = [
     },
   ],
   [
-    "Progress estimates the lines, the Live estimate is approved and the run translates them",
+    "Progress estimates the lines, and the approved Live run, paused between requests and resumed, translates them",
     async ({ page, state }) => {
       await page.click("Progress");
       await page.click("Estimate cost");
       await page.waitText("Nothing is sent until you approve this estimate.");
       await page.shot(path.join(state.work, "logs", "manual-estimate.png"));
+      // Each answer waits, so the run can pause between its requests.
+      const modeFile = path.join(state.work, "provider/mode.json");
+      const mode = fs.existsSync(modeFile)
+        ? JSON.parse(fs.readFileSync(modeFile, "utf8"))
+        : {};
+      fs.writeFileSync(modeFile, JSON.stringify({ ...mode, delay: 1500 }));
       await page.click("Approve and start Live");
+      await page.click("Pause at the next safe point");
+      await until(
+        "the run to pause",
+        async () => (await latestRun(page))?.status === "stopped",
+        60_000,
+      );
+      await page.waitText(
+        "Resume the run first, so its lines aren't sent twice.",
+      );
+      await page.shot(path.join(state.work, "logs", "manual-paused.png"));
+      fs.writeFileSync(modeFile, JSON.stringify(mode));
+      await page.click("Resume");
       const run = await until(
         "the Live run to end",
         async () => {

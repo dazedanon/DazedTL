@@ -524,6 +524,7 @@ class Translation:
                 saved_jobs,
                 self.run_mode(project, record.get("method")),
                 project.root,
+                record.get("method"),
             ),
             "active": self.jobs.running(project_id),
             "warnings": warnings,
@@ -728,7 +729,7 @@ Additional project instructions:
 {instructions}
 """
 
-    def job_views(self, jobs, mode, root):
+    def job_views(self, jobs, mode, root, method=None):
         """Saved runs as pages show them. An estimate waiting for approval
         reads as repricing decides: priced again when only its price changed,
         by the current settings or a pricing fix, with an approval token for
@@ -737,9 +738,17 @@ Additional project instructions:
         can't be priced again by. An estimate for declined requests keeps its
         own mode, whatever the project's. A run's recorded usage is priced at
         the rates it froze, a Live run's requests each at the price of the
-        time it arrived."""
+        time it arrived. A run is the project's own when it is of its
+        *method*: Manual's, or Assistant-led's for every other; pages show
+        only those, and History every run."""
         current = {}
         views = []
+        # The units of the file a Manual project has loaded now.
+        units = (
+            (manual.loaded(root) or {}).get("units_sha256")
+            if any(job.get("method") == MANUAL for job in jobs)
+            else None
+        )
         newest = max(
             (
                 job["created"]
@@ -797,6 +806,11 @@ Additional project instructions:
                 view["settings_changed"] = (
                     not reading.current and not view["pricing_changed"]
                 )
+            view["own"] = (job.get("method") == MANUAL) == (method == MANUAL)
+            if job.get("method") == MANUAL and job["kind"] == "translation":
+                # A run estimated from another file than the one loaded now:
+                # its estimate can't be approved and its end is History's.
+                view["file_changed"] = job.get("units_sha256") != units
             views.append(view)
         return views
 
@@ -1482,16 +1496,7 @@ Additional project instructions:
                 return self.jobs.store.view(job)
             # An estimate nobody approved sent nothing, whatever its mode.
             if not self.jobs.store.authorized(job):
-                for row in job["states"].values():
-                    if row["state"] == "pending":
-                        row.update(
-                            state="failed", message="Canceled before submission."
-                        )
-                job.update(
-                    status="canceled",
-                    message="Canceled before submission; no requests were sent.",
-                )
-                self.jobs.store.save(job)
+                self.jobs.store.discard(job)
                 return self.jobs.store.view(job)
             if plan["configuration"]["mode"] != "batch":
                 raise ValueError("Provider cancellation applies to Batch runs.")
@@ -1636,7 +1641,9 @@ Additional project instructions:
         entry = reused["requests"].get(fingerprint)
         if entry is None or batch_id not in {None, entry["id"]}:
             return None
-        held = unit_results.held(self.jobs.store, project_id, {fingerprint})
+        held = unit_results.held(
+            self.jobs.store, project_id, {fingerprint}, plan["source"]
+        )
         if fingerprint not in held:
             raise ValueError(
                 "The run that sent that request can't be read. Recover that run first."

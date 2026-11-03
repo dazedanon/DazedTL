@@ -57,7 +57,11 @@ def decode_json(raw):
     )
 
 
-def read_json(path, *, limit: int | None = 128_000_000):
+# The largest JSON file DazedTL reads, its runs' and units files included.
+JSON_LIMIT = 128_000_000
+
+
+def read_json(path, *, limit: int | None = JSON_LIMIT):
     """A regular JSON file of at most `limit` bytes; None reads any size."""
     path = Path(path)
     if (

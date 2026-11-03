@@ -30,8 +30,13 @@ def line(identity, source, translation=None, **fields):
 
 
 class TranslationFileTests(unittest.TestCase):
-    setUp = test_workflow.WorkflowTests.setUp
     prepared = test_workflow.WorkflowTests.prepared
+
+    def setUp(self):
+        test_workflow.WorkflowTests.setUp(self)
+        # Game-shaped, so the suite's write check holds the glossary an
+        # import adds to the game-write gateway.
+        (self.game / "data").mkdir()
 
     def file(self, name, lines, **extra):
         path = self.root / name
@@ -147,6 +152,27 @@ class TranslationFileTests(unittest.TestCase):
         self.assertEqual(
             (again["run"]["requests"], again["summary"]["translated"]), (1, 1)
         )
+        # Progress leaves the earlier file's run to History.
+        views = {job["id"]: job for job in self.service.state(self.identity)["jobs"]}
+        self.assertTrue(views[run]["file_changed"])
+        self.assertFalse(views[again["run"]["id"]]["file_changed"])
+        # A line translated in the file retires the estimate waiting to send
+        # it, so approving it can't pay for the line again or replace it.
+        manual.load(
+            self.identity,
+            str(
+                self.file(
+                    "mine.json",
+                    [line("a/1", "はい。"), line("b/1", "いいや。", "Nope, mine.")],
+                )
+            ),
+        )
+        retired = self.service.jobs.store.record(again["run"]["id"], self.identity)
+        self.assertEqual(retired["status"], "canceled")
+        # Assistant-led's pages leave Manual's runs to History.
+        self.projects.choose_method(self.identity, "len")
+        views = {job["id"]: job for job in self.service.state(self.identity)["jobs"]}
+        self.assertFalse(views[run]["own"])
 
     def test_an_import_lands_on_lines_whose_id_and_source_match(self):
         selected = self.project.read()
@@ -163,15 +189,25 @@ class TranslationFileTests(unittest.TestCase):
                 "units": [
                     {"id": "a/1", "scene": "a", "source": "\\C[2]はい\\C[0]。"},
                     {"id": "a/2", "scene": "a", "source": "いいえ。"},
+                    {"id": "a/3", "scene": "a", "source": "ー第一章ー"},
                     {"id": "b/1", "scene": "b", "source": "うん。"},
                 ],
             },
         )
         run = self.prepared(self.service.organize(self.identity, units))["run"]["id"]
-        self.accept(run, {"a/1": "\\C[2]Yes\\C[0].", "a/2": "No.", "b/1": "Yeah."})
+        self.accept(
+            run,
+            {
+                "a/1": "\\C[2]Yes\\C[0].",
+                "a/2": "No.",
+                "a/3": "-Chapter One-",
+                "b/1": "Yeah.",
+            },
+        )
         (self.game / ".dazedtl").mkdir(exist_ok=True)
         (self.game / ".dazedtl/glossary.txt").write_text(
-            "# Game Characters\nリリ (Lili) - female\n", encoding="utf-8"
+            "# Game Characters\nリリ (Lili) - female\n\n# Speakers\nサキ (Saki)\n",
+            encoding="utf-8",
         )
         exchange = Exchange(self.service, None)
         exchange.export(self.identity, str(self.root / "shared.json"))
@@ -184,17 +220,28 @@ class TranslationFileTests(unittest.TestCase):
                     "source": "リリ",
                     "translation": "Lili",
                     "note": "female",
-                }
+                },
+                {
+                    "section": "Speakers",
+                    "source": "サキ",
+                    "translation": "Saki",
+                    "note": "",
+                },
             ],
         )
         rows = {row["id"]: row for row in shared["lines"]}
         rows["a/1"]["translation"] = "Sure."  # drops its colour codes
         rows["a/2"]["translation"] = "Nope."
+        # A spreadsheet read "-Chapter One-" as a formula.
+        rows["a/3"]["translation"] = "#NAME?"
         rows["b/1"]["source"] = "うんうん。"
         shared["lines"].append(line("c/1", "ほう。", "Oh."))
-        shared["glossary"].append(
-            {"section": "Game Characters", "source": "ミカ", "translation": "Mika"}
-        )
+        shared["glossary"] += [
+            {"section": "Game Characters", "source": "ミカ", "translation": "Mika"},
+            # A name another section holds stays the game's, since the
+            # character section would outrank it in requests.
+            {"section": "Game Characters", "source": "サキ", "translation": "Sakki"},
+        ]
         path = self.root / "edited.json"
         path.write_text(json.dumps(shared, ensure_ascii=False), encoding="utf-8")
         preview = exchange.preview(self.identity, str(path))
@@ -204,13 +251,14 @@ class TranslationFileTests(unittest.TestCase):
                 key: preview[key]
                 for key in ("replaced", "refused", "changed", "unknown", "unchanged")
             },
-            {"replaced": 1, "refused": 1, "changed": 1, "unknown": 1, "unchanged": 0},
+            {"replaced": 1, "refused": 2, "changed": 1, "unknown": 1, "unchanged": 0},
         )
         self.assertEqual(
-            [row["id"] for row in preview["skipped"]], ["b/1", "c/1", "a/1"]
+            [row["id"] for row in preview["skipped"]], ["b/1", "c/1", "a/1", "a/3"]
         )
         self.assertIn("control codes", preview["skipped"][2]["reason"])
-        self.assertEqual(preview["glossary"], {"added": 1, "same": 1, "differs": 0})
+        self.assertIn("spreadsheet", preview["skipped"][3]["reason"])
+        self.assertEqual(preview["glossary"], {"added": 1, "same": 2, "differs": 1})
         with self.assertRaisesRegex(ValueError, "changed after it was checked"):
             exchange.apply(self.identity, str(path), "0" * 64)
         check_response(
@@ -224,11 +272,47 @@ class TranslationFileTests(unittest.TestCase):
         }
         self.assertEqual(
             exported,
-            {"a/1": "\\C[2]Yes\\C[0].", "a/2": "Nope.", "b/1": "Yeah."},
+            {
+                "a/1": "\\C[2]Yes\\C[0].",
+                "a/2": "Nope.",
+                "a/3": "-Chapter One-",
+                "b/1": "Yeah.",
+            },
         )
         glossary = (self.game / ".dazedtl/glossary.txt").read_text(encoding="utf-8")
         self.assertIn("ミカ (Mika)", glossary)
         self.assertIn("リリ (Lili) - female", glossary)
+        self.assertNotIn("Sakki", glossary)
+        # Importing an earlier file again wins over a later one, as its
+        # newest import.
+        later = self.file("later.json", [line("a/2", "いいえ。", "Nah.")])
+        for name in (later, path):
+            exchange.apply(
+                self.identity,
+                str(name),
+                exchange.preview(self.identity, str(name))["sha256"],
+            )
+        exchange.export(self.identity, str(self.root / "again.json"))
+        self.assertEqual(
+            {
+                row["id"]: row["translation"]
+                for row in read_json(self.root / "again.json")["lines"]
+            }["a/2"],
+            "Nope.",
+        )
+        # A later organize keeps the imported line, and its request reads as
+        # a run's does, to review or correct it.
+        again = self.prepared(self.service.organize(self.identity, units))["run"]["id"]
+        _job, plan = self.service.jobs.store.load(again, self.identity)
+        imported = [
+            fingerprint
+            for fingerprint, value in plan["reused"]["requests"].items()
+            if value["id"].startswith("imported-")
+        ]
+        self.assertTrue(imported)
+        self.assertTrue(
+            self.service.request(self.identity, again, request_sha256=imported[0])
+        )
         # An imported translation is read like a run's, even after the index
         # beside the receipts is lost.
         (self.game / unit_results.INDEX).unlink()
@@ -457,8 +541,8 @@ class GuidedLineTests(unittest.TestCase):
     def test_a_translated_and_an_untranslated_copy_name_their_lines_alike(self):
         from dazedtl.translation.guided_lines import GuidedLines
 
-        mine = GuidedLines(self.game("mine", TRANSLATED), "mine", PAIR)
-        theirs = GuidedLines(self.game("theirs", ORIGINAL), "theirs", PAIR)
+        mine = GuidedLines(self.game("mine", TRANSLATED), "mine", PAIR, True)
+        theirs = GuidedLines(self.game("theirs", ORIGINAL), "theirs", PAIR, True)
         exported = {row["id"]: row for row in mine.lines()}
         head = "Map001.json#/events/1/pages/0/list"
         self.assertEqual(
@@ -488,6 +572,9 @@ class GuidedLineTests(unittest.TestCase):
             theirs.problems,
         )
         self.assertEqual((summary["added"], summary["empty"]), (4, 1))
+        # A line the file adds is written as Guided writes a reply's, its
+        # corner brackets as quotes.
+        write[f"{head}/9"] = "「Goodbye.」"
         theirs.save(write, "mine.json")
         working = read_json(self.root / "theirs-work/translated/Map001.json")
         commands = working["events"][1]["pages"][0]["list"]
@@ -500,8 +587,11 @@ class GuidedLineTests(unittest.TestCase):
         )
         self.assertEqual(commands[1]["_original"], "こんにちは。\n元気？")
         self.assertEqual(commands[3]["_original"], ["はい", "いいえ"])
-        self.assertEqual(commands[10]["parameters"][0], "さようなら。")
+        self.assertEqual(commands[10]["parameters"][0], '"Goodbye."')
         self.assertEqual(
             {row["id"]: row["translation"] for row in theirs.lines()},
-            {identity: row["translation"] for identity, row in exported.items()},
+            {
+                **{identity: row["translation"] for identity, row in exported.items()},
+                f"{head}/9": '"Goodbye."',
+            },
         )

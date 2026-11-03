@@ -26,13 +26,14 @@ from pathlib import Path
 from dazedtl import system
 
 from . import organize
-from .files import decode_json, digest
+from .files import JSON_LIMIT, decode_json, digest
 
 FORMAT = "dazedtl-translation"
 VERSION = 1
 SUFFIXES = {".json", ".csv"}
-# A file this size holds every line of the largest games with room to spare.
-LIMIT = 256_000_000
+# A file this size holds every line of the largest games with room to spare,
+# and reads back as JSON within the limit runs and units files have.
+LIMIT = JSON_LIMIT
 # A line's fields: a source unit's, with its translation.
 FIELDS = organize.FIELDS | {"translation"}
 # The CSV view's columns, in the order an export writes them; the ones after

@@ -357,22 +357,32 @@ class Application:
                 project["next_label"] = "Open translation"
                 project["engine_label"] = current["engine"]
                 project["engine"] = self.translation.engine.detect(project["source"])
-                if current["jobs"]:
-                    job = current["jobs"][0]
+                own = [job for job in current["jobs"] if job.get("own", True)]
+                # A Manual project has no assistant: its user estimates the
+                # file their own tools wrote.
+                manual = current["manual"]
+                if own:
+                    job = own[0]
                     if (
                         job["quote"]
                         and job["status"] == "ready"
                         and not job["approved"]
                     ):
                         # A prepared run is not working; it waits for the user.
-                        outdated = job.get("settings_changed") or job.get(
-                            "pricing_changed"
+                        outdated = (
+                            job.get("settings_changed")
+                            or job.get("pricing_changed")
+                            or job.get("file_changed")
                         )
                         project.update(
                             status="Estimate is out of date"
                             if outdated
                             else "Estimate needs your approval",
-                            detail="Ask your assistant for a new estimate."
+                            detail=(
+                                "Estimate again on Progress."
+                                if manual
+                                else "Ask your assistant for a new estimate."
+                            )
                             if outdated
                             else "Approve it on Progress.",
                         )
@@ -388,6 +398,15 @@ class Application:
                     project.update(
                         status="Last reported: " + current["progress"]["phase"],
                         detail=current["progress"].get("next_action", ""),
+                    )
+                elif manual:
+                    project.update(
+                        status="Text file loaded"
+                        if manual["loaded"]
+                        else "Ready for your text file",
+                        detail="Estimate its cost on Progress."
+                        if manual["loaded"]
+                        else "Load the file your own tools wrote on Text.",
                     )
                 else:
                     project.update(

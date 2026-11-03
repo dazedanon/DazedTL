@@ -42,6 +42,9 @@ export function RequestsPanel({ state }: { state: TranslationState }) {
   );
   // Start over and the other operations this game has run.
   const activity = projectActivity([], state.jobs);
+  // A Manual game's runs come from its own text file, with no assistant or
+  // engine adapter's plan.
+  const manual = !!state.manual;
   const inspected = jobs.find((job) => job.id === inspecting.run);
   // The run lists showing all their rows, as `${run}:${list}`.
   const [expanded, setExpanded] = useState<string[]>([]);
@@ -70,8 +73,9 @@ export function RequestsPanel({ state }: { state: TranslationState }) {
       >
         {!jobs.length && (
           <p className="muted">
-            The agent will prepare the source inventory and requests. They will
-            appear here for inspection and API cost review.
+            {manual
+              ? "Your runs appear here once you estimate your text file on Progress."
+              : "The agent will prepare the source inventory and requests. They will appear here for inspection and API cost review."}
           </p>
         )}
         {jobs.map((job) => (
@@ -323,49 +327,51 @@ export function RequestsPanel({ state }: { state: TranslationState }) {
           </div>
         </Section>
       )}
-      <Section title="Request plan">
-        <p className="muted">
-          The starting prompt handles this automatically. You can also compile
-          an engine adapter's saved plan here.
-        </p>
-        <FieldRow
-          id="request-plan-path"
-          label="Plan file, relative to the game"
-          wide
-        >
-          {(props) => (
-            <input
-              {...props}
-              value={path}
-              onChange={(event) => setPath(event.target.value)}
+      {!manual && (
+        <Section title="Request plan">
+          <p className="muted">
+            The starting prompt handles this automatically. You can also compile
+            an engine adapter's saved plan here.
+          </p>
+          <FieldRow
+            id="request-plan-path"
+            label="Plan file, relative to the game"
+            wide
+          >
+            {(props) => (
+              <input
+                {...props}
+                value={path}
+                onChange={(event) => setPath(event.target.value)}
+              />
+            )}
+          </FieldRow>
+          <div className="actions">
+            <ActionControl
+              label="Compile and review remaining work"
+              disabled={state.active || action.busy || !path}
+              pending={action.busy && action.key === "compile"}
+              pendingText="Starting…"
+              error={action.key === "compile" ? action.error : ""}
+              job={state.jobs.find((job) => job.id === compiling)}
+              onClick={() =>
+                void action.run(
+                  async () => {
+                    await flushDrafts();
+                    const started = await api.translation.compile(
+                      state.projectId,
+                      path,
+                    );
+                    setCompiling(started.id);
+                  },
+                  "",
+                  "compile",
+                )
+              }
             />
-          )}
-        </FieldRow>
-        <div className="actions">
-          <ActionControl
-            label="Compile and review remaining work"
-            disabled={state.active || action.busy || !path}
-            pending={action.busy && action.key === "compile"}
-            pendingText="Starting…"
-            error={action.key === "compile" ? action.error : ""}
-            job={state.jobs.find((job) => job.id === compiling)}
-            onClick={() =>
-              void action.run(
-                async () => {
-                  await flushDrafts();
-                  const started = await api.translation.compile(
-                    state.projectId,
-                    path,
-                  );
-                  setCompiling(started.id);
-                },
-                "",
-                "compile",
-              )
-            }
-          />
-        </div>
-      </Section>
+          </div>
+        </Section>
+      )}
     </>
   );
 }

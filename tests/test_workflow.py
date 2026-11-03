@@ -14,6 +14,7 @@ from unittest.mock import Mock, patch
 from dazedtl.api.contracts.validation import check_response
 from dazedtl.api.server import assistant_dispatch
 from dazedtl.compatibility import estimate_prices, original_files
+from dazedtl.compatibility.translation import TranslationEngine
 from dazedtl.projects.store import Projects
 from dazedtl.settings import openrouter
 from dazedtl.settings.execution import configuration, connection_summary, worker_secret
@@ -116,6 +117,10 @@ class Engine:
             }
             for batch in plan["batches"]
         ]
+
+    # Through the game-write gateway, which the suite's write check holds
+    # every game write to.
+    glossary_add = TranslationEngine.glossary_add
 
     def glossary_terms(self, _source):
         return getattr(self, "glossary", [])

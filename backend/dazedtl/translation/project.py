@@ -11,6 +11,8 @@ WORK = ".dazedtl/len-method"
 # tools extract and write the game's text, so DazedTL never writes the game,
 # needs no Git baseline and keeps no assistant's progress report for them.
 MANUAL = "manual"
+# A Manual project's loaded file as the units its estimates organize.
+MANUAL_UNITS = ".dazedtl/manual/units.json"
 MODES = {"agent", "live", "batch"}
 DEFAULTS = {
     "mode": "batch",

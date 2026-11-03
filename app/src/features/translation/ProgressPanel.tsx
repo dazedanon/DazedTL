@@ -449,6 +449,8 @@ export function ApiRun({
   action,
   untold = false,
   resume = null,
+  actions = null,
+  reestimate = true,
   waiting = "Your assistant's estimate appears here, and nothing is sent until you approve it.",
 }: {
   run: TranslationJob | undefined;
@@ -459,6 +461,11 @@ export function ApiRun({
   action: ReturnType<typeof useAction>;
   untold?: boolean;
   resume?: ReactNode;
+  /** The run's own controls beside Pause, such as Manual's Resume. */
+  actions?: ReactNode;
+  /** Whether an outdated estimate gets its own Estimate again here; Manual's
+   * footer one estimates the loaded file again instead. */
+  reestimate?: boolean;
   /** What the panel says before there is an estimate. */
   waiting?: string;
 }) {
@@ -520,33 +527,35 @@ export function ApiRun({
             </span>
           </Notice>
         ) : outdated ? (
-          <ActionControl
-            variant="primary"
-            label="Estimate again"
-            disabled={action.busy || state.active || options.mode === "agent"}
-            disabledReason={
-              options.mode === "agent"
-                ? "Choose API Batch or Live API in Options first."
-                : state.active && !redo
-                  ? "Wait for the current work to finish."
-                  : ""
-            }
-            pending={action.busy && action.key === "reestimate"}
-            pendingText="Estimating…"
-            error={action.key === "reestimate" ? action.error : ""}
-            feedbackKey="reestimate"
-            job={redo}
-            onClick={() =>
-              void action.run(
-                async () => {
-                  await flushDrafts();
-                  await api.translation.reestimate(state.projectId, run.id);
-                },
-                "",
-                "reestimate",
-              )
-            }
-          />
+          reestimate && (
+            <ActionControl
+              variant="primary"
+              label="Estimate again"
+              disabled={action.busy || state.active || options.mode === "agent"}
+              disabledReason={
+                options.mode === "agent"
+                  ? "Choose API Batch or Live API in Options first."
+                  : state.active && !redo
+                    ? "Wait for the current work to finish."
+                    : ""
+              }
+              pending={action.busy && action.key === "reestimate"}
+              pendingText="Estimating…"
+              error={action.key === "reestimate" ? action.error : ""}
+              feedbackKey="reestimate"
+              job={redo}
+              onClick={() =>
+                void action.run(
+                  async () => {
+                    await flushDrafts();
+                    await api.translation.reestimate(state.projectId, run.id);
+                  },
+                  "",
+                  "reestimate",
+                )
+              }
+            />
+          )
         ) : quote ? (
           <>
             <TranslationCost
@@ -637,6 +646,7 @@ export function ApiRun({
               <Feedback error={action.error} />
             )}
             {pause}
+            {actions}
             {untold && (
               <>
                 <Notice tone="warning">

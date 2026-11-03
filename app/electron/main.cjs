@@ -562,10 +562,10 @@ app
           app.getPath("documents"),
           String(name || "translation.json").replace(/[\\/:*?"<>|]/g, "_"),
         ),
-        filters: [
-          { name: "Translation file (JSON)", extensions: ["json"] },
-          { name: "Lines as CSV", extensions: ["csv"] },
-        ],
+        // The name's ending picks the format, so one filter offers both:
+        // GTK keeps a typed name's ending when another filter is chosen.
+        filters: translationFiles,
+        properties: ["showOverwriteConfirmation"],
       });
       return selected.canceled ? null : selected.filePath;
     });

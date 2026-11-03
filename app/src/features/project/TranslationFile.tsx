@@ -11,9 +11,7 @@ import { DialogBody, DialogHeader } from "../../ui/Dialog";
 import { Modal } from "../../ui/Modal";
 import { PathText } from "../../ui/PathText";
 import { StatusIcon } from "../../ui/StatusIcon";
-
-const count = (value: number, one: string, many = one + "s") =>
-  `${value.toLocaleString()} ${value === 1 ? one : many}`;
+import { plural } from "../../ui/displayText";
 
 /** The name a game's exported file is offered under. */
 export const exportName = (project: Project) =>
@@ -27,8 +25,9 @@ export async function exportTranslation(project: Project) {
   const path = await window.dazedtl.saveTranslationFile(exportName(project));
   if (!path) return "";
   const saved = await api.translation.exportFile(project.id, path);
-  return `Saved ${count(saved.lines, "line")}, ${saved.translated.toLocaleString()} translated${
-    saved.glossary ? `, with ${count(saved.glossary, "glossary term")}` : ""
+  const csv = saved.path.toLowerCase().endsWith(".csv");
+  return `Saved ${plural(saved.lines, "line")} as ${csv ? "CSV" : "JSON"}, ${saved.translated.toLocaleString()} translated${
+    saved.glossary ? `, with ${plural(saved.glossary, "glossary term")}` : ""
   }.`;
 }
 
@@ -163,14 +162,15 @@ export function ImportSummary({
           .filter(([amount]) => amount > 0)
           .map(([amount, noun, one, many]) => (
             <li key={many}>
-              <strong>{count(amount, noun)}</strong> {amount === 1 ? one : many}
+              <strong>{plural(amount, noun)}</strong>{" "}
+              {amount === 1 ? one : many}
             </li>
           ))}
         {skipped > 0 && (
           <li className="translation-import-warning">
             <StatusIcon status="warning" size={14} />
             <span>
-              <strong>{count(skipped, "line")}</strong>{" "}
+              <strong>{plural(skipped, "line")}</strong>{" "}
               {skipped === 1 ? "is" : "are"} skipped
               {value.skipped.length < skipped &&
                 `, the first ${value.skipped.length} listed below`}
@@ -237,9 +237,9 @@ function ImportReview({
           variant="primary"
           label={
             lines
-              ? `Import ${count(lines, "translation")}`
+              ? `Import ${plural(lines, "translation")}`
               : terms
-                ? `Import ${count(terms, "glossary term")}`
+                ? `Import ${plural(terms, "glossary term")}`
                 : "Nothing to import"
           }
           disabled={action.busy || !(lines || terms)}
@@ -250,8 +250,12 @@ function ImportReview({
             void action.run(async () => {
               await api.translation.importFile(project.id, path, value.sha256);
               imported(
-                `Imported ${count(lines, "translation")}` +
-                  (terms ? ` and ${count(terms, "glossary term")}.` : "."),
+                `Imported ${[
+                  lines && plural(lines, "translation"),
+                  terms && plural(terms, "glossary term"),
+                ]
+                  .filter(Boolean)
+                  .join(" and ")}.`,
               );
             })
           }
