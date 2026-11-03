@@ -3,6 +3,14 @@
 Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 [release.mjs](scripts/release.mjs) writes each entry from [release/notes.md](release/notes.md).
 
+## [2.59.4] - 2026-11-03
+
+### Fixed
+
+- **GameUpdate:** on Linux without Git, when the patch site refuses GameUpdate's usual download, it says how to install Git again instead of stopping with "git: command not found", which 2.59.3 brought.
+- **GameUpdate:** on Windows, a patch too deep for the game's folder now stops before copying anything and asks to move the game to a shorter folder, instead of leaving it half patched; a patch whose Git LFS files a site's download leaves out is refused too.
+- **GameUpdate:** messages no longer show internal tags such as PATCH_ERR and name the Git step that failed, a second GameUpdate window no longer deletes the first one's download, and closing the Linux terminal no longer leaves a copy of the script behind.
+
 ## [2.59.3] - 2026-11-03
 
 ### Changed
@@ -1627,6 +1635,7 @@ Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachan
 - The first release of DazedTL as a desktop app, installed from a ZIP with a START launcher and updated from inside the app.
 - **Guided steps** for RPG Maker MV, MZ and VX Ace games, and **Assistant-led** for any game.
 
+[2.59.4]: https://github.com/dazedanon/DazedTL/compare/v2.59.3...v2.59.4
 [2.59.3]: https://github.com/dazedanon/DazedTL/compare/v2.59.2...v2.59.3
 [2.59.2]: https://github.com/dazedanon/DazedTL/compare/v2.59.1...v2.59.2
 [2.59.1]: https://github.com/dazedanon/DazedTL/compare/v2.59.0...v2.59.1
