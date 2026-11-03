@@ -399,15 +399,50 @@ class Settings:
         self._write(state)
         return self.describe()
 
-    def describe(self):
-        state = self._read()
+    def _preferences(self, state):
+        """The saved preferences Settings edits, as a draft would hold them."""
         values = {key: self._values(state)[key] for key in ("language", "model")}
         values["sourceLanguage"] = state["sourceLanguage"]
-        update = self.game_update(state)
         selected = self._connection(state)
-        model_options = deepcopy(
-            selected["model_options"] if selected else state["model_options"]
-        )
+        return {
+            "values": values,
+            "modelOptions": deepcopy(
+                selected["model_options"] if selected else state["model_options"]
+            ),
+        }
+
+    def _pending(self, state):
+        """The active connection's draft, or None when it changes nothing.
+
+        Drafts belong to one connection. Another connection's draft, or one an
+        earlier version left for a connection that no longer exists, is not a
+        pending edit here; only a changed shared language would be. A draft
+        that matches the saved values leaves Settings nothing to save or
+        revert, so it must not block switching models either.
+        """
+        draft = state["draft"]
+        if not draft:
+            return None
+        saved = self._preferences(state)
+        profile = draft["connections"].get(state["active"])
+        pending = {
+            "values": {
+                "language": draft["language"],
+                "model": profile["model"] if profile else saved["values"]["model"],
+                "sourceLanguage": draft.get(
+                    "sourceLanguage", saved["values"]["sourceLanguage"]
+                ),
+            },
+            "modelOptions": deepcopy(
+                profile["model_options"] if profile else saved["modelOptions"]
+            ),
+        }
+        return None if pending == saved else pending
+
+    def describe(self):
+        state = self._read()
+        saved = self._preferences(state)
+        update = self.game_update(state)
         connections = []
         for item in state["connections"]:
             # Incomplete imported entries stay recoverable, but unsafe old URL
@@ -444,8 +479,8 @@ class Settings:
             )
         result = {
             "revision": state["revision"],
-            "values": values,
-            "modelOptions": model_options,
+            "values": saved["values"],
+            "modelOptions": saved["modelOptions"],
             "defaultEntriesPerRequest": preferences.DEFAULT_ENTRIES_PER_REQUEST,
             "defaultOutputTokens": preferences.DEFAULT_OUTPUT_TOKENS,
             "defaultBatchInputTokens": preferences.DEFAULT_BATCH_INPUT_TOKENS,
@@ -468,29 +503,9 @@ class Settings:
                 "branch": update["branch"],
             },
         }
-        draft = state["draft"]
-        profile = draft and draft["connections"].get(state["active"])
-        # Drafts belong to one connection. Another connection's draft, or one an
-        # earlier version left for a connection that no longer exists, is not a
-        # pending edit here; only a changed shared language would be.
-        source = draft and draft.get("sourceLanguage", values["sourceLanguage"])
-        if profile or (
-            draft
-            and (
-                draft["language"] != values["language"]
-                or source != values["sourceLanguage"]
-            )
-        ):
-            result["draft"] = {
-                "values": {
-                    "language": draft["language"],
-                    "model": profile["model"] if profile else values["model"],
-                    "sourceLanguage": source,
-                },
-                "modelOptions": deepcopy(
-                    profile["model_options"] if profile else model_options
-                ),
-            }
+        pending = self._pending(state)
+        if pending:
+            result["draft"] = pending
         return result
 
     def ready(self):
@@ -991,6 +1006,10 @@ class Settings:
             "sourceLanguage": source,
             "connections": profiles,
         }
+        # An edit changed back is no draft; keeping it would outlive the saved
+        # values it matched.
+        if not self._pending(state):
+            self._clear_draft(state, connection_id)
         self._write(state, bump=False)
         return {"saved": True}
 
