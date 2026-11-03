@@ -1448,6 +1448,27 @@ class SettingsTests(unittest.TestCase):
                     "maxOutputTokens": 16384,
                 },
             }
+            # A draft that matches the saved values leaves Settings nothing to
+            # save or revert, so it must not block the model menu, whether
+            # written now or kept from an edit changed back.
+            settings.draft(
+                view["revision"], "first", view["values"], view["modelOptions"]
+            )
+            self.assertIsNone(json.loads(path.read_text(encoding="utf-8"))["draft"])
+            kept = {
+                "language": "English",
+                "sourceLanguage": "Japanese",
+                "connections": {
+                    "first": {
+                        "model": "model-one",
+                        "model_options": view["modelOptions"],
+                    }
+                },
+            }
+            write_json(
+                path, {**json.loads(path.read_text(encoding="utf-8")), "draft": kept}
+            )
+            self.assertNotIn("draft", Settings(temporary, adapter).describe())
             settings.draft(view["revision"], "first", view["values"], options)
             settings = Settings(temporary, adapter)
             self.assertEqual(settings.describe()["draft"]["modelOptions"], options)
