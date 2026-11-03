@@ -28,6 +28,7 @@ from dazedtl.compatibility.speaker_scan import collect as collect_speakers
 from dazedtl.compatibility.translation import (
     ProviderFailure,
     TranslationEngine,
+    explained,
     provider_errors,
 )
 from dazedtl.settings import effort
@@ -2977,10 +2978,17 @@ class CompatibilityContracts(unittest.TestCase):
                         patch.dict(package.__dict__),
                     ):
                         package.__dict__.pop("genai", None)
-                        with self.assertRaises(RuntimeError):
+                        with self.assertRaises(RuntimeError) as raised:
                             batch_refusals.advance_guided(
                                 root, plan, resolve, connection=connection
                             )
+                    # The run fails with what to fix, read as written, not
+                    # "check_submit failed (RuntimeError)"; it names no key or
+                    # address.
+                    self.assertTrue(explained(raised.exception))
+                    self.assertIn("google-genai", str(raised.exception))
+                    for secret in ("proxy-key", "run-key", proxy):
+                        self.assertNotIn(secret, str(raised.exception))
                     self.assertEqual(sent, [])
                     self.assertEqual(
                         [

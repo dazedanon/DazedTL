@@ -39,12 +39,20 @@ class ProviderFailure(RuntimeError):
 def explained(error):
     """Whether an error's own message says what to fix; any other error is a
     fault the user can only report."""
+    from util.batch_providers import BatchNotSendable
     from util.version_update import GitWorkflowError
 
-    return isinstance(error, (ValueError, OSError, GitWorkflowError, ProviderFailure))
+    return isinstance(
+        error,
+        (ValueError, OSError, GitWorkflowError, ProviderFailure, BatchNotSendable),
+    )
 
 
 def provider_errors(function):
+    """Wraps a provider call so its error keeps only its HTTP status or class,
+    which cannot carry a key or a request body; DazedTL's own refusals, which
+    say what to fix and name neither, pass as written."""
+
     @wraps(function)
     def call(*args, **kwargs):
         try:
@@ -52,6 +60,10 @@ def provider_errors(function):
         except ProviderFailure, ResultsUnavailable:
             raise
         except Exception as error:
+            from util.batch_providers import BatchNotSendable
+
+            if isinstance(error, BatchNotSendable):
+                raise
             raise ProviderFailure(function.__name__, error) from error
 
     return call

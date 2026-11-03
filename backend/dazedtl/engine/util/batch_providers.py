@@ -58,6 +58,13 @@ class BatchProviderJobError(RuntimeError):
         super().__init__(message)
 
 
+class BatchNotSendable(RuntimeError):
+    """A Batch call refused before anything is sent, such as a new Batch
+    (submission_client) or a Gemini Batch's files without google-genai,
+    whose message is DazedTL's own: it says what to fix and names no key or
+    address, so it reaches the user as written."""
+
+
 def _route(api_url: str | None, api_provider: str | None) -> tuple[str, str]:
     """A route's server address and protocol, the engine's settings when
     none is given."""
@@ -83,7 +90,7 @@ def require_gemini_api(address: str | None) -> None:
     """Refuses a new Gemini Batch at *address* unless it is Google's own
     API (on_gemini_api), before anything is sent."""
     if not on_gemini_api(address):
-        raise RuntimeError(
+        raise BatchNotSendable(
             "Gemini Batches move their files through Google's own API, and this "
             "connection's server address is another server. Use Live for this "
             "connection, or a Google Gemini connection for Batches."
@@ -207,7 +214,10 @@ def get_client(provider: str, *, api_key: str | None = None,
             # field but do not authenticate it.
             key = "not-needed"
         elif not key:
-            raise RuntimeError(f"{batch_provider_label(provider)} requires an API key")
+            raise BatchNotSendable(
+                f"{batch_provider_label(provider)} requires an API key. Add one "
+                "to this connection in Settings."
+            )
     address = str(address or "").strip()
     # Each SDK loads with its first client; importing both took most of a
     # worker's startup, seconds on Windows.
@@ -229,7 +239,7 @@ def get_client(provider: str, *, api_key: str | None = None,
         return openai.OpenAI(**kwargs)
     if provider == PROVIDER_OPENAI:
         if not address and api_key is not None:
-            raise RuntimeError(
+            raise BatchNotSendable(
                 "This OpenAI-compatible key has no server address saved with it. "
                 "Restore its connection in Settings."
             )
@@ -286,12 +296,16 @@ def google_files_client(api_key: str):
     journal, never repeated under it by the SDK."""
     key = str(api_key or "").strip()
     if not key:
-        raise RuntimeError(f"{batch_provider_label(PROVIDER_GEMINI)} requires an API key")
+        raise BatchNotSendable(
+            f"{batch_provider_label(PROVIDER_GEMINI)} requires an API key. Add one "
+            "to this connection in Settings."
+        )
     try:
         from google import genai
     except ImportError as exc:
-        raise RuntimeError(
-            "Gemini batching requires google-genai. Install project requirements first."
+        raise BatchNotSendable(
+            "Gemini Batches need the google-genai package, which this DazedTL "
+            "install is missing. Reinstall DazedTL, then continue the run."
         ) from exc
     return genai.Client(api_key=key, http_options={"retry_options": {"attempts": 1}})
 
@@ -302,7 +316,8 @@ def submission_client(provider: str, client=None):
     there: a Gemini Batch's address is Google's own (require_gemini_api) and
     its Files client can be made (google_files_client). Each refusal comes
     before anything is sent, so a caller that records a create as maybe sent
-    asks this first, and a refusal leaves its requests unsent."""
+    asks this first, and a refusal leaves its requests unsent. A refusal of
+    its own is a BatchNotSendable, which says what to fix."""
     client = client or get_client(provider)
     if provider == PROVIDER_GEMINI:
         require_gemini_api(str(getattr(client, "base_url", "") or ""))
