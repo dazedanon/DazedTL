@@ -117,6 +117,25 @@ class Manual:
             "loaded": loaded,
         }
 
+    def example(self, project_id, path):
+        """Saves an example translation file at *path*, outside the game, in
+        the project's language pair, for the user's own extractor to follow."""
+        project = self._project(project_id)
+        target = translation_file.destination(path, project.root)
+        value = translation_file.example(
+            language_pair.pair(self.translation.settings, project.root)
+        )
+        translation_file.write(target, value)
+        json = target.suffix.lower() == ".json"
+        return {
+            "path": str(target),
+            "lines": len(value["lines"]),
+            "translated": sum(
+                line["translation"] is not None for line in value["lines"]
+            ),
+            "glossary": len(value["glossary"]) if json else 0,
+        }
+
     def estimate(self, project_id):
         """Starts the estimate of the loaded lines without a translation, as
         organize packs them, in the project's API mode

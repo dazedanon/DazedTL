@@ -236,6 +236,38 @@ function Workspace({
       }}
     />
   );
+  // An example file for the user's own extractor to follow.
+  const format = (
+    <ActionRow
+      title="File format"
+      description="JSON or CSV, one line per message. The example shows every field your extractor can write."
+    >
+      <ActionControl
+        label="Save example…"
+        disabled={action.busy}
+        pending={action.busy && action.key === "example"}
+        pendingText="Saving…"
+        error={action.key === "example" ? action.error : ""}
+        notice={action.key === "example" ? action.notice : ""}
+        onClick={async () => {
+          const done = await action.run(
+            async () => {
+              const path = await window.dazedtl.saveTranslationFile(
+                "Translation file example.json",
+              );
+              if (!path) return false;
+              await api.translation.manualExample(project.id, path);
+              return true;
+            },
+            "",
+            "example",
+          );
+          if (done.ok && done.value)
+            action.succeed("Example saved.", "example");
+        }}
+      />
+    </ActionRow>
+  );
   const skipped = load && load.unknown + load.changed + load.refused > 0;
   return (
     <PageLayout
@@ -260,6 +292,7 @@ function Workspace({
             [
               "load",
               "reload",
+              "example",
               "estimate",
               "export",
               "approve",
@@ -313,14 +346,18 @@ function Workspace({
                       onClick={() => void choose(loaded.path, "reload")}
                     />
                   </ActionRow>
+                  {format}
                 </ActionList>
               ) : (
-                <StatusPanel
-                  title="Text file"
-                  state="not_started"
-                  guide="manual"
-                  description="Load the file your extractor wrote. Nothing is sent until you approve an estimate."
-                />
+                <>
+                  <StatusPanel
+                    title="Text file"
+                    state="not_started"
+                    guide="manual"
+                    description="Load the file your extractor wrote. Nothing is sent until you approve an estimate."
+                  />
+                  <ActionList>{format}</ActionList>
+                </>
               )}
               {skipped && <ImportSummary value={load} project={project} />}
             </PageBody>

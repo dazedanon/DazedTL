@@ -69,6 +69,14 @@ class TranslationFileTests(unittest.TestCase):
             {**selected["options"], "mode": "agent"},
         )
         manual = Manual(self.service)
+        # The example Text saves for the user's own extractor loads as is.
+        example = manual.example(self.identity, str(self.root / "example.json"))
+        check_response("manual_example", example)
+        shown = manual.load(self.identity, example["path"])
+        self.assertEqual(
+            (shown["loaded"]["lines"], shown["added"], shown["glossary"]["added"]),
+            (2, 1, 1),
+        )
         source = self.file(
             "extracted.json",
             [

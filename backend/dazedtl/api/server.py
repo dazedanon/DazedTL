@@ -1092,6 +1092,7 @@ def routes(app):
             lambda value, _params: value,
         )
     methods["manual_load"] = (app.manual.load, lambda value, _params: value)
+    methods["manual_example"] = (app.manual.example, lambda value, _params: value)
     methods["manual_estimate"] = (app.manual.estimate, lambda value, _params: value)
     methods["project_checkpoint_changes"] = (
         app.translation.checkpoint_changes,

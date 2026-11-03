@@ -645,8 +645,17 @@ const manualLed = [
     },
   ],
   [
-    "Your own extractor writes the game's text into a file, which Text loads",
+    "Text saves an example file, your own extractor writes the game's text into a file, and Text loads it",
     async ({ page, state }) => {
+      const example = path.join(state.work, "example.json");
+      await chooseFile(
+        { root: state.root, inspect: state.app.inspect },
+        example,
+      );
+      await page.click("Save example…");
+      await page.waitText("Example saved.");
+      if (!JSON.parse(fs.readFileSync(example, "utf8")).lines.length)
+        throw new Error("The example file holds no lines.");
       const file = path.join(state.work, "extracted.json");
       manualTools(state, "extract", "--out", file);
       await chooseFile({ root: state.root, inspect: state.app.inspect }, file);

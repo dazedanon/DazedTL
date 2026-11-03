@@ -888,6 +888,9 @@ METHODS: dict[str, Method] = {
         TranslationFileImportRequest, TranslationFileImport
     ),
     "manual_load": Method(TranslationFileRequest, ManualLoad),
+    "manual_example": Method(
+        TranslationFileRequest, TranslationFileExport, refresh=False
+    ),
     "manual_estimate": Method(ProjectRequest, TranslationJob),
     # The Checkpoints tab: its timeline, one checkpoint's changes, and go
     # back, undo and save a copy, which only the user starts.

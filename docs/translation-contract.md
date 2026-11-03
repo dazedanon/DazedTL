@@ -146,6 +146,7 @@ A translation file carries a project's lines out of DazedTL and back in every me
   Manual checks each line as organize checks a unit; an import needs only `id` and `source`.
 - CSV: a UTF-8 header row naming `id`, `scene`, `group`, `kind`, `speaker`, `source`, `translation`, `field`, `max_lines` or `max_characters`, at least `id` and `source`; an empty cell is null, and tokens and the glossary need JSON.
 - A plain units file reads as a translation file without translations.
+- Manual's **Save example…** writes `example`, organize's example units as a translation file.
 
 IDs are the units' own in Assistant-led and Manual.
 Guided names a line `<file>#<JSON pointer>` into the original game file: a value's own, and for a message, scrolling text or comment its first command's, with `/parameters/4` after it for a name box and `~<n>` for a later part, so translated and untranslated copies of one game version share IDs ([guided_lines](../backend/dazedtl/translation/guided_lines.py)).

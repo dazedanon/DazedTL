@@ -131,6 +131,8 @@ export const api = {
       request("project_translation_import", { project_id, path, sha256 }),
     manualLoad: (project_id: string, path: string) =>
       request("manual_load", { project_id, path }),
+    manualExample: (project_id: string, path: string) =>
+      request("manual_example", { project_id, path }),
     manualEstimate: (project_id: string) =>
       request("manual_estimate", { project_id }),
     checkpointChanges: (project_id: string, commit: string) =>

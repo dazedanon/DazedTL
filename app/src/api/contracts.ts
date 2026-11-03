@@ -3779,6 +3779,10 @@ export type RpcContract = {
     response: TranslationFileImport;
   };
   manual_load: { request: TranslationFileRequest; response: ManualLoad };
+  manual_example: {
+    request: TranslationFileRequest;
+    response: TranslationFileExport;
+  };
   manual_estimate: { request: ProjectRequest; response: TranslationJob };
   project_checkpoints: {
     request: ProjectRequest;

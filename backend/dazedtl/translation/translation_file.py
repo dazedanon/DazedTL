@@ -336,6 +336,26 @@ def document(languages, lines, glossary=(), game=None):
     return value
 
 
+def example(languages):
+    """An example file for a user's own extractor, in the project's
+    *languages*: organize's example units, the first waiting for its
+    translation and the second translated, which a Manual load keeps, and a
+    glossary entry, so it shows every field a file holds and loads as is."""
+    first, second = organize.EXAMPLE["units"]
+    return document(
+        languages,
+        [{**first, "translation": None}, {**second, "translation": "Medicine"}],
+        [
+            {
+                "section": "Game Characters",
+                "source": "リリ",
+                "translation": "Lili",
+                "note": "The heroine",
+            }
+        ],
+    )
+
+
 def write(path, value):
     """Writes the translation file *value* to *path*, as JSON or as the CSV
     view of its lines by the path's suffix. The CSV file starts with a byte

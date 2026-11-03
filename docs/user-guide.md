@@ -186,7 +186,7 @@ Your assistant uses its own plan in every mode, so on a limited plan pick a smal
 Your own tools extract the game's text into a translation file and write the translations back; DazedTL translates the file with your API key.
 
 1. On **Text**, load the file your tools wrote: JSON or CSV, one line per message with an ID, its source text and an empty translation.
-   The [translation contract](translation-contract.md#translation-files) describes the format; lines already translated in the file are kept.
+   **Save example…** saves a file with every field, which the [translation contract](translation-contract.md#translation-files) describes; lines already translated in the file are kept.
 2. Check **Options**, and the glossary on **Context**.
 3. On **Progress**, click **Estimate cost**, then approve the estimate.
 4. Click **Export translations…** and let your tools write the file into the game.
