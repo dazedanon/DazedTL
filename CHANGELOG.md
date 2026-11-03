@@ -3,6 +3,18 @@
 Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 [release.mjs](scripts/release.mjs) writes each entry from [release/notes.md](release/notes.md).
 
+## [2.59.3] - 2026-11-03
+
+### Changed
+
+- **GameUpdate:** a game gets GameUpdate's Git download from 2.59.2, and the fixes below, only after you choose **Recreate GameUpdate files** (Guided) or your assistant prepares the game again (Assistant-led), then push the translation; until then its players run the GameUpdate it shipped with.
+
+### Fixed
+
+- **GameUpdate:** when the patch site refuses its usual download, GameUpdate now says the repository is missing, private or unreachable instead of downloading Git for nothing and asking for a username, and refuses a patch kept in Git LFS instead of copying placeholder files into the game.
+- **GameUpdate:** on Windows, patches with deep folders no longer fail to unpack, a copy of Git for Windows that a virus scanner held or damaged is replaced by itself, and two GameUpdate windows on one game no longer clash.
+- **GameUpdate:** on SteamOS, the message for a missing Git now gives commands that work on its read-only system.
+
 ## [2.59.2] - 2026-11-03
 
 ### Changed
@@ -1615,6 +1627,7 @@ Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachan
 - The first release of DazedTL as a desktop app, installed from a ZIP with a START launcher and updated from inside the app.
 - **Guided steps** for RPG Maker MV, MZ and VX Ace games, and **Assistant-led** for any game.
 
+[2.59.3]: https://github.com/dazedanon/DazedTL/compare/v2.59.2...v2.59.3
 [2.59.2]: https://github.com/dazedanon/DazedTL/compare/v2.59.1...v2.59.2
 [2.59.1]: https://github.com/dazedanon/DazedTL/compare/v2.59.0...v2.59.1
 [2.59.0]: https://github.com/dazedanon/DazedTL/compare/v2.58.1...v2.59.0
