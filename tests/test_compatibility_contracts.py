@@ -97,7 +97,7 @@ import hashlib, json, sys
 from pathlib import Path
 sys.path.insert(0, sys.argv[1])
 from util.len_translation import LenProject
-from util.len_progress import read_progress, update_progress
+from util.len_progress import check_progress, read_progress, update_progress
 root = Path(sys.argv[2])
 work = root / ".dazedtl/len-method/work"
 work.mkdir(parents=True)
@@ -150,6 +150,19 @@ for refused in ({"text": ".dazedtl/len-method/work/parts.json"},
         update_progress(project if "images" in refused else text, refused)
     except ValueError as error:
         results.append(str(error))
+# A report that marks every phase done but still names one is refused with
+# what to send instead, and writing nothing; the report it asks for passes.
+done = {**dict.fromkeys(("preparation", "extraction", "translation", "injection",
+                         "qa", "patch"), "complete"), "images": "out_of_scope"}
+finished = {"phase": "patch", "phases": done, "text": ".dazedtl/len-method/work/text.json"}
+before = saved.read_bytes()
+try:
+    check_progress(text, finished)
+except ValueError as error:
+    results.append(str(error))
+results.append(saved.read_bytes() == before)
+del finished["phase"]
+results.append(update_progress(text, finished)["phases"]["patch"])
 print(json.dumps(results))
 """
 
@@ -4793,6 +4806,12 @@ class ManualJobs:
                 2,
                 "Unit a appears in more than one part.",
                 "Only a text export can list parts, in place of its units list.",
+                (
+                    "The current phase must be active or blocked. Once every phase is done, "
+                    "leave phase out; otherwise keep the phase you are working in active."
+                ),
+                True,
+                "complete",
             ],
         )
 

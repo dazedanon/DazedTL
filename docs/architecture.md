@@ -392,6 +392,7 @@ The protocol version is a hash of the contracts, so any change rejects a stale r
 - The starting prompt drives `scripts/project.py` against an authenticated loopback endpoint in the running backend; its connection descriptor is profile-local, permission-restricted and removed on shutdown, and its token never enters a handoff.
 - Agent operations use the same locked dispatch and ownership checks as Electron; the helper has no settings or general shell endpoint, and no route to what only the user starts, such as going back, undoing, saving a copy or Start over.
 - The app controls its workers; an assistant's activity is read from saved artifacts and never shown as an app-owned process.
+- A progress report is checked before the app records QA's evidence or checkpoints, so a refused one changes nothing, and the app keeps the last report it published in the project's records, out of the game where the assistant writes, so later refreshes never build on one the assistant sent or edited ([progress_report](../backend/dazedtl/translation/progress_report.py)).
 - On Windows every copied task opens with a [note](../backend/dazedtl/translation/helper_command.py) naming DazedTL's own Python with `-X utf8` and its bundled Git, since a fresh Windows has neither and Python's pipes can't carry Japanese in the ANSI code page; its commands are PowerShell, and the note says how to run them from Git Bash or WSL ([shell_note](../backend/dazedtl/system.py)).
 
 Guided and Assistant-led differ in who extracts, drives and reviews the work, never in the quality of the text.

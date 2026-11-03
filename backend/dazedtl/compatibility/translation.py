@@ -307,6 +307,12 @@ class TranslationEngine:
             else read_progress(project, check_hashes=verify)
         )
 
+    def check_progress(self, source, options, report):
+        """Refuses a report progress would refuse, writing nothing."""
+        from util.len_progress import check_progress
+
+        check_progress(self.project(source, options), report)
+
     def compile(
         self, source, options, plan, language, skill_users=None, actor_variables=None
     ):

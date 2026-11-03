@@ -2,6 +2,10 @@
 saved results. The helper, the app and a run's worker all rewrite it, so each
 holds the project's progress lock while it reads, changes and publishes.
 
+The app keeps the last report it published in the project's records, out of
+the game, where the assistant writes its reports and could send or edit the
+app's copy; only a report that passed its checks is kept (`kept`).
+
 The report also names the assistant's checkpoints: the app commits the
 assistant's work at each report it publishes and when one of its runs ends,
 named for the phase the work was done in (`checkpoint`). Work that no longer
@@ -18,7 +22,9 @@ from dazedtl.translation.files import project_path, read_json, verify_evidence
 from dazedtl.translation.project import MANUAL, WORK
 from dazedtl.translation.results import Results
 
-REPORT = WORK + "/progress-report.json"
+# Where apps before 2.59.5 kept the last report, read once (`_last`).
+LEGACY = WORK + "/progress-report.json"
+VERSION = 1
 NEXT_ACTION = "Continue saved work, then fit, inject and perform QA."
 # What the assistant does next once work no longer covers a phase.
 REOPENED = "Check the game's files again, then continue from {}."
@@ -26,19 +32,58 @@ REOPENED = "Check the game's files again, then continue from {}."
 PHASE_ACTION = "assistant_phase"
 
 
+def _records(workspace, project_id):
+    return Path(workspace) / "translation/projects" / project_id
+
+
 def _lock(workspace, project_id):
-    return exclusive(
-        Path(workspace) / "translation/projects" / project_id / "progress.lock"
-    )
+    return exclusive(_records(workspace, project_id) / "progress.lock")
 
 
-def phase(source, report=None):
+def kept(workspace, project_id):
+    """The record of the last report the app published."""
+    return _records(workspace, project_id) / "progress-report.json"
+
+
+def _keep(workspace, project_id, report):
+    write_json(kept(workspace, project_id), {"version": VERSION, "report": report})
+
+
+def _last(workspace, project_id, source, check=None):
+    """The last report the app published, or None before the first; a record
+    this app can't read counts as none. Before its first record, the report
+    an earlier app kept in the game is read once: with `check`, which refuses
+    a report, it is kept if it passes, as the one later refreshes build on,
+    since the assistant may have sent or edited that file since."""
+    path = kept(workspace, project_id)
+    if path.exists():
+        try:
+            value = read_json(path)
+        except ValueError, OSError:
+            return None
+        if not isinstance(value, dict) or value.get("version") != VERSION:
+            return None
+        report = value.get("report")
+        return report if isinstance(report, dict) else None
+    try:
+        report = read_json(project_path(source, LEGACY, exists=False))
+        if not isinstance(report, dict):
+            report = None
+        elif check:
+            check(report)
+    except ValueError, OSError:
+        report = None
+    if check:
+        _keep(workspace, project_id, report)
+    return report
+
+
+def phase(workspace, project_id, source, report=None):
     """The checkpoint of the assistant's work in the phase it last reported,
     or in `report`'s before its first report."""
     from util.len_progress import PHASES
 
-    path = project_path(source, REPORT, exists=False)
-    last = read_json(path) if path.is_file() else report
+    last = _last(workspace, project_id, source) or report
     name = last.get("phase") if isinstance(last, dict) else None
     label = PHASES.get(name) if isinstance(name, str) else None
     return Change(label or "Assistant's work", "Assistant-led", PHASE_ACTION)
@@ -57,7 +102,9 @@ def checkpoint(engine, workspace, project_id, source, report=None):
         except OSError, ValueError:
             # Packaging, which needs the manifest, says what is wrong with it.
             pass
-    engine.pending_checkpoint(source, phase(source, report), named)
+    engine.pending_checkpoint(
+        source, phase(workspace, project_id, source, report), named
+    )
 
 
 def publish(workspace, project_id, engine, source, options, report):
@@ -65,21 +112,24 @@ def publish(workspace, project_id, engine, source, options, report):
     later refreshes build on."""
     with _lock(workspace, project_id):
         value = engine.progress(source, options, report)
-        write_json(project_path(source, REPORT, exists=False), report)
+        _keep(workspace, project_id, report)
     return value
+
+
+def _checked(engine, source, options):
+    return lambda report: engine.check_progress(source, options, report)
 
 
 def update(workspace, project_id, engine, source, options, change):
     """Republishes the last report after change edits it in place; nothing
     happens before the assistant's first report."""
     with _lock(workspace, project_id):
-        path = project_path(source, REPORT, exists=False)
-        if not path.exists():
+        report = _last(workspace, project_id, source, _checked(engine, source, options))
+        if report is None:
             return None
-        report = read_json(path)
         change(report)
         value = engine.progress(source, options, report)
-        write_json(path, report)
+        _keep(workspace, project_id, report)
     return value
 
 
@@ -132,7 +182,7 @@ def follow(workspace, project_id, engine, source, undone):
 
     from .project import ProjectWorkspace
 
-    if not project_path(source, REPORT, exists=False).is_file():
+    if _last(workspace, project_id, source) is None:
         return None
     names = {label: name for name, label in PHASES.items()}
     found = {
@@ -163,12 +213,15 @@ def refresh(workspace, project_id, engine, plan, *, started=False):
     """
     if not reports(plan):
         return
-    verify_evidence(plan["source"], plan["evidence"])
-    engine.verify_bindings(plan["source"], plan["original_bindings"])
+    source, options = plan["source"], plan["options"]
+    verify_evidence(source, plan["evidence"])
+    engine.verify_bindings(source, plan["original_bindings"])
     with _lock(workspace, project_id):
-        path = project_path(plan["source"], REPORT, exists=False)
-        report: dict[str, Any] = read_json(path) if path.exists() else {}
-        relative, changed = Results(plan["source"]).export(plan)
+        report: dict[str, Any] = (
+            _last(workspace, project_id, source, _checked(engine, source, options))
+            or {}
+        )
+        relative, changed = Results(source).export(plan)
         report.update(text=relative, inputs=list(plan["evidence"]))
         phases = report.setdefault("phases", {})
         if changed:
@@ -182,5 +235,5 @@ def refresh(workspace, project_id, engine, plan, *, started=False):
                 report["next_action"] = NEXT_ACTION
             elif phases.get("translation") != "blocked":
                 phases["translation"] = "active"
-        engine.progress(plan["source"], plan["options"], report)
-        write_json(path, report)
+        engine.progress(source, options, report)
+        _keep(workspace, project_id, report)

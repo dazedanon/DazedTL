@@ -1201,7 +1201,13 @@ Additional project instructions:
                 "Register the patch's runtime manifest with Git setup first.",
                 "Your assistant sets up the game's version tracking first.",
             )
-        self.sync_images(project_id)
+        try:
+            self.sync_images(project_id)
+        except ValueError:
+            # The last report no longer passes its checks, as after a scope
+            # change: its snapshot stands, and the evidence checked next says
+            # whether its image counts are still current.
+            pass
         progress = self.engine.progress(project.root, selected, verify=True)
         if progress.get("warnings") or progress["phases"].get("qa") != "complete":
             raise PackageRefusal(
@@ -1817,7 +1823,15 @@ If you won't translate a request, skip it and go on; it stays declined. Use the 
         value = self.image_units(project_id)
         if value is None:
             return None
-        write_json(project_path(project.root, IMAGE_UNITS, exists=False), value)
+        # Rewriting the same records would read as changed to Progress, which
+        # compares their timestamp.
+        path = project_path(project.root, IMAGE_UNITS, exists=False)
+        try:
+            unchanged = path.is_file() and read_json(path) == value
+        except ValueError:
+            unchanged = False
+        if not unchanged:
+            write_json(path, value)
         return IMAGE_UNITS
 
     def sync_images(self, project_id):
@@ -1844,10 +1858,11 @@ If you won't translate a request, skip it and go on; it stays declined. Use the 
         images = self.image_progress(project_id)
         if images and isinstance(report, dict):
             report = {**report, "images": images}
-        if (
-            isinstance(report, dict)
-            and report.get("phases", {}).get("qa") == "complete"
-        ):
+        # A refused report changes nothing: it is checked before QA's runtime
+        # evidence is recorded and its work checkpointed.
+        options = project.read()["options"]
+        self.engine.check_progress(project.root, options, report)
+        if report.get("phases", {}).get("qa") == "complete":
             state = lifecycle(self.workspace, project_id)
             manifest_path = state.get("runtime_manifest") or state.get(
                 "checkpoint", {}
@@ -1867,19 +1882,10 @@ If you won't translate a request, skip it and go on; it stays declined. Use the 
         # Each report ends a stretch of the assistant's work, saved as a
         # checkpoint of the phase it was in.
         progress_report.checkpoint(
-            self.engine,
-            self.workspace,
-            project_id,
-            project.root,
-            report if isinstance(report, dict) else None,
+            self.engine, self.workspace, project_id, project.root, report
         )
         return progress_report.publish(
-            self.workspace,
-            project_id,
-            self.engine,
-            project.root,
-            project.read()["options"],
-            report,
+            self.workspace, project_id, self.engine, project.root, options, report
         )
 
     def operation(self, project_id, action, arguments):

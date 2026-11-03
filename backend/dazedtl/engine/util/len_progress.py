@@ -261,6 +261,16 @@ def _validate_snapshot(value):
 
 def update_progress(project: LenProject, report: dict) -> dict:
     """Replace one complete report; derive counts from persisted unit exports."""
+    snapshot = check_progress(project, report)
+    project.workspace.mkdir(parents=True, exist_ok=True)
+    _prepare_local_work(project)
+    _write_atomic(project.workspace / "progress.json", json.dumps(snapshot, ensure_ascii=False, indent=2) + "\n")
+    return snapshot
+
+
+def check_progress(project: LenProject, report: dict) -> dict:
+    """The snapshot update_progress would write for one complete report,
+    refusing it by the same rules, without writing anything."""
     _validate_project(project)
     allowed = {"phase", "phases", "text", "images", "inputs", "blocker", "next_action", "timing", "estimates"}
     if not isinstance(report, dict) or report.keys() - allowed:
@@ -278,7 +288,10 @@ def update_progress(project: LenProject, report: dict) -> dict:
     if phase:
         snapshot["phases"][phase] = phases.get(phase, "active")
         if snapshot["phases"][phase] not in {"active", "blocked"}:
-            raise ValueError("The current phase must be active or blocked.")
+            raise ValueError(
+                "The current phase must be active or blocked. Once every phase is done, leave phase out; "
+                "otherwise keep the phase you are working in active."
+            )
     for key in ("blocker", "next_action"):
         snapshot[key] = _line(report.get(key, ""), key)
     evidence = {}
@@ -327,9 +340,6 @@ def update_progress(project: LenProject, report: dict) -> dict:
     snapshot["evidence"] = sorted(evidence.values(), key=lambda item: item["path"])
     snapshot["updated_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
     _validate_snapshot(snapshot)
-    project.workspace.mkdir(parents=True, exist_ok=True)
-    _prepare_local_work(project)
-    _write_atomic(project.workspace / "progress.json", json.dumps(snapshot, ensure_ascii=False, indent=2) + "\n")
     return snapshot
 
 
