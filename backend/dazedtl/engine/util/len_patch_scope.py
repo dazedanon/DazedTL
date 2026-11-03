@@ -26,7 +26,7 @@ from util.playtest.fixes import PLUGIN as FIXES_FILE
 from util.playtest.fixes import loads_fixes, without_loader
 from util.playtest.fixes import patch_files as fixes_files
 from util.project_preparation import (
-    GAMEUPDATE_COPY_SKIP_NAMES, RPG_GAMEUPDATE_COPY_SKIP_NAMES, gameupdate_git, rpgmaker_layout,
+    GAMEUPDATE_COPY_SKIP_NAMES, RPG_GAMEUPDATE_COPY_SKIP_NAMES, gameupdate_local, rpgmaker_layout,
 )
 from util.version_update import GitWorkflowError
 from util.version_update.git_workflow import (
@@ -54,7 +54,7 @@ def _path(value: str) -> str:
             or any(p.casefold() in {"save", "saves", "logs", "cache", "__pycache__", "node_modules", ".venv", "venv"} for p in parts[:-1])
             or any(p == ".env" or p.startswith(".env.") for p in parts)
             or parts[-1] in {".api_key", "api_keys.json", "previous_patch_sha.txt"}
-            or gameupdate_git(value)
+            or gameupdate_local(value)
             or parts[-1].endswith(("_key.txt", "_keys.txt", ".log", ".tmp"))):
         raise GitWorkflowError(f"Local state or unsafe path cannot enter the patch: {value!r}")
     return value

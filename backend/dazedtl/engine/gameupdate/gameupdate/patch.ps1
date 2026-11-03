@@ -356,6 +356,136 @@ function Get-PatchGitUrl {
     return "$($Resolved.webBase)/$($Resolved.username)/$($Resolved.repo).git"
 }
 
+function Invoke-Settled {
+    <#
+    Runs $Action until it succeeds, for about 30 seconds: antivirus scanners
+    briefly lock new files, and a folder being removed stays until its last
+    open file closes.
+    #>
+    param(
+        [Parameter(Mandatory = $true)][scriptblock]$Action,
+        [int]$Tries = 300
+    )
+    for ($attempt = 1; ; $attempt++) {
+        try {
+            return & $Action
+        }
+        catch {
+            if ($attempt -ge $Tries) { throw }
+            Start-Sleep -Milliseconds 100
+        }
+    }
+}
+
+function Remove-SettledItem {
+    param([Parameter(Mandatory = $true)][string]$LiteralPath)
+    Invoke-Settled -Action {
+        if (Test-Path -LiteralPath $LiteralPath) {
+            Remove-Item -LiteralPath $LiteralPath -Recurse -Force -ErrorAction Stop
+        }
+    }
+}
+
+function Remove-StaleGameUpdateTemp {
+    <#
+    A window closed mid-run leaves its temporary files; a later run removes
+    the ones old enough that no other game's GameUpdate can still be using them.
+    #>
+    param([TimeSpan]$OlderThan = [TimeSpan]::FromHours(12))
+    $cutoff = (Get-Date) - $OlderThan
+    Get-ChildItem -LiteralPath ([IO.Path]::GetTempPath()) -Filter 'gu_*' -Force -ErrorAction SilentlyContinue |
+        Where-Object { $_.LastWriteTime -lt $cutoff } |
+        ForEach-Object {
+            try { Remove-Item -LiteralPath $_.FullName -Recurse -Force -ErrorAction Stop } catch { }
+        }
+}
+
+function New-GameUpdateTempPath {
+    param([Parameter(Mandatory = $true)][string]$Kind)
+    return Join-Path ([IO.Path]::GetTempPath()) ('gu_' + $Kind + '_' + [Guid]::NewGuid().ToString('N').Substring(0, 8))
+}
+
+function Enter-GameUpdateLock {
+    <#
+    Holds gameupdate\gameupdate.lock for the rest of the run, so two
+    GameUpdate windows on one game never replace each other's files or Git.
+    Windows releases it when the process ends, however it ends.
+    #>
+    param([Parameter(Mandatory = $true)][string]$BundleRoot)
+    try {
+        return New-Object System.IO.FileStream(
+            (Join-Path $BundleRoot 'gameupdate.lock'),
+            [IO.FileMode]::OpenOrCreate, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None,
+            1, [IO.FileOptions]::DeleteOnClose)
+    }
+    catch {
+        $cause = $_.Exception
+        while ($cause.InnerException) { $cause = $cause.InnerException }
+        # 32 and 33: Windows' sharing and lock violations, another run's hold.
+        if (($cause.HResult -band 0xFFFF) -in 32, 33) {
+            throw 'PATCH_ERR:BUSY:Another GameUpdate is already running for this game. Let it finish, then run GameUpdate again if needed.'
+        }
+        throw ('PATCH_ERR:FOLDER:GameUpdate can''t write in {0} ({1}). Move the game to a folder you can change, then run GameUpdate again.' -f $BundleRoot, $cause.Message)
+    }
+}
+
+function Invoke-PatchHttpGet {
+    # A GET whose HTTP status is an answer, not an error: 0 when nothing answered.
+    param([Parameter(Mandatory = $true)][string]$Uri)
+    try {
+        $response = Invoke-WebRequest -Uri $Uri -Headers @{ 'User-Agent' = 'DazedMTL-Patcher-1.0' } -UseBasicParsing -TimeoutSec 60
+        return @{ Status = [int]$response.StatusCode; Bytes = $response.RawContentStream.ToArray() }
+    }
+    catch {
+        $response = $_.Exception.Response
+        $status = if ($response) { [int]$response.StatusCode } else { 0 }
+        return @{ Status = $status; Bytes = $null }
+    }
+}
+
+function Get-AdvertisedSha {
+    <#
+    The branch's commit from Git's ref advertisement, a plain GET that needs no
+    Git, read as pkt-lines: four hex digits of length, then "<sha> <ref>".
+    Throws when the answer is definite (offline, no such public repository or
+    branch); returns '' when the forge gave no usable answer, such as a
+    challenge page, so Git itself has to ask.
+    #>
+    param([Parameter(Mandatory = $true)][hashtable]$Resolved)
+    $web = "$($Resolved.webBase)/$($Resolved.username)/$($Resolved.repo)"
+    $answer = Invoke-PatchHttpGet -Uri ((Get-PatchGitUrl -Resolved $Resolved) + '/info/refs?service=git-upload-pack')
+    switch ($answer.Status) {
+        0 { throw ('PATCH_ERR:NETWORK:Could not reach {0}. Check your internet connection, then run GameUpdate again.' -f $Resolved.host) }
+        { $_ -in 401, 404 } { throw ('PATCH_ERR:REPO:{0} was not found or is not public. GameUpdate needs no account; ask the translator to check the repository.' -f $web) }
+        { $_ -ge 500 } { throw ('PATCH_ERR:NETWORK:{0} is having problems (HTTP {1}). Try GameUpdate again later.' -f $Resolved.host, $answer.Status) }
+        200 { }
+        default { return '' }
+    }
+    # pkt-line lengths count bytes, so the body is read as latin1 and the
+    # branch's name as its UTF-8 bytes.
+    $latin1 = [Text.Encoding]::GetEncoding(28591)
+    $body = $latin1.GetString($answer.Bytes)
+    $ref = $latin1.GetString([Text.Encoding]::UTF8.GetBytes('refs/heads/' + $Resolved.branch))
+    $offset = 0
+    while ($offset + 4 -le $body.Length) {
+        $size = 0
+        if (-not [int]::TryParse($body.Substring($offset, 4), [Globalization.NumberStyles]::HexNumber, $null, [ref]$size) -or
+            ($size -gt 0 -and $size -lt 4)) {
+            return ''
+        }
+        if ($size -eq 0) {
+            $offset += 4
+            continue
+        }
+        $line = $body.Substring($offset + 4, [Math]::Min($size, $body.Length - $offset) - 4).Split([char]0)[0].Trim()
+        $offset += $size
+        if ($line -match '^([0-9a-f]{40,64}) (\S+)$' -and $Matches[2] -ceq $ref) {
+            return $Matches[1]
+        }
+    }
+    throw ("PATCH_ERR:REPO:Branch '{0}' was not found in {1}." -f $Resolved.branch, $web)
+}
+
 function Expand-VerifiedMinGit {
     <#
     Unpacks a downloaded MinGit ZIP into $Destination only when its SHA-256 is
@@ -371,24 +501,43 @@ function Expand-VerifiedMinGit {
         throw ('PATCH_ERR:GIT:The Git for Windows download does not match its pinned checksum (got {0}); it was not used.' -f $actual)
     }
     $partial = $Destination + '.partial'
-    if (Test-Path -LiteralPath $partial) {
-        Remove-FileOrDirectoryViaCmd -LiteralPath $partial
-    }
+    Remove-SettledItem -LiteralPath $partial
     Expand-Archive -LiteralPath $ZipPath -DestinationPath $partial -Force
     Set-Content -LiteralPath (Join-Path $partial 'dazedtl-mingit.sha256') -Value $Sha256 -Encoding Ascii
-    if (Test-Path -LiteralPath $Destination) {
-        Remove-FileOrDirectoryViaCmd -LiteralPath $Destination
+    try {
+        Remove-SettledItem -LiteralPath $Destination
+        Invoke-Settled -Action { Rename-Item -LiteralPath $partial -NewName ([IO.Path]::GetFileName($Destination)) -ErrorAction Stop }
     }
-    Rename-Item -LiteralPath $partial -NewName ([IO.Path]::GetFileName($Destination))
+    catch {
+        throw ('PATCH_ERR:GIT:{0} could not be replaced ({1}). Close anything using it, such as a folder window or a virus scanner, then run GameUpdate again.' -f $Destination, $_.Exception.Message)
+    }
+}
+
+function Save-MinGitZip {
+    param([Parameter(Mandatory = $true)][string]$OutFile)
+    Invoke-WebRequest -Uri $MinGitUrl -OutFile $OutFile -Headers @{ 'User-Agent' = 'DazedMTL-Patcher-1.0' } -UseBasicParsing
+}
+
+function Test-GameUpdateMinGit {
+    param(
+        [Parameter(Mandatory = $true)][string]$Git,
+        [Parameter(Mandatory = $true)][string]$BundleRoot
+    )
+    $folder = (Join-Path $BundleRoot 'mingit') + [IO.Path]::DirectorySeparatorChar
+    return $Git.StartsWith($folder, [StringComparison]::OrdinalIgnoreCase)
 }
 
 function Get-PatchGit {
     <#
     The Git that fetches the patch when the forge's API or archive download
     fails: Git on PATH, else the pinned MinGit, downloaded and checked once
-    into gameupdate\mingit and reused after that.
+    into gameupdate\mingit and reused after that. -Reinstall replaces a
+    MinGit that failed to run.
     #>
-    param([Parameter(Mandatory = $true)][string]$BundleRoot)
+    param(
+        [Parameter(Mandatory = $true)][string]$BundleRoot,
+        [switch]$Reinstall
+    )
     $onPath = Get-Command git -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
     if ($onPath) {
         return $onPath.Source
@@ -396,18 +545,22 @@ function Get-PatchGit {
     $folder = Join-Path $BundleRoot 'mingit'
     $git = Join-Path $folder 'cmd\git.exe'
     $marker = Join-Path $folder 'dazedtl-mingit.sha256'
-    if ((Test-Path -LiteralPath $git -PathType Leaf) -and (Test-Path -LiteralPath $marker -PathType Leaf) -and
+    if (-not $Reinstall -and (Test-Path -LiteralPath $git -PathType Leaf) -and (Test-Path -LiteralPath $marker -PathType Leaf) -and
         ((Get-Content -LiteralPath $marker -Raw).Trim() -eq $MinGitSha256)) {
         return $git
     }
-    Write-Host 'Git is not installed; downloading Git for Windows (MinGit) once for GameUpdate...'
-    $zip = Join-Path ([IO.Path]::GetTempPath()) ('gu_mingit_' + [Guid]::NewGuid().ToString('N') + '.zip')
+    Write-Host 'Git is not installed; downloading Git for Windows (MinGit, about 35 MB) once for GameUpdate...'
+    # Windows PowerShell's Expand-Archive takes only a file named .zip.
+    $zip = (New-GameUpdateTempPath -Kind 'mingit') + '.zip'
     $prevPref = $ProgressPreference
     try {
+        # Windows PowerShell's progress bar slows a download many times over.
         $ProgressPreference = 'SilentlyContinue'
+        $watch = [Diagnostics.Stopwatch]::StartNew()
         Invoke-WithRetry -Name 'Download Git for Windows' -Attempts (Get-EnvInt -Name 'GAMEUPDATE_DL_ATTEMPTS' -Default 2) -Action {
-            Invoke-WebRequest -Uri $MinGitUrl -OutFile $zip -Headers @{ 'User-Agent' = 'DazedMTL-Patcher-1.0' } -UseBasicParsing
+            Save-MinGitZip -OutFile $zip
         } | Out-Null
+        Write-Host ('Downloaded Git for Windows in {0:N0}s; checking and unpacking it...' -f $watch.Elapsed.TotalSeconds)
         Expand-VerifiedMinGit -ZipPath $zip -Sha256 $MinGitSha256 -Destination $folder
     }
     finally {
@@ -419,20 +572,54 @@ function Get-PatchGit {
     return $git
 }
 
+function Invoke-WithPatchGit {
+    <#
+    Runs $Action with the patch's Git, retried. A MinGit that still fails,
+    such as one a virus scanner damaged, is downloaded again once.
+    #>
+    param(
+        [Parameter(Mandatory = $true)][string]$BundleRoot,
+        [Parameter(Mandatory = $true)][string]$Name,
+        [Parameter(Mandatory = $true)][scriptblock]$Action
+    )
+    # Invoke-WithRetry runs the block in its own scope, where $Action is its
+    # own parameter, so the work goes by names it does not use.
+    $patchWork = $Action
+    $attempts = Get-EnvInt -Name 'GAMEUPDATE_DL_ATTEMPTS' -Default 2
+    $patchGit = Get-PatchGit -BundleRoot $BundleRoot
+    try {
+        return Invoke-WithRetry -Name $Name -Attempts $attempts -Action { & $patchWork $patchGit }
+    }
+    catch {
+        if ($_.Exception.Message -like 'PATCH_ERR:LFS:*' -or -not (Test-GameUpdateMinGit -Git $patchGit -BundleRoot $BundleRoot)) {
+            throw
+        }
+        Write-Host ('Git for Windows failed ({0}); downloading it again...' -f $_.Exception.Message)
+    }
+    $patchGit = Get-PatchGit -BundleRoot $BundleRoot -Reinstall
+    try {
+        return Invoke-WithRetry -Name $Name -Attempts $attempts -Action { & $patchWork $patchGit }
+    }
+    catch {
+        throw ('{0} If this keeps happening, delete the gameupdate\mingit folder and run GameUpdate again.' -f $_.Exception.Message)
+    }
+}
+
 function Invoke-PatchGit {
     # No prompt for a login a public patch never needs: a missing repository
     # fails instead of waiting on a credential helper.
     param(
         [Parameter(Mandatory = $true)][string]$Git,
-        [Parameter(Mandatory = $true)][string[]]$Arguments
+        [Parameter(Mandatory = $true)][string[]]$Arguments,
+        [int[]]$ExitCodes = @(0)
     )
     $env:GIT_TERMINAL_PROMPT = '0'
     $env:GCM_INTERACTIVE = 'never'
     # Windows PowerShell turns Git's messages on a redirected stderr into
     # errors; the exit code alone says whether it worked.
     $ErrorActionPreference = 'Continue'
-    $output = & $Git -c credential.helper= @Arguments
-    if ($LASTEXITCODE -ne 0) {
+    $output = & $Git -c credential.helper= -c core.longpaths=true @Arguments
+    if ($LASTEXITCODE -notin $ExitCodes) {
         throw ('PATCH_ERR:GIT:git {0} failed with exit code {1}.' -f $Arguments[0], $LASTEXITCODE)
     }
     return $output
@@ -447,7 +634,7 @@ function Get-GitLatestSha {
     $line = @(Invoke-PatchGit -Git $Git -Arguments @('ls-remote', $url, ('refs/heads/' + $Resolved.branch)))[0]
     $sha = if ($line) { ([string]$line).Split("`t")[0].Trim() } else { '' }
     if ($sha -notmatch '^[0-9a-f]{40,64}$') {
-        throw ("PATCH_ERR:GIT:Could not read branch '{0}' from {1}." -f $Resolved.branch, $url)
+        throw ("PATCH_ERR:GIT:Git could not read branch '{0}' from {1}." -f $Resolved.branch, $url)
     }
     return $sha
 }
@@ -464,14 +651,23 @@ function Save-GitPatchZip {
         [Parameter(Mandatory = $true)][hashtable]$Resolved,
         [Parameter(Mandatory = $true)][string]$OutFile
     )
-    $repoDir = Join-Path ([IO.Path]::GetTempPath()) ('gu_git_' + [Guid]::NewGuid().ToString('N'))
+    $repoDir = New-GameUpdateTempPath -Kind 'git'
     try {
         Invoke-PatchGit -Git $Git -Arguments @('init', '-q', $repoDir) | Out-Null
         Invoke-PatchGit -Git $Git -Arguments @(
-            '-C', $repoDir, 'fetch', '-q', '--depth', '1', '--no-tags',
+            '-C', $repoDir, 'fetch', '--depth', '1', '--no-tags',
             (Get-PatchGitUrl -Resolved $Resolved), ('refs/heads/' + $Resolved.branch)
         ) | Out-Null
         $sha = ([string](Invoke-PatchGit -Git $Git -Arguments @('-C', $repoDir, 'rev-parse', 'FETCH_HEAD'))).Trim()
+        # Git LFS keeps such files outside the commit, so the download would
+        # hold only their pointer files; never put those in a game.
+        $lfs = Invoke-PatchGit -Git $Git -ExitCodes 0, 1 -Arguments @(
+            '-C', $repoDir, 'grep', '-l', '-e', 'filter=lfs', 'FETCH_HEAD', '--', '.gitattributes', '*/.gitattributes'
+        )
+        if ($lfs) {
+            throw ('PATCH_ERR:LFS:This patch keeps files in Git LFS, which GameUpdate can''t download with Git. Download it from {0}/{1}/{2} instead.' -f `
+                $Resolved.webBase, $Resolved.username, $Resolved.repo)
+        }
         Invoke-PatchGit -Git $Git -Arguments @(
             '-C', $repoDir, '-c', 'core.autocrlf=false', '-c', 'core.eol=lf',
             'archive', '--format=zip', '--prefix=patch/', '-o', $OutFile, 'FETCH_HEAD'
@@ -482,6 +678,44 @@ function Save-GitPatchZip {
         if (Test-Path -LiteralPath $repoDir) {
             Remove-FileOrDirectoryViaCmd -LiteralPath $repoDir
         }
+    }
+}
+
+function Expand-PatchZip {
+    <#
+    Unpacks a patch archive's files into $Destination without the archive's
+    own root folder, such as GitLab's <repo>-<sha>-<sha>, which would push deep
+    patch paths past Windows' 260-character limit.
+    #>
+    param(
+        [Parameter(Mandatory = $true)][string]$ZipPath,
+        [Parameter(Mandatory = $true)][string]$Destination
+    )
+    Add-Type -AssemblyName System.IO.Compression, System.IO.Compression.FileSystem
+    $archive = [IO.Compression.ZipFile]::OpenRead($ZipPath)
+    try {
+        $roots = @($archive.Entries | ForEach-Object { $_.FullName.Replace('\', '/').Split('/')[0] } | Select-Object -Unique)
+        if ($roots.Count -ne 1) {
+            throw ('PATCH_ERR:ZIP:Expected one root folder in archive, found {0}.' -f $roots.Count)
+        }
+        $base = [IO.Path]::GetFullPath($Destination).TrimEnd('\', '/') + [IO.Path]::DirectorySeparatorChar
+        foreach ($entry in $archive.Entries) {
+            $relative = $entry.FullName.Replace('\', '/').Substring($roots[0].Length).TrimStart('/')
+            if (-not $relative) { continue }
+            $target = [IO.Path]::GetFullPath((Join-Path $base $relative))
+            if (-not $target.StartsWith($base, [StringComparison]::OrdinalIgnoreCase)) {
+                throw ('PATCH_ERR:ZIP:The archive holds a path outside its folder: {0}' -f $entry.FullName)
+            }
+            if ($entry.FullName.EndsWith('/')) {
+                [void][IO.Directory]::CreateDirectory($target)
+                continue
+            }
+            [void][IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($target))
+            [IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $target, $true)
+        }
+    }
+    finally {
+        $archive.Dispose()
     }
 }
 
@@ -742,7 +976,7 @@ function Invoke-WithRetry {
         catch {
             $lastErr = $_
             if ($i -lt $Attempts) {
-                Write-Host ("{0} failed ({1}/{2}), retrying..." -f $Name, $i, $Attempts)
+                Write-Host ("{0} failed ({1}/{2}): {3} Retrying..." -f $Name, $i, $Attempts, $_.Exception.Message)
                 Start-Sleep -Seconds $DelaySeconds
             }
         }
@@ -948,9 +1182,10 @@ function Invoke-PatchDownloadExtract {
     $headers = New-PatchApiHeaders -Resolved $Resolved
     $dlAttempts = Get-EnvInt -Name 'GAMEUPDATE_DL_ATTEMPTS' -Default 2
 
-    # The forge's API first; Git when the API fails, such as with a 403 or a
-    # challenge page in place of its answer.
-    $git = $null
+    # The forge's API first. When it fails, such as with a 403 or a challenge
+    # page in place of its answer, the ref advertisement, which needs no Git;
+    # Git itself asks only when that gives no answer either.
+    $useGit = $false
     try {
         $latestSha = Invoke-WithRetry -Name 'Resolve latest patch SHA' -Attempts $dlAttempts -Action {
             $sha = ([string](Get-PatchLatestSha -Resolved $Resolved -Headers $headers)).Trim()
@@ -959,10 +1194,14 @@ function Invoke-PatchDownloadExtract {
         }
     }
     catch {
-        Write-Host ('Resolve latest patch SHA failed ({0}); asking Git instead.' -f $_.Exception.Message)
-        $git = Get-PatchGit -BundleRoot $BundleRoot
-        $latestSha = Invoke-WithRetry -Name 'Ask Git for the latest patch commit' -Attempts $dlAttempts -Action {
-            Get-GitLatestSha -Git $git -Resolved $Resolved
+        Write-Host ('Resolve latest patch SHA failed ({0}); asking Git''s own protocol instead.' -f $_.Exception.Message)
+        $useGit = $true
+        $latestSha = Get-AdvertisedSha -Resolved $Resolved
+        if (-not $latestSha) {
+            $latestSha = Invoke-WithPatchGit -BundleRoot $BundleRoot -Name 'Ask Git for the latest patch commit' -Action {
+                param($git)
+                Get-GitLatestSha -Git $git -Resolved $Resolved
+            }
         }
     }
 
@@ -978,119 +1217,110 @@ function Invoke-PatchDownloadExtract {
     }
 
     $zipPath = Join-Path $Root ('dazedmtl_patch_' + [Guid]::NewGuid().ToString('N') + '.zip')
-    Write-Host ('Downloading patch... ' + $zipPath)
-    $stage = Join-Path ([IO.Path]::GetTempPath()) ('gu_' + [Guid]::NewGuid().ToString('N'))
-    $archiveUrl = Get-PatchArchiveUrl -Resolved $Resolved -Sha $latestSha
-
-    if (-not $git) {
-        try {
-            $dlSw = [System.Diagnostics.Stopwatch]::StartNew()
-            Invoke-WithRetry -Name 'Download archive with Invoke-WebRequest' -Attempts $dlAttempts -Action {
-                Invoke-PatchArchiveDownload -Url $archiveUrl -OutFile $zipPath -Headers $headers
-            } | Out-Null
-            $dlSw.Stop()
-            $bytes = (Get-Item -LiteralPath $zipPath).Length
-            if ($bytes -eq 0) {
-                $hint = Get-InvalidZipDownloadHint -LiteralPath $zipPath
-                Remove-DownloadedRepoZip -LiteralPath $zipPath
-                throw "PATCH_ERR:ZIP:Download is empty (0 bytes). $hint"
-            }
-
-            $secs = [Math]::Max($dlSw.Elapsed.TotalSeconds, 0.001)
-            $mbps = ($bytes / 1MB) / $secs
-            Write-Host ("Download complete: {0:N1} MB in {1:N1}s ({2:N1} MB/s)" -f ($bytes / 1MB), $secs, $mbps)
-
-            $zipHeaderBad = $false
-            $zipHeaderHint = ''
-            $fs = [System.IO.File]::OpenRead($zipPath)
-            try {
-                $hdr = New-Object byte[] 4
-                if ($fs.Read($hdr, 0, 4) -lt 4 -or $hdr[0] -ne 0x50 -or $hdr[1] -ne 0x4B) {
-                    $zipHeaderBad = $true
-                    $zipHeaderHint = Get-InvalidZipDownloadHint -LiteralPath $zipPath
-                }
-            }
-            finally {
-                $fs.Dispose()
-            }
-            if ($zipHeaderBad) {
-                Remove-DownloadedRepoZip -LiteralPath $zipPath
-                throw "PATCH_ERR:ZIP:Download is not a valid ZIP (missing PK header). $zipHeaderHint"
-            }
-        }
-        catch {
-            Write-Host ('Downloading the archive failed ({0}); trying Git instead.' -f $_.Exception.Message)
-            if (Test-Path -LiteralPath $zipPath) {
-                Remove-DownloadedRepoZip -LiteralPath $zipPath
-            }
-            $git = Get-PatchGit -BundleRoot $BundleRoot
-        }
-    }
-    if ($git) {
-        Write-Host 'Downloading patch with Git...'
-        $latestSha = Invoke-WithRetry -Name 'Fetch the patch with Git' -Attempts $dlAttempts -Action {
-            if (Test-Path -LiteralPath $zipPath) {
-                Remove-DownloadedRepoZip -LiteralPath $zipPath
-            }
-            Save-GitPatchZip -Git $git -Resolved $Resolved -OutFile $zipPath
-        }
-    }
-
-    if (Test-Path -LiteralPath $stage) {
-        Remove-FileOrDirectoryViaCmd -LiteralPath $stage
-    }
-    New-Item -ItemType Directory -Path $stage | Out-Null
+    $stage = New-GameUpdateTempPath -Kind 'patch'
     try {
-        try {
-            Expand-Archive -LiteralPath $zipPath -DestinationPath $stage -Force
-            $dirs = @(Get-ChildItem -LiteralPath $stage -Directory)
-            if ($dirs.Count -ne 1) {
-                throw ('PATCH_ERR:ZIP:Expected one root folder in archive, found {0}.' -f $dirs.Count)
-            }
-            $stagedRoot = $dirs[0].FullName
-            $isWolfGame = Test-WolfGameRoot -Root $Root
-            $wolfOnlyNames = @('UberWolfCli.exe', 'UberWolfCli.LICENSE.txt')
+        if (-not $useGit) {
+            try {
+                Write-Host ('Downloading patch... ' + $zipPath)
+                $archiveUrl = Get-PatchArchiveUrl -Resolved $Resolved -Sha $latestSha
+                $dlSw = [System.Diagnostics.Stopwatch]::StartNew()
+                Invoke-WithRetry -Name 'Download archive with Invoke-WebRequest' -Attempts $dlAttempts -Action {
+                    Invoke-PatchArchiveDownload -Url $archiveUrl -OutFile $zipPath -Headers $headers
+                } | Out-Null
+                $dlSw.Stop()
+                $bytes = (Get-Item -LiteralPath $zipPath).Length
+                if ($bytes -eq 0) {
+                    $hint = Get-InvalidZipDownloadHint -LiteralPath $zipPath
+                    throw "PATCH_ERR:ZIP:Download is empty (0 bytes). $hint"
+                }
 
-            if ($isWolfGame) {
-                # Stage UberWolfCli before unpack so packed WOLF games can
-                # convert Data.wolf -> Data/ before English files land.
-                foreach ($cliName in $wolfOnlyNames) {
-                    $stagedCli = Join-Path $stagedRoot $cliName
-                    $destCli = Join-Path $Root $cliName
-                    if ((Test-Path -LiteralPath $stagedCli -PathType Leaf) -and
-                        -not (Test-Path -LiteralPath $destCli -PathType Leaf)) {
-                        Copy-Item -LiteralPath $stagedCli -Destination $destCli -Force
+                $secs = [Math]::Max($dlSw.Elapsed.TotalSeconds, 0.001)
+                $mbps = ($bytes / 1MB) / $secs
+                Write-Host ("Download complete: {0:N1} MB in {1:N1}s ({2:N1} MB/s)" -f ($bytes / 1MB), $secs, $mbps)
+
+                $zipHeaderBad = $false
+                $zipHeaderHint = ''
+                $fs = [System.IO.File]::OpenRead($zipPath)
+                try {
+                    $hdr = New-Object byte[] 4
+                    if ($fs.Read($hdr, 0, 4) -lt 4 -or $hdr[0] -ne 0x50 -or $hdr[1] -ne 0x4B) {
+                        $zipHeaderBad = $true
+                        $zipHeaderHint = Get-InvalidZipDownloadHint -LiteralPath $zipPath
                     }
                 }
-                Invoke-WolfPreSetup -Root $Root
+                finally {
+                    $fs.Dispose()
+                }
+                if ($zipHeaderBad) {
+                    throw "PATCH_ERR:ZIP:Download is not a valid ZIP (missing PK header). $zipHeaderHint"
+                }
+                Expand-PatchZip -ZipPath $zipPath -Destination $stage
             }
-
-            # Copy file-by-file so WOLF-only tools never leak into RPG Maker,
-            # SRPG, or other game roots through a downloaded patch archive.
-            $sourcePrefix = $stagedRoot.TrimEnd(
-                [IO.Path]::DirectorySeparatorChar,
-                [IO.Path]::AltDirectorySeparatorChar
-            ) + [IO.Path]::DirectorySeparatorChar
-            foreach ($file in Get-ChildItem -LiteralPath $stagedRoot -Recurse -File -Force) {
-                if ((-not $isWolfGame) -and ($file.Name -in $wolfOnlyNames)) {
-                    continue
+            catch {
+                Write-Host ('The archive could not be downloaded or unpacked ({0}); trying Git instead.' -f $_.Exception.Message)
+                $useGit = $true
+                Remove-SettledItem -LiteralPath $stage
+            }
+            finally {
+                if (Test-Path -LiteralPath $zipPath) {
+                    Remove-DownloadedRepoZip -LiteralPath $zipPath
                 }
-                $relative = $file.FullName.Substring($sourcePrefix.Length)
-                $destination = Join-Path $Root $relative
-                $destinationDir = Split-Path -Parent $destination
-                if (-not (Test-Path -LiteralPath $destinationDir -PathType Container)) {
-                    New-Item -ItemType Directory -Path $destinationDir -Force | Out-Null
-                }
-                Copy-Item -LiteralPath $file.FullName -Destination $destination -Force
             }
         }
-        finally {
-            if (Test-Path -LiteralPath $zipPath) {
-                Remove-DownloadedRepoZip -LiteralPath $zipPath
+        if ($useGit) {
+            Write-Host 'Downloading patch with Git...'
+            $latestSha = Invoke-WithPatchGit -BundleRoot $BundleRoot -Name 'Fetch the patch with Git' -Action {
+                param($git)
+                if (Test-Path -LiteralPath $zipPath) {
+                    Remove-DownloadedRepoZip -LiteralPath $zipPath
+                }
+                Save-GitPatchZip -Git $git -Resolved $Resolved -OutFile $zipPath
             }
+            Expand-PatchZip -ZipPath $zipPath -Destination $stage
+            Remove-DownloadedRepoZip -LiteralPath $zipPath
+        }
+
+        Write-Host 'Applying patch...'
+        $isWolfGame = Test-WolfGameRoot -Root $Root
+        $wolfOnlyNames = @('UberWolfCli.exe', 'UberWolfCli.LICENSE.txt')
+
+        if ($isWolfGame) {
+            # Stage UberWolfCli before unpack so packed WOLF games can
+            # convert Data.wolf -> Data/ before English files land.
+            foreach ($cliName in $wolfOnlyNames) {
+                $stagedCli = Join-Path $stage $cliName
+                $destCli = Join-Path $Root $cliName
+                if ((Test-Path -LiteralPath $stagedCli -PathType Leaf) -and
+                    -not (Test-Path -LiteralPath $destCli -PathType Leaf)) {
+                    Copy-Item -LiteralPath $stagedCli -Destination $destCli -Force
+                }
+            }
+            Invoke-WolfPreSetup -Root $Root
+        }
+
+        # Copy file-by-file so WOLF-only tools never leak into RPG Maker,
+        # SRPG, or other game roots through a downloaded patch archive.
+        $sourcePrefix = [IO.Path]::GetFullPath($stage).TrimEnd(
+            [IO.Path]::DirectorySeparatorChar,
+            [IO.Path]::AltDirectorySeparatorChar
+        ) + [IO.Path]::DirectorySeparatorChar
+        foreach ($file in Get-ChildItem -LiteralPath $stage -Recurse -File -Force) {
+            if ((-not $isWolfGame) -and ($file.Name -in $wolfOnlyNames)) {
+                continue
+            }
+            $relative = $file.FullName.Substring($sourcePrefix.Length)
+            $destination = Join-Path $Root $relative
+            $destinationDir = Split-Path -Parent $destination
+            if (-not (Test-Path -LiteralPath $destinationDir -PathType Container)) {
+                New-Item -ItemType Directory -Path $destinationDir -Force | Out-Null
+            }
+            Copy-Item -LiteralPath $file.FullName -Destination $destination -Force
         }
     }
     finally {
+        if (Test-Path -LiteralPath $zipPath) {
+            Remove-DownloadedRepoZip -LiteralPath $zipPath
+        }
         if (Test-Path -LiteralPath $stage) {
             Remove-FileOrDirectoryViaCmd -LiteralPath $stage
         }
@@ -1212,6 +1442,10 @@ try {
     Write-Host ('Pulling patch from {0}/{1}/{2} ({3}, branch: {4})' -f `
         $resolved.webBase, $resolved.username, $resolved.repo, $resolved.kind, $resolved.branch)
 
+    # Held until the process ends.
+    $gameUpdateLock = Enter-GameUpdateLock -BundleRoot $PatchBundleRoot
+    Remove-StaleGameUpdateTemp
+
     Invoke-WolfPreSetup -Root $GameRoot
     Invoke-SrpgPreSetup -Root $GameRoot
 
@@ -1225,7 +1459,11 @@ try {
     catch {
         Write-Host ''
         Write-Host $_.Exception.Message
-        if ($_.InvocationInfo.PositionMessage) { Write-Host $_.InvocationInfo.PositionMessage }
+        # GameUpdate's own errors say what happened; a script position helps
+        # only with an unexpected one.
+        if ($_.Exception.Message -notlike 'PATCH_ERR:*' -and $_.InvocationInfo.PositionMessage) {
+            Write-Host $_.InvocationInfo.PositionMessage
+        }
         Remove-PatchTempArtifacts -Root $GameRoot
         Wait-ConsolePause
         exit 1
@@ -1243,8 +1481,6 @@ try {
         Wait-ConsolePause
         exit 1
     }
-
-    Write-Host 'Applying patch...'
 
     Invoke-SrpgPostApply -Root $GameRoot
     # Safety: if Data/ is ready (from unpack or patch files) but Data.wolf

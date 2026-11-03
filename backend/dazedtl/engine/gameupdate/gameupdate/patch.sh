@@ -8,6 +8,19 @@ CONFIG_FILE="$SCRIPT_DIR/patch-config.txt"
 STATE_FILE="$SCRIPT_DIR/previous_patch_sha.txt"
 API_HEADERS=( -H "User-Agent: GameUpdate/1.0" )
 
+# Temporary folders and the downloaded ZIP go however the run ends, closed
+# window and Ctrl+C included.
+TEMP_PATHS=()
+remove_temp_paths() {
+    local path
+    for path in "${TEMP_PATHS[@]}"; do
+        rm -rf "$path"
+    done
+    rm -f "$ROOT_DIR/repo.zip"
+}
+trap remove_temp_paths EXIT
+trap 'exit 130' INT TERM HUP
+
 check_dependency() {
   if ! command -v "$1" > /dev/null 2>&1; then
     echo "Error: '$1' is not installed. Please install it using 'pkg install $1'."
@@ -181,7 +194,10 @@ require_git() {
         return 0
     fi
     local install="your package manager's git package"
-    if command -v apt-get > /dev/null 2>&1; then
+    if command -v steamos-readonly > /dev/null 2>&1; then
+        # SteamOS keeps its system read-only, so pacman alone fails there.
+        install="sudo steamos-readonly disable && sudo pacman-key --init && sudo pacman-key --populate archlinux holo && sudo pacman -S git && sudo steamos-readonly enable (in Desktop Mode, after setting a password with passwd)"
+    elif command -v apt-get > /dev/null 2>&1; then
         install="sudo apt install git"
     elif command -v dnf > /dev/null 2>&1; then
         install="sudo dnf install git"
@@ -200,6 +216,50 @@ require_git() {
 
 git_latest_sha() {
     git_quiet ls-remote "$GIT_URL" "refs/heads/${branch}" | awk 'NR == 1 { print $1 }'
+}
+
+# The branch's commit from Git's ref advertisement, a plain GET that needs no
+# Git: sets latest_patch_sha, or stops when the answer is definite (offline,
+# no such public repository or branch). Returns 1 when the forge gave no
+# usable answer, such as a challenge page, so Git itself has to ask.
+read_advertised_sha() {
+    local body code
+    body="$(mktemp)"
+    TEMP_PATHS+=( "$body" )
+    code="$(curl -sS -o "$body" -w '%{http_code}' --max-time 60 \
+        -H "User-Agent: GameUpdate/1.0" \
+        "${GIT_URL}/info/refs?service=git-upload-pack" 2>/dev/null)" || true
+    case "$code" in
+        200)
+            # pkt-lines: four hex digits of length, then "<sha> <ref>"; a ref
+            # line can follow a flush (0000) or carry capabilities after a NUL.
+            latest_patch_sha="$(tr '\0' '\n' < "$body" | awk -v ref="refs/heads/${branch}" '
+                $2 == ref {
+                    field = $1
+                    size = length(field) < 68 ? 40 : 64
+                    print substr(field, length(field) - size + 1)
+                    exit
+                }')"
+            if ! [[ "$latest_patch_sha" =~ ^[0-9a-f]{40,64}$ ]]; then
+                echo "PATCH_ERR:REPO:Branch '${branch}' was not found in ${WEB_BASE}/${username}/${repo}."
+                exit 1
+            fi
+            return 0
+            ;;
+        401|404)
+            echo "PATCH_ERR:REPO:${WEB_BASE}/${username}/${repo} was not found or is not public. GameUpdate needs no account; ask the translator to check the repository."
+            exit 1
+            ;;
+        ''|000)
+            echo "PATCH_ERR:NETWORK:Could not reach ${HOST_NAME}. Check your internet connection, then run GameUpdate again."
+            exit 1
+            ;;
+        5??)
+            echo "PATCH_ERR:NETWORK:${HOST_NAME} is having problems (HTTP ${code}). Try GameUpdate again later."
+            exit 1
+            ;;
+    esac
+    return 1
 }
 
 echo "Pulling patch from ${WEB_BASE}/${username}/${repo} (${FORGE_KIND}, branch: ${branch})"
@@ -248,12 +308,12 @@ while true; do
     attempt=$((attempt + 1))
     sleep 2
 done
-if [ "$download_method" = "git" ]; then
+if [ "$download_method" = "git" ] && ! read_advertised_sha; then
     require_git
     latest_patch_sha="$(retry_cmd "Ask Git for the latest patch commit" git_latest_sha)" || true
     latest_patch_sha="$(printf '%s' "$latest_patch_sha" | tr -d '[:space:]')"
     if ! [[ "$latest_patch_sha" =~ ^[0-9a-f]{40,64}$ ]]; then
-        echo "PATCH_ERR:GIT:Could not read branch '${branch}' from ${GIT_URL}."
+        echo "PATCH_ERR:GIT:Git could not read branch '${branch}' from ${GIT_URL}."
         exit 1
     fi
 fi
@@ -440,15 +500,23 @@ download_with_git() {
     echo "Downloading latest patch with Git..."
     local repo_dir
     repo_dir=$(mktemp -d)
+    TEMP_PATHS+=( "$repo_dir" )
     if ! git_quiet init -q "$repo_dir" \
         || ! retry_cmd "Fetch the patch with Git" \
-            git_quiet -C "$repo_dir" fetch -q --depth 1 --no-tags "$GIT_URL" "refs/heads/${branch}"; then
+            git_quiet -C "$repo_dir" fetch --depth 1 --no-tags "$GIT_URL" "refs/heads/${branch}"; then
         echo "Git download failed!"
         rm -rf "$repo_dir"
         return 1
     fi
     local fetched
     fetched="$(git_quiet -C "$repo_dir" rev-parse FETCH_HEAD)"
+    # Git LFS keeps such files outside the commit, so the download would hold
+    # only their pointer files; never put those in a game.
+    if git_quiet -C "$repo_dir" grep -q -e 'filter=lfs' FETCH_HEAD -- .gitattributes '*/.gitattributes'; then
+        echo "PATCH_ERR:LFS:This patch keeps files in Git LFS, which GameUpdate can't download with Git. Download it from ${WEB_BASE}/${username}/${repo} instead."
+        rm -rf "$repo_dir"
+        exit 1
+    fi
     if ! git_quiet -C "$repo_dir" -c core.autocrlf=false -c core.eol=lf \
         archive --format=zip --prefix=patch/ -o "$ROOT_DIR/repo.zip" FETCH_HEAD; then
         echo "Git could not pack the patch!"
@@ -460,23 +528,28 @@ download_with_git() {
     latest_patch_sha="$fetched"
 }
 
-download_extract() {
-    if [ "$download_method" = "archive" ] && ! download_archive; then
-        echo "Downloading the archive failed; trying Git instead."
-        require_git
-        download_method=git
-    fi
-    if [ "$download_method" = "git" ] && ! download_with_git; then
-        return 1
-    fi
-
+# Unpacks repo.zip into a new temporary folder, TMP_EX.
+extract_zip() {
     TMP_EX=$(mktemp -d)
-
+    TEMP_PATHS+=( "$TMP_EX" )
     echo "Extracting..."
     if ! unzip -qo "$ROOT_DIR/repo.zip" -d "$TMP_EX"; then
         echo "Extraction failed!"
         rm -rf "$TMP_EX"
         rm -f "$ROOT_DIR/repo.zip"
+        return 1
+    fi
+}
+
+download_extract() {
+    if [ "$download_method" = "archive" ]; then
+        if ! download_archive || ! extract_zip; then
+            echo "The archive could not be downloaded or unpacked; trying Git instead."
+            require_git
+            download_method=git
+        fi
+    fi
+    if [ "$download_method" = "git" ] && { ! download_with_git || ! extract_zip; }; then
         return 1
     fi
 

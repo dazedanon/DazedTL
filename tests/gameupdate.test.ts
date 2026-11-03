@@ -24,13 +24,13 @@ type Route = (path: string, headers: Record<string, string>) => Answer;
  * the branch, against *route* standing in for GitGud, and resolves with the
  * warning it shows, or "" once a request it makes fails with nothing after.
  */
-function warningFrom(t: TestContext, route: Route) {
+function warningFrom(t: TestContext, route: Route, branch = "main") {
   const game = fs.mkdtempSync(path.join(os.tmpdir(), "dazedtl-check-"));
   t.after(() => fs.rmSync(game, { recursive: true, force: true }));
   fs.mkdirSync(path.join(game, "gameupdate"));
   fs.writeFileSync(
     path.join(game, "gameupdate/patch-config.txt"),
-    "forge=gitlab\nhost=gitgud.io\nusername=Owner\nrepo=Game\nbranch=main\n",
+    `forge=gitlab\nhost=gitgud.io\nusername=Owner\nrepo=Game\nbranch=${branch}\n`,
   );
   fs.writeFileSync(
     path.join(game, "gameupdate/previous_patch_sha.txt"),
@@ -44,10 +44,13 @@ function warningFrom(t: TestContext, route: Route) {
         callback: (response: EventEmitter) => void,
       ) {
         const answer = route(options.path, options.headers ?? {});
+        let encoding: BufferEncoding = "utf8";
         const response = Object.assign(new EventEmitter(), {
           statusCode: answer.status,
           resume() {},
-          setEncoding() {},
+          setEncoding(chosen: BufferEncoding) {
+            encoding = chosen;
+          },
         });
         const request = Object.assign(new EventEmitter(), {
           setTimeout() {},
@@ -57,7 +60,10 @@ function warningFrom(t: TestContext, route: Route) {
         setImmediate(() => {
           callback(response);
           if (answer.status === 200) {
-            response.emit("data", answer.body ?? "");
+            response.emit(
+              "data",
+              Buffer.from(answer.body ?? "").toString(encoding),
+            );
             response.emit("end");
           }
           // A warning comes in this turn or not at all.
@@ -82,7 +88,7 @@ const named = (headers: Record<string, string>) =>
 // A Git smart HTTP ref advertisement, in pkt-lines.
 function advertisement(refs: [string, string][]) {
   const pkt = (line: string) =>
-    (line.length + 4).toString(16).padStart(4, "0") + line;
+    (Buffer.byteLength(line) + 4).toString(16).padStart(4, "0") + line;
   return (
     pkt("# service=git-upload-pack\n") +
     "0000" +
@@ -126,4 +132,23 @@ test("the in-game update check reads the branch from Git when the API refuses it
   });
   assert.match(warning, /gitgud\.io\/Owner\/Game/);
   assert.equal(asked.length, 2);
+});
+
+test("the in-game update check finds a branch whose name is not ASCII", async (t) => {
+  // pkt-line lengths count bytes, not characters.
+  const warning = await warningFrom(
+    t,
+    (requested) =>
+      requested.endsWith("/info/refs?service=git-upload-pack")
+        ? {
+            status: 200,
+            body: advertisement([
+              ["a".repeat(40), "refs/heads/日本語版"],
+              ["b".repeat(40), "refs/heads/英語"],
+            ]),
+          }
+        : { status: 403 },
+    "英語",
+  );
+  assert.match(warning, /gitgud\.io\/Owner\/Game/);
 });

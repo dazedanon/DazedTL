@@ -817,6 +817,9 @@ class ReleaseTests(unittest.TestCase):
                 (game / "gameupdate/patch-config.txt").write_text(
                     "repo=x", encoding="utf-8"
                 )
+                # A Windows run's own Git goes too.
+                (game / "gameupdate/mingit/cmd").mkdir(parents=True)
+                (game / "gameupdate/mingit/cmd/git.exe").write_bytes(b"")
                 self.assertIn("take it out", engine.setup_mismatch(game, off)[0])
                 written.clear()
                 engine.gameupdate(game, off)

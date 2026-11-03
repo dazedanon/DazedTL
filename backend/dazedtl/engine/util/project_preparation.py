@@ -19,9 +19,10 @@ GAMEUPDATE_PRESERVE_EXISTING = frozenset({"README.md"})
 GAMEUPDATE_LAUNCHER = "GameUpdate.bat"
 GAMEUPDATE_CONFIG = "gameupdate/patch-config.txt"
 GAMEUPDATE_STATE = "gameupdate/previous_patch_sha.txt"
-# patch.ps1 unpacks Git for Windows here, and beside it while unpacking, in a
-# game on a computer without Git; it is that computer's, never a patch's.
-GAMEUPDATE_GIT_FOLDERS = frozenset({"mingit", "mingit.partial"})
+# What GameUpdate keeps in gameupdate/ on a player's computer, never in a
+# patch: patch.ps1's Git for Windows, the folder it unpacks it in first, and
+# the lock one run holds.
+GAMEUPDATE_LOCAL_NAMES = frozenset({"mingit", "mingit.partial", "gameupdate.lock"})
 
 
 def format_plugins_js(path: str | Path) -> int:
@@ -75,10 +76,11 @@ def copy_files(src: str | Path, dst: str | Path, *, skip_names=frozenset(),
     return copied, errors
 
 
-def gameupdate_git(relative: str) -> bool:
-    """Whether the game-relative *relative* is in GameUpdate's own Git."""
+def gameupdate_local(relative: str) -> bool:
+    """Whether the game-relative *relative* is in what GameUpdate keeps on the
+    player's computer (GAMEUPDATE_LOCAL_NAMES)."""
     parts = [part.casefold() for part in PurePosixPath(relative).parts[:2]]
-    return len(parts) == 2 and parts[0] == "gameupdate" and parts[1] in GAMEUPDATE_GIT_FOLDERS
+    return len(parts) == 2 and parts[0] == "gameupdate" and parts[1] in GAMEUPDATE_LOCAL_NAMES
 
 
 def install_gameupdate(game_root: str | Path, *, wolf: bool = False, source: str | Path | None = None,
@@ -136,6 +138,22 @@ def remove_gameupdate(game_root: str | Path, *, source: str | Path | None = None
                     log(f"  removed {name}")
         except (OSError, ValueError) as exc:
             errors.append(f"{name}: {exc}")
+    # GameUpdate's local Git and lock go too, though no patch holds them, so
+    # the folder can go with them.
+    for name in sorted(GAMEUPDATE_LOCAL_NAMES):
+        target = root / "gameupdate" / name
+        try:
+            _game_path(root, target)
+            if target.is_symlink() or target.is_file():
+                system.unlink(target)
+            elif target.is_dir():
+                system.remove_tree(target)
+            else:
+                continue
+            if log:
+                log(f"  removed gameupdate/{name}")
+        except (OSError, ValueError) as exc:
+            errors.append(f"gameupdate/{name}: {exc}")
     folder = root / "gameupdate"
     try:
         if folder.is_dir() and not folder.is_symlink() and not any(folder.iterdir()):

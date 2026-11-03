@@ -12,7 +12,7 @@ from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from stat import S_IFREG
 
-from util.project_preparation import gameupdate_git
+from util.project_preparation import gameupdate_local
 
 from dazedtl import system
 from dazedtl.actions import stopped_note
@@ -114,7 +114,7 @@ def exclusion(relative, *, directory=False):
     lowered = [part.casefold() for part in parts]
     if any(_windows_unsafe(part) for part in parts):
         return "A name Windows can't use"
-    if any(part in _PRIVATE_DIRS for part in lowered) or gameupdate_git(relative):
+    if any(part in _PRIVATE_DIRS for part in lowered) or gameupdate_local(relative):
         return "Private configuration, local state or tool cache"
     name = lowered[-1]
     if (
