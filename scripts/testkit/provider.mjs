@@ -52,9 +52,11 @@
 // under /api.anthropic.com and /openrouter.ai/api, with the effort data
 // each provider's own list carries (`claudeModels`, `routedModels`), and
 // GLM 6 runs OpenRouter's Batch at half its Live price on one endpoint.
-// Under /opencode.ai/ it answers as OpenCode Go's gateway does: a request
-// without an `x-opencode-session` header gets OpenCode's HTTP 400, and
-// /opencode.ai/inference/go/v1/models lists Go's model rows (`goModels`).
+// Under /opencode.ai/ it answers as OpenCode Go's gateway does:
+// /opencode.ai/inference/go/v1/models lists Go's model rows (`goModels`),
+// with or without a session, any other model list is not found, and any
+// other request without an `x-opencode-session` header gets OpenCode's
+// HTTP 400.
 //
 //   node scripts/testkit/provider.mjs --folder <dir> [--port <n>]
 //
@@ -637,15 +639,18 @@ export async function startProvider({ folder, port = 0 }) {
           );
           return reply(200, { id: crypto.randomUUID(), event: "message" });
         }
-        // OpenCode's gateway routes nothing without a session.
-        if (url.includes("/opencode.ai/") && !session)
-          return reply(400, missingSession);
-        if (
-          request.method === "GET" &&
-          url.includes("/opencode.ai/inference/go/") &&
-          route === "/models"
-        )
-          return reply(200, { object: "list", data: goModels });
+        // OpenCode lists Go's models only beside its OpenAI-compatible API,
+        // and without a session, which only its other requests need.
+        if (url.includes("/opencode.ai/")) {
+          if (
+            request.method === "GET" &&
+            url.endsWith("/opencode.ai/inference/go/v1/models")
+          )
+            return reply(200, { object: "list", data: goModels });
+          if (route === "/models")
+            return reply(404, { error: { message: "Not in the stand-in." } });
+          if (!session) return reply(400, missingSession);
+        }
         if (
           request.method === "GET" &&
           /\/(api\.anthropic\.com|openrouter\.ai\/api)\//.test(url) &&
