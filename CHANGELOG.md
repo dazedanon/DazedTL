@@ -3,6 +3,13 @@
 Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 [release.mjs](scripts/release.mjs) writes each entry from [release/notes.md](release/notes.md).
 
+## [2.59.0] - 2026-11-03
+
+### Added
+
+- **Manual:** a third way to translate a game of any engine, beside Guided steps and Assistant-led: your own tools extract the game's text into a translation file, DazedTL translates its lines with your API key, the glossary and its checks once you approve an estimate, and **Export translations…** gives your tools the file to write back into the game. **Save example…** on Text saves a file that shows every field your tools can write.
+- **Project page:** the Translation file row's **Export…** saves every line of a game with its translation as JSON or CSV, to edit or share, and **Import…** takes a file's translations back after showing what changes and why any line is skipped; a Guided game gets them in its working copies, which Apply writes into the game.
+
 ## [2.58.1] - 2026-11-02
 
 ### Fixed
@@ -1594,6 +1601,7 @@ Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachan
 - The first release of DazedTL as a desktop app, installed from a ZIP with a START launcher and updated from inside the app.
 - **Guided steps** for RPG Maker MV, MZ and VX Ace games, and **Assistant-led** for any game.
 
+[2.59.0]: https://github.com/dazedanon/DazedTL/compare/v2.58.1...v2.59.0
 [2.58.1]: https://github.com/dazedanon/DazedTL/compare/v2.58.0...v2.58.1
 [2.58.0]: https://github.com/dazedanon/DazedTL/compare/v2.57.0...v2.58.0
 [2.57.0]: https://github.com/dazedanon/DazedTL/compare/v2.56.1...v2.57.0
