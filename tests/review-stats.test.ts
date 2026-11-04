@@ -187,7 +187,7 @@ test("review stats read real trailers by their first word, code lines from numst
   commit("refactor: tidy", "Introduced-by: abc1234", "Found-by: review");
   commit(
     "fix: one",
-    "Introduced-by: abc1234 defaced the cache",
+    "Introduced-by: [abc1234] defaced the cache",
     "Found-by: User, in chat",
   );
   commit(

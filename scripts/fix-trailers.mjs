@@ -48,7 +48,7 @@ export function readCommits(text) {
       .filter(Boolean);
   // Brackets and punctuation around a value, but no # or other prefix.
   const first = (/** @type {string} */ value) =>
-    (value.split(/\s+/)[0] ?? "").replace(/^[(]+|[),.;:]+$/g, "");
+    (value.split(/\s+/)[0] ?? "").replace(/^[([]+|[)\],.;:]+$/g, "");
   return text
     .split("\n")
     .filter((line) => line.trim())
