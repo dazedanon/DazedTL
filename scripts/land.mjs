@@ -265,7 +265,7 @@ export function untrailedFixes(git, base, then = "") {
   return [
     "These fix commits lack the trailers AGENTS.md asks for:",
     ...untrailed,
-    `End each one's message, after a blank line, with "Introduced-by: <hash>" naming the commit that brought the bug in, this branch's own included, or "Introduced-by: unknown" when the history doesn't show it or "none" when no commit did, and with "Found-by: <who>", one of ${finders.join(", ")}. Reword the last commit with git commit --amend, an earlier one with a rebase.${then && ` ${then}`}`,
+    `End each one's message, after a blank line, with "Introduced-by: <hash>" naming the commit that brought the bug in, this branch's own included, or "Introduced-by: unknown" when the history doesn't show it or "none" when no commit did, and with "Found-by: <who>", one of ${finders.join(", ")}. Reword the last commit with git commit --amend. A rebase that rewords an earlier one gives each commit after it a new hash, so change an Introduced-by naming one of those to its new hash.${then && ` ${then}`}`,
   ].join("\n");
 }
 
