@@ -107,33 +107,38 @@ test("a release given --head refuses once locked if a landing moved dev past it,
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dazedtl-release-"));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const git = gitIn(dir);
-  const run = (...args: string[]) => git(args).stdout.trim();
+  const run = (...args: string[]) => {
+    const result = git(args);
+    assert.equal(result.status, 0, result.stderr);
+    return result.stdout.trim();
+  };
   run("init", "-q", "-b", "dev");
   const commit = (message: string) => {
     run(
-      "-c",
-      "user.name=t",
-      "-c",
-      "user.email=t@t",
-      "commit",
-      "-q",
-      "--allow-empty",
-      "-m",
-      message,
+      ...["-c", "user.name=t", "-c", "user.email=t@t"],
+      ...["-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null"],
+      ...["commit", "-q", "--allow-empty", "-m", message],
     );
     return run("rev-parse", "HEAD");
   };
   const approved = commit("approved");
+  run("switch", "-q", "-c", "side");
+  const side = commit("side");
+  run("switch", "-q", "dev");
   // A landing took the lock first and moved dev.
   const landed = commit("landed");
-  let released = 0;
-  const task = async () => void released++;
-  await assert.rejects(lockedRelease(git, dir, approved, task), DevMoved);
-  assert.equal(released, 0);
+  const shipped: Array<string | undefined> = [];
+  const ship = async (head?: string) => void shipped.push(head);
+  await assert.rejects(lockedRelease(git, dir, approved, ship), DevMoved);
   assert.notEqual(git(["rev-parse", "--verify", "--quiet", lockRef]).status, 0);
-  // A name always matches dev, so it is no approval.
-  await assert.rejects(lockedRelease(git, dir, "dev", task), /commit hash/);
-  await lockedRelease(git, dir, landed.slice(0, 12), task);
-  await lockedRelease(git, dir, undefined, task);
-  assert.equal(released, 2);
+  // Neither a name, which always matches dev, nor a commit dev never held is
+  // a race to ask again about.
+  for (const head of ["dev", landed.slice(0, 12), side]) {
+    const refused = await lockedRelease(git, dir, head, ship).catch((e) => e);
+    assert.ok(refused instanceof Error && !(refused instanceof DevMoved), head);
+  }
+  assert.deepEqual(shipped, []);
+  await lockedRelease(git, dir, landed.toUpperCase(), ship);
+  await lockedRelease(git, dir, undefined, ship);
+  assert.deepEqual(shipped, [landed, undefined]);
 });

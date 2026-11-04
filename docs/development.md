@@ -186,7 +186,7 @@ A Discord intake worker lands in two steps, since it works in its own clone and 
 It runs `node scripts/land.mjs --hand-off <dir>` with the directory its prompt gives: the same format, merge and checks against `origin`'s `dev`, leaving the branch as `handoff.bundle` and `handoff.json` there, with no review, lock, app wait or push.
 The intake has its own reviewer review exactly that bundle, then runs the main checkout's own `node scripts/land.mjs --finish <dir> --review <file.json>`.
 Under the lock, that checks the bundle with Git alone and runs nothing from it, then fast-forwards `dev`, records the review and pushes as a landing does.
-It never waits without a limit: it exits 3 when `dev` moved after the checks, so the worker merges `dev` and hands off again, 4 at once while your DazedTL is open, and 5 when the main checkout can't take it now.
+It never waits without a limit: it exits 3 when `dev` moved after the checks, so the worker merges `dev` and hands off again, 4 at once while your DazedTL is open, and 5 when the main checkout can't take it now, such as with uncommitted changes or the lock held over 10 minutes.
 
 ### Releasing
 
@@ -199,7 +199,6 @@ node scripts/release.mjs 2.0.1
 It waits for CI to pass on GitHub for that `dev` commit, rerunning failed jobs once, then fast-forwards `main`, files the [release notes](#release-notes), signs a manifest of every file, tags `v2.0.1`, pushes `main` and the tag to every mirror and publishes the notes as the tag's GitHub Release.
 If only the GitHub Release fails, `node scripts/release.mjs github 2.0.1` publishes it from the tag.
 A prerelease such as `2.1.0-beta.1` is tagged on `dev` for the Beta channel without waiting for CI, and `--local` stops before pushing.
-`--head <commit>` releases nothing and exits 3 if `dev` is no longer that commit.
 
 Release once user-visible work has landed: the session that finished it cuts the release without asking, with no review pass or manual real-game check, since CI on the release commit runs the release scenarios for MZ, MV and VX Ace.
 A patch release follows only for a regression players hit.

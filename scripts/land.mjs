@@ -38,7 +38,7 @@ import {
 } from "./ci-wait.mjs";
 import { NOTES } from "./changelog.mjs";
 import { generated } from "./contracts.mjs";
-import { gitIn, LockBusy, withLock } from "./land-lock.mjs";
+import { devMoved, gitIn, LockBusy, withLock } from "./land-lock.mjs";
 import { repository } from "./release.mjs";
 import { failureReport, tail, testsWithRetry } from "./testkit/retry.mjs";
 import { mirrors } from "./update.mjs";
@@ -64,8 +64,7 @@ const handoffBundle = "handoff.bundle";
 const handoffRef = "refs/dazedtl/handoff";
 /** Keeps hooks and the file system monitor from running while --finish works. */
 const sealed = ["-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false"];
-/** --finish's exit codes for a hand-off to make again or to retry later. */
-const devMoved = 3;
+/** --finish's exit codes for a hand-off to retry later, beside devMoved. */
 const appOpen = 4;
 const mainBusy = 5;
 /** How long --finish waits for another session's landing lock. */

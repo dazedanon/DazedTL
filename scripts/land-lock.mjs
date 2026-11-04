@@ -25,6 +25,12 @@ const lockNotice = 5 * 60_000;
 /** Thrown when a live holder keeps the lock past a waiter's limit. */
 export class LockBusy extends Error {}
 
+/**
+ * The exit code of land.mjs --finish and release.mjs --head when dev moved
+ * past the commit they were given, so the caller makes it again from dev.
+ */
+export const devMoved = 3;
+
 /** Runs Git in `cwd`. @returns {Git} */
 export function gitIn(/** @type {string} */ cwd) {
   return (args, input) => {

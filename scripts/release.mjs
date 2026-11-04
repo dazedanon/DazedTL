@@ -10,8 +10,8 @@
 //   node scripts/release.mjs key               create the signing key, once
 //   node scripts/release.mjs 2.0.0 [--local] [--head <commit>]
 //                                              release; --local skips pushing;
-//                                              --head exits 3 if dev is no
-//                                              longer that commit once locked
+//                                              --head, dev's whole hash, exits
+//                                              3 if dev moved past it
 //   node scripts/release.mjs github 2.0.0      publish v2.0.0's GitHub Release
 import fs from "node:fs";
 import os from "node:os";
@@ -26,7 +26,7 @@ import {
   waitForCI,
 } from "./ci-wait.mjs";
 import { root } from "./dependencies.mjs";
-import { gitIn, withLock } from "./land-lock.mjs";
+import { devMoved, gitIn, withLock } from "./land-lock.mjs";
 import {
   CHANGELOG,
   NOTES,
@@ -363,29 +363,26 @@ function setVersion(version) {
   }
 }
 
-/** release.mjs's exit code when dev is no longer the commit --head named. */
-export const devMoved = 3;
+/** Thrown, for exit code devMoved, when dev moved past the approved --head. */
 export class DevMoved extends Error {}
 
 /**
  * Runs `task` holding the landing lock, first refusing with DevMoved when
- * `head` is given and dev is no longer that commit, so a landing that took
- * the lock ahead of the release is never shipped unapproved.
+ * `head` is given and dev moved past that commit, so a landing that took the
+ * lock ahead of the release is never shipped unapproved. `task` gets the
+ * approved commit, which the release checks again before it ships.
  * @template T
  * @param {import("./land-lock.mjs").Git} gitAt
  * @param {string} worktree
  * @param {string | undefined} head
- * @param {() => Promise<T>} task
+ * @param {(approved: string | undefined) => Promise<T>} task
  * @param {{ log?: (line: string) => void }} [options]
  */
 export function lockedRelease(gitAt, worktree, head, task, options) {
   return withLock(
     gitAt,
     { branch: "release", worktree },
-    () => {
-      if (head !== undefined) requireHead(gitAt, head);
-      return task();
-    },
+    () => task(head === undefined ? undefined : requireHead(gitAt, head)),
     options,
   );
 }
@@ -403,18 +400,28 @@ function requireHead(
     ]);
     return result.status === 0 ? result.stdout.trim() : null;
   };
-  // A name such as dev would always match; only a hash pins what was approved.
-  const approved = /^[0-9a-f]{7,64}$/.test(head) ? commit(head) : null;
-  if (!approved)
-    throw new Error(`--head needs a commit hash of dev, not "${head}".`);
+  // A name such as dev would always match, and a short hash can be ambiguous;
+  // only a whole hash that resolves to itself pins what was approved.
+  const approved = head.toLowerCase();
+  if (!/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(approved))
+    throw new Error(`--head needs dev's whole commit hash, not "${head}".`);
+  if (commit(approved) !== approved)
+    throw new Error(`--head ${head} is not a commit here.`);
   const dev = commit("refs/heads/dev");
-  if (dev !== approved)
-    throw new DevMoved(
-      `dev moved to ${dev?.slice(0, 8) ?? "nothing"} since ${approved.slice(0, 8)} was approved; nothing was released.`,
+  if (dev === approved) return approved;
+  const behind =
+    dev !== null &&
+    gitAt(["merge-base", "--is-ancestor", approved, dev]).status === 0;
+  if (!behind)
+    throw new Error(
+      `--head ${approved.slice(0, 8)} is not on dev; nothing was released.`,
     );
+  throw new DevMoved(
+    `dev moved to ${dev.slice(0, 8)} since ${approved.slice(0, 8)} was approved; nothing was released.`,
+  );
 }
 
-async function release(version, push) {
+async function release(version, push, approved) {
   if (!isVersion(version))
     throw new Error(
       `Give a version such as 2.0.0 or 2.1.0-beta.1, not "${version}".`,
@@ -445,6 +452,11 @@ async function release(version, push) {
 
   // main moves to exactly the commit whose CI passed.
   const checked = git("rev-parse", "HEAD");
+  // The lock can be taken over while the checks run longer than it lasts.
+  if (approved && checked !== approved)
+    throw new DevMoved(
+      `dev moved to ${checked.slice(0, 8)} during the release's checks; nothing was released.`,
+    );
   if (stable) await requireCI(checked, push);
   const branch = stable ? "main" : "dev";
   const tag = `v${version}`;
@@ -606,7 +618,8 @@ if (import.meta.main)
         gitIn(root),
         root,
         at < 0 ? undefined : (args[at + 1] ?? ""),
-        () => release(command ?? "", !args.includes("--local")),
+        (approved) =>
+          release(command ?? "", !args.includes("--local"), approved),
         { log: console.log },
       );
     }
