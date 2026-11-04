@@ -47,6 +47,9 @@ from util.source_text import holds_source
 # to the next translation (see `run`). Game updates and Assistant-led's writer
 # carry the count with the translation.
 ROWS = "_rows"
+# The data files whose events hold command lists: maps, common events and
+# troops.
+EVENT_FILE = re.compile(r"(?:Map\d+|CommonEvents|Troops)\.json")
 NOTES = frozenset({"_original", ROWS})
 
 MESSAGE = "message"

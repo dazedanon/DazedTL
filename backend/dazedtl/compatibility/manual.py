@@ -8,7 +8,7 @@ import threading
 from collections.abc import Callable
 from contextlib import contextmanager
 from copy import deepcopy
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from dazedtl import system
@@ -44,6 +44,34 @@ def stage_originals(directory, plan, policy):
         plan["source"],
         Path(directory) / FOLDER,
     )
+
+
+def freeze_variables(plan):
+    """Gives a run over an RPG Maker MV/MZ game's System.json, whose frozen
+    request policy translates the variable names the game's plugins draw
+    (settings/preferences SYSTEM_TEXT), the ids of those names, read from the
+    game (engine util/rpgmaker_variable_names), since its worker holds no
+    plugin or event file to read them from."""
+    from util.rpgmaker_variable_names import game_drawn
+
+    from dazedtl.settings.preferences import SYSTEM_TEXT
+
+    policy = plan.get("dazedtl_request_policy")
+    if (
+        plan.get("engine") != "RPG Maker MV/MZ"
+        or not isinstance(policy, dict)
+        or policy.get("systemText") != SYSTEM_TEXT
+        or not plan.get("context_source")
+        or not any(
+            PurePosixPath(name).name == "System.json"
+            for name in plan.get("selected") or ()
+        )
+    ):
+        return
+    plan["dazedtl_request_policy"] = {
+        **policy,
+        "drawnVariables": sorted(game_drawn(plan["context_source"])),
+    }
 
 
 def canceled_before_submission(job, directory, *, finishing=False):
@@ -641,6 +669,7 @@ def manual_jobs(source, workspace, lock, allow_providers):
                     )
                 # Included before the native plan hash is computed and launch starts.
                 plan["dazedtl_request_policy"] = deepcopy(self.request_policy)
+                freeze_variables(plan)
             stage_originals(directory, plan, self.request_policy)
 
     return ManualJobs(workspace, lock, allow_providers=allow_providers)

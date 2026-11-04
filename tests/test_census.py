@@ -454,6 +454,109 @@ class CensusTests(unittest.TestCase):
         _report, uncovered = census.coverage(scan(game), sources[:3], [], [])
         self.assertEqual(uncovered, [])
 
+    def test_variable_names_a_plugin_draws_count_as_their_text(self):
+        # A variable window drew 現在の出撃ドローン beside its value, set aside
+        # with every variable name as an identifier.
+        def plugin(name, code, *header):
+            return "\n".join(("/*:", *(f" * {line}" for line in header), " */", code))
+
+        draws = "this.drawText($dataSystem.variables[id], 0, 0, 200);"
+        # Event files hold a Japanese plugin name unescaped.
+        window = "変数窓"
+        plugins = [
+            {"name": window, "status": True, "parameters": {"hudVariable": "3"}},
+            {"name": "Store", "status": True, "parameters": {"target": "4"}},
+            # A setting looks variable 8 up by its whole name.
+            {"name": "Chime", "status": True, "parameters": {"name": "弾 "}},
+        ]
+        names = [
+            "",
+            "ドローン",
+            "作業用",
+            "残り弾数",
+            "保存先",
+            "検索用",
+            "体力",
+            "照準",
+            "弾 ",
+        ]
+        game = {
+            "www/js/plugins.js": f"var $plugins =\n{json.dumps(plugins)};\n".encode(),
+            f"www/js/plugins/{window}.js": plugin(
+                window,
+                draws,
+                "@param hudVariable",
+                "@type variable",
+                "@command show",
+                "@arg variableId",
+                "@type variable",
+                "@arg label",
+                "@type string",
+            ).encode(),
+            # Its variable setting stores a value; it draws no name, though
+            # its help names where names are kept.
+            "www/js/plugins/Store.js": plugin(
+                "Store",
+                "$gameVariables.setValue(id, 1);",
+                "@help Names are in $dataSystem.variables.",
+                "@param target",
+                "@type variable",
+            ).encode(),
+            # Its help names a drawn variable; its code looks nothing up.
+            "www/js/plugins/Chime.js": plugin(
+                "Chime",
+                "AudioManager.playSe(se);",
+                "@plugindesc ドローンが増えると鳴ります。",
+            ).encode(),
+            "www/data/System.json": {"currencyUnit": "円", "variables": names},
+            "www/data/CommonEvents.json": [
+                None,
+                {
+                    "list": [
+                        command(357, window, "show", "", {"variableId": "1"}),
+                        command(357, window, "show", "", {"variableId": "5"}),
+                        command(357, "Store", "show", "", {"variableId": "2"}),
+                        # Text that only mentions a drawn name looks nothing up.
+                        command(108, "ここでドローン+1"),
+                        command(
+                            357, "Popup", "say", "", {"text": "残り弾数が減った！"}
+                        ),
+                        # A script, a plugin command's list argument and an MV
+                        # plugin command look variables 5 to 7 up by name.
+                        command(355, "$dataSystem.variables.indexOf('検索用');"),
+                        command(357, window, "show", "", {"variableId": "6"}),
+                        command(357, "Reset", "reset", "", {"names": '["体力"]'}),
+                        command(357, window, "show", "", {"variableId": "7"}),
+                        command(356, "SetVar 照準,5"),
+                        command(357, window, "show", "", {"variableId": "8"}),
+                    ]
+                },
+            ],
+        }
+        drawn = census.DRAWN_SEGMENT
+        rows = {
+            (entry["field"], "".join(entry["runs"]))
+            for entry in scan(game)["entries"]
+            if entry["kind"] == "rpgmaker:system"
+        }
+        self.assertEqual(
+            rows,
+            {
+                ("currencyUnit", "円"),
+                (f"variables/{drawn}", "ドローン"),
+                (f"variables/{drawn}", "残り弾数"),
+                ("variables/*", "作業用"),
+                ("variables/*", "保存先"),
+                ("variables/*", "検索用"),
+                ("variables/*", "体力"),
+                ("variables/*", "照準"),
+                ("variables/*", "弾"),
+            },
+        )
+        for field in ("currencyUnit", f"variables/{drawn}"):
+            self.assertTrue(census.protected("rpgmaker:system", field), field)
+        self.assertFalse(census.protected("rpgmaker:system", "variables/*"))
+
     def test_plugins_count_as_the_game_loads_them(self):
         # The assistant translated plugins the game never runs: a disabled
         # entry, a plugin's later entry, DazedTL's own update check, and the
