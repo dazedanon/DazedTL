@@ -3,14 +3,19 @@
 import ipaddress
 import json
 import os
+import queue
 import re
 import secrets
+import socket
+import threading
 import time
 from datetime import UTC, datetime
 from functools import cache
+from itertools import zip_longest
 from pathlib import Path
 from urllib.parse import quote, urlsplit
 
+import httpcore
 import httpx
 
 from . import effort, opencode
@@ -453,6 +458,269 @@ def openrouter_host(value):
     return value
 
 
+# Settings' own requests to a provider (bounded_request) give connecting,
+# the address lookup and TLS included, SETUP_SECONDS and the reply, from
+# sending the request on, REPLY_SECONDS, so a slow way in can't eat the
+# reply's time. Every other
+# backend request waits behind them, so even OpenRouter's check, which reads
+# its Batch endpoints after its list, ends before the backend counts as
+# stalled (api/server REQUEST_STALL_SECONDS).
+SETUP_SECONDS = 4
+REPLY_SECONDS = 10
+# A host's next address is tried this long after the one before started, as
+# browsers do (RFC 8305), so addresses that never answer, such as IPv6
+# that is configured but not routed, don't each cost a whole timeout.
+ATTEMPT_DELAY = 0.25
+
+
+class TooLarge(Exception):
+    """A reply longer than bounded_request's byte limit."""
+
+
+class TooSlow(Exception):
+    """A reply that ran past bounded_request's time."""
+
+
+class _Clock:
+    """The two budgets of one bounded_request: connecting's, from its first
+    connect, and the reply's, from the first byte sent since the last TLS
+    start. A proxy's tunnel handshake is sent before the server's TLS, so it
+    is held to the reply's time, and the request gets all of it again."""
+
+    def __init__(self, reply):
+        self.reply_seconds = reply
+        self.setup_end = None
+        self.reply_end = None
+
+    def setup(self, timeout):
+        if self.setup_end is None:
+            self.setup_end = time.monotonic() + SETUP_SECONDS
+        return _within(timeout, self.setup_end)
+
+    def reply(self, timeout):
+        if self.reply_end is None:
+            self.reply_end = time.monotonic() + self.reply_seconds
+        return _within(timeout, self.reply_end)
+
+
+def _within(timeout, end):
+    left = end - time.monotonic()
+    return left if timeout is None else min(timeout, left)
+
+
+class _Stream(httpcore.NetworkStream):
+    """httpcore's stream, each step held to what is left of its budget."""
+
+    def __init__(self, stream, clock):
+        self.stream = stream
+        self.clock = clock
+
+    def read(self, max_bytes, timeout=None):
+        left = self.clock.reply(timeout)
+        if left <= 0:
+            raise httpcore.ReadTimeout("The reply ran out of time.")
+        return self.stream.read(max_bytes, left)
+
+    def write(self, buffer, timeout=None):
+        left = self.clock.reply(timeout)
+        if left <= 0:
+            raise httpcore.WriteTimeout("The request ran out of time.")
+        self.stream.write(buffer, left)
+
+    def close(self):
+        self.stream.close()
+
+    def start_tls(self, ssl_context, server_hostname=None, timeout=None):
+        left = self.clock.setup(timeout)
+        if left <= 0:
+            raise httpcore.ConnectTimeout("Connecting ran out of time.")
+        stream = self.stream.start_tls(ssl_context, server_hostname, left)
+        self.clock.reply_end = None
+        return _Stream(stream, self.clock)
+
+    def get_extra_info(self, info):
+        return self.stream.get_extra_info(info)
+
+
+class _Backend(httpcore.NetworkBackend):
+    """httpcore's own connections, with a host's addresses raced (RFC 8305)
+    and every step held to its _Clock."""
+
+    def __init__(self, clock):
+        self.clock = clock
+        self.backend = httpcore.SyncBackend()
+
+    def connect_tcp(
+        self, host, port, timeout=None, local_address=None, socket_options=None
+    ):
+        addresses = self._addresses(host, port, self.clock.setup(timeout))
+        if not addresses:
+            raise httpcore.ConnectError(f"{host} has no address.")
+        if len(addresses) == 1:
+            left = self.clock.setup(timeout)
+            if left <= 0:
+                raise httpcore.ConnectTimeout("No address answered in time.")
+            stream = self.backend.connect_tcp(
+                addresses[0], port, left, local_address, socket_options
+            )
+            return _Stream(stream, self.clock)
+        hosts = iter(addresses)
+        results = queue.SimpleQueue()
+        lock = threading.Lock()
+        over = threading.Event()
+
+        def attempt(address, left):
+            try:
+                stream = self.backend.connect_tcp(
+                    address, port, left, local_address, socket_options
+                )
+            except (httpcore.ConnectError, httpcore.ConnectTimeout) as error:
+                results.put(error)
+                return
+            except BaseException as error:
+                # Never left waiting for an attempt that failed otherwise.
+                results.put(error)
+                raise
+            with lock:
+                if not over.is_set():
+                    results.put(stream)
+                    return
+            stream.close()
+
+        running, failure = 0, None
+        try:
+            while True:
+                left = self.clock.setup(timeout)
+                if left <= 0:
+                    raise httpcore.ConnectTimeout("No address answered in time.")
+                address = next(hosts, None)
+                if address is not None:
+                    threading.Thread(
+                        target=attempt, args=(address, left), daemon=True
+                    ).start()
+                    running += 1
+                elif not running:
+                    raise failure or httpcore.ConnectError("No address answered.")
+                try:
+                    result = results.get(
+                        timeout=left if address is None else min(left, ATTEMPT_DELAY)
+                    )
+                except queue.Empty:
+                    continue
+                running -= 1
+                if isinstance(result, Exception):
+                    # A refused address hands over to the next at once.
+                    failure = result
+                    continue
+                return _Stream(result, self.clock)
+        finally:
+            with lock:
+                over.set()
+            while not results.empty():
+                result = results.get_nowait()
+                if not isinstance(result, Exception):
+                    result.close()
+
+    @staticmethod
+    def _addresses(host, port, left):
+        """*host*'s addresses, its first family first and then the families
+        alternating; the lookup, which no socket timeout bounds, waits *left*
+        seconds at most."""
+        try:
+            ipaddress.ip_address(host)
+            return [host]
+        except ValueError:
+            pass
+        found = queue.SimpleQueue()
+
+        def lookup():
+            try:
+                found.put(socket.getaddrinfo(host, port, type=socket.SOCK_STREAM))
+            except OSError as error:
+                found.put(httpcore.ConnectError(str(error)))
+            except ValueError as error:
+                # Such as a name the IDNA codec refuses.
+                found.put(error)
+            except BaseException as error:
+                found.put(error)
+                raise
+
+        threading.Thread(target=lookup, daemon=True).start()
+        try:
+            rows = found.get(timeout=max(left, 0))
+        except queue.Empty:
+            raise httpcore.ConnectTimeout(
+                f"Looking up {host} ran out of time."
+            ) from None
+        if isinstance(rows, BaseException):
+            raise rows
+        families = {}
+        for family, *_, sockaddr in rows:
+            families.setdefault(family, []).append(sockaddr[0])
+        return list(
+            dict.fromkeys(
+                each
+                for row in zip_longest(*families.values())
+                for each in row
+                if each is not None
+            )
+        )
+
+    def sleep(self, seconds):
+        self.backend.sleep(seconds)
+
+
+def bounded_request(
+    method,
+    url,
+    *,
+    headers,
+    limit,
+    content=None,
+    reply=None,
+    bodies=None,
+):
+    """The status and body of one request with no retries or redirects:
+    connecting may take SETUP_SECONDS and the reply *reply* seconds, by
+    default REPLY_SECONDS, each step held to what is left (_Clock), so a slow
+    address or route doesn't fail a working server and a stalled or
+    trickling one still ends. Only a status in *bodies*, by default a 2xx
+    one, has its body read; any other comes with none.
+
+    Raises TooLarge past *limit* bytes, TooSlow when the reply runs out of
+    time, and httpx.HTTPError, such as ConnectTimeout, when the server can't
+    be reached.
+    """
+    clock = _Clock(REPLY_SECONDS if reply is None else reply)
+    with httpx.Client(
+        timeout=httpx.Timeout(clock.reply_seconds, connect=SETUP_SECONDS),
+        follow_redirects=False,
+    ) as client:
+        # httpx takes no network backend, so each of its own transports, a
+        # proxy's included, gets one on its httpcore pool (httpx is pinned in
+        # requirements.lock).
+        for transport in (client._transport, *client._mounts.values()):
+            if isinstance(transport, httpx.HTTPTransport):
+                if not hasattr(transport._pool, "_network_backend"):
+                    raise RuntimeError(
+                        "httpx no longer takes bounded_request's backend."
+                    )
+                transport._pool._network_backend = _Backend(clock)
+        try:
+            with client.stream(
+                method, url, headers=headers, content=content
+            ) as response:
+                body = bytearray()
+                if response.status_code in (bodies or range(200, 300)):
+                    for chunk in response.iter_bytes():
+                        body.extend(chunk)
+                        if len(body) > limit:
+                            raise TooLarge
+                return response.status_code, bytes(body)
+        except httpx.ReadTimeout, httpx.WriteTimeout:
+            raise TooSlow from None
+
+
 def openrouter_hosts(model=""):
     """Read model-specific hosts (or the legacy public catalog), without credentials."""
     if (
@@ -467,26 +735,27 @@ def openrouter_hosts(model=""):
             "Choose a valid OpenRouter model in Preferences before loading its hosts."
         )
     path = "/models/" + quote(model, safe="/") + "/endpoints" if model else "/providers"
+    unloaded = "OpenRouter's host list could not be loaded. Check your connection and try again."
     try:
-        deadline = time.monotonic() + 8
-        with (
-            httpx.Client(
-                timeout=httpx.Timeout(3, connect=3), follow_redirects=False
-            ) as client,
-            client.stream(
-                "GET",
-                PROVIDERS["openrouter"]["endpoint"] + path,
-                headers={"Accept": "application/json", "Accept-Encoding": "identity"},
-            ) as response,
-        ):
-            response.raise_for_status()
-            content = bytearray()
-            for chunk in response.iter_raw(chunk_size=65536):
-                content.extend(chunk)
-                if len(content) > 1_000_000 or time.monotonic() > deadline:
-                    raise ValueError(
-                        "OpenRouter's host list was too large or took too long. Try again."
-                    )
+        status, content = bounded_request(
+            "GET",
+            PROVIDERS["openrouter"]["endpoint"] + path,
+            headers={"Accept": "application/json", "Accept-Encoding": "identity"},
+            limit=1_000_000,
+        )
+    except TooLarge:
+        raise ValueError(
+            "OpenRouter's host list is too large to read. Leave the host on Automatic."
+        ) from None
+    except TooSlow:
+        raise ValueError(
+            "OpenRouter's host list took too long to arrive. Check your connection and try again."
+        ) from None
+    except httpx.HTTPError:
+        raise ValueError(unloaded) from None
+    if not 200 <= status < 300:
+        raise ValueError(unloaded)
+    try:
         data = json.loads(content).get("data")
         if model and (not isinstance(data, dict) or data.get("id") != model):
             raise ValueError
@@ -509,10 +778,6 @@ def openrouter_hosts(model=""):
         return sorted(
             hosts.values(), key=lambda host: (host["name"].casefold(), host["slug"])
         )
-    except httpx.HTTPError:
-        raise ValueError(
-            "OpenRouter's host list could not be loaded. Check your connection and try again."
-        ) from None
     except ValueError, TypeError, KeyError, AttributeError:
         raise ValueError(
             "OpenRouter returned an unavailable or invalid host list. Try again later."
@@ -601,52 +866,37 @@ def check(connection):
         }
 
     try:
-        deadline = time.monotonic() + 8
-        with (
-            httpx.Client(
-                timeout=httpx.Timeout(3, connect=3), follow_redirects=False
-            ) as client,
-            client.stream("GET", url, headers=headers) as response,
-        ):
-            status = response.status_code
-            if status == 400:
-                return result(
-                    "failed",
-                    "The provider rejected the connection details. Check the API key and server URL.",
-                )
-            if status == 401:
-                return result(
-                    "failed",
-                    "Authentication was rejected. Check the API key and provider.",
-                )
-            if status == 403:
-                return result(
-                    "unavailable",
-                    "Model-list access was refused. This key may have restricted permissions.",
-                )
-            if status == 429:
-                return result(
-                    "unavailable",
-                    "The provider is rate limiting requests. Try checking again later.",
-                )
-            if status in {301, 302, 303, 307, 308, 404, 405}:
-                return result(
-                    "unsupported",
-                    "This address does not expose the expected model list. Check the server's base URL.",
-                )
-            if status != 200:
-                return result(
-                    "unavailable",
-                    f"The provider returned HTTP {status}. The connection was saved, but could not be verified.",
-                )
-            content = bytearray()
-            for chunk in response.iter_raw(chunk_size=65536):
-                content.extend(chunk)
-                if len(content) > byte_limit or time.monotonic() > deadline:
-                    return result(
-                        "unavailable",
-                        "The model list was too large or took too long. Try again later.",
-                    )
+        status, content = bounded_request("GET", url, headers=headers, limit=byte_limit)
+        if status == 400:
+            return result(
+                "failed",
+                "The provider rejected the connection details. Check the API key and server URL.",
+            )
+        if status == 401:
+            return result(
+                "failed",
+                "Authentication was rejected. Check the API key and provider.",
+            )
+        if status == 403:
+            return result(
+                "unavailable",
+                "Model-list access was refused. This key may have restricted permissions.",
+            )
+        if status == 429:
+            return result(
+                "unavailable",
+                "The provider is rate limiting requests. Try checking again later.",
+            )
+        if status in {301, 302, 303, 307, 308, 404, 405}:
+            return result(
+                "unsupported",
+                "This address does not expose the expected model list. Check the server's base URL.",
+            )
+        if status != 200:
+            return result(
+                "unavailable",
+                f"The provider returned HTTP {status}. The connection was saved, but could not be verified.",
+            )
         payload = json.loads(content)
         rows = (
             payload.get("data")
@@ -706,6 +956,16 @@ def check(connection):
             "Server reached. This check does not prove that a custom server enforces API-key authentication.",
             models,
         )
+    except TooLarge:
+        return result(
+            "unavailable",
+            "The model list is too large to read. The connection was saved, but could not be verified.",
+        )
+    except TooSlow:
+        return result(
+            "unavailable",
+            "The model list took too long to arrive. Check the network, then check again.",
+        )
     except httpx.TimeoutException:
         return result(
             "unavailable",
@@ -730,10 +990,8 @@ def check(connection):
 # included, stops at CHECK_TOKENS, so it costs a fraction of a cent.
 CHECK_PROMPT = "Reply with OK."
 CHECK_TOKENS = 16
-# Every other backend request waits behind a check, so each step of it is
-# bounded and the whole ends before the backend counts as stalled
-# (api/server REQUEST_STALL_SECONDS).
-CHECK_TIMEOUT = httpx.Timeout(10, connect=4)
+# The reply's time, a model's loading and thinking included
+# (bounded_request).
 CHECK_SECONDS = 20
 
 
@@ -847,23 +1105,20 @@ def check_effort(connection, model, level, listed=None):
     def failed(message):
         return {"status": "failed", "message": message}
 
-    content = bytearray()
     try:
-        deadline = time.monotonic() + CHECK_SECONDS
-        with (
-            httpx.Client(timeout=CHECK_TIMEOUT, follow_redirects=False) as client,
-            client.stream(
-                "POST", url, headers=headers, content=json.dumps(body).encode()
-            ) as response,
-        ):
-            status = response.status_code
-            for chunk in response.iter_bytes(chunk_size=65536):
-                content.extend(chunk)
-                if len(content) > 1_000_000 or time.monotonic() > deadline:
-                    return failed(
-                        "The server's reply was too large or took too long. Check again later."
-                    )
-    except httpx.TimeoutException:
+        status, content = bounded_request(
+            "POST",
+            url,
+            headers=headers,
+            content=json.dumps(body).encode(),
+            limit=1_000_000,
+            reply=CHECK_SECONDS,
+            # A refusal's reason is in its body (_reason).
+            bodies=(*range(200, 300), 400, 422),
+        )
+    except TooLarge:
+        return failed("The server's reply was too large to read.")
+    except TooSlow:
         return failed(
             "The server didn't answer in time. If it was loading the model, check again once it has."
         )

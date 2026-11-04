@@ -8,7 +8,8 @@
 //     "failStatus": 400, "failError": null, "failFirst": false, "stall": false, "answer": null,
 //     "delay": 0, "hold": false,
 //     "batchSeconds": 0, "long": ["text"], "reply": { "text": "reply" },
-//     "target": null, "effort": null, "lists": true }
+//     "target": null, "effort": null, "lists": true,
+//     "listSeconds": 0, "listBytes": 0 }
 //
 // - refuse: lines holding the text come back as a refusal note until the
 //   app sends its clarification; decline: they always do.
@@ -38,6 +39,10 @@
 //   their model lists and OpenRouter's Batch endpoints, with HTTP 503, as
 //   in an outage, so their connection checks fail and a model's Batch
 //   can't be read.
+// - listSeconds: every model list arrives over that many seconds, its
+//   headers after a third and each half of its body a third later, as on
+//   a slow route; listBytes: every model list is padded with spaces to
+//   that many bytes.
 //
 // Every request is recorded in <folder>/requests.jsonl as its time, method,
 // route, status, its User-Agent and OpenCode session header, and for a JSON
@@ -651,10 +656,30 @@ export async function startProvider({ folder, port = 0 }) {
             body: sent,
           }) + "\n",
         );
-        response.writeHead(status, {
-          "Content-Type": raw ? "application/octet-stream" : "application/json",
-        });
-        response.end(raw || JSON.stringify(value));
+        const settings = mode();
+        const list = request.method === "GET" && /\/models(\/user)?$/.test(url);
+        let content = raw || Buffer.from(JSON.stringify(value));
+        if (list && settings.listBytes > content.length)
+          content = Buffer.concat([
+            content,
+            Buffer.alloc(settings.listBytes - content.length, " "),
+          ]);
+        const head = () =>
+          response.writeHead(status, {
+            "Content-Type": raw
+              ? "application/octet-stream"
+              : "application/json",
+            "Content-Length": content.length,
+          });
+        if (!list || !settings.listSeconds) {
+          head();
+          return response.end(content);
+        }
+        const step = (settings.listSeconds * 1000) / 3;
+        const half = Math.floor(content.length / 2);
+        setTimeout(head, step);
+        setTimeout(() => response.write(content.subarray(0, half)), step * 2);
+        setTimeout(() => response.end(content.subarray(half)), step * 3);
       };
       try {
         if (request.method === "POST" && route === "/ntfy.sh/") {

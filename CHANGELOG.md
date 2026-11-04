@@ -3,6 +3,16 @@
 Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 [release.mjs](scripts/release.mjs) writes each entry from [release/notes.md](release/notes.md).
 
+## [2.63.0] - 2026-11-04
+
+### Added
+
+- **Options:** Assistant-led offers GameUpdate for KiriKiri games, so players can download your newest translation by running GameUpdate.
+
+### Fixed
+
+- **Settings:** a connection check on a network with slow or unrouted addresses, such as IPv6 that doesn't connect, no longer fails with "The model list was too large or took too long"; a list that is really too large or too slow now says which.
+
 ## [2.62.0] - 2026-11-04
 
 ### Changed
@@ -1662,6 +1672,7 @@ Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachan
 - The first release of DazedTL as a desktop app, installed from a ZIP with a START launcher and updated from inside the app.
 - **Guided steps** for RPG Maker MV, MZ and VX Ace games, and **Assistant-led** for any game.
 
+[2.63.0]: https://github.com/dazedanon/DazedTL/compare/v2.62.0...v2.63.0
 [2.62.0]: https://github.com/dazedanon/DazedTL/compare/v2.61.0...v2.62.0
 [2.61.0]: https://github.com/dazedanon/DazedTL/compare/v2.60.0...v2.61.0
 [2.60.0]: https://github.com/dazedanon/DazedTL/compare/v2.59.4...v2.60.0
