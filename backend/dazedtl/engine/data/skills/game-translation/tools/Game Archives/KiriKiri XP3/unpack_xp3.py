@@ -115,6 +115,9 @@ def parse_index(index):
             raise XP3Error(f"file record at 0x{pos:x} has no name")
         records.append(record)
         pos += 12 + size
+    if index and not records:
+        # A game's own index format, such as an encrypted or hashed one.
+        raise XP3Error("the archive index lists no files this tool can read")
     return records
 
 
