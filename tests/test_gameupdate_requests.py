@@ -237,16 +237,18 @@ class GameUpdateRequestTests(unittest.TestCase):
 
     def without_git(self):
         """A PATH with every command but Git and the package managers."""
+        return self.path_without({"git"} | PACKAGE_MANAGERS)
+
+    def path_without(self, names):
+        """A PATH with every command but *names*."""
         tools = self.root / "tools"
         tools.mkdir()
         for folder in os.environ["PATH"].split(os.pathsep):
             if not os.path.isdir(folder):
                 continue
             for name in os.listdir(folder):
-                if (
-                    name != "git"
-                    and name not in PACKAGE_MANAGERS
-                    and not (tools / name).exists(follow_symlinks=False)
+                if name not in names and not (tools / name).exists(
+                    follow_symlinks=False
                 ):
                     (tools / name).symlink_to(Path(folder) / name)
         return f"{self.bin}{os.pathsep}{tools}"
@@ -498,10 +500,12 @@ class GameUpdateRequestTests(unittest.TestCase):
         import fcntl
 
         self.stand_in_curl()
-        for name in ("held", "opened as a run ended"):
+        without_flock = self.path_without({"flock"})
+        for name in ("held", "opened as a run ended", "held without flock"):
             with self.subTest(name):
                 game = self.game(name=name.replace(" ", "-"))
                 lock = game / "gameupdate/gameupdate.lock"
+                path = None
                 with open(lock, "ab") as other:
                     if name == "opened as a run ended":
                         (game / "gameupdate/previous_patch_sha.txt").write_text(
@@ -509,16 +513,58 @@ class GameUpdateRequestTests(unittest.TestCase):
                         )
                         ended = self.patch_sh(game, os.environ)
                         self.assertIn("Already up to date", ended.stdout)
+                    if name == "held without flock":
+                        path = without_flock
+                        (game / "gameupdate/gameupdate.pid").write_text(
+                            f"{os.getpid()}\n", encoding="utf-8"
+                        )
                     undo = game / "gameupdate/undo"
                     undo.mkdir()
                     (undo / "journal.txt").write_text("added a.txt\n", encoding="utf-8")
                     (game / "a.txt").write_text("being copied", encoding="utf-8")
                     before = snapshot(game)
                     fcntl.flock(other, fcntl.LOCK_EX)
-                    result = self.patch_sh(game, os.environ)
+                    result = self.patch_sh(game, os.environ, path=path)
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn("Another GameUpdate is already running", result.stdout)
                 self.assertEqual(snapshot(game), before)
+
+    @unittest.skipUnless(
+        POSIX_TOOLS,
+        "patch.sh runs where bash, git, jq and unzip do; Windows players run patch.ps1",
+    )
+    def test_patch_sh_takes_over_the_lock_a_killed_run_left_without_flock(self):
+        self.stand_in_curl()
+        game = self.game()
+        (game / "gameupdate/previous_patch_sha.txt").write_text(SHA, encoding="utf-8")
+        # The process of a killed run, ended.
+        dead = subprocess.Popen(["true"])
+        dead.wait()
+        (game / "gameupdate/gameupdate.pid").write_text(
+            f"{dead.pid}\n", encoding="utf-8"
+        )
+        result = self.patch_sh(game, os.environ, path=self.path_without({"flock"}))
+        self.assertIn(
+            "Already up to date", result.stdout, result.stdout + result.stderr
+        )
+        self.assertFalse((game / "gameupdate/gameupdate.pid").exists())
+
+    @unittest.skipUnless(
+        POSIX_TOOLS,
+        "patch.sh runs where bash, git, jq and unzip do; Windows players run patch.ps1",
+    )
+    def test_patch_sh_refuses_a_folder_where_the_game_has_a_file(self):
+        # Its undo used to remove the game's file as a folder the patch added.
+        self.stand_in_curl()
+        config, _head = self.patch_repository(files={"img/pictures/Title.png": "new"})
+        game = self.game()
+        (game / "img").mkdir()
+        (game / "img/pictures").write_text("the game's own", encoding="utf-8")
+        before = snapshot(game)
+        result = self.patch_sh(game, {**git_env(self.root, **config), "API": "403"})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("a folder where the game has a file: img/pictures", result.stdout)
+        self.assertEqual(snapshot(game), before, result.stdout + result.stderr)
 
     def patch_sh_in_a_terminal_closed_at(self, game, env, written):
         """Runs patch.sh in a terminal that closes once *written* says patch.sh
@@ -897,6 +943,18 @@ class PatchPs1Tests(unittest.TestCase):
                 self.assertNotIn("RESULT", output)
                 self.assertEqual(snapshot(game), before, output)
                 self.assertEqual(list(temporary.glob("gu_*")), [], output)
+
+    def test_patch_ps1_refuses_a_folder_where_the_game_has_a_file(self):
+        # Its undo used to remove the game's file as a folder the patch added.
+        game = self.game()
+        (game / "img").mkdir()
+        (game / "img/pictures").write_text("the game's own", encoding="utf-8")
+        before = snapshot(game)
+        output = self.update(
+            game, self.serve({"a.txt": "new", "img/pictures/Title.png": "new"}), {}
+        )
+        self.assertIn("a folder where the game has a file: img/pictures", output)
+        self.assertEqual(snapshot(game), before, output)
 
     def test_patch_ps1_puts_back_a_game_a_stopped_run_left_half_patched(self):
         # What a run leaves when its window is closed while it copies; the

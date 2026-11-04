@@ -21,10 +21,19 @@ GAMEUPDATE_CONFIG = "gameupdate/patch-config.txt"
 GAMEUPDATE_STATE = "gameupdate/previous_patch_sha.txt"
 # What GameUpdate keeps in gameupdate/ on a player's computer, never in a
 # patch: patch.ps1's Git for Windows, the folder it unpacks it in first, the
-# lock one run holds, the copies of the scripts the launchers run, and the
-# undo record of a patch being applied.
+# lock one run holds (gameupdate.pid where patch.sh has no flock), the copies
+# of the scripts the launchers run, and the undo record of a patch being
+# applied.
 GAMEUPDATE_LOCAL_NAMES = frozenset(
-    {"mingit", "mingit.partial", "gameupdate.lock", "patch2.ps1", "patch2.sh", "undo"}
+    {
+        "mingit",
+        "mingit.partial",
+        "gameupdate.lock",
+        "gameupdate.pid",
+        "patch2.ps1",
+        "patch2.sh",
+        "undo",
+    }
 )
 
 

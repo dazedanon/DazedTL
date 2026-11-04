@@ -690,12 +690,19 @@ function Save-GitPatchZip {
 function Get-PatchPathLimit {
     <#
     The longest full paths a patch's files and folders may have: Windows'
-    259 characters for a file and 247 for a folder, unless this PowerShell
-    can make longer ones. Whether it can depends on the PowerShell, Windows'
-    version and its LongPathsEnabled setting, so it makes a deep folder and
-    file in the temporary folder once and sees.
+    259 characters for a file and 247 for a folder, unless Windows allows
+    long paths (LongPathsEnabled) and this PowerShell can make them. Whether
+    it can depends on the PowerShell and Windows' version, so it makes a deep
+    folder and file in the temporary folder once and sees.
     #>
     if ($null -eq $script:PatchPathLimit) {
+        $script:PatchPathLimit = @{ File = 259; Folder = 247 }
+        # The game's own programs reach long paths only where Windows allows
+        # them, even when PowerShell 7 could make them without.
+        $long = Get-ItemProperty -LiteralPath 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem' -Name LongPathsEnabled -ErrorAction SilentlyContinue
+        if (-not $long -or $long.LongPathsEnabled -ne 1) {
+            return $script:PatchPathLimit
+        }
         $probe = New-GameUpdateTempPath -Kind 'long'
         try {
             $deep = $probe
@@ -706,9 +713,7 @@ function Get-PatchPathLimit {
             [IO.File]::WriteAllText((Join-Path $deep 'probe.txt'), '')
             $script:PatchPathLimit = @{ File = [int]::MaxValue; Folder = [int]::MaxValue }
         }
-        catch {
-            $script:PatchPathLimit = @{ File = 259; Folder = 247 }
-        }
+        catch { }
         finally {
             try { [IO.Directory]::Delete($probe, $true) } catch { }
         }
@@ -1363,6 +1368,10 @@ function Copy-PatchFiles {
     $stageFolder = [IO.Path]::GetFullPath($Stage).TrimEnd('\', '/')
     $undo = Get-PatchUndoFolder -BundleRoot $BundleRoot
     $journalPath = Join-Path $undo 'journal.txt'
+    # Copies a removal left behind must not stand in for this patch's.
+    if ([IO.Directory]::Exists($undo)) {
+        Remove-SettledItem -LiteralPath $undo
+    }
     [void][IO.Directory]::CreateDirectory($undo)
     $journal = New-Object IO.StreamWriter($journalPath, $false, (New-Object Text.UTF8Encoding($false)))
     $journal.AutoFlush = $true
@@ -1375,16 +1384,21 @@ function Copy-PatchFiles {
             if ([IO.Path]::GetFileName($source) -in $Skip) {
                 continue
             }
-            $relative = $source.Substring($stageFolder.Length + 1)
+            # With / as patch.sh writes it, for a game folder both use.
+            $relative = $source.Substring($stageFolder.Length + 1).Replace('\', '/')
             $destination = Join-Path $Root $relative
             $folders = New-Object Collections.Generic.List[string]
             $folder = [IO.Path]::GetDirectoryName($relative)
             while ($folder -and -not [IO.Directory]::Exists((Join-Path $Root $folder))) {
+                if ([IO.File]::Exists((Join-Path $Root $folder))) {
+                    throw ('PATCH_ERR:APPLY:This patch has a folder where the game has a file: {0}' -f $folder)
+                }
                 $folders.Insert(0, $folder)
                 $folder = [IO.Path]::GetDirectoryName($folder)
             }
             foreach ($folder in $folders) {
-                $journal.WriteLine('added ' + $folder)
+                # GetDirectoryName gives Windows' separator back.
+                $journal.WriteLine('added ' + $folder.Replace('\', '/'))
                 [void][IO.Directory]::CreateDirectory((Join-Path $Root $folder))
             }
             if ([IO.Directory]::Exists($destination)) {

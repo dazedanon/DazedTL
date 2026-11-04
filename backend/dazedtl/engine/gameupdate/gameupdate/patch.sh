@@ -15,6 +15,7 @@ UNDO_DIR="$SCRIPT_DIR/undo"
 UNDO_JOURNAL="$UNDO_DIR/journal.txt"
 UNDO_MOVED=0
 APPLYING=0
+PID_LOCK=""
 
 # Puts the game back as it was before a patch copy that did not finish, from
 # its journal, newest change first: moves each game file it set aside back,
@@ -76,10 +77,15 @@ undo_patch() {
 copy_patch_file() {
     local source="$1" relative="$2" folder i
     local folders=()
-    folder="$(dirname "$relative")"
+    folder=.
+    [[ "$relative" == */* ]] && folder="${relative%/*}"
     while [ "$folder" != . ] && [ ! -d "$ROOT_DIR/$folder" ]; do
+        if [ -e "$ROOT_DIR/$folder" ] || [ -L "$ROOT_DIR/$folder" ]; then
+            echo "ERROR: This patch has a folder where the game has a file: $folder"
+            return 1
+        fi
         folders+=( "$folder" )
-        folder="$(dirname "$folder")"
+        if [[ "$folder" == */* ]]; then folder="${folder%/*}"; else folder=.; fi
     done
     for ((i = ${#folders[@]} - 1; i >= 0; i--)); do
         printf 'added %s\n' "${folders[i]}" >> "$UNDO_JOURNAL" || return 1
@@ -115,6 +121,9 @@ remove_temp_paths() {
         rm -rf "$path"
     done
     rm -f "$ROOT_DIR/repo.zip"
+    if [ -n "$PID_LOCK" ] && [ "$(cat "$PID_LOCK" 2> /dev/null)" = "$$" ]; then
+        rm -f "$PID_LOCK"
+    fi
 }
 trap remove_temp_paths EXIT
 trap 'exit 130' INT TERM HUP
@@ -154,15 +163,33 @@ check_dependency curl
 # Held for the rest of the run, so a second GameUpdate never undoes or
 # replaces files this one is applying; patch.ps1 holds the same file. The
 # file stays: one removed while another run opens it would let two runs hold
-# it. Systems without flock run unlocked.
+# it. Without flock, gameupdate.pid names the run holding it, made only
+# where it is missing; one whose process has ended was left by a killed run.
+busy="ERROR: Another GameUpdate is already running for this game. Let it finish, then run GameUpdate again if needed."
+unwritable="ERROR: GameUpdate can't write in $SCRIPT_DIR. Move the game to a folder you can change, then run GameUpdate again."
 if command -v flock > /dev/null 2>&1; then
     if ! exec 9> "$SCRIPT_DIR/gameupdate.lock"; then
-        echo "ERROR: GameUpdate can't write in $SCRIPT_DIR. Move the game to a folder you can change, then run GameUpdate again."
+        echo "$unwritable"
         exit 1
     fi
     if ! flock -n 9; then
-        echo "ERROR: Another GameUpdate is already running for this game. Let it finish, then run GameUpdate again if needed."
+        echo "$busy"
         exit 1
+    fi
+else
+    PID_LOCK="$SCRIPT_DIR/gameupdate.pid"
+    if ! ( set -C; printf '%s\n' "$$" > "$PID_LOCK" ) 2> /dev/null; then
+        holder="$(cat "$PID_LOCK" 2> /dev/null || true)"
+        if [ -n "$holder" ] && kill -0 "$holder" 2> /dev/null; then
+            PID_LOCK=""
+            echo "$busy"
+            exit 1
+        fi
+        if ! printf '%s\n' "$$" > "$PID_LOCK"; then
+            PID_LOCK=""
+            echo "$unwritable"
+            exit 1
+        fi
     fi
 fi
 
@@ -708,8 +735,11 @@ download_extract() {
     fi
 
     echo "Applying patch..."
-    mkdir -p "$UNDO_DIR"
-    : > "$UNDO_JOURNAL"
+    # Copies a removal left behind must not stand in for this patch's.
+    if ! { rm -rf "$UNDO_DIR" && mkdir "$UNDO_DIR" && : > "$UNDO_JOURNAL"; }; then
+        echo "ERROR: GameUpdate can't empty $UNDO_DIR. Close the game, then run GameUpdate again."
+        return 1
+    fi
     UNDO_MOVED=0
     APPLYING=1
     copy_failed=0
