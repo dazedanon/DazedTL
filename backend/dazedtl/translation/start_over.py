@@ -21,7 +21,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from util.paths import GAME_NOTES_FILENAME
+from util.paths import is_project_file
 
 from dazedtl import system
 from dazedtl.foreign_work import ARCHIVE
@@ -148,7 +148,7 @@ def run(
                 _move(path, archive / "context" / name)
 
         def keep(name):
-            return save_game(name) or name in kept or name == GAME_NOTES_FILENAME
+            return save_game(name) or name in kept or is_project_file(name)
 
         tracked, undone = set(), []
         if configured:

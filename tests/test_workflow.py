@@ -2644,6 +2644,104 @@ class WorkflowTests(unittest.TestCase):
         self.assertNotEqual(update, legacy)
         self.assertIn("extra.json", original_files.files(self.game, update))
 
+    def test_a_full_update_keeps_assistant_notes_written_before_set_up(self):
+        # Notes in the game's folder before Set up were recorded as an
+        # original game file, so a new release without them deleted the
+        # notes, with what the user saved since, and reported complete.
+        from dazedtl.compatibility.checkpoint_commits import _git
+        from util.len_git import setup_git
+        from util.len_translation import LenProject
+
+        (self.game / "AGENTS.md").write_text("Repack Data.wolf.", encoding="utf-8")
+        original_files.record(self.game, original_files.PREPARED, "1.0")
+        setup_git(LenProject(self.game), version="1.0", current_is_untranslated=True)
+        # The notes are the translation's, never the game's original.
+        self.assertNotIn(
+            "AGENTS.md",
+            _git(self.game, "ls-tree", "--name-only", "original").stdout.split(),
+        )
+        recorded = original_files.records(self.game)[-1].commit
+        self.assertNotIn("AGENTS.md", original_files.files(self.game, recorded))
+        self._assert_a_full_update_keeps_the_notes()
+
+    def test_a_full_update_keeps_notes_a_game_set_up_earlier_holds_as_original(self):
+        # A game set up before the notes were the project's holds them in its
+        # original record and `original` branch, which nothing rewrites.
+        from dazedtl.compatibility.checkpoint_commits import _git
+        from util.len_git import setup_git
+        from util.len_translation import LenProject
+
+        def earlier(relative):
+            return relative.partition("/")[0] == ".dazedtl"
+
+        def held(relative):
+            return relative.partition("/")[0] not in {".git", ".dazedtl"}
+
+        (self.game / "AGENTS.md").write_text("Repack Data.wolf.", encoding="utf-8")
+        with (
+            patch.object(original_files, "held", held),
+            patch("util.version_update.git_workflow.is_project_file", earlier),
+        ):
+            original_files.record(self.game, original_files.PREPARED, "1.0")
+            setup_git(
+                LenProject(self.game), version="1.0", current_is_untranslated=True
+            )
+        self.assertIn(
+            "AGENTS.md",
+            _git(self.game, "ls-tree", "--name-only", "original").stdout.split(),
+        )
+        recorded = original_files.records(self.game)[-1].commit
+        self.assertIn(
+            "AGENTS.md", _git(self.game, "ls-tree", "--name-only", recorded).stdout
+        )
+        # Readers take no notes from such a record.
+        self.assertNotIn("AGENTS.md", original_files.files(self.game, recorded))
+        self._assert_a_full_update_keeps_the_notes()
+
+    def _assert_a_full_update_keeps_the_notes(self):
+        """Saves the notes, then lays a full release without them over the
+        game, which must leave the saved notes as they are."""
+        from dataclasses import asdict
+
+        from desktop.backend.guidance import notes
+        from util import version_update
+
+        agents = self.game / "AGENTS.md"
+        engine = TranslationEngine(self.profile)
+        engine.document_save(
+            self.game,
+            "notes",
+            notes(self.game)["revision"],
+            "Repack Data.wolf after injection.",
+        )
+        official = self.root / "release"
+        official.mkdir()
+        write_json(official / "source.json", {"line": "いいえ。"})
+        self.engine.version = engine.version
+        preview = asdict(
+            version_update.preview_official_update(self.game, official, "1.1")
+        )
+        result = execute(
+            self.engine,
+            self.profile,
+            {"project_id": self.identity},
+            {
+                "source": str(self.game),
+                "options": DEFAULTS,
+                "action": "version_apply",
+                "arguments": {
+                    "official": str(official),
+                    "version": "1.1",
+                    "preview": preview,
+                },
+            },
+            lambda: False,
+        )
+        self.assertTrue(result["complete"])
+        self.assertEqual(
+            agents.read_text(encoding="utf-8"), "Repack Data.wolf after injection."
+        )
+
     def test_helper_checkpoints_save_through_git_with_dazedtls_own_files(self):
         # The helper's checkpoint once restored originals from the backup and
         # snapshotted the workspace; Git's original branch is authoritative,

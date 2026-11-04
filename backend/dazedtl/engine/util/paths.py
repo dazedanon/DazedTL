@@ -422,8 +422,7 @@ def is_portable_game_file(relative: str) -> bool:
     return parts in {
         (".dazedtl", GLOSSARY_FILENAME),
         (".dazedtl", "settings.json"),
-        (GAME_NOTES_FILENAME,),
-    } or (len(parts) == 3 and parts[:2] == (".dazedtl", "skills") and parts[2].casefold().endswith(".md"))
+    } or is_game_notes(relative) or (len(parts) == 3 and parts[:2] == (".dazedtl", "skills") and parts[2].casefold().endswith(".md"))
 
 
 def portable_game_files(game_root: str | Path) -> list[str]:
@@ -448,11 +447,29 @@ def portable_game_files(game_root: str | Path) -> list[str]:
     )
 
 
+def is_game_notes(relative: str) -> bool:
+    """Whether a game-relative path is the assistant notes, in any case: a
+    case-insensitive checkout, as on Windows, where Git sets
+    `core.ignorecase`, takes `agents.md` for them, and the forges' archives,
+    which match case, would ship it to players under exact-case rules."""
+    return relative.casefold() == GAME_NOTES_FILENAME.casefold()
+
+
+def is_project_file(relative: str) -> bool:
+    """Whether a game-relative path is the project's own, never the original
+    game's: a file under DazedTL's folder, or the assistant notes, even ones
+    the game folder held before Set up. No record of the original game holds
+    them, a game update leaves them as they are, Go back and Start over leave
+    the notes, and an undo takes them back only with a checkpoint of their
+    own (checkpoint_history)."""
+    return relative.partition("/")[0] == GAME_METADATA_RELATIVE.as_posix() or is_game_notes(relative)
+
+
 def is_game_tool_file(relative: str) -> bool:
     """Whether a game-relative path is one of DazedTL's own files that players
-    never download: the files under its folders, the assistant notes and the
+    never download: the project's files, a VX Ace game's ace_json and the
     repository's description files."""
-    if relative in GAME_REPOSITORY_METADATA or relative == GAME_NOTES_FILENAME:
+    if relative in GAME_REPOSITORY_METADATA or is_project_file(relative):
         return True
     folder, separator, _name = relative.partition("/")
     return bool(separator) and folder in GAME_TOOL_FOLDERS

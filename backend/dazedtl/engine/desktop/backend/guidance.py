@@ -135,8 +135,11 @@ def documents_save(root, changes):
             path = Path(current[NOTES]["path"])
         else:
             path = custom_skill_path_for_game(root, name.removeprefix("custom:")) if name.startswith("custom:") else (game_skill_path_for_game if name == "game" else quirks_path_for_game)(root)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        temporary = path.with_name(path.name + ".desktop-tmp")
+        # The notes' file is written beside DazedTL's own, which no record
+        # of the original game holds, as the notes aren't.
+        staging = root / ".dazedtl" if name == NOTES else path.parent
+        staging.mkdir(parents=True, exist_ok=True)
+        temporary = staging / (path.name + ".desktop-tmp")
         regular(root, temporary).write_text(text, encoding="utf-8", newline="\n")
         system.replace(temporary, path)
         if name == NOTES:
