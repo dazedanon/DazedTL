@@ -2094,7 +2094,8 @@ class CompatibilityContracts(unittest.TestCase):
         # OpenCode's other models read at the multiple their route's model
         # list sets, which the run froze (settings/opencode
         # cache_read_multiple), such as GLM 5.3 Flash's 0.2 on either route
-        # and DeepSeek V4.1 Flash's 0.02 on pay-as-you-go, not at 0.1x.
+        # and DeepSeek V4.1 Flash's 0.02 on pay-as-you-go, not at 0.1x; a
+        # DeepSeek model on Go too, which DeepSeek's own rules don't know.
         for model, provider, endpoint, multiple in (
             (
                 "glm-5.3-flash",
@@ -2113,6 +2114,12 @@ class CompatibilityContracts(unittest.TestCase):
                 "opencode",
                 "https://opencode.ai/inference/openai/v1",
                 0.02,
+            ),
+            (
+                "deepseek-v4.1-pro",
+                "opencode-go",
+                "https://opencode.ai/inference/go/openai/v1",
+                0.145 / 1.74,
             ),
         ):
             with self.subTest(model, provider=provider):

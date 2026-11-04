@@ -677,6 +677,7 @@ class SettingsTests(unittest.TestCase):
                 [{"when": {"date": {"gte": "2026-12-01"}}, "factor": 2}],
             ),
             row("kimi-k2.7-code", 0.95, 4, read=0.19),
+            row("deepseek-v4.1-pro", 1.74, 3.48, ["high", "max"], [peak], 0.145),
             row("deepseek-v4.1-flash-free", 0, 0, ["low", "high", "max"]),
         ]
         requests = []
@@ -793,17 +794,23 @@ class SettingsTests(unittest.TestCase):
             )
             self.assertNotIn("rateNote", kimi)
             stored, _custom, paid = saved._read()["connections"]
-            # A run freezes its route's own cache read price, Kimi K2.7 Code's
-            # $0.19 of $0.95 on Go, beside its rates; a DeepSeek model on Go
-            # reads at DeepSeek's own (provider_costs), and pay-as-you-go at
-            # its row's.
+            # A run freezes its route's own cache read price beside its
+            # rates, Kimi K2.7 Code's $0.19 of $0.95 on Go, and a DeepSeek
+            # model's on Go too, where DeepSeek's own rules
+            # (provider_costs) know only the IDs on DeepSeek's API.
             self.assertAlmostEqual(
                 opencode.cache_read_multiple(stored, "kimi-k2.7-code") or 0, 0.2
             )
-            self.assertNotIn(
-                "cache_read_multiple", configuration(saved, "live")["rates"]
+            self.assertAlmostEqual(
+                opencode.cache_read_multiple(stored, "deepseek-v4.1-pro") or 0,
+                0.145 / 1.74,
             )
-            self.assertNotIn("cacheReadMultiple", request_policy(saved, "live"))
+            self.assertAlmostEqual(
+                configuration(saved, "live")["rates"]["cache_read_multiple"], 0.02
+            )
+            self.assertAlmostEqual(
+                request_policy(saved, "live")["cacheReadMultiple"], 0.02
+            )
             saved.select(saved.describe()["revision"], "paid")
             self.assertNotIn(
                 "rateNote", saved.model_defaults("paid", "deepseek-v4.1-flash")

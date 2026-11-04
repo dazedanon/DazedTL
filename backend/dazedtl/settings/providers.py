@@ -285,11 +285,12 @@ def opencode_deepseek(model):
 def deepseek_route(model, endpoint):
     """Whether a request for *model* to *endpoint* is billed as DeepSeek's own
     API bills it: on DeepSeek's own API, or a DeepSeek model on OpenCode Go,
-    which prices DeepSeek's models exactly as DeepSeek does, peak hours and
-    cache reads included. OpenCode's pay-as-you-go API prices them flat, at
-    its own cache read price. The one rule for DeepSeek's cache read prices
-    (engine batch_providers live_price_route) and its off-peak price
-    (provider_costs time_priced_route)."""
+    which prices DeepSeek's models as DeepSeek does, peak hours included.
+    OpenCode's pay-as-you-go API prices them flat. The one rule for
+    DeepSeek's off-peak price (provider_costs time_priced_route) and its
+    cache read prices (engine batch_providers live_price_route), which a run
+    on either of OpenCode's routes reads from the route's model list instead
+    (settings/opencode cache_read_multiple)."""
     return own_api("deepseek", endpoint) or (
         own_api("opencode-go", endpoint) and opencode_deepseek(model)
     )
