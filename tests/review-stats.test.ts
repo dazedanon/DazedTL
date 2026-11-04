@@ -260,6 +260,8 @@ test("review stats read real trailers by their first word, code lines from numst
   const base = git(["rev-parse", "HEAD"]).stdout.trim();
   for (const [file, text] of [
     ["tests/a.test.ts", "1\n2\n"],
+    // Git quotes a path like this one unless asked not to.
+    ["backend/tool/tests/日本語_test.py", "1\n2\n"],
     ["docs/a.md", "1\n"],
     ["app/a.json", "1\n"],
     ["app/src/api/contracts.ts", "1\n"],

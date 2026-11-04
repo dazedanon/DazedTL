@@ -92,7 +92,7 @@ export function loggedLandings(text) {
 
 /**
  * The lines a landing changed in code, from its `git diff --numstat
- * --no-renames -z` output, whose paths Git leaves unquoted: tests,
+ * --no-renames -z` output, whose paths Git leaves unquoted: tests folders,
  * Markdown, JSON and the generated API contracts are left out, and binary
  * files count none.
  * @param {string} text
@@ -103,7 +103,7 @@ export function codeLines(text) {
     const [added, deleted, file] = entry.split("\t");
     if (
       !file ||
-      file.startsWith("tests/") ||
+      /(^|\/)tests\//.test(file) ||
       /\.(md|json)$/i.test(file) ||
       generated.includes(file)
     )
