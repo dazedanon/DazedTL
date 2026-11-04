@@ -154,6 +154,7 @@ The [plugin service](../backend/dazedtl/plugins/service.py) owns investigation, 
 The [image service](../backend/dazedtl/images/service.py) owns the inventory, selection, discovery, editing contracts, reports and application receipts that Guided and Image Manager share.
 
 - The selection moves through the four steps of [imageFlow](../app/src/features/images/imageFlow.ts), and the service alone decides whether the images are investigated.
+- Every image is edited as a PNG copy; [image_formats](../backend/dazedtl/engine/util/image_formats.py) alone reads a game's BMP, JPEG or KiriKiri TLG file into it and writes the edit back in the file's own format, under its own name.
 - Lettered sound effects are flavor, often hundreds per game, so an image with nothing else stays out of the list; detector misses alone never certify an image has no text.
 - Every image an assistant changes needs a [recipe](../backend/dazedtl/images/recipes.py), and reports pass the same [validation](../backend/dazedtl/images/validation.py) as the assistant's validator; only the user accepts an image the assistant can't prove, and the app never runs a recipe's command.
 - A [family](../backend/dazedtl/images/families.py) member is reviewed by the crop that differs from an examined sibling, so look-alike CG frames aren't paid for again.

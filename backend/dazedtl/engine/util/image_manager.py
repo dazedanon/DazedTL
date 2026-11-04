@@ -12,13 +12,14 @@ import os
 import tempfile
 import uuid
 
+from util.image_formats import LOOSE_IMAGE_EXTENSIONS, from_png, to_png
 from util.paths import ensure_game_tool_gitignore
 from util import system
 
 PROFILE_AUTO = "auto"
 PROFILE_RPGMAKER_MVMZ = "rpgmaker_mvmz"
 PROFILE_GENERIC = "generic"
-SUPPORTED_PLAIN_EXTENSIONS = (".png",)
+SUPPORTED_PLAIN_EXTENSIONS = LOOSE_IMAGE_EXTENSIONS
 _EXCLUDED_SCAN_DIRS = {".dazedtl", ".git", "__pycache__"}
 _PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 
@@ -110,11 +111,13 @@ IMAGE_ENGINE_PROFILES = (
         configurable_image_root=True,
         supports_encryption=False,
         translation_skill_context=(
-            "This profile manages loose PNG assets without assuming a particular game engine. "
-            "Search available code, data, scenes, and asset references for runtime usage when "
-            "they exist. If placement, scaling, opacity, or dynamic-value behavior cannot be "
-            "established, preserve suspicious blank regions and report the uncertainty. Do not "
-            "attempt archive extraction, bundle rebuilding, or format conversion."
+            "This profile manages loose PNG, BMP, JPEG and KiriKiri TLG images without assuming "
+            "a particular game engine; an image in another format than PNG is edited as a PNG "
+            "copy, and applying it writes it back in its game file's format. Search available "
+            "code, data, scenes, and asset references for runtime usage when they exist. If "
+            "placement, scaling, opacity, or dynamic-value behavior cannot be established, "
+            "preserve suspicious blank regions and report the uncertainty. Do not extract "
+            "archives, rebuild bundles or convert file formats yourself."
         ),
     ),
 )
@@ -373,12 +376,12 @@ def copy_plain_assets_to_workspace(
                 continue
             runtime = asset.runtime_plain_path
             if runtime is None or not runtime.is_file():
-                raise FileNotFoundError("runtime PNG no longer exists")
+                raise FileNotFoundError("runtime image no longer exists")
             _inside(root, runtime)
             _inside(workspace, asset.plain_path, label="Editable image target")
             if progress:
                 progress(f"Making {asset.asset_id} editable")
-            _atomic_write(asset.plain_path, runtime.read_bytes())
+            _atomic_write(asset.plain_path, to_png(runtime.read_bytes()))
             record_asset_baseline(root, asset)
             result.completed += 1
         except Exception as exc:
@@ -392,7 +395,7 @@ def prepare_plain_assets_for_patch(
     *,
     progress: Callable[[str], None] | None = None,
 ) -> ImageActionResult:
-    """Publish loose PNG edits through the transactional patch path."""
+    """Publish loose image edits through the transactional patch path."""
 
     return _prepare_assets_transaction(
         PROFILE_GENERIC, game_root, assets, None, progress=progress
@@ -449,8 +452,9 @@ def _prepare_assets_transaction(
                 already_published = decrypt_image_bytes(current, key) == editable
                 output = encrypt_image_bytes(editable, key)
             else:
-                already_published = current == editable
-                output = editable
+                # A loose image in another format is written back in it.
+                output = from_png(editable, current)
+                already_published = current == output
 
             if asset_source_conflict(root, asset):
                 if already_published:
@@ -523,6 +527,13 @@ def _prepare_assets_transaction(
     return result
 
 
+def _children(root: Path) -> list[Path]:
+    try:
+        return sorted(path for path in root.iterdir() if path.is_dir())
+    except OSError:
+        return []
+
+
 def detect_image_engine(game_root: str | Path) -> ImageEngineDetection:
     root = _resolved_root(game_root)
     markers = (
@@ -562,6 +573,9 @@ def detect_image_engine(game_root: str | Path) -> ImageEngineDetection:
         # RPG Maker XP, VX and VX Ace keep images in Graphics, loose once
         # Set up has extracted the game's archive.
         root / "Graphics",
+        # A KiriKiri game without archives keeps its images in data, and a
+        # Wolf game in Data.
+        *(child for child in _children(root) if child.name.casefold() == "data"),
     )
     suggested = next(
         (
@@ -572,9 +586,9 @@ def detect_image_engine(game_root: str | Path) -> ImageEngineDetection:
         None,
     )
     reason = (
-        f"No RPG Maker encryption markers found; loose PNGs found under {suggested}"
+        f"No RPG Maker encryption markers found; loose images found under {suggested}"
         if suggested
-        else "No supported engine markers found; choose the folder containing loose PNGs"
+        else "No supported engine markers found; choose the folder containing loose images"
     )
     return ImageEngineDetection(PROFILE_GENERIC, "fallback", reason, suggested)
 
@@ -700,7 +714,7 @@ def preview_profile_png_bytes(
     elif asset.has_plain:
         raw = asset.plain_path.read_bytes()
     elif asset.has_runtime_plain:
-        raw = asset.runtime_plain_path.read_bytes()
+        raw = to_png(asset.runtime_plain_path.read_bytes())
     else:
         raise FileNotFoundError(asset.runtime_plain_path or asset.plain_path)
     return _strip_png_iccp_for_display(raw)

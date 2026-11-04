@@ -733,9 +733,13 @@ def inspect_row(root, adapter, row, old, key):
     if runtime_changed:
         applied = row.get("applied") or {}
         finding = row.get("finding") or {}
-        if row.get("sourcePngHash") != applied.get("candidateHash") and finding.get(
-            "sourceHash"
-        ) != row.get("sourceHash"):
+        # An image applied in another format than PNG holds its candidate's
+        # pixels, not its bytes, so the file it was applied as tells too.
+        if (
+            row.get("sourcePngHash") != applied.get("candidateHash")
+            and row.get("sourceHash") != applied.get("runtimeHash")
+            and finding.get("sourceHash") != row.get("sourceHash")
+        ):
             row.pop("finding", None)
             row["classification"] = "not_examined"
             row["staleReason"] = (

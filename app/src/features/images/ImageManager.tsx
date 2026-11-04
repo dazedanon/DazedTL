@@ -762,7 +762,7 @@ function Manager({
           return { saved: imageDraft(reply.state) };
         });
       },
-      "Image folder saved. Indexing loose PNGs.",
+      "Image folder saved. Indexing loose images.",
       "image-folder",
     );
   // Ctrl+A and Select tick or untick every image the view shows.
@@ -1162,7 +1162,7 @@ function Manager({
         <div className="image-profile-issue">
           <span>
             {state.profile.reason ||
-              "Choose a folder containing loose PNGs. Archive extraction is not available in Image Manager."}
+              "Choose a folder containing loose images. Archive extraction is not available in Image Manager."}
           </span>
           <Button
             onClick={() => {
@@ -1623,7 +1623,7 @@ function Manager({
         >
           <DialogHeader
             title="Choose loose image folder"
-            description="Enter a folder relative to this game's root. Only loose PNGs are supported; archives must be extracted separately."
+            description="Enter a folder relative to this game's root. Loose PNG, BMP, JPEG and KiriKiri TLG images are supported; archives must be extracted separately."
           />
           <DialogBody className="image-apply-body">
             <label>

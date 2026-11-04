@@ -54,7 +54,7 @@ class ImageCompatibility:
                 except (OSError, ValueError) as exc:
                     reason = str(exc)
             else:
-                reason = "Choose a folder containing loose PNGs."
+                reason = "Choose a folder containing loose images."
         value = get_image_profile(identity)
         return {
             "id": identity,
@@ -88,41 +88,43 @@ class ImageCompatibility:
 
     def inventory(self, root, profile, stopped=lambda: False):
         """Stream metadata instead of constructing the Qt manager's complete asset list."""
+        from util.image_formats import LOOSE_IMAGE_EXTENSIONS, png_name, runtime_name
         from util.rpgmaker_images import resolve_content_root
 
-        base = resolve_content_root(root) if profile["id"] == "rpgmaker_mvmz" else root
-        image_root = (
-            base / "img"
-            if profile["id"] == "rpgmaker_mvmz"
-            else root / profile["imageRoot"]
-        )
+        mvmz = profile["id"] == "rpgmaker_mvmz"
+        base = resolve_content_root(root) if mvmz else root
+        image_root = base / "img" if mvmz else root / profile["imageRoot"]
         editable_base = root / ".dazedtl/images" / base.relative_to(root)
+        # An MV/MZ image is its PNG, encrypted or not; a loose image in
+        # another format is its own file, edited as a PNG copy.
+        extensions = {".png", ".png_", ".rpgmvp"} if mvmz else LOOSE_IMAGE_EXTENSIONS
         for path in self._walk(image_root, stopped):
             extension = path.suffix.casefold()
-            if extension not in (
-                {".png", ".png_", ".rpgmvp"}
-                if profile["id"] == "rpgmaker_mvmz"
-                else {".png"}
-            ):
+            if extension not in extensions:
                 continue
-            logical = path.with_suffix(".png")
-            identity = logical.relative_to(base).as_posix()
+            identity = (
+                (path.with_suffix(".png") if mvmz else path)
+                .relative_to(base)
+                .as_posix()
+            )
             yield {
                 "id": identity,
                 "path": identity,
                 "profile": profile["id"],
                 "runtime": path.relative_to(root).as_posix(),
                 "destination": path.relative_to(root).as_posix(),
-                "editable": (editable_base / logical.relative_to(base))
+                "editable": (editable_base / png_name(identity))
                 .relative_to(root)
                 .as_posix(),
-                "encrypted": extension != ".png",
+                "encrypted": mvmz and extension != ".png",
             }
         workspace_root = editable_base / image_root.relative_to(base)
         for path in self._walk(workspace_root, stopped):
             if path.suffix.casefold() != ".png":
                 continue
             identity = path.relative_to(editable_base).as_posix()
+            if not mvmz:
+                identity = runtime_name(identity)
             # Merging is done by the index; editable-only assets remain visible and blocked.
             yield {
                 "id": identity,
@@ -157,7 +159,9 @@ class ImageCompatibility:
             from util.rpgmaker_images import decrypt_image_bytes
 
             value = decrypt_image_bytes(value, key)
-        return value
+        from util.image_formats import to_png
+
+        return to_png(value)
 
     def original_bytes(self, root, row, key):
         """The original Prepare freezes: an older publisher's backup of the
@@ -185,7 +189,9 @@ class ImageCompatibility:
             from util.rpgmaker_images import decrypt_image_bytes
 
             plain = decrypt_image_bytes(raw, key)
-        return plain, raw, origin
+        from util.image_formats import to_png
+
+        return to_png(plain), raw, origin
 
     @staticmethod
     def _asset(root, row):
@@ -385,6 +391,10 @@ class ImageCompatibility:
             if key is None:
                 raise ValueError("The encryption key is required for this image.")
             raw = encrypt_image_bytes(raw, key)
+        else:
+            from util.image_formats import from_png
+
+            raw = from_png(raw, project_path(root, row["runtime"]).read_bytes())
         return hashlib.sha256(raw).hexdigest()
 
     def restore(self, root, rows, originals=None):

@@ -15,6 +15,7 @@ from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import numpy as np
 from dazedtl import system
 from dazedtl.api import views
 from dazedtl.api.contracts.validation import check_response
@@ -231,7 +232,7 @@ class ImageTests(unittest.TestCase):
         self.service.action(self.identity, "prepare")
         request, _ = self.request("edit_task")
         candidate = candidate or png(color)
-        write_bytes(self.game / (".dazedtl/images/" + identity), candidate)
+        write_bytes(self.game / request["assets"][0]["editable"], candidate)
         self.recipe(request["assets"][0], candidate)
         self.report(
             request,
@@ -1636,6 +1637,45 @@ class DecodedImagePatchTests(unittest.TestCase):
         delivery = {**built, "stamp": stamp(built["path"])}
         delivery.update(basis(self.game, delivery.pop("paths")))
         self.assertTrue(current(delivery, self.game))
+
+    def test_kirikiri_bmp_and_tlg_images_are_applied_in_their_own_format(self):
+        # KiriKiri games keep title screens and eye-catches as BMP or TLG
+        # files, which Images skipped, listing PNG files alone.
+        from tests.test_image_formats import bgra, picture, pixels_of, tlg6
+
+        title, menu = "decoded/Picture/タイトル画面.BMP", "decoded/Picture/menu.tlg"
+        stream = BytesIO()
+        Image.new("RGB", (8, 8), (9, 9, 9)).save(stream, format="BMP")
+        write_bytes(self.game / title, stream.getvalue())
+        write_bytes(self.game / menu, tlg6(bgra(picture(8, 8, 1)), 4))
+        self.scan()
+        self.assertEqual(
+            sorted(row["id"] for row in self.service.list(self.identity)["items"]),
+            sorted([title, menu, "decoded/Picture/title.png"]),
+        )
+        # Saved as an assistant's editor may, unlike the copy DazedTL makes.
+        stream = BytesIO()
+        Image.new("RGB", (8, 8), (200, 10, 10)).save(
+            stream, format="PNG", compress_level=0
+        )
+        candidates = {title: stream.getvalue(), menu: png((2, 3, 4, 100))}
+        for name, candidate in candidates.items():
+            self.reviewed_candidate(name, candidate=candidate)
+            step = self.service.assistant(self.identity, "apply")
+            self.assertEqual(step["applied"], [name])
+        for name, kind in ((title, b"BM"), (menu, b"TLG5")):
+            raw = (self.game / name).read_bytes()
+            self.assertTrue(raw.startswith(kind))
+            np.testing.assert_array_equal(
+                pixels_of(raw),
+                np.asarray(Image.open(BytesIO(candidates[name])).convert("RGBA")),
+            )
+        # The game's file holds the candidate's pixels in another format, not
+        # its bytes; it still reads applied, not changed since discovery.
+        rows = {row["id"]: row for row in self.service.list(self.identity)["items"]}
+        for name in candidates:
+            self.assertEqual(rows[name]["state"], "applied")
+            self.assertFalse(rows[name].get("staleReason"))
 
     def test_undoing_an_apply_into_a_decoded_folder_puts_its_original_back(self):
         # Undoing the apply deleted the decoded image, which only the apply

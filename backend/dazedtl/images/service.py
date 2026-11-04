@@ -10,7 +10,7 @@ import uuid
 from contextlib import closing
 from copy import deepcopy
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from dazedtl import foreign_work, system
 from dazedtl.compatibility.images import ImageCompatibility
@@ -2650,7 +2650,15 @@ class ImageService:
                 else:
                     runtime_original = runtime_bytes
                 original_metadata = png_metadata(raw)
-                frozen = WORK + "/originals/" + row["id"]
+                # Named as its editable copy: a PNG, whatever the game's
+                # file format.
+                frozen = (
+                    WORK
+                    + "/originals/"
+                    + PurePosixPath(row["id"])
+                    .with_name(PurePosixPath(row["editable"]).name)
+                    .as_posix()
+                )
                 frozen_path = project_path(root, frozen, exists=False)
                 if frozen_path.exists():
                     raise ValueError(
