@@ -1,29 +1,31 @@
-// Sums up what landings' independent reviews caught and which bugs got past
-// them, so the review rule in the dazedtl-land skill is tuned on data. It
-// reads every landed review record in the shared Git directory's reviews log
-// and every commit on dev whose `Introduced-by:` trailer names the commit
-// that brought in the bug it fixes (AGENTS.md), and matches that commit to
-// the landing that holds it.
+// Sums up what landings' reviews caught and which bugs got past them, so
+// the review rule in the dazedtl-land skill is tuned on data. It reads every
+// landed review record in the shared Git directory's reviews log and every
+// commit on dev whose `Introduced-by:` trailer names the commit that
+// brought in the bug it fixes (AGENTS.md), and matches that commit to the
+// landing that holds it.
 // Usage: node scripts/review-stats.mjs
 import fs from "node:fs";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
 import { gitIn } from "./land-lock.mjs";
-import { readReview, reviewLog } from "./land.mjs";
+import { reviewLog } from "./land.mjs";
 
 /**
- * @typedef {{ range: string, reviews: number, findings: { kind?: string, outcome: string, review: number }[] }} Logged
- * A landed range with how many independent reviews it ran, 0 for one its
- * author reviewed before independent reviews, and their findings.
+ * @typedef {{ kind?: string, outcome: string, review: number }} Finding
+ * @typedef {{ range: string, reviews: number, findings: Finding[] }} Logged
+ * A landed range with how many independent reviews it ran and their
+ * findings; one its author reviewed or skipped, before independent
+ * reviews, ran none, and its findings count as review 0.
  * @typedef {Logged & { commits: string[] }} Landing
  * A logged landing with the full hashes of its range's commits.
  * @typedef {{ fix: string, introduced: string }} Escape
- * A fix commit and the full hash of the commit that brought its bug in.
+ * A fix commit and the full hash of a commit that brought its bug in.
  */
 
 /**
- * The landings in a reviews log's text; a line that can't be read is
- * listed apart instead of ending the report.
+ * The landings in a reviews log's text, read as land.mjs logged them, so
+ * a later, stricter readReview leaves old lines readable; a line that can't
+ * be read is listed apart instead of ending the report.
  * @param {string} text
  */
 export function loggedLandings(text) {
@@ -40,40 +42,61 @@ export function loggedLandings(text) {
       unread.push(`${where} is not JSON.`);
       continue;
     }
-    if (typeof row?.range !== "string") {
-      unread.push(`${where} has no range.`);
+    const independent = row?.reviewer === "independent";
+    // An early landing could skip its review, recording why instead.
+    const findings = Array.isArray(row?.findings)
+      ? row.findings
+      : !independent && typeof row?.skipped === "string"
+        ? []
+        : null;
+    if (
+      typeof row?.range !== "string" ||
+      !findings ||
+      findings.some(
+        (/** @type {any} */ item) =>
+          item?.outcome !== "fixed" && item?.outcome !== "dismissed",
+      )
+    ) {
+      unread.push(`${where} has no range or a finding without an outcome.`);
       continue;
     }
-    // Before independent reviews, records named no reviewer.
-    if (row.reviewer === undefined) {
-      landings.push({ range: row.range, reviews: 0, findings: [] });
-      continue;
-    }
-    try {
-      const { reviews, findings } = readReview(line);
-      landings.push({ range: row.range, reviews, findings });
-    } catch (error) {
-      unread.push(`${where}: ${/** @type {Error} */ (error).message}`);
-    }
+    landings.push({
+      range: row.range,
+      reviews: independent ? (row.reviews ?? 1) : 0,
+      findings: findings.map((/** @type {any} */ item) => ({
+        ...(item.kind === undefined ? {} : { kind: item.kind }),
+        outcome: item.outcome,
+        review: independent ? (item.review ?? 1) : 0,
+      })),
+    });
   }
   return { landings, unread };
 }
 
 /**
- * The fixes in `git log --format="%H %(trailers:key=Introduced-by,...)"`
- * output, each with the commit names its trailers give; words that can't
- * be a hash, such as a note after it, are left out, so a trailer with none
- * leaves its fix with no names, for the report to point out.
+ * The fixes in `git log --format="%H%x1f%(trailers:key=Introduced-by,
+ * valueonly,separator=%x1e)"` output, each with the commit each trailer
+ * names: the first word of its value, so a note after the hash is never
+ * read as one. A trailer that names no hash is kept in `unnamed`, for the
+ * report to point out.
  * @param {string} text
  */
 export function namedFixes(text) {
   const fixes = [];
   for (const line of text.split("\n")) {
-    const [fix, ...words] = line.trim().split(/\s+/);
-    const names = words
-      .map((word) => word.replace(/^[^0-9a-f]+|[^0-9a-f]+$/gi, ""))
-      .filter((word) => /^[0-9a-f]{7,40}$/i.test(word));
-    if (fix && words.length) fixes.push({ fix, names });
+    const [fix, trailers = ""] = line.split("\x1f");
+    if (!fix.trim() || !trailers.trim()) continue;
+    const names = [];
+    const unnamed = [];
+    for (const value of trailers.split("\x1e")) {
+      const first = (value.trim().split(/\s+/)[0] ?? "").replace(
+        /^[^0-9a-f]+|[^0-9a-f]+$/gi,
+        "",
+      );
+      if (/^[0-9a-f]{7,64}$/i.test(first)) names.push(first);
+      else if (value.trim()) unnamed.push(value.trim());
+    }
+    fixes.push({ fix: fix.trim(), names, unnamed });
   }
   return fixes;
 }
@@ -81,8 +104,9 @@ export function namedFixes(text) {
 /**
  * Landings and escaped bugs by how many reviews each landing ran, findings
  * by the review that reported them, their kind and outcome, and the bugs
- * whose commit no logged landing holds. A bug fixed in the landing that
- * brought it in never got past that landing, so it is left out.
+ * whose commit no logged landing holds. A bug counts once per landing it
+ * got past, however many of that landing's commits its fix names, and a
+ * bug fixed in the landing that brought it in never got past it.
  * @param {Landing[]} landings
  * @param {Escape[]} escapes
  */
@@ -110,13 +134,16 @@ export function summarize(landings, escapes) {
   }
   const escaped = [];
   const outside = [];
+  const counted = new Set();
   for (const escape of escapes) {
     const landing = owner.get(escape.introduced);
     if (!landing) {
       outside.push(escape);
       continue;
     }
-    if (owner.get(escape.fix) === landing) continue;
+    const key = `${escape.fix} ${landing.range}`;
+    if (owner.get(escape.fix) === landing || counted.has(key)) continue;
+    counted.add(key);
     /** @type {{ landings: number, escapes: number }} */ (
       byReviews.get(landing.reviews)
     ).escapes += 1;
@@ -151,33 +178,39 @@ function main() {
       );
     return { ...landing, commits: listed.stdout.split("\n").filter(Boolean) };
   });
-  const fixes = namedFixes(
-    git([
-      "log",
-      "dev",
-      "--format=%H %(trailers:key=Introduced-by,valueonly,separator=%x20)",
-    ]).stdout,
-  );
-  // One Git process resolves every name: a full hash, or "<name> missing".
+  const history = git([
+    "log",
+    "dev",
+    "--format=%H%x1f%(trailers:key=Introduced-by,valueonly,separator=%x1e)",
+  ]);
+  if (history.status !== 0)
+    problems.push(`dev's history can't be read: ${history.stderr.trim()}`);
+  const fixes = namedFixes(history.stdout);
+  // One Git process resolves every name: its full hash, or why not.
   const names = fixes.flatMap((fix) => fix.names);
-  const resolved = git(
+  const resolving = git(
     ["cat-file", "--batch-check=%(objectname)"],
     names.map((name) => `${name}^{commit}\n`).join(""),
-  ).stdout.split("\n");
+  );
+  if (names.length && resolving.status !== 0)
+    problems.push(`Git can't resolve commits: ${resolving.stderr.trim()}`);
+  const resolved = resolving.stdout.split("\n");
   const escapes = [];
   let at = 0;
-  for (const { fix, names } of fixes) {
-    if (!names.length)
+  for (const { fix, names, unnamed } of fixes) {
+    for (const value of unnamed)
       problems.push(
-        `Fix ${fix.slice(0, 8)} has an Introduced-by trailer with no commit hash.`,
+        `Fix ${fix.slice(0, 8)} has an Introduced-by trailer with no commit hash: ${value}`,
       );
     for (const name of names) {
-      const introduced = resolved[at++] ?? "";
-      if (/^[0-9a-f]{40,64}$/.test(introduced))
-        escapes.push({ fix, introduced });
+      const answer = resolved[at++] ?? "";
+      if (/^[0-9a-f]{40,64}$/.test(answer))
+        escapes.push({ fix, introduced: answer });
       else
         problems.push(
-          `Fix ${fix.slice(0, 8)} names ${name}, which Git can't find.`,
+          answer.endsWith(" ambiguous")
+            ? `Fix ${fix.slice(0, 8)} names ${name}, which matches several objects; give more of the hash.`
+            : `Fix ${fix.slice(0, 8)} names ${name}, which Git can't find.`,
         );
     }
   }
@@ -193,7 +226,9 @@ function main() {
   console.log("Findings by review and kind, fixed/dismissed:");
   for (const [review, kinds] of summary.rounds)
     console.log(
-      `  review ${review}: ${Object.entries(kinds)
+      `  ${review ? `review ${review}` : "author's review"}: ${Object.entries(
+        kinds,
+      )
         .map(([kind, tally]) => `${kind} ${tally.fixed}/${tally.dismissed}`)
         .join(", ")}`,
     );
@@ -208,4 +243,4 @@ function main() {
   for (const problem of problems) console.log(problem);
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1] || "").href) main();
+if (import.meta.main) main();

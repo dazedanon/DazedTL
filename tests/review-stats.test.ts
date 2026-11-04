@@ -23,6 +23,8 @@ test("review stats put each escaped bug on the landing that let it in", () => {
     ],
     [
       { fix: "f1", introduced: "c2" },
+      // One bug, however many of the landing's commits its fix names.
+      { fix: "f1", introduced: "c1" },
       { fix: "f2", introduced: "old" },
       // A bug its own landing fixed never got past that landing.
       { fix: "c3", introduced: "c1" },
@@ -48,47 +50,61 @@ test("review stats put each escaped bug on the landing that let it in", () => {
   assert.deepEqual(summary.outside, [{ fix: "f2", introduced: "old" }]);
 });
 
-test("review stats read only hashes from a trailer and skip a log line they can't read", () => {
+test("review stats read each trailer's hash alone and skip a log line they can't read", () => {
+  const sha256 = "a".repeat(64);
+  const trailers = (...values: string[]) => values.join("\x1e");
   assert.deepEqual(
     namedFixes(
-      "f1 abc1234 on dev\nf2\nf3 (def5678), 1234567890abcdef1234567890abcdef12345678\nf4 v2.61.0\n",
+      [
+        `f1\x1f${trailers("abc1234 defaced the cache")}`,
+        "f2\x1f",
+        `f3\x1f${trailers("(def5678),", sha256)}`,
+        `f4\x1f${trailers("v2.61.0")}`,
+      ].join("\n"),
     ),
     [
-      { fix: "f1", names: ["abc1234"] },
-      {
-        fix: "f3",
-        names: ["def5678", "1234567890abcdef1234567890abcdef12345678"],
-      },
-      // Pointed out in the report rather than dropped.
-      { fix: "f4", names: [] },
+      { fix: "f1", names: ["abc1234"], unnamed: [] },
+      { fix: "f3", names: ["def5678", sha256], unnamed: [] },
+      { fix: "f4", names: [], unnamed: ["v2.61.0"] },
     ],
   );
-  const independent = {
-    reviewer: "independent",
-    level: "high",
-    head: "abc1234",
-    findings: [{ summary: "Off by one", kind: "bug", outcome: "fixed" }],
-  };
   const { landings, unread } = loggedLandings(
     [
-      JSON.stringify({ range: "a..b", level: "high", findings: [] }),
+      JSON.stringify({
+        range: "a..b",
+        findings: [{ summary: "Typo", outcome: "fixed" }],
+      }),
       '{"range":"abc',
-      JSON.stringify({ range: "b..c", ...independent }),
-      JSON.stringify({ range: "c..d", ...independent, level: "low" }),
+      JSON.stringify({
+        range: "b..c",
+        reviewer: "independent",
+        reviews: 2,
+        findings: [
+          { kind: "bug", outcome: "fixed", review: 2 },
+          { outcome: "dismissed" },
+        ],
+      }),
+      JSON.stringify({ range: "c..d", findings: [{ summary: "No outcome" }] }),
+      JSON.stringify({ range: "d..e", skipped: "Docs only" }),
       "",
     ].join("\n"),
   );
   assert.deepEqual(landings, [
-    { range: "a..b", reviews: 0, findings: [] },
+    { range: "a..b", reviews: 0, findings: [{ outcome: "fixed", review: 0 }] },
     {
       range: "b..c",
-      reviews: 1,
+      reviews: 2,
       findings: [
-        { summary: "Off by one", kind: "bug", outcome: "fixed", review: 1 },
+        { kind: "bug", outcome: "fixed", review: 2 },
+        { outcome: "dismissed", review: 1 },
       ],
     },
+    { range: "d..e", reviews: 0, findings: [] },
   ]);
   assert.equal(unread.length, 2);
   assert.match(unread[0], /line 2 is not JSON/);
-  assert.match(unread[1], /line 4: .*level/);
+  assert.match(
+    unread[1],
+    /line 4 has no range or a finding without an outcome/,
+  );
 });
