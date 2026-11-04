@@ -162,10 +162,9 @@ def written(root, names):
     from util.paths import LEGACY_GAME_SKILLS_RELATIVE, game_git_set_up
     root = Path(root)
     chosen = [defined(name) for name in names]
-    current = read(root, names)
     own, moved = [], []
     for found in chosen:
-        own += [found.path, Path(current[found.key]["path"]).relative_to(root).as_posix()]
+        own += [found.path, *(path.relative_to(root).as_posix() for path in _files(root, found))]
         moved += found.legacy
     if any(found.skill for found in chosen):
         moved += [path.relative_to(root).as_posix() for path in (root / LEGACY_GAME_SKILLS_RELATIVE).rglob("*") if not path.is_dir()]
