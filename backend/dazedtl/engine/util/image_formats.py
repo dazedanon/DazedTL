@@ -348,9 +348,14 @@ def _tlg_file(image, original: bytes) -> bytes:
     stream, tags = _tlg_parts(original)
     colors = stream[11]
     if colors == 1:
-        # KiriKiri reads TLG5 in color only, and DazedTL writes no TLG6.
-        raise ValueError("DazedTL can't write a grayscale TLG image.")
-    written = _tlg5_file(_bgra(image if colors == 4 else _opaque(image, "TLG")), colors)
+        # KiriKiri reads TLG5 in color only, so a grayscale image stays TLG6.
+        import numpy as np
+
+        written = _tlg6_gray_file(np.asarray(_opaque(image, "TLG").convert("L")))
+    else:
+        written = _tlg5_file(
+            _bgra(image if colors == 4 else _opaque(image, "TLG")), colors
+        )
     if not original.startswith(_TLG_SDS):
         return written
     return _TLG_SDS + struct.pack("<I", len(written)) + written + tags
@@ -454,6 +459,129 @@ _CHROMA = (
 )
 
 
+def _tlg6_order(width: int, lines: int):
+    """Where each pixel of a TLG6 group of `lines` lines sits among the
+    group's values: each 8-pixel-wide block's values run along its lines in
+    turn, a block of an odd column from its bottom line up, and each odd
+    line right to left."""
+    import numpy as np
+
+    x = np.arange(width)
+    column = x // 8
+    start = column * 8
+    span = np.minimum(8, width - start)
+    local = x - start
+    line = np.arange(lines)[:, None]
+    stored = np.where(column % 2 == 1, lines - 1 - line, line)
+    across = np.where(line % 2 == 1, span - 1 - local, local)
+    return column * lines * 8 + stored * span + across
+
+
+class _Bits:
+    """TLG6's bit stream, written lowest bit first."""
+
+    def __init__(self):
+        self.out, self.pending, self.count = bytearray(), 0, 0
+
+    def put(self, value: int, length: int) -> None:
+        self.pending |= value << self.count
+        self.count += length
+        while self.count >= 8:
+            self.out.append(self.pending & 0xFF)
+            self.pending >>= 8
+            self.count -= 8
+
+    def position(self) -> int:
+        return len(self.out) * 8 + self.count
+
+    def gamma(self, value: int) -> None:
+        length = value.bit_length() - 1
+        self.put((1 << length) | ((value & ((1 << length) - 1)) << (length + 1)), 2 * length + 1)
+
+
+def _golomb_codes(values) -> tuple[bytes, int]:
+    """KiriKiri's run-length Golomb codes of signed residuals, as its encoder
+    writes them, and their length in bits; the decoder is _golomb."""
+    table = _GOLOMB_BITS
+    bits = _Bits()
+    bits.put(1 if values[0] else 0, 1)
+    n, a, i, zeros = 3, 0, 0, 0
+    while i < len(values):
+        if not values[i]:
+            zeros += 1
+            i += 1
+            continue
+        if zeros:
+            bits.gamma(zeros)
+        end = i
+        while end < len(values) and values[end]:
+            end += 1
+        bits.gamma(end - i)
+        for value in values[i:end]:
+            k = table[a * 4 + n]
+            m = (2 * value if value >= 0 else -2 * value - 1) - 1
+            quotient = m >> k
+            position = bits.position()
+            # A quotient reaching four bytes on is written as a byte there.
+            limit = ((position >> 3) + 4) * 8 - position
+            if quotient >= limit:
+                bits.put(0, limit)
+                bits.put(quotient, 8)
+            else:
+                bits.put(1 << quotient, quotient + 1)
+            bits.put(m & ((1 << k) - 1), k)
+            a += m >> 1
+            n -= 1
+            if n < 0:
+                a >>= 1
+                n = 3
+        i, zeros = end, 0
+    if zeros:
+        bits.gamma(zeros)
+    length = bits.position()
+    bits.put(0, -length % 8)
+    return bytes(bits.out), length
+
+
+def _tlg6_gray_file(gray) -> bytes:
+    """A one-color TLG6 stream of 8-bit `gray`, each block predicted by MED
+    as KiriKiri's own encoder may write it."""
+    import numpy as np
+
+    height, width = gray.shape
+    pixels = gray.astype(np.int16)
+    left, up, corner = (np.zeros_like(pixels) for _ in range(3))
+    left[:, 1:] = pixels[:, :-1]
+    up[1:] = pixels[:-1]
+    corner[1:, 1:] = pixels[:-1, :-1]
+    low, high = np.minimum(left, up), np.maximum(left, up)
+    guess = np.where(
+        corner >= high, low, np.where(corner < low, high, left + up - corner)
+    )
+    errors = ((pixels - guess) & 0xFF).astype(np.int8)
+    groups, longest = [], 0
+    for top in range(0, height, 8):
+        lines = min(8, height - top)
+        values = np.empty(lines * width, np.int8)
+        values[_tlg6_order(width, lines)] = errors[top : top + lines]
+        codes, length = _golomb_codes(values.tolist())
+        longest = max(longest, length)
+        groups.append(struct.pack("<I", length) + codes)
+    blocks = ((width - 1) // 8 + 1) * ((height - 1) // 8 + 1)
+    # Every block's filter type is 0, MED without color correlation, stored
+    # as LZSS literals: a zero flag byte before each eight.
+    filters = b"".join(
+        b"\x00" + bytes(min(8, blocks - at)) for at in range(0, blocks, 8)
+    )
+    return (
+        _TLG6
+        + bytes([1, 0, 0, 0])
+        + struct.pack("<IIII", width, height, longest, len(filters))
+        + filters
+        + b"".join(groups)
+    )
+
+
 def _tlg6_pixels(stream: bytes):
     import numpy as np
 
@@ -475,20 +603,10 @@ def _tlg6_pixels(stream: bytes):
     )
     position = 31 + size
     residuals = np.zeros((height, width, 4), np.uint8)
-    x = np.arange(width)
-    column = x // 8
-    start = column * 8
-    span = np.minimum(8, width - start)
-    local = x - start
     for top in range(0, height, 8):
         lines = min(8, height - top)
         count = lines * width
-        line = np.arange(lines)[:, None]
-        # Each block's values run along its lines in turn, a block of an odd
-        # column from its bottom line up, and each odd line right to left.
-        stored = np.where(column % 2 == 1, lines - 1 - line, line)
-        across = np.where(line % 2 == 1, span - 1 - local, local)
-        order = column * lines * 8 + stored * span + across
+        order = _tlg6_order(width, lines)
         for color in range(colors):
             bits = struct.unpack_from("<I", stream, position)[0]
             if bits >> 30:

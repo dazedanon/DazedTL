@@ -331,16 +331,21 @@ class TlgTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "transparent"):
             from_png(png(picture(8, 8, 2)), original)
 
-    def test_a_grayscale_tlg6_reads_as_its_first_channel(self):
-        # KiriKiri reads a one-color TLG6, such as a rule image; it was
-        # refused as an unsupported color type, so it couldn't be viewed.
-        pixels = picture(11, 13, 4)
+    def test_a_grayscale_tlg6_reads_and_is_written_back(self):
+        # KiriKiri reads a one-color TLG6, such as a mask; it was refused as
+        # an unsupported color type, then its edit only at Apply.
+        pixels = picture(19, 13, 4)
         raw = tlg6(bgra(pixels), 1)
         with Image.open(BytesIO(to_png(raw))) as image:
             self.assertEqual(image.mode, "L")
             np.testing.assert_array_equal(np.asarray(image), pixels[:, :, 2])
-        with self.assertRaisesRegex(ValueError, "grayscale"):
-            from_png(to_png(raw), raw)
+        edited = picture(19, 13, 5)[:, :, 0]
+        stream = BytesIO()
+        Image.fromarray(edited, "L").save(stream, format="PNG")
+        written = from_png(stream.getvalue(), raw)
+        self.assertTrue(written.startswith(b"TLG6.0\x00raw\x1a\x01"))
+        with Image.open(BytesIO(to_png(written))) as image:
+            np.testing.assert_array_equal(np.asarray(image), edited)
 
 
 class BmpAndJpegTests(unittest.TestCase):
