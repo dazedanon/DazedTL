@@ -86,7 +86,8 @@ export function GameUpdateField({
 /**
  * The game's GameUpdate config below Options, once the game holds
  * GameUpdate and Settings name its owner; until then the GameUpdate choice
- * links Settings itself.
+ * links Settings itself. Taking GameUpdate out unmounts the panel, so
+ * adding it again shows no earlier notice.
  */
 export function GameUpdateConfig({
   project,
@@ -99,7 +100,7 @@ export function GameUpdateConfig({
   disabled: boolean;
   settings: (section?: SettingsSection) => void;
 }) {
-  if (state.gameUpdate.state === "unconfigured") return null;
+  if (["absent", "unconfigured"].includes(state.gameUpdate.state)) return null;
   return (
     <GameUpdatePanel
       key={project.id}
