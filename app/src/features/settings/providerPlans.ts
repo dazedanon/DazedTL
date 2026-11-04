@@ -22,6 +22,10 @@ export function providerChoices(presets: SettingsProvider[]) {
   );
 }
 
+// The automatic names 2.61.0 gave OpenCode's plans, before they were one
+// provider, so connections saved then follow a plan switch too.
+const FORMER_NAMES = ["OpenCode Go", "OpenCode pay-as-you-go"];
+
 type PlanFields = {
   provider: string;
   name: string;
@@ -50,9 +54,11 @@ export function choosePlan<Value extends PlanFields>(
   return {
     ...value,
     provider,
-    name: plans.some((plan) => plan.connectionName === value.name)
-      ? next.connectionName
-      : value.name,
+    name:
+      plans.some((plan) => plan.connectionName === value.name) ||
+      FORMER_NAMES.includes(value.name)
+        ? next.connectionName
+        : value.name,
     reuse_secret:
       !!saved?.has_secret &&
       saved.provider !== provider &&

@@ -49,6 +49,12 @@ test("a saved connection keeps its key and automatic name across plans", () => {
   });
   // Moving back leaves nothing to save.
   assert.deepEqual(choosePlan(presets, moved, "opencode-go", saved), initial);
+  // So does a name 2.61.0 gave before plans were one provider.
+  assert.equal(
+    choosePlan(presets, { ...initial, name: "OpenCode Go" }, "opencode", saved)
+      .name,
+    "OpenCode (Pay-as-you-go balance)",
+  );
   // A name the user chose stays.
   assert.equal(
     choosePlan(presets, { ...initial, name: "Mine" }, "opencode", saved).name,
