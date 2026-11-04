@@ -20,6 +20,11 @@ import {
 const day = 86_400_000;
 const now = 100 * day;
 const old = now - exposureDays * day;
+// A landing on each of the days up to now, so `old` is just old enough.
+const landed = Array.from(
+  { length: exposureDays },
+  (_, index) => old + (index + 1) * day,
+);
 
 test("review stats put each escaped bug on the landing that let it in, once it is old enough", () => {
   const fix = (
@@ -80,7 +85,7 @@ test("review stats put each escaped bug on the landing that let it in, once it i
       // Its trailer named a commit Git can't find.
       fix("x1", []),
     ],
-    { now, fixCommits: new Set(["c3", "d1", "e1"]) },
+    { landed, fixCommits: new Set(["c3", "d1", "e1"]) },
   );
   assert.deepEqual(summary.byReviews, [
     [0, { landings: 1, escapes: 0 }],
@@ -130,6 +135,34 @@ test("review stats put each escaped bug on the landing that let it in, once it i
   assert.deepEqual(summary.chains, [["e1", "d1"]]);
 });
 
+test("review stats count a landing's age in days on which landings reached dev", () => {
+  const at = now - 20 * day;
+  const age = (days: number[]) =>
+    summarize(
+      [
+        {
+          range: "a..b",
+          reviews: 1,
+          findings: [],
+          landed: at,
+          commits: ["b1"],
+          lines: 10,
+        },
+      ],
+      [],
+      { landed: [at, ...days.map((n) => at + n * day)], fixCommits: new Set() },
+    );
+  // 20 days old, but work stopped after 3 of them; two landings on one day
+  // and a later one the same day as it count once each.
+  const quiet = age([0.5, 1, 2, 2.1, 3]);
+  assert.equal(quiet.recent, 1);
+  assert.deepEqual(quiet.byReviews, []);
+  // Landings on 14 of the 20 days since.
+  const busy = age([1, 2, 3, 4, 6, 7, 8, 10, 11, 12, 15, 16, 18, 19]);
+  assert.equal(busy.recent, 0);
+  assert.deepEqual(busy.byReviews, [[1, { landings: 1, escapes: 0 }]]);
+});
+
 test("review stats list a chain of fixes across landings, and only those", () => {
   const landing = (range: string, commits: string[]) => ({
     range,
@@ -158,7 +191,7 @@ test("review stats list a chain of fixes across landings, and only those", () =>
       fix("f1b", ["f1"]),
       fix("f1", ["before"]),
     ],
-    { now, fixCommits: new Set(["f1", "f1b", "f2", "f3"]) },
+    { landed, fixCommits: new Set(["f1", "f1b", "f2", "f3"]) },
   );
   assert.deepEqual(chains, [["f3", "f2", "f1"]]);
 });

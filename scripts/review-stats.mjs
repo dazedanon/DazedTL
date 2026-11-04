@@ -3,8 +3,8 @@
 // landed review record in the shared Git directory's reviews log and every
 // commit on dev whose `Introduced-by:` trailer (fix-trailers.mjs) names the
 // commit that brought in the bug it fixes, and matches that commit to the
-// landing that holds it. Bugs take days to surface, so escapes are set
-// beside landings only once those are `exposureDays` old.
+// landing that holds it. Bugs take days of work to surface, so escapes are
+// set beside landings only once those are `exposureDays` active days old.
 // Usage: node scripts/review-stats.mjs
 import fs from "node:fs";
 import path from "node:path";
@@ -31,8 +31,20 @@ import { gitIn, reviewLog } from "./land-lock.mjs";
  * names, its `unknown` or `none` marks and who found the bug.
  */
 
-/** How many days old a landing is before the bugs that got past it count. */
+/**
+ * How many active days old a landing is before the bugs that got past it
+ * count: days after its own on which a landing reached dev. Bugs surface
+ * while work goes on, so quiet weeks such as a vacation add no exposure.
+ */
 export const exposureDays = 14;
+
+/**
+ * A time's day number. Days split at midnight UTC, so every machine, CI and
+ * the tests count the same days whatever their time zone; an hour's shift of
+ * the boundary barely moves a count of working days.
+ * @param {number} time In milliseconds.
+ */
+const dayOf = (time) => Math.floor(time / 86_400_000);
 
 /** The upper ends of the landing size buckets, in code lines. */
 const sizes = [100, 300, 1000];
@@ -139,10 +151,14 @@ export function highEnd(low, { named, unknown }) {
  * it in never got past it.
  * @param {Landing[]} landings
  * @param {Fix[]} fixes
- * @param {{ now: number, fixCommits: Set<string> }} options `fixCommits`
- *   holds every commit whose subject is a fix's.
+ * @param {{ landed: (number | null)[], fixCommits: Set<string> }} options
+ *   `landed` holds every logged landing's time, listed or not, to count
+ *   active days; `fixCommits` holds every commit whose subject is a fix's.
  */
-export function summarize(landings, fixes, { now, fixCommits }) {
+export function summarize(landings, fixes, { landed, fixCommits }) {
+  const days = [
+    ...new Set(landed.flatMap((time) => (time === null ? [] : [dayOf(time)]))),
+  ];
   /** @type {Map<number, { landings: number, escapes: number }>} */
   const byReviews = new Map();
   /** @type {Map<number, { landings: number, escapes: number }>} */
@@ -172,9 +188,10 @@ export function summarize(landings, fixes, { now, fixCommits }) {
   let undated = 0;
   for (const landing of landings) {
     for (const commit of landing.commits) owner.set(commit, landing);
+    const from = landing.landed === null ? null : dayOf(landing.landed);
     if (
-      landing.landed !== null &&
-      now - landing.landed >= exposureDays * 86_400_000
+      from !== null &&
+      days.filter((day) => day > from).length >= exposureDays
     ) {
       exposed.add(landing);
       tally(landing, "landings");
@@ -400,7 +417,7 @@ function main() {
     (commit) => fixCommits.has(commit.commit) && !tracedCommits.has(commit),
   ).length;
   const summary = summarize(withCommits, fixes, {
-    now: Date.now(),
+    landed: landings.map((landing) => landing.landed),
     fixCommits,
   });
   const short = (/** @type {string} */ hash) => hash.slice(0, 8);
@@ -418,7 +435,7 @@ function main() {
     /** @type {[any, { landings: number, escapes: number }][]} */ rows,
     /** @type {(key: any) => string} */ name,
   ) => {
-    console.log(`Landings ${exposureDays} days old or more, ${title}:`);
+    console.log(`Landings ${exposureDays} active days old or more, ${title}:`);
     if (!rows.length) console.log("  none yet");
     for (const [key, group] of rows)
       console.log(
@@ -436,7 +453,7 @@ function main() {
     (bucket) => bucket,
   );
   console.log(
-    `${count(summary.recent, "landing")} under ${exposureDays} days old ${summary.recent === 1 ? "is" : "are"} left out of these until then.`,
+    `${count(summary.recent, "landing")} under ${exposureDays} active days old ${summary.recent === 1 ? "is" : "are"} left out of these until then; an active day is one on which a landing reached dev.`,
   );
   if (summary.undated)
     console.log(
@@ -451,7 +468,7 @@ function main() {
     );
   if (summary.foundBy.length)
     console.log(
-      `Bugs that got past landings ${exposureDays} days old or more, by who found them: ${summary.foundBy
+      `Bugs that got past landings ${exposureDays} active days old or more, by who found them: ${summary.foundBy
         .map(([found, n]) => `${found || "not recorded"} ${n}`)
         .join(", ")}`,
     );
