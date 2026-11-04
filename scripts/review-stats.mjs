@@ -269,8 +269,8 @@ export function summarize(landings, fixes, { now, fixCommits }) {
 /**
  * Each chain of fixes, newest first, whose bug came from a fix that another
  * landing, or none in the log, held. When they fix one behavior, AGENTS.md
- * already asked for a rework at the second. A fix of the fix its own landing brought in is a
- * review's catch, not a link.
+ * already asked for a rework at the second. A fix of the fix its own landing
+ * brought in is a review's catch, not a link.
  * @param {Fix[]} fixes
  * @param {Map<string, Landing>} owner
  * @param {Set<string>} fixCommits
