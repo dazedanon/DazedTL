@@ -336,10 +336,19 @@ test("a landing's review record comes from an independent reviewer and accounts 
         }),
       /Finding 1 .* needs a review number from 1 to 2/,
     );
-  assert.equal(
-    record({ ...reviewed, level: "high", findings: [] }).reviews,
-    1,
-    "a record from before reviews were counted",
+  // A record from before reviews were counted, as the Discord intake writes.
+  assert.deepEqual(
+    record({
+      ...reviewed,
+      level: "high",
+      findings: [{ summary: "Off by one", outcome: "fixed" }],
+    }),
+    {
+      ...reviewed,
+      level: "high",
+      reviews: 1,
+      findings: [{ summary: "Off by one", outcome: "fixed", review: 1 }],
+    },
   );
   assert.throws(() => record({ ...reviewed, level: "high" }), /findings list/);
   assert.throws(() => readReview("level: high"), /not JSON/);

@@ -76,7 +76,7 @@ const lockLimit = 10 * 60_000;
  * Reads a landing's review record: the code-review level a reviewer that
  * never saw the work ran, how many such reviews ran (1 when not given), the
  * last commit the last one checked and what became of each finding, with
- * the review that found it, which only a one-review record may leave out.
+ * the review that reported it, which only a one-review record may leave out.
  * Throws with what is wrong, so no branch lands on its author's review alone.
  * @param {string} text
  * @returns {{ level: string, reviewer: "independent", reviews: number, head: string, findings: { summary: string, outcome: "fixed" | "dismissed", reason?: string, review: number }[] }}
@@ -120,7 +120,7 @@ export function readReview(text) {
         item.review === undefined && reviews === 1 ? 1 : item.review;
       if (!Number.isInteger(review) || review < 1 || review > reviews)
         throw new Error(
-          `${which} needs a review number from 1 to ${reviews}, the record's "reviews": the independent review that found it.`,
+          `${which} needs a review number from 1 to ${reviews}, the record's "reviews": the independent review that reported it.`,
         );
       if (item.outcome === "fixed")
         return { summary: item.summary, outcome: "fixed", review };
