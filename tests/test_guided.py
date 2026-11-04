@@ -306,6 +306,8 @@ class GuidedTests(unittest.TestCase):
             folder=lambda _: self.folder,
             state=lambda _: {"project": self.native, "manual_job": self.pending},
             documents=lambda _: {},
+            # The Guidance task's view, which adds the assistant notes.
+            editable=lambda owner: workflows.documents(owner),
             update=update,
             apply_investigation_settings=apply_settings,
             save=Mock(),
@@ -2584,6 +2586,43 @@ class GuidedTests(unittest.TestCase):
             self.guided.save_documents(self.identity, draft("Keep after failure"))
         self.assertEqual(pending["documents"]["glossary"]["text"], "Keep after failure")
         self.assertEqual(path.read_text(encoding="utf-8"), "")
+
+    def test_guidance_edits_the_assistant_notes_beside_the_guidance(self):
+        # Guided's Guidance must show, select and save the game's assistant
+        # notes as Assistant-led's Context does: it read only the guidance,
+        # so Guided had no Assistant notes tab.
+        from desktop.backend.guidance import documents, documents_save, editable
+
+        self.backend.workflows.documents = lambda _: documents(self.source)
+        self.backend.workflows.editable = lambda _: editable(self.source)
+        self.backend.workflows.documents_save = lambda _, changes: documents_save(
+            self.source, changes
+        )
+        self.backend.workflows.draft = Mock()
+        summaries = []
+
+        def write(source, native=None, **options):
+            summaries.append(options["summary"])
+            return game_write(source, native, **options)
+
+        self.backend.game_write = write
+        self.guided.position(self.identity, "context", "guidance", "notes")
+        self.assertEqual(
+            read_json(self.guided.path(self.identity, "context-document")),
+            {"name": "notes"},
+        )
+        self.assertFalse(
+            self.guided.context_status(self.identity)["documents"]["notes"]["exists"]
+        )
+        notes = "Repack Data.wolf after injection."
+        self.guided.save_documents(
+            self.identity, {"notes": {"text": notes, "revision": ""}}
+        )
+        self.assertEqual((self.source / "AGENTS.md").read_text(encoding="utf-8"), notes)
+        self.assertEqual(summaries, ["Save Assistant notes"])
+        self.assertTrue(
+            self.guided.context_status(self.identity)["documents"]["notes"]["exists"]
+        )
 
     def test_measured_layout_applies_once_and_preserves_active_work_and_width_edits(
         self,

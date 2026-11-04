@@ -339,7 +339,7 @@ class Guided:
             raise ValueError("Choose a guided task.")
         documents = context_setup.retained_documents(
             native["source"],
-            self.backend.workflows.documents(native["id"]),
+            self.backend.workflows.editable(native["id"]),
             self.backend.workflows.state(native["id"])
             .get("draft", {})
             .get("documents", {}),
@@ -816,7 +816,7 @@ class Guided:
         )
         documents = context_setup.retained_documents(
             native["source"],
-            self.backend.workflows.documents(native["id"]),
+            self.backend.workflows.editable(native["id"]),
             value.get("draft", {}).get("documents", {}),
         )
         paid = [
@@ -1128,7 +1128,7 @@ class Guided:
             raise ValueError("Choose a guidance document.")
         from desktop.backend.guidance import holds
 
-        current = self.backend.workflows.documents(native["id"])
+        current = self.backend.workflows.editable(native["id"])
         # Explicit Save replaces the current guidance. The editor's older
         # revision is recovery metadata, not a conflict-review prerequisite.
         changes = {
@@ -1170,4 +1170,5 @@ def guidance_title(name):
         "glossary": "Glossary",
         "quirks": "Style & quirks",
         "game": "Game context",
+        "notes": "Assistant notes",
     }.get(name) or "Skill: " + name.removeprefix("custom:")

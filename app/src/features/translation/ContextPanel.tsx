@@ -3,6 +3,7 @@ import { api } from "../../api/client";
 import type { TranslationState } from "../../api/contracts";
 import { useApplication } from "../../app/ApplicationProvider";
 import { useLanguages } from "../../app/LanguagesProvider";
+import { AssistantNotesNote } from "../guided/AssistantNotesNote";
 import { guidanceFormats } from "../guided/guidanceFormats";
 import { useAction } from "../../state/useAction";
 import { useDocumentDraft } from "../../state/useDocumentDraft";
@@ -65,13 +66,7 @@ export function ContextPanel({
       <PageBody ref={body} className="lens-context-body">
         {name === "notes" ? (
           <p className="muted lens-context-note">
-            Notes every assistant reads first and keeps current. Never sent with
-            translation requests.{" "}
-            <HelpPopover label="Assistant notes">
-              Saved as AGENTS.md in the game folder and kept in the game&apos;s
-              Git, so they reach other computers and assistants. Players never
-              download them.
-            </HelpPopover>
+            <AssistantNotesNote />
           </p>
         ) : (
           <p className="muted lens-context-note">

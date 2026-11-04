@@ -40,7 +40,7 @@ import {
   selection,
   sourceErrors,
 } from "../eventTextSelection";
-import { guidanceNames } from "../guidanceReview";
+import { assistantNotes, guidanceNames } from "../guidanceReview";
 import { historyOutcome } from "../historyView";
 import {
   activeRun,
@@ -1158,28 +1158,30 @@ export function useGuidedWorkspace({
       "folder:" + key,
     );
   const savedNames = guidanceNames(state.documents, context.drafts);
-  const saveDocuments = (names: string[]) =>
-    action.run(
+  const saveDocuments = (names: string[]) => {
+    // A missing guidance file is created from the text shown for it; the
+    // assistant notes only once something is written in them.
+    const missing = names.filter(
+      (name) => name !== assistantNotes && !discovery.documents[name]?.exists,
+    );
+    return action.run(
       async () => {
-        // One save, so one checkpoint; a missing file is created from the
-        // text shown for it.
+        // One save, so one checkpoint.
         const created: Documents = {};
-        for (const name of names)
-          if (!discovery.documents[name]?.exists)
-            created[name] = {
-              text: state.documents[name]?.text || "",
-              revision: state.documents[name]?.revision || "",
-            };
+        for (const name of missing)
+          created[name] = {
+            text: state.documents[name]?.text || "",
+            revision: state.documents[name]?.revision || "",
+          };
         await context.save(names, created);
       },
       // Saving creates missing files and writes drafts; otherwise it is a no-op.
-      names.some(
-        (name) => context.drafts[name] || !discovery.documents[name]?.exists,
-      )
+      missing.length || names.some((name) => context.drafts[name])
         ? "Guidance saved."
         : "Guidance is already saved.",
       "context:save",
     );
+  };
   // Back to the saved Line widths; edits to the other options stay, as
   // discarding one guidance document leaves the others.
   const discardWidths = async () => {
