@@ -2631,8 +2631,8 @@ class GuidedTests(unittest.TestCase):
         )
         # Notes an assistant wrote that can't be read keep a draft of them
         # selectable, so it can be discarded: Guidance once refused to select
-        # it. Saving it stays refused, leaving the file as it is, while the
-        # rest of the guidance saves.
+        # it. A Save guidance that sends it stays refused whole, leaving every
+        # file as it is, and the rest saves once that draft is discarded.
         unreadable = "メモ".encode("shift_jis")
         (self.source / "AGENTS.md").write_bytes(unreadable)
         drafts = {
@@ -2641,9 +2641,10 @@ class GuidedTests(unittest.TestCase):
         }
         self.backend.workflows.state = lambda _: {"draft": {"documents": drafts}}
         self.guided.position(self.identity, "context", "guidance", "notes")
-        with self.assertRaisesRegex(ValueError, "AGENTS.md"):
-            self.guided.save_documents(self.identity, {"notes": drafts["notes"]})
+        with self.assertRaisesRegex(ValueError, "discard the Assistant notes draft"):
+            self.guided.save_documents(self.identity, dict(drafts))
         self.assertEqual((self.source / "AGENTS.md").read_bytes(), unreadable)
+        self.assertEqual(documents(self.source)["quirks"]["text"], "")
         self.guided.save_documents(self.identity, {"quirks": drafts["quirks"]})
         self.assertEqual(documents(self.source)["quirks"]["text"], "Keep honorifics.")
         # Notes linked to another file are unreadable too, and their draft
