@@ -220,7 +220,7 @@ class TranslationEngine:
         return editable(source)
 
     def document_save(self, source, name, revision, text):
-        from desktop.backend.guidance import document_save, written
+        from desktop.backend.guidance import NOTES, document_save, written
 
         from .game_write import write_game
 
@@ -229,7 +229,7 @@ class TranslationEngine:
             source,
             pack=False,
             paths=written(source, [name]),
-            summary="Save guidance",
+            summary="Save assistant notes" if name == NOTES else "Save guidance",
             stage="Context",
         ):
             return document_save(source, name, revision, text)
