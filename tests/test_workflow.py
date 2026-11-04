@@ -2470,9 +2470,18 @@ class WorkflowTests(unittest.TestCase):
             ).stdout,
             "AGENTS.md: export-ignore: set\n",
         )
-        checkpoint_history.go_back(self.game, before)
+        saved_notes = _git(self.game, "rev-parse", "HEAD").stdout.strip()
+        back = checkpoint_history.go_back(self.game, before)
         self.assertEqual(
             agents.read_text(encoding="utf-8"), "Repack Data.wolf after injection."
+        )
+        # Going back left the notes, so it took out no save of them: History
+        # listed one as taken out, and the result named it undone.
+        self.assertNotIn(saved_notes, back["undone"])
+        self.assertTrue(back["undone"])
+        self.assertNotIn(
+            saved_notes,
+            checkpoint_history._taken_out(checkpoint_history._log(self.game)),
         )
 
     def test_assistant_notes_in_another_case_never_reach_players(self):

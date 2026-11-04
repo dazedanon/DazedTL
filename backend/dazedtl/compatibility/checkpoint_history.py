@@ -327,13 +327,19 @@ def edited_outside(root):
     return sorted(_pending(root) - _waiting(root))
 
 
-def _taken_out(entries):
-    """Each checkpoint a go back took out of the game, to that go back's
-    commit: those after its target, unless an undo has put the go back
-    itself out, except those that changed only documents Go back leaves,
-    such as a save of the assistant notes. `entries` are newest first."""
+def _left_by_go_back(entry):
+    """Whether a checkpoint changed only documents Go back leaves, such as a
+    save of the assistant notes, so going back past it takes nothing out."""
     from util.guidance_documents import kept_by_checkpoints
 
+    return bool(entry.changes) and all(map(kept_by_checkpoints, entry.changes))
+
+
+def _taken_out(entries):
+    """Each checkpoint a go back took out of the game, to that go back's
+    commit: those after its target but those it left (`_left_by_go_back`),
+    unless an undo has put the go back itself out. `entries` are newest
+    first."""
     result = {}
     for index, entry in enumerate(entries):
         target = entry.action == BACK and _trailer(entry.message, TARGET_TRAILER)
@@ -347,8 +353,7 @@ def _taken_out(entries):
         for other in entries[index + 1 :]:
             if other.commit == target:
                 break
-            kept = other.changes and all(map(kept_by_checkpoints, other.changes))
-            if other.listed and not kept:
+            if other.listed and not _left_by_go_back(other):
                 result.setdefault(other.commit, entry.commit)
     return result
 
@@ -712,6 +717,7 @@ def go_back(
     translation, stay as they are, as Start over leaves them; an undo still
     takes out a checkpoint's own change to them, which are their own
     checkpoint once an assistant made them (checkpoint_commits `_saving`).
+    The checkpoints it left (`_left_by_go_back`) are not among `undone`.
     `original` is the saved original game of a game set up before
     Git kept its original files, and `folder` the game's Guided workspace,
     whose packing receipt a VX Ace game's pack keeps current, as every
@@ -732,7 +738,7 @@ def go_back(
         changed = set(filterfalse(kept_by_checkpoints, _diff(root, commit, "HEAD")))
         plan = _plan(state, changed, state.tree(commit))
         written = _apply(game, root, plan, stopped, state)
-    undone = [entry.commit for entry in entries[:index]]
+    undone = [entry.commit for entry in entries[:index] if not _left_by_go_back(entry)]
     return {"files": written, "commit": _head(root, game), "undone": undone}
 
 
