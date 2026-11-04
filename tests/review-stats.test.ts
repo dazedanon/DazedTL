@@ -73,6 +73,8 @@ test("review stats put each escaped bug on the landing that let it in, once it i
       fix("e1", ["d1"], "discord"),
       fix("u1", [], "user", ["unknown"]),
       fix("n1", [], "author", ["none"]),
+      // Its trailer named a commit Git can't find.
+      fix("x1", []),
     ],
     { now, fixCommits: new Set(["c3", "d1", "e1"]) },
   );
@@ -110,13 +112,8 @@ test("review stats put each escaped bug on the landing that let it in, once it i
   assert.deepEqual(summary.foundBy, [["user", 1]]);
   // Got past b..c, so f1 is not also counted among the outside ones.
   assert.deepEqual(summary.outside, [{ fix: "f2", introduced: "old" }]);
-  // One of five fixes naming where their bug came from says unknown.
-  assert.deepEqual(summary.origins, {
-    named: 4,
-    unknown: 1,
-    none: 1,
-  });
-  assert.equal(highEnd(4, summary.origins), 5);
+  assert.deepEqual(summary.origins, { named: 4, unknown: 2, none: 1 });
+  assert.equal(highEnd(4, summary.origins), 6);
   assert.equal(highEnd(0, { named: 0, unknown: 2 }), Infinity);
   // e1's bug came from d1, a fix another landing held.
   assert.deepEqual(summary.chains, [["e1", "d1"]]);

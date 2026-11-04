@@ -115,8 +115,8 @@ export function codeLines(text) {
 
 /**
  * The most bugs that got past landings that `low` known ones suggest, when
- * the fixes marked `unknown` got past landings as often as those that name
- * a commit.
+ * the fixes marked `unknown`, or naming no commit Git can find, got past
+ * landings as often as those that name one.
  * @param {number} low
  * @param {{ named: number, unknown: number }} origins
  */
@@ -232,9 +232,13 @@ export function summarize(landings, fixes, { now, fixCommits }) {
       !firsts.has(escape.fix) &&
       firsts.add(escape.fix),
   );
+  // A fix naming no commit Git can find doesn't say where its bug came from.
   const named = fixes.filter((fix) => fix.introduced.length).length;
-  const unknown = fixes.filter(
-    (fix) => !fix.introduced.length && fix.marks.includes("unknown"),
+  const none = fixes.filter(
+    (fix) =>
+      !fix.introduced.length &&
+      fix.marks.length &&
+      fix.marks.every((mark) => mark === "none"),
   ).length;
   const sorted = (/** @type {Map<any, any>} */ map) =>
     [...map].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
@@ -253,13 +257,8 @@ export function summarize(landings, fixes, { now, fixCommits }) {
     foundBy: [...foundBy].sort(([, a], [, b]) => b - a),
     origins: {
       named,
-      unknown,
-      none: fixes.filter(
-        (fix) =>
-          !fix.introduced.length &&
-          !fix.marks.includes("unknown") &&
-          fix.marks.includes("none"),
-      ).length,
+      unknown: fixes.length - named - none,
+      none,
     },
     chains: fixChains(fixes, owner, fixCommits),
     escaped,
