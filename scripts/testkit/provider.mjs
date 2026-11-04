@@ -352,13 +352,17 @@ function sourceLines(params) {
 
 /**
  * The lines an Assistant-led API request carries under numbered keys, which
- * its output schema asks for again, or null for a Guided request.
+ * its output schema asks for again, or null for a Guided request. JSON mode,
+ * which DeepSeek's models get, names no keys: there the lines are the last
+ * object of numbered lines the request carries.
  */
 function keyedLines(params) {
   const keys = Object.keys(
     params.response_format?.json_schema?.schema?.properties || {},
   );
-  if (!keys.length || !keys.every((key) => /^\d+$/.test(key))) return null;
+  const jsonMode = params.response_format?.type === "json_object";
+  if (!jsonMode && (!keys.length || !keys.every((key) => /^\d+$/.test(key))))
+    return null;
   // The lines to translate come last, after any earlier lines as context.
   return (
     [...objects(requestText(params))]
@@ -367,8 +371,14 @@ function keyedLines(params) {
         (value) =>
           value &&
           typeof value === "object" &&
-          Object.keys(value).length === keys.length &&
-          keys.every((key) => typeof value[key] === "string"),
+          !Array.isArray(value) &&
+          (jsonMode
+            ? Object.keys(value).length > 0 &&
+              Object.entries(value).every(
+                ([key, line]) => /^\d+$/.test(key) && typeof line === "string",
+              )
+            : Object.keys(value).length === keys.length &&
+              keys.every((key) => typeof value[key] === "string")),
       ) || null
   );
 }

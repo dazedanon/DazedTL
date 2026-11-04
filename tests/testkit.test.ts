@@ -199,6 +199,38 @@ test("the stand-in records each request's JSON body and never its credentials", 
   }
 });
 
+test("the stand-in answers an Assistant-led request in JSON mode by its line keys", async () => {
+  // DeepSeek's models get JSON mode, whose request names no keys, and the
+  // stand-in answered it as Guided's, so the run refused every reply.
+  const folder = fs.mkdtempSync(path.join(os.tmpdir(), "dazedtl-stand-in-"));
+  const provider = await startProvider({ folder });
+  try {
+    const response = await fetch(`${provider.url}/chat/completions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: "deepseek-v4.1-flash",
+        response_format: { type: "json_object" },
+        messages: [
+          { role: "system", content: 'Reply as {"Line1": "..."}.' },
+          {
+            role: "user",
+            content:
+              'QA notes:\n{"1": "a name"}\n\nTranslate only:\n```json\n{"1": "ミカ", "2": "剣士"}\n```',
+          },
+        ],
+      }),
+    });
+    const reply = JSON.parse(
+      (await response.json()).choices[0].message.content,
+    );
+    assert.deepEqual(Object.keys(reply), ["1", "2"]);
+  } finally {
+    await provider.close();
+    fs.rmSync(folder, { recursive: true, force: true });
+  }
+});
+
 test("two runs whose work folders share a last part get different displays", () => {
   const names = ["/tmp/a/w", "/tmp/b/w"].map(displayName);
   assert.notEqual(names[0], names[1]);
