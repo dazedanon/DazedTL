@@ -2,8 +2,5 @@
 
 ### Added
 
-- **Options:** Assistant-led offers GameUpdate for KiriKiri games, so players can download your newest translation by running GameUpdate.
-
-### Fixed
-
-- **Settings:** a connection check on a network with slow or unrouted addresses, such as IPv6 that doesn't connect, no longer fails with "The model list was too large or took too long"; a list that is really too large or too slow now says which.
+- **Manual:** Options can copy GameUpdate into the game, so players can download your newest translation by running it.
+- **Images:** images with revision notes carry a note mark, the preview shows the note, and a **Notes** view lists them, so **Copy revision task (N)** no longer counts notes you can't find.

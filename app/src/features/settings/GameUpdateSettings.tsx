@@ -66,7 +66,7 @@ export default function GameUpdateSettings({
         <p className="settings-intro">
           Players run GameUpdate to download your latest published patch. Each
           game&apos;s repository is set in its Release task, or on Options for
-          Assistant-led.
+          Assistant-led and Manual.
         </p>
         <fieldset disabled={busy}>
           <FieldRow id="gameupdate-forge" label="Forge">

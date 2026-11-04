@@ -468,7 +468,7 @@ class ImageService:
                     status="interrupted",
                     message="The previous scan was interrupted. Refresh inventory to resume indexing.",
                 )
-            counts = index.counts()
+            counts = index.counts(list(_notes(value)))
             return {
                 "projectId": project_id,
                 "name": project["name"],
@@ -531,6 +531,12 @@ class ImageService:
                     "offset": 0,
                     "limit": 1,
                 }
+            # The Notes view and its count read the saved revision notes.
+            noted = (
+                list(_notes(self._load(project_id)))
+                if filter == "noted" or offset == 0
+                else []
+            )
             result = self._index(project_id).list(
                 query=query,
                 folder=folder,
@@ -538,6 +544,7 @@ class ImageService:
                 offset=offset,
                 limit=limit,
                 selected_only=selected_only,
+                noted=noted,
             )
             result["items"] = [self._public(row) for row in result["items"]]
             return result
@@ -1385,8 +1392,13 @@ class ImageService:
                         ("selected_only", False),
                     )
                 }
-                ids = [row["id"] for row in self._index(project_id).rows(**filters)]
                 value = self._load(project_id)
+                ids = [
+                    row["id"]
+                    for row in self._index(project_id).rows(
+                        **filters, noted=list(_notes(value))
+                    )
+                ]
                 mode = options.get("mode")
                 if mode == "remove":
                     removed = set(ids)
@@ -1740,11 +1752,11 @@ class ImageService:
             scope, identities = self._scope(project_id, options, value)
         elif action == "revision_task" and options.get("noted") is True:
             # Every image with a note waiting, as the footer counts them.
-            index = self._index(project_id)
             identities = [
-                identity
-                for identity in _notes(value)
-                if index.holds(identity) and index.get(identity)
+                row["id"]
+                for row in self._index(project_id).rows(
+                    filter="noted", noted=list(_notes(value))
+                )
             ]
             if not identities:
                 raise ValueError("No image has a revision note waiting.")

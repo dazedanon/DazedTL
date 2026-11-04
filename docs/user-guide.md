@@ -130,8 +130,8 @@ Click **Apply to game** when it's done.
 4. **Apply**: check the results and click **Apply to game**.
 
 To letter an image yourself, tick it and choose **More > Edit text…**.
-To ask for changes, open an image in **Compare images** and write **Revision notes**; they stay with the image, even one already in the game, until your assistant's results answer them.
-**Copy revision task** there sends that image, and **Copy revision task** in the footer sends every noted image at once.
+To ask for changes, write **Revision notes** in **Compare images**; they stay with the image, even one in the game, until your assistant's results answer them.
+The **Notes** view lists the noted images; **Copy revision task** sends one from Compare images, or all from the footer.
 
 If a run fails, a banner says why, and **Run history > Inspect** shows each request and the AI's reply.
 Lines that failed keep their original text until you translate them again.
@@ -267,11 +267,11 @@ Upload only what you may store: a private repository isn't permission to share s
 ## Publishing with GameUpdate
 
 GameUpdate updates players to your latest translation from a public Git repository on GitGud, GitHub or a Forgejo server such as Codeberg.
-Set up adds it to the game: `GameUpdate.bat`, `GameUpdate_linux.sh`, the `gameupdate` folder and a `README.md` for players.
+Set up, or **Options** in Manual, adds `GameUpdate.bat`, its scripts and a `README.md` for players to the game.
 
 1. In **Settings > GameUpdate**, choose the site and enter the owner of your repositories, such as `dazed-translations`.
    Leave the owner empty if you don't use GameUpdate.
-2. Confirm the game's repository under **GameUpdate** in the **Release** task, or on **Options** for Assistant-led; DazedTL fills it in from the game's Git remote when it can.
+2. Confirm the game's repository under **GameUpdate**, in the **Release** task or on **Options**; DazedTL fills it in from the game's Git remote when it can.
 3. Push the translation to that repository before you build a ZIP; see [Make a remote repository](#make-a-remote-repository), and make it public when you release.
    Otherwise GameUpdate stays off in that ZIP, since it can't tell which version players start from.
 

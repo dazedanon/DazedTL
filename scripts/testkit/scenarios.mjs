@@ -2215,6 +2215,18 @@ const imagesRevised = () => {
           page.locate("Copy revision task (2)"),
         );
         await page.shot(path.join(state.work, "logs/footer-revision-task.png"));
+        // The task card says which images hold the notes and lists them all,
+        // even from a search that hides them.
+        await page.type('input[aria-label="Search images"]', "cg");
+        await page.click("2 images have revision notes");
+        await until(
+          "the Notes view to list the noted images",
+          async () =>
+            (await page.evaluate(
+              `[...document.querySelectorAll(".image-grid:not([inert]) .image-tile-name")].map((name) => name.textContent).join()`,
+            )) === lettered.join(),
+        );
+        await page.shot(path.join(state.work, "logs/notes-view.png"));
       },
     ],
     [

@@ -733,6 +733,12 @@ class GameUpdateDefaultsRequest(TypedDict):
     branch: str
 
 
+class ManualGameUpdateRequest(TypedDict):
+    project_id: str
+    # Copy GameUpdate into the game, or take it out.
+    install: bool
+
+
 class ProjectGameUpdateRequest(TypedDict):
     project_id: str
     # save a repository, keep an edited file's values, replace them with
@@ -892,6 +898,7 @@ METHODS: dict[str, Method] = {
         TranslationFileRequest, TranslationFileExport, refresh=False
     ),
     "manual_estimate": Method(ProjectRequest, TranslationJob),
+    "manual_gameupdate": Method(ManualGameUpdateRequest, GameUpdateStatus),
     # The Checkpoints tab: its timeline, one checkpoint's changes, and go
     # back, undo and save a copy, which only the user starts.
     "project_checkpoints": Method(ProjectRequest, CheckpointTimeline, refresh=False),

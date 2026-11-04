@@ -813,8 +813,8 @@ def require_baseline(engine, source, options, state, *, allow_pending=False):
 
 def require_run_baseline(engine, source, plan, state):
     """require_baseline for a run's *plan*, which a Manual run (project
-    MANUAL) needs none of: DazedTL never writes a Manual game, whose own
-    tools write the translations."""
+    MANUAL) needs none of: a Manual game's own tools write the
+    translations."""
     from .project import MANUAL
 
     if plan.get("method") == MANUAL:

@@ -16,6 +16,7 @@ import {
   ChevronDown,
   Eye,
   Image as ImageIcon,
+  MessageSquareText,
   MoreHorizontal,
   Search,
 } from "lucide-react";
@@ -233,6 +234,7 @@ function Tile({
   selected,
   size,
   queue,
+  note,
   onPick,
   onKeyDown,
   onCompare,
@@ -241,6 +243,8 @@ function Tile({
   selected: boolean;
   size: number;
   queue: ThumbnailQueue;
+  /** The image's revision note, until a report answers it. */
+  note: string;
   /** Chooses the image with the click's modifiers; `checkbox` toggles it. */
   onPick: (event: Modifiers, checkbox?: boolean) => void;
   onKeyDown: (event: KeyboardEvent) => void;
@@ -314,6 +318,16 @@ function Tile({
         >
           <StatusIcon status={displayMarks[display]} size={14} />
         </span>
+        {note && (
+          <span
+            className="image-tile-note"
+            role="img"
+            aria-label="Revision note"
+            title={`Revision note: ${note}`}
+          >
+            <MessageSquareText size={14} aria-hidden="true" />
+          </span>
+        )}
       </div>
       <div className="image-tile-footer">
         <FileName
@@ -492,6 +506,14 @@ function Manager({
     scroll,
     dimensions.height,
   );
+  // The images whose revision notes are saved, which the Notes view lists.
+  const savedNotes = useMemo(
+    () =>
+      Object.keys(state.notes || {})
+        .sort()
+        .join("\n"),
+    [state.notes],
+  );
   const grid = useImageGrid(
     projectId,
     value.view,
@@ -499,6 +521,7 @@ function Manager({
     listRevision,
     state.selection,
     flow.applied,
+    savedNotes,
     range.start,
     range.end,
   );
@@ -854,7 +877,8 @@ function Manager({
   // Revision notes save with the list, so they survive closing Compare,
   // leaving Images and restarting; a report that answers one removes it.
   const notes = value.notes;
-  const noted = Object.keys(notes).length;
+  // The noted images the list holds, as the revision task sends them.
+  const noted = counts.noted;
   // A note is with the assistant while the task that sent it waits and the
   // note is as it sent it.
   const sentAt = (id: string) => {
@@ -892,6 +916,7 @@ function Manager({
     uncertain: { showSelected: false, status: "uncertain" },
     ready: { showSelected: false, status: "ready" },
     applied: { showSelected: false, status: "applied" },
+    noted: { showSelected: false, status: "noted" },
     all: { showSelected: false, status: "all" },
   } as const;
   type GridView = keyof typeof views | "";
@@ -899,13 +924,14 @@ function Manager({
     ? value.view.status === "not_applied"
       ? "list"
       : ""
-    : (["uncertain", "ready", "applied", "all"] as const).find(
+    : (["uncertain", "ready", "applied", "noted", "all"] as const).find(
         (key) => key === value.view.status,
       ) || "";
   // An empty list view, unless a folder or search hides its images, has
-  // nothing left to translate.
-  const listDone =
-    shown === "list" && !value.view.folder && !value.view.query.trim();
+  // nothing left to translate, and an empty Notes view no notes waiting.
+  const unfiltered = !value.view.folder && !value.view.query.trim();
+  const listDone = shown === "list" && unfiltered;
+  const notesDone = shown === "noted" && unfiltered;
   // Before the assistant examined the images, an empty list waits for the
   // investigation, and once the user stopped it, for their ticks, rather than
   // having nothing left.
@@ -930,6 +956,7 @@ function Manager({
     { value: "uncertain", label: "Unsure", whole: counts.uncertain },
     { value: "ready", label: "Translated", whole: counts.ready },
     { value: "applied", label: "Applied", whole: counts.applied },
+    { value: "noted", label: "Notes", whole: noted },
     { value: "all", label: "All images", whole: counts.indexed },
   ];
   const editText = () =>
@@ -1198,6 +1225,20 @@ function Manager({
                 review
               </Button>
             )}
+            {noted > 0 && (
+              <Button
+                variant="link"
+                className="image-task-note"
+                // Every noted image, whichever folder or search is open.
+                onClick={() =>
+                  changeView({ ...views.noted, folder: "", query: "" }, true)
+                }
+              >
+                {noted === 1
+                  ? "1 image has a revision note"
+                  : `${imageCount(noted)} have revision notes`}
+              </Button>
+            )}
           </AssistantTask>
           <div className="image-browser-toolbar">
             <div className="image-search">
@@ -1340,7 +1381,9 @@ function Manager({
                             ? "No images ticked yet"
                             : listDone
                               ? "Nothing left to translate"
-                              : "No matching images"}
+                              : notesDone
+                                ? "No revision notes waiting"
+                                : "No matching images"}
                   </h3>
                   {/* A search inside a folder looks only there, which the grid
                   alone does not show. */}
@@ -1348,6 +1391,7 @@ function Manager({
                     folderSearch ||
                     unexamined ||
                     unticked ||
+                    notesDone ||
                     hidden > 0) && (
                     <p>
                       {!counts.indexed
@@ -1360,7 +1404,9 @@ function Manager({
                               : "Your assistant recommends the images to translate once it examines them."
                             : unticked
                               ? "Tick the images to translate in All images."
-                              : `${hidden.toLocaleString()} ${hidden === 1 ? "image in your list is" : "images in your list are"} outside this view.`}
+                              : notesDone
+                                ? "A note written in Compare images waits here until your assistant's report answers it."
+                                : `${hidden.toLocaleString()} ${hidden === 1 ? "image in your list is" : "images in your list are"} outside this view.`}
                     </p>
                   )}
                   {/* The task's own step offers the investigation. */}
@@ -1386,7 +1432,7 @@ function Manager({
                         ? "Index images"
                         : folderSearch
                           ? "Search all folders"
-                          : listDone
+                          : listDone || notesDone
                             ? "Show all images"
                             : "Clear filters"}
                     </Button>
@@ -1432,6 +1478,7 @@ function Manager({
                           selected={selection.has(asset.id)}
                           size={thumbnailSize}
                           queue={queue}
+                          note={notes[asset.id] || ""}
                           onPick={(event, checkbox) =>
                             pick(index, event, checkbox)
                           }
@@ -1518,6 +1565,7 @@ function Manager({
           listed={!!viewedAsset && selection.has(viewedAsset.id)}
           queue={queue}
           thumbnailSize={thumbnailSize}
+          note={(viewedAsset && notes[viewedAsset.id]) || ""}
           onCompare={openCompare}
         />
       </div>

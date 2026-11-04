@@ -10,6 +10,7 @@ from dazedtl.storage import write_json
 from dazedtl.translation import progress_report, translation_file, unit_results
 from dazedtl.translation.exchange import Exchange
 from dazedtl.translation.files import read_json
+from dazedtl.translation.game_update import ABSENT
 from dazedtl.translation.manual import Manual
 from dazedtl.translation.manual import loaded as loaded_file
 from dazedtl.translation.project import WORK
@@ -64,7 +65,7 @@ class TranslationFileTests(unittest.TestCase):
 
     def test_a_manual_project_translates_its_own_file_and_exports_every_line(self):
         # A Manual game has no Git baseline and no census: its own extractor
-        # decides the scope, and DazedTL never writes the game.
+        # decides the scope and writes the game.
         self.engine.git_status = lambda *_args: {}
         self.projects.choose_method(self.identity, "manual")
         # Options Assistant-led saved as Assistant only, which Manual lacks.
@@ -210,6 +211,30 @@ class TranslationFileTests(unittest.TestCase):
         self.projects.choose_method(self.identity, "len")
         views = {job["id"]: job for job in self.service.state(self.identity)["jobs"]}
         self.assertFalse(views[run]["own"])
+
+    def test_a_manual_projects_gameupdate_box_copies_it_into_the_game(self):
+        self.engine.git_status = lambda *_args: {}
+        manual = Manual(self.service)
+        # Assistant-led's assistant installs GameUpdate itself.
+        with self.assertRaisesRegex(ValueError, "isn't translated Manually"):
+            manual.gameupdate(self.identity, True)
+        self.projects.choose_method(self.identity, "manual")
+        # Manual has none, so ticking the box copies GameUpdate into the game
+        # at once, whatever its engine, and unticking takes it out; the
+        # player README stays.
+        # The engine's status says whether the game holds GameUpdate.
+        self.engine.game_update = lambda source, *_args: {
+            **ABSENT,
+            "installed": (Path(source) / "gameupdate/patch.sh").is_file(),
+        }
+        shown = manual.gameupdate(self.identity, True)
+        check_response("manual_gameupdate", shown)
+        self.assertTrue(shown["installed"])
+        self.assertTrue((self.game / "gameupdate/patch.sh").is_file())
+        self.assertFalse(manual.gameupdate(self.identity, False)["installed"])
+        self.assertFalse((self.game / "GameUpdate.bat").exists())
+        self.assertFalse((self.game / "gameupdate").exists())
+        self.assertTrue((self.game / "README.md").is_file())
 
     def test_an_import_lands_on_lines_whose_id_and_source_match(self):
         selected = self.project.read()

@@ -282,7 +282,14 @@ class ImageTests(unittest.TestCase):
         # The view switch counts each view within the same search.
         self.assertEqual(
             searched["views"],
-            {"all": 1, "list": 0, "uncertain": 0, "ready": 0, "applied": 0},
+            {
+                "all": 1,
+                "list": 0,
+                "uncertain": 0,
+                "ready": 0,
+                "applied": 0,
+                "noted": 0,
+            },
         )
         self.assertEqual(self.service.list(self.identity)["views"]["list"], 1)
         reopened = ImageService(
@@ -505,7 +512,19 @@ class ImageTests(unittest.TestCase):
                 listed["views"],
                 state["counts"]["uncertain"],
             ),
-            (0, 0, {"all": 2, "list": 0, "uncertain": 0, "ready": 0, "applied": 1}, 0),
+            (
+                0,
+                0,
+                {
+                    "all": 2,
+                    "list": 0,
+                    "uncertain": 0,
+                    "ready": 0,
+                    "applied": 1,
+                    "noted": 0,
+                },
+                0,
+            ),
         )
         self.assertEqual(editing["assets"][0]["id"], "img/A.png")
 
@@ -1091,6 +1110,18 @@ class ImageTests(unittest.TestCase):
             True,
         )
         self.assertEqual(list(service.state(self.identity)["notes"]), ["img/B.png"])
+        # The Notes view lists only the image whose note still waits, and each
+        # view counts it within its search.
+        noted = service.list(self.identity, filter="noted")
+        self.assertEqual([item["id"] for item in noted["items"]], ["img/B.png"])
+        self.assertEqual(noted["views"]["noted"], 1)
+        self.assertEqual(service.list(self.identity, query="A")["views"]["noted"], 0)
+        self.assertEqual(service.state(self.identity)["counts"]["noted"], 1)
+        # Untick all shown in the Notes view unticks just that image.
+        state = service.action(
+            self.identity, "select_matching", {"filter": "noted", "mode": "remove"}
+        )["state"]
+        self.assertEqual(state["selection"], ["img/A.png"])
         # Editing the waiting note makes it unsent until a task copies it again.
         state = service.state(self.identity)
         edited = {"img/B.png": "Translate the sign."}

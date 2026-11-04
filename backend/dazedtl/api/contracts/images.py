@@ -156,6 +156,8 @@ class ImageCounts(TypedDict):
     selectedSkipped: int
     selectedNeedsReview: int
     selectedEditable: int
+    # The images the list holds with revision notes waiting.
+    noted: int
     missing: int
 
 
@@ -277,6 +279,8 @@ class ImageViewCounts(TypedDict):
     uncertain: int
     ready: int
     applied: int
+    # The images with revision notes waiting.
+    noted: int
 
 
 class ImageList(TypedDict):
