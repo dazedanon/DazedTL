@@ -740,17 +740,10 @@ def _saving(root, change, named, claimed, log=lambda _line: None):
 
     named = set(_relative(named))
     status = _status(root)
-    notes = set(filter(is_game_notes, status.paths))
-    if unreadable := {path for path in notes if not _readable(Path(root) / path)}:
-        log(
-            f"{', '.join(sorted(unreadable))} in the game folder can't be read,"
-            " as when another program holds it, so its edits wait for a later"
-            " checkpoint."
-        )
-    # The assistant notes joined the rules keeping DazedTL's files out of
-    # players' downloads after many games took them, so the checkpoint that
-    # records the notes records the rule too.
-    rule = bool(notes - unreadable) and keep_out_of_downloads(Path(root))
+    # The rules keeping DazedTL's files out of players' downloads grew after
+    # many games took them, the notes' in any case last, so a checkpoint
+    # records those its game lacks.
+    rule = {".gitattributes"} if keep_out_of_downloads(Path(root)) else set()
     if rule:
         status = _status(root)
     # DazedTL's own files are never edits made outside it.
@@ -775,24 +768,27 @@ def _saving(root, change, named, claimed, log=lambda _line: None):
             # New rules can let in files they hid, such as the portable
             # settings an old rule order kept out.
             status = _status(root)
+    notes = set(filter(is_game_notes, status.paths))
+    if unreadable := {path for path in notes if not _readable(Path(root) / path)}:
+        log(
+            f"{', '.join(sorted(unreadable))} in the game folder can't be read,"
+            " as when another program holds it, so its edits wait for a later"
+            " checkpoint."
+        )
     pending = status.paths - unreadable
-    notes_rule = {".gitattributes"} if rule else set()
-    chosen = (
-        joined
-        | notes_rule
-        | (pending & named if claimed is None else pending - claimed)
-    )
-    if apart := {path for path in chosen if is_game_notes(path)} - named:
+    chosen = joined | rule | (pending & named if claimed is None else pending - claimed)
+    apart = set() if any(map(is_game_notes, named)) else notes & chosen
+    if apart:
         from desktop.backend.guidance import NOTES_SAVE
 
         notes_commit = _commit(
-            root, apart | notes_rule, Change(NOTES_SAVE, "Context"), status
+            root, apart | rule, Change(NOTES_SAVE, "Context"), status
         )
         if notes_commit is not None:
             # The rest is built on HEAD's tree, never on an index that may
             # not have taken the notes' commit.
             status = status._replace(head=notes_commit, index=None)
-        chosen -= apart | notes_rule
+        chosen -= apart | rule
     commit = _commit(root, chosen, change, status) if chosen else None
     return commit, commit or (status.head if status.head != "(initial)" else None)
 
@@ -809,25 +805,33 @@ def _readable(path):
         return False
 
 
+@contextmanager
+def _rewriting_rules(root):
+    """Marks a checkpoint made outside a game write's block as the
+    gateway's: letting files into the patch rewrites .gitignore, and adding
+    the rules keeping DazedTL's files out of downloads .gitattributes, writes
+    of the gateway's own."""
+    from .game_write import writing
+
+    token = writing.set(writing.get() | {str(Path(root).resolve())})
+    try:
+        yield
+    finally:
+        writing.reset(token)
+
+
 def save(root, change, named=()):
     """Records the pending changes in the patch, and the `named` files the
     patch lacks, as one checkpoint; for work committed outside a game write,
     such as an assistant's own edits and a phase's waiting writes. Writes
-    waiting for another phase are its checkpoint first. Letting files in
-    rewrites .gitignore, a write of the gateway's own."""
-    from .game_write import writing
-
+    waiting for another phase are its checkpoint first."""
     folder = _folder(root)
-    token = writing.set(writing.get() | {str(Path(root).resolve())})
-    try:
-        with exclusive(folder / "checkpoint.lock"):
-            _recover(root, folder)
-            waiting = _settle(root, folder, change)
-            commit = _save(root, change, [*named, *waiting], _others(folder))
-            system.unlink(folder / WAITING, missing_ok=True)
-            return commit
-    finally:
-        writing.reset(token)
+    with _rewriting_rules(root), exclusive(folder / "checkpoint.lock"):
+        _recover(root, folder)
+        waiting = _settle(root, folder, change)
+        commit = _save(root, change, [*named, *waiting], _others(folder))
+        system.unlink(folder / WAITING, missing_ok=True)
+        return commit
 
 
 def outside_edits(root):
@@ -835,7 +839,7 @@ def outside_edits(root):
     changes made in the patch outside DazedTL as their own, leaving the files
     of writes in progress to them."""
     folder = _folder(root)
-    with exclusive(folder / "checkpoint.lock"):
+    with _rewriting_rules(root), exclusive(folder / "checkpoint.lock"):
         _recover(root, folder)
         _settle(root, folder)
         claimed = _others(folder)
@@ -944,7 +948,7 @@ class Checkpoint:
         from util.version_update.git_workflow import wait_for_index_lock
 
         wait_for_index_lock(_index(self.root).with_name("index.lock"))
-        with exclusive(self.folder / "checkpoint.lock"):
+        with _rewriting_rules(self.root), exclusive(self.folder / "checkpoint.lock"):
             if self.phase is None:
                 _recover(self.root, self.folder)
             claimed = None if self.phase else _others(self.folder)

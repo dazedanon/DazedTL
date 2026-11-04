@@ -2258,7 +2258,11 @@ class WorkflowTests(unittest.TestCase):
             _git(self.game, "show", "--name-only", "--format=", older).stdout.split(),
         )
         # Phase checkpoints committed before then, which hold the notes with
-        # their files, undo apart too and leave the notes.
+        # their files, undo apart too and leave the notes, and hold up no
+        # notes checkpoint's undo, even once undone.
+        saved = _git(
+            self.game, "log", "-1", "--format=%H", "--grep=Save Assistant notes"
+        ).stdout.strip()
         agents.write_text("Names are in names.json.\n", encoding="utf-8")
         write_json(self.game / "names.json", {"name": "Lily"})
         save(self.game, Change("Extraction", "Assistant-led"), ["AGENTS.md"])
@@ -2270,6 +2274,7 @@ class WorkflowTests(unittest.TestCase):
         checkpoint_history.undo(self.game, older)
         self.assertEqual(read_json(self.game / "names.json"), {"name": "リリ"})
         self.assertEqual(agents.read_text(encoding="utf-8"), "Repack Data.wolf.\n")
+        self.assertIsNone(checkpoint_history.blockers(self.game, [saved])[saved])
 
     def test_start_over_restores_the_original_and_sets_the_attempt_aside(self):
         # Starting over must put every original file back as one checkpoint,
@@ -2484,7 +2489,18 @@ class WorkflowTests(unittest.TestCase):
 
         setup_git(LenProject(self.game), version="1.0", current_is_untranslated=True)
         _git(self.game, "config", "core.ignorecase", "true")
+        # A game that took them before then still holds the exact-case rule.
+        attributes = self.game / ".gitattributes"
+        attributes.write_text(
+            attributes.read_text(encoding="utf-8").replace(
+                "/[aA][gG][eE][nN][tT][sS].[mM][dD]", "/AGENTS.md"
+            ),
+            encoding="utf-8",
+        )
         (self.game / "agents.md").write_text("Repack Data.wolf.", encoding="utf-8")
+        write_json(self.game / "source.json", {"line": "はい。"})
+        _git(self.game, "add", "-f", ".gitattributes", "agents.md", "source.json")
+        _git(self.game, "commit", "-m", "Took the notes")
         with (
             running(for_action("export_selected")),
             write_game(self.game, paths=["source.json"]) as written,
