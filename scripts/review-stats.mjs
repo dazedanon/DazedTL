@@ -128,7 +128,8 @@ export function highEnd(low, { named, unknown }) {
 /**
  * Landings old enough to count and the bugs that got past them, by how many
  * reviews each ran and by its code lines; findings by the review that
- * reported them, their kind and outcome; who found the bugs that got past;
+ * reported them, their kind and outcome; who found the bugs that got past
+ * those landings;
  * how the fixes name where their bug came from; chains of fixes whose bug
  * came from another landing's fix; and the bugs whose commit no listed
  * landing holds. A bug counts once per landing it got past, however many of
@@ -191,6 +192,7 @@ export function summarize(landings, fixes, { now, fixCommits }) {
   const counted = new Set();
   /** @type {Map<string, number>} */
   const foundBy = new Map();
+  const finds = new Set();
   for (const { fix, introduced, found } of fixes) {
     for (const commit of introduced) {
       const landing = owner.get(commit);
@@ -201,9 +203,13 @@ export function summarize(landings, fixes, { now, fixCommits }) {
       const key = `${fix} ${landing.range}`;
       if (owner.get(fix) === landing || counted.has(key)) continue;
       counted.add(key);
-      if (exposed.has(landing)) tally(landing, "escapes");
-      if (!escaped.some((escape) => escape.fix === fix))
-        foundBy.set(found ?? "", (foundBy.get(found ?? "") ?? 0) + 1);
+      if (exposed.has(landing)) {
+        tally(landing, "escapes");
+        if (!finds.has(fix)) {
+          finds.add(fix);
+          foundBy.set(found ?? "", (foundBy.get(found ?? "") ?? 0) + 1);
+        }
+      }
       escaped.push({
         fix,
         introduced: commit,
@@ -422,7 +428,7 @@ function main() {
     );
   if (summary.foundBy.length)
     console.log(
-      `Bugs that got past a landing, by who found them: ${summary.foundBy
+      `Bugs that got past landings ${exposureDays} days old or more, by who found them: ${summary.foundBy
         .map(([found, n]) => `${found || "not recorded"} ${n}`)
         .join(", ")}`,
     );

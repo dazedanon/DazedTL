@@ -106,10 +106,8 @@ test("review stats put each escaped bug on the landing that let it in, once it i
       ["e1", "d1", "c..d"],
     ],
   );
-  assert.deepEqual(summary.foundBy, [
-    ["user", 1],
-    ["discord", 1],
-  ]);
+  // e1's bug got past a landing too recent to count yet.
+  assert.deepEqual(summary.foundBy, [["user", 1]]);
   // Got past b..c, so f1 is not also counted among the outside ones.
   assert.deepEqual(summary.outside, [{ fix: "f2", introduced: "old" }]);
   // One of five fixes naming where their bug came from says unknown.
