@@ -648,10 +648,22 @@ def openai_usage(usage: Mapping, provider: str = PROVIDER_OPENAI) -> dict:
         or usage.get("cache_read_input_tokens")
         or 0
     )
+    # OpenCode reports its cache writes only beside its own counts, by how
+    # long each lasts, all in its prompt total; Live prices every write as
+    # a five-minute one (translation._record_live_cost).
+    opencode = usage.get("opencode")
+    tokens = opencode.get("tokens") if isinstance(opencode, Mapping) else None
+    opencode_writes = sum(
+        value
+        for key in ("cache_write_5m", "cache_write_1h")
+        if isinstance(tokens, Mapping)
+        and type(value := tokens.get(key)) is int
+        and value > 0
+    )
     cache_write = int(
         prompt_details.get("cache_write_tokens")
         or prompt_details.get("cacheWriteTokens")
-        or 0
+        or opencode_writes
     )
     thinking = 0
     if provider == PROVIDER_GEMINI:

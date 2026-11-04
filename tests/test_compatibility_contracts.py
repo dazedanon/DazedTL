@@ -2249,6 +2249,51 @@ class CompatibilityContracts(unittest.TestCase):
             None,
         )
         self.assertAlmostEqual(spent or 0, second["cost"])
+        # OpenCode reports cache writes only by how long they last, beside
+        # its own counts, so a Claude model there priced its writes as
+        # uncached input; both methods price them at Claude's five-minute
+        # write price, as every Live write.
+        model = "claude-sonnet-5-5"
+        written = {
+            "prompt_tokens": 2015,
+            "completion_tokens": 3,
+            "total_tokens": 2018,
+            "cache_read_input_tokens": 0,
+            "opencode": {
+                "tokens": {
+                    **second["opencode"]["tokens"],
+                    "cache_read": 0,
+                    "cache_write_5m": 1920,
+                }
+            },
+        }
+        billed = (95 * 2 + 1920 * 2 * 1.25 + 3 * 10) / 1_000_000
+        self.assertEqual(openai_usage(written)["cache_creation_input_tokens"], 1920)
+        with (
+            patch.dict(os.environ, {"api": endpoint, "API_PROVIDER": "openai"}),
+            patch.object(
+                translation,
+                "getPricingConfig",
+                return_value={"inputAPICost": 2, "outputAPICost": 10},
+            ),
+            patch.object(translation, "_thread_local", threading.local()),
+            patch.object(translation, "_global_accurate_cost", 0.0),
+            patch.object(translation, "LIVE_CACHE_READ_MULTIPLE", None),
+        ):
+            translation._record_live_cost(CompletionUsage(**written), model)
+            self.assertAlmostEqual(translation._thread_local.file_live_cost, billed)
+        spent = usage_cost(
+            uncached_usage(openai_usage(written)),
+            {
+                "mode": "live",
+                "model": model,
+                "endpoint": endpoint,
+                "protocol": "openai",
+                "rates": {"input": 2, "output": 10},
+            },
+            None,
+        )
+        self.assertAlmostEqual(spent or 0, billed)
 
     def test_each_claude_route_rule_routes_a_model_and_address_alike(self):
         # The Claude name test and the native-Anthropic route test were copied
