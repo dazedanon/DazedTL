@@ -165,10 +165,13 @@ def _bmp_image(raw: bytes):
 def _bmp_file(image, original: bytes) -> bytes:
     """A BMP KiriKiri reads as the original: 32-bit with the edited alpha in
     each pixel's fourth byte for an original with alpha, 32-bit with those
-    bytes zero for an original that leaves them so, else 24-bit."""
+    bytes zero for an original that leaves them so, 8-bit in its palette
+    for one with a palette, else 24-bit."""
     from PIL import Image
 
     _offset, _width, _height, bits, compression = _bmp_header(original)
+    if bits <= 8:
+        return _paletted_bmp(_opaque(image, "BMP"), original, bits)
     with Image.open(BytesIO(original)) as opened:
         # Pillow reads the alpha of a BMP whose masks give one.
         alpha = _bmp_alpha(original) is not None or "A" in opened.getbands()
@@ -187,6 +190,43 @@ def _bmp_file(image, original: bytes) -> bytes:
         "<2sIHHI", b"BM", 54 + len(data), 0, 0, 54
     ) + struct.pack("<IiiHHIIiiII", 40, width, height, 1, 32, 0, len(data), 2835, 2835, 0, 0)
     return header + data
+
+
+def _paletted_bmp(image, original: bytes, bits: int) -> bytes:
+    """An 8-bit BMP of the RGB edit of a BMP with a palette, in that palette,
+    which some engines take transparency from, such as Wolf RPG from its
+    first color: each pixel the edit left keeps its color's index, and each
+    other one takes the nearest color, a tie the later one."""
+    import numpy as np
+    from PIL import Image
+
+    with Image.open(BytesIO(original)) as opened:
+        indexes = np.asarray(opened).astype(np.uint8)
+        if opened.mode == "P":
+            palette = np.array(opened.getpalette(), np.uint8).reshape(-1, 3)
+        else:
+            # Pillow reads a palette of grays at their own indexes as "L", or
+            # black and white as "1".
+            colors = struct.unpack_from("<I", original, 46)[0] or 1 << bits
+            levels = (0, 255) if opened.mode == "1" else range(colors)
+            palette = np.repeat(np.array(levels, np.uint8)[:, None], 3, axis=1)
+    edited = np.asarray(image, np.uint8)
+    changed = (edited != palette[indexes]).any(axis=2)
+    if changed.any():
+        colors, inverse = np.unique(edited[changed], axis=0, return_inverse=True)
+        distance = (
+            (colors[:, None].astype(np.int32) - palette[None, ::-1]) ** 2
+        ).sum(axis=2)
+        nearest = len(palette) - 1 - distance.argmin(axis=1)
+        indexes = indexes.copy()
+        indexes[changed] = nearest[inverse.ravel()]
+    result = Image.fromarray(indexes, "P")
+    # All 256 colors, as Pillow reads an 8-bit BMP of black and white alone
+    # as one bit per pixel.
+    result.putpalette(palette.tobytes().ljust(768, b"\0"))
+    stream = BytesIO()
+    result.save(stream, format="BMP")
+    return stream.getvalue()
 
 
 # TLG, KiriKiri's own lossless format. TLG5 and TLG6 are read as KiriKiri Z's

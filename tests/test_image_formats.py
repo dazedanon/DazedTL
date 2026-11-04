@@ -405,6 +405,31 @@ class BmpAndJpegTests(unittest.TestCase):
         self.assertFalse(np.frombuffer(written, np.uint8, offset=54)[3::4].any())
         np.testing.assert_array_equal(pixels_of(written), opaque)
 
+    def test_a_paletted_bmp_keeps_its_palette(self):
+        # It was written back as a 24-bit BMP, so an engine taking a 256-color
+        # image's transparency from its palette, such as Wolf RPG from index
+        # 0, showed its transparent areas as a solid box.
+        palette = [0, 0, 0, 255, 255, 255, 200, 30, 30] + [0, 0, 0] * 253
+        indexes = np.zeros((6, 8), np.uint8)
+        indexes[1:3, 1:7] = 1
+        indexes[4:, :] = 3  # Black too, but not index 0.
+        original = Image.fromarray(indexes, "P")
+        original.putpalette(palette)
+        stream = BytesIO()
+        original.save(stream, format="BMP")
+        raw = stream.getvalue()
+        edited = pixels_of(raw).copy()
+        edited[1, 1] = (250, 240, 250, 255)  # Nearest to white.
+        edited[2, 2] = (180, 40, 20, 255)  # Nearest to red.
+        written = from_png(png(edited), raw)
+        with Image.open(BytesIO(written)) as image:
+            self.assertEqual(image.mode, "P")
+            self.assertEqual(image.getpalette()[:768], palette)
+            expected = indexes.copy()
+            expected[2, 2] = 2
+            np.testing.assert_array_equal(np.asarray(image), expected)
+        self.assertEqual(from_png(to_png(written), written), written)
+
     def test_a_24_bit_bmp_and_a_jpeg_are_written_in_their_format(self):
         original = picture(8, 8, 1, alpha=False)
         edited = picture(8, 8, 2, alpha=False)
