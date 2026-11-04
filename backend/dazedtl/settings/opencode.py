@@ -24,16 +24,10 @@ from .preferences import text
 MAX_MODELS = 250
 # A model keeps at most this many date multipliers.
 MAX_DATED = 8
-_KEYS = {
-    "input",
-    "output",
-    "cache_read",
-    "context",
-    "max_output",
-    "json",
-    "peak",
-    "dated",
-}
+_KEYS = {"input", "output", "cache_read", "max_output", "peak", "dated"}
+# What catalogs kept before nothing read it, a model's context limit and
+# whether it takes structured outputs, which a saved one may still hold.
+_RETIRED = {"context", "json"}
 
 
 def _factor(value):
@@ -121,8 +115,8 @@ def paid(rows):
 
 def catalog(rows):
     """{model ID: what DazedTL keeps of its row}, bounded: its listed input,
-    output and cache read prices, its context and output limits, whether it
-    takes structured outputs, and its price multipliers (_multipliers).
+    output and cache read prices, its output limit and its price
+    multipliers (_multipliers).
     Context-length price overrides apply only far above a translation
     request's size, so they are left out."""
     result = {}
@@ -137,15 +131,12 @@ def catalog(rows):
         cost = _object(row, "cost")
         prices = _object(cost, "text")
         inputs = _object(prices, "input")
-        limit = _object(row, "limit")
         peak, dated = _multipliers(cost)
         result[model] = {
             "input": amount(inputs.get("price")),
             "output": amount(_object(prices, "output").get("price")),
             "cache_read": amount(_object(inputs, "cache").get("read")),
-            "context": positive_integer(limit.get("context")),
-            "max_output": positive_integer(limit.get("output")),
-            "json": _object(row, "capabilities").get("structured_output") is True,
+            "max_output": positive_integer(_object(row, "limit").get("output")),
             "peak": peak,
             "dated": dated,
         }
@@ -161,12 +152,9 @@ def validate_catalog(value):
         text(model, "model ID", required=True)
         if (
             not isinstance(row, dict)
-            or set(row) != _KEYS
-            or type(row["json"]) is not bool
-            or any(
-                row[key] is not None and positive_integer(row[key]) is None
-                for key in ("context", "max_output")
-            )
+            or not _KEYS <= set(row) <= _KEYS | _RETIRED
+            or row["max_output"] is not None
+            and positive_integer(row["max_output"]) is None
             or any(
                 row[key] is not None and amount(row[key]) is None
                 for key in ("input", "output", "cache_read")

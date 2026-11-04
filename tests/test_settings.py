@@ -794,6 +794,14 @@ class SettingsTests(unittest.TestCase):
             )
             self.assertNotIn("rateNote", kimi)
             stored, _custom, paid = saved._read()["connections"]
+            # A catalog saved when rows kept a context limit and structured
+            # outputs still loads.
+            opencode.validate_catalog(
+                {
+                    model: {**row, "context": 1000000, "json": True}
+                    for model, row in stored["catalog"].items()
+                }
+            )
             # A run freezes its route's own cache read price beside its
             # rates, Kimi K2.7 Code's $0.19 of $0.95 on Go, and a DeepSeek
             # model's on Go too, where DeepSeek's own rules
@@ -877,7 +885,7 @@ class SettingsTests(unittest.TestCase):
                 {"input": 2_000_000},
                 {"dated": [{"from": "December", "until": None, "factor": 2}]},
                 {"dated": [{"from": None, "until": None, "factor": 0}]},
-                {"json": None},
+                {"max_output": 0},
             ):
                 with self.subTest(invalid=invalid), self.assertRaises(ValueError):
                     opencode.validate_catalog(
