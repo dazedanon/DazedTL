@@ -69,13 +69,21 @@ def provider_errors(function):
     return call
 
 
-# The engines besides RPG Maker whose patches GameUpdate installs: it copies a
-# patch's files over the game, so a patch laid out as the game updates it,
-# such as Unity's replaced assets or BepInEx plugin, a TyranoScript game's
-# resources/app or rebuilt app.asar and WOLF's loose Data files or packed
-# Data/*.wolf, except what gameupdate_refusal names. Other engines' layouts
-# were not checked.
-GAMEUPDATE_ENGINES = frozenset({"WOLF", "Unity", "TyranoScript"})
+# The engines besides RPG Maker whose patches GameUpdate installs, in the
+# order messages name them: it copies a patch's files over the game, so a
+# patch laid out as the game updates it, such as Unity's replaced assets or
+# BepInEx plugin, a TyranoScript game's resources/app or rebuilt app.asar,
+# WOLF's loose Data files or packed Data/*.wolf and the patch xp3 a KiriKiri
+# game loads over its own archives, except what gameupdate_refusal names.
+# Other engines' layouts were not checked.
+GAMEUPDATE_ENGINES = ("WOLF", "Unity", "TyranoScript", "KiriKiri")
+
+
+def gameupdate_engine_names(conjunction):
+    """GAMEUPDATE_ENGINES as prose, such as "WOLF, Unity, TyranoScript or
+    KiriKiri"."""
+    *rest, last = GAMEUPDATE_ENGINES
+    return f"{', '.join(rest)} {conjunction} {last}"
 
 
 def gameupdate_offered(engine):
@@ -192,6 +200,9 @@ class TranslationEngine:
             return "WOLF"
         if (root / "tyrano").is_dir() or (root / "resources/app/tyrano").is_dir():
             return "TyranoScript"
+        # KiriKiri reads its game from xp3 archives beside its exe.
+        if any(path.is_file() for path in root.glob("*.xp3", case_sensitive=False)):
+            return "KiriKiri"
         if any(root.glob("*_Data")):
             return "Unity"
         return UNRECOGNIZED
@@ -736,8 +747,9 @@ class TranslationEngine:
             )
         if engine not in GAMEUPDATE_ENGINES:
             raise ValueError(
-                "GameUpdate installs only in games DazedTL recognizes as WOLF, "
-                "Unity or TyranoScript, whose patches it was checked with."
+                "GameUpdate installs only in games DazedTL recognizes as "
+                f"{gameupdate_engine_names('or')}, whose patches it was "
+                "checked with."
             )
         log = log or (lambda _line: None)
         if not self.project(root, options).install_gameupdate:

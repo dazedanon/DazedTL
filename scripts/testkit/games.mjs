@@ -26,9 +26,11 @@ const bases = {
   wolf: "A WOLF RPG Editor game whose pictures sit in Data/Picture.wolf, packed by the bundled WolfDawn: a title screen with lettering and two CGs.",
   tyrano:
     "A TyranoScript game, its runtime a stand-in: data/scenario/first.ks holds a few lines of dialogue, two naming its forest and one an inn's price.",
+  kirikiri:
+    "A KiriKiri game, its runtime a stand-in: an unencrypted data.xp3 holds scenario/first.ks, the TyranoScript game's lines.",
 };
 
-/** The TyranoScript game's scenario, which Text QA can't read. */
+/** The TyranoScript and KiriKiri games' scenario, which Text QA can't read. */
 const tyranoScenario = [
   "*start",
   "[cm]",
@@ -42,6 +44,87 @@ const tyranoScenario = [
   "[s]",
   "",
 ].join("\n");
+
+const u16 = (value) => {
+  const bytes = Buffer.alloc(2);
+  bytes.writeUInt16LE(value);
+  return bytes;
+};
+const u32 = (value) => {
+  const bytes = Buffer.alloc(4);
+  bytes.writeUInt32LE(value);
+  return bytes;
+};
+const u64 = (value) => {
+  const bytes = Buffer.alloc(8);
+  bytes.writeBigUInt64LE(BigInt(value));
+  return bytes;
+};
+
+function adler32(data) {
+  let a = 1;
+  let b = 0;
+  for (const byte of data) {
+    a = (a + byte) % 65521;
+    b = (b + a) % 65521;
+  }
+  return ((b << 16) | a) >>> 0;
+}
+
+/**
+ * A KiriKiri XP3 archive of `files` (name to text), each member
+ * zlib-compressed with its checksum, as an unencrypted game ships it.
+ * @param {Record<string, string>} files
+ */
+function xp3(files) {
+  const magic = Buffer.from("XP3\r\n \n\x1a\x8b\x67\x01", "latin1");
+  const start = magic.length + 8;
+  const bodies = [];
+  const entries = [];
+  let size = 0;
+  for (const [name, text] of Object.entries(files)) {
+    const data = Buffer.from(text);
+    const stored = zlib.deflateSync(data);
+    const chunks = Buffer.concat(
+      [
+        [
+          "info",
+          Buffer.concat([
+            u32(0),
+            u64(data.length),
+            u64(stored.length),
+            u16(name.length),
+            Buffer.from(name, "utf16le"),
+          ]),
+        ],
+        [
+          "segm",
+          Buffer.concat([
+            u32(1),
+            u64(start + size),
+            u64(data.length),
+            u64(stored.length),
+          ]),
+        ],
+        ["adlr", u32(adler32(data))],
+      ].flatMap(([tag, chunk]) => [Buffer.from(tag), u64(chunk.length), chunk]),
+    );
+    entries.push(Buffer.from("File"), u64(chunks.length), chunks);
+    bodies.push(stored);
+    size += stored.length;
+  }
+  const index = Buffer.concat(entries);
+  const packed = zlib.deflateSync(index);
+  return Buffer.concat([
+    magic,
+    u64(start + size),
+    ...bodies,
+    Buffer.from([1]),
+    u64(packed.length),
+    u64(index.length),
+    packed,
+  ]);
+}
 
 /** The WolfDawn build bundled for this system. */
 export const wolfTool = path.join(
@@ -311,6 +394,18 @@ export async function makeGame(names, game, change) {
       path.join(game, "index.html"),
       '<!doctype html><script src="tyrano/tyrano.js"></script>\n',
     );
+    return {};
+  }
+  if (base === "kirikiri") {
+    if (rest.length)
+      throw new Error("No variant applies to the KiriKiri game.");
+    if (change) throw new Error("The KiriKiri game has no database to edit.");
+    fs.mkdirSync(game, { recursive: true });
+    fs.writeFileSync(
+      path.join(game, "data.xp3"),
+      xp3({ "scenario/first.ks": tyranoScenario }),
+    );
+    fs.writeFileSync(path.join(game, "Game.exe"), "Game.exe stand-in");
     return {};
   }
   if (base === "ace") {

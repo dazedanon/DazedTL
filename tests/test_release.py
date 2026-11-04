@@ -797,7 +797,10 @@ class ReleaseTests(unittest.TestCase):
                 engine.detect = lambda _root, name=detected: name
                 with self.assertRaisesRegex(ValueError, refusal):
                     engine.gameupdate(game, on)
-            engine.detect = lambda _root: "Unity"
+            # A KiriKiri game, which DazedTL knows by its xp3 archives, loads
+            # a patch xp3 GameUpdate copies over it.
+            del engine.detect
+            (game / "Data.xp3").write_bytes(b"")
             written = []
             with patch("dazedtl.compatibility.game_write.write_game") as write_game:
                 write_game.return_value.__enter__.return_value.wrote = lambda *names: (
@@ -829,7 +832,7 @@ class ReleaseTests(unittest.TestCase):
             self.assertIsNone(engine.setup_mismatch(game, off))
             self.assertEqual(
                 sorted(path.relative_to(game).as_posix() for path in game.rglob("*")),
-                ["README.md"],
+                ["Data.xp3", "README.md"],
             )
             self.assertLessEqual(
                 {
