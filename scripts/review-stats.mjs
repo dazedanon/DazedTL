@@ -92,14 +92,15 @@ export function loggedLandings(text) {
 
 /**
  * The lines a landing changed in code, from its `git diff --numstat
- * --no-renames` output: tests, Markdown, JSON and the generated API
- * contracts are left out, and binary files count none.
+ * --no-renames -z` output, whose paths Git leaves unquoted: tests,
+ * Markdown, JSON and the generated API contracts are left out, and binary
+ * files count none.
  * @param {string} text
  */
 export function codeLines(text) {
   let total = 0;
-  for (const line of text.split("\n")) {
-    const [added, deleted, file] = line.split("\t");
+  for (const entry of text.split("\0")) {
+    const [added, deleted, file] = entry.split("\t");
     if (
       !file ||
       file.startsWith("tests/") ||
@@ -316,14 +317,18 @@ function main() {
   // A landing Git can't list is left out, so it skews no review count.
   const withCommits = landings.flatMap((landing) => {
     const listed = git(["rev-list", "--end-of-options", landing.range]);
-    const diff = git([
-      "diff",
-      "--numstat",
-      "--no-renames",
-      "--end-of-options",
-      landing.range,
-    ]);
-    if (listed.status === 0 && diff.status === 0)
+    const diff =
+      listed.status === 0
+        ? git([
+            "diff",
+            "--numstat",
+            "--no-renames",
+            "-z",
+            "--end-of-options",
+            landing.range,
+          ])
+        : listed;
+    if (diff.status === 0)
       return [
         {
           ...landing,
@@ -332,7 +337,7 @@ function main() {
         },
       ];
     problems.push(
-      `Landing ${landing.range} can't be listed, so it is left out: ${(listed.stderr || diff.stderr).trim()}`,
+      `Landing ${landing.range} can't be listed, so it is left out: ${diff.stderr.trim()}`,
     );
     return [];
   });

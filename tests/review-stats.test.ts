@@ -253,7 +253,7 @@ test("review stats read real trailers by their first word, code lines from numst
   // code.mjs: six lines removed, one added.
   assert.equal(
     codeLines(
-      git(["diff", "--numstat", "--no-renames", `${base}..HEAD`]).stdout,
+      git(["diff", "--numstat", "--no-renames", "-z", `${base}..HEAD`]).stdout,
     ),
     7,
   );
