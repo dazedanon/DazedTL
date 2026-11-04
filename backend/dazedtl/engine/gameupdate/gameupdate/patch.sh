@@ -164,7 +164,8 @@ check_dependency curl
 # replaces files this one is applying; patch.ps1 holds the same file. The
 # file stays: one removed while another run opens it would let two runs hold
 # it. Without flock, gameupdate.pid names the run holding it, made only
-# where it is missing; one whose process has ended was left by a killed run.
+# where it is missing; one whose process has ended, or is no GameUpdate's
+# since its number was reused, was left by a killed run.
 busy="ERROR: Another GameUpdate is already running for this game. Let it finish, then run GameUpdate again if needed."
 unwritable="ERROR: GameUpdate can't write in $SCRIPT_DIR. Move the game to a folder you can change, then run GameUpdate again."
 if command -v flock > /dev/null 2>&1; then
@@ -180,9 +181,10 @@ else
     PID_LOCK="$SCRIPT_DIR/gameupdate.pid"
     if ! ( set -C; printf '%s\n' "$$" > "$PID_LOCK" ) 2> /dev/null; then
         holder="$(cat "$PID_LOCK" 2> /dev/null || true)"
-        if [ -n "$holder" ] && kill -0 "$holder" 2> /dev/null; then
+        if [ -n "$holder" ] && kill -0 "$holder" 2> /dev/null \
+            && { ! command -v ps > /dev/null 2>&1 || ps -p "$holder" -o args= 2> /dev/null | grep -q patch; }; then
             PID_LOCK=""
-            echo "$busy"
+            echo "$busy If none is, delete gameupdate/gameupdate.pid."
             exit 1
         fi
         if ! printf '%s\n' "$$" > "$PID_LOCK"; then

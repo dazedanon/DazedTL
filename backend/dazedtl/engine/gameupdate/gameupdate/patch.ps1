@@ -697,8 +697,9 @@ function Get-PatchPathLimit {
     #>
     if ($null -eq $script:PatchPathLimit) {
         $script:PatchPathLimit = @{ File = 259; Folder = 247 }
-        # The game's own programs reach long paths only where Windows allows
-        # them, even when PowerShell 7 could make them without.
+        # Without LongPathsEnabled no game program can open a long path,
+        # even when PowerShell 7 could make it; with it, only those that
+        # declare they can.
         $long = Get-ItemProperty -LiteralPath 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem' -Name LongPathsEnabled -ErrorAction SilentlyContinue
         if (-not $long -or $long.LongPathsEnabled -ne 1) {
             return $script:PatchPathLimit
@@ -1391,7 +1392,7 @@ function Copy-PatchFiles {
             $folder = [IO.Path]::GetDirectoryName($relative)
             while ($folder -and -not [IO.Directory]::Exists((Join-Path $Root $folder))) {
                 if ([IO.File]::Exists((Join-Path $Root $folder))) {
-                    throw ('PATCH_ERR:APPLY:This patch has a folder where the game has a file: {0}' -f $folder)
+                    throw ('PATCH_ERR:APPLY:This patch has a folder where the game has a file: {0}' -f $folder.Replace('\', '/'))
                 }
                 $folders.Insert(0, $folder)
                 $folder = [IO.Path]::GetDirectoryName($folder)

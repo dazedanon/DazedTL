@@ -515,8 +515,21 @@ class GameUpdateRequestTests(unittest.TestCase):
                         self.assertIn("Already up to date", ended.stdout)
                     if name == "held without flock":
                         path = without_flock
+                        # A process that reads as patch.sh's.
+                        holder = subprocess.Popen(
+                            [
+                                sys.executable,
+                                "-c",
+                                "import time; time.sleep(60)",
+                                "patch.sh",
+                            ],
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
+                        )
+                        self.addCleanup(holder.wait)
+                        self.addCleanup(holder.kill)
                         (game / "gameupdate/gameupdate.pid").write_text(
-                            f"{os.getpid()}\n", encoding="utf-8"
+                            f"{holder.pid}\n", encoding="utf-8"
                         )
                     undo = game / "gameupdate/undo"
                     undo.mkdir()
@@ -535,19 +548,29 @@ class GameUpdateRequestTests(unittest.TestCase):
     )
     def test_patch_sh_takes_over_the_lock_a_killed_run_left_without_flock(self):
         self.stand_in_curl()
-        game = self.game()
-        (game / "gameupdate/previous_patch_sha.txt").write_text(SHA, encoding="utf-8")
-        # The process of a killed run, ended.
-        dead = subprocess.Popen(["true"])
-        dead.wait()
-        (game / "gameupdate/gameupdate.pid").write_text(
-            f"{dead.pid}\n", encoding="utf-8"
+        path = self.path_without({"flock"})
+        # A killed run's process number, which may since be another
+        # program's.
+        ended = subprocess.Popen(["true"])
+        ended.wait()
+        other = subprocess.Popen(
+            ["sleep", "60"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
         )
-        result = self.patch_sh(game, os.environ, path=self.path_without({"flock"}))
-        self.assertIn(
-            "Already up to date", result.stdout, result.stdout + result.stderr
-        )
-        self.assertFalse((game / "gameupdate/gameupdate.pid").exists())
+        self.addCleanup(other.wait)
+        self.addCleanup(other.kill)
+        for name, holder in (("ended", ended.pid), ("reused", other.pid)):
+            with self.subTest(name):
+                game = self.game(name=name)
+                (game / "gameupdate/previous_patch_sha.txt").write_text(
+                    SHA, encoding="utf-8"
+                )
+                (game / "gameupdate/gameupdate.pid").write_text(
+                    f"{holder}\n", encoding="utf-8"
+                )
+                result = self.patch_sh(game, os.environ, path=path)
+                output = result.stdout + result.stderr
+                self.assertIn("Already up to date", result.stdout, output)
+                self.assertFalse((game / "gameupdate/gameupdate.pid").exists())
 
     @unittest.skipUnless(
         POSIX_TOOLS,
