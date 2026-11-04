@@ -322,7 +322,7 @@ function Tile({
           <span
             className="image-tile-note"
             role="img"
-            aria-label={`Revision note: ${note}`}
+            aria-label="Revision note"
             title={`Revision note: ${note}`}
           >
             <MessageSquareText size={14} aria-hidden="true" />
@@ -507,9 +507,13 @@ function Manager({
     dimensions.height,
   );
   // The images whose revision notes are saved, which the Notes view lists.
-  const savedNotes = Object.keys(state.notes || {})
-    .sort()
-    .join("\n");
+  const savedNotes = useMemo(
+    () =>
+      Object.keys(state.notes || {})
+        .sort()
+        .join("\n"),
+    [state.notes],
+  );
   const grid = useImageGrid(
     projectId,
     value.view,
@@ -873,7 +877,8 @@ function Manager({
   // Revision notes save with the list, so they survive closing Compare,
   // leaving Images and restarting; a report that answers one removes it.
   const notes = value.notes;
-  const noted = Object.keys(notes).length;
+  // The noted images the list holds, as the revision task sends them.
+  const noted = counts.noted;
   // A note is with the assistant while the task that sent it waits and the
   // note is as it sent it.
   const sentAt = (id: string) => {
@@ -923,18 +928,15 @@ function Manager({
         (key) => key === value.view.status,
       ) || "";
   // An empty list view, unless a folder or search hides its images, has
-  // nothing left to translate.
-  const listDone =
-    shown === "list" && !value.view.folder && !value.view.query.trim();
+  // nothing left to translate, and an empty Notes view no notes waiting.
+  const unfiltered = !value.view.folder && !value.view.query.trim();
+  const listDone = shown === "list" && unfiltered;
+  const notesDone = shown === "noted" && unfiltered;
   // Before the assistant examined the images, an empty list waits for the
   // investigation, and once the user stopped it, for their ticks, rather than
   // having nothing left.
   const unexamined = listDone && flow.unexamined;
   const unticked = listDone && flow.unticked;
-  // An empty Notes view, unless a folder or search hides its images, has no
-  // notes waiting.
-  const notesDone =
-    shown === "noted" && !value.view.folder && !value.view.query.trim();
   // Which views show follows the whole game, so the switch keeps its shape;
   // their numbers follow the folder and search, as the grid does.
   const scoped = grid.views;

@@ -347,7 +347,9 @@ class Index:
                 )
             return result
 
-    def counts(self):
+    def counts(self, noted=()):
+        """What the Image Manager counts; `noted` are the ids of the images
+        with revision notes, of which it counts those the list holds."""
         within, values = self.within()
         with self.connection() as db:
             classifications = dict(
@@ -390,6 +392,10 @@ class Index:
                 "SELECT count(*) FROM assets WHERE " + within + " AND " + REMAINING,
                 values,
             ).fetchone()[0]
+            noted = db.execute(
+                "SELECT count(*) FROM assets WHERE " + within + " AND " + LISTED,
+                (*values, json.dumps(list(noted))),
+            ).fetchone()[0]
             return {
                 "indexed": indexed,
                 "examined": examined,
@@ -409,6 +415,7 @@ class Index:
                 "selectedNeedsReview": selected.get("needs_review", 0),
                 "selectedEditable": sum(selected.values())
                 - selected.get("not_prepared", 0),
+                "noted": noted,
                 "missing": db.execute(
                     "SELECT count(*) FROM assets WHERE "
                     + within

@@ -1116,6 +1116,12 @@ class ImageTests(unittest.TestCase):
         self.assertEqual([item["id"] for item in noted["items"]], ["img/B.png"])
         self.assertEqual(noted["views"]["noted"], 1)
         self.assertEqual(service.list(self.identity, query="A")["views"]["noted"], 0)
+        self.assertEqual(service.state(self.identity)["counts"]["noted"], 1)
+        # Untick all shown in the Notes view unticks just that image.
+        state = service.action(
+            self.identity, "select_matching", {"filter": "noted", "mode": "remove"}
+        )["state"]
+        self.assertEqual(state["selection"], ["img/A.png"])
         # Editing the waiting note makes it unsent until a task copies it again.
         state = service.state(self.identity)
         edited = {"img/B.png": "Translate the sign."}

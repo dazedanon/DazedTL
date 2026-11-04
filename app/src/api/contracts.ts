@@ -2378,6 +2378,7 @@ export type ImageCounts = {
   selectedSkipped: number;
   selectedNeedsReview: number;
   selectedEditable: number;
+  noted: number;
   missing: number;
 };
 
