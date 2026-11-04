@@ -2491,6 +2491,7 @@ export type ImageViewCounts = {
   uncertain: number;
   ready: number;
   applied: number;
+  noted: number;
 };
 
 export type ImageList = {

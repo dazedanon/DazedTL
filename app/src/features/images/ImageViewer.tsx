@@ -1,6 +1,6 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import { useLanguages } from "../../app/LanguagesProvider";
-import { Image as ImageIcon } from "lucide-react";
+import { Image as ImageIcon, MessageSquareText } from "lucide-react";
 import type { ImageAsset } from "../../api/contracts";
 import { imagesApi } from "../../api/images";
 import { messageOf } from "../../api/errors";
@@ -22,6 +22,7 @@ export function ImageViewer({
   listed,
   queue,
   thumbnailSize,
+  note,
   onCompare,
 }: {
   projectId: string;
@@ -30,6 +31,8 @@ export function ImageViewer({
   listed: boolean;
   queue: ThumbnailQueue;
   thumbnailSize: number;
+  /** The image's revision note, until a report answers it. */
+  note: string;
   onCompare: (asset: ImageAsset) => void;
 }) {
   return (
@@ -49,6 +52,15 @@ export function ImageViewer({
           <ImageIcon size={24} aria-hidden="true" />
           <span>Click an image to preview it.</span>
         </div>
+      )}
+      {/* Compare holds the note's box, to change or empty it. */}
+      {asset && note && (
+        <p className="image-viewer-note">
+          <MessageSquareText size={14} aria-hidden="true" />
+          <span>
+            <strong>Revision note</strong> {note}
+          </span>
+        </p>
       )}
     </figure>
   );

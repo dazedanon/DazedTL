@@ -130,8 +130,8 @@ Click **Apply to game** when it's done.
 4. **Apply**: check the results and click **Apply to game**.
 
 To letter an image yourself, tick it and choose **More > Edit text…**.
-To ask for changes, open an image in **Compare images** and write **Revision notes**; they stay with the image, even one already in the game, until your assistant's results answer them.
-**Copy revision task** there sends that image, and **Copy revision task** in the footer sends every noted image at once.
+To ask for changes, write **Revision notes** in **Compare images**; they stay with the image, even one in the game, until your assistant's results answer them.
+The **Notes** view lists the noted images, and **Copy revision task** in the footer sends them all at once.
 
 If a run fails, a banner says why, and **Run history > Inspect** shows each request and the AI's reply.
 Lines that failed keep their original text until you translate them again.

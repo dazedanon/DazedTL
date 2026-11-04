@@ -277,6 +277,8 @@ class ImageViewCounts(TypedDict):
     uncertain: int
     ready: int
     applied: int
+    # The images with revision notes waiting.
+    noted: int
 
 
 class ImageList(TypedDict):

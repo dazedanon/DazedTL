@@ -531,6 +531,12 @@ class ImageService:
                     "offset": 0,
                     "limit": 1,
                 }
+            # The Notes view and its count read the saved revision notes.
+            noted = (
+                list(_notes(self._load(project_id)))
+                if filter == "noted" or offset == 0
+                else ()
+            )
             result = self._index(project_id).list(
                 query=query,
                 folder=folder,
@@ -538,6 +544,7 @@ class ImageService:
                 offset=offset,
                 limit=limit,
                 selected_only=selected_only,
+                noted=noted,
             )
             result["items"] = [self._public(row) for row in result["items"]]
             return result

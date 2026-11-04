@@ -121,6 +121,8 @@ def image_folder(state):
 # Images an investigation of the remaining images asks about: not examined
 # yet, and neither in the game nor excluded, which settles them.
 REMAINING = "examined=0 AND state!='applied' AND classification!='excluded'"
+# The images among the ids a JSON list holds, such as those with revision notes.
+LISTED = "id IN (SELECT value FROM json_each(?))"
 
 
 def holds(folder, identity):
@@ -251,7 +253,9 @@ class Index:
             ),
         )
 
-    def where(self, query="", folder="", filter="all", selected_only=False):
+    def where(self, query="", folder="", filter="all", selected_only=False, noted=()):
+        """The SQL that picks the images a view shows; `noted` are the ids of
+        the images with revision notes, which the "noted" view lists."""
         within, parameters = self.within()
         parts, parameters = [within], list(parameters)
         if query:
@@ -266,6 +270,9 @@ class Index:
             parts.append("state!='applied'")
         elif filter == "remaining":
             parts.append(REMAINING)
+        elif filter == "noted":
+            parts.append(LISTED)
+            parameters.append(json.dumps(list(noted)))
         elif filter and filter != "all":
             parts.append("(classification=? OR state=?)")
             parameters.extend((filter, filter))
@@ -327,13 +334,14 @@ class Index:
                     "SELECT count(*), total(selected=1 AND state!='applied'),"
                     " total(classification='uncertain' AND state!='applied'),"
                     " total(classification='ready' OR state='ready'),"
-                    " total(classification='applied' OR state='applied')"
+                    " total(classification='applied' OR state='applied'),"
+                    f" total({LISTED})"
                     " FROM assets" + scope,
-                    values,
+                    (json.dumps(list(filters.get("noted", ()))), *values),
                 ).fetchone()
                 result["views"] = dict(
                     zip(
-                        ("all", "list", "uncertain", "ready", "applied"),
+                        ("all", "list", "uncertain", "ready", "applied", "noted"),
                         (int(count) for count in views),
                     )
                 )

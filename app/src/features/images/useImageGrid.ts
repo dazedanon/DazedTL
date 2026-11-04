@@ -23,7 +23,13 @@ type Filters = {
   filter: string;
   selected_only: boolean;
 };
-type Scope = { filters: Filters; inventory: string; revision: number };
+type Scope = {
+  filters: Filters;
+  inventory: string;
+  revision: number;
+  /** The saved revision notes' images while the Notes view lists them. */
+  noted: string;
+};
 type Loaded = Results<Scope>;
 /**
  * The page of images `start` to `end` of the view's matches, with the rest of
@@ -31,7 +37,9 @@ type Loaded = Results<Scope>;
  * reloads them, while saving a different `selection` only recounts the
  * selected matches, so ticking images never reloads the grid and the
  * Recommended view keeps a tile its user just unticked. `applied` of the
- * selected images are in the game, which the list leaves to Applied.
+ * selected images are in the game, which the list leaves to Applied. `noted`
+ * names the images whose revision notes are saved: the Notes view reloads
+ * when it changes, and every view recounts.
  */
 export function useImageGrid(
   projectId: string,
@@ -40,6 +48,7 @@ export function useImageGrid(
   revision: number,
   selection: readonly string[],
   applied: number,
+  noted: string,
   start: number,
   end: number,
 ) {
@@ -53,9 +62,10 @@ export function useImageGrid(
     }),
     [projectId, view.query, view.folder, view.status, view.showSelected],
   );
+  const notedShown = view.status === "noted" ? noted : "";
   const scope = useMemo(
-    () => ({ filters, inventory, revision }),
-    [filters, inventory, revision],
+    () => ({ filters, inventory, revision, noted: notedShown }),
+    [filters, inventory, revision, notedShown],
   );
   // Results are tagged with their scope, so a new scope starts without
   // resetting state inside an effect.
@@ -170,7 +180,7 @@ export function useImageGrid(
     return () => {
       current = false;
     };
-  }, [scope, saved, chosen]);
+  }, [scope, saved, chosen, noted]);
   return {
     total: grid.total,
     /** Selected images the filters hide; unknown until counted. */

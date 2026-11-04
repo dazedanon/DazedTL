@@ -16,6 +16,7 @@ import {
   ChevronDown,
   Eye,
   Image as ImageIcon,
+  MessageSquareText,
   MoreHorizontal,
   Search,
 } from "lucide-react";
@@ -233,6 +234,7 @@ function Tile({
   selected,
   size,
   queue,
+  note,
   onPick,
   onKeyDown,
   onCompare,
@@ -241,6 +243,8 @@ function Tile({
   selected: boolean;
   size: number;
   queue: ThumbnailQueue;
+  /** The image's revision note, until a report answers it. */
+  note: string;
   /** Chooses the image with the click's modifiers; `checkbox` toggles it. */
   onPick: (event: Modifiers, checkbox?: boolean) => void;
   onKeyDown: (event: KeyboardEvent) => void;
@@ -314,6 +318,16 @@ function Tile({
         >
           <StatusIcon status={displayMarks[display]} size={14} />
         </span>
+        {note && (
+          <span
+            className="image-tile-note"
+            role="img"
+            aria-label={`Revision note: ${note}`}
+            title={`Revision note: ${note}`}
+          >
+            <MessageSquareText size={14} aria-hidden="true" />
+          </span>
+        )}
       </div>
       <div className="image-tile-footer">
         <FileName
@@ -492,6 +506,10 @@ function Manager({
     scroll,
     dimensions.height,
   );
+  // The images whose revision notes are saved, which the Notes view lists.
+  const savedNotes = Object.keys(state.notes || {})
+    .sort()
+    .join("\n");
   const grid = useImageGrid(
     projectId,
     value.view,
@@ -499,6 +517,7 @@ function Manager({
     listRevision,
     state.selection,
     flow.applied,
+    savedNotes,
     range.start,
     range.end,
   );
@@ -892,6 +911,7 @@ function Manager({
     uncertain: { showSelected: false, status: "uncertain" },
     ready: { showSelected: false, status: "ready" },
     applied: { showSelected: false, status: "applied" },
+    noted: { showSelected: false, status: "noted" },
     all: { showSelected: false, status: "all" },
   } as const;
   type GridView = keyof typeof views | "";
@@ -899,7 +919,7 @@ function Manager({
     ? value.view.status === "not_applied"
       ? "list"
       : ""
-    : (["uncertain", "ready", "applied", "all"] as const).find(
+    : (["uncertain", "ready", "applied", "noted", "all"] as const).find(
         (key) => key === value.view.status,
       ) || "";
   // An empty list view, unless a folder or search hides its images, has
@@ -911,6 +931,10 @@ function Manager({
   // having nothing left.
   const unexamined = listDone && flow.unexamined;
   const unticked = listDone && flow.unticked;
+  // An empty Notes view, unless a folder or search hides its images, has no
+  // notes waiting.
+  const notesDone =
+    shown === "noted" && !value.view.folder && !value.view.query.trim();
   // Which views show follows the whole game, so the switch keeps its shape;
   // their numbers follow the folder and search, as the grid does.
   const scoped = grid.views;
@@ -930,6 +954,7 @@ function Manager({
     { value: "uncertain", label: "Unsure", whole: counts.uncertain },
     { value: "ready", label: "Translated", whole: counts.ready },
     { value: "applied", label: "Applied", whole: counts.applied },
+    { value: "noted", label: "Notes", whole: noted },
     { value: "all", label: "All images", whole: counts.indexed },
   ];
   const editText = () =>
@@ -1198,6 +1223,17 @@ function Manager({
                 review
               </Button>
             )}
+            {noted > 0 && (
+              <Button
+                variant="link"
+                className="image-task-note"
+                onClick={() => changeView(views.noted, true)}
+              >
+                {noted === 1
+                  ? "1 image has a revision note"
+                  : `${imageCount(noted)} have revision notes`}
+              </Button>
+            )}
           </AssistantTask>
           <div className="image-browser-toolbar">
             <div className="image-search">
@@ -1340,7 +1376,9 @@ function Manager({
                             ? "No images ticked yet"
                             : listDone
                               ? "Nothing left to translate"
-                              : "No matching images"}
+                              : notesDone
+                                ? "No revision notes waiting"
+                                : "No matching images"}
                   </h3>
                   {/* A search inside a folder looks only there, which the grid
                   alone does not show. */}
@@ -1348,6 +1386,7 @@ function Manager({
                     folderSearch ||
                     unexamined ||
                     unticked ||
+                    notesDone ||
                     hidden > 0) && (
                     <p>
                       {!counts.indexed
@@ -1360,7 +1399,9 @@ function Manager({
                               : "Your assistant recommends the images to translate once it examines them."
                             : unticked
                               ? "Tick the images to translate in All images."
-                              : `${hidden.toLocaleString()} ${hidden === 1 ? "image in your list is" : "images in your list are"} outside this view.`}
+                              : notesDone
+                                ? "A note written in Compare images waits here until your assistant's report answers it."
+                                : `${hidden.toLocaleString()} ${hidden === 1 ? "image in your list is" : "images in your list are"} outside this view.`}
                     </p>
                   )}
                   {/* The task's own step offers the investigation. */}
@@ -1386,7 +1427,7 @@ function Manager({
                         ? "Index images"
                         : folderSearch
                           ? "Search all folders"
-                          : listDone
+                          : listDone || notesDone
                             ? "Show all images"
                             : "Clear filters"}
                     </Button>
@@ -1432,6 +1473,7 @@ function Manager({
                           selected={selection.has(asset.id)}
                           size={thumbnailSize}
                           queue={queue}
+                          note={notes[asset.id] || ""}
                           onPick={(event, checkbox) =>
                             pick(index, event, checkbox)
                           }
@@ -1518,6 +1560,7 @@ function Manager({
           listed={!!viewedAsset && selection.has(viewedAsset.id)}
           queue={queue}
           thumbnailSize={thumbnailSize}
+          note={(viewedAsset && notes[viewedAsset.id]) || ""}
           onCompare={openCompare}
         />
       </div>
