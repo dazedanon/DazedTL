@@ -403,6 +403,7 @@ The protocol version is a hash of the contracts, so any change rejects a stale r
 Guided and Assistant-led differ in who extracts, drives and reviews the work, never in the quality of the text.
 A rule that shapes translated text, such as the prompt and its context, output checks and lint, fitting, [word spacing](../backend/dazedtl/engine/util/word_spacing.py) and Text QA, has one definition both methods call, and an improvement to either reaches the other in the same change or as a queued follow-up.
 Assistant-led brings each such rule that needs no engine parser to its other engines too.
+Features and workflow follow the methods the same way: a feature or step added to one, such as a Context document, a review view or a Release option, reaches the other wherever it fits cleanly and helps there, in the same change or as a queued follow-up, and a change that leaves the other method out says why.
 
 Assistant-led runs:
 
