@@ -329,7 +329,7 @@ async function warnRedDev(/** @type {Deps} */ { read, log }, main) {
 }
 
 /** Refuses to run on Windows, saying so. */
-function onWindows(/** @type {Deps["log"]} */ log) {
+export function onWindows(/** @type {Deps["log"]} */ log) {
   if (process.platform !== "win32") return false;
   log("Land from Linux or macOS; land.mjs does not run on Windows.");
   return true;

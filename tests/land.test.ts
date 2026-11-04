@@ -20,6 +20,7 @@ import {
   reviewedHead,
   timer,
   waitForApp,
+  onWindows,
 } from "../scripts/land.mjs";
 import { addRelease, notesTemplate } from "../scripts/changelog.mjs";
 
@@ -346,11 +347,7 @@ test("a landing's review covers every commit of the branch but merges of dev and
     assert.throws(() => reviewedHead(git, head), /not a commit on this branch/);
 });
 
-test(
-  "a sandboxed worker hands off a checked branch without writing the main checkout, and --finish lands it",
-  // It runs whole landings, and land.mjs refuses to run on Windows.
-  { skip: process.platform === "win32" && "land.mjs does not run on Windows" },
-  async (t) => {
+test("a sandboxed worker hands off a checked branch without writing the main checkout, and --finish lands it", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "dazedtl-land-"));
   const main = path.join(root, "main");
   const clone = path.join(root, "clone");
@@ -422,6 +419,15 @@ test(
   const record = () => JSON.parse(fs.readFileSync(handoffFile, "utf8"));
   const refs = () => atMain(["for-each-ref"]).stdout;
   const finish = () => finishHandOff(main, deps, dir, reviewFile);
+
+  // land.mjs refuses to run on Windows: there, both steps must refuse and change nothing.
+  if (onWindows(() => {})) {
+    const untouched = refs();
+    assert.equal(await handOff(clone, deps, dir), 1);
+    assert.equal(await finish(), 1);
+    assert.equal(refs(), untouched);
+    return;
+  }
 
   // dev moved after the worker branched, so the hand-off merges it in.
   const work = commit(clone, "work.txt", "work\n");
