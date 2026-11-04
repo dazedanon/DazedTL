@@ -351,6 +351,19 @@ test("a landing's review record comes from an independent reviewer and accounts 
       }),
     /Finding 1 .* needs a kind of bug, risk, quality/,
   );
+  // A --review landing gives every finding's kind; the intake's need not.
+  assert.throws(
+    () =>
+      readReview(
+        JSON.stringify({
+          ...reviewed,
+          level: "high",
+          findings: [{ summary: "Off by one", outcome: "fixed" }],
+        }),
+        { kinds: true },
+      ),
+    /Finding 1 .* needs a kind/,
+  );
   // A record from before reviews were counted, as the Discord intake writes.
   assert.deepEqual(
     record({

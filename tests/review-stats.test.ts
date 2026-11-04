@@ -27,6 +27,8 @@ test("review stats put each escaped bug on the landing that let it in", () => {
       { fix: "f1", introduced: "c1" },
       { fix: "f2", introduced: "old" },
       { fix: "f2", introduced: "older" },
+      // Got past b..c, so not also counted among the outside ones.
+      { fix: "f1", introduced: "oldest" },
       // A bug its own landing fixed never got past that landing.
       { fix: "c3", introduced: "c1" },
     ],
@@ -60,13 +62,13 @@ test("review stats read each trailer's hash alone and skip a log line they can't
         `f1\x1f${trailers("abc1234 defaced the cache")}`,
         "f2\x1f",
         `f3\x1f${trailers("(def5678),", sha256)}`,
-        `f4\x1f${trailers("v2.61.0")}`,
+        `f4\x1f${trailers("v2.61.0", "#1234567")}`,
       ].join("\n"),
     ),
     [
       { fix: "f1", names: ["abc1234"], unnamed: [] },
       { fix: "f3", names: ["def5678", sha256], unnamed: [] },
-      { fix: "f4", names: [], unnamed: ["v2.61.0"] },
+      { fix: "f4", names: [], unnamed: ["v2.61.0", "#1234567"] },
     ],
   );
   const { landings, unread } = loggedLandings(

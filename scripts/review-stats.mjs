@@ -7,8 +7,7 @@
 // Usage: node scripts/review-stats.mjs
 import fs from "node:fs";
 import path from "node:path";
-import { gitIn } from "./land-lock.mjs";
-import { reviewLog } from "./land.mjs";
+import { gitIn, reviewLog } from "./land-lock.mjs";
 
 /**
  * @typedef {{ kind?: string, outcome: string, review: number }} Finding
@@ -89,8 +88,9 @@ export function namedFixes(text) {
     const names = [];
     const unnamed = [];
     for (const value of trailers.split("\x1e")) {
+      // Brackets and punctuation around a hash, but no # or prefix.
       const first = (value.trim().split(/\s+/)[0] ?? "").replace(
-        /^[^0-9a-f]+|[^0-9a-f]+$/gi,
+        /^[(]+|[),.;:]+$/g,
         "",
       );
       if (/^[0-9a-f]{7,64}$/i.test(first)) names.push(first);
@@ -104,9 +104,10 @@ export function namedFixes(text) {
 /**
  * Landings and escaped bugs by how many reviews each landing ran, findings
  * by the review that reported them, their kind and outcome, and the bugs
- * whose commit no logged landing holds. A bug counts once per landing it
- * got past, however many of that landing's commits its fix names, and a
- * bug fixed in the landing that brought it in never got past it.
+ * whose commit no listed landing holds. A bug counts once per landing it
+ * got past, however many of that landing's commits its fix names, and only
+ * among the outside ones when no landing holds any of them; a bug fixed in
+ * the landing that brought it in never got past it.
  * @param {Landing[]} landings
  * @param {Escape[]} escapes
  */
@@ -138,8 +139,7 @@ export function summarize(landings, escapes) {
   for (const escape of escapes) {
     const landing = owner.get(escape.introduced);
     if (!landing) {
-      if (!outside.some((other) => other.fix === escape.fix))
-        outside.push(escape);
+      outside.push(escape);
       continue;
     }
     const key = `${escape.fix} ${landing.range}`;
@@ -150,13 +150,25 @@ export function summarize(landings, escapes) {
     ).escapes += 1;
     escaped.push({ ...escape, range: landing.range, reviews: landing.reviews });
   }
+  const blamed = new Set(
+    escapes
+      .filter((escape) => owner.has(escape.introduced))
+      .map((escape) => escape.fix),
+  );
+  const firsts = new Set();
+  const unheld = outside.filter(
+    (escape) =>
+      !blamed.has(escape.fix) &&
+      !firsts.has(escape.fix) &&
+      firsts.add(escape.fix),
+  );
   const sorted = (/** @type {Map<number, any>} */ map) =>
     [...map].sort(([a], [b]) => a - b);
   return {
     byReviews: sorted(byReviews),
     rounds: sorted(rounds),
     escaped,
-    outside,
+    outside: unheld,
   };
 }
 
@@ -171,18 +183,22 @@ function main() {
     fs.existsSync(log) ? fs.readFileSync(log, "utf8") : "",
   );
   problems.push(...unread);
-  const withCommits = landings.map((landing) => {
-    const listed = git(["rev-list", landing.range]);
-    if (listed.status !== 0)
-      problems.push(
-        `Landing ${landing.range} can't be listed: ${listed.stderr.trim()}`,
-      );
-    return { ...landing, commits: listed.stdout.split("\n").filter(Boolean) };
+  // A landing Git can't list is left out, so it skews no review count.
+  const withCommits = landings.flatMap((landing) => {
+    const listed = git(["rev-list", "--end-of-options", landing.range]);
+    if (listed.status === 0)
+      return [
+        { ...landing, commits: listed.stdout.split("\n").filter(Boolean) },
+      ];
+    problems.push(
+      `Landing ${landing.range} can't be listed, so it is left out: ${listed.stderr.trim()}`,
+    );
+    return [];
   });
   const history = git([
     "log",
-    "dev",
-    "--format=%H%x1f%(trailers:key=Introduced-by,valueonly,separator=%x1e)",
+    "--format=%H%x1f%(trailers:key=Introduced-by,valueonly,unfold,separator=%x1e)",
+    "refs/heads/dev",
   ]);
   if (history.status !== 0)
     problems.push(`dev's history can't be read: ${history.stderr.trim()}`);
@@ -224,7 +240,8 @@ function main() {
     console.log(
       `  ${reviews || "none"}: ${count(group.landings, "landing")}, ${count(group.escapes, "bug")} got past them`,
     );
-  console.log("Findings by review and kind, fixed/dismissed:");
+  if (summary.rounds.length)
+    console.log("Findings by review and kind, fixed/dismissed:");
   for (const [review, kinds] of summary.rounds)
     console.log(
       `  ${review ? `review ${review}` : "author's review"}: ${Object.entries(
@@ -239,7 +256,7 @@ function main() {
     );
   if (summary.outside.length)
     console.log(
-      `${count(summary.outside.length, "fixed bug")} came from commits no logged landing holds, such as those from before the log.`,
+      `${count(summary.outside.length, "fixed bug")} came from commits no listed landing holds, such as those from before the log.`,
     );
   for (const problem of problems) console.log(problem);
 }
