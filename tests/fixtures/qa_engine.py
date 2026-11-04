@@ -558,7 +558,7 @@ else:
 assert "第1層で休む" in qa.context_view(task, "Map001.json#/events/1/pages/0/list/1")
 
 
-def deep_result(row, corrections, declined=("朝だ",)):
+def deep_result(row, corrections, declined=("朝だ",), header_name="Owner"):
     bundle = bundle_of(row)
     reviews = []
     for item in bundle["items"]:
@@ -608,7 +608,7 @@ def deep_result(row, corrections, declined=("朝だ",)):
                         "kind": "show-text",
                         "face_name": "owner",
                         "face_index": 0,
-                        "name": "Owner",
+                        "name": header_name,
                     },
                 }
             )
@@ -726,6 +726,17 @@ except qa.QAResultError as error:
     assert "visible-number-mismatch" in str(error), error
 else:
     raise AssertionError("A correction that changes a number was accepted.")
+# A Show Text fix's nameplate is checked the same way: one copied from the
+# source's Japanese headers would roll back the whole apply.
+try:
+    qa.accept_result(
+        task,
+        result_path("japanese-name", deep_result(row, {}, header_name="店主")),
+    )
+except qa.QAResultError as error:
+    assert "source-language-residue" in str(error), error
+else:
+    raise AssertionError("A Show Text fix with a Japanese nameplate was accepted.")
 # A correction is rewrapped to its message's portrait width before its rows
 # count, and this one needs a fourth row.
 try:

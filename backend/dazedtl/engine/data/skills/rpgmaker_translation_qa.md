@@ -328,6 +328,7 @@ A scene correction keeps `correction` null and `apply_identities` empty, and nam
 the item's scenes by the command numbers the bundle prints:
 `"scene_correction":{"scene":"S1","lines":[{"command":197,"current":"exact current text","correction":"Corrected text."},{"command":210,"current":"exact current text","correction":"Corrected text."}]}`.
 Source fixes are `"source_fix":{"kind":"show-text","face_name":"<a face the game shows>","face_index":0,"name":"<nameplate, empty for narration>"}`
+(write the nameplate as the game shows it: the header's translation, never its source),
 with category `speaker`, `correction` null and exactly one `apply_identities` entry, or
 `"source_fix":{"kind":"database-numbers"}` on a correction that changes a number only to one of
 its locator's `database_values`, or `"source_fix":{"kind":"battler-name"}` on a correction that

@@ -38,6 +38,7 @@ from util.qa.storage import (
     task_json,
 )
 from util.qa.validation import (
+    _header_check,
     _line_names,
     _own_lines,
     _read_observations,
@@ -72,12 +73,19 @@ def _accept(task_dir: str | Path, result: dict[str, Any]) -> dict[str, Any]:
             _validate_editorial_result(bundle, result, str(row.get("assigned_to") or ""))
         else:
             reviews = result.get("reviews")
+            reviews = [
+                review for review in reviews if isinstance(review, dict)
+            ] if isinstance(reviews, list) else []
             _validate_deep_result(
                 bundle,
                 result,
                 _scene_check(root, checkpoint, bundle, result)
-                if isinstance(reviews, list) and any(
-                    isinstance(review, dict) and review.get("scene_correction") is not None
+                if any(review.get("scene_correction") is not None for review in reviews)
+                else None,
+                _header_check(root, task)
+                if any(
+                    isinstance(review.get("source_fix"), dict)
+                    and review["source_fix"].get("kind") == "show-text"
                     for review in reviews
                 )
                 else None,

@@ -3,11 +3,13 @@ checkpoint bundle rows and workers, and the changes a finding makes."""
 
 from __future__ import annotations
 
+import json
 from collections import defaultdict
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
+from util import rpgmaker_blocks as blocks
 from util.qa.schema import DEFAULT_HELPER, REVIEW_STAGES, QAResultError, _utc_now
 from util.qa.storage import _read_json
 
@@ -92,6 +94,37 @@ def _resolve_parts(value: Any, parts: Iterable[str]) -> Any:
         else:
             current = current[part]
     return current
+
+
+def _show_text_header(
+    record: dict[str, Any], data_root: str | Path, records: dict[str, dict]
+) -> tuple[str, list, str]:
+    """The Show Text header that owns a message record, as the game holds it:
+    its parameters' pointer, the parameters, and its nameplate record's
+    identity, empty for a header without a name of its own."""
+    parts = _decode_pointer(record["source_pointer"])
+    list_index = len(parts) - 1 - parts[::-1].index("list")
+    document = json.loads(
+        (Path(data_root) / record["file"]).read_text(encoding="utf-8-sig")
+    )
+    commands = _resolve_parts(document, parts[: list_index + 1])
+    owner = int(parts[list_index + 1])
+    if commands[owner].get("code") == 401:
+        owner = blocks.show_text(commands, owner)
+    header = commands[owner] if owner is not None else {}
+    parameters = header.get("parameters")
+    if header.get("code") != 101 or not isinstance(parameters, list) or len(parameters) < 5:
+        raise QAResultError("No Show Text header owns this message")
+    pointer = "/" + "/".join(
+        part.replace("~", "~0").replace("/", "~1")
+        for part in [*parts[: list_index + 1], str(owner), "parameters"]
+    )
+    nameplate = next((
+        other["identity"] for other in records.values()
+        if other["file"] == record["file"]
+        and other["source_pointer"].startswith(pointer.rsplit("/", 1)[0] + "/_original")
+    ), "")
+    return pointer, parameters, nameplate
 
 
 def _latest_deep_reviews(

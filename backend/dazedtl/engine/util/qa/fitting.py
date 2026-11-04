@@ -378,15 +378,43 @@ def correction_problems(
             f"has a line {widest_line(correction)} characters wide; its line "
             f"width is {box['width']}"
         )
+    problems += _introduced_flags(source, live, written, event_code, allowed)
+    return problems
+
+
+def nameplate_problems(record: dict[str, Any] | None, name: str) -> list[str]:
+    """Why a Show Text fix's *name* would trip the post-apply regression in
+    its header's nameplate *record*; a header without a name of its own has
+    no record, and the regression checks none."""
+    if record is None:
+        return []
+    return _introduced_flags(
+        record["source"], record["live"], name, record.get("event_code"),
+        show_text_allowance(name),
+    )
+
+
+def show_text_allowance(name: str) -> frozenset[str]:
+    """The flags a Show Text fix's nameplate may add: narration's header
+    loses its name on purpose."""
+    return frozenset({"empty-live"}) if name == "" else frozenset()
+
+
+def _introduced_flags(
+    source: str, live: str, written: str, event_code: int | None,
+    allowed: Iterable[str],
+) -> list[str]:
+    """The blocking mechanical flags *written* adds where *live* stood, as
+    the post-apply regression reads them, for a reviewer."""
     before = set(mechanical.evidence(source, live, event_code)["flags"])
     after = set(mechanical.evidence(source, written, event_code)["flags"])
     introduced = sorted(_disallowed_flags(
         after - before - APPROVED_NONBLOCKING_MECHANICAL_FLAGS, allowed,
         source, written,
     ))
-    if introduced:
-        problems.append("introduces " + _flag_details(introduced, source, written))
-    return problems
+    if not introduced:
+        return []
+    return ["introduces " + _flag_details(introduced, source, written)]
 
 
 def _flag_details(flags: Iterable[str], source: str, text: str) -> str:

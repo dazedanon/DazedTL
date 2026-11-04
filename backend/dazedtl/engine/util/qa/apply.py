@@ -21,6 +21,7 @@ from util.qa.fitting import (
     _message_record,
     _operation_writes,
     _written,
+    show_text_allowance,
 )
 from util.qa.ledger import REVIEWED_FILE
 from util.qa.records import _changes, _set_pointer
@@ -164,8 +165,7 @@ def correction_map(
                 "pointer": finding["pointer"],
                 "expected": finding["current_parameters"],
                 "replacement": finding["parameters"],
-                # Narration's header loses its name on purpose.
-                "allowed_flags": ["empty-live"] if finding["parameters"][4] == "" else [],
+                "allowed_flags": sorted(show_text_allowance(finding["parameters"][4])),
             })
             continue
         # A scene correction's lines apply and undo together as one finding.
@@ -405,7 +405,14 @@ def apply_loaded_correction_map(
             system.replace(rollback, path)
         regression["rolled_back"] = True
         _atomic_write_json(root / regression_name, regression)
-        raise ValueError("QA regression failed; all game-file changes were rolled back")
+        # The report is written to the app's disposable copy, so the reason
+        # travels in the message, by the corrections the user reads.
+        reasons = regression["reasons"]
+        raise ValueError(
+            "QA regression failed; all game-file changes were rolled back: "
+            + "; ".join(reasons[:3])
+            + (f"; and {len(reasons) - 3} more" if len(reasons) > 3 else "")
+        )
     regression["applied_operations"] = applied
     _atomic_write_json(root / regression_name, regression)
     return regression
@@ -426,6 +433,8 @@ def _regression_check_loaded(
     warnings = []
     if set(before_records) != set(after_records):
         errors.append("source identity coverage changed after corrections")
+    # The errors as the user reads them, naming a correction by its finding.
+    reasons = list(errors)
     for identity in sorted(set(before_records) & set(after_records)):
         if before_records[identity]["source_sha256"] != after_records[identity]["source_sha256"]:
             errors.append(f"preserved source changed: {identity}")
@@ -439,6 +448,7 @@ def _regression_check_loaded(
             expected = operation["replacement"][4] if header else operation["replacement"]
             if record is None or record["live"] != expected:
                 errors.append(f"approved correction is missing: {operation['identity']}")
+                reasons.append(f"{operation['finding_id']}'s correction is missing")
                 continue
             # The text QA reviewed, flagged by the current rules as the
             # correction is, whichever rules made its inventory.
@@ -469,16 +479,18 @@ def _regression_check_loaded(
                     f"{operation['identity']} " + ", ".join(warning_flags)
                 )
             if blocking_flags:
+                details = _flag_details(blocking_flags, record["source"], record["live"])
                 errors.append(
                     "approved correction introduced mechanical flags: "
-                    f"{operation['identity']} "
-                    + _flag_details(blocking_flags, record["source"], record["live"])
+                    f"{operation['identity']} " + details
                 )
+                reasons.append(f"{operation['finding_id']} introduces {details}")
     return {
         "schema": REGRESSION_SCHEMA,
         "created_at": _utc_now(),
         "valid": not errors,
         "errors": errors,
+        "reasons": reasons,
         "warnings": warnings,
         "before_manifest_sha256": before["content_sha256"],
         "after_manifest_sha256": after["content_sha256"],

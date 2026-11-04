@@ -7,17 +7,15 @@ from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
 
-from util import rpgmaker_blocks as blocks
 from util.qa.advance import _not_reviewed
 from util.qa.bundles import _screen_motif_map
 from util.qa.pace import _not_translated_report
 from util.qa.records import (
     _changes,
-    _decode_pointer,
     _latest_deep_reviews,
     _record_maps,
-    _resolve_parts,
     _result_declines,
+    _show_text_header,
 )
 from util.qa.schema import (
     ADDED_BATTLER_NAME,
@@ -354,19 +352,12 @@ def _show_text_finding(
         raise QAResultError(f"A Show Text fix targets a declined line: {review['id']}")
     record = records[identity]
     fix = review["source_fix"]
-    parts = _decode_pointer(record["source_pointer"])
-    list_index = len(parts) - 1 - parts[::-1].index("list")
-    document = json.loads(
-        (Path(task["data_root"]) / record["file"]).read_text(encoding="utf-8-sig")
-    )
-    commands = _resolve_parts(document, parts[: list_index + 1])
-    owner = int(parts[list_index + 1])
-    if commands[owner].get("code") == 401:
-        owner = blocks.show_text(commands, owner)
-    header = commands[owner] if owner is not None else {}
-    parameters = header.get("parameters")
-    if header.get("code") != 101 or not isinstance(parameters, list) or len(parameters) < 5:
-        raise QAResultError(f"No Show Text header owns this message: {review['id']}")
+    try:
+        pointer, parameters, nameplate = _show_text_header(
+            record, task["data_root"], records
+        )
+    except QAResultError as error:
+        raise QAResultError(f"{error}: {review['id']}") from error
     if fix["face_name"] and fix["face_name"] not in faces:
         raise QAResultError(
             f"The Show Text fix names a face the game never shows: {review['id']}"
@@ -375,15 +366,6 @@ def _show_text_finding(
     replacement[0], replacement[1], replacement[4] = (
         fix["face_name"], fix["face_index"], fix["name"]
     )
-    pointer = "/" + "/".join(
-        part.replace("~", "~0").replace("/", "~1")
-        for part in [*parts[: list_index + 1], str(owner), "parameters"]
-    )
-    nameplate = next((
-        other["identity"] for other in records.values()
-        if other["file"] == record["file"]
-        and other["source_pointer"].startswith(pointer.rsplit("/", 1)[0] + "/_original")
-    ), "")
 
     def header_text(values: list) -> str:
         face = f"{values[0]} {values[1]}" if values[0] else "no face"

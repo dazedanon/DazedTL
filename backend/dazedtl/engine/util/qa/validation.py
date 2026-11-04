@@ -19,8 +19,17 @@ from util.qa.bundles import (
     _target_entry,
     _target_shape,
 )
-from util.qa.fitting import _adds_only_battler_name, _record_problems
-from util.qa.records import _changes, _decode_pointer, _record_maps
+from util.qa.fitting import (
+    _adds_only_battler_name,
+    _record_problems,
+    nameplate_problems,
+)
+from util.qa.records import (
+    _changes,
+    _decode_pointer,
+    _record_maps,
+    _show_text_header,
+)
 from util.qa.schema import (
     ADDED_BATTLER_NAME,
     DECLINE_REASON_LIMIT,
@@ -232,6 +241,14 @@ def _simulate_apply(
     problems = []
     for finding in findings:
         if finding.get("kind") == "show-text":
+            found = nameplate_problems(
+                records.get(finding["nameplate_identity"]), finding["parameters"][4]
+            )
+            if found:
+                problems.append(
+                    f"{finding['id']} at {finding['nameplate_identity']}: "
+                    + "; ".join(found)
+                )
             continue
         for change in _changes(finding):
             for identity in change["identities"]:
@@ -516,8 +533,11 @@ def _validate_screen_result(bundle: dict, result: dict) -> None:
             )
 
 
-def _validate_show_text_fix(review: dict[str, Any], item: dict[str, Any]) -> None:
-    """A Show Text fix names one occurrence and the header it should have."""
+def _validate_show_text_fix(
+    review: dict[str, Any], item: dict[str, Any], header_check: dict[str, Any]
+) -> None:
+    """A Show Text fix names one occurrence and the header it should have,
+    whose nameplate passes apply's checks."""
     identity = review["id"]
     fix = review["source_fix"]
     if set(fix) != {"kind", "face_name", "face_index", "name"}:
@@ -544,6 +564,20 @@ def _validate_show_text_fix(review: dict[str, Any], item: dict[str, Any]) -> Non
         raise QAResultError(
             f"A Show Text fix names exactly one message occurrence in "
             f"apply_identities: {identity}"
+        )
+    records = header_check["records"]
+    try:
+        _pointer, _parameters, nameplate = _show_text_header(
+            records[targets[0]], header_check["data_root"], records
+        )
+    except QAResultError as error:
+        raise QAResultError(f"{error}: {identity}") from error
+    problems = nameplate_problems(records.get(nameplate), fix["name"])
+    if problems:
+        raise QAResultError(
+            f"The Show Text fix's name for {identity} would block apply: "
+            + "; ".join(problems)
+            + "; write the nameplate as the game shows it, the header's translation"
         )
 
 
@@ -670,6 +704,13 @@ def _validate_sweep_result(bundle: dict, result: dict) -> None:
             raise QAResultError(
                 f"A sweep review that rejects candidates needs a note: {review['id']}"
             )
+
+
+def _header_check(root: Path, task: dict[str, Any]) -> dict[str, Any]:
+    """What a Show Text fix is checked against: the inventory's records, whose
+    headers the game's own files place."""
+    records, _clusters = _record_maps(_read_json(root / "inventory.json"))
+    return {"records": records, "data_root": task["data_root"]}
 
 
 def _scene_check(
@@ -844,7 +885,10 @@ def _validate_correction(
 
 
 def _validate_deep_result(
-    bundle: dict, result: dict, scene_check: dict[str, Any] | None = None
+    bundle: dict,
+    result: dict,
+    scene_check: dict[str, Any] | None = None,
+    header_check: dict[str, Any] | None = None,
 ) -> None:
     if result.get("schema") != DEEP_RESULT_SCHEMA:
         raise QAResultError("Deep result has the wrong schema")
@@ -897,7 +941,8 @@ def _validate_deep_result(
             if review.get("scene_correction") is not None:
                 _validate_scene_correction(review, item, bundle, scene_check)
             elif kind == "show-text":
-                _validate_show_text_fix(review, item)
+                assert header_check is not None
+                _validate_show_text_fix(review, item, header_check)
                 continue
             else:
                 _validate_correction(review, item, kind)
