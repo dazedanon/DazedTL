@@ -38,7 +38,7 @@ def compile_requests(
         language,
         skill_users or {},
         actor_variables,
-        staged=staged,
+        **({"staged": True} if staged else {}),
     )
     if len(compiled) != len(raw["batches"]):
         raise ValueError("The engine compiler did not return every source batch.")

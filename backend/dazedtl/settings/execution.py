@@ -130,8 +130,14 @@ def _frozen(settings, mode, *, cached_only, unpriced, choice=None):
         except openrouter.Unread:
             if not unpriced:
                 raise
-    defaults = settings.connection_defaults(
-        connection, model, cached_only=cached_only or custom
+    defaults = (
+        settings.connection_defaults(
+            connection, model, cached_only=cached_only or custom
+        )
+        if choice
+        else settings.model_defaults(
+            connection["id"], model, cached_only=cached_only or custom
+        )
     )
     # Cached defaults are empty until the model's prices are first looked up.
     rates = {

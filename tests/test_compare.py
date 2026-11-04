@@ -192,7 +192,9 @@ class ApprovalTests(unittest.TestCase):
         estimate = self.estimated()
         started = self.compare.translate("p1", estimate)
         plan = json.loads(
-            (self.operations.root / started["id"] / "plan.json").read_text()
+            (self.operations.root / started["id"] / "plan.json").read_text(
+                encoding="utf-8"
+            )
         )
         # Only the model the estimate priced is sent.
         self.assertEqual([row["model"] for row in plan["options"]["candidates"]], ["a"])
