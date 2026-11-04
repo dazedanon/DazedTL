@@ -6,5 +6,6 @@
 
 ### Fixed
 
+- **Context:** the **Assistant notes** (`AGENTS.md`) are no longer deleted by a game update when the game had them before Set up, no longer stop undoing an older Assistant-led checkpoint or go back with its undo, and are no longer replaced by an older Guided draft without asking; one another program holds no longer fails every change to the game, and on Windows an `agents.md` in another case no longer reaches players' downloads.
 - **GameUpdate:** an update that fails partway, such as on a file the running game holds, a full disk or a folder too deep for Windows ("Could not find a part of the path"), now puts the game back as it was instead of leaving it half patched; a game gets this with its next copy of GameUpdate, such as from **Recreate GameUpdate files**.
 - **Text QA:** reviews no longer propose a speaker fix that names the character in Japanese, which stopped **Apply corrections** with "QA regression failed; all game-file changes were rolled back"; a failed apply now names the correction that stopped it.
