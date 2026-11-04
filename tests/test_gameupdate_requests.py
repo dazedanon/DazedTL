@@ -433,7 +433,7 @@ class GameUpdateRequestTests(unittest.TestCase):
             # Again while the game is put back.
             ("ctrl+c twice", "kill -INT $PPID; sleep 0.2\n"),
             # The next run puts it back, before it asks for the patch.
-            ("power cut", "kill -KILL $PPID\n"),
+            ("killed", "kill -KILL $PPID\n"),
         ):
             with self.subTest(name):
                 game = self.game(name=name.replace(" ", "-"))
@@ -474,7 +474,7 @@ class GameUpdateRequestTests(unittest.TestCase):
                     result = self.patch_sh(game, env)
                     output = result.stdout + result.stderr
                     self.assertNotEqual(result.returncode, 0)
-                if name == "power cut":
+                if name == "killed":
                     self.assertNotEqual(snapshot(game), before, output)
                     (self.bin / "cp").unlink()
                     result = self.patch_sh(
@@ -484,6 +484,31 @@ class GameUpdateRequestTests(unittest.TestCase):
                 if name != "closed terminal":
                     self.assertIn("left as it was", output)
                 self.assertEqual(snapshot(game), before, output)
+
+    @unittest.skipUnless(
+        POSIX_TOOLS and shutil.which("flock"),
+        "patch.sh locks with flock where it has it",
+    )
+    def test_patch_sh_lets_one_gameupdate_run_at_a_time(self):
+        # A second run's undo of the first run's journal while that run
+        # copied left the game half patched.
+        import fcntl
+
+        self.stand_in_curl()
+        game = self.game()
+        undo = game / "gameupdate/undo"
+        undo.mkdir()
+        (undo / "journal.txt").write_text("added a.txt\n", encoding="utf-8")
+        (game / "a.txt").write_text("being copied", encoding="utf-8")
+        before = snapshot(game)
+        with open(game / "gameupdate/gameupdate.lock", "wb") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            result = self.patch_sh(game, os.environ)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Another GameUpdate is already running", result.stdout)
+        # The lock the other run holds stays.
+        before["gameupdate/gameupdate.lock"] = b""
+        self.assertEqual(snapshot(game), before)
 
     def patch_sh_in_a_terminal_closed_at(self, game, env, written):
         """Runs patch.sh in a terminal that closes once *written* says patch.sh
@@ -815,9 +840,17 @@ class PatchPs1Tests(unittest.TestCase):
         for shell in SHELLS:
             with self.subTest(shell):
                 game = self.game(name=Path(shell).stem)
-                output = self.update(game, self.serve({deep: "{}"}), {}, shell)
+                temporary = self.root / f"tmp-{game.name}"
+                temporary.mkdir()
+                output = self.update(
+                    game,
+                    self.serve({deep: "{}"}),
+                    {"TEMP": str(temporary), "TMP": str(temporary)},
+                    shell,
+                )
                 self.assertIn("RESULT 0", output)
                 self.assertTrue((game / deep).is_file(), output)
+                self.assertEqual(list(temporary.glob("gu_*")), [], output)
 
     def test_patch_ps1_leaves_the_game_as_it_was_when_a_copy_fails(self):
         # A file the running game holds, copied after part of the patch:

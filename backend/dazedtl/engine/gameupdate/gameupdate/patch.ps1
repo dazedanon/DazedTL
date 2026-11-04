@@ -1339,7 +1339,8 @@ function Undo-PatchFiles {
         Write-Host 'The game was left as it was before this update.'
     }
     if ([IO.Directory]::Exists($undo)) {
-        Remove-SettledItem -LiteralPath $undo
+        # What is left over changes nothing for the game.
+        try { Remove-SettledItem -LiteralPath $undo } catch { }
     }
 }
 
@@ -1570,8 +1571,9 @@ function Invoke-PatchDownloadExtract {
         if (Test-Path -LiteralPath $zipPath) {
             Remove-DownloadedRepoZip -LiteralPath $zipPath
         }
-        if (Test-Path -LiteralPath $stage) {
-            Remove-FileOrDirectoryViaCmd -LiteralPath $stage
+        if ([IO.Directory]::Exists($stage)) {
+            # .NET, unlike cmd.exe, reaches the long paths Get-PatchPathLimit allows.
+            try { [IO.Directory]::Delete($stage, $true) } catch { Remove-FileOrDirectoryViaCmd -LiteralPath $stage }
         }
     }
 

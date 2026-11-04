@@ -15,6 +15,7 @@ UNDO_DIR="$SCRIPT_DIR/undo"
 UNDO_JOURNAL="$UNDO_DIR/journal.txt"
 UNDO_MOVED=0
 APPLYING=0
+LOCKED=0
 
 # Puts the game back as it was before a patch copy that did not finish, from
 # its journal, newest change first: moves each game file it set aside back,
@@ -67,7 +68,7 @@ undo_patch() {
         rm -f "$UNDO_JOURNAL"
         echo "The game was left as it was before this update."
     fi
-    rm -rf "$UNDO_DIR"
+    rm -rf "$UNDO_DIR" || true
 }
 
 # Copies patch file $1 to $2, relative to the game, after writing the change
@@ -115,6 +116,9 @@ remove_temp_paths() {
         rm -rf "$path"
     done
     rm -f "$ROOT_DIR/repo.zip"
+    if [ "$LOCKED" -eq 1 ]; then
+        rm -f "$SCRIPT_DIR/gameupdate.lock"
+    fi
 }
 trap remove_temp_paths EXIT
 trap 'exit 130' INT TERM HUP
@@ -137,10 +141,11 @@ run_windows_exe() {
                 echo "ERROR: wine is required to run $(basename "$exe") on Linux."
                 return 1
             fi
-            ( cd "$ROOT_DIR" && WINEDEBUG=-all wine "$exe" "$@" )
+            # Without the run's lock, which wineserver would hold after it.
+            ( cd "$ROOT_DIR" && WINEDEBUG=-all wine "$exe" "$@" 9>&- )
             ;;
         *)
-            ( cd "$ROOT_DIR" && "$exe" "$@" )
+            ( cd "$ROOT_DIR" && "$exe" "$@" 9>&- )
             ;;
     esac
 }
@@ -150,7 +155,21 @@ check_dependency jq
 check_dependency unzip
 check_dependency curl
 
-# An update stopped partway, such as by a power cut, is undone first.
+# Held for the rest of the run, so a second GameUpdate never undoes or
+# replaces files this one is applying; patch.ps1 holds the same file.
+if command -v flock > /dev/null 2>&1; then
+    if ! exec 9> "$SCRIPT_DIR/gameupdate.lock"; then
+        echo "ERROR: GameUpdate can't write in $SCRIPT_DIR. Move the game to a folder you can change, then run GameUpdate again."
+        exit 1
+    fi
+    if ! flock -n 9; then
+        echo "ERROR: Another GameUpdate is already running for this game. Let it finish, then run GameUpdate again if needed."
+        exit 1
+    fi
+    LOCKED=1
+fi
+
+# An update stopped partway, such as by a killed process, is undone first.
 undo_patch || exit 1
 
 # Check if CONFIG_FILE exists
