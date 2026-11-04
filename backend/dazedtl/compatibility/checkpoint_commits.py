@@ -741,13 +741,13 @@ def _saving(root, change, named, claimed, log=lambda _line: None):
     named = set(_relative(named))
     status = _status(root)
     # The rules keeping DazedTL's files out of players' downloads grew after
-    # many games took them, the notes' in any case last, so a checkpoint of
-    # DazedTL's own write, or one taking the notes, records those its game
-    # lacks; one recording a write that ended, or beside a write that named
-    # no files, leaves .gitattributes to that write.
+    # many games took them, the notes' in any case last, so the checkpoint of
+    # DazedTL's own write records those its game lacks; one recording a
+    # write that ended, or beside a write that named no files, leaves
+    # .gitattributes to that write.
     rule = (
         {".gitattributes"}
-        if (change is not OUTSIDE or any(map(is_game_notes, status.paths)))
+        if change is not OUTSIDE
         and claimed is not None
         and ".gitattributes" not in claimed
         and keep_out_of_downloads(Path(root))
