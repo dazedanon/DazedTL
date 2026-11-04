@@ -147,12 +147,14 @@ def long_paths_enabled() -> bool:
 
 
 def snapshot(folder: Path) -> dict[str, bytes | None]:
-    """Every file's bytes and every folder (None) under *folder*."""
+    """Every file's bytes and every folder (None) under *folder*, a game, but
+    for the lock patch.sh leaves for the next run."""
     return {
         path.relative_to(folder).as_posix(): None
         if path.is_dir()
         else path.read_bytes()
         for path in folder.rglob("*")
+        if path.relative_to(folder).as_posix() != "gameupdate/gameupdate.lock"
     }
 
 
@@ -491,24 +493,32 @@ class GameUpdateRequestTests(unittest.TestCase):
     )
     def test_patch_sh_lets_one_gameupdate_run_at_a_time(self):
         # A second run's undo of the first run's journal while that run
-        # copied left the game half patched.
+        # copied left the game half patched; so did a third run, once the
+        # second locked a lock file an ending run had removed.
         import fcntl
 
         self.stand_in_curl()
-        game = self.game()
-        undo = game / "gameupdate/undo"
-        undo.mkdir()
-        (undo / "journal.txt").write_text("added a.txt\n", encoding="utf-8")
-        (game / "a.txt").write_text("being copied", encoding="utf-8")
-        before = snapshot(game)
-        with open(game / "gameupdate/gameupdate.lock", "wb") as lock:
-            fcntl.flock(lock, fcntl.LOCK_EX)
-            result = self.patch_sh(game, os.environ)
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("Another GameUpdate is already running", result.stdout)
-        # The lock the other run holds stays.
-        before["gameupdate/gameupdate.lock"] = b""
-        self.assertEqual(snapshot(game), before)
+        for name in ("held", "opened as a run ended"):
+            with self.subTest(name):
+                game = self.game(name=name.replace(" ", "-"))
+                lock = game / "gameupdate/gameupdate.lock"
+                with open(lock, "ab") as other:
+                    if name == "opened as a run ended":
+                        (game / "gameupdate/previous_patch_sha.txt").write_text(
+                            SHA, encoding="utf-8"
+                        )
+                        ended = self.patch_sh(game, os.environ)
+                        self.assertIn("Already up to date", ended.stdout)
+                    undo = game / "gameupdate/undo"
+                    undo.mkdir()
+                    (undo / "journal.txt").write_text("added a.txt\n", encoding="utf-8")
+                    (game / "a.txt").write_text("being copied", encoding="utf-8")
+                    before = snapshot(game)
+                    fcntl.flock(other, fcntl.LOCK_EX)
+                    result = self.patch_sh(game, os.environ)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("Another GameUpdate is already running", result.stdout)
+                self.assertEqual(snapshot(game), before)
 
     def patch_sh_in_a_terminal_closed_at(self, game, env, written):
         """Runs patch.sh in a terminal that closes once *written* says patch.sh
