@@ -1021,7 +1021,8 @@ class PatchPs1Tests(unittest.TestCase):
                     self.assertIn("RESULT 0", output)
                     self.assertTrue((game / deep).is_file(), output)
                 else:
-                    self.assertIn("Move the game to a shorter folder", output)
+                    self.assertIn("This patch has files too deep", output)
+                    self.assertFalse((game / ("a" * 100)).exists(), output)
                 self.assertEqual(list(temporary.glob("gu_*")), [], output)
 
     def test_patch_ps1_leaves_the_game_as_it_was_when_a_copy_fails(self):
