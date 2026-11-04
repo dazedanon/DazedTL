@@ -1,6 +1,14 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
-import { publishRelease } from "../scripts/release.mjs";
+import { gitIn, lockRef } from "../scripts/land-lock.mjs";
+import {
+  DevMoved,
+  lockedRelease,
+  publishRelease,
+} from "../scripts/release.mjs";
 
 const changelog = `# Changelog
 
@@ -93,4 +101,39 @@ test("a GitHub Release is not created for a tag GitHub lacks", async () => {
     /push it first/,
   );
   assert.equal(missing.writes.length, 0);
+});
+
+test("a release given --head refuses once locked if a landing moved dev past it, and releases the lock", async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dazedtl-release-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const git = gitIn(dir);
+  const run = (...args: string[]) => git(args).stdout.trim();
+  run("init", "-q", "-b", "dev");
+  const commit = (message: string) => {
+    run(
+      "-c",
+      "user.name=t",
+      "-c",
+      "user.email=t@t",
+      "commit",
+      "-q",
+      "--allow-empty",
+      "-m",
+      message,
+    );
+    return run("rev-parse", "HEAD");
+  };
+  const approved = commit("approved");
+  // A landing took the lock first and moved dev.
+  const landed = commit("landed");
+  let released = 0;
+  const task = async () => void released++;
+  await assert.rejects(lockedRelease(git, dir, approved, task), DevMoved);
+  assert.equal(released, 0);
+  assert.notEqual(git(["rev-parse", "--verify", "--quiet", lockRef]).status, 0);
+  // A name always matches dev, so it is no approval.
+  await assert.rejects(lockedRelease(git, dir, "dev", task), /commit hash/);
+  await lockedRelease(git, dir, landed.slice(0, 12), task);
+  await lockedRelease(git, dir, undefined, task);
+  assert.equal(released, 2);
 });

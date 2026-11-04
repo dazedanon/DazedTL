@@ -8,7 +8,10 @@
 // (scripts/land-lock.mjs) throughout, so no landing moves dev meanwhile.
 //
 //   node scripts/release.mjs key               create the signing key, once
-//   node scripts/release.mjs 2.0.0 [--local]   release; --local skips pushing
+//   node scripts/release.mjs 2.0.0 [--local] [--head <commit>]
+//                                              release; --local skips pushing;
+//                                              --head exits 3 if dev is no
+//                                              longer that commit once locked
 //   node scripts/release.mjs github 2.0.0      publish v2.0.0's GitHub Release
 import fs from "node:fs";
 import os from "node:os";
@@ -360,6 +363,57 @@ function setVersion(version) {
   }
 }
 
+/** release.mjs's exit code when dev is no longer the commit --head named. */
+export const devMoved = 3;
+export class DevMoved extends Error {}
+
+/**
+ * Runs `task` holding the landing lock, first refusing with DevMoved when
+ * `head` is given and dev is no longer that commit, so a landing that took
+ * the lock ahead of the release is never shipped unapproved.
+ * @template T
+ * @param {import("./land-lock.mjs").Git} gitAt
+ * @param {string} worktree
+ * @param {string | undefined} head
+ * @param {() => Promise<T>} task
+ * @param {{ log?: (line: string) => void }} [options]
+ */
+export function lockedRelease(gitAt, worktree, head, task, options) {
+  return withLock(
+    gitAt,
+    { branch: "release", worktree },
+    () => {
+      if (head !== undefined) requireHead(gitAt, head);
+      return task();
+    },
+    options,
+  );
+}
+
+function requireHead(
+  /** @type {import("./land-lock.mjs").Git} */ gitAt,
+  /** @type {string} */ head,
+) {
+  const commit = (/** @type {string} */ name) => {
+    const result = gitAt([
+      "rev-parse",
+      "--verify",
+      "--quiet",
+      `${name}^{commit}`,
+    ]);
+    return result.status === 0 ? result.stdout.trim() : null;
+  };
+  // A name such as dev would always match; only a hash pins what was approved.
+  const approved = /^[0-9a-f]{7,64}$/.test(head) ? commit(head) : null;
+  if (!approved)
+    throw new Error(`--head needs a commit hash of dev, not "${head}".`);
+  const dev = commit("refs/heads/dev");
+  if (dev !== approved)
+    throw new DevMoved(
+      `dev moved to ${dev?.slice(0, 8) ?? "nothing"} since ${approved.slice(0, 8)} was approved; nothing was released.`,
+    );
+}
+
 async function release(version, push) {
   if (!isVersion(version))
     throw new Error(
@@ -534,7 +588,8 @@ async function release(version, push) {
 
 if (import.meta.main)
   try {
-    const [command] = process.argv.slice(2);
+    const args = process.argv.slice(2);
+    const [command] = args;
     if (command === "key") createKey();
     else if (command === "github") {
       const version = process.argv[3] ?? "";
@@ -545,14 +600,17 @@ if (import.meta.main)
       await publishGitHubRelease(version);
     }
     // Landings wait until the release has moved dev and main.
-    else
-      await withLock(
+    else {
+      const at = args.indexOf("--head");
+      await lockedRelease(
         gitIn(root),
-        { branch: "release", worktree: root },
-        () => release(command ?? "", !process.argv.includes("--local")),
+        root,
+        at < 0 ? undefined : (args[at + 1] ?? ""),
+        () => release(command ?? "", !args.includes("--local")),
         { log: console.log },
       );
+    }
   } catch (error) {
     console.error(error instanceof Error ? error.message : error);
-    process.exitCode = 1;
+    process.exitCode = error instanceof DevMoved ? devMoved : 1;
   }
