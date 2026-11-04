@@ -61,16 +61,6 @@ const u64 = (value) => {
   return bytes;
 };
 
-function adler32(data) {
-  let a = 1;
-  let b = 0;
-  for (const byte of data) {
-    a = (a + byte) % 65521;
-    b = (b + a) % 65521;
-  }
-  return ((b << 16) | a) >>> 0;
-}
-
 /**
  * A KiriKiri XP3 archive of `files` (name to text), each member
  * zlib-compressed with its checksum, as an unencrypted game ships it.
@@ -106,7 +96,8 @@ function xp3(files) {
             u64(stored.length),
           ]),
         ],
-        ["adlr", u32(adler32(data))],
+        // zlib ends its stream with the data's Adler-32, big-endian.
+        ["adlr", u32(stored.readUInt32BE(stored.length - 4))],
       ].flatMap(([tag, chunk]) => [Buffer.from(tag), u64(chunk.length), chunk]),
     );
     entries.push(Buffer.from("File"), u64(chunks.length), chunks);
