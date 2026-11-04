@@ -2258,8 +2258,9 @@ class WorkflowTests(unittest.TestCase):
             _git(self.game, "show", "--name-only", "--format=", older).stdout.split(),
         )
         # Phase checkpoints committed before then, which hold the notes with
-        # their files, undo apart too and leave the notes, and hold up no
-        # notes checkpoint's undo, even once undone.
+        # their files, undo apart too and leave the notes. A notes
+        # checkpoint's undo waits on one until it is undone, so it never
+        # takes back notes the assistant wrote there.
         saved = _git(
             self.game, "log", "-1", "--format=%H", "--grep=Save Assistant notes"
         ).stdout.strip()
@@ -2270,9 +2271,14 @@ class WorkflowTests(unittest.TestCase):
         agents.write_text("Repack Data.wolf.\n", encoding="utf-8")
         write_json(self.game / "source.json", {"line": "No."})
         save(self.game, Change("Injection", "Assistant-led"), ["AGENTS.md"])
+        later = _git(self.game, "rev-parse", "HEAD").stdout.strip()
         self.assertIsNone(checkpoint_history.blockers(self.game, [older])[older])
         checkpoint_history.undo(self.game, older)
         self.assertEqual(read_json(self.game / "names.json"), {"name": "リリ"})
+        self.assertEqual(agents.read_text(encoding="utf-8"), "Repack Data.wolf.\n")
+        found = checkpoint_history.blocker(self.game, saved)
+        self.assertEqual(found and found["commit"], later)
+        checkpoint_history.undo(self.game, later)
         self.assertEqual(agents.read_text(encoding="utf-8"), "Repack Data.wolf.\n")
         self.assertIsNone(checkpoint_history.blockers(self.game, [saved])[saved])
 

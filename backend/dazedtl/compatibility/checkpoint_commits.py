@@ -81,7 +81,7 @@ if TYPE_CHECKING:
 
 ACTION_TRAILER = "DazedTL-Action"
 STAGE_TRAILER = "DazedTL-Stage"
-# The checkpoint a go back put the game back to.
+# The checkpoint a go back put the game back to, or an undo took out.
 TARGET_TRAILER = "DazedTL-Target"
 # The action of a checkpoint holding changes made outside DazedTL.
 OUTSIDE_EDITS = "outside_edits"

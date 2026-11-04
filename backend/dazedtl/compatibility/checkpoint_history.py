@@ -246,11 +246,16 @@ def _moved(entry):
 def _blockers(entries):
     """For each entry of the current version, the newest later entry it must
     wait for and the files they share, or None; one pass over the changes.
-    Both read only the changes undos take out (`_moved`), so no entry waits
-    on one whose undo would not free it."""
+    An entry waits only on a change to a file its undo takes out (`_moved`),
+    and on an earlier checkpoint's notes edit that its undo leaves only until
+    that checkpoint is undone, so no undo takes back notes an assistant wrote
+    after it while the checkpoint holding them stands."""
     newest = {}
     result = {}
+    undone = set()
     for index, entry in enumerate(entries):
+        if entry.action == UNDO:
+            undone.add(_trailer(entry.message, TARGET_TRAILER))
         differing = {
             path
             for path, change in _moved(entry).items()
@@ -262,7 +267,8 @@ def _blockers(entries):
             result[entry.commit] = (entries[later], shared)
         else:
             result[entry.commit] = None
-        for path, change in _moved(entry).items():
+        kept = _moved(entry) if entry.commit in undone else entry.changes
+        for path, change in kept.items():
             newest.setdefault(path, (index, change[3]))
     return result
 
@@ -858,7 +864,7 @@ def undo(
         raise ValueError(
             "A game version's first checkpoint can't be undone; go back to it instead."
         )
-    change = Change(" ".join(_undoing(target)), None, UNDO)
+    change = Change(" ".join(_undoing(target)), None, UNDO, target.commit)
     with running(change), write_game(root, folder, log=log, restores=True) as game:
         entries = _since(root, game, entries)
         index = _restorable(entries, commit)
