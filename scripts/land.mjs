@@ -221,12 +221,13 @@ export function reviewedHead(git, head) {
  * Says which of the branch's own fix commits after `base`, merges left out
  * since those bring in what other landings checked, end without the
  * trailers AGENTS.md asks for (fix-trailers.mjs) or name a commit that is
- * not before them; null when none do.
+ * not before them, ending with `then`; null when none do.
  * @param {ReturnType<typeof gitIn>} git
  * @param {string} base
+ * @param {string} [then] what to do once they carry them
  * @returns {string | null}
  */
-export function untrailedFixes(git, base) {
+export function untrailedFixes(git, base, then = "") {
   const listed = git([
     "log",
     "--no-merges",
@@ -264,7 +265,7 @@ export function untrailedFixes(git, base) {
   return [
     "These fix commits lack the trailers AGENTS.md asks for:",
     ...untrailed,
-    `End each one's message, after a blank line, with "Introduced-by: <hash>" naming the commit that brought the bug in, this branch's own included, or "Introduced-by: unknown" when the history doesn't show it or "none" when no commit did, and with "Found-by: <who>", one of ${finders.join(", ")}. Reword the last commit with git commit --amend, an earlier one with a rebase.`,
+    `End each one's message, after a blank line, with "Introduced-by: <hash>" naming the commit that brought the bug in, this branch's own included, or "Introduced-by: unknown" when the history doesn't show it or "none" when no commit did, and with "Found-by: <who>", one of ${finders.join(", ")}. Reword the last commit with git commit --amend, an earlier one with a rebase.${then && ` ${then}`}`,
   ].join("\n");
 }
 
@@ -528,9 +529,13 @@ export async function land(cwd, deps, reviewFile) {
   const found = featureBranch(cwd, log);
   if (typeof found === "number") return found;
   const { top, git, branch } = found;
-  const untrailed = untrailedFixes(git, "refs/heads/dev");
+  const untrailed = untrailedFixes(
+    git,
+    "refs/heads/dev",
+    "Then record the new head in the review record.",
+  );
   if (untrailed) {
-    log(`${untrailed} Then record the new head in the review record.`);
+    log(untrailed);
     return 1;
   }
   try {
@@ -933,9 +938,9 @@ export async function handOff(cwd, deps, dir) {
     log("Fetching dev from origin failed; nothing was handed off.");
     return 1;
   }
-  const untrailed = untrailedFixes(git, originDev);
+  const untrailed = untrailedFixes(git, originDev, "Then hand off again.");
   if (untrailed) {
-    log(`${untrailed} Then hand off again.`);
+    log(untrailed);
     return 1;
   }
   const time = timer(deps.now);
