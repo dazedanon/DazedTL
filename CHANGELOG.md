@@ -3,6 +3,16 @@
 Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 [release.mjs](scripts/release.mjs) writes each entry from [release/notes.md](release/notes.md).
 
+## [2.61.0] - 2026-11-03
+
+### Added
+
+- **Settings:** OpenCode Go and OpenCode pay-as-you-go are new providers: paste an OpenCode key to translate Live with OpenCode's models at its own prices, with each model's thinking efforts from its model list, and DeepSeek's thinking can be turned **Off**, which saves most of its output cost.
+
+### Changed
+
+- **Settings:** for DeepSeek on its own API and on OpenCode Go, Pricing says the rates shown are peak-hour rates and when DeepSeek bills half.
+
 ## [2.60.0] - 2026-11-03
 
 ### Changed
@@ -1645,6 +1655,7 @@ Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachan
 - The first release of DazedTL as a desktop app, installed from a ZIP with a START launcher and updated from inside the app.
 - **Guided steps** for RPG Maker MV, MZ and VX Ace games, and **Assistant-led** for any game.
 
+[2.61.0]: https://github.com/dazedanon/DazedTL/compare/v2.60.0...v2.61.0
 [2.60.0]: https://github.com/dazedanon/DazedTL/compare/v2.59.4...v2.60.0
 [2.59.4]: https://github.com/dazedanon/DazedTL/compare/v2.59.3...v2.59.4
 [2.59.3]: https://github.com/dazedanon/DazedTL/compare/v2.59.2...v2.59.3
