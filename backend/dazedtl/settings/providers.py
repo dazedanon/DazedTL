@@ -459,9 +459,9 @@ def openrouter_host(value):
 
 
 # Settings' own requests to a provider (bounded_request) give connecting,
-# the address lookup, a proxy's handshake and TLS included, SETUP_SECONDS
-# and the reply, from sending the request on, REPLY_SECONDS, so a slow way
-# in can't eat the reply's time. Every other
+# the address lookup and TLS included, SETUP_SECONDS and the reply, from
+# sending the request on, REPLY_SECONDS, so a slow way in can't eat the
+# reply's time. Every other
 # backend request waits behind them, so even OpenRouter's check, which reads
 # its Batch endpoints after its list, ends before the backend counts as
 # stalled (api/server REQUEST_STALL_SECONDS).
@@ -484,7 +484,8 @@ class TooSlow(Exception):
 class _Clock:
     """The two budgets of one bounded_request: connecting's, from its first
     connect, and the reply's, from the first byte sent since the last TLS
-    start, so a proxy's handshake counts as connecting."""
+    start. A proxy's tunnel handshake is sent before the server's TLS, so it
+    is held to the reply's time, and the request gets all of it again."""
 
     def __init__(self, reply):
         self.reply_seconds = reply
@@ -637,6 +638,12 @@ class _Backend(httpcore.NetworkBackend):
                 found.put(socket.getaddrinfo(host, port, type=socket.SOCK_STREAM))
             except OSError as error:
                 found.put(httpcore.ConnectError(str(error)))
+            except ValueError as error:
+                # Such as a name the IDNA codec refuses.
+                found.put(error)
+            except BaseException as error:
+                found.put(error)
+                raise
 
         threading.Thread(target=lookup, daemon=True).start()
         try:
@@ -645,7 +652,7 @@ class _Backend(httpcore.NetworkBackend):
             raise httpcore.ConnectTimeout(
                 f"Looking up {host} ran out of time."
             ) from None
-        if isinstance(rows, Exception):
+        if isinstance(rows, BaseException):
             raise rows
         families = {}
         for family, *_, sockaddr in rows:

@@ -557,6 +557,11 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(checked["check"]["status"], "reachable")
         self.assertEqual(checked["models"], ["fixture-model"])
         self.assertIn("timed out", lost["check"]["message"])
+        # A name the lookup refuses says so at once.
+        refused = providers.check(
+            model_list(server.getsockname()[1], "a" * 64 + ".test")
+        )
+        self.assertEqual(refused["check"]["status"], "unsupported")
 
     def test_a_check_ends_a_trickling_reply_and_tells_it_from_an_oversized_list(
         self,
