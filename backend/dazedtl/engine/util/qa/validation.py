@@ -562,12 +562,12 @@ def _validate_show_text_fix(
         )
     records = header_check["records"]
     try:
-        _pointer, _parameters, nameplate = _show_text_header(
+        _pointer, parameters, nameplate = _show_text_header(
             records[targets[0]], header_check["data_root"], records
         )
     except QAResultError as error:
         raise QAResultError(f"{error}: {identity}") from error
-    problems = nameplate_problems(records.get(nameplate), fix["name"])
+    problems = nameplate_problems(records.get(nameplate), fix["name"], parameters[4])
     if problems:
         raise QAResultError(
             f"The Show Text fix's name for {identity} would block apply: "

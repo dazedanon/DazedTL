@@ -1150,7 +1150,9 @@ assert ["owner", 0, 0, 2, "Owner"] in headers[2:], headers
 # A name put on a header that had none has no nameplate to check against, so
 # it is read for Japanese alone, and the apply rolls back naming its finding.
 owner = next(row["id"] for row in findings["findings"] if row["kind"] == "show-text")
+# The undo's operation, from the applied header, applied as a fix.
 named = qa.correction_map(task, [owner], undo=True)
+del named["mode"]
 (operation,) = named["operations"]
 operation["identity"] = ""
 operation["replacement"] = [*operation["replacement"][:4], "店主"]
@@ -1162,6 +1164,34 @@ except qa.RegressionError as error:
     assert error.failed == {owner: "introduces source-language-residue"}, error
 else:
     raise AssertionError("A Japanese name on a header without one was applied.")
+
+
+def resigned(document, operation):
+    document = {**document, "operations": [operation]}
+    del document["content_sha256"]
+    document["content_sha256"] = qa_schema._sha256(qa_schema._canonical_bytes(document))
+    return document
+
+
+# Undoing a fix puts back the name the header held when reviewed, translated
+# or not, so it applies, and so does the fix after it.
+assert apply(resigned({**named, "mode": "undo"}, operation))
+assert operation["replacement"] in [
+    command["parameters"]
+    for command in json.loads((data / "Map001.json").read_text())["events"][1]["pages"][
+        0
+    ]["list"]
+]
+assert apply(
+    resigned(
+        named,
+        {
+            **operation,
+            "expected": operation["replacement"],
+            "replacement": operation["expected"],
+        },
+    )
+)
 assert qa.status(task)["screen"]["lint"] == {"accepted": 1, "total": 1, "declined": 0}
 # The declined scene and items are a coverage gap, reported once with their
 # reasons.

@@ -456,8 +456,14 @@ def _regression_check_loaded(
         for operation in corrections.get("operations") or []:
             header = operation.get("kind") == "show-text"
             if header and not operation["identity"]:
-                # A header without a name of its own has no record.
-                for problem in nameplate_problems(None, operation["replacement"][4]):
+                # A header without a nameplate record, read against the name
+                # it held when reviewed, which an undo puts back.
+                reviewed = operation[
+                    "replacement" if corrections.get("mode") == "undo" else "expected"
+                ]
+                for problem in nameplate_problems(
+                    None, operation["replacement"][4], reviewed[4]
+                ):
                     errors.append(
                         f"approved correction {problem}: {operation['finding_id']}"
                     )

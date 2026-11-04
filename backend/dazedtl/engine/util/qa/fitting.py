@@ -383,13 +383,18 @@ def correction_problems(
     return problems
 
 
-def nameplate_problems(record: dict[str, Any] | None, name: str) -> list[str]:
+def nameplate_problems(
+    record: dict[str, Any] | None, name: str, held: str
+) -> list[str]:
     """Why a Show Text fix's *name* would trip the post-apply regression in
-    its header's nameplate *record*. A header without a name of its own has
-    no record and no source to read a name against, so its new name is read
-    for the source's language alone."""
+    its header's nameplate *record*. A header without one, whether nameless
+    or with a name never translated, has no source to read a name against,
+    so a name other than the one it *held* when reviewed is read for the
+    source's language alone; putting back the name it held, as an undo or a
+    face-only fix does, adds nothing."""
     if record is None:
-        return ["introduces source-language-residue"] if source_left(name, "") else []
+        added = name != held and source_left(name, "")
+        return ["introduces source-language-residue"] if added else []
     return _introduced_flags(
         record["source"], record["live"], name, record.get("event_code"),
         show_text_allowance(name),
