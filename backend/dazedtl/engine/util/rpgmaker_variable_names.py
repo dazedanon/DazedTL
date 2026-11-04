@@ -38,6 +38,8 @@ _READS = re.compile(r"\$dataSystem\s*(?:\.\s*variables\b|\[\s*['\"]variables['\"
 _HEADER = re.compile(r"/\*:[\w-]*\s(.*?)\*/", re.S)
 _TAG = re.compile(r"^[\s*]*@(\w+)[ \t]*(\S*)", re.M)
 _TYPES = frozenset({"variable", "variable[]"})
+# What separates the words of an MV plugin command, as in `SetVar name,5`.
+_WORDS = re.compile(r"[\s,=:;]+")
 _EVENT_FILE = re.compile(r"(?:Map\d+|CommonEvents|Troops)\.json")
 
 
@@ -170,9 +172,9 @@ def drawn(
             texts = [value for value in scripts(command) if isinstance(value, str)]
             first = command["parameters"][:1]
             if blocks.code(command) == 357:
-                values.update(texts)
+                values.update(leaf for text in texts for leaf in _leaves(text))
             elif blocks.code(command) == 356 and first and isinstance(first[0], str):
-                values.update(first[0].split())
+                values.update(_WORDS.split(first[0]))
             else:
                 code += texts
     script = "\n".join(code)
@@ -185,8 +187,8 @@ def drawn(
 
 
 def _leaves(value: Any) -> Iterator[str]:
-    """Every string in a plugin's settings, those its settings hold as JSON
-    text included."""
+    """Every string in a plugin's settings or command arguments, those they
+    hold as JSON text included."""
     if isinstance(value, str):
         yield value.strip()
         if value.strip()[:1] in ("[", "{"):

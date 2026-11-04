@@ -468,7 +468,16 @@ class CensusTests(unittest.TestCase):
             {"name": "Store", "status": True, "parameters": {"target": "4"}},
             {"name": "Chime", "status": True, "parameters": {}},
         ]
-        names = ["", "ドローン", "作業用", "残り弾数", "保存先", "検索用"]
+        names = [
+            "",
+            "ドローン",
+            "作業用",
+            "残り弾数",
+            "保存先",
+            "検索用",
+            "体力",
+            "照準",
+        ]
         game = {
             "www/js/plugins.js": f"var $plugins =\n{json.dumps(plugins)};\n".encode(),
             f"www/js/plugins/{window}.js": plugin(
@@ -508,8 +517,13 @@ class CensusTests(unittest.TestCase):
                         command(
                             357, "Popup", "say", "", {"text": "残り弾数が減った！"}
                         ),
-                        # A script looks variable 5 up by its name.
+                        # A script, a plugin command's list argument and an MV
+                        # plugin command look variables 5 to 7 up by name.
                         command(355, "$dataSystem.variables.indexOf('検索用');"),
+                        command(357, window, "show", "", {"variableId": "6"}),
+                        command(357, "Reset", "reset", "", {"names": '["体力"]'}),
+                        command(357, window, "show", "", {"variableId": "7"}),
+                        command(356, "SetVar 照準,5"),
                     ]
                 },
             ],
@@ -529,6 +543,8 @@ class CensusTests(unittest.TestCase):
                 ("variables/*", "作業用"),
                 ("variables/*", "保存先"),
                 ("variables/*", "検索用"),
+                ("variables/*", "体力"),
+                ("variables/*", "照準"),
             },
         )
         for field in ("currencyUnit", f"variables/{drawn}"):
