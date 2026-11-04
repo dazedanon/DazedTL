@@ -3,6 +3,13 @@
 Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 [release.mjs](scripts/release.mjs) writes each entry from [release/notes.md](release/notes.md).
 
+## [2.62.0] - 2026-11-04
+
+### Changed
+
+- **Settings:** OpenCode Go and OpenCode pay-as-you-go are now one **OpenCode** provider, with a **Plan** choice between your Go subscription and your pay-as-you-go balance.
+- **Translation:** when a provider declines a request, the one retry now also tells it that the translation takes place in Japan and that all content complies with Japanese law.
+
 ## [2.61.0] - 2026-11-03
 
 ### Added
@@ -1655,6 +1662,7 @@ Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachan
 - The first release of DazedTL as a desktop app, installed from a ZIP with a START launcher and updated from inside the app.
 - **Guided steps** for RPG Maker MV, MZ and VX Ace games, and **Assistant-led** for any game.
 
+[2.62.0]: https://github.com/dazedanon/DazedTL/compare/v2.61.0...v2.62.0
 [2.61.0]: https://github.com/dazedanon/DazedTL/compare/v2.60.0...v2.61.0
 [2.60.0]: https://github.com/dazedanon/DazedTL/compare/v2.59.4...v2.60.0
 [2.59.4]: https://github.com/dazedanon/DazedTL/compare/v2.59.3...v2.59.4
