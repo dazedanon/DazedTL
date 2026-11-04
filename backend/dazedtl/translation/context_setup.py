@@ -32,12 +32,17 @@ def retained_documents(source, documents, drafts):
     for name in drafts:
         if name in documents or not (name.startswith("custom:") or name == NOTES):
             continue
-        relative = (
-            GAME_NOTES_FILENAME
+        # Nothing writes through the notes' path, since saving them reads
+        # them again and refuses, so a link there leaves the project open.
+        path = (
+            Path(source) / GAME_NOTES_FILENAME
             if name == NOTES
-            else ".dazedtl/skills/" + name.removeprefix("custom:") + ".md"
+            else project_path(
+                source,
+                ".dazedtl/skills/" + name.removeprefix("custom:") + ".md",
+                exists=False,
+            )
         )
-        path = project_path(source, relative, exists=False)
         documents[name] = {"text": "", "revision": digest(b""), "path": str(path)}
     return documents
 

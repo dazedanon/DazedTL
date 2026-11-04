@@ -2640,6 +2640,13 @@ class GuidedTests(unittest.TestCase):
         self.assertEqual((self.source / "AGENTS.md").read_bytes(), unreadable)
         self.guided.save_documents(self.identity, {"quirks": drafts["quirks"]})
         self.assertEqual(documents(self.source)["quirks"]["text"], "Keep honorifics.")
+        # Notes linked to another file are unreadable too, and their draft
+        # must not refuse the project's every state: it once failed on the
+        # link.
+        (self.source / "AGENTS.md").unlink()
+        (self.source / "CLAUDE.md").write_text("Shared notes", encoding="utf-8")
+        (self.source / "AGENTS.md").symlink_to("CLAUDE.md")
+        self.guided.position(self.identity, "context", "guidance", "notes")
 
     def test_measured_layout_applies_once_and_preserves_active_work_and_width_edits(
         self,
