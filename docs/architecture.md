@@ -292,6 +292,12 @@ Resync archives a file's working copy, staged outputs and cache, and advances it
 - Each method's pages show only its current runs (`own` in `job_views`): not another method's, one an import superseded, or a finished Manual run of an earlier file.
 - A [translation file](../backend/dazedtl/translation/exchange.py) exports and imports a project's lines in every method through one line set per method; an import never writes the game itself, only accepted results or Guided's working copies, which Apply publishes.
 
+#### Compare models
+
+- [Compare](../backend/dazedtl/translation/compare.py) translates the same lines with up to four models, or one with changed settings, built as the game's method builds them: Guided as an engine run of the recorded original of one file, cut after a page or entry ([compare](../backend/dazedtl/compatibility/compare.py)); Assistant-led and Manual as their API run of a group's units, compiled against a copy of the game's guidance and sent by the run's Live runner from a store of its own ([compare_units](../backend/dazedtl/compatibility/compare_units.py)).
+- A model is any saved connection's, frozen through `Choice` in [execution](../backend/dazedtl/settings/execution.py).
+- An estimate operation prices the requests; the click on its price starts one translate operation, refused once used or when its inputs changed, and no reply reaches the game, its results, cache or runs.
+
 #### Publication
 
 A [text publication](../backend/dazedtl/translation/publication.py) freezes reviewed destinations, then fits, checks and writes the whole batch in one game write; its receipt names the checkpoint it made and keeps no copy of what it replaced, since Git does.

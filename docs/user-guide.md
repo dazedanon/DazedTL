@@ -199,6 +199,16 @@ Under **Translation file** on the Project page, **Export…** saves every line w
 **Import…** shows what a file changes, then takes its translations for the lines whose ID and source text match; the glossary only gains the terms it lacks.
 In Guided steps the translations go into your working copies, so apply them in Translate.
 
+## Compare models
+
+**Compare** in the sidebar translates a few lines with up to four models, or one model with changed settings, sent as a real run sends them, with your glossary and guidance; nothing goes into the game.
+
+1. Choose **Lines**, then add models from any of your connections.
+2. **Estimate cost**, then **Translate** for the price shown.
+3. In **Model vs model**, click the best translation of each line; **Blind** hides the names until every line has a pick.
+
+**Tune settings** tries a thinking effort, glossary change or instruction and shows any two runs side by side, with the changed words marked; **Use these settings** keeps them, and **Use this model** makes it the model every game translates with.
+
 ## Playtest checklist
 
 A run that ends without errors doesn't prove the game reads well, so play it after each Apply, and once more before you share it:
