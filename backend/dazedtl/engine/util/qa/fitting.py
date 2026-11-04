@@ -29,7 +29,6 @@ from util.rpgmaker_qa_manifest import (
     resolve_pointer,
 )
 from util.rpgmaker_rewrap import rendered_rows, widest_line
-from util.source_text import source_left
 
 APPROVED_NONBLOCKING_MECHANICAL_FLAGS = frozenset({"suspicious-length-ratio"})
 
@@ -379,7 +378,7 @@ def correction_problems(
             f"has a line {widest_line(correction)} characters wide; its line "
             f"width is {box['width']}"
         )
-    problems += _introduced_flags(source, live, written, event_code, allowed)
+    problems += _blocking_problems(source, live, written, event_code, allowed)
     return problems
 
 
@@ -393,9 +392,10 @@ def nameplate_problems(
     source's language alone; putting back the name it held, as an undo or a
     face-only fix does, adds nothing."""
     if record is None:
-        added = name != held and source_left(name, "")
-        return ["introduces source-language-residue"] if added else []
-    return _introduced_flags(
+        flags = mechanical.evidence("", name, 101)["flags"] if name != held else []
+        residue = "source-language-residue" in flags
+        return ["introduces source-language-residue"] if residue else []
+    return _blocking_problems(
         record["source"], record["live"], name, record.get("event_code"),
         show_text_allowance(name),
     )
@@ -419,7 +419,7 @@ def introduced_flags(
     return _disallowed_flags(after - before, allowed, source, written)
 
 
-def _introduced_flags(
+def _blocking_problems(
     source: str, live: str, written: str, event_code: int | None,
     allowed: Iterable[str],
 ) -> list[str]:

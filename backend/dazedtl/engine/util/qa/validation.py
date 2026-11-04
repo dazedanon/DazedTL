@@ -572,7 +572,8 @@ def _validate_show_text_fix(
         raise QAResultError(
             f"The Show Text fix's name for {identity} would block apply: "
             + "; ".join(problems)
-            + "; write the nameplate as the game shows it, the header's translation"
+            + "; write the name in the translation's language, as the game's "
+            "other headers show it"
         )
 
 

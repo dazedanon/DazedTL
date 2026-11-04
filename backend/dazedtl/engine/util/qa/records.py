@@ -104,14 +104,18 @@ def _show_text_header(
     identity, empty for a header without a name of its own."""
     parts = _decode_pointer(record["source_pointer"])
     list_index = len(parts) - 1 - parts[::-1].index("list")
-    document = json.loads(
-        (Path(data_root) / record["file"]).read_text(encoding="utf-8-sig")
-    )
-    commands = _resolve_parts(document, parts[: list_index + 1])
-    owner = int(parts[list_index + 1])
-    if commands[owner].get("code") == 401:
-        owner = blocks.show_text(commands, owner)
-    header = commands[owner] if owner is not None else {}
+    try:
+        document = json.loads(
+            (Path(data_root) / record["file"]).read_text(encoding="utf-8-sig")
+        )
+        commands = _resolve_parts(document, parts[: list_index + 1])
+        owner = int(parts[list_index + 1])
+        if commands[owner].get("code") == 401:
+            owner = blocks.show_text(commands, owner)
+        header = commands[owner] if owner is not None else {}
+    except (OSError, ValueError, LookupError, TypeError, AttributeError) as error:
+        # The game's file changed or can't be read since QA was prepared.
+        raise QAResultError(f"The game no longer holds this message: {error}") from error
     parameters = header.get("parameters")
     if header.get("code") != 101 or not isinstance(parameters, list) or len(parameters) < 5:
         raise QAResultError("No Show Text header owns this message")
