@@ -2623,6 +2623,23 @@ class GuidedTests(unittest.TestCase):
         self.assertTrue(
             self.guided.context_status(self.identity)["documents"]["notes"]["exists"]
         )
+        # Notes an assistant wrote that can't be read keep a draft of them
+        # selectable, so it can be discarded: Guidance once refused to select
+        # it. Saving it stays refused, leaving the file as it is, while the
+        # rest of the guidance saves.
+        unreadable = "メモ".encode("shift_jis")
+        (self.source / "AGENTS.md").write_bytes(unreadable)
+        drafts = {
+            "notes": {"text": "My notes", "revision": ""},
+            "quirks": {"text": "Keep honorifics.", "revision": ""},
+        }
+        self.backend.workflows.state = lambda _: {"draft": {"documents": drafts}}
+        self.guided.position(self.identity, "context", "guidance", "notes")
+        with self.assertRaisesRegex(ValueError, "AGENTS.md"):
+            self.guided.save_documents(self.identity, {"notes": drafts["notes"]})
+        self.assertEqual((self.source / "AGENTS.md").read_bytes(), unreadable)
+        self.guided.save_documents(self.identity, {"quirks": drafts["quirks"]})
+        self.assertEqual(documents(self.source)["quirks"]["text"], "Keep honorifics.")
 
     def test_measured_layout_applies_once_and_preserves_active_work_and_width_edits(
         self,

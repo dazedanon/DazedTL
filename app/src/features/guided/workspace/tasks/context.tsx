@@ -183,7 +183,6 @@ export function guidanceView(w: GuidedWorkspace): TaskView {
     advance,
     feedback,
     savedNames,
-    guidanceDirty,
     saveDocuments,
     translation,
   } = w;
@@ -201,7 +200,7 @@ export function guidanceView(w: GuidedWorkspace): TaskView {
       />
     </>
   );
-  const dirty = guidanceDirty;
+  const dirty = Object.keys(context.drafts).length > 0;
   const secondary = (
     <>
       {!!context.drafts[documentName] && (
@@ -468,7 +467,7 @@ export function estimateView(w: GuidedWorkspace): TaskView {
   const {
     state,
     mode,
-    guidanceDirty,
+    context,
     settings,
     disabled,
     advance,
@@ -488,7 +487,7 @@ export function estimateView(w: GuidedWorkspace): TaskView {
   // or to retry Claude's count.
   const blocked = !state.provider.model
     ? "Choose a connection and model in Settings first."
-    : guidanceDirty
+    : Object.keys(context.drafts).length
       ? "Save or discard your Guidance edits first."
       : current && !estimate.result?.tasks.some((task) => task.approximateInput)
         ? "This estimate is up to date."

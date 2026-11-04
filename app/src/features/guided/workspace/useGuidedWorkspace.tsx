@@ -40,11 +40,7 @@ import {
   selection,
   sourceErrors,
 } from "../eventTextSelection";
-import {
-  guidanceAvailability,
-  guidanceEdited,
-  guidanceNames,
-} from "../guidanceReview";
+import { guidanceAvailability, guidanceNames } from "../guidanceReview";
 import { historyOutcome } from "../historyView";
 import {
   activeRun,
@@ -104,7 +100,6 @@ export function useGuidedWorkspace({
   const speakerAction = useAction({ observer: application });
   const draft = useGuidedWorkflow(state, action.report);
   const context = useContextDraft(project.id, state.drafts, action.report);
-  const guidanceDirty = guidanceEdited(state.documents, context.drafts);
   const form = useDraft("guided-form:" + project.id, {
     initial: { saved: state.form },
     report: action.report,
@@ -298,7 +293,7 @@ export function useGuidedWorkspace({
   const currentEstimate = (target: Phase) =>
     !changed.length &&
     !draft.dirty &&
-    !guidanceDirty &&
+    !Object.keys(context.drafts).length &&
     state.estimates[target]?.current
       ? state.estimates[target]?.job
       : null;
@@ -421,7 +416,7 @@ export function useGuidedWorkspace({
     mode,
     files: phaseFiles.map((file) => file.name),
     state,
-    dirty: draft.dirty || guidanceDirty,
+    dirty: draft.dirty || !!Object.keys(context.drafts).length,
     busy: operationBusy,
     running,
     save,
@@ -1684,7 +1679,6 @@ export function useGuidedWorkspace({
     closePanel,
     chooseFolder,
     savedNames,
-    guidanceDirty,
     saveDocuments,
     widths,
     discardWidths,
