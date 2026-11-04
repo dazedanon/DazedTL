@@ -647,11 +647,14 @@ function mirrorTargets(atMain, main) {
 
 /**
  * Fast-forwards the main checkout's dev to `head`. Returns null once it
- * moved, else why the main checkout could not take it.
+ * moved, else why not: "busy" while the main checkout is off dev or has
+ * changes, which clears by itself; "moved" when dev moved past the landing;
+ * "refused" when Git refuses the branch's files there, such as one that
+ * would replace a file the main checkout ignores or has untracked.
  * @param {ReturnType<typeof gitIn>} atMain
  * @param {string} main
  * @param {string} head
- * @returns {string[] | null}
+ * @returns {{ cause: "busy" | "moved" | "refused", report: string[] } | null}
  */
 function moveDev(atMain, main, head) {
   const checkedOut = atMain([
@@ -661,26 +664,38 @@ function moveDev(atMain, main, head) {
     "HEAD",
   ]).stdout.trim();
   if (checkedOut !== "dev")
-    return [
-      `${main} has ${checkedOut || "a detached HEAD"} checked out instead of dev; nothing landed.`,
-    ];
+    return {
+      cause: "busy",
+      report: [
+        `${main} has ${checkedOut || "a detached HEAD"} checked out instead of dev; nothing landed.`,
+      ],
+    };
   const changes = atMain([
     "status",
     "--porcelain",
     "--untracked-files=no",
   ]).stdout.trimEnd();
   if (changes)
-    return [`${main} has uncommitted changes; nothing landed:\n${changes}`];
+    return {
+      cause: "busy",
+      report: [`${main} has uncommitted changes; nothing landed:\n${changes}`],
+    };
   // Never replace a file the main checkout ignores, such as local settings.
   const forward = atMain(["merge", "--ff-only", "--no-overwrite-ignore", head]);
-  if (forward.status !== 0)
-    return [
-      tail(forward.stdout + forward.stderr),
-      atMain(["merge-base", "--is-ancestor", "dev", head]).status === 0
-        ? `dev could not move to ${head.slice(0, 7)}; nothing landed.`
-        : "dev moved without the landing lock; land again.",
-    ];
-  return null;
+  if (forward.status === 0) return null;
+  const why = tail(forward.stdout + forward.stderr);
+  return atMain(["merge-base", "--is-ancestor", "dev", head]).status === 0
+    ? {
+        cause: "refused",
+        report: [
+          why,
+          `dev could not move to ${head.slice(0, 7)}; nothing landed.`,
+        ],
+      }
+    : {
+        cause: "moved",
+        report: [why, "dev moved without the landing lock; land again."],
+      };
 }
 
 /**
@@ -767,7 +782,7 @@ async function underLock(deps, { top, main, branch }, time, tell, record) {
   if (await waitForApp(main, deps, tell)) time.lap("app wait");
   const targets = mirrorTargets(atMain, main);
   const refused = moveDev(atMain, main, head);
-  if (refused) return outcome(1, ...refused);
+  if (refused) return outcome(1, ...refused.report);
   // dev has the commits now, whether or not every mirror takes them.
   record(`${before}..${head}`);
   const unpushed = await pushDev(deps, main, targets);
@@ -1075,12 +1090,21 @@ async function finishUnderLock(
       return outcome(appOpen, appOpenLine(main));
     const targets = mirrorTargets(git, main);
     const refused = moveDev(git, main, head);
-    if (refused)
+    // Only a busy main checkout clears by itself; a retry would hit
+    // anything else again.
+    if (refused?.cause === "busy")
       return outcome(
         mainBusy,
-        ...refused,
+        ...refused.report,
         "The main checkout can't take it now; nothing changed; finish again later.",
       );
+    if (refused?.cause === "moved")
+      return outcome(
+        devMoved,
+        ...refused.report.slice(0, -1),
+        `dev moved since the hand-off's checks; merge dev into ${branch} and hand off again.`,
+      );
+    if (refused) return outcome(1, ...refused.report);
     recordReview(deps, common, { branch, range: `${base}..${head}`, review });
     const unpushed = await pushDev(deps, main, targets, sealed);
     time.lap("push");

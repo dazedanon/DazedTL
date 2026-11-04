@@ -459,6 +459,11 @@ test("a sandboxed worker hands off a checked branch without writing the main che
   fs.writeFileSync(path.join(main, "dev.txt"), "local\n");
   assert.equal(await finish(), 5);
   atMain(["checkout", "--", "dev.txt"]);
+  // A file of the main checkout's own in the branch's way never clears by
+  // itself, so it is the hand-off's to fix, not a retry's.
+  fs.writeFileSync(path.join(main, "work.txt"), "mine\n");
+  assert.equal(await finish(), 1);
+  fs.rmSync(path.join(main, "work.txt"));
   assert.equal(refs(), before);
 
   logged.length = 0;
