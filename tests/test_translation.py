@@ -150,6 +150,25 @@ class TranslationTests(unittest.TestCase):
         self.store.authorize(job)
         return job, plan
 
+    def test_a_run_with_a_corrupt_frozen_cache_read_multiple_is_left_out_alone(self):
+        # The project's run views price each run's usage at its frozen cache
+        # read multiple, so one corrupt value raised for every run's view.
+        kept, _ = self.run_record()
+        corrupt, _ = self.run_record()
+        path = self.store.folder(corrupt["id"]) / "job.json"
+        job = json.loads(path.read_text(encoding="utf-8"))
+        job["configuration"]["rates"] = {
+            "input": 1,
+            "output": 2,
+            "cache_read_multiple": -1,
+        }
+        path.write_text(json.dumps(job), encoding="utf-8")
+        self.assertEqual(
+            [run["id"] for run in self.store.list("project")], [kept["id"]]
+        )
+        self.assertEqual(len(self.store.warnings), 1)
+        self.assertIn(corrupt["id"], self.store.warnings[0])
+
     def test_result_validation_preserves_ids_masks_and_distinct_speakers(self):
         first = request()
         second = request(speaker="Theo")

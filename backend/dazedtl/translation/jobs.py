@@ -191,6 +191,15 @@ class RunStore:
             raise ValueError(
                 "The saved run index no longer matches its request states."
             )
+        # The run's views price its usage at this frozen value; a corrupt one
+        # leaves only this run out (list's warning), not every run's view.
+        from util.provider_costs import valid_read_multiple
+
+        rates = (job.get("configuration") or {}).get("rates") or {}
+        if "cache_read_multiple" in rates and not valid_read_multiple(
+            rates["cache_read_multiple"]
+        ):
+            raise ValueError("The saved run's model options are invalid.")
         if job["kind"] == "operation" and "action" not in job:
             try:
                 plan = self.plan(folder, job)
