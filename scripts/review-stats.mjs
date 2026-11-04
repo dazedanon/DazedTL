@@ -362,11 +362,12 @@ function main() {
   /** @type {Fix[]} */
   const fixes = [];
   let at = 0;
-  for (const { commit: fix, hashes, marks, found, unread } of traced) {
+  for (const { commit, unread } of commits)
     for (const { key, value } of unread)
       problems.push(
-        `Fix ${fix.slice(0, 8)} has a ${key} trailer that is none of its values: ${value}`,
+        `Commit ${commit.slice(0, 8)} has a ${key} trailer that is none of its values: ${value}`,
       );
+  for (const { commit: fix, hashes, marks, found } of traced) {
     const introduced = [];
     for (const name of hashes) {
       const answer = resolved[at++] ?? "";
