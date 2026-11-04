@@ -89,13 +89,45 @@ def stage(root, target, candidate):
             shutil.copytree(path, target / relative, symlinks=False)
     (target / ".dazedtl").mkdir(parents=True, exist_ok=True)
     if candidate.get("glossary") is not None:
+        path = target / ".dazedtl/glossary.txt"
+        legacy = target / "glossary.txt"
+        held = path if path.is_file() else legacy
         # A legacy glossary would move over it.
-        system.unlink(target / "glossary.txt", missing_ok=True)
-        system.write_text(target / ".dazedtl/glossary.txt", candidate["glossary"])
+        system.write_text(
+            path,
+            glossary(
+                system.read_bytes(held).decode("utf-8-sig") if held.is_file() else "",
+                candidate["glossary"],
+            ),
+        )
+        system.unlink(legacy, missing_ok=True)
     if (candidate.get("instruction") or "").strip():
         (target / INSTRUCTION).parent.mkdir(parents=True, exist_ok=True)
         system.write_text(target / INSTRUCTION, candidate["instruction"])
     return target
+
+
+def glossary(held, game):
+    """A glossary file holding a test's *game* section, the part the
+    Context editor shows, in place of that of the file *held*, whose shipped
+    base section stays as the game's file has it (util/vocab
+    write_game_vocab)."""
+    from util.paths import GLOSSARY_BASE_SEPARATOR
+
+    base = (
+        held[held.find(GLOSSARY_BASE_SEPARATOR) :]
+        if GLOSSARY_BASE_SEPARATOR in held
+        else ""
+    )
+    game = game.rstrip("\n")
+    return game + ("\n\n" + base if base else "\n")
+
+
+def editable(text):
+    """The game section of a glossary file, as the Context editor shows it."""
+    from util.paths import GLOSSARY_BASE_SEPARATOR
+
+    return text.split(GLOSSARY_BASE_SEPARATOR, 1)[0].rstrip("\n")
 
 
 def build(engine, workspace, options, candidate, found, game):

@@ -800,9 +800,11 @@ def _order(name):
 def _glossary(source):
     from util.paths import GAME_GLOSSARY_RELATIVE
 
+    from dazedtl.compatibility.compare_units import editable
+
     path = project_path(source, GAME_GLOSSARY_RELATIVE.as_posix(), exists=False)
     try:
-        return system.read_bytes(path).decode("utf-8-sig")
+        return editable(system.read_bytes(path).decode("utf-8-sig"))
     except OSError:
         return ""
 
@@ -865,7 +867,8 @@ def view(estimate, options, translated, marks):
                 ),
             }
         )
-    source = (translated or estimate).get("result") or {}
+    # A translation running has no result yet; its estimate read the lines.
+    source = (translated or {}).get("result") or estimate.get("result") or {}
     lines = []
     for line in source.get("lines", []):
         lines.append(

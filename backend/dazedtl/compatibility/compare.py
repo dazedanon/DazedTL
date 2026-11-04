@@ -82,7 +82,7 @@ def cut(name, document, phase, lines, markers=frozenset()):
         counts = {}
         for line in found:
             counts[line.paths[0][0]] = counts.get(line.paths[0][0], 0) + 1
-        total, end = 0, None
+        total, end = 0, 0
         for entry in sorted(counts):
             total += counts[entry]
             end = entry
@@ -261,6 +261,15 @@ def guidance(candidate):
                 continue
             path = Path(directory) / relative
             path.parent.mkdir(parents=True, exist_ok=True)
+            if relative == GLOSSARY:
+                from .compare_units import glossary
+
+                text = glossary(
+                    system.read_bytes(path).decode("utf-8-sig")
+                    if path.is_file()
+                    else "",
+                    text,
+                )
             system.write_text(path, text)
             native["context_hashes"][relative] = digest(path.read_bytes())
 

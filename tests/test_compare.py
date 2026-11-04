@@ -9,9 +9,11 @@ from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 
 from dazedtl.compatibility.compare import END, cut, rows, sources
+from dazedtl.compatibility.compare_units import editable, glossary
 from dazedtl.storage import write_json
 from dazedtl.translation.compare import Compare
 from dazedtl.translation.project import MANUAL_UNITS
+from util.paths import GLOSSARY_BASE_SEPARATOR
 
 
 def command(code, parameters, **extra):
@@ -45,6 +47,7 @@ class LinesTests(unittest.TestCase):
             ],
         }
         value, kept = cut("Map001.json", original, "dialogue", 2)
+        assert isinstance(value, dict)
         # The second line's page stays whole; the next page ends at once.
         self.assertEqual(value["events"][2]["pages"][0]["list"], [END])
         self.assertEqual(len(original["events"][2]["pages"][0]["list"]), 3)
@@ -92,6 +95,18 @@ class LinesTests(unittest.TestCase):
         value, kept = cut("Items.json", items, "database", 2)
         self.assertEqual(value[2], None)
         self.assertEqual(len(kept), 2)
+
+
+class GlossaryTests(unittest.TestCase):
+    def test_a_test_glossary_keeps_the_games_base_section_once(self):
+        # Tune starts from the glossary the Context editor shows; sending the
+        # whole file back appended the shipped base a second time.
+        held = "村長 (Village Chief)\n\n" + GLOSSARY_BASE_SEPARATOR + "魔法 (Magic)\n"
+        shown = editable(held)
+        self.assertEqual(shown, "村長 (Village Chief)")
+        changed = glossary(held, shown + "\nミカ (Mika)")
+        self.assertEqual(changed.count(GLOSSARY_BASE_SEPARATOR), 1)
+        self.assertEqual(editable(changed), "村長 (Village Chief)\nミカ (Mika)")
 
 
 class Operations:
@@ -146,7 +161,7 @@ class ApprovalTests(unittest.TestCase):
                     ),
                 ),
                 settings=SimpleNamespace(
-                    _read=lambda: {},
+                    _read=dict,
                     _connection=lambda _state, _id: connection,
                     _configured=lambda _connection: True,
                     convert_quotes=lambda: True,
