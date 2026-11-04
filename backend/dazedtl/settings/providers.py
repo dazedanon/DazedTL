@@ -302,8 +302,9 @@ def deepseek_route(model, endpoint):
 
 # OpenCode's gateway routes a request only with a session, which keeps a
 # conversation on one backend for its prompt cache, and asks each client to
-# name itself; https://opencode.ai/v2/docs/console/harnesses/
-OPENCODE_HOST = "opencode.ai"
+# name itself; https://opencode.ai/v2/docs/console/harnesses/ The gateway's
+# host is its routes' own APIs' (OWN_HOSTS), one for both.
+OPENCODE_HOSTS = frozenset(OWN_HOSTS[name] for name in OPENCODE)
 
 
 def gateway_session():
@@ -343,7 +344,7 @@ def gateway_headers(address, session=None):
     worker keeps for its run, and the Guided engine one per process. They go
     on the client or the call, never into a request's params, which Batch
     files, saved plans and Inspect keep."""
-    if hostname(address) != OPENCODE_HOST and not any(
+    if hostname(address) not in OPENCODE_HOSTS and not any(
         _stand_in(name, address) for name in OPENCODE
     ):
         return {}
