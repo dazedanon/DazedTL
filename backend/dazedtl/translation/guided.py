@@ -1136,10 +1136,8 @@ class Guided:
         # draft began are not replaced (documents_save refuses).
         changes = {
             name: {
-                "revision": document.get("revision")
-                or current.get(name, {}).get("revision", "")
-                if name == NOTES
-                else current.get(name, {}).get("revision", ""),
+                "revision": (name == NOTES and document.get("revision"))
+                or current.get(name, {}).get("revision", ""),
                 "text": document["text"],
             }
             for name, document in documents.items()
