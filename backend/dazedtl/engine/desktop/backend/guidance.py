@@ -124,6 +124,8 @@ def documents_save(root, changes):
             revision = digest(b"")
         held = current.get(name, {"text": None, "revision": digest(b"")})
         if held["revision"] != revision and not holds(name, held, text) and not _replaced(root, name, held, revision):
+            if name == NOTES:
+                raise ValueError(f"AGENTS.md changed on disk after you began editing the {NOTES_TITLE}, as an assistant does. To keep the file, discard the {NOTES_TITLE} draft; to keep your text, copy it, discard the draft, then paste it back and save.")
             raise ValueError("This guidance changed on disk. Reload before saving.")
     for name, change in changes.items():
         text = change["text"]
