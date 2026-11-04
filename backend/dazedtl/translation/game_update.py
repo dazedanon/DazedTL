@@ -11,6 +11,7 @@ ACTIONS = {"save", "keep", "replace", "defaults"}
 ABSENT = {
     "state": "absent",
     "message": "",
+    "installed": False,
     "repo": "",
     "suggested": "",
     "values": None,
@@ -43,6 +44,7 @@ def view(status):
     return {
         "state": status["state"],
         "message": status["message"],
+        "installed": status["installed"],
         "repo": status["repo"],
         "suggested": status["suggested"],
         "values": _public(status["values"]),

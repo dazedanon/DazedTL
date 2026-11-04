@@ -25,7 +25,10 @@ const listed = (values: Values, fields: (keyof Values)[]) =>
   fields.map((field) => `${fieldNames[field]} ${values[field]}`).join(", ");
 
 /** Where the game's GameUpdate config stands, in one row. */
-function summary(status: GameUpdateStatus): {
+function summary(
+  status: GameUpdateStatus,
+  releases: boolean,
+): {
   mark: StatusKind;
   title: string;
   detail: string;
@@ -35,8 +38,7 @@ function summary(status: GameUpdateStatus): {
       return {
         mark: "warning",
         title: "Needs its repository",
-        detail:
-          "Enter the repository players download from. Releases wait for it.",
+        detail: `Enter the repository players download from.${releases ? " Releases wait for it." : ""}`,
       };
     case "pending":
       return {
@@ -61,11 +63,14 @@ function summary(status: GameUpdateStatus): {
     case "unconfigured":
     case "ready":
       // Every write to the game is its own checkpoint, so the config is
-      // saved with the translation as soon as it is written.
+      // saved with the translation as soon as it is written; a game DazedTL
+      // doesn't release may have no Git to save it in.
       return {
         mark: "done",
         title: "Ready to publish",
-        detail: `${CONFIG} is saved with the translation.`,
+        detail: releases
+          ? `${CONFIG} is saved with the translation.`
+          : `${CONFIG} is in the game.`,
       };
   }
 }
@@ -79,11 +84,14 @@ export function GameUpdatePanel({
   status,
   disabled,
   openSettings,
+  releases = true,
 }: {
   projectId: string;
   status: GameUpdateStatus;
   disabled: boolean;
   openSettings: () => void;
+  /** Whether DazedTL releases the game, and saves its config with them. */
+  releases?: boolean;
 }) {
   const application = useApplication();
   const action = useAction({ observer: application });
@@ -148,7 +156,7 @@ export function GameUpdatePanel({
   const target = typed === null && status.file ? status.file : values;
   const shownRepo =
     typed === null && status.file ? status.file.repo : repo.trim();
-  const row = summary(status);
+  const row = summary(status, releases);
   const unsaved =
     !!repo.trim() &&
     (repo.trim() !== status.repo ||

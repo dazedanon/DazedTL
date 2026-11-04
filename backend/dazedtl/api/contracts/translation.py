@@ -364,6 +364,8 @@ class GameUpdateStatus(TypedDict):
         "unavailable",
     ]
     message: str
+    # Whether the game holds GameUpdate's scripts.
+    installed: bool
     # The repository the game's settings keep, and the one origin suggests.
     repo: str
     suggested: str

@@ -32,8 +32,7 @@ import type { ProjectLink } from "../guided/workspace/model";
 import type { SettingsSection } from "../settings/Settings";
 import { useProjectOptions } from "./useProjectOptions";
 import { ContextPanel } from "./ContextPanel";
-import { OptionsPanel } from "./OptionsPanel";
-import { GameUpdatePanel } from "../project/GameUpdatePanel";
+import { GameUpdateConfig, OptionsPanel } from "./OptionsPanel";
 import {
   attemptJobs,
   awaitingQuote,
@@ -383,17 +382,12 @@ function Workspace({
                 disabled={disabled}
                 settings={settings}
               />
-              {/* Options' GameUpdate choice links Settings itself while that
-                  is all the panel would say. */}
-              {state.gameUpdate.state !== "unconfigured" && (
-                <GameUpdatePanel
-                  key={project.id}
-                  projectId={project.id}
-                  status={state.gameUpdate}
-                  disabled={disabled}
-                  openSettings={() => settings("gameupdate")}
-                />
-              )}
+              <GameUpdateConfig
+                project={project}
+                state={state}
+                disabled={disabled}
+                settings={settings}
+              />
             </PageBody>
             <ActionBar feedback={<Feedback dirty={draft.dirty} />}>
               {draft.dirty && (

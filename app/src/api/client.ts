@@ -135,6 +135,8 @@ export const api = {
       request("manual_example", { project_id, path }),
     manualEstimate: (project_id: string) =>
       request("manual_estimate", { project_id }),
+    manualGameUpdate: (project_id: string, install: boolean) =>
+      request("manual_gameupdate", { project_id, install }),
     checkpointChanges: (project_id: string, commit: string) =>
       request("project_checkpoint_changes", { project_id, commit }),
     checkpoint: (

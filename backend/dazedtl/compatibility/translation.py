@@ -732,16 +732,9 @@ class TranslationEngine:
     def gameupdate(self, source, options, log=None):
         """Installs GameUpdate's files in a game of an engine whose patches
         GameUpdate installs (GAMEUPDATE_ENGINES), or takes them out when the
-        project's options leave GameUpdate out, in one write to the game; an
-        RPG Maker game gets them from its preparation. DazedTL writes the
-        game's config once the files are there, as for RPG Maker."""
-        from util.len_patch_scope import setup_files
-        from util.project_preparation import install_gameupdate, remove_gameupdate
-
-        from .game_write import write_game
-
-        root = Path(source)
-        engine = self.detect(root)
+        project's options leave GameUpdate out (set_gameupdate); an RPG Maker
+        game gets them from its preparation."""
+        engine = self.detect(source)
         if engine in {"MVMZ", "ACE"}:
             raise ValueError(
                 "An RPG Maker game gets GameUpdate from operation rpgmaker_prepare."
@@ -752,22 +745,44 @@ class TranslationEngine:
                 f"{gameupdate_engine_names('or')}, whose patches it was "
                 "checked with."
             )
+        return self.set_gameupdate(
+            source, self.project(source, options).install_gameupdate, log
+        )
+
+    def set_gameupdate(self, source, install, log=None):
+        """Installs GameUpdate's files in the game at `source`, or takes them
+        out, in one write to the game. Any engine's game takes them: operation
+        gameupdate checks the engine first, while a Manual project's own
+        tools lay its patch out. DazedTL writes the game's config once the
+        files are there, as for RPG Maker."""
+        from util.len_patch_scope import setup_files
+        from util.paths import game_git_set_up
+        from util.project_preparation import install_gameupdate, remove_gameupdate
+
+        from .game_write import write_game
+
+        root = Path(source)
+        engine = self.detect(root)
         log = log or (lambda _line: None)
-        if not self.project(root, options).install_gameupdate:
-            with write_game(root, log=log, pack=False) as game:
+        # A checkpoint outside an operation, such as a Manual project's
+        # options save, is named for Options.
+        if not install:
+            with write_game(
+                root, log=log, pack=False, summary="Remove GameUpdate", stage="Options"
+            ) as game:
                 removed, errors = remove_gameupdate(root, log=log)
                 game.wrote(*removed)
                 if errors:
                     raise ValueError("GameUpdate removal failed. " + "; ".join(errors))
             return {"engine": engine, "removed": removed}
-        from util.paths import game_git_set_up
-
         if refusal := gameupdate_refusal(
             engine, _tracked(root) if game_git_set_up(root) else ()
         ):
             raise ValueError(refusal)
         readme = not (root / "README.md").exists()
-        with write_game(root, log=log, pack=False) as game:
+        with write_game(
+            root, log=log, pack=False, summary="Add GameUpdate", stage="Options"
+        ) as game:
             copied, errors = install_gameupdate(root, wolf=engine == "WOLF", log=log)
             game.wrote(*setup_files(root), *(["README.md"] if readme else []))
             if errors:
