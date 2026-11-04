@@ -173,7 +173,7 @@ One landing runs at a time, under a lock that a release also holds.
 
 - Every landing passes an independent review first: a reviewer that never saw the work runs `code-review` at `high` or above on the branch against `dev`, the author fixes each finding or dismisses it with a reason, and the same reviewer checks the fixes and reasons.
   The review record says an independent reviewer ran it, at which level, the last commit it checked and what became of each finding; [readReview](../scripts/land.mjs) gives its shape.
-  land.mjs refuses a record without them, and a branch with commits after that one other than merges and the formatter's.
+  land.mjs refuses a record without them, and a branch with commits after that one other than merges of `dev` and the formatter's.
   Each landed record joins `dazedtl-reviews.jsonl` in the shared Git directory with its branch and range, to show what reviews catch.
 - A failed test run runs once more after the machine's load drops; a pass then is reported as `Flaky:`, and a second failure stops the landing.
 - Both sides' [release notes](#release-notes) are joined, and conflicts only in the generated API contracts are resolved by writing them again.

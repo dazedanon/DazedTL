@@ -266,10 +266,12 @@ test("a landing's review record comes from an independent reviewer and accounts 
     () => record({ ...reviewed, level: "medium", findings: [] }),
     /level of high/,
   );
-  assert.throws(
-    () => record({ level: "high", reviewer: "independent", findings: [] }),
-    /head commit/,
-  );
+  // A name such as HEAD would follow the branch past what was reviewed.
+  for (const head of [undefined, "HEAD", "work"])
+    assert.throws(
+      () => record({ ...reviewed, head, level: "high", findings: [] }),
+      /hash of the head commit/,
+    );
   assert.throws(
     () =>
       record({
@@ -310,11 +312,16 @@ test("a landing's review covers every commit of the branch but merges of dev and
   };
   assert.equal(await formatBranch(git, dir, format, () => {}), null);
   assert.equal(reviewedHead(git, reviewed.slice(0, 8)), reviewed);
-  // A fix made after the review, such as for a failed landing, is not reviewed.
+  // A merge of another branch, or a fix made after the review such as for a
+  // failed landing, is not reviewed.
+  git(["checkout", "-qb", "side", `${reviewed}~1`]);
+  commit("side.txt", "side\n", "feat: side");
+  git(["checkout", "-q", "work"]);
+  git(["merge", "-q", "--no-edit", "side"]);
   commit("code.mjs", "let a = 2;\n", "fix: later");
   assert.throws(
     () => reviewedHead(git, reviewed),
-    /after the review record's head[^]* fix: later$/,
+    /head;[^]*\n\w+ fix: later\n\w+ Merge branch 'side' into work$/,
   );
   git(["checkout", "-q", "dev"]);
   const elsewhere = commit("dev.txt", "dev\n", "fix: on dev");

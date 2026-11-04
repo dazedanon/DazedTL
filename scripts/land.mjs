@@ -37,7 +37,7 @@ const icon = path.join(import.meta.dirname, "..", "resources", "icon.png");
 /** The code-review levels a landing's review may run at: high and up. */
 const reviewLevels = ["high", "xhigh", "max", "ultra"];
 const reviewShape =
-  '{"level": "high", "reviewer": "independent", "head": "<the commit the reviewer last checked>", "findings": [{"summary": "...", "outcome": "fixed"}, {"summary": "...", "outcome": "dismissed", "reason": "..."}]}';
+  '{"level": "high", "reviewer": "independent", "head": "<hash of the last commit the reviewer checked>", "findings": [{"summary": "...", "outcome": "fixed"}, {"summary": "...", "outcome": "dismissed", "reason": "..."}]}';
 /** Where landed reviews are recorded, one JSON line each, in the shared Git directory. */
 const reviewLog = "dazedtl-reviews.jsonl";
 /** The subject of the commit holding what the formatter changed. */
@@ -68,9 +68,10 @@ export function readReview(text) {
     throw new Error(
       `The review record needs a level of ${reviewLevels.join(", ")}.`,
     );
-  if (!filled(record.head))
+  // A name such as HEAD would follow the branch past what was reviewed.
+  if (typeof record.head !== "string" || !/^[0-9a-f]{7,40}$/i.test(record.head))
     throw new Error(
-      "The review record needs the head commit its reviewer last checked.",
+      "The review record needs the hash of the head commit its reviewer last checked.",
     );
   if (!Array.isArray(record.findings))
     throw new Error(
@@ -104,7 +105,7 @@ export function readReview(text) {
 /**
  * Resolves the commit a landing's reviewer last checked to its full hash.
  * Throws when it is not on the branch at `git`, or when the branch has
- * commits of its own after it: apart from merges and the formatter's
+ * commits of its own after it: apart from merges of dev and the formatter's
  * commits, a change made after the review lands only once it is reviewed.
  * @param {ReturnType<typeof gitIn>} git
  * @param {string} head
@@ -123,15 +124,19 @@ export function reviewedHead(git, head) {
     throw new Error(
       `The review record's head ${head} is not a commit on this branch.`,
     );
+  const onDev = (/** @type {string} */ parent) =>
+    git(["merge-base", "--is-ancestor", parent, "dev"]).status === 0;
   const after = lines(
-    git([
-      "log",
-      "--first-parent",
-      "--no-merges",
-      "--format=%h %s",
-      `${commit}..HEAD`,
-    ]).stdout,
-  ).filter((line) => line.slice(line.indexOf(" ") + 1) !== formatSubject);
+    git(["log", "--first-parent", "--format=%P\t%h %s", `${commit}..HEAD`])
+      .stdout,
+  ).flatMap((line) => {
+    const [parents, title] = line.split("\t", 2);
+    const merged = parents.split(" ").slice(1);
+    const reviewed = merged.length
+      ? merged.every(onDev)
+      : title.slice(title.indexOf(" ") + 1) === formatSubject;
+    return reviewed ? [] : [title];
+  });
   if (after.length)
     throw new Error(
       `These commits came after the review record's head; have the reviewer check them and record the new head:\n${after.join("\n")}`,
