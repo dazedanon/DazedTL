@@ -4,11 +4,13 @@ import { api } from "../../api/client";
 import type {
   CompareChoice,
   CompareRow,
+  Comparison,
   EffortLevel,
 } from "../../api/contracts";
 import { useApplication } from "../../app/ApplicationProvider";
 import { useLanguages } from "../../app/LanguagesProvider";
 import { useAction } from "../../state/useAction";
+import { useOnChange } from "../../state/useOnChange";
 import { useRead } from "../../state/useRead";
 import { ActionBar } from "../../ui/ActionBar";
 import { ActionControl } from "../../ui/ActionControl";
@@ -21,7 +23,7 @@ import { SegmentedControl } from "../../ui/SegmentedControl";
 import { useTabPanelShown } from "../../ui/Tabs";
 import { settingsSaved } from "../settings/settingsChanges";
 import type { CompareContext } from "./Compare";
-import { CompareGrid } from "./CompareGrid";
+import { CompareGrid, type Difference } from "./CompareGrid";
 import {
   glossaryChanges,
   glossaryEntries,
@@ -49,6 +51,19 @@ const start = (context: CompareContext): Settings | null =>
     glossary: null,
     instruction: "",
   };
+
+/** What a run changed from the game's settings, in a few words. */
+function settingsOf(item: Comparison) {
+  const model = item.candidates[0];
+  return [
+    model.model,
+    model.effort ? `${model.effort} effort` : "",
+    model.glossary !== undefined ? "test glossary" : "",
+    model.instruction ? "instruction" : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
 
 /** A setting's row: its label, marked once the test changes it. */
 function Setting({
@@ -128,7 +143,8 @@ function GlossaryDialog({
 /**
  * Tune settings: one model's translation of the lines with its thinking
  * effort, glossary or an instruction changed for the test, marking what
- * changed since an earlier run of the same lines.
+ * the words that changed between two runs of the same lines it shows side
+ * by side.
  */
 export function Tune({ context }: { context: CompareContext }) {
   const application = useApplication();
@@ -193,20 +209,94 @@ export function Tune({ context }: { context: CompareContext }) {
     },
   );
   const runs = tuneRuns(context.comparisons, scene.file, scene.lines);
-  // The lines show this test's run, else the last run of these lines.
-  const shown =
+  // The newest run shows on the right, this test's once it is translated,
+  // beside the run before it, until the user picks other runs.
+  const latest =
     run.shown?.stage === "translation" ? run.shown : (runs.at(-1) ?? run.shown);
-  const number = shown ? runs.indexOf(shown) + 1 : 0;
-  const [chosenSince, setSince] = useState<string | null>();
-  const earlier = runs.slice(0, Math.max(0, number - 1));
-  const since =
-    chosenSince === null
+  const [chosen, setChosen] = useState<{
+    left?: string | null;
+    right?: string;
+  }>({});
+  useOnChange(latest?.id, () => setChosen({}));
+  const shown = runs.find((item) => item.id === chosen.right) ?? latest;
+  const position = shown ? runs.indexOf(shown) : -1;
+  const left =
+    chosen.left === null
       ? undefined
-      : (earlier.find((item) => item.id === chosenSince) ?? earlier.at(-1));
-  const texts = new Map(
-    (since?.rows ?? []).map((row) => [row.id, row.translations[0]?.text]),
-  );
-  const before = (row: CompareRow) => texts.get(row.id);
+      : (runs.find((item) => item.id === chosen.left && item !== shown) ??
+        (position > 0 ? runs[position - 1] : undefined));
+  const name = (item: Comparison) => `Run ${runs.indexOf(item) + 1}`;
+  const pickRun = (
+    side: "left" | "right",
+    value: Comparison | undefined,
+    choose: (id: string | null) => void,
+  ) =>
+    runs.length > 1 ? (
+      <Menu
+        variant="link"
+        label={side === "left" ? "Compare with" : "Show run"}
+        align="start"
+        trigger={
+          <>
+            {value ? name(value) : "Compare with a run"}
+            <ChevronDown size={13} aria-hidden="true" />
+          </>
+        }
+      >
+        {[...runs].reverse().map((item) => (
+          <MenuItem
+            key={item.id}
+            current={item === value}
+            description={settingsOf(item)}
+            disabled={side === "left" ? item === shown : item === left}
+            onSelect={() => choose(item.id)}
+          >
+            {name(item)}
+          </MenuItem>
+        ))}
+        {side === "left" && (
+          <>
+            <MenuSeparator />
+            <MenuItem current={!value} onSelect={() => choose(null)}>
+              Show one run
+            </MenuItem>
+          </>
+        )}
+      </Menu>
+    ) : value ? (
+      name(value)
+    ) : (
+      languages.target
+    );
+  const pair = left && shown ? [left, shown] : shown ? [shown] : [];
+  const grid: Comparison | undefined =
+    left && shown
+      ? {
+          ...shown,
+          candidates: [left.candidates[0], shown.candidates[0]],
+          rows: shown.rows.map((row) => {
+            const earlier = left.rows.find((item) => item.id === row.id);
+            return {
+              ...row,
+              translations: [
+                earlier?.translations[0] ?? null,
+                row.translations[0] ?? null,
+              ],
+              problems: [earlier?.problems[0] ?? [], row.problems[0] ?? []],
+            };
+          }),
+        }
+      : shown;
+  const difference = (
+    row: CompareRow,
+    column: number,
+  ): Difference | undefined => {
+    const [before, after] = row.translations;
+    if (!left || !before || !after) return undefined;
+    return column === 0
+      ? { other: after.text, side: "before" }
+      : { other: before.text, side: "after" };
+  };
   const result = shown?.candidates[0];
   const translated = !!shown?.translationId && result?.cost !== undefined;
   const current = translated && shown === run.shown;
@@ -217,59 +307,10 @@ export function Tune({ context }: { context: CompareContext }) {
   const count = glossaryEntries(glossary).length;
   const edits = changed.glossary ? glossaryChanges(gameGlossary, glossary) : 0;
   const disabled = run.action.busy;
-  const detail = shown && (
-    <>
-      {[
-        number > 0 && `Run ${number}`,
-        result && modelDetail(result, !!shown.translationId),
-      ]
-        .filter(Boolean)
-        .join(" · ")}
-      {earlier.length > 0 && (
-        <>
-          {" · "}
-          <Menu
-            variant="link"
-            label="Mark changes since"
-            align="start"
-            trigger={
-              <>
-                {since
-                  ? `changes since run ${runs.indexOf(since) + 1}`
-                  : "no changes marked"}
-                <ChevronDown size={13} aria-hidden="true" />
-              </>
-            }
-          >
-            {[...earlier].reverse().map((item) => {
-              const model = item.candidates[0];
-              return (
-                <MenuItem
-                  key={item.id}
-                  current={item === since}
-                  description={[
-                    model.model,
-                    model.effort ? `${model.effort} effort` : "",
-                    model.glossary !== undefined ? "test glossary" : "",
-                    model.instruction ? "instruction" : "",
-                  ]
-                    .filter(Boolean)
-                    .join(" · ")}
-                  onSelect={() => setSince(item.id)}
-                >
-                  Changes since run {runs.indexOf(item) + 1}
-                </MenuItem>
-              );
-            })}
-            <MenuSeparator />
-            <MenuItem current={!since} onSelect={() => setSince(null)}>
-              Mark no changes
-            </MenuItem>
-          </Menu>
-        </>
-      )}
-    </>
-  );
+  const detail = (item: Comparison) =>
+    [modelDetail(item.candidates[0], !!item.translationId), settingsOf(item)]
+      .filter(Boolean)
+      .join(" · ");
   return (
     <>
       <PageBody className="compare-body">
@@ -389,16 +430,36 @@ export function Tune({ context }: { context: CompareContext }) {
           </div>
           <CompareGrid
             label="Translation with these settings"
-            comparison={shown}
-            columns={[
-              {
-                position: 0,
-                title: languages.target,
-                detail,
-                error: result?.error,
-              },
-            ]}
-            before={since ? before : undefined}
+            comparison={grid}
+            columns={pair.map((item, index) => ({
+              position: index,
+              title:
+                index === 0 && pair.length > 1
+                  ? pickRun("left", item, (id) =>
+                      setChosen((value) => ({ ...value, left: id })),
+                    )
+                  : pickRun("right", item, (id) =>
+                      setChosen((value) => ({
+                        ...value,
+                        right: id ?? undefined,
+                      })),
+                    ),
+              detail: (
+                <>
+                  {detail(item)}
+                  {pair.length === 1 && runs.length > 1 && (
+                    <>
+                      {" · "}
+                      {pickRun("left", undefined, (id) =>
+                        setChosen((value) => ({ ...value, left: id })),
+                      )}
+                    </>
+                  )}
+                </>
+              ),
+              error: item.candidates[0]?.error,
+            }))}
+            difference={left ? difference : undefined}
             empty={run.empty(
               "Estimate the cost to see these lines translated.",
             )}

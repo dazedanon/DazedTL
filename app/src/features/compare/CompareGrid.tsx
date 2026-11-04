@@ -17,25 +17,35 @@ export type CompareColumn = {
   error?: string;
 };
 
-/** A line's text as an earlier run had it changed into this one: removed
- * words struck through where they stood, added ones marked. */
-function Changed({ before, after }: { before: string; after: string }) {
-  const edits = useMemo(() => wordEdits(before, after), [before, after]);
-  // A line rewritten whole reads as its old version over its new one.
-  const whole =
-    edits.length === 2 &&
-    edits[0].kind === "removed" &&
-    edits[1].kind === "added";
+/** How a line's text differs from another run's: on the earlier run's side
+ * the words the later one dropped are marked, on the later run's side the
+ * words it brought. */
+export type Difference = { other: string; side: "before" | "after" };
+
+function Changed({
+  text,
+  difference,
+}: {
+  text: string;
+  difference: Difference;
+}) {
+  const { other, side } = difference;
+  const edits = useMemo(
+    () => (side === "after" ? wordEdits(other, text) : wordEdits(text, other)),
+    [other, text, side],
+  );
+  const mine = side === "after" ? "added" : "removed";
   return edits.map((edit, index) => {
     if (edit.kind === "same") return edit.text;
+    if (edit.kind !== mine) return null;
     // Spaces at a change's edges stay outside its mark.
-    const [, lead, text, trail] = /^(\s*)(.*?)(\s*)$/su.exec(edit.text)!;
-    const Mark = edit.kind === "added" ? "ins" : "del";
+    const [, lead, part, trail] = /^(\s*)(.*?)(\s*)$/su.exec(edit.text)!;
+    const Mark = side === "after" ? "ins" : "del";
     return (
       <Fragment key={index}>
         {lead}
-        <Mark>{text}</Mark>
-        {whole && index === 0 ? "\n" : trail}
+        <Mark>{part}</Mark>
+        {trail}
       </Fragment>
     );
   });
@@ -44,8 +54,8 @@ function Changed({ before, after }: { before: string; after: string }) {
 /**
  * The comparison's lines: the source with its speaker, then each model's
  * translation, with what the checks found under it. Picking marks one
- * translation per line as the best; Tune settings marks what changed since
- * an earlier run instead.
+ * translation per line as the best; Tune settings marks what changed
+ * between two runs instead.
  */
 export function CompareGrid({
   comparison,
@@ -53,7 +63,7 @@ export function CompareGrid({
   empty,
   marks,
   pick,
-  before,
+  difference,
   label,
 }: {
   comparison: Comparison | undefined;
@@ -63,8 +73,8 @@ export function CompareGrid({
   marks?: Record<string, number>;
   /** Marks a translation as its line's best, or clears the mark. */
   pick?: (row: CompareRow, model: number | null) => void;
-  /** Each line's text in the run Tune settings compares with. */
-  before?: (row: CompareRow) => string | undefined;
+  /** How a column's line differs from the other run's, in Tune settings. */
+  difference?: (row: CompareRow, position: number) => Difference | undefined;
   label: string;
 }) {
   const languages = useLanguages();
@@ -126,7 +136,8 @@ export function CompareGrid({
                 const translation = row.translations[column.position];
                 const problems = row.problems[column.position] ?? [];
                 const best = !!marks && marks[row.id] === model;
-                const earlier = translation && before?.(row);
+                const differs =
+                  translation && difference?.(row, column.position);
                 const content = translation && (
                   <>
                     <span className="compare-cell-top">
@@ -144,8 +155,8 @@ export function CompareGrid({
                       className="compare-text"
                       lang={languages.targetTag ?? undefined}
                     >
-                      {earlier !== undefined && earlier !== null ? (
-                        <Changed before={earlier} after={translation.text} />
+                      {differs ? (
+                        <Changed text={translation.text} difference={differs} />
                       ) : (
                         translation.text
                       )}

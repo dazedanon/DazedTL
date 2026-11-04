@@ -219,11 +219,7 @@
 }
 .compare-text del {
   background: var(--color-error-surface);
-  color: var(--color-muted);
-  text-decoration: line-through;
-}
-.compare-text del {
-  margin-inline-end: var(--space-half);
+  color: var(--color-text);
 }
 .compare-grid > tbody td.compare-grid-empty {
   padding: var(--space-6) var(--space-3);
