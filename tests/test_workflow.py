@@ -2500,6 +2500,37 @@ class WorkflowTests(unittest.TestCase):
         patch_files = TranslationEngine(self.profile).patch_files(self.game, [])
         self.assertEqual(patch_files["files"], ["source.json"])
 
+    @unittest.skipIf(
+        os.name == "nt" or os.geteuid() == 0, "Only a user's Linux file has no read."
+    )
+    def test_notes_another_program_holds_never_stop_a_game_write(self):
+        # Notes Windows keeps locked while another program holds them failed
+        # every game write with raw Git text: the checkpoint of edits made
+        # outside DazedTL could not add them. A file without read permission
+        # stands in for the lock.
+        from dazedtl.compatibility.checkpoint_commits import _git, for_action, running
+        from dazedtl.compatibility.game_write import write_game
+        from desktop.backend.guidance import notes
+        from util.len_git import setup_git
+        from util.len_translation import LenProject
+
+        setup_git(LenProject(self.game), version="1.0", current_is_untranslated=True)
+        TranslationEngine(self.profile).document_save(
+            self.game, "notes", notes(self.game)["revision"], "Repack Data.wolf."
+        )
+        agents = self.game / "AGENTS.md"
+        agents.write_text("Repack Data.wolf after injection.", encoding="utf-8")
+        agents.chmod(0)
+        self.addCleanup(agents.chmod, 0o644)
+        with (
+            running(for_action("export_selected")),
+            write_game(self.game, paths=["source.json"]) as written,
+        ):
+            written.put("source.json", b'{"line": "Yes."}')
+        self.assertEqual(
+            _git(self.game, "show", "HEAD:source.json").stdout, '{"line": "Yes."}'
+        )
+
     def test_a_patch_update_records_an_older_projects_new_originals(self):
         # A project set up before Git kept its original files, which reads
         # its backup, recorded nothing for a patch laid over the game, so an

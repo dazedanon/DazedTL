@@ -719,30 +719,38 @@ def _wait(root, folder, change, paths):
     )
 
 
-def _save(root, change, named, claimed):
+def _save(root, change, named, claimed, log=lambda _line: None):
     """Commits the pending changes `claimed`, another write's, leaves out,
     or only the `named` ones while `claimed` is None, with the named files
     and DazedTL's own runtime files the patch lacks let into it."""
-    return _saving(root, change, named, claimed)[0]
+    return _saving(root, change, named, claimed, log)[0]
 
 
-def _saving(root, change, named, claimed):
+def _saving(root, change, named, claimed, log=lambda _line: None):
     """`_save`'s commit, and the commit HEAD is at once it is done.
 
     The assistant notes the write didn't name, as an assistant edits them
     with its own tools, are a checkpoint of their own before it, so they
     never move with the translation's checkpoints (checkpoint_history
-    `_moved`)."""
+    `_moved`). Notes that can't be read, as a file another program holds on
+    Windows, wait for a checkpoint that can read them, which `log` says, so
+    the write goes on."""
     from util.len_patch_scope import dazedtl_files, grow_scope, keep_out_of_downloads
     from util.paths import is_game_notes
 
     named = set(_relative(named))
     status = _status(root)
     notes = set(filter(is_game_notes, status.paths))
+    if unreadable := {path for path in notes if not _readable(Path(root) / path)}:
+        log(
+            f"{', '.join(sorted(unreadable))} in the game folder can't be read,"
+            " as when another program holds it, so its edits wait for a later"
+            " checkpoint."
+        )
     # The assistant notes joined the rules keeping DazedTL's files out of
     # players' downloads after many games took them, so the checkpoint that
     # records the notes records the rule too.
-    rule = bool(notes) and keep_out_of_downloads(Path(root))
+    rule = bool(notes - unreadable) and keep_out_of_downloads(Path(root))
     if rule:
         status = _status(root)
     # DazedTL's own files are never edits made outside it.
@@ -767,7 +775,7 @@ def _saving(root, change, named, claimed):
             # New rules can let in files they hid, such as the portable
             # settings an old rule order kept out.
             status = _status(root)
-    pending = status.paths
+    pending = status.paths - unreadable
     notes_rule = {".gitattributes"} if rule else set()
     chosen = (
         joined
@@ -787,6 +795,18 @@ def _saving(root, change, named, claimed):
         chosen -= apart | notes_rule
     commit = _commit(root, chosen, change, status) if chosen else None
     return commit, commit or (status.head if status.head != "(initial)" else None)
+
+
+def _readable(path):
+    """Whether Git can read the file at `path` to commit it; a file that is
+    gone commits as removed."""
+    try:
+        with system.open_read(path):
+            return True
+    except FileNotFoundError:
+        return True
+    except OSError:
+        return False
 
 
 def save(root, change, named=()):
@@ -901,10 +921,13 @@ class Checkpoint:
         paths: Iterable[str] | None,
         change: Change,
         checkout: Checkout | None = None,
+        log=lambda _line: None,
     ):
         from util.version_update.git_workflow import carrying
 
         self.root = Path(root)
+        # The write's log, which says what its checkpoints leave out.
+        self.log = log
         self.folder = _folder(root)
         self.paths = list(_relative(paths or ()))
         self.phase = _phase.get()
@@ -931,7 +954,7 @@ class Checkpoint:
             try:
                 _settle(self.root, self.folder)
                 if claimed is not None:
-                    self.start = _saving(self.root, OUTSIDE, (), claimed)[1]
+                    self.start = _saving(self.root, OUTSIDE, (), claimed, self.log)[1]
             except BaseException:
                 self.write.close()
                 raise
@@ -956,6 +979,7 @@ class Checkpoint:
                 change,
                 [*self.paths, *touched],
                 _others(self.folder, self.write),
+                self.log,
             )
 
     def close(self, touched=None):
