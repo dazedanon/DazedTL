@@ -13,14 +13,16 @@ export const guidanceTitle = (name: string) =>
   })[name] || name.replace("custom:", "Skill: ");
 
 /** The documents the Guidance task shows and Save guidance sends: the core
- * guidance, the assistant notes unless the game's can't be read, then the
- * custom skills. */
+ * guidance, the assistant notes, then the custom skills. Notes the game's
+ * AGENTS.md can't be read into stay out, a draft of them too, so they never
+ * block saving the rest. */
 export function guidanceNames(documents: Documents, drafts: Documents) {
-  const names = new Set([...Object.keys(documents), ...Object.keys(drafts)]);
   return [
     ...coreGuidance,
-    ...(names.has(assistantNotes) ? [assistantNotes] : []),
-    ...[...names].filter((name) => name.startsWith("custom:")),
+    ...(assistantNotes in documents ? [assistantNotes] : []),
+    ...[...new Set([...Object.keys(documents), ...Object.keys(drafts)])].filter(
+      (name) => name.startsWith("custom:"),
+    ),
   ];
 }
 
