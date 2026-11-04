@@ -74,7 +74,8 @@ def _carries(kind: str, structs: dict[str, dict[str, str]], seen=frozenset()) ->
     )
 
 
-@lru_cache(maxsize=1024)
+# About one game's plugins, whose text _PLUGINS keeps too.
+@lru_cache(maxsize=256)
 def drawing(source: str) -> Drawing | None:
     """What a plugin's file declares names a variable it draws, or None when
     its code, outside its help, draws no variable name."""
@@ -91,8 +92,12 @@ def drawing(source: str) -> Drawing | None:
                 command, owner = value.split()[0] if value else None, None
             elif tag == "param" and value:
                 owner = (structs.setdefault(struct, {}) if struct else settings, value)
-            elif tag == "arg" and command and value and not struct:
-                owner = (arguments.setdefault(command, {}), value)
+            elif tag == "arg":
+                owner = (
+                    (arguments.setdefault(command, {}), value)
+                    if command and value and not struct
+                    else None
+                )
             elif tag == "type" and owner:
                 owner[0][owner[1]] = value
                 owner = None
@@ -224,7 +229,8 @@ def read_facts(name: str, text: str | None) -> Facts | None:
         return None
 
 
-@lru_cache(maxsize=1024)
+# About one game's plugins, whose text _PLUGINS keeps too.
+@lru_cache(maxsize=256)
 def _literals(source: str) -> tuple[str, ...]:
     return tuple(lex(source)[1])
 
