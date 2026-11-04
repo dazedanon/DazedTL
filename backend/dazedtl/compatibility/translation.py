@@ -3,7 +3,7 @@
 import json
 import os
 import tempfile
-from contextlib import contextmanager, redirect_stdout
+from contextlib import contextmanager, nullcontext, redirect_stdout
 from dataclasses import asdict
 from functools import wraps
 from pathlib import Path
@@ -332,14 +332,24 @@ class TranslationEngine:
         check_progress(self.project(source, options), report)
 
     def compile(
-        self, source, options, plan, language, skill_users=None, actor_variables=None
+        self,
+        source,
+        options,
+        plan,
+        language,
+        skill_users=None,
+        actor_variables=None,
+        *,
+        staged=False,
     ):
         """The context of each batch's request. ``skill_users`` holds the
         note on who uses the skill of each unit holding a battle message, with
         the names whose glossary entries join its request
         (translation/skill_users). ``actor_variables``, None unless the run
         shows actors' names for name codes, maps each variable a code-122
-        script sets to an actor's name to that actor (translation/name_codes)."""
+        script sets to an actor's name to that actor (translation/name_codes).
+        A *staged* source is a private copy of a game's guidance, such as a
+        model comparison's, which no game write guards."""
         from util.len_translation import request_contexts
         from util.skills import ctx
 
@@ -372,11 +382,15 @@ class TranslationEngine:
                     f"{batch['instruction_key']}. Use a section.key from data/translation_contexts.json."
                 ) from None
         # The requests' shared context moves legacy guidance into .dazedtl.
-        with write_game(
-            source,
-            pack=False,
-            summary="Prepare translation requests",
-            stage="Translate",
+        with (
+            nullcontext()
+            if staged
+            else write_game(
+                source,
+                pack=False,
+                summary="Prepare translation requests",
+                stage="Translate",
+            )
         ):
             compiled = request_contexts(
                 self.project(source, options),

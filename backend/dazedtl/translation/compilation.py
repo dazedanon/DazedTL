@@ -13,17 +13,32 @@ COMPILER_VERSION = 1
 
 
 def compile_requests(
-    engine, source, options, raw, language, skill_users=None, actor_variables=None
+    engine,
+    source,
+    options,
+    raw,
+    language,
+    skill_users=None,
+    actor_variables=None,
+    *,
+    staged=False,
 ):
     """The plan's requests. ``skill_users`` holds the notes on its units'
     skill users that the run's policy gives them (translation/skill_users),
     and ``actor_variables`` what its name-code policy gives its sources
-    (translation/name_codes variables)."""
+    (translation/name_codes variables); a *staged* source is a private copy
+    of the game's guidance (TranslationEngine compile)."""
     if not raw["batches"]:
         # Organize found every line translated; nothing reads the game.
         return [], COMPILER_VERSION
     compiled = engine.compile(
-        source, options, raw, language, skill_users or {}, actor_variables
+        source,
+        options,
+        raw,
+        language,
+        skill_users or {},
+        actor_variables,
+        staged=staged,
     )
     if len(compiled) != len(raw["batches"]):
         raise ValueError("The engine compiler did not return every source batch.")

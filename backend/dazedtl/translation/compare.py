@@ -3,25 +3,31 @@ models, or by one model with changed settings, to choose between them in
 equal conditions.
 
 A comparison is two operations (compatibility/compare). Its estimate prices
-each model's requests offline, built as a Translate run builds them; the
-Translate button carries that price, and its click approves it once: the
-translate operation starts only from a finished estimate whose inputs are
-unchanged and that no translate used before. Results are the operations'
-own records, as the whole-game estimate's are, so History lists every
-comparison with what it spent; the best line a person picks in each row,
-and whether model names stay hidden, are kept beside them here.
+each model's requests offline, built as the game's own method builds them:
+Guided's engine run of the file, or Assistant-led's and Manual's requests of
+their units. The Translate button carries that price, and its click approves
+it once: the translate operation starts only from a finished estimate whose
+inputs are unchanged and that no translate used before. Results are the
+operations' own records, as the whole-game estimate's are; the best line a
+person picks in each row, and whether model names stay hidden, are kept
+beside them here.
 """
 
+import json
 from copy import deepcopy
+from pathlib import Path
+from typing import NamedTuple
 
 from dazedtl import system
 from dazedtl.actions import label
-from dazedtl.compatibility.compare import ESTIMATE, TRANSLATE, WHOLE_GAME
+from dazedtl.compatibility.compare import ESTIMATE, TRANSLATE, UNITS, WHOLE_GAME
+from dazedtl.compatibility.compare_units import GUIDANCE
+from dazedtl.projects.store import working_method
 from dazedtl.settings import providers
 from dazedtl.settings.execution import Choice, request_policy
 from dazedtl.storage import read_versioned_json, write_json
 
-from .files import digest, project_path
+from .files import digest, evidence, project_path, read_json
 
 # Raise when the same choices would be estimated or translated differently,
 # or the saved record changes shape.
@@ -35,6 +41,26 @@ MAX_LINES = 200
 TEXT_LIMIT = 200_000
 # The comparisons a page lists.
 HISTORY = 20
+# Assistant-led and Manual runs freeze this mode for a Live request.
+LIVE = "live"
+UNORGANIZED = (
+    "Compare uses the lines your assistant extracted. It's available once "
+    "they are organized into requests."
+)
+UNLOADED = "Load your text file on Text first; Compare uses its lines."
+
+
+class Game(NamedTuple):
+    """A project as a comparison reads it: its method ("guided", "len" or
+    "manual"), the owner its operations are filed under, its game folder,
+    and its Guided record or its units file."""
+
+    method: str
+    project: str
+    owner: str
+    root: str
+    native: dict | None = None
+    units: str = ""
 
 
 class Compare:
@@ -52,9 +78,8 @@ class Compare:
         )
 
     def _read(self, project_id):
-        path = self._path(project_id)
         return read_versioned_json(
-            path,
+            self._path(project_id),
             {"version": VERSION, "used": {}, "marks": {}},
             {},
             _validate,
@@ -64,6 +89,63 @@ class Compare:
         path = self._path(project_id)
         path.parent.mkdir(parents=True, exist_ok=True)
         write_json(path, value)
+
+    # The game
+
+    def game(self, project_id):
+        """The project as a comparison reads it, refusing one it can't
+        compare yet with why."""
+        guided = self.guided
+        project = guided.projects.get(project_id)
+        method = working_method(project, False)
+        if method == "guided" or project.get("backend_id") and method not in UNITS:
+            _, native = guided.record(project_id)
+            guided.require_preparation(project_id, native)
+            if native.get("collection_error"):
+                raise ValueError(native["collection_error"])
+            return Game("guided", project_id, native["id"], native["source"], native)
+        if method not in UNITS:
+            raise ValueError("Choose how to translate this game first.")
+        root = project["source"]
+        if method == "manual":
+            from .project import MANUAL_UNITS
+
+            if not project_path(root, MANUAL_UNITS, exists=False).is_file():
+                raise ValueError(UNLOADED)
+            return Game(method, project_id, project_id, root, units=MANUAL_UNITS)
+        return Game(
+            method,
+            project_id,
+            project_id,
+            root,
+            units=self._organized(project_id, root),
+        )
+
+    def _organized(self, project_id, root):
+        """The units file the game's newest Assistant-led run was organized
+        from."""
+        store = self.guided.translation.jobs.store
+        for job in sorted(
+            (
+                item
+                for item in store.list(project_id)
+                if item.get("kind") == "translation"
+            ),
+            key=lambda item: item["created"],
+            reverse=True,
+        ):
+            try:
+                _job, plan = store.load(job["id"], project_id)
+                organized = read_json(project_path(root, plan["input_path"]))
+                return organized["inputs"][0]
+            except OSError, ValueError, KeyError, TypeError, IndexError:
+                continue
+        raise ValueError(UNORGANIZED)
+
+    def _units(self, game):
+        from .organize import units_input
+
+        return units_input(read_json(project_path(game.root, game.units)))
 
     # Choices
 
@@ -87,11 +169,13 @@ class Compare:
                 "instruction",
             }:
                 raise ValueError("Choose each model from a connection.")
-            connection, model = item.get("connection_id"), item.get("model")
+            connection = item.get("connection_id")
             if not isinstance(connection, str) or not connection:
                 raise ValueError("Choose each model's connection.")
-            model = providers_model(model)
-            row: dict[str, object] = {"connection_id": connection, "model": model}
+            row: dict[str, object] = {
+                "connection_id": connection,
+                "model": _model(item.get("model")),
+            }
             if kind == "tune":
                 if "effort" in item:
                     from dazedtl.settings.effort import checked
@@ -114,32 +198,30 @@ class Compare:
             raise ValueError("Each model is in the comparison once.")
         return rows
 
-    def _scope(self, project_id, file, lines):
-        """The game, its file and the file's phase, refusing what the
-        comparison can't translate."""
-        guided = self.guided
-        _, native = guided.record(project_id)
-        guided.require_preparation(project_id, native)
-        if native.get("collection_error"):
-            raise ValueError(native["collection_error"])
+    def _phase(self, game, file, lines):
+        """The Guided task a file belongs to, or the group a unit file's
+        lines have, refusing what can't be compared."""
+        if type(lines) is not int or not 0 <= lines <= MAX_LINES:
+            raise ValueError(f"Compare up to {MAX_LINES} lines.")
+        if game.native is None:
+            if not any(unit["group"] == file for unit in self._units(game)):
+                raise ValueError("Choose one of the game's groups of lines.")
+            return ""
         phase = next(
             (
                 phase
                 for phase in ("database", "dialogue")
-                if file in guided.full_estimate.files(native, phase)
+                if file in self.guided.full_estimate.files(game.native, phase)
             ),
             None,
         )
         if phase is None:
             raise ValueError("Choose a Database files or Maps & events file.")
-        if type(lines) is not int or not 0 <= lines <= MAX_LINES:
-            raise ValueError(f"Compare up to {MAX_LINES} lines.")
-        return native, phase
+        return phase
 
-    def _engine(self, state, candidate):
-        """What a model's runs freeze: its connection's engine settings,
-        name and request policy, or why it can't run, such as having no
-        price, which its column shows."""
+    def _row(self, game, state, candidate):
+        """What a model's runs freeze, by the game's method, or why it
+        can't run, such as having no price, which its column shows."""
         settings = self.guided.settings
         connection = settings._connection(state, candidate["connection_id"])
         if not settings._configured(connection):
@@ -155,15 +237,18 @@ class Compare:
                 if key in candidate
             },
         }
-        options = (
-            {"thinkingEffort": candidate["effort"]} if "effort" in candidate else None
+        choice = Choice(
+            connection["id"],
+            candidate["model"],
+            {"thinkingEffort": candidate["effort"]} if "effort" in candidate else None,
         )
         try:
-            policy = request_policy(
-                settings,
-                "translate",
-                Choice(connection["id"], candidate["model"], options),
-            )
+            if game.native is None:
+                configuration, _route = self.guided.translation.api_configuration(
+                    LIVE, game.root, choice=choice
+                )
+                return {**row, "configuration": configuration}
+            policy = request_policy(settings, "translate", choice)
         except ValueError as error:
             return {**row, "error": str(error)}
         return {
@@ -179,44 +264,66 @@ class Compare:
             "policy": policy,
         }
 
-    def _plan(self, project_id, kind, file, lines, candidates):
+    def _plan(self, game, kind, file, lines, candidates):
         """The operation plan that estimates the comparison, with the inputs
         its approval binds."""
+        from dazedtl.settings import language_pair
+
         from . import comment_text
 
         guided = self.guided
         candidates = self._candidates(kind, candidates)
-        native, phase = self._scope(project_id, file, lines)
-        settings = guided.settings
-        pair = guided.runs.pair(native)
-        state = settings._read()
-        rows = [
-            {"index": index, **self._engine(state, candidate)}
-            for index, candidate in enumerate(candidates)
-        ]
-        inputs = guided.inputs(native)
-        sources = inputs.sources([file], inputs.record()["inputs"])
-        folder = guided.backend.workflows.folder(native["id"])
-        markers = (
-            sorted(comment_text.markers(native["source"]))
-            if phase == "dialogue" and native["phase1_comments"]
-            else []
-        )
-        workflow = guided.backend.workflows.phase_workflow(native["id"], phase)
+        phase = self._phase(game, file, lines)
+        state = guided.settings._read()
         options = {
-            "projectId": project_id,
+            "projectId": game.project,
+            "method": game.method,
             "kind": kind,
             "file": file,
-            "phase": phase,
-            "relative": sources[file]["relative"],
             "lines": lines,
-            "markers": markers,
-            "workflow": workflow,
-            "pair": pair,
+            "pair": language_pair.pair(guided.settings, game.root),
             "claudeCount": guided.backend.manual.allow_providers,
-            "candidates": rows,
+            "candidates": [
+                {"index": index, **self._row(game, state, candidate)}
+                for index, candidate in enumerate(candidates)
+            ],
         }
-        guard = guided.backend.guided_guard(native, folder)
+        if game.native is None:
+            root = Path(game.root)
+            _record, project = guided.translation.project(game.project)
+            options.update(
+                workspace=str(guided.translation.workspace),
+                source=game.root,
+                inputPath=game.units,
+                selected={**project.read()["options"], "mode": LIVE},
+                quotes=guided.settings.convert_quotes(),
+            )
+            guard = evidence(
+                root,
+                [
+                    game.units,
+                    *(relative for relative in GUIDANCE if (root / relative).is_file()),
+                    *(
+                        path.relative_to(root).as_posix()
+                        for path in sorted((root / ".dazedtl/skills").glob("*.md"))
+                    ),
+                ],
+            )
+            folder = guided.translation.workspace / "translation/projects" / game.owner
+        else:
+            native = game.native
+            inputs = guided.inputs(native)
+            sources = inputs.sources([file], inputs.record()["inputs"])
+            folder = guided.backend.workflows.folder(native["id"])
+            options.update(
+                phase=phase,
+                relative=sources[file]["relative"],
+                markers=sorted(comment_text.markers(native["source"]))
+                if phase == "dialogue" and native["phase1_comments"]
+                else [],
+                workflow=guided.backend.workflows.phase_workflow(native["id"], phase),
+            )
+            guard = guided.backend.guided_guard(native, folder)
         options["inputs"] = digest(
             {
                 "version": VERSION,
@@ -228,61 +335,59 @@ class Compare:
                 "guard": guard,
             }
         )
-        return native, folder, guard, options
+        return {
+            "project_id": game.owner,
+            "project": deepcopy(game.native) if game.native else {"source": game.root},
+            "folder": str(folder),
+            "guard": guard,
+            "options": options,
+        }
 
-    def _start(self, native, folder, guard, action, options):
+    def _start(self, plan, action):
         return self.guided.backend.operations.start(
-            {
-                "project_id": native["id"],
-                "project": deepcopy(native),
-                "folder": str(folder),
-                "action": action,
-                "label": label(action),
-                "guard": guard,
-                "options": options,
-            }
+            {**plan, "action": action, "label": label(action)}
+        )
+
+    def _prepare(self, game):
+        """Installs every connection's credential and the game's languages,
+        which a Guided run reads as a Translate run does."""
+        if game.native is not None:
+            self.guided.settings.prepare_engine(pair=self.guided.runs.pair(game.native))
+
+    def _jobs(self, game, action):
+        return sorted(
+            (
+                job
+                for job in self.guided.backend.operations.jobs.values()
+                if job["project_id"] == game.owner and job["action"] == action
+            ),
+            key=lambda job: job["created"],
+            reverse=True,
         )
 
     # Methods
 
     def estimate(self, project_id, kind, file, lines, candidates):
         """Starts pricing each model's requests for the lines, offline."""
-        guided = self.guided
-        guided.idle(isolated_workers=True)
-        native, _phase = self._scope(project_id, file, lines)
-        # Every connection's credential and the game's languages, which the
-        # runs read as a Translate run does.
-        guided.settings.prepare_engine(pair=guided.runs.pair(native))
-        native, folder, guard, options = self._plan(
-            project_id, kind, file, lines, candidates
-        )
-        return self._start(native, folder, guard, ESTIMATE, options)
+        self.guided.idle(isolated_workers=True)
+        game = self.game(project_id)
+        self._prepare(game)
+        return self._start(self._plan(game, kind, file, lines, candidates), ESTIMATE)
 
     def translate(self, project_id, estimate_id):
         """Sends the requests an estimate priced, once: the click on its
         price approves it."""
         guided = self.guided
         guided.idle(isolated_workers=True)
+        game = self.game(project_id)
         job = guided.backend.operations.jobs.get(estimate_id)
-        _, native = guided.record(project_id)
-        if (
-            not job
-            or job["action"] != ESTIMATE
-            or job["project_id"] != native["id"]
-            or job["status"] != "complete"
-            or not isinstance(job.get("result"), dict)
-        ):
+        options = self._options(game, estimate_id, ESTIMATE)
+        if job["status"] != "complete" or not isinstance(job.get("result"), dict):
             raise ValueError("Estimate the comparison before translating it.")
-        saved = system.read_bytes(
-            guided.backend.operations.root / estimate_id / "plan.json"
-        )
-        import json
-
-        options = json.loads(saved)["options"]
         record = self._read(project_id)
         if estimate_id in record["used"]:
             raise ValueError("These lines were already translated. Estimate again.")
-        guided.settings.prepare_engine(pair=guided.runs.pair(native))
+        self._prepare(game)
         candidates = [
             {
                 "connection_id": row["connection_id"],
@@ -295,30 +400,30 @@ class Compare:
             }
             for row in options["candidates"]
         ]
-        native, folder, guard, current = self._plan(
-            project_id, options["kind"], options["file"], options["lines"], candidates
+        plan = self._plan(
+            game, options["kind"], options["file"], options["lines"], candidates
         )
-        if current["inputs"] != options["inputs"]:
+        if plan["options"]["inputs"] != options["inputs"]:
             raise ValueError(
                 "The game, its guidance or a model's settings changed. Estimate again."
             )
         priced = {
-            row["index"]: row["estimate"]
+            row["index"]
             for row in job["result"].get("models", [])
             if isinstance(row.get("estimate"), dict)
         }
         if not priced:
             raise ValueError("No model could be estimated. Check its connection.")
-        current["candidates"] = [
-            row for row in current["candidates"] if row["index"] in priced
+        plan["options"]["candidates"] = [
+            row for row in plan["options"]["candidates"] if row["index"] in priced
         ]
-        current["estimate"] = estimate_id
+        plan["options"]["estimate"] = estimate_id
         # Saved before the operation starts, so a second click or a retry
         # can't send the same requests again.
         record["used"][estimate_id] = ""
         self._write(project_id, record)
         try:
-            started = self._start(native, folder, guard, TRANSLATE, current)
+            started = self._start(plan, TRANSLATE)
         except Exception:
             record["used"].pop(estimate_id, None)
             self._write(project_id, record)
@@ -330,14 +435,10 @@ class Compare:
     def marks(self, project_id, comparison_id, marks, blind, revealed):
         """Keeps the line a person picked as best in each row, and whether
         the models' names stay hidden until every row has a pick."""
-        guided = self.guided
-        _, native = guided.record(project_id)
-        job = guided.backend.operations.jobs.get(comparison_id)
-        if not job or job["action"] != TRANSLATE or job["project_id"] != native["id"]:
-            raise ValueError("This comparison is no longer available.")
+        self._options(self.game(project_id), comparison_id, TRANSLATE)
         if (
             not isinstance(marks, dict)
-            or len(marks) > MAX_LINES
+            or len(marks) > MAX_LINES * 2
             or any(
                 not isinstance(key, str)
                 or type(value) is not int
@@ -357,12 +458,20 @@ class Compare:
         self._write(project_id, record)
         return {"saved": True}
 
-    def scenes(self, native):
-        """The files a comparison may translate, with their map names and
-        lines, as Translate's file lists count them."""
+    def scenes(self, game):
+        """The files or groups a comparison may translate, with their map
+        names and lines, as the game's own lists count them."""
+        if game.native is None:
+            counts = {}
+            for unit in self._units(game):
+                counts[unit["group"]] = counts.get(unit["group"], 0) + 1
+            return [
+                {"file": group, "title": "", "lines": count}
+                for group, count in counts.items()
+            ]
         from . import comment_text
 
-        guided = self.guided
+        guided, native = self.guided, game.native
         phases = {
             name: phase
             for phase in ("database", "dialogue")
@@ -389,10 +498,8 @@ class Compare:
     def state(self, project_id):
         """The project's comparisons, newest first: each estimate with its
         translation once approved, the lines and each model's result."""
-        guided = self.guided
         try:
-            _, native = guided.record(project_id)
-            guided.require_preparation(project_id, native)
+            game = self.game(project_id)
         except ValueError as error:
             return {
                 "available": False,
@@ -403,18 +510,10 @@ class Compare:
                 "wholeGame": [],
             }
         record = self._read(project_id)
-        jobs = guided.backend.operations.jobs
+        jobs = self.guided.backend.operations.jobs
         rows = []
-        for job in sorted(
-            (
-                item
-                for item in jobs.values()
-                if item["project_id"] == native["id"] and item["action"] == ESTIMATE
-            ),
-            key=lambda item: item["created"],
-            reverse=True,
-        ):
-            options = _options(guided.backend.operations.root, job["id"])
+        for job in self._jobs(game, ESTIMATE):
+            options = _options(self.guided.backend.operations.root, job["id"])
             if options is None:
                 continue
             translated = jobs.get(record["used"].get(job["id"]) or "")
@@ -431,27 +530,25 @@ class Compare:
         return {
             "available": True,
             "reason": "",
-            "scenes": self.scenes(native),
-            "glossary": _glossary(native["source"]),
+            "scenes": self.scenes(game),
+            "glossary": _glossary(game.root),
             "comparisons": rows,
-            "wholeGame": self.wholes(native),
+            "wholeGame": self.wholes(game),
         }
 
     def model(self, connection_id, model):
         """The thinking efforts a model on a connection may be sent, and
         whether its price is known, from what Settings has looked up."""
         settings = self.guided.settings
-        state = settings._read()
-        connection = settings._connection(state, connection_id)
+        connection = settings._connection(settings._read(), connection_id)
         if connection is None:
             raise ValueError("That connection is no longer in Settings.")
-        model = providers_model(model)
+        model = _model(model)
         defaults = settings.connection_defaults(connection, model, cached_only=True)
         options = connection["model_options"].get(model) or {}
-        custom = options.get("pricing") == "custom"
         rates = (
             (options.get("inputRate"), options.get("outputRate"))
-            if custom
+            if options.get("pricing") == "custom"
             else (defaults.get("inputRate"), defaults.get("outputRate"))
         )
         efforts = defaults.get("thinkingEffort") or settings._effort(connection, model)
@@ -465,8 +562,8 @@ class Compare:
         connection and model, and, from Tune settings, the effort it was sent
         with, its glossary and its instruction, saved as the game's guidance."""
         guided = self.guided
-        _, native = guided.record(project_id)
-        row = self._candidate(native, comparison_id, model)
+        game = self.game(project_id)
+        row = self._candidate(game, comparison_id, model)
         settings = guided.settings
         described = settings.describe()
         if described.get("draft"):
@@ -489,44 +586,67 @@ class Compare:
             {**described["values"], "model": row["model"]},
             model_options,
         )
-        documents = {}
+        changes = {}
         if row.get("glossary") is not None:
-            documents["glossary"] = {"text": row["glossary"]}
+            changes["glossary"] = lambda _text: row["glossary"]
         if (row.get("instruction") or "").strip():
-            current = guided.backend.workflows.editable(native["id"]).get("game") or {}
-            text = (current.get("text") or "").rstrip()
-            documents["game"] = {
-                "text": (text + "\n\n" if text else "")
+            changes["game"] = lambda text: (
+                (text.rstrip() + "\n\n" if text.strip() else "")
                 + row["instruction"].strip()
                 + "\n"
-            }
-        if documents:
-            guided.save_documents(project_id, documents)
+            )
+        if changes and game.native is not None:
+            current = guided.backend.workflows.editable(game.native["id"])
+            guided.save_documents(
+                project_id,
+                {
+                    name: {"text": change((current.get(name) or {}).get("text") or "")}
+                    for name, change in changes.items()
+                },
+            )
+        elif changes:
+            service = guided.translation
+            current = service.documents(project_id)
+            for name, change in changes.items():
+                document = current.get(name) or {}
+                service.save_document(
+                    project_id,
+                    name,
+                    document.get("revision", ""),
+                    change(document.get("text") or ""),
+                )
         return {"saved": True}
 
     def whole_game(self, project_id, comparison_id, model):
-        """Starts Context's Cost estimate for a compared model: every
-        Translate task over all its files, priced for that model."""
-        from .full_estimate import PHASES
-
+        """Starts the game's cost estimate for a compared model: Context's
+        Cost estimate of every Translate task for a Guided game, every unit
+        left to translate for an Assistant-led or Manual one."""
         guided = self.guided
         guided.idle(isolated_workers=True)
-        _, native = guided.record(project_id)
-        guided.require_preparation(project_id, native)
-        row = self._candidate(native, comparison_id, model)
+        game = self.game(project_id)
+        row = self._candidate(game, comparison_id, model)
+        choice = {
+            "connection_id": row["connection_id"],
+            "model": row["model"],
+            **({"effort": row["effort"]} if "effort" in row else {}),
+        }
+        self._prepare(game)
+        if game.native is None:
+            plan = self._plan(game, "single", None, 0, [choice])
+            if "error" in plan["options"]["candidates"][0]:
+                raise ValueError(plan["options"]["candidates"][0]["error"])
+            plan["options"]["choice"] = choice
+            return self._start(plan, WHOLE_GAME)
+        from .full_estimate import PHASES
+
+        native = game.native
         event_text = guided.event_text.status(project_id, native)
         if event_text["enabled"] and event_text["errors"]:
             raise ValueError(
                 "Fix the event text source choices first: "
                 + " ".join(event_text["errors"])
             )
-        guided.settings.prepare_engine(pair=guided.runs.pair(native))
-        choice = {
-            "connection_id": row["connection_id"],
-            "model": row["model"],
-            **({"effort": row["effort"]} if "effort" in row else {}),
-        }
-        engine = self._engine(guided.settings._read(), choice)
+        engine = self._row(game, guided.settings._read(), choice)
         if "error" in engine:
             raise ValueError(engine["error"])
         full = guided.full_estimate
@@ -543,13 +663,11 @@ class Compare:
         inputs = guided.inputs(native)
         sources = inputs.sources(names, inputs.record()["inputs"])
         folder = guided.backend.workflows.folder(native["id"])
-        return guided.backend.operations.start(
+        return self._start(
             {
                 "project_id": native["id"],
                 "project": deepcopy(native),
                 "folder": str(folder),
-                "action": WHOLE_GAME,
-                "label": label(WHOLE_GAME),
                 "guard": guided.backend.guided_guard(native, folder),
                 "options": {
                     # Read by its own page only, never as the game's estimate.
@@ -578,22 +696,28 @@ class Compare:
                         for task in tasks
                     ],
                 },
-            }
+            },
+            WHOLE_GAME,
         )
 
-    def _candidate(self, native, comparison_id, model):
-        """A comparison's model, as its estimate froze it."""
-        guided = self.guided
-        job = guided.backend.operations.jobs.get(comparison_id)
+    def _options(self, game, identity, action):
+        """The options a comparison operation of the game froze."""
+        job = self.guided.backend.operations.jobs.get(identity)
         options = (
-            _options(guided.backend.operations.root, comparison_id)
-            if job and job["action"] == ESTIMATE and job["project_id"] == native["id"]
+            _options(self.guided.backend.operations.root, identity)
+            if job and job["action"] == action and job["project_id"] == game.owner
             else None
         )
+        if options is None:
+            raise ValueError("This comparison is no longer available.")
+        return options
+
+    def _candidate(self, game, comparison_id, model):
+        """A comparison's model, as its estimate froze it."""
         row = next(
             (
                 item
-                for item in (options or {}).get("candidates", [])
+                for item in self._options(game, comparison_id, ESTIMATE)["candidates"]
                 if item["index"] == model
             ),
             None,
@@ -602,21 +726,12 @@ class Compare:
             raise ValueError("This comparison is no longer available.")
         return row
 
-    def wholes(self, native):
+    def wholes(self, game):
         """The whole-game estimates started for compared models, newest
         first."""
-        guided = self.guided
         rows = []
-        for job in sorted(
-            (
-                item
-                for item in guided.backend.operations.jobs.values()
-                if item["project_id"] == native["id"] and item["action"] == WHOLE_GAME
-            ),
-            key=lambda item: item["created"],
-            reverse=True,
-        )[:HISTORY]:
-            options = _options(guided.backend.operations.root, job["id"])
+        for job in self._jobs(game, WHOLE_GAME)[:HISTORY]:
+            options = _options(self.guided.backend.operations.root, job["id"])
             if options is None:
                 continue
             choice = options["choice"]
@@ -651,11 +766,9 @@ class Compare:
 
     def request(self, project_id, comparison_id, model, index):
         """One request a model's translation sent, as Show request shows it."""
-        guided = self.guided
-        _, native = guided.record(project_id)
-        job = guided.backend.operations.jobs.get(comparison_id)
-        if not job or job["action"] != TRANSLATE or job["project_id"] != native["id"]:
-            raise ValueError("This comparison is no longer available.")
+        game = self.game(project_id)
+        self._options(game, comparison_id, TRANSLATE)
+        job = self.guided.backend.operations.jobs[comparison_id]
         found = next(
             (
                 row
@@ -670,7 +783,7 @@ class Compare:
         return requests[index]
 
 
-def providers_model(value):
+def _model(value):
     from dazedtl.settings.preferences import text
 
     return text(value, "model ID", required=True)
@@ -706,8 +819,6 @@ def _validate(value):
 
 
 def _options(root, identity):
-    import json
-
     try:
         return json.loads(system.read_bytes(root / identity / "plan.json"))["options"]
     except OSError, ValueError, KeyError, TypeError:
@@ -727,6 +838,7 @@ def view(estimate, options, translated, marks):
     for row in options["candidates"]:
         priced = models.get(row["index"], {})
         done = results.get(row["index"], {})
+        error = done.get("error") or priced.get("error") or row.get("error")
         candidates.append(
             {
                 "index": row["index"],
@@ -741,11 +853,7 @@ def view(estimate, options, translated, marks):
                     if isinstance(priced.get("estimate"), dict)
                     else {}
                 ),
-                **(
-                    {"error": done.get("error") or priced.get("error")}
-                    if done.get("error") or priced.get("error")
-                    else {}
-                ),
+                **({"error": error} if error else {}),
                 **(
                     {
                         "cost": done.get("cost", 0),
@@ -775,7 +883,6 @@ def view(estimate, options, translated, marks):
                 ],
             }
         )
-    status = translated["status"] if translated else estimate["status"]
     return {
         "id": estimate["id"],
         "translationId": translated["id"] if translated else None,
@@ -784,7 +891,7 @@ def view(estimate, options, translated, marks):
         "lines": options["lines"],
         "created": estimate["created"],
         "stage": "translation" if translated else "estimate",
-        "status": status,
+        "status": translated["status"] if translated else estimate["status"],
         "message": (translated or estimate).get("message", ""),
         "candidates": candidates,
         "rows": lines,

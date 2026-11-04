@@ -400,10 +400,16 @@ def result(directory, name, phase, markers, seconds, original, found, pair):
 
 def run(plan, log):
     """A comparison operation: estimates each model's run, or, approved,
-    translates it."""
+    translates it; or estimates the whole game for one model."""
     from desktop.backend.manual import worker_environment
     from desktop.backend.workflow_actions import validate_plan
 
+    if plan["options"].get("method") in UNITS:
+        return run_units(plan, log)
+    if plan["action"] == WHOLE_GAME:
+        from .full_estimate import run as whole
+
+        return whole(plan, log)
     validate_plan(plan)
     folder = Path(plan["folder"])
     options = plan["options"]
@@ -506,6 +512,137 @@ def run(plan, log):
         with ThreadPoolExecutor(max_workers=len(candidates) or 1) as pool:
             values = list(pool.map(one, candidates))
     return {"file": name, "lines": shown, "models": values}
+
+
+# The methods whose lines are the units an extractor saved.
+UNITS = ("len", "manual")
+
+
+def run_units(plan, log):
+    """A comparison of an Assistant-led or Manual game (compare_units)."""
+    from util.paths import runtime_data_profile
+
+    from dazedtl.languages import reading_game
+
+    from . import compare_units
+    from .translation import TranslationEngine
+
+    options = plan["options"]
+    action = plan["action"]
+    workspace = Path(options["workspace"])
+    root = options["source"]
+    candidates = options["candidates"]
+    report = Activity(log, candidates)
+    engine = TranslationEngine(workspace / "engine")
+    parent = workspace / "translation/projects" / options["projectId"]
+    parent.mkdir(parents=True, exist_ok=True)
+    with (
+        runtime_data_profile(engine.profile),
+        reading_game(root),
+        system.staging_folder(parent, "compare-") as scratch,
+    ):
+        report("Reading the lines")
+        found = compare_units.units(
+            root,
+            options["inputPath"],
+            options.get("file"),
+            0 if action == WHOLE_GAME else options["lines"],
+        )
+        if action == WHOLE_GAME:
+            # What the game has left to translate, as its estimate prices.
+            found = compare_units.remaining(
+                workspace,
+                options["projectId"],
+                root,
+                found,
+                candidates[0]["configuration"],
+            )
+        if not found:
+            raise ValueError("These lines are already translated or hold no text.")
+        shown = compare_units.sources(found)
+        built = {}
+        for candidate in candidates:
+            index, label = candidate["index"], candidate["label"]
+            if "error" in candidate:
+                continue
+            report(f"{label} · preparing", index, "preparing")
+            game = compare_units.stage(root, scratch / f"model-{index}/game", candidate)
+            try:
+                built[index] = (
+                    game,
+                    *compare_units.build(
+                        engine, workspace, options, candidate, found, game
+                    ),
+                )
+            except ValueError as error:
+                built[index] = error
+
+        def one(candidate):
+            index, label = candidate["index"], candidate["label"]
+            if "error" in candidate:
+                return {"index": index, "error": candidate["error"]}
+            value = built[index]
+            if isinstance(value, ValueError):
+                report(f"{label} · can't be compared", index, "failed")
+                return {"index": index, "error": str(value)}
+            game, requests, preceding = value
+            if action != TRANSLATE:
+                report(f"{label} · estimated", index, "done")
+                return {
+                    "index": index,
+                    "estimate": compare_units.estimate(engine, candidate, requests),
+                }
+            started = time.monotonic()
+            try:
+                result = compare_units.translate(
+                    engine,
+                    workspace,
+                    options,
+                    candidate,
+                    requests,
+                    preceding,
+                    game,
+                    scratch / f"model-{index}/runs",
+                    log.stopped,
+                )
+            except (OSError, RuntimeError, ValueError) as error:
+                report(f"{label} · failed", index, "failed")
+                return {"index": index, "error": _message(error)}
+            glossary = game / ".dazedtl/glossary.txt"
+            result.update(
+                seconds=round(time.monotonic() - started, 1),
+                problems=problems(
+                    options.get("file") or "",
+                    shown,
+                    result["lines"],
+                    system.read_bytes(glossary).decode("utf-8-sig")
+                    if glossary.is_file()
+                    else "",
+                    options["pair"],
+                ),
+            )
+            report(f"{label} · translated", index, "done")
+            return {"index": index, **result}
+
+        with ThreadPoolExecutor(max_workers=len(candidates) or 1) as pool:
+            values = list(pool.map(one, candidates))
+    if action == WHOLE_GAME:
+        priced = values[0].get("estimate") if values else None
+        if not priced:
+            raise ValueError(
+                values[0].get("error") or "The game could not be estimated."
+            )
+        return {
+            "tasks": [
+                {
+                    "phase": "units",
+                    "files": len(found),
+                    "liveCost": float(priced.get("live_cost") or 0),
+                    "batchCost": priced.get("batch_cost"),
+                }
+            ]
+        }
+    return {"file": options.get("file"), "lines": shown, "models": values}
 
 
 def _message(error):
