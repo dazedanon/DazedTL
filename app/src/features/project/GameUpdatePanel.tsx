@@ -25,7 +25,10 @@ const listed = (values: Values, fields: (keyof Values)[]) =>
   fields.map((field) => `${fieldNames[field]} ${values[field]}`).join(", ");
 
 /** Where the game's GameUpdate config stands, in one row. */
-function summary(status: GameUpdateStatus): {
+function summary(
+  status: GameUpdateStatus,
+  releases: boolean,
+): {
   mark: StatusKind;
   title: string;
   detail: string;
@@ -35,8 +38,7 @@ function summary(status: GameUpdateStatus): {
       return {
         mark: "warning",
         title: "Needs its repository",
-        detail:
-          "Enter the repository players download from. Releases wait for it.",
+        detail: `Enter the repository players download from.${releases ? " Releases wait for it." : ""}`,
       };
     case "pending":
       return {
@@ -79,11 +81,14 @@ export function GameUpdatePanel({
   status,
   disabled,
   openSettings,
+  releases = true,
 }: {
   projectId: string;
   status: GameUpdateStatus;
   disabled: boolean;
   openSettings: () => void;
+  /** Whether DazedTL releases the game, whose releases wait for its repository. */
+  releases?: boolean;
 }) {
   const application = useApplication();
   const action = useAction({ observer: application });
@@ -148,7 +153,7 @@ export function GameUpdatePanel({
   const target = typed === null && status.file ? status.file : values;
   const shownRepo =
     typed === null && status.file ? status.file.repo : repo.trim();
-  const row = summary(status);
+  const row = summary(status, releases);
   const unsaved =
     !!repo.trim() &&
     (repo.trim() !== status.repo ||

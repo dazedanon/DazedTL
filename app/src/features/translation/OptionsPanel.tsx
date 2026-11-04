@@ -107,6 +107,7 @@ export function GameUpdateConfig({
       status={state.gameUpdate}
       disabled={disabled}
       openSettings={() => settings("gameupdate")}
+      releases={project.method !== "manual"}
     />
   );
 }
