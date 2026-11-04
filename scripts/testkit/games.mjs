@@ -27,7 +27,7 @@ const bases = {
   tyrano:
     "A TyranoScript game, its runtime a stand-in: data/scenario/first.ks holds a few lines of dialogue, two naming its forest and one an inn's price.",
   kirikiri:
-    "A KiriKiri game, its runtime a stand-in: an unencrypted data.xp3 holds scenario/first.ks, the TyranoScript game's lines.",
+    "A KiriKiri game, its runtime a stand-in: an unencrypted data.xp3 holds scenario/first.ks, the TyranoScript game's lines, a title screen with lettering as a BMP, a lettered menu as a TLG and a CG as a PNG.",
 };
 
 /** The TyranoScript and KiriKiri games' scenario, which Text QA can't read. */
@@ -62,9 +62,9 @@ const u64 = (value) => {
 };
 
 /**
- * A KiriKiri XP3 archive of `files` (name to text), each member
+ * A KiriKiri XP3 archive of `files` (name to text or bytes), each member
  * zlib-compressed with its checksum, as an unencrypted game ships it.
- * @param {Record<string, string>} files
+ * @param {Record<string, string | Buffer>} files
  */
 function xp3(files) {
   const magic = Buffer.from("XP3\r\n \n\x1a\x8b\x67\x01", "latin1");
@@ -175,6 +175,81 @@ function pngChunk(type, data) {
  * `noise` rows of random pixels, which no compression shrinks, as a CG's
  * detail does not.
  */
+/** picture()'s pixel at (x, y) as [red, green, blue]. */
+const shade = (x, y, index) => [
+  (x + index * 7) & 255,
+  (y + index * 13) & 255,
+  (index * 31) & 255,
+];
+
+/** picture()'s pixels as a 24-bit BMP, its rows bottom up. */
+function bmp(width, height, index) {
+  const stride = (width * 3 + 3) & ~3;
+  const data = Buffer.alloc(stride * height);
+  for (let y = 0; y < height; y++)
+    for (let x = 0; x < width; x++) {
+      const [red, green, blue] = shade(x, y, index);
+      data.set([blue, green, red], (height - 1 - y) * stride + x * 3);
+    }
+  const header = Buffer.alloc(54);
+  header.write("BM", 0, "latin1");
+  header.writeUInt32LE(54 + data.length, 2);
+  header.writeUInt32LE(54, 10);
+  header.writeUInt32LE(40, 14);
+  header.writeInt32LE(width, 18);
+  header.writeInt32LE(height, 22);
+  header.writeUInt16LE(1, 26);
+  header.writeUInt16LE(24, 28);
+  header.writeUInt32LE(data.length, 34);
+  return Buffer.concat([header, data]);
+}
+
+/**
+ * picture()'s pixels as KiriKiri's TLG5 with an alpha channel, each block's
+ * planes stored uncompressed: every channel's difference from the pixel
+ * above, less the left pixel's, blue and red less green's.
+ */
+function tlg5(width, height, index) {
+  const pixel = (x, y) =>
+    x < 0 || y < 0 ? [0, 0, 0, 0] : [...shade(x, y, index).reverse(), 255];
+  const block = 4;
+  const blocks = [];
+  const sizes = [];
+  for (let top = 0; top < height; top += block) {
+    const rows = Math.min(block, height - top);
+    const planes = [0, 1, 2, 3].map(() => Buffer.alloc(rows * width));
+    for (let y = top; y < top + rows; y++)
+      for (let x = 0; x < width; x++) {
+        const value = (x, y) =>
+          pixel(x, y).map((channel, at) => channel - pixel(x, y - 1)[at]);
+        const here = value(x, y);
+        const left = value(x - 1, y);
+        const delta = here.map((channel, at) => channel - left[at]);
+        const at = (y - top) * width + x;
+        planes[0][at] = (delta[0] - delta[1]) & 255;
+        planes[1][at] = delta[1] & 255;
+        planes[2][at] = (delta[2] - delta[1]) & 255;
+        planes[3][at] = delta[3] & 255;
+      }
+    const parts = planes.flatMap((plane) => [
+      Buffer.from([1]),
+      u32(plane.length),
+      plane,
+    ]);
+    sizes.push(parts.reduce((total, part) => total + part.length, 0));
+    blocks.push(...parts);
+  }
+  return Buffer.concat([
+    Buffer.from("TLG5.0\x00raw\x1a", "latin1"),
+    Buffer.from([4]),
+    u32(width),
+    u32(height),
+    u32(block),
+    ...sizes.map(u32),
+    ...blocks,
+  ]);
+}
+
 function picture(width, height, index, noise) {
   const header = Buffer.alloc(13);
   header.writeUInt32BE(width, 0);
@@ -187,12 +262,8 @@ function picture(width, height, index, noise) {
   for (let y = 0; y < height; y++) {
     raw[y * stride] = 0; // no filter
     if (y < noise) continue;
-    for (let x = 0; x < width; x++) {
-      const at = y * stride + 1 + x * 3;
-      raw[at] = (x + index * 7) & 255;
-      raw[at + 1] = (y + index * 13) & 255;
-      raw[at + 2] = (index * 31) & 255;
-    }
+    for (let x = 0; x < width; x++)
+      raw.set(shade(x, y, index), y * stride + 1 + x * 3);
   }
   return Buffer.concat([
     Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
@@ -392,9 +463,15 @@ export async function makeGame(names, game, change) {
       throw new Error("No variant applies to the KiriKiri game.");
     if (change) throw new Error("The KiriKiri game has no database to edit.");
     fs.mkdirSync(game, { recursive: true });
+    // KiriKiri picks an image's decoder by its extension.
     fs.writeFileSync(
       path.join(game, "data.xp3"),
-      xp3({ "scenario/first.ks": tyranoScenario }),
+      xp3({
+        "scenario/first.ks": tyranoScenario,
+        "image/text_title.bmp": bmp(320, 240, 0),
+        "image/text_menu.tlg": tlg5(160, 90, 1),
+        "bgimage/bg_0000.png": picture(320, 240, 2, 0),
+      }),
     );
     fs.writeFileSync(path.join(game, "Game.exe"), "Game.exe stand-in");
     return {};

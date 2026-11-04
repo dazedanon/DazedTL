@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+"""Unpack a standard KiriKiri XP3 archive.
+
+A file it can't read, such as one a game-specific cipher encrypts, is named
+at the end and left out; the rest are extracted, and the exit code is 2."""
 import argparse
 import shutil
 import struct
@@ -73,7 +77,9 @@ def parse_index(index):
         size = read_u64(index, pos + 4)
         body = index[pos + 12 : pos + 12 + size]
         if tag != b"File":
-            raise XP3Error(f"unexpected top-level tag {tag!r} at 0x{pos:x}")
+            # KiriKiri skips other chunks too, such as a name hash table.
+            pos += 12 + size
+            continue
 
         record = {"name": None, "flags": 0, "original_size": 0, "archive_size": 0, "segments": [], "adler32": None}
         sub_pos = 0
@@ -120,46 +126,60 @@ def output_path(root, xp3_name):
     return root.joinpath(*rel.parts)
 
 
+def member_chunks(src, record):
+    """The bytes of one archive member, in chunks; raises XP3Error when the
+    member can't be read, after the chunk that shows it."""
+    checksum = 1
+    total = 0
+    for segment in record["segments"]:
+        src.seek(segment["offset"])
+        raw_size = segment["archive_size"]
+        original_size = segment["original_size"]
+        flags = segment["flags"]
+
+        if flags == 0:
+            remaining = raw_size
+            while remaining:
+                chunk = src.read(min(1024 * 1024, remaining))
+                if not chunk:
+                    raise XP3Error("unexpected end of archive")
+                checksum = zlib.adler32(chunk, checksum)
+                total += len(chunk)
+                remaining -= len(chunk)
+                yield chunk
+            if raw_size != original_size:
+                raise XP3Error("raw segment size mismatch")
+        elif flags == 1:
+            try:
+                data = zlib.decompress(src.read(raw_size))
+            except zlib.error as exc:
+                raise XP3Error("compressed segment does not decompress (encrypted?)") from exc
+            if len(data) != original_size:
+                raise XP3Error("compressed segment size mismatch")
+            checksum = zlib.adler32(data, checksum)
+            total += len(data)
+            yield data
+        else:
+            raise XP3Error(f"unsupported segment flags {flags} (encrypted?)")
+
+    if total != record["original_size"]:
+        raise XP3Error("file size mismatch")
+    if record["adler32"] is not None and (checksum & 0xFFFFFFFF) != record["adler32"]:
+        raise XP3Error("checksum mismatch: encrypted by the game or damaged")
+
+
 def extract_file(src, dst, record, overwrite):
+    """Extract one member; a member it can't read leaves no file behind."""
     dst.parent.mkdir(parents=True, exist_ok=True)
     if dst.exists() and not overwrite:
         raise XP3Error(f"output exists: {dst}")
-
-    checksum = 1
-    total = 0
-    with dst.open("wb") as out:
-        for segment in record["segments"]:
-            src.seek(segment["offset"])
-            raw_size = segment["archive_size"]
-            original_size = segment["original_size"]
-            flags = segment["flags"]
-
-            if flags == 0:
-                remaining = raw_size
-                while remaining:
-                    chunk = src.read(min(1024 * 1024, remaining))
-                    if not chunk:
-                        raise XP3Error(f"unexpected EOF while reading {record['name']}")
-                    out.write(chunk)
-                    checksum = zlib.adler32(chunk, checksum)
-                    total += len(chunk)
-                    remaining -= len(chunk)
-                if raw_size != original_size:
-                    raise XP3Error(f"raw segment size mismatch for {record['name']}")
-            elif flags == 1:
-                data = zlib.decompress(src.read(raw_size))
-                if len(data) != original_size:
-                    raise XP3Error(f"compressed segment size mismatch for {record['name']}")
-                out.write(data)
-                checksum = zlib.adler32(data, checksum)
-                total += len(data)
-            else:
-                raise XP3Error(f"unsupported segment flags {flags} for {record['name']}")
-
-    if total != record["original_size"]:
-        raise XP3Error(f"file size mismatch for {record['name']}")
-    if record["adler32"] is not None and (checksum & 0xFFFFFFFF) != record["adler32"]:
-        raise XP3Error(f"adler32 mismatch for {record['name']}")
+    try:
+        with dst.open("wb") as out:
+            for chunk in member_chunks(src, record):
+                out.write(chunk)
+    except XP3Error:
+        dst.unlink(missing_ok=True)
+        raise
 
 
 def main():
@@ -169,14 +189,24 @@ def main():
     parser.add_argument("--overwrite", action="store_true")
     args = parser.parse_args()
 
+    failed = []
     with args.archive.open("rb") as src:
         records = parse_index(read_index(src))
         print(f"records: {len(records)}")
         print(f"output: {args.output}")
         for index, record in enumerate(records, 1):
-            extract_file(src, output_path(args.output, record["name"]), record, args.overwrite)
+            try:
+                extract_file(src, output_path(args.output, record["name"]), record, args.overwrite)
+            except XP3Error as exc:
+                failed.append((record["name"], str(exc)))
             if index % 100 == 0 or index == len(records):
-                print(f"extracted {index}/{len(records)}", flush=True)
+                print(f"read {index}/{len(records)}", flush=True)
+    print(f"extracted: {len(records) - len(failed)}")
+    if failed:
+        print(f"could not read {len(failed)} files:", file=sys.stderr)
+        for name, reason in failed:
+            print(f"  {name}: {reason}", file=sys.stderr)
+        sys.exit(2)
 
 
 if __name__ == "__main__":

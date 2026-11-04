@@ -2506,6 +2506,36 @@ export const scenarios = {
       ],
     ],
   },
+  "images-kirikiri": {
+    description:
+      "An Assistant-led project on the KiriKiri game: the assistant unpacks data.xp3 with Len's XP3 tool into a folder, translates its lettered BMP title screen and TLG menu through the Images steps on that folder, each applied in its own format, then packs them into a patch.xp3 and checkpoints it; Images lists both under their own names, applied.",
+    game: "kirikiri",
+    steps: () => [
+      assistantLed[0],
+      assistantLed[1],
+      [
+        "The assistant translates the images in data.xp3 and packs them into patch.xp3",
+        async ({ page, state }) => {
+          console.log(
+            `\n  ${(await assistant(page, state, "kirikiri-images")).trim().replaceAll("\n", "\n  ")}`,
+          );
+        },
+      ],
+      [
+        "Images lists the BMP and the TLG under their own names, applied",
+        async ({ page }) => {
+          for (const id of [
+            "decoded/data/image/text_title.bmp",
+            "decoded/data/image/text_menu.tlg",
+          ]) {
+            const row = await imageRow(page, id);
+            if (row?.id !== id || row.state !== "applied" || row.staleReason)
+              throw new Error(`Images reads ${id} as ${JSON.stringify(row)}.`);
+          }
+        },
+      ],
+    ],
+  },
   "assistant-released": {
     description:
       "An Assistant-led project the assistant translated and wrote, but for one line its extractor missed, then played, that line translated through its extraction and injection once Text QA counted it never translated, reviewed with Text QA through the project helper, one correction applied, and played again before packaging; Progress holds QA at Final check until that playtest settles, the Playtest tab then reads Skipped for the game it could not play, its Patch phase shows the patch ZIP, and Release builds a clean game ZIP and saves the patch ZIP, with QA's correction and that line, where it suggests.",

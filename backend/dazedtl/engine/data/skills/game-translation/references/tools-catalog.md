@@ -60,7 +60,7 @@ so read the Bakin section at the bottom of this file before adapting anything Ba
 | Folder | Tool | Format |
 |---|---|---|
 | `RPG Maker MZ` | `decrypt_rpgmz_data.js`, `decrypt_rpgmz_audio.js`, `run_runtime_image_dump.js` | encrypted MZ |
-| `KiriKiri XP3` | `unpack_xp3.py` | `.xp3` |
+| `KiriKiri XP3` | `unpack_xp3.py` (names the files it can't read, such as encrypted ones, and exits with 2), `pack_xp3.py` (an unencrypted archive, `--flat` for a patch.xp3) | `.xp3` |
 | `Siglus G00-ScenePCK` | `unpack_g00.py`/`pack_g00.py`, `scene_pck.py`, `extract_scene_text.py`, `dazed_scene_text_bridge.py` | Siglus |
 | `YU-RIS YPF-YSTB` | `ypf/ystb_extract.py` + `_repack.py`, Elfhime only (YPF 0x1E7) | YU-RIS |
 | `RPG Maker RGSSAD` | `rgssad.py` (v1/v2/v3 extract + list), `install-template.ps1`/`.bat` (a PLAYER-facing installer: unpacks the archive with an embedded C# routine, lays the patch over it, moves the archive aside, `-Uninstall` reverses it). **Read its README**: RGSS3 serves `Data\*.rvdata2` from the archive whenever it is present and ignores a loose file beside it, so a patch dropped in next to `Game.rgss3a` does nothing, silently. | `.rgssad` XP, `.rgss2a` VX, `.rgss3a` Ace |
