@@ -117,7 +117,7 @@ def documents_save(root, changes):
         if not valid_document_name(name) or not isinstance(text, str) or len(text.encode()) > 1_000_000:
             raise ValueError("Choose a guidance document below 1 MB.")
         if name == NOTES and NOTES not in current:
-            raise ValueError("AGENTS.md in the game folder can't be read as text below 1 MB. Fix or remove it and reload, or discard the Assistant notes draft.")
+            raise ValueError(f"AGENTS.md in the game folder can't be opened, or read as text below 1 MB. Fix or remove it and reload, or discard the {NOTES_TITLE} draft.")
         revision = change.get("revision")
         if name not in current and revision == "":
             revision = digest(b"")
