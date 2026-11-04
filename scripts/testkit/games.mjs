@@ -170,11 +170,6 @@ function pngChunk(type, data) {
   return Buffer.concat([head, data, crc]);
 }
 
-/**
- * An RGB PNG with pixels of its own: a gradient keyed on `index` under
- * `noise` rows of random pixels, which no compression shrinks, as a CG's
- * detail does not.
- */
 /** picture()'s pixel at (x, y) as [red, green, blue]. */
 const shade = (x, y, index) => [
   (x + index * 7) & 255,
@@ -250,6 +245,11 @@ function tlg5(width, height, index) {
   ]);
 }
 
+/**
+ * An RGB PNG with pixels of its own: a gradient keyed on `index` under
+ * `noise` rows of random pixels, which no compression shrinks, as a CG's
+ * detail does not.
+ */
 function picture(width, height, index, noise) {
   const header = Buffer.alloc(13);
   header.writeUInt32BE(width, 0);
