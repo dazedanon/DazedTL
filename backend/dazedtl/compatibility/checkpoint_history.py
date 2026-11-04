@@ -246,9 +246,8 @@ def _moved(entry):
 def _blockers(entries):
     """For each entry of the current version, the newest later entry it must
     wait for and the files they share, or None; one pass over the changes.
-    An entry waits on a later change to a file its undo takes out (`_moved`),
-    even one that later entry's own undo leaves, so no undo takes back notes
-    an assistant wrote after it."""
+    Both read only the changes undos take out (`_moved`), so no entry waits
+    on one whose undo would not free it."""
     newest = {}
     result = {}
     for index, entry in enumerate(entries):
@@ -263,7 +262,7 @@ def _blockers(entries):
             result[entry.commit] = (entries[later], shared)
         else:
             result[entry.commit] = None
-        for path, change in entry.changes.items():
+        for path, change in _moved(entry).items():
             newest.setdefault(path, (index, change[3]))
     return result
 
