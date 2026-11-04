@@ -637,7 +637,8 @@ class SettingsTests(unittest.TestCase):
         # and keeps the catalog Settings prices each model from: on Go, a
         # DeepSeek model at its peak rate, as DeepSeek's own API is estimated,
         # another model at its listed rate times any date multiplier in
-        # effect; on pay-as-you-go, every model at its listed rate. Free
+        # effect, with a note that the DeepSeek rate is its peak; on
+        # pay-as-you-go, every model at its listed rate. Free
         # models, which answer only OpenCode's own app, are left out, and a
         # DeepSeek model's thinking turns off as on DeepSeek's own API. A
         # run reads its cache at the route's own price, not at 0.1x.
@@ -778,17 +779,19 @@ class SettingsTests(unittest.TestCase):
                 (0.3, 1.2, "catalog"),
             )
             self.assertEqual(flash["maxOutputTokens"], 384000)
+            # Its rates say they are peak rates, as Go's other models' don't.
+            self.assertIn("rateNote", flash)
             self.assertEqual(
                 [option["label"] for option in flash["thinkingEffort"]["options"]],
                 ["Provider default", "Off", "Low", "High", "Maximum"],
             )
             # A model that reasons with no levels listed takes none.
+            kimi = saved.model_defaults("go", "kimi-k2.7-code")
             self.assertEqual(
-                saved.model_defaults("go", "kimi-k2.7-code")["thinkingEffort"][
-                    "options"
-                ],
+                kimi["thinkingEffort"]["options"],
                 [{"value": None, "label": "Provider default"}],
             )
+            self.assertNotIn("rateNote", kimi)
             stored, _custom, paid = saved._read()["connections"]
             # A run freezes its route's own cache read price, Kimi K2.7 Code's
             # $0.19 of $0.95 on Go, beside its rates; a DeepSeek model on Go
@@ -802,6 +805,9 @@ class SettingsTests(unittest.TestCase):
             )
             self.assertNotIn("cacheReadMultiple", request_policy(saved, "live"))
             saved.select(saved.describe()["revision"], "paid")
+            self.assertNotIn(
+                "rateNote", saved.model_defaults("paid", "deepseek-v4.1-flash")
+            )
             self.assertAlmostEqual(
                 configuration(saved, "live")["rates"]["cache_read_multiple"], 0.02
             )

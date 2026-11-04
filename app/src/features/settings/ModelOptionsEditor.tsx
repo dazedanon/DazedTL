@@ -494,7 +494,8 @@ export default function ModelOptionsEditor({
         <p className="settings-note">
           {openrouter
             ? "Live rates are charged for names and labels translated before a Batch. Actual charges depend on the serving host and account settings."
-            : "Base rates before cache and batch adjustments. Custom servers may charge different rates."}
+            : (resolved?.rateNote ??
+              "Base rates before cache and batch adjustments. Custom servers may charge different rates.")}
         </p>
       </Section>
       {openrouter && (

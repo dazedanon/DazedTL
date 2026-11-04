@@ -2127,6 +2127,7 @@ export type ModelDefaults = {
   batchInputRate?: number | null;
   batchOutputRate?: number | null;
   thinkingEffort?: ThinkingEffort;
+  rateNote?: string;
 };
 
 export type SettingsProvider = {

@@ -600,10 +600,25 @@ class Settings:
     def model_defaults(
         self, connection_id, model, *, cached_only=False, batch_endpoints=None
     ):
+        """The rates, output allowance and efforts Settings shows for *model*
+        on the active connection, with the note its rates need on a route
+        priced by the hour (provider_costs time_price_note)."""
         state = self._read()
         if connection_id != state["active"]:
             raise ValueError("The active connection changed. Reopen Settings.")
         active = self._connection(state)
+        value = self._model_defaults(
+            active, model, cached_only=cached_only, batch_endpoints=batch_endpoints
+        )
+        if active and value:
+            from util.provider_costs import time_price_note, time_priced_route
+
+            note = time_price_note(time_priced_route(providers.address(active), model))
+            if note:
+                value = {**value, "rateNote": note}
+        return value
+
+    def _model_defaults(self, active, model, *, cached_only, batch_endpoints):
         if active and active["provider"] == "openrouter":
             if batch_endpoints is not None:
                 active = {**active, "batch_endpoints": batch_endpoints}

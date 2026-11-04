@@ -91,6 +91,7 @@ class ModelDefaults(TypedDict):
     batchInputRate: NotRequired[float | None]
     batchOutputRate: NotRequired[float | None]
     thinkingEffort: NotRequired[ThinkingEffort]
+    rateNote: NotRequired[str]
 
 
 class SettingsProvider(TypedDict):

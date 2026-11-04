@@ -72,15 +72,18 @@ def time_priced_route(endpoint: str | None, model: str | None) -> str | None:
 # the one factor its peak and off-peak prices differ by, on its own API and on
 # OpenCode Go (settings/opencode describe).
 DEEPSEEK_OFF_PEAK = 0.5
+# DeepSeek's peak hours, Monday to Friday, as [start, end) hours in UTC
+# (https://api-docs.deepseek.com/quick_start/pricing): the one statement of
+# them, for time_price_factor and time_price_note.
+DEEPSEEK_PEAK_HOURS = ((1, 4), (6, 10))
 
 
 def time_price_factor(route: str | None, received: str | None) -> float:
     """Usage's price at the time it arrived as a multiple of the peak price
     its run froze, on a ``route`` from time_priced_route.
 
-    DeepSeek's own API bills half outside its peak hours, 01:00-04:00 and
-    06:00-10:00 UTC Monday to Friday
-    (https://api-docs.deepseek.com/quick_start/pricing), and OpenCode Go
+    DeepSeek's own API bills half outside its peak hours
+    (DEEPSEEK_PEAK_HOURS), and OpenCode Go
     bills its DeepSeek models at their listed price then, half the peak
     price a Go run froze (settings/opencode). DeepSeek's Chinese public
     holidays are off-peak too but count as peak here, which errs high, as
@@ -96,8 +99,26 @@ def time_price_factor(route: str | None, received: str | None) -> float:
     if when.tzinfo is None:
         return 1.0
     when = when.astimezone(UTC)
-    peak = when.weekday() < 5 and (1 <= when.hour < 4 or 6 <= when.hour < 10)
+    peak = when.weekday() < 5 and any(
+        start <= when.hour < end for start, end in DEEPSEEK_PEAK_HOURS
+    )
     return 1.0 if peak else DEEPSEEK_OFF_PEAK
+
+
+def time_price_note(route: str | None) -> str | None:
+    """What Settings says under the rates of a ``route`` from
+    time_priced_route, whose rates are its peak price because estimates
+    price Live usage at peak (time_price_factor), or None for a route billed
+    the same at any hour."""
+    if route != "deepseek":
+        return None
+    hours = " and ".join(
+        f"{start:02d}:00-{end:02d}:00" for start, end in DEEPSEEK_PEAK_HOURS
+    )
+    return (
+        "Peak-hour rates, before cache adjustments. DeepSeek bills half"
+        f" outside {hours} UTC on weekdays."
+    )
 
 
 def joined_received_at(route: str | None, *times: str | None) -> str | None:
