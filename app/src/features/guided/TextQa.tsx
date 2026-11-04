@@ -19,7 +19,7 @@ import { ActionList, ActionRow } from "../../ui/ActionList";
 import { AssistantTask, type AssistantTaskState } from "../../ui/AssistantTask";
 import { Button } from "../../ui/Button";
 import { ExpandableText } from "../../ui/ExpandableText";
-import { LineChange } from "../../ui/LineChange";
+import { LineChange, type LineChangeRow } from "../../ui/LineChange";
 import { useLanguages } from "../../app/LanguagesProvider";
 import { Notice } from "../../ui/Notice";
 import { StatusMark } from "../../ui/StatusMark";
@@ -188,10 +188,10 @@ export function TextQaWork({
 }
 
 /**
- * The Japanese, the text now and the other side of a change, labelled, the
- * two in the added and removed colors with the words that changed marked. An
- * applied change shows the text it replaced as Was; one not in the game
- * shows the text it would replace as Now.
+ * The Japanese, the text now and the other side of a change, labelled. A
+ * change's two sides read in the added and removed colors with the words
+ * that changed marked: an applied one shows the text it replaced as Was, one
+ * not in the game the text it would replace as Now.
  */
 function Change({
   source,
@@ -216,25 +216,19 @@ function Change({
     lang: languages.sourceTag ?? undefined,
   };
   const lang = languages.targetTag ?? undefined;
-  return (
-    <LineChange
-      rows={
-        after === undefined
-          ? [original, { label: "Now", text: before, lang }]
-          : applied
-            ? [
-                original,
-                { label: "Now", text: after, change: "added", lang },
-                { label: "Was", text: before, change: "removed", lang },
-              ]
-            : [
-                original,
-                { label: "Now", text: before, change: "removed", lang },
-                { label: afterLabel, text: after, change: "added", lang },
-              ]
-      }
-    />
-  );
+  const sides: LineChangeRow[] =
+    after === undefined
+      ? [{ label: "Now", text: before, lang }]
+      : applied
+        ? [
+            { label: "Now", text: after, change: "added", lang },
+            { label: "Was", text: before, change: "removed", lang },
+          ]
+        : [
+            { label: "Now", text: before, change: "removed", lang },
+            { label: afterLabel, text: after, change: "added", lang },
+          ];
+  return <LineChange rows={[original, ...sides]} />;
 }
 
 /**
