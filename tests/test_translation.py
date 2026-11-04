@@ -1979,7 +1979,7 @@ class TranslationTests(unittest.TestCase):
         from contextlib import nullcontext
 
         from dazedtl.translation.batch_refusals import advance, journal
-        from dazedtl.translation.refusals import EARLIER_CLARIFICATIONS
+        from dazedtl.translation.refusals import CLARIFICATIONS
 
         def send(*args):
             return advance(*args, reserve=lambda _items: nullcontext(True))
@@ -2012,7 +2012,7 @@ class TranslationTests(unittest.TestCase):
         self.assertNotIn("requests", record)
         # A journal saved before an update sent an earlier wording, and still
         # continues; a wording the app never sent does not.
-        for content, continues in ((EARLIER_CLARIFICATIONS[0], True), ("Hi", False)):
+        for content, continues in ((CLARIFICATIONS[1], True), ("Hi", False), (["Hi"], False)):
             with self.subTest(content=content):
                 saved = deepcopy(record)
                 for batch in saved["batches"]:
