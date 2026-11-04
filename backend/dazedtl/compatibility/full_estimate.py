@@ -214,10 +214,24 @@ def stage_run(
     return workspace, native
 
 
+def engine_configuration(workspace, engine):
+    """The engine settings a run reads (desktop.backend.manual run_plan)
+    for another saved connection and model than Settings' active ones:
+    *engine*'s ``values`` over the saved ones, and its connection's
+    ``key_name``."""
+    from desktop.backend.settings import SettingsStore
+
+    described = SettingsStore(workspace).describe()
+    described["values"] = {**described["values"], **engine["values"]}
+    described["active_key"] = engine["key_name"]
+    return described
+
+
 def estimate_task(directory, folder, plan, inventory, task, log):
     label = LABELS[task["phase"]]
     phase = task["phase"]
     log(f"{label} · preparing", phase, state="starting")
+    engine = plan["options"].get("engine")
     workspace, native = stage_run(
         directory,
         folder,
@@ -228,6 +242,9 @@ def estimate_task(directory, folder, plan, inventory, task, log):
         task["workflow"],
         plan["options"]["policy"],
         log.stopped,
+        configuration=engine_configuration(folder.parent.parent, engine)
+        if engine
+        else None,
     )
     return counted(
         directory,

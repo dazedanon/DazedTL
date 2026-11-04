@@ -4358,6 +4358,12 @@ export const ACTIONS = {
     restorable: false,
     reports_outcome: false,
   },
+  compare_whole_game: {
+    label: "Estimate the translation cost with a compared model",
+    family: "background",
+    restorable: false,
+    reports_outcome: false,
+  },
   speaker_scan: {
     label: "Scan speaker names",
     family: "background",

@@ -24,9 +24,19 @@ from dazedtl import system
 from dazedtl.actions import stopped_note
 from dazedtl.translation.files import digest
 
-from .full_estimate import ENGINE, WORKER, counted, end, launch, stage_run
+from .full_estimate import (
+    ENGINE,
+    WORKER,
+    counted,
+    end,
+    engine_configuration,
+    launch,
+    stage_run,
+)
 
 ESTIMATE, TRANSLATE = "compare_estimate", "compare_translate"
+# Context's Cost estimate for a compared model (full_estimate.run).
+WHOLE_GAME = "compare_whole_game"
 # The requests a model's result keeps for Show request.
 KEPT_REQUESTS = 20
 # What a comparison's test-only guidance is saved as in a run's snapshot,
@@ -247,17 +257,6 @@ def guidance(candidate):
     return change
 
 
-def configuration(workspace, candidate):
-    """The engine settings a candidate's run reads in place of Settings'
-    active connection (desktop.backend.manual run_plan)."""
-    from desktop.backend.settings import SettingsStore
-
-    described = SettingsStore(workspace).describe()
-    described["values"] = {**described["values"], **candidate["values"]}
-    described["active_key"] = candidate["key_name"]
-    return described
-
-
 def translate(directory, env, label, log, index):
     """Runs a staged run's translate worker to its end. The approved quote
     covers its names pass, so a confirmation it asks for is answered yes."""
@@ -451,7 +450,7 @@ def run(plan, log):
                     options["workflow"],
                     candidate["policy"],
                     stopped,
-                    configuration=configuration(workspace, candidate),
+                    configuration=engine_configuration(workspace, candidate),
                     context=guidance(candidate),
                 )
                 if action == ESTIMATE:
