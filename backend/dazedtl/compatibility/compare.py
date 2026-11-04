@@ -62,7 +62,7 @@ def cut(name, document, phase, lines, markers=frozenset()):
     """*document* holding only its first *lines* lines that hold Japanese,
     all of them for 0, cut where its requests are built from: an event file
     after the command list of the last line, whose later lists end at once,
-    a database file after the entry of the last line. What the cut keeps is
+    a database file after the first entries holding that many lines. What the cut keeps is
     the file's own, so its requests are as a run of the whole file builds
     them, but for the last request, which may pack fewer lines. Returns the
     cut document and the lines it keeps."""
@@ -74,14 +74,24 @@ def cut(name, document, phase, lines, markers=frozenset()):
     found = [line for line in read(name, document, phase, markers) if _japanese(line)]
     if not lines or len(found) <= lines:
         return document, found
-    last = found[lines - 1].paths[0]
     value = deepcopy(document)
     if phase == "database":
         if not isinstance(value, list):
             return document, found
-        for index in range(last[0] + 1, len(value)):
+        # Entries in their order, until they hold the lines asked for.
+        counts = {}
+        for line in found:
+            counts[line.paths[0][0]] = counts.get(line.paths[0][0], 0) + 1
+        total, end = 0, None
+        for entry in sorted(counts):
+            total += counts[entry]
+            end = entry
+            if total >= lines:
+                break
+        for index in range(end + 1, len(value)):
             value[index] = None
-        return value, found[:lines]
+        return value, [line for line in found if line.paths[0][0] <= end]
+    last = found[lines - 1].paths[0]
     lists = [tuple(listed) for listed in _event_lists(name, value)]
 
     def owner(path):
