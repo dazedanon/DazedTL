@@ -264,6 +264,9 @@ export default function Settings({
                       <DetailRow label="Provider">
                         {provider?.label || "Choose a provider"}
                       </DetailRow>
+                      {provider?.plan && (
+                        <DetailRow label="Plan">{provider.plan}</DetailRow>
+                      )}
                       {current.provider === "openrouter" &&
                         current.openrouter_host && (
                           <DetailRow label="Host">

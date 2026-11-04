@@ -74,6 +74,15 @@ export default function ConnectionEditor({
   const hostModel =
     connection?.provider === "openrouter" ? connection.model : "";
   const definition = providers.find((item) => item.id === value.provider);
+  // Presets that share a label are one provider's plans: the provider list
+  // offers each label once, at its first plan, and Plan picks among them.
+  const plans = definition?.plan
+    ? providers.filter((item) => item.label === definition.label)
+    : [];
+  const choices = providers.filter(
+    (provider, index) =>
+      providers.findIndex((item) => item.label === provider.label) === index,
+  );
   const sameRoute =
     connection?.provider === value.provider &&
     connection?.protocol === value.protocol &&
@@ -100,6 +109,10 @@ export default function ConnectionEditor({
       organization: "",
       openrouter_host: "",
     }));
+  }
+  // A provider's plans take the same key, so a typed one stays.
+  function choosePlan(provider: string) {
+    setValue((current) => ({ ...current, provider, reuse_secret: false }));
   }
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -148,13 +161,13 @@ export default function ConnectionEditor({
                 <select
                   {...control}
                   required
-                  value={value.provider}
+                  value={plans[0]?.id ?? value.provider}
                   onChange={(event) => chooseProvider(event.target.value)}
                 >
                   <option value="" disabled>
                     Choose provider
                   </option>
-                  {providers.map((provider) => (
+                  {choices.map((provider) => (
                     <option key={provider.id} value={provider.id}>
                       {provider.label}
                     </option>
@@ -162,6 +175,27 @@ export default function ConnectionEditor({
                 </select>
               )}
             </FieldRow>
+            {plans.length > 1 && (
+              <FieldRow
+                id="connection-plan"
+                label="Plan"
+                help={`The ${plans[0].label} plan that pays for this connection's requests.`}
+              >
+                {(control) => (
+                  <select
+                    {...control}
+                    value={value.provider}
+                    onChange={(event) => choosePlan(event.target.value)}
+                  >
+                    {plans.map((plan) => (
+                      <option key={plan.id} value={plan.id}>
+                        {plan.plan}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </FieldRow>
+            )}
             {value.provider === "openrouter" && (
               <OpenRouterHost
                 key={hostModel}

@@ -495,6 +495,7 @@ class Settings:
                 {
                     "id": name,
                     "label": definition["label"],
+                    **({"plan": definition["plan"]} if "plan" in definition else {}),
                     "protocol": definition["protocol"],
                     "defaultEndpoint": definition["endpoint"],
                 }

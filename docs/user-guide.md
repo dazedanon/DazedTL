@@ -300,9 +300,10 @@ For OpenAI, raise **Batch token allowance** to your account's limit from [OpenAI
   Its Batches can take up to 24 hours and can't be cancelled once sent.
 - **Kimi:** Batch works with Kimi K2.6 and K2.7 Code, at 40% off; Kimi K3 translates Live only.
 - **DeepSeek** and **OpenCode** translate Live only; DeepSeek costs half [off-peak](https://api-docs.deepseek.com/quick_start/pricing), on Go too.
-- **OpenCode Go** bills your plan's allowance; a used-up limit fails requests until it resets, unless Extra Usage is on.
+- **OpenCode:** **Plan** picks what pays.
+  **Go subscription** bills your plan's allowance; a used-up limit fails requests until it resets, unless Extra Usage is on.
   Go's DeepSeek needs **Global** under Regions in the workspace's Privacy settings, and Muse Spark needs **Allow paid endpoints that train on request data** turned on.
-- **OpenCode pay-as-you-go** bills your Console balance; free models work only in OpenCode's app, so they aren't listed.
+  **Pay-as-you-go balance** bills your Console balance; free models work only in OpenCode's app and aren't listed.
 - The estimate leaves out Kimi and DeepSeek thinking, billed as output; Thinking effort **Off** stops DeepSeek's.
 
 ## Notifications

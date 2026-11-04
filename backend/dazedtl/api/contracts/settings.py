@@ -97,6 +97,9 @@ class ModelDefaults(TypedDict):
 class SettingsProvider(TypedDict):
     id: Provider
     label: str
+    # Presets that share a label are one provider's plans (settings/providers
+    # PROVIDERS), such as OpenCode's Go subscription and pay-as-you-go balance.
+    plan: NotRequired[str]
     protocol: ProviderProtocol
     defaultEndpoint: str
 

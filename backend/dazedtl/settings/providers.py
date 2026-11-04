@@ -92,16 +92,20 @@ PROVIDERS = {
     # Both routes send Chat Completions to every model, Claude's and Gemini's
     # too: Console lists each model with its native API but translates
     # every text model's requests from the others
-    # (https://opencode.ai/v2/docs/console/models/).
+    # (https://opencode.ai/v2/docs/console/models/). Presets that share a
+    # label are one provider's plans, which Settings offers as one provider
+    # with a Plan choice that starts on the first.
     "opencode-go": {
-        "label": "OpenCode Go",
+        "label": "OpenCode",
+        "plan": "Go subscription",
         "protocol": "openai",
         "endpoint": os.environ.get("DAZEDTL_TEST_OPENCODE_GO_ENDPOINT")
         or OWN_APIS["opencode-go"],
     },
     # The same models billed from the Console balance at their listed prices.
     "opencode": {
-        "label": "OpenCode pay-as-you-go",
+        "label": "OpenCode",
+        "plan": "Pay-as-you-go balance",
         "protocol": "openai",
         "endpoint": os.environ.get("DAZEDTL_TEST_OPENCODE_ENDPOINT")
         or OWN_APIS["opencode"],

@@ -2134,6 +2134,7 @@ export type ModelDefaults = {
 export type SettingsProvider = {
   id: Provider;
   label: string;
+  plan?: string;
   protocol: ProviderProtocol;
   defaultEndpoint: string;
 };
