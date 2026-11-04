@@ -254,6 +254,7 @@ test("a landing's review record comes from an independent reviewer and accounts 
     record({
       level: "high",
       reviewer: "independent",
+      reviews: 2,
       head: "abc1234",
       findings: [
         { summary: "Off by one", outcome: "fixed", reason: "" },
@@ -268,6 +269,7 @@ test("a landing's review record comes from an independent reviewer and accounts 
     {
       level: "high",
       reviewer: "independent",
+      reviews: 2,
       head: "abc1234",
       findings: [
         { summary: "Off by one", outcome: "fixed", review: 1 },
@@ -308,16 +310,36 @@ test("a landing's review record comes from an independent reviewer and accounts 
       }),
     /Finding 1 .* without a reason/,
   );
-  for (const review of [0, 1.5, "2"])
+  // A landing runs at most three reviews, and each finding names one of them.
+  for (const reviews of [0, 4, null])
+    assert.throws(
+      () => record({ ...reviewed, level: "high", reviews, findings: [] }),
+      /needs "reviews"/,
+    );
+  for (const [outcome, review] of [
+    ["fixed", 0],
+    ["fixed", 1.5],
+    ["dismissed", "2"],
+    ["dismissed", null],
+    ["fixed", 3],
+  ])
     assert.throws(
       () =>
         record({
           ...reviewed,
           level: "high",
-          findings: [{ summary: "Off by one", outcome: "fixed", review }],
+          reviews: 2,
+          findings: [
+            { summary: "Off by one", outcome, reason: "Kept", review },
+          ],
         }),
-      /Finding 1 .* needs a review number/,
+      /Finding 1 .* needs a review number from 1 to 2/,
     );
+  assert.equal(
+    record({ ...reviewed, level: "high", findings: [] }).reviews,
+    1,
+    "a record from before reviews were counted",
+  );
   assert.throws(() => record({ ...reviewed, level: "high" }), /findings list/);
   assert.throws(() => readReview("level: high"), /not JSON/);
 });

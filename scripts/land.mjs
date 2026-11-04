@@ -49,8 +49,10 @@ const pushTimeout = 5 * 60_000;
 const icon = path.join(import.meta.dirname, "..", "resources", "icon.png");
 /** The code-review levels a landing's review may run at: high and up. */
 const reviewLevels = ["high", "xhigh", "max", "ultra"];
+/** The most independent reviews one landing runs; the dazedtl-land skill says when another runs. */
+const maxReviews = 3;
 const reviewShape =
-  '{"level": "high", "reviewer": "independent", "head": "<hash of the last commit the reviewer checked>", "findings": [{"summary": "...", "outcome": "fixed", "review": 1}, {"summary": "...", "outcome": "dismissed", "reason": "...", "review": 2}]}';
+  '{"level": "high", "reviewer": "independent", "reviews": 2, "head": "<hash of the last commit the last reviewer checked>", "findings": [{"summary": "...", "outcome": "fixed", "review": 1}, {"summary": "...", "outcome": "dismissed", "reason": "...", "review": 2}]}';
 /** Where landed reviews are recorded, one JSON line each, in the shared Git directory. */
 const reviewLog = "dazedtl-reviews.jsonl";
 /** The subject of the commit holding what the formatter changed. */
@@ -72,12 +74,12 @@ const lockLimit = 10 * 60_000;
 
 /**
  * Reads a landing's review record: the code-review level a reviewer that
- * never saw the work ran, the last commit it checked and what became of each
- * finding it reported, with which of the branch's independent reviews found
- * it (1 when not given). Throws with what is wrong, so no branch lands on its
- * author's review alone.
+ * never saw the work ran, how many such reviews ran (1 when not given), the
+ * last commit the last one checked and what became of each finding, with
+ * the review that found it (1 when not given). Throws with what is wrong, so
+ * no branch lands on its author's review alone.
  * @param {string} text
- * @returns {{ level: string, reviewer: "independent", head: string, findings: { summary: string, outcome: "fixed" | "dismissed", reason?: string, review: number }[] }}
+ * @returns {{ level: string, reviewer: "independent", reviews: number, head: string, findings: { summary: string, outcome: "fixed" | "dismissed", reason?: string, review: number }[] }}
  */
 export function readReview(text) {
   let record;
@@ -96,10 +98,15 @@ export function readReview(text) {
     throw new Error(
       `The review record needs a level of ${reviewLevels.join(", ")}.`,
     );
+  const reviews = record.reviews === undefined ? 1 : record.reviews;
+  if (!Number.isInteger(reviews) || reviews < 1 || reviews > maxReviews)
+    throw new Error(
+      `The review record needs "reviews", how many independent reviews ran, from 1 to ${maxReviews}.`,
+    );
   // A name such as HEAD would follow the branch past what was reviewed.
   if (typeof record.head !== "string" || !/^[0-9a-f]{7,64}$/i.test(record.head))
     throw new Error(
-      "The review record needs the hash of the head commit its reviewer last checked.",
+      "The review record needs the hash of the head commit its last reviewer checked.",
     );
   if (!Array.isArray(record.findings))
     throw new Error(
@@ -109,10 +116,10 @@ export function readReview(text) {
     (/** @type {any} */ item, /** @type {number} */ index) => {
       const which = `Finding ${index + 1} of the review record`;
       if (!filled(item?.summary)) throw new Error(`${which} needs a summary.`);
-      const review = item.review ?? 1;
-      if (!Number.isInteger(review) || review < 1)
+      const review = item.review === undefined ? 1 : item.review;
+      if (!Number.isInteger(review) || review < 1 || review > reviews)
         throw new Error(
-          `${which} needs a review number of 1 or more: the independent review that found it.`,
+          `${which} needs a review number from 1 to ${reviews}: the independent review that found it.`,
         );
       if (item.outcome === "fixed")
         return { summary: item.summary, outcome: "fixed", review };
@@ -131,6 +138,7 @@ export function readReview(text) {
   return {
     level: record.level,
     reviewer: "independent",
+    reviews,
     head: record.head,
     findings,
   };

@@ -171,9 +171,8 @@ A fix you found in a game but didn't code can go through the guide's [Share a fi
 `node scripts/land.mjs --review <file.json>` lands a finished branch on `dev` from its worktree: it formats the branch, merges `dev` into it, runs the tests and build checks, fast-forwards the main checkout's `dev` and pushes it to every mirror.
 One landing runs at a time, under a lock that a release also holds.
 
-- Every landing passes an independent review first: a reviewer that never saw the work runs `code-review` at `high` or above on the branch against `dev`, the author fixes each finding or dismisses it with a reason, and the reviewer checks both; many fixes earn another, up to three reviews.
-  The review record says an independent reviewer ran it, at which level, the last commit it checked and what became of each finding; [readReview](../scripts/land.mjs) gives its shape.
-  land.mjs refuses a record without them, and a branch with commits after that one other than merges of `dev` and the formatter's.
+- Every landing passes an independent review first: a reviewer that never saw the work runs `code-review` at `high` or above on the branch against `dev`, the author fixes each finding or dismisses it with a reason, and that reviewer checks both; the dazedtl-land skill says when a fresh reviewer follows, up to three.
+  land.mjs refuses a review record without the fields [readReview](../scripts/land.mjs) names, and a branch with commits after its head other than merges of `dev` and the formatter's.
   Each landed record joins `dazedtl-reviews.jsonl` in the shared Git directory with its branch and range, to show what reviews catch.
 - A failed test run runs once more after the machine's load drops; a pass then is reported as `Flaky:`, and a second failure stops the landing.
 - Both sides' [release notes](#release-notes) are joined, and conflicts only in the generated API contracts are resolved by writing them again.
@@ -184,7 +183,7 @@ One landing runs at a time, under a lock that a release also holds.
 
 A Discord intake worker lands in two steps, since it works in its own clone and may never write the main checkout.
 It runs `node scripts/land.mjs --hand-off <dir>` with the directory its prompt gives: the same format, merge and checks against `origin`'s `dev`, leaving the branch as `handoff.bundle` and `handoff.json` there, with no review, lock, app wait or push.
-The intake has its own reviewer review exactly that bundle, then runs the main checkout's own `node scripts/land.mjs --finish <dir> --review <file.json>`.
+The intake has its own reviewer, only one, review exactly that bundle, then runs the main checkout's own `node scripts/land.mjs --finish <dir> --review <file.json>`.
 Under the lock, that checks the bundle with Git alone and runs nothing from it, then fast-forwards `dev`, records the review and pushes as a landing does.
 It never waits without a limit: it exits 3 when `dev` moved after the checks, so the worker merges `dev` and hands off again, 4 at once while your DazedTL is open, and 5 when the main checkout can't take it now, such as with uncommitted changes or the lock held over 10 minutes.
 
