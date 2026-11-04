@@ -1537,7 +1537,7 @@ def scan(
         """The ids of the variable names an MV/MZ System.json's game draws
         (util/rpgmaker_variable_names), from the plugins and data files
         beside it."""
-        from util.rpgmaker_variable_names import drawn, read_facts
+        from util.rpgmaker_variable_names import drawn, plugin, read_facts
 
         if not _rpgmaker_data(name) or PurePosixPath(name).name != "System.json":
             return frozenset()
@@ -1554,9 +1554,13 @@ def scan(
         system = _json(decode_text(data) or "")
         return drawn(
             entries,
-            lambda plugin: text(
-                files.get(
-                    (plugins.parent / "plugins" / f"{plugin}.js").as_posix().casefold()
+            lambda name: plugin(
+                text(
+                    files.get(
+                        (plugins.parent / "plugins" / f"{name}.js")
+                        .as_posix()
+                        .casefold()
+                    )
                 )
             ),
             lambda: (

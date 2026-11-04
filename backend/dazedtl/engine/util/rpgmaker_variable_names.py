@@ -27,7 +27,6 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Callable, Iterable, Iterator
-from functools import lru_cache
 from pathlib import Path
 from typing import Any, NamedTuple
 
@@ -74,12 +73,10 @@ def _carries(kind: str, structs: dict[str, dict[str, str]], seen=frozenset()) ->
     )
 
 
-# About one game's plugins, whose text _PLUGINS keeps too.
-@lru_cache(maxsize=256)
-def drawing(source: str) -> Drawing | None:
+def drawing(source: str, code: str | None = None) -> Drawing | None:
     """What a plugin's file declares names a variable it draws, or None when
-    its code, outside its help, draws no variable name."""
-    if not _READS.search(lex(source)[0]):
+    its *code*, the file outside its comments, draws no variable name."""
+    if not _READS.search(lex(source)[0] if code is None else code):
         return None
     settings: dict[str, str] = {}
     arguments: dict[str, dict[str, str]] = {}
@@ -229,30 +226,39 @@ def read_facts(name: str, text: str | None) -> Facts | None:
         return None
 
 
-# About one game's plugins, whose text _PLUGINS keeps too.
-@lru_cache(maxsize=256)
-def _literals(source: str) -> tuple[str, ...]:
-    return tuple(lex(source)[1])
+class Plugin(NamedTuple):
+    """What a plugin's file tells of variable names: what it draws, and its
+    code's string literals, which may look a name up."""
+
+    drawing: Drawing | None
+    literals: tuple[str, ...]
+
+
+def plugin(source: str | None) -> Plugin:
+    """A plugin file's text read once, as :func:`drawn` reads it; an
+    unreadable file draws and looks up nothing."""
+    code, literals = lex(source or "")
+    return Plugin(drawing(source or "", code), tuple(literals))
 
 
 def drawn(
     plugins: PluginList,
-    source: Callable[[str], str | None],
+    read: Callable[[str], Plugin],
     files: Callable[[], Iterable[Facts]],
     system: Any,
 ) -> frozenset[int]:
     """The ids of the variables whose names in *system* (System.json) the
     loaded *plugins* draw and no code could look up, from each plugin's file
-    by its name (*source*, None when unreadable) and the facts of the game's
+    read by its name (*read*, :func:`plugin`) and the facts of the game's
     other data files, which *files* gives only for a game whose plugins draw
     a name."""
     names = variable_names(system)
     loaded = [entry for entry in plugins.loaded() if isinstance(entry.get("name"), str)]
-    sources = {entry["name"]: source(entry["name"]) or "" for entry in loaded}
+    files_read = {entry["name"]: read(entry["name"]) for entry in loaded}
     drawings = {
-        name: found
-        for name, text in sources.items()
-        if (found := drawing(text)) is not None
+        name: found.drawing
+        for name, found in files_read.items()
+        if found.drawing is not None
     }
     if not names or not drawings:
         return frozenset()
@@ -261,10 +267,9 @@ def drawn(
     # quoted.
     values: set[str] = set()
     code: list[str] = []
-    for text in sources.values():
-        literals = _literals(text)
-        values.update(literal.strip() for literal in literals)
-        code += literals
+    for found in files_read.values():
+        values.update(literal.strip() for literal in found.literals)
+        code += found.literals
     for entry in loaded:
         parameters = entry.get("parameters")
         if not isinstance(parameters, dict):
@@ -317,11 +322,11 @@ def _text(path: Path) -> str | None:
 
 
 class _Plugins(NamedTuple):
-    """A game's loaded plugins and their files' text, by plugin name, and
-    whether any of them draws a variable name."""
+    """A game's loaded plugins and their files as :func:`plugin` reads them,
+    by plugin name, and whether any of them draws a variable name."""
 
     plugins: PluginList
-    sources: dict[str, str | None]
+    files: dict[str, Plugin]
     draws: bool
 
 
@@ -354,14 +359,12 @@ def _plugins(data: Path) -> tuple[tuple, _Plugins]:
     key = (*listed, _signature(js / f"{name}.js" for name in names))
     found = _PLUGINS.get(key)
     if found is None:
-        sources = {name: _text(js / f"{name}.js") for name in names}
+        files = {name: plugin(_text(js / f"{name}.js")) for name in names}
         found = _keep(
             _PLUGINS,
             key,
             _Plugins(
-                plugins,
-                sources,
-                any(drawing(text) for text in sources.values() if text),
+                plugins, files, any(each.drawing for each in files.values())
             ),
         )
     return key, found
@@ -402,7 +405,7 @@ def data_drawn(data_folder: str | Path) -> frozenset[int]:
         except ValueError:
             document = None
         found = _keep(
-            _DRAWN, key, drawn(plugins.plugins, plugins.sources.get, every, document)
+            _DRAWN, key, drawn(plugins.plugins, lambda name: plugins.files.get(name) or plugin(None), every, document)
         )
     return found
 
