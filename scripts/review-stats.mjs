@@ -268,8 +268,8 @@ export function summarize(landings, fixes, { now, fixCommits }) {
 
 /**
  * Each chain of fixes, newest first, whose bug came from a fix that another
- * landing, or none in the log, held: the place AGENTS.md sends to a rework
- * instead of another fix. A fix of the fix its own landing brought in is a
+ * landing, or none in the log, held. When they fix one behavior, AGENTS.md
+ * already asked for a rework at the second. A fix of the fix its own landing brought in is a
  * review's catch, not a link.
  * @param {Fix[]} fixes
  * @param {Map<string, Landing>} owner
@@ -448,10 +448,12 @@ function main() {
         .join(", ")}`,
     );
   if (summary.chains.length)
-    console.log("Fix chains, each fix's bug from the fix after it:");
+    console.log(
+      "Fix chains, each fix's bug from the fix after it; one behavior fixed twice goes to a rework (AGENTS.md):",
+    );
   for (const chain of summary.chains)
     console.log(
-      `  ${chain.map(short).join(" <- ")}${chain.length >= 3 ? `: ${chain.length} fixes in a row, so the next goes to a rework (AGENTS.md)` : ""}`,
+      `  ${chain.map(short).join(" <- ")}${chain.length >= 3 ? `: ${chain.length} fixes in a row` : ""}`,
     );
   for (const escape of summary.escaped)
     console.log(
