@@ -13,17 +13,16 @@ import { GuideLink } from "../ui/GuideLink";
  * problem copies a bug report, and Share a fix a task for the user's
  * assistant, which writes up a fix it made in the game. One line below them
  * says how the last copy went; a success fades away by itself, a failure
- * stays. Both wait for the workspace to open like the rest of the sidebar,
- * but a report needs no backend, so it opens as soon as startup has failed.
+ * stays. A report needs no backend, so it stays open while the app starts,
+ * even when startup hangs; Share a fix waits for the workspace like the rest
+ * of the sidebar.
  */
 export function ShareActions({
   project,
   opened,
-  failed,
 }: {
   project?: Project | null;
   opened: boolean;
-  failed: boolean;
 }) {
   const action = useAction();
   const context: ReportContext = {
@@ -54,7 +53,6 @@ export function ShareActions({
     <>
       <Button
         variant="quiet"
-        disabled={!opened && !failed}
         pending={action.busy && action.key === "report"}
         title="Copy a report for Discord with your version, system, game and recent errors filled in"
         onClick={() =>

@@ -377,11 +377,7 @@ export default function App() {
                 <BookOpen size={18} />
                 Guide
               </Button>
-              <ShareActions
-                project={project}
-                opened={!!state}
-                failed={application.stopped || unopened}
-              />
+              <ShareActions project={project} opened={!!state} />
               <Button
                 aria-current={state?.screen === "settings" ? "page" : undefined}
                 disabled={!state}
