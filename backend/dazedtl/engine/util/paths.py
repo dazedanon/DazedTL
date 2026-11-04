@@ -115,6 +115,12 @@ GAME_SKILL_RESERVED_NAMES = frozenset({"quirks.md", "game.md", "translation.md"}
 # It is the project's, like the glossary: Git keeps it, translation requests
 # never carry it and players never download it.
 GAME_NOTES_FILENAME = "AGENTS.md"
+# The notes' name in any case as a .gitignore, .gitattributes and pathspec
+# pattern (is_game_notes).
+GAME_NOTES_PATTERN = "".join(
+    f"[{letter.lower()}{letter.upper()}]" if letter.isalpha() else letter
+    for letter in GAME_NOTES_FILENAME
+)
 
 GAME_TOOL_GITIGNORE_BEGIN = "# BEGIN DazedTL portable translation settings"
 GAME_TOOL_GITIGNORE_END = "# END DazedTL portable translation settings"
@@ -132,7 +138,7 @@ GAME_TOOL_GITIGNORE_BLOCK = "\n".join(
         "/.dazedtl/skills/*",
         # Any case, as Windows' Git and the skill loader read the extension.
         "!/.dazedtl/skills/*.[mM][dD]",
-        "!/" + GAME_NOTES_FILENAME,
+        "!/" + GAME_NOTES_PATTERN,
         GAME_TOOL_GITIGNORE_END,
     )
 ) + "\n"
@@ -157,13 +163,16 @@ GAME_REPOSITORY_METADATA = (".gitignore", ".gitattributes", "README.md")
 # archive`, which builds a patch's ZIP and the forges' downloads GameUpdate
 # applies, leaves them out.
 GAME_TOOL_FOLDERS = (GAME_METADATA_RELATIVE.as_posix(), "ace_json")
-GAME_TOOL_EXPORT_IGNORED = (*GAME_TOOL_FOLDERS, GAME_NOTES_FILENAME)
+GAME_TOOL_EXPORT_IGNORED = (*GAME_TOOL_FOLDERS, GAME_NOTES_PATTERN)
 # The repository's description files stay out of archives too, so a patch's
 # ZIP carries only the game.
 GAME_TOOL_ARCHIVE_EXCLUDES = (*GAME_TOOL_EXPORT_IGNORED, *GAME_REPOSITORY_METADATA)
 GAME_TOOL_GITATTRIBUTES_RULES = tuple(
     f"/{path} export-ignore" for path in GAME_TOOL_EXPORT_IGNORED
 )
+# The rule that kept only the notes' exact name out, which the rule for any
+# case replaces where it stands.
+_LEGACY_NOTES_GITATTRIBUTES_RULE = f"/{GAME_NOTES_FILENAME} export-ignore"
 GAME_TOOL_GITATTRIBUTES_COMMENT = (
     "# DazedTL's glossary, settings, skills and assistant notes, and VX Ace's"
     " ace_json, stay out of players' downloads.\n"
@@ -477,7 +486,14 @@ def is_game_tool_file(relative: str) -> bool:
 
 def game_tool_gitattributes_text(existing: str) -> str:
     """Return a game's .gitattributes with the rules keeping DazedTL's own
-    files out of archives, adding each once."""
+    files out of archives, adding each once, the notes' rule for any case in
+    place of the exact-case one that came before it."""
+    existing = re.sub(
+        rf"^{re.escape(_LEGACY_NOTES_GITATTRIBUTES_RULE)}(?=\r?$)",
+        f"/{GAME_NOTES_PATTERN} export-ignore",
+        existing,
+        flags=re.MULTILINE,
+    )
     present = {line.strip() for line in existing.splitlines()}
     missing = [rule for rule in GAME_TOOL_GITATTRIBUTES_RULES if rule not in present]
     if not missing:

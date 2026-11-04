@@ -2425,6 +2425,36 @@ class WorkflowTests(unittest.TestCase):
             agents.read_text(encoding="utf-8"), "Repack Data.wolf after injection."
         )
 
+    def test_assistant_notes_in_another_case_never_reach_players(self):
+        # Windows ignores case, so `!/AGENTS.md` let an `agents.md` into Git
+        # under its own case, and the forges' archives, which never ignore
+        # case, shipped it to players, as did the patch ZIP.
+        import tarfile
+
+        from dazedtl.compatibility.checkpoint_commits import _git, for_action, running
+        from dazedtl.compatibility.game_write import write_game
+        from util.len_git import setup_git
+        from util.len_translation import LenProject
+        from util.paths import is_game_tool_file
+
+        setup_git(LenProject(self.game), version="1.0", current_is_untranslated=True)
+        _git(self.game, "config", "core.ignorecase", "true")
+        (self.game / "agents.md").write_text("Repack Data.wolf.", encoding="utf-8")
+        with (
+            running(for_action("export_selected")),
+            write_game(self.game, paths=["source.json"]) as written,
+        ):
+            written.put("source.json", b'{"line": "Yes."}')
+        self.assertTrue(is_game_tool_file("agents.md"))
+        download = self.root / "download.tar"
+        case_sensitive = ("-c", "core.ignorecase=false")
+        _git(self.game, *case_sensitive, "archive", "-o", str(download), "HEAD")
+        with tarfile.open(download) as archive:
+            self.assertIn("source.json", archive.getnames())
+            self.assertNotIn("agents.md", archive.getnames())
+        patch_files = TranslationEngine(self.profile).patch_files(self.game, [])
+        self.assertEqual(patch_files["files"], ["source.json"])
+
     def test_a_patch_update_records_an_older_projects_new_originals(self):
         # A project set up before Git kept its original files, which reads
         # its backup, recorded nothing for a patch laid over the game, so an
