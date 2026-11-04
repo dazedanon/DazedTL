@@ -39,6 +39,13 @@ import {
 import { NOTES } from "./changelog.mjs";
 import { generated } from "./contracts.mjs";
 import {
+  commitFormat,
+  finders,
+  isFix,
+  missingTrailers,
+  readCommits,
+} from "./fix-trailers.mjs";
+import {
   devMoved,
   gitIn,
   LockBusy,
@@ -208,6 +215,57 @@ export function reviewedHead(git, head) {
       `These commits came after the review record's head; have the reviewer check them and record the new head:\n${after.join("\n")}`,
     );
   return commit;
+}
+
+/**
+ * Says which of the branch's own fix commits after `base`, merges left out
+ * since those bring in what other landings checked, end without the
+ * trailers AGENTS.md asks for (fix-trailers.mjs) or name a commit that is
+ * not before them; null when none do.
+ * @param {ReturnType<typeof gitIn>} git
+ * @param {string} base
+ * @returns {string | null}
+ */
+export function untrailedFixes(git, base) {
+  const listed = git([
+    "log",
+    "--no-merges",
+    `--format=${commitFormat}`,
+    `${base}..HEAD`,
+  ]);
+  if (listed.status !== 0)
+    return `Git can't list the branch's commits: ${listed.stderr.trim()}`;
+  const untrailed = readCommits(listed.stdout)
+    .filter((commit) => isFix(commit.subject))
+    .flatMap((commit) => {
+      const lacks = missingTrailers(commit);
+      for (const hash of commit.hashes) {
+        const named = git([
+          "rev-parse",
+          "--verify",
+          "--quiet",
+          `${hash}^{commit}`,
+        ]).stdout.trim();
+        if (
+          !named ||
+          named === commit.commit ||
+          git(["merge-base", "--is-ancestor", named, commit.commit]).status !==
+            0
+        )
+          lacks.push(`Introduced-by ${hash} names no commit before it`);
+      }
+      return lacks.length
+        ? [
+            `${commit.commit.slice(0, 7)} ${commit.subject}: ${lacks.join("; ")}`,
+          ]
+        : [];
+    });
+  if (!untrailed.length) return null;
+  return [
+    "These fix commits lack the trailers AGENTS.md asks for:",
+    ...untrailed,
+    `End each one's message, after a blank line, with "Introduced-by: <hash>" naming the commit that brought the bug in, this branch's own included, or "Introduced-by: unknown" when the history doesn't show it or "none" when no commit did, and with "Found-by: <who>", one of ${finders.join(", ")}. Reword the last commit with git commit --amend, an earlier one with a rebase.`,
+  ].join("\n");
 }
 
 /** Whether the user's own DazedTL runs from the main checkout. */
@@ -470,6 +528,11 @@ export async function land(cwd, deps, reviewFile) {
   const found = featureBranch(cwd, log);
   if (typeof found === "number") return found;
   const { top, git, branch } = found;
+  const untrailed = untrailedFixes(git, "refs/heads/dev");
+  if (untrailed) {
+    log(`${untrailed} Then record the new head in the review record.`);
+    return 1;
+  }
   try {
     review = { ...review, head: reviewedHead(git, review.head) };
   } catch (error) {
@@ -868,6 +931,11 @@ export async function handOff(cwd, deps, dir) {
   if (fetched.status !== 0) {
     log(tail(fetched.stdout + fetched.stderr));
     log("Fetching dev from origin failed; nothing was handed off.");
+    return 1;
+  }
+  const untrailed = untrailedFixes(git, originDev);
+  if (untrailed) {
+    log(`${untrailed} Then hand off again.`);
     return 1;
   }
   const time = timer(deps.now);

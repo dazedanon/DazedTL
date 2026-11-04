@@ -15,10 +15,12 @@ import {
   finishHandOff,
   formatBranch,
   handOff,
+  land,
   mergeDev,
   readReview,
   reviewedHead,
   timer,
+  untrailedFixes,
   waitForApp,
   onWindows,
 } from "../scripts/land.mjs";
@@ -427,6 +429,90 @@ test("a landing's review covers every commit of the branch but merges of dev and
     assert.throws(() => reviewedHead(git, head), /not a commit on this branch/);
 });
 
+test("a landing refuses a fix of its own without the trailers saying where its bug came from and who found it", async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dazedtl-land-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const git = gitIn(dir);
+  git(["init", "-q", "-b", "dev"]);
+  git(["config", "user.name", "Test"]);
+  git(["config", "user.email", "test@example.com"]);
+  const commit = (message: string) => {
+    fs.writeFileSync(path.join(dir, "code.txt"), message);
+    git(["commit", "-qam", message]);
+    return git(["rev-parse", "HEAD"]).stdout.trim();
+  };
+  fs.writeFileSync(path.join(dir, "code.txt"), "");
+  git(["add", "-A"]);
+  git(["commit", "-qm", "base"]);
+  git(["checkout", "-qb", "work"]);
+  const work = commit("feat: work");
+  // dev's fixes landed under their own checks, so a merge of dev brings
+  // in none the branch must answer for.
+  git(["checkout", "-q", "dev"]);
+  const elsewhere = commit("fix: on dev");
+  git(["checkout", "-q", "work"]);
+  git(["merge", "-q", "--no-edit", "-X", "theirs", "dev"]);
+  assert.equal(untrailedFixes(git, "dev"), null);
+  commit("fix(ui): bare");
+  const reviewFile = path.join(dir, "..", `${path.basename(dir)}.json`);
+  t.after(() => fs.rmSync(reviewFile, { force: true }));
+  fs.writeFileSync(
+    reviewFile,
+    JSON.stringify({
+      level: "high",
+      reviewer: "independent",
+      head: work,
+      findings: [],
+    }),
+  );
+  const logged: string[] = [];
+  const deps = { log: (line: string) => logged.push(line) } as any;
+  if (!onWindows(() => {})) {
+    assert.equal(await land(dir, deps, reviewFile), 1);
+    assert.match(
+      logged.join("\n"),
+      /lack the trailers[^]*\n\w{7} fix\(ui\): bare: no Introduced-by trailer; no Found-by trailer\n[^]*review, ci, scenario, playtest, discord, user, author[^]*new head in the review record/,
+    );
+  }
+  const reword = (...trailers: string[]) =>
+    git([
+      "commit",
+      "-q",
+      "--amend",
+      "-m",
+      "fix(ui): bare",
+      "-m",
+      trailers.join("\n"),
+    ]);
+  // A note may follow a value, and a commit of the branch's own may be named.
+  reword("Introduced-by: unknown, before the history", "Found-by: Discord");
+  assert.equal(untrailedFixes(git, "dev"), null);
+  reword(
+    "Introduced-by: none",
+    `Introduced-by: ${work.slice(0, 8)}`,
+    "Found-by: review",
+  );
+  assert.equal(untrailedFixes(git, "dev"), null);
+  reword(
+    "Introduced-by: v2.61.0",
+    `Introduced-by: ${elsewhere}`,
+    "Found-by: somebody",
+  );
+  const refused = untrailedFixes(git, "refs/heads/dev") ?? "";
+  assert.match(
+    refused,
+    /Introduced-by "v2\.61\.0" is no commit hash, unknown or none/,
+  );
+  assert.match(refused, /Found-by "somebody" is none of review,/);
+  // dev's commit is merged in, so it is before the fix.
+  assert.doesNotMatch(refused, new RegExp(`Introduced-by ${elsewhere}`));
+  reword("Introduced-by: deadbeef1", "Found-by: user", "Found-by: ci");
+  assert.match(
+    untrailedFixes(git, "dev") ?? "",
+    /2 Found-by trailers, not the one that found it; Introduced-by deadbeef1 names no commit before it/,
+  );
+});
+
 test("a sandboxed worker hands off a checked branch without writing the main checkout, and --finish lands it", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "dazedtl-land-"));
   const main = path.join(root, "main");
@@ -588,4 +674,15 @@ test("a sandboxed worker hands off a checked branch without writing the main che
   logged.length = 0;
   assert.equal(await finish(), 3);
   assert.match(logged.join("\n"), /^dev moved since the hand-off's checks/m);
+
+  // A fix without its trailers is refused before anything else runs.
+  commit(clone, "fix.txt", "fix\n");
+  atClone(["commit", "-q", "--amend", "-m", "fix: unexplained"]);
+  logged.length = 0;
+  assert.equal(await handOff(clone, deps, dir), 1);
+  assert.match(
+    logged.join("\n"),
+    /fix: unexplained: no Introduced-by[^]*Then hand off again\.$/,
+  );
+  assert.equal(fs.existsSync(handoffFile), false);
 });

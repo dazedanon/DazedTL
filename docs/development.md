@@ -172,7 +172,7 @@ A fix you found in a game but didn't code can go through the guide's [Share a fi
 One landing runs at a time, under a lock that a release also holds.
 
 - Every landing passes an independent review first: a reviewer that never saw the work runs `code-review` at `high` or above on the branch against `dev`, the author fixes each finding or dismisses it with a reason, and that reviewer checks both; the dazedtl-land skill says when a fresh reviewer follows.
-  land.mjs refuses a review record [readReview](../scripts/land.mjs) can't read, and a branch with commits after its head other than merges of `dev` and the formatter's.
+  land.mjs refuses a review record [readReview](../scripts/land.mjs) can't read, a branch with commits after its head other than merges of `dev` and the formatter's, and, like `--hand-off`, a fix commit of its own without [AGENTS.md](../AGENTS.md)'s trailers.
   Each landed record joins `dazedtl-reviews.jsonl` in the shared Git directory with its branch and range; `node scripts/review-stats.mjs` sums up what reviews caught and which bugs got past them.
 - A failed test run runs once more after the machine's load drops; a pass then is reported as `Flaky:`, and a second failure stops the landing.
 - Both sides' [release notes](#release-notes) are joined, and conflicts only in the generated API contracts are resolved by writing them again.
