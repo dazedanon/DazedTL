@@ -48,7 +48,10 @@ class Definition:
     file back with the rest of the game, or "keep" when every checkpoint but
     its own, Go back and Start over leave it as it is. `holds_up` is the work
     an unsaved draft of it holds up. `any_case` matches its file name in any
-    case, as assistants and Windows name it."""
+    case, as assistants and Windows name it. A document requests don't
+    carry says what it is for in `description`, with `help` on where it is
+    kept, {file} naming its file, which the editors show in place of the
+    file."""
 
     key: str
     path: str
@@ -60,6 +63,8 @@ class Definition:
     holds_up: frozenset[str]
     legacy: tuple[str, ...] = ()
     any_case: bool = False
+    description: str = ""
+    help: str = ""
 
     def matches(self, relative):
         """Whether a game-relative path is this document's file."""
@@ -118,6 +123,11 @@ ASSISTANT_NOTES = Definition(
     checkpoints="keep",
     holds_up=frozenset({HANDOFF}),
     any_case=True,
+    description="Notes every assistant reads first and keeps current. Never sent"
+    " with translation requests.",
+    help="Saved as {file} in the game folder and kept in the game's Git, so they"
+    " reach other computers and assistants, and anyone who can see the game's"
+    " repository. Players' downloads leave them out.",
 )
 # In the editors' tab order; custom skills follow.
 FIXED = (GLOSSARY, QUIRKS, GAME_CONTEXT, ASSISTANT_NOTES)

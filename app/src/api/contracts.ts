@@ -24,6 +24,8 @@ export type Document = {
   kind: "core" | "optional" | "custom";
   requests: boolean;
   holdsUp: ("handoff" | "work")[];
+  description: string;
+  help: string;
   state: "saved" | "missing" | "unreadable";
   reason?: string;
   changed: boolean;

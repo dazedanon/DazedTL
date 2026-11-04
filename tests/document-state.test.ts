@@ -21,6 +21,8 @@ const document = (
   kind: key === "notes" ? "optional" : "core",
   requests: key !== "notes",
   holdsUp: key === "notes" ? ["handoff"] : ["handoff", "work"],
+  description: "",
+  help: "",
   state: "missing",
   changed: false,
   ...values,

@@ -53,7 +53,7 @@ export function DocumentsChangedDialog({
           {titles.join(", ")}, as when an assistant edits {one ? "it" : "them"}.
         </p>
         {names.map((name) => (
-          <section key={name} className="documents-changed-diff">
+          <section key={name}>
             <p className="muted">
               {one ? "Your draft" : `Your ${documents[name].title} draft`} (+)
               compared with the file (−):

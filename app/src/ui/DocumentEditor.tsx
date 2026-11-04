@@ -8,8 +8,8 @@ import { Tabs } from "./Tabs";
 /**
  * The guidance documents' editor, the same in every method: a tab for each
  * document but the custom skills, which a select picks; beside each, its
- * file, or what it is for when requests don't carry it, and where it
- * stands; then its text, or why DazedTL can't read its file.
+ * file, or its description, and where it stands; then its text, or why
+ * DazedTL can't read its file.
  */
 export function DocumentEditor({
   documents,
@@ -92,7 +92,14 @@ export function DocumentEditor({
           }
         >
           <div className="document-editor-state">
-            {document.requests ? (
+            {document.description ? (
+              <span className="document-editor-note muted">
+                {document.description}{" "}
+                <HelpPopover label={document.title}>
+                  {document.help}
+                </HelpPopover>
+              </span>
+            ) : (
               <span className="document-editor-file">
                 <span className="path">{document.file}</span>
                 {formats?.[name] && (
@@ -100,17 +107,6 @@ export function DocumentEditor({
                     {formats[name]}
                   </HelpPopover>
                 )}
-              </span>
-            ) : (
-              <span className="document-editor-note muted">
-                Notes every assistant reads first and keeps current. Never sent
-                with translation requests.{" "}
-                <HelpPopover label={document.title}>
-                  Saved as {document.file} in the game folder and kept in the
-                  game&apos;s Git, so they reach other computers and assistants,
-                  and anyone who can see the game&apos;s repository.
-                  Players&apos; downloads leave them out.
-                </HelpPopover>
               </span>
             )}
             <span

@@ -99,6 +99,8 @@ def _document(root, found):
         "kind": found.kind,
         "requests": found.requests,
         "holdsUp": sorted(found.holds_up),
+        "description": found.description,
+        "help": found.help.format(file=name),
         "changed": False,
     }
     try:

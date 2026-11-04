@@ -1173,9 +1173,6 @@ export function useGuidedWorkspace({
     actionKey: "context:save",
   });
   const saveDocuments = () => guidanceSave.save(Object.keys(context.drafts));
-  // The drafts that hold up work reading what translation requests carry;
-  // an Assistant notes draft holds up only handing a task to an assistant.
-  const workDrafts = heldDrafts(state.documents, context.drafts, "work");
   // Back to the saved Line widths; edits to the other options stay, as
   // discarding one guidance document leaves the others.
   const discardWidths = async () => {
@@ -1677,7 +1674,6 @@ export function useGuidedWorkspace({
     chooseFolder,
     saveDocuments,
     guidanceDialog: guidanceSave.dialog,
-    workDrafts,
     source,
     widths,
     discardWidths,

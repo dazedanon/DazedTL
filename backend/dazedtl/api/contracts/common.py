@@ -30,6 +30,10 @@ class Document(TypedDict):
     kind: Literal["core", "optional", "custom"]
     requests: bool
     holdsUp: list[Literal["handoff", "work"]]
+    # What a document requests don't carry is for, shown in place of its
+    # file, and help on where it is kept; empty for the others.
+    description: str
+    help: str
     state: Literal["saved", "missing", "unreadable"]
     reason: NotRequired[str]
     # Whether the file changed on disk since the document's draft began.

@@ -64,6 +64,8 @@ DOCUMENT_FIELDS = (
     "kind",
     "requests",
     "holdsUp",
+    "description",
+    "help",
     "state",
     "reason",
     "changed",

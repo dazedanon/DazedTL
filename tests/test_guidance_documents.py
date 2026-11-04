@@ -188,6 +188,9 @@ class GuidanceDocumentTests(unittest.TestCase):
                     (found.title, found.kind, "missing"),
                 )
                 self.assertEqual(document["holdsUp"], sorted(found.holds_up))
+                # The editors show what a document requests don't carry is
+                # for in place of its file.
+                self.assertEqual(bool(document["description"]), not found.requests)
                 self.assertEqual(save_summary([found.key]), "Save " + found.title)
                 self.assertIn(found.path, written(self.root, [found.key]))
                 self.assertTrue(is_project_file(found.path))
