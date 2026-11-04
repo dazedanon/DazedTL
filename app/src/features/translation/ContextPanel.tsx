@@ -5,6 +5,7 @@ import { useApplication } from "../../app/ApplicationProvider";
 import { useLanguages } from "../../app/LanguagesProvider";
 import { AssistantNotesNote } from "../guided/AssistantNotesNote";
 import { guidanceFormats } from "../guided/guidanceFormats";
+import { assistantNotes } from "../guided/guidanceReview";
 import { useAction } from "../../state/useAction";
 import { useDocumentDraft } from "../../state/useDocumentDraft";
 import {
@@ -64,7 +65,7 @@ export function ContextPanel({
   return (
     <>
       <PageBody ref={body} className="lens-context-body">
-        {name === "notes" ? (
+        {name === assistantNotes ? (
           <p className="muted lens-context-note">
             <AssistantNotesNote />
           </p>

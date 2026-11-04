@@ -11,6 +11,8 @@ DOCUMENTS = {"glossary": (".dazedtl/glossary.txt", "glossary.txt"),
 # The assistant notes the Context editor shows beside the guidance; no
 # translation request carries them, so `documents` leaves them out.
 NOTES = "notes"
+# Their name in both methods' editors and the checkpoints that save them.
+NOTES_TITLE = "Assistant notes"
 
 def documents(root):
     root = Path(root)

@@ -40,7 +40,7 @@ import {
   selection,
   sourceErrors,
 } from "../eventTextSelection";
-import { assistantNotes, guidanceNames } from "../guidanceReview";
+import { guidanceAvailability, guidanceNames } from "../guidanceReview";
 import { historyOutcome } from "../historyView";
 import {
   activeRun,
@@ -1159,11 +1159,8 @@ export function useGuidedWorkspace({
     );
   const savedNames = guidanceNames(state.documents, context.drafts);
   const saveDocuments = (names: string[]) => {
-    // A missing guidance file is created from the text shown for it; the
-    // assistant notes only once something is written in them.
-    const missing = names.filter(
-      (name) => name !== assistantNotes && !discovery.documents[name]?.exists,
-    );
+    // A missing core guidance file is created from the text shown for it.
+    const { missing } = guidanceAvailability(discovery.documents);
     return action.run(
       async () => {
         // One save, so one checkpoint.

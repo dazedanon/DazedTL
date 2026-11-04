@@ -1166,9 +1166,11 @@ class Guided:
 
 def guidance_title(name):
     """A guidance document's name as the Guidance task's tabs show it."""
+    from desktop.backend.guidance import NOTES, NOTES_TITLE
+
     return {
         "glossary": "Glossary",
         "quirks": "Style & quirks",
         "game": "Game context",
-        "notes": "Assistant notes",
+        NOTES: NOTES_TITLE,
     }.get(name) or "Skill: " + name.removeprefix("custom:")
