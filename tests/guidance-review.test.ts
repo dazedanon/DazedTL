@@ -3,6 +3,7 @@ import test from "node:test";
 import type { ContextSetup, GuidedState } from "../app/src/api/contracts.ts";
 import {
   guidanceAvailability,
+  guidanceEdited,
   guidanceNames,
 } from "../app/src/features/guided/guidanceReview.ts";
 import {
@@ -130,6 +131,13 @@ test("guidance completion follows file presence independently of old review and 
   // draft: listed, every Save guidance failed on them, glossary included.
   const draft = { notes: { text: "My notes", revision: "old" } };
   assert.ok(!guidanceNames({}, draft).includes("notes"));
+  // Nor does that hidden draft hold up estimates and runs, which it would
+  // with no way to discard it.
+  assert.equal(guidanceEdited({}, draft), false);
+  assert.equal(
+    guidanceEdited({ notes: { text: "", revision: "" } }, draft),
+    true,
+  );
   assert.ok(
     guidanceNames({ notes: { text: "", revision: "" } }, draft).includes(
       "notes",

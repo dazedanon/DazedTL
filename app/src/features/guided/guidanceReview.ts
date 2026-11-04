@@ -26,6 +26,12 @@ export function guidanceNames(documents: Documents, drafts: Documents) {
   ];
 }
 
+/** Whether Guidance holds edits Save guidance would send, which estimates
+ * and runs wait for; a draft it leaves out never holds them up. */
+export function guidanceEdited(documents: Documents, drafts: Documents) {
+  return guidanceNames(documents, drafts).some((name) => !!drafts[name]);
+}
+
 export function guidanceAvailability(documents: ContextSetup["documents"]) {
   const missing = coreGuidance.filter((name) => !documents[name]?.exists);
   return { complete: !missing.length, missing };
