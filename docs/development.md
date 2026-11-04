@@ -218,7 +218,7 @@ The [updater](architecture.md#distribution-and-updates) accepts only releases si
 ### Release notes
 
 Every stable release needs notes for users in [release/notes.md](../release/notes.md), and `release.mjs` stops until they're there.
-Each landing users would notice adds its own line there, in its own `docs(release): note ...` commit, since a release can run with no session to write them, such as from the Discord intake.
+Each landing users would notice adds or updates its line there, in its own `docs(release): note ...` commit, since a release can run with no session to write them, such as from the Discord intake.
 Put each line under the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) headings `### Added`, `Changed`, `Deprecated`, `Removed`, `Fixed` and `Security`, one `- ` line per change:
 
 ```markdown
