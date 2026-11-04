@@ -51,7 +51,7 @@ test("review stats put each escaped bug on the landing that let it in", () => {
 test("review stats read only hashes from a trailer and skip a log line they can't read", () => {
   assert.deepEqual(
     namedFixes(
-      "f1 abc1234 on dev\nf2\nf3 (def5678), 1234567890abcdef1234567890abcdef12345678\n",
+      "f1 abc1234 on dev\nf2\nf3 (def5678), 1234567890abcdef1234567890abcdef12345678\nf4 v2.61.0\n",
     ),
     [
       { fix: "f1", names: ["abc1234"] },
@@ -59,6 +59,8 @@ test("review stats read only hashes from a trailer and skip a log line they can'
         fix: "f3",
         names: ["def5678", "1234567890abcdef1234567890abcdef12345678"],
       },
+      // Pointed out in the report rather than dropped.
+      { fix: "f4", names: [] },
     ],
   );
   const independent = {

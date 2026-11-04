@@ -62,7 +62,8 @@ export function loggedLandings(text) {
 /**
  * The fixes in `git log --format="%H %(trailers:key=Introduced-by,...)"`
  * output, each with the commit names its trailers give; words that can't
- * be a hash, such as a note after it, are left out.
+ * be a hash, such as a note after it, are left out, so a trailer with none
+ * leaves its fix with no names, for the report to point out.
  * @param {string} text
  */
 export function namedFixes(text) {
@@ -72,7 +73,7 @@ export function namedFixes(text) {
     const names = words
       .map((word) => word.replace(/^[^0-9a-f]+|[^0-9a-f]+$/gi, ""))
       .filter((word) => /^[0-9a-f]{7,40}$/i.test(word));
-    if (fix && names.length) fixes.push({ fix, names });
+    if (fix && words.length) fixes.push({ fix, names });
   }
   return fixes;
 }
@@ -165,7 +166,11 @@ function main() {
   ).stdout.split("\n");
   const escapes = [];
   let at = 0;
-  for (const { fix, names } of fixes)
+  for (const { fix, names } of fixes) {
+    if (!names.length)
+      problems.push(
+        `Fix ${fix.slice(0, 8)} has an Introduced-by trailer with no commit hash.`,
+      );
     for (const name of names) {
       const introduced = resolved[at++] ?? "";
       if (/^[0-9a-f]{40,64}$/.test(introduced))
@@ -175,6 +180,7 @@ function main() {
           `Fix ${fix.slice(0, 8)} names ${name}, which Git can't find.`,
         );
     }
+  }
   const summary = summarize(withCommits, escapes);
   const short = (/** @type {string} */ hash) => hash.slice(0, 8);
   const count = (/** @type {number} */ n, /** @type {string} */ noun) =>
