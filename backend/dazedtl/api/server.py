@@ -17,6 +17,7 @@ from dazedtl import system
 from dazedtl.api.contracts.methods import METHODS
 from dazedtl.api.local import LocalAPI
 from dazedtl.compatibility import game_write, original_files, original_record
+from dazedtl.compatibility.compare import ACTIONS as COMPARE_ACTIONS
 from dazedtl.compatibility.dazedmtl import ExistingBackend
 from dazedtl.compatibility.runtime import ENGINE_ROOT
 from dazedtl.compatibility.translation import TranslationEngine
@@ -531,9 +532,24 @@ class Application:
                 assistant_tasks = self.assistant_tasks.view(project["id"])
             except ValueError, OSError, RuntimeError, subprocess.SubprocessError:
                 assistant_tasks = []
+        compare = []
+        if project:
+            # Each method's comparisons are operations filed under its
+            # Guided record or its project (translation/compare Game.owner).
+            owners = {project["id"], project.get("backend_id")}
+            compare = [
+                views.job(job)
+                for job in sorted(
+                    self.backend.operations.jobs.values(),
+                    key=lambda job: job["created"],
+                    reverse=True,
+                )
+                if job["project_id"] in owners and job["action"] in COMPARE_ACTIONS
+            ][:40]
         return {
             "application": views.application(state),
             "assistantTasks": assistant_tasks,
+            "compareOperations": compare,
             "translation": current,
             "translationError": error,
             "guided": legacy,

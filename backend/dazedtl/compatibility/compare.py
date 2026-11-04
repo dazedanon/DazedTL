@@ -37,6 +37,7 @@ from .full_estimate import (
 ESTIMATE, TRANSLATE = "compare_estimate", "compare_translate"
 # Context's Cost estimate for a compared model (full_estimate.run).
 WHOLE_GAME = "compare_whole_game"
+ACTIONS = (ESTIMATE, TRANSLATE, WHOLE_GAME)
 # The requests a model's result keeps for Show request.
 KEPT_REQUESTS = 20
 # What a comparison's test-only guidance is saved as in a run's snapshot,

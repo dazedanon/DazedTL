@@ -2,6 +2,7 @@ import { useEffect, useEffectEvent, useRef, useState } from "react";
 import {
   BookOpen,
   Bot,
+  Columns2,
   Gamepad2,
   Route,
   Settings2,
@@ -39,6 +40,7 @@ import Translation, {
   type TranslationView,
 } from "../features/translation/Translation";
 import ManualTranslation from "../features/translation/ManualTranslation";
+import Compare from "../features/compare/Compare";
 import { Menu, MenuItem, MenuSeparator } from "../ui/Menu";
 import { RecentProjectName } from "../features/project/RecentProject";
 import { Button } from "../ui/Button";
@@ -77,6 +79,10 @@ export default function App() {
   const [askMethod, setAskMethod] = useState(false);
   const [intent, setIntent] = useState<GuidedIntent | null>(null);
   const project = state?.project;
+  // Compare stays mounted after its first visit too, keeping each tab's
+  // choices and results while another page shows; each game starts fresh.
+  const [compareOpened, setCompareOpened] = useState(false);
+  if (state?.screen === "compare" && !compareOpened) setCompareOpened(true);
   // Project tabs and requests belong to one game; switching starts fresh.
   const [owner, setOwner] = useState(project?.id);
   if (owner !== project?.id) {
@@ -86,6 +92,7 @@ export default function App() {
     setHistoryTab("runs");
     setIntent(null);
     setMethodOpen(false);
+    setCompareOpened(state?.screen === "compare");
   }
   if (askMethod && project) {
     setAskMethod(false);
@@ -367,6 +374,18 @@ export default function App() {
                   Translation
                 </Button>
               )}
+              {project && (
+                <Button
+                  aria-current={
+                    state?.screen === "compare" ? "page" : undefined
+                  }
+                  disabled={action.busy || !project.available}
+                  onClick={() => navigate("compare")}
+                >
+                  <Columns2 size={18} />
+                  Compare
+                </Button>
+              )}
             </nav>
             <div className="sidebar-bottom">
               <Button
@@ -479,7 +498,8 @@ export default function App() {
                       <p className="muted">Opening your workspace…</p>
                     )
                   ) : state.screen === "settings" ||
-                    state.screen === "guide" ? null : workspace &&
+                    state.screen === "guide" ||
+                    state.screen === "compare" ? null : workspace &&
                     project?.method === "guided" ? (
                     <GuidedWorkflow
                       key={project.id}
@@ -533,6 +553,21 @@ export default function App() {
                       openGuided={openGuided}
                     />
                   )}
+                  {project?.available &&
+                    (compareOpened || state?.screen === "compare") && (
+                      <div
+                        hidden={state?.screen !== "compare"}
+                        style={{ display: "contents" }}
+                      >
+                        <ErrorBoundary label="Compare">
+                          <Compare
+                            key={project.id}
+                            project={project}
+                            visible={state?.screen === "compare"}
+                          />
+                        </ErrorBoundary>
+                      </div>
+                    )}
                 </OriginalRecordProvider>
               </LanguagesProvider>
             </ErrorBoundary>

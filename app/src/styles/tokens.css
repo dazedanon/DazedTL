@@ -126,6 +126,12 @@
   --change-label-width: 5.5rem;
   --field-column-gap: var(--space-4);
   --action-column-width: 19rem;
+  /* Compare models: Tune settings' column and its labels, the Add models
+     dialog's height and the test glossary's editor. */
+  --compare-settings-width: 26rem;
+  --compare-label-width: 8rem;
+  --compare-dialog-height: 40rem;
+  --compare-glossary-height: 24rem;
   /* Image Manager's preview column beside the task and grid; narrow
      windows give the grid more of the row. */
   --image-viewer-width: 45%;

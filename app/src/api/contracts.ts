@@ -3119,6 +3119,7 @@ export type WorkspaceSnapshot = {
   plugins?: PluginState | null;
   pluginsError?: string;
   pluginsForeign?: PluginForeignWork;
+  compareOperations?: Job[];
 };
 
 export type ProjectRequest = {
