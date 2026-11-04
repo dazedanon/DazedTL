@@ -4,6 +4,8 @@ import type { Document } from "../app/src/api/contracts.ts";
 import {
   documentStatus,
   draftsRefusal,
+  savedMessage,
+  unreadableLeftOut,
 } from "../app/src/state/documentState.ts";
 import { lineDiff } from "../app/src/ui/lineDiff.ts";
 
@@ -101,4 +103,43 @@ test("the changed-on-disk choice compares the draft with the file in hunks TextD
     ].join("\n"),
   );
   assert.equal(lineDiff("same", "same"), "");
+});
+
+test("a save says which files it left out unread, and never that guidance is saved while one is", () => {
+  // A core file DazedTL can't read kept Guidance incomplete while Save
+  // guidance said "Guidance is already saved.".
+  const documents = {
+    glossary: document("glossary", { state: "saved" }),
+    game: {
+      ...document("glossary", { state: "unreadable" }),
+      file: ".dazedtl/skills/game.md",
+    },
+    notes: document("notes", { state: "unreadable" }),
+  };
+  const drafts = { notes: { text: "Mine", revision: "" } };
+  const whole = unreadableLeftOut(documents, drafts, ["notes"], true);
+  assert.deepEqual(whole, ["game", "notes"]);
+  assert.deepEqual(unreadableLeftOut(documents, {}, [], false), []);
+  assert.equal(
+    savedMessage("Guidance", { documents, saved: [] }, [], ["game"], documents),
+    "DazedTL can't read .dazedtl/skills/game.md; its tab says why.",
+  );
+  assert.equal(
+    savedMessage(
+      "Guidance",
+      { documents, saved: ["glossary"] },
+      [],
+      whole,
+      documents,
+    ),
+    "Guidance saved. DazedTL can't read .dazedtl/skills/game.md, notes; their tabs say why.",
+  );
+  assert.equal(
+    savedMessage("Guidance", { documents, saved: [] }, [], [], documents),
+    "Guidance is already saved.",
+  );
+  assert.equal(
+    savedMessage("Context", null, [], [], documents),
+    "Nothing to save.",
+  );
 });

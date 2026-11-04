@@ -1,5 +1,6 @@
 import { useState } from "react";
-import type { Documents, DocumentsSaved } from "../api/contracts";
+import type { Documents } from "../api/contracts";
+import { savedMessage, unreadableLeftOut } from "../state/documentState";
 import type { useAction } from "../state/useAction";
 import type { useDocumentDraft } from "../state/useDocumentDraft";
 import { DocumentsChangedDialog } from "./DocumentsChangedDialog";
@@ -54,9 +55,7 @@ export function useDocumentsSave({
       );
   }
   function save(names: string[]) {
-    const skipped = names.filter(
-      (name) => documents[name]?.state === "unreadable" && !!draft.drafts[name],
-    );
+    const skipped = unreadableLeftOut(documents, draft.drafts, names, whole);
     const chosen = names.filter(
       (name) => documents[name]?.state !== "unreadable",
     );
@@ -89,25 +88,4 @@ export function useDocumentsSave({
     />
   );
   return { save, dialog };
-}
-
-function savedMessage(
-  label: "Context" | "Guidance",
-  result: DocumentsSaved | null,
-  discarded: string[],
-  skipped: string[],
-  documents: Documents,
-) {
-  const done = result?.saved.length
-    ? `${label} saved.`
-    : discarded.length
-      ? discarded.length === 1
-        ? "Draft discarded."
-        : "Drafts discarded."
-      : label === "Guidance"
-        ? "Guidance is already saved."
-        : "Nothing to save.";
-  if (!skipped.length) return done;
-  const files = skipped.map((name) => documents[name].file).join(", ");
-  return `${done} DazedTL can't read ${files}, so ${skipped.length === 1 ? "its draft stays" : "their drafts stay"}.`;
 }

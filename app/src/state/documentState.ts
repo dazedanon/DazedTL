@@ -3,6 +3,7 @@ import type {
   DocumentDraft,
   DocumentDrafts,
   Documents,
+  DocumentsSaved,
 } from "../api/contracts";
 
 /** The work an unsaved draft can hold up, as each document's definition
@@ -56,4 +57,50 @@ export function draftsRefusal(
   if (!held.length) return "";
   const titles = held.map((name) => documents[name]?.title).filter(Boolean);
   return `Save or discard your ${titles.join(", ") || "guidance"} ${held.length === 1 ? "draft" : "drafts"} in ${tab} first.`;
+}
+
+/**
+ * The documents a save of `names` leaves out because DazedTL can't read
+ * their file: those with a draft among them and, for a save of the whole
+ * set, every core document Guidance still needs.
+ */
+export function unreadableLeftOut(
+  documents: Documents,
+  drafts: DocumentDrafts,
+  names: string[],
+  whole: boolean,
+) {
+  return Object.keys(documents).filter(
+    (name) =>
+      documents[name].state === "unreadable" &&
+      ((names.includes(name) && !!drafts[name]) ||
+        (whole && documents[name].kind === "core")),
+  );
+}
+
+/** What a save of guidance did, named for the tab that saves it, and the
+ * files it left out because DazedTL can't read them. */
+export function savedMessage(
+  label: "Context" | "Guidance",
+  result: DocumentsSaved | null,
+  discarded: string[],
+  unreadable: string[],
+  documents: Documents,
+) {
+  const done = result?.saved.length
+    ? `${label} saved.`
+    : discarded.length
+      ? discarded.length === 1
+        ? "Draft discarded."
+        : "Drafts discarded."
+      : unreadable.length
+        ? ""
+        : label === "Guidance"
+          ? "Guidance is already saved."
+          : "Nothing to save.";
+  if (!unreadable.length) return done;
+  const files = unreadable.map((name) => documents[name].file).join(", ");
+  const why =
+    unreadable.length === 1 ? "its tab says why" : "their tabs say why";
+  return `${done} DazedTL can't read ${files}; ${why}.`.trim();
 }
