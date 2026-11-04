@@ -6559,8 +6559,10 @@ def searchSystem(data, pbar):
         response = translateAI([unit_src], context, False)
         totalTokens[0] += response[1][0]
         totalTokens[1] += response[1][1]
-        if response[0]:
-            data["currencyUnit"] = response[0][0].replace('"', "").strip()
+        unit = response[0][0].replace('"', "").strip() if response[0] else ""
+        # An empty reply would erase the unit; it stays to be sent again.
+        if unit:
+            data["currencyUnit"] = unit
             _apply_system_scalar_original(data, "currencyUnit", unit_src)
         if pbar is not None:
             pbar.refresh()

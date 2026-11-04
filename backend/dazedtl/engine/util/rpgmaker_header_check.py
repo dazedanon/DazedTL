@@ -61,7 +61,6 @@ FLAG_LIMIT = 200
 TEXT_LIMIT = 120
 KINDS = ("face", "self-address", "pronoun", "sound-effect", "unnamed-line")
 
-_EVENT_FILE_RE = re.compile(r"(?:Map\d+|CommonEvents|Troops)\.json")
 _ACTOR_CODE_RE = re.compile(r"\\[Nn]\[(\d+)\]")
 _CODE_RE = re.compile(r"\\[A-Za-z]+(?:\[[^\]]*\]|<[^>]*>)?|\\[{}<>|.!^$]")
 _LEADING_CODES_RE = re.compile(r"^(?:\\[A-Za-z]+(?:\[[^\]]*\])?)+")
@@ -165,7 +164,7 @@ def _boxes(data: Path) -> list[dict[str, Any]]:
     actors = _actors(data)
     found = []
     for path in sorted(data.glob("*.json"), key=lambda item: item.name):
-        if not _EVENT_FILE_RE.fullmatch(path.name):
+        if not blocks.EVENT_FILE.fullmatch(path.name):
             continue
         document = _read(path)
         for list_path, commands in blocks.command_lists(document):

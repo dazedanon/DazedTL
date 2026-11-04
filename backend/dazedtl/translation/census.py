@@ -1535,9 +1535,9 @@ def scan(
 
     def variables_for(name, data):
         """The ids of the variable names an MV/MZ System.json's game draws
-        (util/rpgmaker_variable_names), from the plugins and event files
+        (util/rpgmaker_variable_names), from the plugins and data files
         beside it."""
-        from util.rpgmaker_variable_names import drawn
+        from util.rpgmaker_variable_names import drawn, read_facts
 
         if not _rpgmaker_data(name) or PurePosixPath(name).name != "System.json":
             return frozenset()
@@ -1559,11 +1559,14 @@ def scan(
                     (plugins.parent / "plugins" / f"{plugin}.js").as_posix().casefold()
                 )
             ),
-            [
-                (path.name, lambda each=each: text(each))
+            lambda: (
+                fact
                 for each in names
                 if (path := PurePosixPath(each)).parent == folder
-            ],
+                and path.suffix.casefold() == ".json"
+                and path.name != "System.json"
+                and (fact := read_facts(path.name, text(each))) is not None
+            ),
             system,
         )
 

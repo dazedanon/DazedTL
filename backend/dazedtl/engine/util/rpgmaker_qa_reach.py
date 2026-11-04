@@ -65,7 +65,6 @@ _IDENTIFIER_RE = re.compile(r"[A-Za-z_$][\w$]*")
 _WORD_RE = re.compile(r"[\w.:-]+")
 # Names shorter than this are too common to tie a use to one plugin.
 _NAME_MINIMUM = 4
-_EVENT_FILE_RE = re.compile(r"(?:Map\d+|CommonEvents|Troops)\.json")
 
 
 def lex(source: str) -> tuple[str, list[str]]:
@@ -291,7 +290,7 @@ class Reach:
 
     def scan(self, name: str, document: Any) -> None:
         """Record the plugin commands and script one event file holds."""
-        if not _EVENT_FILE_RE.fullmatch(name):
+        if not blocks.EVENT_FILE.fullmatch(name):
             return
         for command in event_commands(document):
             parameters = command["parameters"]

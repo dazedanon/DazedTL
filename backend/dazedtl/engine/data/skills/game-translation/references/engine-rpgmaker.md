@@ -282,7 +282,7 @@ the registration, not the folder.
 
 The default stays off: plugins and events resolve these by NAME.
 But a plugin that displays a variable often draws the variable's NAME as the label beside it - `LL_VariableWindow` does.
-`util.rpgmaker_variable_names.game_drawn(game_root)` gives the ids DazedTL translates in both methods: those a plugin whose code reads `$dataSystem.variables` names in a `@type variable` setting or command argument, unless the name appears in plugin code, settings or an event script.
+`util.rpgmaker_variable_names.game_drawn(game_root)` gives the ids DazedTL translates in both methods: those a plugin whose code reads `$dataSystem.variables` names in a `@type variable` setting or command argument, directly or in a `struct<>`, unless code could look the name up, as its module docstring lists.
 The census lists those names as text players read (field `variables/*[drawn]`).
 Whitelist other ids only on evidence, exactly like the `122` values, and verify nothing looks a name up: `grep -n "variables\.indexOf\|switches\.indexOf"` over `js/`.
 

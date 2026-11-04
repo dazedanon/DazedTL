@@ -53,7 +53,6 @@ _PLACEHOLDER_RE = re.compile(r"[◯〇]|○○")
 _SHOWN_CODE_RE = re.compile(r"\\([VNPI])\[(\d+)\]|\\(G)(?![A-Za-z\[])", re.IGNORECASE)
 _PLACEHOLDER_NUMBER_RE = re.compile(r"%\d")
 _MAP_RE = re.compile(r"Map\d+\.json")
-_EVENT_FILE_RE = re.compile(r"(?:Map\d+|CommonEvents|Troops)\.json")
 # Event commands whose text the page check reads; the 101 nameplate is its
 # fifth parameter.
 _PAGE_TEXT = {101: 4, 401: 0, 405: 0, 320: 1, 324: 1, 325: 1}
@@ -280,7 +279,7 @@ class _Checks:
                     _original(system, "terms", "messages", key),
                 )
         for name, document in self.documents.items():
-            if _EVENT_FILE_RE.fullmatch(name):
+            if blocks.EVENT_FILE.fullmatch(name):
                 for path, commands in blocks.command_lists(document):
                     self._page(name, path, commands)
 
