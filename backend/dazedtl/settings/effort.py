@@ -385,12 +385,7 @@ def model_id(model):
 # (`capabilities.reasoning`, settings/providers OPENCODE). The lists of
 # OpenAI, Gemini, DeepSeek, Kimi and Mistral say nothing about effort, so
 # their models keep the notes above.
-LISTED = {
-    "anthropic": "Anthropic",
-    "openrouter": "OpenRouter",
-    "opencode-go": "OpenCode Go",
-    "opencode": "OpenCode",
-}
+LISTED = frozenset({"anthropic", "openrouter", "opencode-go", "opencode"})
 # A connection keeps at most as many records as its OpenRouter catalog.
 MAX_LISTED = 2000
 _OFF = (None, "disabled", "between_tools")
@@ -794,7 +789,9 @@ def describe(provider, model, listed=None, read=False) -> Choices:
             *({"value": level, "label": label(level)} for level in resolved["levels"]),
         ]
     }
-    name = LISTED.get(provider)
+    from .providers import PROVIDERS
+
+    name = PROVIDERS[provider]["label"] if provider in LISTED else None
     if listed is not None and name:
         value["source"] = (
             f"These levels come from {name}'s model list as of your last "

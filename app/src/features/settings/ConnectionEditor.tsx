@@ -19,6 +19,7 @@ import { FieldRow } from "../../ui/FieldRow";
 import { Button } from "../../ui/Button";
 import { ActionBar } from "../../ui/ActionBar";
 import { OpenRouterHost } from "./OpenRouterHost";
+import { choosePlan, plansOf, providerChoices } from "./providerPlans";
 
 export default function ConnectionEditor({
   connection,
@@ -74,15 +75,7 @@ export default function ConnectionEditor({
   const hostModel =
     connection?.provider === "openrouter" ? connection.model : "";
   const definition = providers.find((item) => item.id === value.provider);
-  // Presets that share a label are one provider's plans: the provider list
-  // offers each label once, at its first plan, and Plan picks among them.
-  const plans = definition?.plan
-    ? providers.filter((item) => item.label === definition.label)
-    : [];
-  const choices = providers.filter(
-    (provider, index) =>
-      providers.findIndex((item) => item.label === provider.label) === index,
-  );
+  const plans = plansOf(providers, definition);
   const sameRoute =
     connection?.provider === value.provider &&
     connection?.protocol === value.protocol &&
@@ -109,10 +102,6 @@ export default function ConnectionEditor({
       organization: "",
       openrouter_host: "",
     }));
-  }
-  // A provider's plans take the same key, so a typed one stays.
-  function choosePlan(provider: string) {
-    setValue((current) => ({ ...current, provider, reuse_secret: false }));
   }
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -167,7 +156,7 @@ export default function ConnectionEditor({
                   <option value="" disabled>
                     Choose provider
                   </option>
-                  {choices.map((provider) => (
+                  {providerChoices(providers).map((provider) => (
                     <option key={provider.id} value={provider.id}>
                       {provider.label}
                     </option>
@@ -185,7 +174,12 @@ export default function ConnectionEditor({
                   <select
                     {...control}
                     value={value.provider}
-                    onChange={(event) => choosePlan(event.target.value)}
+                    onChange={(event) => {
+                      const provider = event.target.value;
+                      setValue((current) =>
+                        choosePlan(providers, current, provider, connection),
+                      );
+                    }}
                   >
                     {plans.map((plan) => (
                       <option key={plan.id} value={plan.id}>
@@ -350,7 +344,7 @@ export default function ConnectionEditor({
                     {...control}
                     value={value.name}
                     maxLength={100}
-                    placeholder={definition?.label || "Automatic"}
+                    placeholder={definition?.connectionName || "Automatic"}
                     onChange={(event) =>
                       setValue({ ...value, name: event.target.value })
                     }

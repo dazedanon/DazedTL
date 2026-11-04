@@ -115,6 +115,15 @@ PROVIDERS = {
 PROTOCOLS = {"openai", "anthropic", "gemini", "mistral"}
 
 
+def connection_name(name):
+    """The name a connection to preset *name* gets when its own is left
+    blank: the preset's label, with its plan when it has one, so two plans'
+    connections never read alike."""
+    preset = PROVIDERS[name]
+    plan = preset.get("plan")
+    return f"{preset['label']} ({plan})" if plan else preset["label"]
+
+
 def endpoint(value):
     if not isinstance(value, str) or len(value) > 2000:
         raise ValueError("Enter a valid server URL.")

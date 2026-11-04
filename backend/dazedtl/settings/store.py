@@ -496,6 +496,7 @@ class Settings:
                     "id": name,
                     "label": definition["label"],
                     **({"plan": definition["plan"]} if "plan" in definition else {}),
+                    "connectionName": providers.connection_name(name),
                     "protocol": definition["protocol"],
                     "defaultEndpoint": definition["endpoint"],
                 }
@@ -1203,7 +1204,7 @@ class Settings:
             if item["id"] != connection_id
         }
         if not name:
-            base = providers.PROVIDERS[provider]["label"]
+            base = providers.connection_name(provider)
             name, suffix = base, 2
             while name.casefold() in used:
                 name = f"{base} {suffix}"

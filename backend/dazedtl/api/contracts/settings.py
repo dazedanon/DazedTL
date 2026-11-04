@@ -100,6 +100,8 @@ class SettingsProvider(TypedDict):
     # Presets that share a label are one provider's plans (settings/providers
     # PROVIDERS), such as OpenCode's Go subscription and pay-as-you-go balance.
     plan: NotRequired[str]
+    # The name a connection to it gets when its own is left blank.
+    connectionName: str
     protocol: ProviderProtocol
     defaultEndpoint: str
 

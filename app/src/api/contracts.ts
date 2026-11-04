@@ -2135,6 +2135,7 @@ export type SettingsProvider = {
   id: Provider;
   label: string;
   plan?: string;
+  connectionName: string;
   protocol: ProviderProtocol;
   defaultEndpoint: string;
 };
