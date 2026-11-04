@@ -39,12 +39,17 @@ import { gitIn, reviewLog } from "./land-lock.mjs";
 export const exposureDays = 14;
 
 /**
- * A time's day number. Days split at midnight UTC, so every machine, CI and
- * the tests count the same days whatever their time zone; an hour's shift of
- * the boundary barely moves a count of working days.
+ * A time's day number. Days split at local midnight, since landings and this
+ * report run on the user's machine and their evening sessions cross midnight
+ * UTC: a UTC split would cut one evening's work into two days.
  * @param {number} time In milliseconds.
  */
-const dayOf = (time) => Math.floor(time / 86_400_000);
+const dayOf = (time) => {
+  const date = new Date(time);
+  return Math.round(
+    Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) / 86_400_000,
+  );
+};
 
 /** The upper ends of the landing size buckets, in code lines. */
 const sizes = [100, 300, 1000];
@@ -59,6 +64,9 @@ export function loggedLandings(text) {
   /** @type {Logged[]} */
   const landings = [];
   const unread = [];
+  // Every landing time, from lines read as landings or not, since each
+  // logged landing reached dev and makes its day an active one.
+  const times = [];
   for (const [index, line] of text.split("\n").entries()) {
     if (!line.trim()) continue;
     const where = `Reviews log line ${index + 1}`;
@@ -69,6 +77,8 @@ export function loggedLandings(text) {
       unread.push(`${where} is not JSON.`);
       continue;
     }
+    const landed = Date.parse(row?.landed);
+    if (Number.isFinite(landed)) times.push(landed);
     const independent = row?.reviewer === "independent";
     // An early landing could skip its review, recording why instead.
     const findings = Array.isArray(row?.findings)
@@ -87,7 +97,6 @@ export function loggedLandings(text) {
       unread.push(`${where} has no range or a finding without an outcome.`);
       continue;
     }
-    const landed = Date.parse(row.landed);
     landings.push({
       range: row.range,
       reviews: independent ? (row.reviews ?? 1) : 0,
@@ -99,7 +108,7 @@ export function loggedLandings(text) {
       landed: Number.isFinite(landed) ? landed : null,
     });
   }
-  return { landings, unread };
+  return { landings, unread, times };
 }
 
 /**
@@ -151,14 +160,12 @@ export function highEnd(low, { named, unknown }) {
  * it in never got past it.
  * @param {Landing[]} landings
  * @param {Fix[]} fixes
- * @param {{ landed: (number | null)[], fixCommits: Set<string> }} options
+ * @param {{ landed: number[], fixCommits: Set<string> }} options
  *   `landed` holds every logged landing's time, listed or not, to count
  *   active days; `fixCommits` holds every commit whose subject is a fix's.
  */
 export function summarize(landings, fixes, { landed, fixCommits }) {
-  const days = [
-    ...new Set(landed.flatMap((time) => (time === null ? [] : [dayOf(time)]))),
-  ];
+  const days = [...new Set(landed.map(dayOf))];
   /** @type {Map<number, { landings: number, escapes: number }>} */
   const byReviews = new Map();
   /** @type {Map<number, { landings: number, escapes: number }>} */
@@ -340,7 +347,7 @@ function main() {
     path.resolve(git(["rev-parse", "--git-common-dir"]).stdout.trim()),
     reviewLog,
   );
-  const { landings, unread } = loggedLandings(
+  const { landings, unread, times } = loggedLandings(
     fs.existsSync(log) ? fs.readFileSync(log, "utf8") : "",
   );
   problems.push(...unread);
@@ -417,7 +424,7 @@ function main() {
     (commit) => fixCommits.has(commit.commit) && !tracedCommits.has(commit),
   ).length;
   const summary = summarize(withCommits, fixes, {
-    landed: landings.map((landing) => landing.landed),
+    landed: times,
     fixCommits,
   });
   const short = (/** @type {string} */ hash) => hash.slice(0, 8);

@@ -18,7 +18,8 @@ import {
 } from "../scripts/review-stats.mjs";
 
 const day = 86_400_000;
-const now = 100 * day;
+// Noon local time, as active days split at local midnight.
+const now = new Date(1970, 3, 10, 12).getTime();
 const old = now - exposureDays * day;
 // A landing on each of the days up to now, so `old` is just old enough.
 const landed = Array.from(
@@ -136,27 +137,35 @@ test("review stats put each escaped bug on the landing that let it in, once it i
 });
 
 test("review stats count a landing's age in days on which landings reached dev", () => {
-  const at = now - 20 * day;
-  const age = (days: number[]) =>
+  // Local times, `days` after a landing at 09:00, at `hour`.
+  const at = (days: number, hour = 12) =>
+    new Date(1970, 2, 1 + days, hour).getTime();
+  const age = (days: number[], extra: number[] = []) =>
     summarize(
       [
         {
           range: "a..b",
           reviews: 1,
           findings: [],
-          landed: at,
+          landed: at(0, 9),
           commits: ["b1"],
           lines: 10,
         },
       ],
       [],
-      { landed: [at, ...days.map((n) => at + n * day)], fixCommits: new Set() },
+      {
+        landed: [at(0, 9), ...days.map((n) => at(n)), ...extra],
+        fixCommits: new Set(),
+      },
     );
-  // 20 days old, but work stopped after 3 of them; two landings on one day
-  // and a later one the same day as it count once each.
-  const quiet = age([0.5, 1, 2, 2.1, 3]);
+  // 20 days old, but with landings on only 3 of the days since.
+  const quiet = age([1, 2, 3, 20]);
   assert.equal(quiet.recent, 1);
   assert.deepEqual(quiet.byReviews, []);
+  // 13 active days: a later landing on its own day and a second one on day
+  // 2 add none.
+  const thirteen = Array.from({ length: 13 }, (_, n) => n + 1);
+  assert.equal(age(thirteen, [at(0, 20), at(2, 23)]).recent, 1);
   // Landings on 14 of the 20 days since.
   const busy = age([1, 2, 3, 4, 6, 7, 8, 10, 11, 12, 15, 16, 18, 19]);
   assert.equal(busy.recent, 0);
@@ -314,7 +323,7 @@ test("review stats read real trailers by their first word, code lines from numst
     8,
   );
 
-  const { landings, unread } = loggedLandings(
+  const { landings, unread, times } = loggedLandings(
     [
       JSON.stringify({
         landed: "2026-11-02T18:04:12.670Z",
@@ -331,7 +340,11 @@ test("review stats read real trailers by their first word, code lines from numst
           { outcome: "dismissed" },
         ],
       }),
-      JSON.stringify({ range: "c..d", findings: [{ summary: "No outcome" }] }),
+      JSON.stringify({
+        landed: "2026-11-03T01:00:00.000Z",
+        range: "c..d",
+        findings: [{ summary: "No outcome" }],
+      }),
       JSON.stringify({ range: "d..e", skipped: "Docs only" }),
       "",
     ].join("\n"),
@@ -353,6 +366,11 @@ test("review stats read real trailers by their first word, code lines from numst
       landed: null,
     },
     { range: "d..e", reviews: 0, findings: [], landed: null },
+  ]);
+  // A line read as no landing still reached dev, so its day is active.
+  assert.deepEqual(times, [
+    Date.parse("2026-11-02T18:04:12.670Z"),
+    Date.parse("2026-11-03T01:00:00.000Z"),
   ]);
   assert.equal(unread.length, 2);
   assert.match(unread[0], /line 2 is not JSON/);
