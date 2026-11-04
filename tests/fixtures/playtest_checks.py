@@ -72,13 +72,16 @@ write(
                 "obtainExp": "Got EXP!",
             }
         },
+        # The name VarWindow draws, translated with Japanese left.
+        "variables": ["", "残弾 Ammo"],
         "_original": {
             "terms": {
                 "messages": {
                     "actorDamage": "%1は %2 のダメージを受けた！",
                     "obtainExp": "%1 の経験値を獲得！",
                 }
-            }
+            },
+            "variables": {"1": "残弾"},
         },
     },
 )
@@ -223,6 +226,7 @@ write(
 )
 
 PLUGIN_LIST = [
+    {"name": "VarWindow", "status": True, "parameters": {"hudVariable": "1"}},
     {
         "name": "Dungeon",
         "status": True,
@@ -270,6 +274,12 @@ write(
 """,
 )
 write(plugins / "Broken.js", 'const message = "壊れた;\n')
+write(
+    plugins / "VarWindow.js",
+    "/*:\n * @param hudVariable\n * @type variable\n */\n"
+    "Window_Base.prototype.refresh = function() {\n"
+    "    this.drawText($dataSystem.variables[1], 0, 0, 120);\n};\n",
+)
 
 # Plugin files decided players never read this string; one drawn still shows.
 kept = {"file": "js/plugins/Dungeon.js", "line": 20, "kind": "template"}
@@ -289,6 +299,7 @@ expected = {
     ("battler-name", "data/Skills.json", "/1/message1"),
     ("placeholder", "data/Skills.json", "/2/message1"),
     ("placeholder", "data/System.json", "/terms/messages/obtainExp"),
+    ("visible-text", "data/System.json", "/variables/1"),
     ("event-codes", "data/Map001.json", "/events/1/pages/1/list/1"),
     ("visible-text", "data/Map001.json", "/events/1/pages/1/list/2/parameters/0"),
     ("placeholder-glyph", "data/Map001.json", "/events/1/pages/1/list/3/parameters/0"),

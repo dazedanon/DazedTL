@@ -24,6 +24,7 @@ from util.original_values import Originals
 from util import rpgmaker_blocks as blocks
 from util.rpgmaker_markers import PluginList, comment_markers, lists_mz
 from util.rpgmaker_plugin_registry import PluginRegistryError, loaded_entries
+from util.rpgmaker_variable_names import data_drawn
 from util.rpgmaker_qa_checks import BATTLE_MESSAGES, battler_name_note, runtime
 from util.rpgmaker_qa_preflight import (
     STANDARD_FILES,
@@ -179,13 +180,14 @@ class _Checks:
         glyphs; text never translated comes from preflight. The problem kind
         keeps its saved name, japanese, for every source."""
         markers = comment_markers(entries)
+        variables = data_drawn(self.data)
         source = languages.active_source()
         placeholders = reading()["placeholders"]
         for name, document in self.documents.items():
             if name not in STANDARD_FILES and not _MAP_RE.fullmatch(name):
                 continue
             for parts, value, kind, translated, original in visible_texts(
-                name, document, markers
+                name, document, markers, variables
             ):
                 if not isinstance(value, str) or not translated:
                     continue

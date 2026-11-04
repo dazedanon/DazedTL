@@ -53,8 +53,8 @@ class Drawing(NamedTuple):
 
 def drawing(source: str) -> Drawing | None:
     """What a plugin's file declares names a variable it draws, or None when
-    its code draws no variable name."""
-    if not _READS.search(source):
+    its code, outside its help, draws no variable name."""
+    if not _READS.search(lex(source)[0]):
         return None
     settings: set[str] = set()
     arguments: dict[str, set[str]] = {}
@@ -143,7 +143,10 @@ def drawn(
         for name in drawings
         for ascii in (False, True)
     ]
-    for _name, document in _documents(events, lambda text: any(call in text for call in calls)):
+    commanded = any(found.arguments for found in drawings.values())
+    for _name, document in _documents(
+        events if commanded else [], lambda text: any(call in text for call in calls)
+    ):
         for command in event_commands(document):
             parameters = command["parameters"]
             if blocks.code(command) != 357 or len(parameters) < 4:
@@ -167,7 +170,9 @@ def drawn(
     }
     # Event scripts, whose strings hold a name between quote marks.
     code: list[str] = []
-    for _name, document in _documents(events, lambda text: any(name in text for name in wanted)):
+    for _name, document in _documents(
+        events if ids else [], lambda text: any(name in text for name in wanted)
+    ):
         for command in event_commands(document):
             texts = [value for value in scripts(command) if isinstance(value, str)]
             first = command["parameters"][:1]
@@ -182,6 +187,7 @@ def drawn(
         id
         for id in ids
         if names[id] not in values
+        and names[id].strip() not in values
         and not any(f"{mark}{names[id]}{mark}" in script for mark in "'\"`")
     )
 

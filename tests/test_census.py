@@ -466,7 +466,8 @@ class CensusTests(unittest.TestCase):
         plugins = [
             {"name": window, "status": True, "parameters": {"hudVariable": "3"}},
             {"name": "Store", "status": True, "parameters": {"target": "4"}},
-            {"name": "Chime", "status": True, "parameters": {}},
+            # A setting looks variable 8 up by its whole name.
+            {"name": "Chime", "status": True, "parameters": {"name": "弾 "}},
         ]
         names = [
             "",
@@ -477,6 +478,7 @@ class CensusTests(unittest.TestCase):
             "検索用",
             "体力",
             "照準",
+            "弾 ",
         ]
         game = {
             "www/js/plugins.js": f"var $plugins =\n{json.dumps(plugins)};\n".encode(),
@@ -491,10 +493,12 @@ class CensusTests(unittest.TestCase):
                 "@arg label",
                 "@type string",
             ).encode(),
-            # Its variable setting stores a value; it draws no name.
+            # Its variable setting stores a value; it draws no name, though
+            # its help names where names are kept.
             "www/js/plugins/Store.js": plugin(
                 "Store",
                 "$gameVariables.setValue(id, 1);",
+                "@help Names are in $dataSystem.variables.",
                 "@param target",
                 "@type variable",
             ).encode(),
@@ -524,6 +528,7 @@ class CensusTests(unittest.TestCase):
                         command(357, "Reset", "reset", "", {"names": '["体力"]'}),
                         command(357, window, "show", "", {"variableId": "7"}),
                         command(356, "SetVar 照準,5"),
+                        command(357, window, "show", "", {"variableId": "8"}),
                     ]
                 },
             ],
@@ -545,6 +550,7 @@ class CensusTests(unittest.TestCase):
                 ("variables/*", "検索用"),
                 ("variables/*", "体力"),
                 ("variables/*", "照準"),
+                ("variables/*", "弾"),
             },
         )
         for field in ("currencyUnit", f"variables/{drawn}"):
