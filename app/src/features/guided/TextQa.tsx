@@ -188,9 +188,10 @@ export function TextQaWork({
 }
 
 /**
- * The Japanese, the text now and the other side of a change, labelled. An
- * applied change shows the text it replaced as Was, the two in the added and
- * removed colors with the words that changed marked.
+ * The Japanese, the text now and the other side of a change, labelled, the
+ * two in the added and removed colors with the words that changed marked. An
+ * applied change shows the text it replaced as Was; one not in the game
+ * shows the text it would replace as Now.
  */
 function Change({
   source,
@@ -218,19 +219,19 @@ function Change({
   return (
     <LineChange
       rows={
-        applied && after !== undefined
-          ? [
-              original,
-              { label: "Now", text: after, change: "added", lang },
-              { label: "Was", text: before, change: "removed", lang },
-            ]
-          : [
-              original,
-              { label: "Now", text: before, lang },
-              ...(after === undefined
-                ? []
-                : [{ label: afterLabel, text: after, lang }]),
-            ]
+        after === undefined
+          ? [original, { label: "Now", text: before, lang }]
+          : applied
+            ? [
+                original,
+                { label: "Now", text: after, change: "added", lang },
+                { label: "Was", text: before, change: "removed", lang },
+              ]
+            : [
+                original,
+                { label: "Now", text: before, change: "removed", lang },
+                { label: afterLabel, text: after, change: "added", lang },
+              ]
       }
     />
   );
@@ -401,8 +402,8 @@ function QaReason({ text }: { text: string }) {
 const scenePreview = 3;
 
 /**
- * What a correction changes, or each line of a scene correction, which
- * applies and undoes as one; an applied one reads as a diff.
+ * What a correction changes, as a diff, or each line of a scene correction,
+ * which applies and undoes as one.
  */
 function FindingChange({ row }: { row: QaFinding }) {
   const [all, setAll] = useState(false);
