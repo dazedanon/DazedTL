@@ -346,7 +346,11 @@ test("a landing's review covers every commit of the branch but merges of dev and
     assert.throws(() => reviewedHead(git, head), /not a commit on this branch/);
 });
 
-test("a sandboxed worker hands off a checked branch without writing the main checkout, and --finish lands it", async (t) => {
+test(
+  "a sandboxed worker hands off a checked branch without writing the main checkout, and --finish lands it",
+  // It runs whole landings, and land.mjs refuses to run on Windows.
+  { skip: process.platform === "win32" && "land.mjs does not run on Windows" },
+  async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "dazedtl-land-"));
   const main = path.join(root, "main");
   const clone = path.join(root, "clone");
