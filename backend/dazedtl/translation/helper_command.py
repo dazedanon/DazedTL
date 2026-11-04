@@ -75,6 +75,8 @@ def notes_note(root):
         f"Assistant notes: {path} holds what anyone working on this game must know,"
         " and the game's Git takes it to other computers and assistants."
         " Read it first when it exists and follow it."
+        " It is yours to keep as much as the user's: edit it yourself, without asking,"
+        " and keep what the user wrote unless it is wrong."
         " Before you finish, add to it, or create it, only lasting facts that apply"
         " whenever someone works on this game: quirks of the game itself, tools you"
         " wrote for it and how to run them, unpacking and repacking steps that differ"
