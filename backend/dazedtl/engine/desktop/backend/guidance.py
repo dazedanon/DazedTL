@@ -26,25 +26,32 @@ def documents(root):
         found = [regular(root, root / candidate) for candidate in candidates if (root / candidate).exists() or (root / candidate).is_symlink()]
         if len(found) > 1:
             raise ValueError(f"Both portable and legacy {name} files exist. Reconcile them before editing.")
-        path = found[0] if found else root / candidates[0]
-        if path.exists() and path.stat().st_size > 1_000_000:
-            raise ValueError("Guidance files must be below 1 MB.")
-        text = stored(name, path.read_text(encoding="utf-8-sig") if path.exists() else "")
-        result[name] = {"text": text, "revision": digest(text.encode()), "path": str(path)}
+        result[name] = _read(name, found[0] if found else root / candidates[0])
     return result
 
-def notes(root):
-    """The game's assistant notes, as `documents` reads a guidance file."""
-    from util.paths import GAME_NOTES_FILENAME
-    path = regular(root, Path(root) / GAME_NOTES_FILENAME)
+def _read(name, path):
+    """A document as the editor shows its file: below 1 MB, in UTF-8 or, as
+    Windows PowerShell 5 writes a file, UTF-16 with its byte order mark."""
     if path.exists() and path.stat().st_size > 1_000_000:
         raise ValueError("Guidance files must be below 1 MB.")
-    text = path.read_text(encoding="utf-8-sig") if path.exists() else ""
+    raw = path.read_bytes() if path.exists() else b""
+    text = stored(name, raw.decode("utf-16") if raw.startswith((b"\xff\xfe", b"\xfe\xff")) else raw.decode("utf-8-sig"))
     return {"text": text, "revision": digest(text.encode()), "path": str(path)}
 
+def notes(root):
+    """The game's assistant notes, read as `documents` reads guidance."""
+    from util.paths import GAME_NOTES_FILENAME
+    return _read(NOTES, regular(root, Path(root) / GAME_NOTES_FILENAME))
+
 def editable(root):
-    """The documents the Context editor saves: the guidance and the notes."""
-    return {**documents(root), NOTES: notes(root)}
+    """The documents the Context editor saves: the guidance and the notes.
+    Notes an assistant wrote that can't be read leave the guidance editable
+    and the project open, without them."""
+    try:
+        held = {NOTES: notes(root)}
+    except (ValueError, UnicodeDecodeError):
+        held = {}
+    return {**documents(root), **held}
 
 def stored(name, text):
     """`text` as `documents` reads it back from a file that holds it: a
@@ -106,6 +113,8 @@ def documents_save(root, changes):
         text = change.get("text") if isinstance(change, dict) else None
         if not valid_document_name(name) or not isinstance(text, str) or len(text.encode()) > 1_000_000:
             raise ValueError("Choose a guidance document below 1 MB.")
+        if name == NOTES and NOTES not in current:
+            raise ValueError("AGENTS.md in the game folder can't be read as text below 1 MB. Fix or remove it, then reload.")
         revision = change.get("revision")
         if name not in current and revision == "":
             revision = digest(b"")
