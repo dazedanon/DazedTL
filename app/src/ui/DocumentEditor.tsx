@@ -8,6 +8,7 @@ const title = (name: string) =>
     glossary: "Glossary",
     game: "Game context",
     quirks: "Translation quirks",
+    notes: "Assistant notes",
   })[name] || name.replace("custom:", "Skill: ");
 
 export function DocumentEditor({

@@ -22,7 +22,7 @@ from dazedtl.storage import write_bytes, write_json
 from dazedtl.translation import originals as game_originals
 from dazedtl.translation.files import decode_json, digest, project_path, read_json
 from dazedtl.translation.git_status_cache import repository_signature
-from dazedtl.translation.helper_command import windows_note
+from dazedtl.translation.helper_command import task_opening
 
 from . import families, recipes
 from .inventory import (
@@ -2018,8 +2018,8 @@ class ImageService:
 
     def _task_text(self, project_id, request, request_path, own=False):
         root = self.record(project_id)[1]
-        # Assistant-led's own assistant read the note in its starting prompt.
-        contract = ("" if own else windows_note()) + self._contract(
+        # Assistant-led's own assistant read the opening in its starting prompt.
+        contract = ("" if own else task_opening(root)) + self._contract(
             request, request_path, own, language_pair.pair(self.settings, root)
         )
         if request["kind"] == "editing":

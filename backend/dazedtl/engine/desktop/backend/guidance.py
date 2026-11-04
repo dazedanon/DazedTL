@@ -8,6 +8,9 @@ from .workflow_actions import regular
 DOCUMENTS = {"glossary": (".dazedtl/glossary.txt", "glossary.txt"),
              "quirks": (".dazedtl/skills/quirks.md", "translation_quirks.txt"),
              "game": (".dazedtl/skills/game.md", "skills/translation.md")}
+# The assistant notes the Context editor shows beside the guidance; no
+# translation request carries them, so `documents` leaves them out.
+NOTES = "notes"
 
 def documents(root):
     root = Path(root)
@@ -30,6 +33,19 @@ def documents(root):
         result[name] = {"text": text, "revision": digest(text.encode()), "path": str(path)}
     return result
 
+def notes(root):
+    """The game's assistant notes, as `documents` reads a guidance file."""
+    from util.paths import GAME_NOTES_FILENAME
+    path = regular(root, Path(root) / GAME_NOTES_FILENAME)
+    if path.exists() and path.stat().st_size > 1_000_000:
+        raise ValueError("Guidance files must be below 1 MB.")
+    text = path.read_text(encoding="utf-8-sig") if path.exists() else ""
+    return {"text": text, "revision": digest(text.encode()), "path": str(path)}
+
+def editable(root):
+    """The documents the Context editor saves: the guidance and the notes."""
+    return {**documents(root), NOTES: notes(root)}
+
 def stored(name, text):
     """`text` as `documents` reads it back from a file that holds it: a
     glossary file also keeps the shipped base, which is not part of it."""
@@ -49,10 +65,11 @@ def written(root, names):
     and, for any skill, the former root skills folder, and the .gitignore
     keeping DazedTL's rules once the game's Git is set up."""
     from util.paths import LEGACY_GAME_SKILLS_RELATIVE, game_git_set_up
+    from util.paths import GAME_NOTES_FILENAME
     root = Path(root)
-    own = [DOCUMENTS[name][0] if name in DOCUMENTS else f".dazedtl/skills/{name.removeprefix('custom:')}.md" for name in names]
+    own = [DOCUMENTS[name][0] if name in DOCUMENTS else GAME_NOTES_FILENAME if name == NOTES else f".dazedtl/skills/{name.removeprefix('custom:')}.md" for name in names]
     legacy = [Path(DOCUMENTS[name][1]) for name in names if name in DOCUMENTS]
-    if any(name != "glossary" for name in names):
+    if any(name not in ("glossary", NOTES) for name in names):
         legacy += [path.relative_to(root) for path in (root / LEGACY_GAME_SKILLS_RELATIVE).rglob("*") if not path.is_dir()]
     moved = list(dict.fromkeys(path.as_posix() for path in legacy if (root / path).exists() or (root / path).is_symlink()))
     return own + moved + ([".gitignore"] if game_git_set_up(root) else [])
@@ -82,7 +99,7 @@ def documents_save(root, changes):
     its text, or when its revision is the one a save that wrote the file and
     then made no checkpoint replaced, as its draft then still has it."""
     root = Path(root)
-    current = documents(root)
+    current = editable(root)
     if not isinstance(changes, dict):
         raise ValueError("Choose a guidance document below 1 MB.")
     for name, change in changes.items():
@@ -102,16 +119,24 @@ def documents_save(root, changes):
             write_game_vocab(text, game_root=root)
             continue
         from util.skills import game_skill_path_for_game, quirks_path_for_game, custom_skill_path_for_game
-        path = custom_skill_path_for_game(root, name.removeprefix("custom:")) if name.startswith("custom:") else (game_skill_path_for_game if name == "game" else quirks_path_for_game)(root)
+        if name == NOTES:
+            path = Path(current[NOTES]["path"])
+        else:
+            path = custom_skill_path_for_game(root, name.removeprefix("custom:")) if name.startswith("custom:") else (game_skill_path_for_game if name == "game" else quirks_path_for_game)(root)
         path.parent.mkdir(parents=True, exist_ok=True)
         temporary = path.with_name(path.name + ".desktop-tmp")
         regular(root, temporary).write_text(text, encoding="utf-8", newline="\n")
         system.replace(temporary, path)
-    return documents(root)
+        if name == NOTES:
+            # A game whose patch rules ignore the rest of its root keeps
+            # the notes in Git all the same.
+            from util.paths import ensure_game_tool_gitignore
+            ensure_game_tool_gitignore(root)
+    return editable(root) if NOTES in changes else documents(root)
 
 
 def valid_document_name(name):
-    if name in DOCUMENTS:
+    if name in DOCUMENTS or name == NOTES:
         return True
     if not isinstance(name, str) or not name.startswith("custom:"):
         return False

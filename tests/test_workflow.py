@@ -155,6 +155,9 @@ class Engine:
     def documents(self, _source):
         return {}
 
+    def editable_documents(self, source):
+        return self.documents(source)
+
     def prepare(self, source, _options, *, language="English", refresh=True):
         self.refreshed = refresh
         return {"skill": "SKILL.md", "setup": str(Path(source) / "setup.md")}
@@ -2227,9 +2230,9 @@ class WorkflowTests(unittest.TestCase):
         # Starting over must put every original file back as one checkpoint,
         # keeping the attempt in the game's Git history and the record of its
         # original files, and move what Git doesn't keep aside instead of
-        # deleting it, keeping save games, the notes the user keeps and the
-        # project's options; a paid API run still waiting at its provider
-        # must refuse it.
+        # deleting it, keeping save games, the notes the user keeps, the
+        # assistant notes and the project's options; a paid API run still
+        # waiting at its provider must refuse it.
         from dazedtl.compatibility.checkpoint_commits import _git
         from util.len_git import setup_git
         from util.len_translation import LenProject
@@ -2279,6 +2282,7 @@ class WorkflowTests(unittest.TestCase):
         portable = {
             self.game / ".dazedtl/settings.json": '{"line_widths": {"x": 1}}',
             self.game / ".dazedtl/skills/custom.md": "custom skill",
+            self.game / "AGENTS.md": "Repack Data.wolf after injection.",
         }
         for path, text in portable.items():
             path.parent.mkdir(exist_ok=True)
@@ -2353,6 +2357,47 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(
             (archive / "context/.dazedtl/glossary.txt").read_text(encoding="utf-8"),
             "Lili (リリ)",
+        )
+        self.assertEqual(
+            (self.game / "AGENTS.md").read_text(encoding="utf-8"),
+            "Repack Data.wolf after injection.",
+        )
+
+    def test_assistant_notes_follow_the_games_git_but_never_reach_players(self):
+        # The notes must reach another computer through the game's Git even
+        # when the translation's patch rules ignore the rest of the game's
+        # root, stay out of every translation request's guidance, and stay
+        # out of the archives players download.
+        from dazedtl.compatibility.checkpoint_commits import _git
+        from dazedtl.compatibility.translation import TranslationEngine
+        from desktop.backend.guidance import documents, notes
+        from util.len_git import setup_git
+        from util.len_patch_scope import scope_ignore
+        from util.len_translation import LenProject
+
+        (self.game / ".gitignore").write_text(
+            scope_ignore("", {"source.json"}), encoding="utf-8"
+        )
+        original_files.record(self.game, original_files.FOUND)
+        setup_git(LenProject(self.game), version="1.0", current_is_untranslated=True)
+        engine = TranslationEngine(self.profile)
+        saved = engine.document_save(
+            self.game,
+            "notes",
+            notes(self.game)["revision"],
+            "Repack Data.wolf after injection.",
+        )
+        self.assertEqual(saved["notes"]["text"], "Repack Data.wolf after injection.")
+        self.assertNotIn("notes", documents(self.game))
+        self.assertEqual(
+            _git(self.game, "show", "HEAD:AGENTS.md").stdout,
+            "Repack Data.wolf after injection.",
+        )
+        # The forges' downloads GameUpdate applies leave out what the game's
+        # rules export-ignore; a patch ZIP leaves out the same.
+        self.assertEqual(
+            _git(self.game, "check-attr", "export-ignore", "AGENTS.md").stdout,
+            "AGENTS.md: export-ignore: set\n",
         )
 
     def test_a_patch_update_records_an_older_projects_new_originals(self):

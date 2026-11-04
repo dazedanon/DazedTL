@@ -166,8 +166,8 @@ Your assistant translates the whole game from one starting prompt.
    - **API Batch** (recommended): your API key, usually at half the Live price.
    - **Live API**: your API key at the full price.
    - **Assistant only**: no API key, but your assistant translates every line itself, which uses far more of its plan.
-2. Check the game's **Languages**, whether to translate **Text in images**, the tools your assistant installs in the game, such as **GameUpdate**, and any instructions for your assistant.
-   Changing a tool later takes effect the next time your assistant prepares the game.
+2. Check the game's **Languages**, whether to translate **Text in images**, the tools your assistant installs, such as **GameUpdate**, and any instructions for your assistant.
+   A changed tool applies when your assistant next prepares the game.
 3. Click **Copy starting prompt** and paste it into your assistant.
    It needs access to the game folder and the DazedTL folder.
 4. Keep DazedTL open.
@@ -176,10 +176,11 @@ Your assistant translates the whole game from one starting prompt.
    If your assistant stops, for example at a usage limit, paste the prompt into a new session and it picks up the saved work.
 5. Use **Release** to build a clean game ZIP or save the patch, even before your assistant finishes: the patch's review lists what's left.
 
+**Context > Assistant notes** keeps what assistants learn about the game for later sessions.
 For RPG Maker games your assistant also fits the text to the game's windows and runs [Text QA](#4-check), with the playtest for MV and MZ games; the **Text QA** and **Playtest** tabs show the results.
 To try again from scratch, stop your assistant and choose **Start over…** on **Progress**; the old attempt stays under Checkpoints.
 
-Your assistant uses its own plan in every mode, so on a limited plan pick a smaller model or lower reasoning effort.
+Your assistant uses its own plan in every mode; on a limited plan, pick a smaller model or lower effort.
 
 ## Manual
 

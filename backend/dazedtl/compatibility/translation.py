@@ -213,6 +213,12 @@ class TranslationEngine:
 
         return documents(source)
 
+    def editable_documents(self, source):
+        """The guidance and the assistant notes, which the Context tab edits."""
+        from desktop.backend.guidance import editable
+
+        return editable(source)
+
     def document_save(self, source, name, revision, text):
         from desktop.backend.guidance import document_save, written
 

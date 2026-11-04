@@ -1,8 +1,11 @@
 """The commands a coding assistant runs to reach this app through its helper."""
 
+import json
 import os
 import shutil
 from pathlib import Path
+
+from util.paths import GAME_NOTES_FILENAME
 
 from dazedtl import system
 
@@ -43,7 +46,7 @@ def windows_note():
     script over game text fails with UnicodeEncodeError unless UTF-8 mode is
     on. The example takes system.shell_command's form, which has PowerShell
     decode UTF-8 too, and system.shell_note says how to run that form outside
-    PowerShell. Every copied task starts with this note.
+    PowerShell. Every copied task starts with this note (task_opening).
     """
     if os.name != "nt":
         return ""
@@ -62,3 +65,30 @@ def windows_note():
             f" run it as `& {system.shell_argument(git)}`."
         )
     return system.shell_note() + note + "\n\n"
+
+
+def notes_note(root):
+    """What every task says about the game's assistant notes, which the next
+    session, on another computer or with another assistant, reads first."""
+    path = json.dumps(str(Path(root) / GAME_NOTES_FILENAME), ensure_ascii=False)
+    return (
+        f"Assistant notes: {path} holds what anyone working on this game must know,"
+        " and the game's Git takes it to other computers and assistants."
+        " Read it first when it exists and follow it."
+        " Before you finish, add to it, or create it, only lasting facts that apply"
+        " whenever someone works on this game: quirks of the game itself, tools you"
+        " wrote for it and how to run them, unpacking and repacking steps that differ"
+        " from the usual ones, changes made outside DazedTL's steps that a new version"
+        " of the game needs again, and the user's standing requests about the work."
+        " .dazedtl/len-method/work stays on this computer, so describe a tool kept there"
+        " well enough to write it again."
+        " Keep the notes short and current, replacing what changed rather than adding"
+        " to it, and leave out progress, this task's steps and what .dazedtl/glossary.txt"
+        " and .dazedtl/skills/game.md and quirks.md hold; style rules for the translation"
+        " belong in quirks.md.\n\n"
+    )
+
+
+def task_opening(root):
+    """What every task DazedTL hands an assistant opens with."""
+    return windows_note() + notes_note(root)

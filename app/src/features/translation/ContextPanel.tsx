@@ -63,13 +63,25 @@ export function ContextPanel({
   return (
     <>
       <PageBody ref={body} className="lens-context-body">
-        <p className="muted lens-context-note">
-          Names, voices and game context for every translation mode.{" "}
-          <HelpPopover label="Context">
-            These files and custom skills stay in the game&apos;s portable
-            workspace. Each run keeps the exact context it used.
-          </HelpPopover>
-        </p>
+        {name === "notes" ? (
+          <p className="muted lens-context-note">
+            Notes every assistant reads first and keeps current. Never sent with
+            translation requests.{" "}
+            <HelpPopover label="Assistant notes">
+              Saved as AGENTS.md in the game folder and kept in the game&apos;s
+              Git, so they reach other computers and assistants. Players never
+              download them.
+            </HelpPopover>
+          </p>
+        ) : (
+          <p className="muted lens-context-note">
+            Names, voices and game context for every translation mode.{" "}
+            <HelpPopover label="Context">
+              These files and custom skills stay in the game&apos;s portable
+              workspace. Each run keeps the exact context it used.
+            </HelpPopover>
+          </p>
+        )}
         <DocumentEditor
           documents={state.documents}
           drafts={draft.drafts}

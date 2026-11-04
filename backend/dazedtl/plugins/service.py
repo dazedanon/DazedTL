@@ -18,7 +18,7 @@ from dazedtl.translation import originals as game_originals
 from dazedtl.translation import reference_folders
 from dazedtl.translation.checkpoint_records import undoes
 from dazedtl.translation.files import decode_json, digest, project_path, read_json
-from dazedtl.translation.helper_command import helper_command, windows_note
+from dazedtl.translation.helper_command import helper_command, task_opening
 from dazedtl.translation.operations import lifecycle, lifecycle_path
 
 from . import ruby
@@ -2290,7 +2290,7 @@ class PluginService:
         }
         source, target = self.languages(root)
         text = (
-            windows_note()
+            task_opening(root)
             + pair_note(source, target)
             + (
                 (

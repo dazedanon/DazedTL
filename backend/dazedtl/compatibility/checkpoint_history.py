@@ -92,10 +92,12 @@ _blocker_cache = RepositoryStatusCache(stable=True)
 
 def _project_file(path):
     """Whether a file of the patch is the project's own, its glossary,
-    settings or skills, never the original game's: going back or undoing
-    takes it back to the checkpoint like any file, while the original game,
-    which Start over puts back, has none of them."""
-    return path.startswith(".dazedtl/")
+    settings, skills or assistant notes, never the original game's: going
+    back or undoing takes it back to the checkpoint like any file, while the
+    original game, which Start over puts back, has none of them."""
+    from util.paths import GAME_NOTES_FILENAME
+
+    return path.startswith(".dazedtl/") or path == GAME_NOTES_FILENAME
 
 
 def _trailer(message, key):
