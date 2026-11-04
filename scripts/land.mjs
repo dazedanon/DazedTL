@@ -38,7 +38,13 @@ import {
 } from "./ci-wait.mjs";
 import { NOTES } from "./changelog.mjs";
 import { generated } from "./contracts.mjs";
-import { devMoved, gitIn, LockBusy, withLock } from "./land-lock.mjs";
+import {
+  devMoved,
+  gitIn,
+  LockBusy,
+  reviewLog,
+  withLock,
+} from "./land-lock.mjs";
 import { repository } from "./release.mjs";
 import { failureReport, tail, testsWithRetry } from "./testkit/retry.mjs";
 import { mirrors } from "./update.mjs";
@@ -51,10 +57,14 @@ const icon = path.join(import.meta.dirname, "..", "resources", "icon.png");
 const reviewLevels = ["high", "xhigh", "max", "ultra"];
 /** The most independent reviews one landing runs; the dazedtl-land skill says when another runs. */
 const maxReviews = 3;
+/**
+ * What a finding is: a bug its reviewer showed with a failing test or a
+ * command's output, a risk it could not show, or quality such as wording,
+ * docs, naming or design. Older and intake records leave it out.
+ */
+export const findingKinds = ["bug", "risk", "quality"];
 const reviewShape =
-  '{"level": "high", "reviewer": "independent", "reviews": 1, "head": "<hash of the last commit the last reviewer checked>", "findings": [{"summary": "...", "outcome": "fixed", "review": 1}, {"summary": "...", "outcome": "dismissed", "reason": "...", "review": 1}]}';
-/** Where landed reviews are recorded, one JSON line each, in the shared Git directory. */
-const reviewLog = "dazedtl-reviews.jsonl";
+  '{"level": "high", "reviewer": "independent", "reviews": 1, "head": "<hash of the last commit the last reviewer checked>", "findings": [{"summary": "...", "kind": "bug", "outcome": "fixed", "review": 1}, {"summary": "...", "kind": "quality", "outcome": "dismissed", "reason": "...", "review": 1}]}';
 /** The subject of the commit holding what the formatter changed. */
 const formatSubject = "style: format";
 /** Where a hand-off's worker keeps origin's dev in its clone. */
@@ -76,12 +86,15 @@ const lockLimit = 10 * 60_000;
  * Reads a landing's review record: the code-review level a reviewer that
  * never saw the work ran, how many such reviews ran (1 when not given), the
  * last commit the last one checked and what became of each finding, with
- * the review that reported it, which only a one-review record may leave out.
+ * the review that reported it, which only a one-review record may leave out,
+ * and its kind (findingKinds), which only the Discord intake's records may
+ * leave out, so `kinds` asks for it everywhere else.
  * Throws with what is wrong, so no branch lands on its author's review alone.
  * @param {string} text
- * @returns {{ level: string, reviewer: "independent", reviews: number, head: string, findings: { summary: string, outcome: "fixed" | "dismissed", reason?: string, review: number }[] }}
+ * @param {{ kinds?: boolean }} [options]
+ * @returns {{ level: string, reviewer: "independent", reviews: number, head: string, findings: { summary: string, kind?: string, outcome: "fixed" | "dismissed", reason?: string, review: number }[] }}
  */
-export function readReview(text) {
+export function readReview(text, { kinds = false } = {}) {
   let record;
   try {
     record = JSON.parse(text);
@@ -125,14 +138,21 @@ export function readReview(text) {
         throw new Error(
           `${which} needs a review number from 1 to ${reviews}: the independent review that reported it, with "reviews" saying how many ran when more than one did.`,
         );
+      if (
+        (kinds || item.kind !== undefined) &&
+        !findingKinds.includes(item.kind)
+      )
+        throw new Error(`${which} needs a kind of ${findingKinds.join(", ")}.`);
+      const kind = item.kind === undefined ? {} : { kind: item.kind };
       if (item.outcome === "fixed")
-        return { summary: item.summary, outcome: "fixed", review };
+        return { summary: item.summary, ...kind, outcome: "fixed", review };
       if (item.outcome !== "dismissed")
         throw new Error(`${which} needs an outcome of fixed or dismissed.`);
       if (!filled(item.reason))
         throw new Error(`${which} is dismissed without a reason.`);
       return {
         summary: item.summary,
+        ...kind,
         outcome: "dismissed",
         reason: item.reason,
         review,
@@ -442,7 +462,7 @@ export async function land(cwd, deps, reviewFile) {
   }
   let review;
   try {
-    review = readReview(fs.readFileSync(reviewFile, "utf8"));
+    review = readReview(fs.readFileSync(reviewFile, "utf8"), { kinds: true });
   } catch (error) {
     log(`${reason(error)} Expected: ${reviewShape}.`);
     return 1;

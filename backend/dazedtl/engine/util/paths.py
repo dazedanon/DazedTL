@@ -110,6 +110,11 @@ GAME_SKILL_RELATIVE = GAME_SKILLS_RELATIVE / "game.md"
 LEGACY_GAME_SKILL_RELATIVE = GAME_SKILLS_RELATIVE / "translation.md"
 # Built-in skill filenames under <game>/.dazedtl/skills/ (not custom overlays).
 GAME_SKILL_RESERVED_NAMES = frozenset({"quirks.md", "game.md", "translation.md"})
+# What every assistant working on the game reads first and keeps current, at
+# the game's root, where assistants that follow agents.md find it themselves.
+# It is the project's, like the glossary: Git keeps it, translation requests
+# never carry it and players never download it.
+GAME_NOTES_FILENAME = "AGENTS.md"
 
 GAME_TOOL_GITIGNORE_BEGIN = "# BEGIN DazedTL portable translation settings"
 GAME_TOOL_GITIGNORE_END = "# END DazedTL portable translation settings"
@@ -127,6 +132,7 @@ GAME_TOOL_GITIGNORE_BLOCK = "\n".join(
         "/.dazedtl/skills/*",
         # Any case, as Windows' Git and the skill loader read the extension.
         "!/.dazedtl/skills/*.[mM][dD]",
+        "!/" + GAME_NOTES_FILENAME,
         GAME_TOOL_GITIGNORE_END,
     )
 ) + "\n"
@@ -151,15 +157,16 @@ GAME_REPOSITORY_METADATA = (".gitignore", ".gitattributes", "README.md")
 # archive`, which builds a patch's ZIP and the forges' downloads GameUpdate
 # applies, leaves them out.
 GAME_TOOL_FOLDERS = (GAME_METADATA_RELATIVE.as_posix(), "ace_json")
+GAME_TOOL_EXPORT_IGNORED = (*GAME_TOOL_FOLDERS, GAME_NOTES_FILENAME)
 # The repository's description files stay out of archives too, so a patch's
 # ZIP carries only the game.
-GAME_TOOL_ARCHIVE_EXCLUDES = (*GAME_TOOL_FOLDERS, *GAME_REPOSITORY_METADATA)
+GAME_TOOL_ARCHIVE_EXCLUDES = (*GAME_TOOL_EXPORT_IGNORED, *GAME_REPOSITORY_METADATA)
 GAME_TOOL_GITATTRIBUTES_RULES = tuple(
-    f"/{folder} export-ignore" for folder in GAME_TOOL_FOLDERS
+    f"/{path} export-ignore" for path in GAME_TOOL_EXPORT_IGNORED
 )
 GAME_TOOL_GITATTRIBUTES_COMMENT = (
-    "# DazedTL's glossary, settings and skills, and VX Ace's ace_json, stay out"
-    " of players' downloads.\n"
+    "# DazedTL's glossary, settings, skills and assistant notes, and VX Ace's"
+    " ace_json, stay out of players' downloads.\n"
 )
 # Images applied into a folder an assistant decoded from the game's archives
 # stay on the translation branch, so checkpoints restore them, but players
@@ -409,12 +416,13 @@ def from_game(path: str, game_root: str | Path) -> str:
 
 
 def is_portable_game_file(relative: str) -> bool:
-    """Whether a game-relative path is a glossary, settings or skill file the
-    managed .gitignore block leaves to Git."""
+    """Whether a game-relative path is a glossary, settings, skill or
+    assistant notes file the managed .gitignore block leaves to Git."""
     parts = tuple(relative.split("/"))
     return parts in {
         (".dazedtl", GLOSSARY_FILENAME),
         (".dazedtl", "settings.json"),
+        (GAME_NOTES_FILENAME,),
     } or (len(parts) == 3 and parts[:2] == (".dazedtl", "skills") and parts[2].casefold().endswith(".md"))
 
 
@@ -424,7 +432,11 @@ def portable_game_files(game_root: str | Path) -> list[str]:
     root = Path(game_root)
     metadata = root / GAME_METADATA_RELATIVE
     skills = metadata / "skills"
-    candidates = [metadata / GLOSSARY_FILENAME, metadata / "settings.json"]
+    candidates = [
+        metadata / GLOSSARY_FILENAME,
+        metadata / "settings.json",
+        root / GAME_NOTES_FILENAME,
+    ]
     if skills.is_dir() and not skills.is_symlink():
         candidates.extend(skills.iterdir())
     return sorted(
@@ -438,9 +450,9 @@ def portable_game_files(game_root: str | Path) -> list[str]:
 
 def is_game_tool_file(relative: str) -> bool:
     """Whether a game-relative path is one of DazedTL's own files that players
-    never download: the files under its folders and the repository's
-    description files."""
-    if relative in GAME_REPOSITORY_METADATA:
+    never download: the files under its folders, the assistant notes and the
+    repository's description files."""
+    if relative in GAME_REPOSITORY_METADATA or relative == GAME_NOTES_FILENAME:
         return True
     folder, separator, _name = relative.partition("/")
     return bool(separator) and folder in GAME_TOOL_FOLDERS

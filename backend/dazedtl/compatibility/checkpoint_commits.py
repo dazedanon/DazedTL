@@ -728,10 +728,17 @@ def _save(root, change, named, claimed):
 
 def _saving(root, change, named, claimed):
     """`_save`'s commit, and the commit HEAD is at once it is done."""
-    from util.len_patch_scope import dazedtl_files, grow_scope
+    from util.len_patch_scope import dazedtl_files, grow_scope, keep_out_of_downloads
+    from util.paths import GAME_NOTES_FILENAME
 
     named = set(_relative(named))
     status = _status(root)
+    # The assistant notes joined the rules keeping DazedTL's files out of
+    # players' downloads after many games took them, so the checkpoint that
+    # records the notes records the rule too.
+    notes = GAME_NOTES_FILENAME in status.paths and keep_out_of_downloads(Path(root))
+    if notes:
+        status = _status(root)
     # DazedTL's own files are never edits made outside it.
     own = (
         set()
@@ -755,6 +762,8 @@ def _saving(root, change, named, claimed):
             # settings an old rule order kept out.
             status = _status(root)
     pending = status.paths
+    if notes:
+        joined |= {".gitattributes"}
     chosen = joined | (pending & named if claimed is None else pending - claimed)
     commit = _commit(root, chosen, change, status) if chosen else None
     return commit, commit or (status.head if status.head != "(initial)" else None)

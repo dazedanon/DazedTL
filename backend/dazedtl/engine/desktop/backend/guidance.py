@@ -8,6 +8,9 @@ from .workflow_actions import regular
 DOCUMENTS = {"glossary": (".dazedtl/glossary.txt", "glossary.txt"),
              "quirks": (".dazedtl/skills/quirks.md", "translation_quirks.txt"),
              "game": (".dazedtl/skills/game.md", "skills/translation.md")}
+# The assistant notes the Context editor shows beside the guidance; no
+# translation request carries them, so `documents` leaves them out.
+NOTES = "notes"
 
 def documents(root):
     root = Path(root)
@@ -23,12 +26,32 @@ def documents(root):
         found = [regular(root, root / candidate) for candidate in candidates if (root / candidate).exists() or (root / candidate).is_symlink()]
         if len(found) > 1:
             raise ValueError(f"Both portable and legacy {name} files exist. Reconcile them before editing.")
-        path = found[0] if found else root / candidates[0]
-        if path.exists() and path.stat().st_size > 1_000_000:
-            raise ValueError("Guidance files must be below 1 MB.")
-        text = stored(name, path.read_text(encoding="utf-8-sig") if path.exists() else "")
-        result[name] = {"text": text, "revision": digest(text.encode()), "path": str(path)}
+        result[name] = _read(name, found[0] if found else root / candidates[0])
     return result
+
+def _read(name, path):
+    """A document as the editor shows its file: below 1 MB, in UTF-8 or, as
+    Windows PowerShell 5 writes a file, UTF-16 with its byte order mark."""
+    if path.exists() and path.stat().st_size > 1_000_000:
+        raise ValueError("Guidance files must be below 1 MB.")
+    raw = path.read_bytes() if path.exists() else b""
+    text = stored(name, raw.decode("utf-16") if raw.startswith((b"\xff\xfe", b"\xfe\xff")) else raw.decode("utf-8-sig"))
+    return {"text": text, "revision": digest(text.encode()), "path": str(path)}
+
+def notes(root):
+    """The game's assistant notes, read as `documents` reads guidance."""
+    from util.paths import GAME_NOTES_FILENAME
+    return _read(NOTES, regular(root, Path(root) / GAME_NOTES_FILENAME))
+
+def editable(root):
+    """The documents the Context editor saves: the guidance and the notes.
+    Notes an assistant wrote that can't be read leave the guidance editable
+    and the project open, without them."""
+    try:
+        held = {NOTES: notes(root)}
+    except (ValueError, UnicodeDecodeError):
+        held = {}
+    return {**documents(root), **held}
 
 def stored(name, text):
     """`text` as `documents` reads it back from a file that holds it: a
@@ -49,10 +72,11 @@ def written(root, names):
     and, for any skill, the former root skills folder, and the .gitignore
     keeping DazedTL's rules once the game's Git is set up."""
     from util.paths import LEGACY_GAME_SKILLS_RELATIVE, game_git_set_up
+    from util.paths import GAME_NOTES_FILENAME
     root = Path(root)
-    own = [DOCUMENTS[name][0] if name in DOCUMENTS else f".dazedtl/skills/{name.removeprefix('custom:')}.md" for name in names]
+    own = [DOCUMENTS[name][0] if name in DOCUMENTS else GAME_NOTES_FILENAME if name == NOTES else f".dazedtl/skills/{name.removeprefix('custom:')}.md" for name in names]
     legacy = [Path(DOCUMENTS[name][1]) for name in names if name in DOCUMENTS]
-    if any(name != "glossary" for name in names):
+    if any(name not in ("glossary", NOTES) for name in names):
         legacy += [path.relative_to(root) for path in (root / LEGACY_GAME_SKILLS_RELATIVE).rglob("*") if not path.is_dir()]
     moved = list(dict.fromkeys(path.as_posix() for path in legacy if (root / path).exists() or (root / path).is_symlink()))
     return own + moved + ([".gitignore"] if game_git_set_up(root) else [])
@@ -82,13 +106,15 @@ def documents_save(root, changes):
     its text, or when its revision is the one a save that wrote the file and
     then made no checkpoint replaced, as its draft then still has it."""
     root = Path(root)
-    current = documents(root)
+    current = editable(root)
     if not isinstance(changes, dict):
         raise ValueError("Choose a guidance document below 1 MB.")
     for name, change in changes.items():
         text = change.get("text") if isinstance(change, dict) else None
         if not valid_document_name(name) or not isinstance(text, str) or len(text.encode()) > 1_000_000:
             raise ValueError("Choose a guidance document below 1 MB.")
+        if name == NOTES and NOTES not in current:
+            raise ValueError("AGENTS.md in the game folder can't be read as text below 1 MB. Fix or remove it, then reload.")
         revision = change.get("revision")
         if name not in current and revision == "":
             revision = digest(b"")
@@ -102,16 +128,24 @@ def documents_save(root, changes):
             write_game_vocab(text, game_root=root)
             continue
         from util.skills import game_skill_path_for_game, quirks_path_for_game, custom_skill_path_for_game
-        path = custom_skill_path_for_game(root, name.removeprefix("custom:")) if name.startswith("custom:") else (game_skill_path_for_game if name == "game" else quirks_path_for_game)(root)
+        if name == NOTES:
+            path = Path(current[NOTES]["path"])
+        else:
+            path = custom_skill_path_for_game(root, name.removeprefix("custom:")) if name.startswith("custom:") else (game_skill_path_for_game if name == "game" else quirks_path_for_game)(root)
         path.parent.mkdir(parents=True, exist_ok=True)
         temporary = path.with_name(path.name + ".desktop-tmp")
         regular(root, temporary).write_text(text, encoding="utf-8", newline="\n")
         system.replace(temporary, path)
-    return documents(root)
+        if name == NOTES:
+            # A game whose patch rules ignore the rest of its root keeps
+            # the notes in Git all the same.
+            from util.paths import ensure_game_tool_gitignore
+            ensure_game_tool_gitignore(root)
+    return editable(root) if NOTES in changes else documents(root)
 
 
 def valid_document_name(name):
-    if name in DOCUMENTS:
+    if name in DOCUMENTS or name == NOTES:
         return True
     if not isinstance(name, str) or not name.startswith("custom:"):
         return False

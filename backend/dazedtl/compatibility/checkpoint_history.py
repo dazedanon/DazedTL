@@ -92,10 +92,12 @@ _blocker_cache = RepositoryStatusCache(stable=True)
 
 def _project_file(path):
     """Whether a file of the patch is the project's own, its glossary,
-    settings or skills, never the original game's: going back or undoing
-    takes it back to the checkpoint like any file, while the original game,
-    which Start over puts back, has none of them."""
-    return path.startswith(".dazedtl/")
+    settings, skills or assistant notes, never the original game's: going
+    back or undoing takes it back to the checkpoint like any file, while the
+    original game, which Start over puts back, has none of them."""
+    from util.paths import GAME_NOTES_FILENAME
+
+    return path.startswith(".dazedtl/") or path == GAME_NOTES_FILENAME
 
 
 def _trailer(message, key):
@@ -708,10 +710,15 @@ def go_back(
 ):
     """Puts the game's files back as they were at `commit`, as one
     checkpoint, and names the checkpoints it took out (`undone`, newest
-    first). `original` is the saved original game of a game set up before
+    first). The assistant notes describe the game, not a state of its
+    translation, so they stay as they are, as Start over leaves them; an undo
+    still takes out a checkpoint's own change to them. `original` is the
+    saved original game of a game set up before
     Git kept its original files, and `folder` the game's Guided workspace,
     whose packing receipt a VX Ace game's pack keeps current, as every
     write's does."""
+    from util.paths import GAME_NOTES_FILENAME
+
     from .game_write import write_game
 
     root = Path(root).resolve()
@@ -723,7 +730,8 @@ def go_back(
         entries = _since(root, game, entries)
         index = _restorable(entries, commit)
         state = _Game(root, entries[index], original, entries[:index])
-        plan = _plan(state, _diff(root, commit, "HEAD"), state.tree(commit))
+        changed = _diff(root, commit, "HEAD") - {GAME_NOTES_FILENAME}
+        plan = _plan(state, changed, state.tree(commit))
         written = _apply(game, root, plan, stopped, state)
     undone = [entry.commit for entry in entries[:index]]
     return {"files": written, "commit": _head(root, game), "undone": undone}

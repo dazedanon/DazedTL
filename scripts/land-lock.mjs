@@ -31,6 +31,9 @@ export class LockBusy extends Error {}
  */
 export const devMoved = 3;
 
+/** Where landed reviews are recorded, one JSON line each, in the shared Git directory. */
+export const reviewLog = "dazedtl-reviews.jsonl";
+
 /** Runs Git in `cwd`. @returns {Git} */
 export function gitIn(/** @type {string} */ cwd) {
   return (args, input) => {

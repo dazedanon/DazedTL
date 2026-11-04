@@ -3,6 +3,12 @@
 Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 [release.mjs](scripts/release.mjs) writes each entry from [release/notes.md](release/notes.md).
 
+## [2.65.0] - 2026-11-04
+
+### Added
+
+- **Context:** a new **Assistant notes** tab holds what every assistant should know about the game, such as its quirks, the tools written for it and how to unpack and repack it. Assistants read it before each task and keep it current, and it travels with the game's Git, as `AGENTS.md`, to other computers and assistants, never to players.
+
 ## [2.64.0] - 2026-11-04
 
 ### Added
@@ -1679,6 +1685,7 @@ Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachan
 - The first release of DazedTL as a desktop app, installed from a ZIP with a START launcher and updated from inside the app.
 - **Guided steps** for RPG Maker MV, MZ and VX Ace games, and **Assistant-led** for any game.
 
+[2.65.0]: https://github.com/dazedanon/DazedTL/compare/v2.64.0...v2.65.0
 [2.64.0]: https://github.com/dazedanon/DazedTL/compare/v2.63.0...v2.64.0
 [2.63.0]: https://github.com/dazedanon/DazedTL/compare/v2.62.0...v2.63.0
 [2.62.0]: https://github.com/dazedanon/DazedTL/compare/v2.61.0...v2.62.0

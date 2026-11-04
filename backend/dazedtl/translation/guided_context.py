@@ -14,7 +14,7 @@ from dazedtl.storage import write_json
 
 from . import context_setup, header_review, reference_folders, speaker_setup
 from .files import digest, project_path, read_json
-from .helper_command import helper_command, windows_note
+from .helper_command import helper_command, task_opening
 from .playtest import final_check
 from .speaker_setup import SCAN_VERSION
 
@@ -57,9 +57,10 @@ class GuidedContext:
         self.guided = guided
 
     def skill(self, project_id, name):
-        """One copied Guided task, opening with the note for Windows tools."""
+        """One copied Guided task, opening as every assistant task does."""
         task = self._task(project_id, name)
-        return {**task, "text": windows_note() + task["text"]}
+        _project, native = self.guided.record(project_id)
+        return {**task, "text": task_opening(native["source"]) + task["text"]}
 
     def _task(self, project_id, name):
         self.guided.clean(project_id)

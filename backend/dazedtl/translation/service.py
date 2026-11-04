@@ -49,7 +49,7 @@ from .census import HELP_SEGMENT
 from .compilation import verify_compilation
 from .files import digest, evidence, project_path, read_json, verify_evidence
 from .game_update import GameUpdate
-from .helper_command import LOOPBACK_NOTE, helper_command, windows_note
+from .helper_command import LOOPBACK_NOTE, helper_command, task_opening, windows_note
 from .jobs import Jobs, declined_message, finished_message, now
 from .operations import (
     census_stale,
@@ -507,7 +507,7 @@ class Translation:
             **selected,
             "drafts": self.drafts(project_id),
             "engine": engine,
-            "documents": self.documents(project_id),
+            "documents": self.engine.editable_documents(record["source"]),
             "progress": progress,
             "assistantSeenAt": self.seen(project_id),
             "coverage": run_compiler.saved_coverage(
@@ -608,7 +608,7 @@ class Translation:
             language=languages["target"],
             refresh=not frozen,
         )
-        handoff = windows_note() + self.starting_prompt(
+        handoff = task_opening(project.root) + self.starting_prompt(
             project_id, project, selected, setup, languages, update
         )
         write_bytes(
