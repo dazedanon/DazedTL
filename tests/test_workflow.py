@@ -2281,6 +2281,12 @@ class WorkflowTests(unittest.TestCase):
         checkpoint_history.undo(self.game, later)
         self.assertEqual(agents.read_text(encoding="utf-8"), "Repack Data.wolf.\n")
         self.assertIsNone(checkpoint_history.blockers(self.game, [saved])[saved])
+        # Redoing it, by undoing its undo, blocks it again.
+        checkpoint_history.undo(
+            self.game, _git(self.game, "rev-parse", "HEAD").stdout.strip()
+        )
+        found = checkpoint_history.blocker(self.game, saved)
+        self.assertEqual(found and found["commit"], later)
 
     def test_start_over_restores_the_original_and_sets_the_attempt_aside(self):
         # Starting over must put every original file back as one checkpoint,

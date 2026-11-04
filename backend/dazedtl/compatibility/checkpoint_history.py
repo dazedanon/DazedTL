@@ -254,7 +254,8 @@ def _blockers(entries):
     result = {}
     undone = set()
     for index, entry in enumerate(entries):
-        if entry.action == UNDO:
+        # An undo that a later one took out, a redo, undoes nothing.
+        if entry.action == UNDO and entry.commit not in undone:
             undone.add(_trailer(entry.message, TARGET_TRAILER))
         differing = {
             path
