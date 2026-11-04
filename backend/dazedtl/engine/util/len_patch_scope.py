@@ -285,6 +285,17 @@ def scope_ignore(existing: str, paths: set[str]) -> str:
     return normalize_game_tool_gitignore_text(existing.rstrip() + "\n\n" + "\n".join(lines) + "\n")
 
 
+def keep_out_of_downloads(repo: Path) -> bool:
+    """Adds to the game's .gitattributes the rules keeping DazedTL's own
+    files out of players' downloads that it lacks; whether it changed."""
+    attributes = repo / ".gitattributes"
+    existing = attributes.read_text(encoding="utf-8", errors="surrogateescape") if attributes.is_file() else ""
+    if (kept := game_tool_gitattributes_text(existing)) == existing:
+        return False
+    _write_atomic(attributes, kept)
+    return True
+
+
 def grow_scope(repo: Path, tracked: Collection[str], added: Iterable[str]) -> tuple[list[str], list[str]]:
     """Lets `added`, files a patch-scoped translation branch lacks, into its
     patch: the .gitignore patch block allows them besides what Git tracks,
@@ -312,10 +323,7 @@ def grow_scope(repo: Path, tracked: Collection[str], added: Iterable[str]) -> tu
     if updated != text:
         _write_atomic(ignore, updated)
         rules.append(".gitignore")
-    attributes = repo / ".gitattributes"
-    existing = attributes.read_text(encoding="utf-8", errors="surrogateescape") if attributes.is_file() else ""
-    if (kept := game_tool_gitattributes_text(existing)) != existing:
-        _write_atomic(attributes, kept)
+    if keep_out_of_downloads(repo):
         rules.append(".gitattributes")
     inventory = _asset_state_path(repo, "", "official-assets")
     if inventory.is_file():

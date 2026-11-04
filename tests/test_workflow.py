@@ -2366,21 +2366,40 @@ class WorkflowTests(unittest.TestCase):
     def test_assistant_notes_follow_the_games_git_but_never_reach_players(self):
         # The notes must reach another computer through the game's Git even
         # when the translation's patch rules ignore the rest of the game's
-        # root, stay out of every translation request's guidance, and stay
-        # out of the archives players download.
+        # root, stay out of every translation request's guidance and out of
+        # the archives players download, also in a game whose rules predate
+        # them, and outlive going back to before they were written. Notes an
+        # assistant wrote in UTF-16 read as text, and ones that can't be read
+        # never stop the guidance from saving.
+        from dazedtl.compatibility import checkpoint_history
         from dazedtl.compatibility.checkpoint_commits import _git
         from dazedtl.compatibility.translation import TranslationEngine
-        from desktop.backend.guidance import documents, notes
+        from desktop.backend.guidance import documents, editable, notes
         from util.len_git import setup_git
         from util.len_patch_scope import scope_ignore
         from util.len_translation import LenProject
 
         (self.game / ".gitignore").write_text(
-            scope_ignore("", {"source.json"}), encoding="utf-8"
+            scope_ignore("", {"source.json", ".gitattributes"}), encoding="utf-8"
         )
         original_files.record(self.game, original_files.FOUND)
         setup_git(LenProject(self.game), version="1.0", current_is_untranslated=True)
+        before = _git(self.game, "rev-parse", "HEAD").stdout.strip()
+        attributes = self.game / ".gitattributes"
+        attributes.write_text(
+            attributes.read_text(encoding="utf-8").replace(
+                "/AGENTS.md export-ignore\n", ""
+            ),
+            encoding="utf-8",
+        )
+        agents = self.game / "AGENTS.md"
+        agents.write_bytes(b"\x80 not text")
+        self.assertNotIn("notes", editable(self.game))
         engine = TranslationEngine(self.profile)
+        glossary = documents(self.game)["glossary"]
+        engine.document_save(self.game, "glossary", glossary["revision"], "Lili (リリ)")
+        agents.write_bytes("Repack Data.wolf.".encode("utf-16"))
+        self.assertEqual(notes(self.game)["text"], "Repack Data.wolf.")
         saved = engine.document_save(
             self.game,
             "notes",
@@ -2393,11 +2412,17 @@ class WorkflowTests(unittest.TestCase):
             _git(self.game, "show", "HEAD:AGENTS.md").stdout,
             "Repack Data.wolf after injection.",
         )
-        # The forges' downloads GameUpdate applies leave out what the game's
-        # rules export-ignore; a patch ZIP leaves out the same.
+        # The forges' downloads GameUpdate applies leave out what the
+        # committed rules export-ignore; a patch ZIP leaves out the same.
         self.assertEqual(
-            _git(self.game, "check-attr", "export-ignore", "AGENTS.md").stdout,
+            _git(
+                self.game, "check-attr", "--source=HEAD", "export-ignore", "AGENTS.md"
+            ).stdout,
             "AGENTS.md: export-ignore: set\n",
+        )
+        checkpoint_history.go_back(self.game, before)
+        self.assertEqual(
+            agents.read_text(encoding="utf-8"), "Repack Data.wolf after injection."
         )
 
     def test_a_patch_update_records_an_older_projects_new_originals(self):
