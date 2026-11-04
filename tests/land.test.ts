@@ -487,12 +487,14 @@ test("a landing refuses a fix of its own without the trailers saying where its b
   // A note may follow a value, and a commit of the branch's own may be named.
   reword("Introduced-by: unknown, before the history", "Found-by: Discord");
   assert.equal(untrailedFixes(git, "dev"), null);
-  reword(
-    "Introduced-by: none",
-    `Introduced-by: ${work.slice(0, 8)}`,
-    "Found-by: review",
-  );
+  reword(`Introduced-by: ${work.slice(0, 8)}`, "Found-by: review");
   assert.equal(untrailedFixes(git, "dev"), null);
+  // A commit named beside none says two things at once.
+  reword("Introduced-by: none", `Introduced-by: ${work}`, "Found-by: review");
+  assert.match(
+    untrailedFixes(git, "dev") ?? "",
+    /bare: Introduced-by none beside other values/,
+  );
   reword(
     "Introduced-by: v2.61.0",
     `Introduced-by: ${elsewhere}`,
