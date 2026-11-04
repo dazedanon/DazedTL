@@ -1,6 +1,7 @@
 import type { ContextSetup, Documents } from "../../api/contracts";
 import { useLanguages } from "../../app/LanguagesProvider";
-import { coreGuidance, guidanceTitle } from "./guidanceReview";
+import { AssistantNotesNote } from "./AssistantNotesNote";
+import { assistantNotes, guidanceTitle } from "./guidanceReview";
 import { guidanceFormats } from "./guidanceFormats";
 import { DocumentEditor } from "../../ui/DocumentEditor";
 import { HelpPopover } from "../../ui/HelpPopover";
@@ -34,7 +35,7 @@ export function GuidanceEditor({
         disabled={disabled}
         names={names}
         tabNames={[
-          ...coreGuidance,
+          ...names.filter((name) => !name.startsWith("custom:")),
           ...(selectedName.startsWith("custom:") ? [selectedName] : []),
         ]}
         titles={{ quirks: "Style & quirks" }}
@@ -55,25 +56,35 @@ export function GuidanceEditor({
         before={(name) => (
           <>
             <div className="guided-document-state">
-              <span className="context-document-path">
-                <span className="path">
-                  {(documents[name]?.path || "")
-                    .replaceAll("\\", "/")
-                    .replace(/^.*?(?=\.dazedtl\/)/, "")}
+              {name === assistantNotes ? (
+                <span className="context-document-path muted">
+                  <span className="context-document-note">
+                    <AssistantNotesNote />
+                  </span>
                 </span>
-                {name === "glossary" && (
-                  <HelpPopover label="Glossary format">
-                    Keep category headers and source (translation) entries;
-                    notes stay on the same line.
-                  </HelpPopover>
-                )}
-              </span>
+              ) : (
+                <span className="context-document-path">
+                  <span className="path">
+                    {(documents[name]?.path || "")
+                      .replaceAll("\\", "/")
+                      .replace(/^.*?(?=\.dazedtl\/)/, "")}
+                  </span>
+                  {name === "glossary" && (
+                    <HelpPopover label="Glossary format">
+                      Keep category headers and source (translation) entries;
+                      notes stay on the same line.
+                    </HelpPopover>
+                  )}
+                </span>
+              )}
               <span className="muted">
                 {context.drafts[name]
                   ? "Unsaved edits"
                   : setup.documents[name]?.exists
                     ? "Saved"
-                    : "Not saved yet"}
+                    : name === assistantNotes
+                      ? "None yet"
+                      : "Not saved yet"}
               </span>
               {!!custom.length && (
                 <select

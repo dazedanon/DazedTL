@@ -23,15 +23,27 @@ LAYOUT_REQUEST = "layout"
 
 
 def retained_documents(source, documents, drafts):
-    """Keep missing custom files addressable while their recovery drafts exist."""
+    """Keep missing custom files, and assistant notes AGENTS.md can't be read
+    into, addressable while their recovery drafts exist, so a draft can be
+    discarded; saving unreadable notes stays refused."""
+    from desktop.backend.guidance import NOTES
+    from util.paths import GAME_NOTES_FILENAME
+
     for name in drafts:
-        if name.startswith("custom:") and name not in documents:
-            path = project_path(
+        if name in documents or not (name.startswith("custom:") or name == NOTES):
+            continue
+        # Nothing writes through the notes' path, since saving them reads
+        # them again and refuses, so a link there leaves the project open.
+        path = (
+            Path(source) / GAME_NOTES_FILENAME
+            if name == NOTES
+            else project_path(
                 source,
                 ".dazedtl/skills/" + name.removeprefix("custom:") + ".md",
                 exists=False,
             )
-            documents[name] = {"text": "", "revision": digest(b""), "path": str(path)}
+        )
+        documents[name] = {"text": "", "revision": digest(b""), "path": str(path)}
     return documents
 
 

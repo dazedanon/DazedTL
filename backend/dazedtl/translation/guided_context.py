@@ -338,7 +338,7 @@ class GuidedContext:
                 self.guided.path(project_id, "context-review"),
                 native,
                 project_id,
-                self.guided.backend.workflows.documents(native["id"]),
+                self.guided.backend.workflows.editable(native["id"]),
                 self.speaker_findings(project_id, native),
                 self.speakers(project_id),
                 self.guided.observed_digest,

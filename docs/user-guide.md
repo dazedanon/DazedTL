@@ -101,7 +101,7 @@ For a Chinese or Japanese target, measure **Line widths** before you apply anyth
 
 | Task | What to do |
 | --- | --- |
-| **Names & glossary** | Copy the task to your assistant. It writes the glossary, character notes and game context; edit them in **Guidance**. |
+| **Names & glossary** | Copy the task to your assistant. It writes the glossary, character notes and game context; edit them and its **Assistant notes** in **Guidance**. |
 | **Event text sources** | Copy the task. Your assistant finds text the game shows through plugins and scripts; change its choices under **Source choices**. |
 | **Line widths** | Optional: copy the task, and your assistant measures the game's text boxes. Adjust the widths if you like; saving rewraps text already applied. |
 | **Cost estimate** | Click **Estimate cost** to see what translating the whole game will cost. Estimating is free. |

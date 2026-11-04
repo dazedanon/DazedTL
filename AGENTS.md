@@ -18,6 +18,7 @@
 - Give each rule one definition, such as how a text block's rows are grouped or how a file's status is counted, and call it from every place that needs it.
   When a fix touches a rule that is defined in more than one place, merge the copies first, or report them if merging is large.
 - Follow the ownership boundaries in [architecture](docs/architecture.md) and reuse its shared UI and state mechanisms.
+- Keep Guided and Assistant-led in step: when a change adds to one method, check whether the other can take it cleanly and with benefit, by the [method parity rule](docs/architecture.md#translation-execution-and-the-agent-boundary).
 - For screens, action handlers or observed state, follow the [UX principles](docs/architecture.md#ux-principles), [visual design](docs/architecture.md#visual-design), [workflow and shared presentation](docs/architecture.md#workflow-and-shared-presentation) and [navigation and responsiveness](docs/architecture.md#navigation-and-responsiveness) sections, including their review steps.
 - Keep credentials, games, run files, logs, and caches outside the source tree.
 - Key saved work on its inputs and an explicit version, never on hashes of source files; see [persistence](docs/architecture.md#persistence-and-settings).

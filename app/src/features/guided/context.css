@@ -228,6 +228,12 @@
   overflow-wrap: anywhere;
   flex: 0 1 auto;
 }
+/* A description in place of the path wraps as text, its help following the
+   last word, within the line and as far from it as a path's help. */
+.context-document-note .help-button {
+  vertical-align: top;
+  margin-left: var(--space-1);
+}
 .context-finding-details .path,
 .context-measurement-sources .path {
   padding: 0;

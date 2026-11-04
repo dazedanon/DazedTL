@@ -306,6 +306,8 @@ class GuidedTests(unittest.TestCase):
             folder=lambda _: self.folder,
             state=lambda _: {"project": self.native, "manual_job": self.pending},
             documents=lambda _: {},
+            # The Guidance task's view, which adds the assistant notes.
+            editable=lambda owner: workflows.documents(owner),
             update=update,
             apply_investigation_settings=apply_settings,
             save=Mock(),
@@ -2584,6 +2586,80 @@ class GuidedTests(unittest.TestCase):
             self.guided.save_documents(self.identity, draft("Keep after failure"))
         self.assertEqual(pending["documents"]["glossary"]["text"], "Keep after failure")
         self.assertEqual(path.read_text(encoding="utf-8"), "")
+
+    def test_guidance_edits_the_assistant_notes_beside_the_guidance(self):
+        # Guided's Guidance must show, select and save the game's assistant
+        # notes as Assistant-led's Context does: it read only the guidance,
+        # so Guided had no Assistant notes tab.
+        from desktop.backend.guidance import documents, documents_save, editable
+
+        self.backend.workflows.documents = lambda _: documents(self.source)
+        self.backend.workflows.editable = lambda _: editable(self.source)
+        self.backend.workflows.documents_save = lambda _, changes: documents_save(
+            self.source, changes
+        )
+        self.backend.workflows.draft = Mock()
+        summaries = []
+
+        def write(source, native=None, **options):
+            summaries.append(options["summary"])
+            return game_write(source, native, **options)
+
+        self.backend.game_write = write
+        # Notes typed and cleared again write no empty AGENTS.md.
+        self.guided.save_documents(
+            self.identity, {"notes": {"text": "", "revision": ""}}
+        )
+        self.assertFalse((self.source / "AGENTS.md").exists())
+        self.assertEqual(summaries, [])
+        self.guided.position(self.identity, "context", "guidance", "notes")
+        self.assertEqual(
+            read_json(self.guided.path(self.identity, "context-document")),
+            {"name": "notes"},
+        )
+        self.assertFalse(
+            self.guided.context_status(self.identity)["documents"]["notes"]["exists"]
+        )
+        notes = "Repack Data.wolf after injection."
+        self.guided.save_documents(
+            self.identity, {"notes": {"text": notes, "revision": ""}}
+        )
+        self.assertEqual((self.source / "AGENTS.md").read_text(encoding="utf-8"), notes)
+        self.assertEqual(summaries, ["Save Assistant notes"])
+        self.assertTrue(
+            self.guided.context_status(self.identity)["documents"]["notes"]["exists"]
+        )
+        # Notes an assistant wrote that can't be read keep a draft of them
+        # selectable, so it can be discarded: Guidance once refused to select
+        # it. A Save guidance that sends it stays refused whole, leaving every
+        # file as it is, and the rest saves once that draft is discarded.
+        unreadable = "メモ".encode("shift_jis")
+        (self.source / "AGENTS.md").write_bytes(unreadable)
+        drafts = {
+            "notes": {"text": "My notes", "revision": ""},
+            "quirks": {"text": "Keep honorifics.", "revision": ""},
+        }
+        self.backend.workflows.state = lambda _: {"draft": {"documents": drafts}}
+        self.guided.position(self.identity, "context", "guidance", "notes")
+        with self.assertRaisesRegex(ValueError, "discard the Assistant notes draft"):
+            self.guided.save_documents(self.identity, dict(drafts))
+        self.assertEqual((self.source / "AGENTS.md").read_bytes(), unreadable)
+        self.assertEqual(documents(self.source)["quirks"]["text"], "")
+        self.guided.save_documents(self.identity, {"quirks": drafts["quirks"]})
+        self.assertEqual(documents(self.source)["quirks"]["text"], "Keep honorifics.")
+        # Notes linked to another file are unreadable too, and their draft
+        # must not refuse the project's every state: it once failed on the
+        # link.
+        (self.source / "AGENTS.md").unlink()
+        (self.source / "CLAUDE.md").write_text("Shared notes", encoding="utf-8")
+        (self.source / "AGENTS.md").symlink_to("CLAUDE.md")
+        self.guided.position(self.identity, "context", "guidance", "notes")
+        # Nor may notes another program holds open, as Windows locks them.
+        with patch(
+            "desktop.backend.guidance.notes", side_effect=PermissionError("held")
+        ):
+            self.guided.position(self.identity, "context", "guidance", "glossary")
+            self.guided.context_status(self.identity)
 
     def test_measured_layout_applies_once_and_preserves_active_work_and_width_edits(
         self,

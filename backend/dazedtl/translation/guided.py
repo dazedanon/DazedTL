@@ -339,7 +339,7 @@ class Guided:
             raise ValueError("Choose a guided task.")
         documents = context_setup.retained_documents(
             native["source"],
-            self.backend.workflows.documents(native["id"]),
+            self.backend.workflows.editable(native["id"]),
             self.backend.workflows.state(native["id"])
             .get("draft", {})
             .get("documents", {}),
@@ -816,7 +816,7 @@ class Guided:
         )
         documents = context_setup.retained_documents(
             native["source"],
-            self.backend.workflows.documents(native["id"]),
+            self.backend.workflows.editable(native["id"]),
             value.get("draft", {}).get("documents", {}),
         )
         paid = [
@@ -1117,7 +1117,8 @@ class Guided:
         """Saves the guidance documents Save guidance sends, skipping those
         whose file already holds their text. A core document the game has no
         file for is created even when empty, which completes Guidance, but
-        the checkpoint is named by the documents whose text changed."""
+        the checkpoint is named by the documents whose text changed; the
+        assistant notes are created only once they hold text."""
         _, native = self.record(project_id)
         if not isinstance(documents, dict) or not all(
             isinstance(name, str)
@@ -1128,7 +1129,7 @@ class Guided:
             raise ValueError("Choose a guidance document.")
         from desktop.backend.guidance import holds
 
-        current = self.backend.workflows.documents(native["id"])
+        current = self.backend.workflows.editable(native["id"])
         # Explicit Save replaces the current guidance. The editor's older
         # revision is recovery metadata, not a conflict-review prerequisite.
         changes = {
@@ -1140,7 +1141,10 @@ class Guided:
             if not (
                 name in current
                 and holds(name, current[name], document["text"])
-                and Path(current[name]["path"]).is_file()
+                and (
+                    Path(current[name]["path"]).is_file()
+                    or name not in context_setup.CORE
+                )
             )
         }
         edited = [
@@ -1166,8 +1170,11 @@ class Guided:
 
 def guidance_title(name):
     """A guidance document's name as the Guidance task's tabs show it."""
+    from desktop.backend.guidance import NOTES, NOTES_TITLE
+
     return {
         "glossary": "Glossary",
         "quirks": "Style & quirks",
         "game": "Game context",
+        NOTES: NOTES_TITLE,
     }.get(name) or "Skill: " + name.removeprefix("custom:")

@@ -123,4 +123,7 @@ test("guidance completion follows file presence independently of old review and 
       { "custom:notes": { text: "", revision: "old" } },
     ).includes("custom:notes"),
   );
+  // The assistant notes are optional, so a game without AGENTS.md stays
+  // complete and Save guidance never creates an empty one.
+  assert.equal(guidanceAvailability(setup.documents).complete, true);
 });

@@ -11,6 +11,8 @@ DOCUMENTS = {"glossary": (".dazedtl/glossary.txt", "glossary.txt"),
 # The assistant notes the Context editor shows beside the guidance; no
 # translation request carries them, so `documents` leaves them out.
 NOTES = "notes"
+# Their name in both methods' editors and the checkpoints that save them.
+NOTES_TITLE = "Assistant notes"
 
 def documents(root):
     root = Path(root)
@@ -45,11 +47,12 @@ def notes(root):
 
 def editable(root):
     """The documents the Context editor saves: the guidance and the notes.
-    Notes an assistant wrote that can't be read leave the guidance editable
-    and the project open, without them."""
+    Notes an assistant wrote that can't be read, or opened, such as a file
+    another program holds, leave the guidance editable and the project open,
+    without them."""
     try:
         held = {NOTES: notes(root)}
-    except (ValueError, UnicodeDecodeError):
+    except (OSError, ValueError):
         held = {}
     return {**documents(root), **held}
 
@@ -114,7 +117,7 @@ def documents_save(root, changes):
         if not valid_document_name(name) or not isinstance(text, str) or len(text.encode()) > 1_000_000:
             raise ValueError("Choose a guidance document below 1 MB.")
         if name == NOTES and NOTES not in current:
-            raise ValueError("AGENTS.md in the game folder can't be read as text below 1 MB. Fix or remove it, then reload.")
+            raise ValueError(f"AGENTS.md in the game folder can't be opened, or read as text below 1 MB. Fix or remove it and reload, or discard the {NOTES_TITLE} draft.")
         revision = change.get("revision")
         if name not in current and revision == "":
             revision = digest(b"")

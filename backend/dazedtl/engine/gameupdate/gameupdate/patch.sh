@@ -3,20 +3,135 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT_DIR="$(pwd)"
+# The game whose gameupdate folder this is, wherever the run starts, so a
+# patch and its undo journal always meet the same folder.
+ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 CONFIG_FILE="$SCRIPT_DIR/patch-config.txt"
 STATE_FILE="$SCRIPT_DIR/previous_patch_sha.txt"
 API_HEADERS=( -H "User-Agent: GameUpdate/1.0" )
 
+# Where applying a patch keeps what it changed: on the game's own drive, so
+# setting a game file aside is a rename that needs no space. DazedTL keeps it
+# out of patches (gameupdate_local in project_preparation.py).
+UNDO_DIR="$SCRIPT_DIR/undo"
+UNDO_JOURNAL="$UNDO_DIR/journal.txt"
+UNDO_MOVED=0
+APPLYING=0
+PID_LOCK=""
+
+# Puts the game back as it was before a patch copy that did not finish, from
+# its journal, newest change first: moves each game file it set aside back,
+# removes each file it added, and each folder it added once that is empty.
+# Each step checks what is there first, so running it again after it stopped
+# finishes it. Fails when a file can't be put back, keeping the journal for
+# the next run.
+undo_patch() {
+    local lines=() line kind relative number path i left=0
+    if [ -f "$UNDO_JOURNAL" ]; then
+        echo "Putting the game back as it was..."
+        # A line cut short, when the run ended while writing it, has no
+        # newline, so read skips it; the change it names was never made.
+        while IFS= read -r line; do
+            lines+=( "$line" )
+        done < "$UNDO_JOURNAL"
+        for ((i = ${#lines[@]} - 1; i >= 0; i--)); do
+            kind="${lines[i]%% *}"
+            relative="${lines[i]#* }"
+            if [ "$kind" = moved ]; then
+                number="${relative%% *}"
+                relative="${relative#* }"
+            fi
+            [ -n "$relative" ] || continue
+            path="$ROOT_DIR/$relative"
+            if [ "$kind" = moved ]; then
+                if [ -e "$UNDO_DIR/$number" ] || [ -L "$UNDO_DIR/$number" ]; then
+                    if ! { rm -f "$path" && mv -f "$UNDO_DIR/$number" "$path"; }; then
+                        echo "GameUpdate could not put back $relative."
+                        left=1
+                    fi
+                fi
+            elif [ -d "$path" ] && [ ! -L "$path" ]; then
+                # Another program may have put files in it since; an empty
+                # folder changes nothing for the game.
+                rmdir "$path" 2> /dev/null || true
+            elif [ -e "$path" ] || [ -L "$path" ]; then
+                if ! rm -f "$path"; then
+                    echo "GameUpdate could not remove $relative."
+                    left=1
+                fi
+            fi
+        done
+        if [ "$left" -ne 0 ]; then
+            echo "ERROR: GameUpdate could not put the game back fully. Close the game, then run GameUpdate again to finish putting it back."
+            return 1
+        fi
+        # Once the journal is gone the game is as it was; the rest of the
+        # folder is only left over.
+        rm -f "$UNDO_JOURNAL"
+        echo "The game was left as it was before this update."
+    fi
+    rm -rf "$UNDO_DIR" || true
+}
+
+# Copies patch file $1 to $2, relative to the game, after writing the change
+# to undo_patch's journal: the game file it replaces is moved aside, and the
+# file and each folder it adds are listed.
+copy_patch_file() {
+    local source="$1" relative="$2" folder i replaced="" mode
+    local folders=()
+    folder=.
+    [[ "$relative" == */* ]] && folder="${relative%/*}"
+    while [ "$folder" != . ] && [ ! -d "$ROOT_DIR/$folder" ]; do
+        if [ -e "$ROOT_DIR/$folder" ] || [ -L "$ROOT_DIR/$folder" ]; then
+            echo "ERROR: This patch has a folder where the game has a file: $folder"
+            return 1
+        fi
+        folders+=( "$folder" )
+        if [[ "$folder" == */* ]]; then folder="${folder%/*}"; else folder=.; fi
+    done
+    for ((i = ${#folders[@]} - 1; i >= 0; i--)); do
+        printf 'added %s\n' "${folders[i]}" >> "$UNDO_JOURNAL" || return 1
+        mkdir "$ROOT_DIR/${folders[i]}" || return 1
+    done
+    if [ -d "$ROOT_DIR/$relative" ]; then
+        echo "ERROR: This patch has a file where the game has a folder: $relative"
+        return 1
+    fi
+    if [ -e "$ROOT_DIR/$relative" ] || [ -L "$ROOT_DIR/$relative" ]; then
+        printf 'moved %s %s\n' "$UNDO_MOVED" "$relative" >> "$UNDO_JOURNAL" || return 1
+        mv -f "$ROOT_DIR/$relative" "$UNDO_DIR/$UNDO_MOVED" || return 1
+        replaced="$UNDO_DIR/$UNDO_MOVED"
+        UNDO_MOVED=$((UNDO_MOVED + 1))
+    else
+        printf 'added %s\n' "$relative" >> "$UNDO_JOURNAL" || return 1
+    fi
+    cp -f "$source" "$ROOT_DIR/$relative" || return 1
+    # The new file takes the patch's mode; the game's own, such as an
+    # executable launcher's, stays.
+    if [ -n "$replaced" ] && mode="$(stat -L -c %a "$replaced" 2> /dev/null)"; then
+        chmod "$mode" "$ROOT_DIR/$relative" || return 1
+    fi
+}
+
 # Temporary folders and the downloaded ZIP go however the run ends, closed
-# window and Ctrl+C included.
+# window and Ctrl+C included; a patch stopped while it is applied is undone,
+# with further signals and output errors, such as a closed terminal's, no
+# longer stopping that.
 TEMP_PATHS=()
 remove_temp_paths() {
     local path
+    trap '' INT TERM HUP PIPE
+    set +e
+    if [ "$APPLYING" -eq 1 ]; then
+        undo_patch
+    fi
     for path in "${TEMP_PATHS[@]}"; do
         rm -rf "$path"
     done
     rm -f "$ROOT_DIR/repo.zip"
+    if [ -n "$PID_LOCK" ] && [ "$(cat "$PID_LOCK" 2> /dev/null)" = "$$" ]; then
+        rm -f "$PID_LOCK"
+    fi
 }
 trap remove_temp_paths EXIT
 trap 'exit 130' INT TERM HUP
@@ -39,10 +154,11 @@ run_windows_exe() {
                 echo "ERROR: wine is required to run $(basename "$exe") on Linux."
                 return 1
             fi
-            ( cd "$ROOT_DIR" && WINEDEBUG=-all wine "$exe" "$@" )
+            # Without the run's lock, which wineserver would hold after it.
+            ( cd "$ROOT_DIR" && WINEDEBUG=-all wine "$exe" "$@" 9>&- )
             ;;
         *)
-            ( cd "$ROOT_DIR" && "$exe" "$@" )
+            ( cd "$ROOT_DIR" && "$exe" "$@" 9>&- )
             ;;
     esac
 }
@@ -51,6 +167,51 @@ run_windows_exe() {
 check_dependency jq
 check_dependency unzip
 check_dependency curl
+
+# Held for the rest of the run, so a second GameUpdate never undoes or
+# replaces files this one is applying; patch.ps1 holds the same file. The
+# file stays: one removed while another run opens it would let two runs hold
+# it. Without flock, gameupdate.pid names the run holding it, made only
+# where it is missing; one whose process has ended, or is no GameUpdate's
+# since its number was reused, was left by a killed run.
+busy="ERROR: Another GameUpdate is already running for this game. Let it finish, then run GameUpdate again if needed."
+unwritable="ERROR: GameUpdate can't write in $SCRIPT_DIR. Move the game to a folder you can change, then run GameUpdate again."
+if command -v flock > /dev/null 2>&1; then
+    if ! exec 9> "$SCRIPT_DIR/gameupdate.lock"; then
+        echo "$unwritable"
+        exit 1
+    fi
+    if ! flock -n 9; then
+        echo "$busy"
+        exit 1
+    fi
+else
+    PID_LOCK="$SCRIPT_DIR/gameupdate.pid"
+    if ! ( set -C; printf '%s\n' "$$" > "$PID_LOCK" ) 2> /dev/null; then
+        holder="$(cat "$PID_LOCK" 2> /dev/null || true)"
+        # A live process whose command can't be read counts as a GameUpdate.
+        holder_args=""
+        # This run's own number, as in a fresh process namespace, is a
+        # killed run's.
+        if [ -n "$holder" ] && [ "$holder" != "$$" ] && kill -0 "$holder" 2> /dev/null; then
+            holder_args="$(tr '\0' ' ' 2> /dev/null < "/proc/$holder/cmdline" \
+                || ps -p "$holder" -o args= 2> /dev/null || true)"
+            if [ -z "$holder_args" ] || [[ "$holder_args" == *patch* ]]; then
+                PID_LOCK=""
+                echo "$busy If none is, delete gameupdate/gameupdate.pid."
+                exit 1
+            fi
+        fi
+        if ! printf '%s\n' "$$" > "$PID_LOCK"; then
+            PID_LOCK=""
+            echo "$unwritable"
+            exit 1
+        fi
+    fi
+fi
+
+# An update stopped partway, such as by a killed process, is undone first.
+undo_patch || exit 1
 
 # Check if CONFIG_FILE exists
 if [ ! -f "$CONFIG_FILE" ]; then
@@ -579,7 +740,9 @@ download_extract() {
     if is_wolf_game; then
         wolf_patch=1
         # Stage UberWolfCli before unpack so Data.wolf -> Data/ happens before
-        # English patch files are copied on top.
+        # English patch files are copied on top. This stays outside the
+        # patch's undo: the loose Data/ it unpacks is the same game, which a
+        # later run would unpack again.
         for cli_name in UberWolfCli.exe UberWolfCli.LICENSE.txt; do
             if [ -f "$inner/$cli_name" ] && [ ! -f "$ROOT_DIR/$cli_name" ]; then
                 cp -f "$inner/$cli_name" "$ROOT_DIR/$cli_name"
@@ -589,6 +752,18 @@ download_extract() {
     fi
 
     echo "Applying patch..."
+    # The startup undo finished any earlier journal. Copies a removal left
+    # behind must not stand in for this patch's.
+    if [ -f "$UNDO_JOURNAL" ]; then
+        echo "ERROR: An earlier update is not put back yet. Close the game, then run GameUpdate again to finish putting it back."
+        return 1
+    fi
+    if ! { rm -rf "$UNDO_DIR" && mkdir "$UNDO_DIR" && : > "$UNDO_JOURNAL"; }; then
+        echo "ERROR: GameUpdate can't empty $UNDO_DIR. Close the game, then run GameUpdate again."
+        return 1
+    fi
+    UNDO_MOVED=0
+    APPLYING=1
     copy_failed=0
     while IFS= read -r -d '' patch_file; do
         relative_path="${patch_file#"$inner"/}"
@@ -597,18 +772,22 @@ download_extract() {
            { [ "$file_name" = "UberWolfCli.exe" ] || [ "$file_name" = "UberWolfCli.LICENSE.txt" ]; }; then
             continue
         fi
-        target_path="$ROOT_DIR/$relative_path"
-        if ! mkdir -p "$(dirname "$target_path")" || ! cp -f "$patch_file" "$target_path"; then
+        if ! copy_patch_file "$patch_file" "$relative_path"; then
             copy_failed=1
             break
         fi
     done < <(find "$inner" -type f -print0)
     if [ "$copy_failed" -ne 0 ]; then
         echo "Patch application failed!"
+        APPLYING=0
+        undo_patch || true
         rm -rf "$TMP_EX"
         rm -f "$ROOT_DIR/repo.zip"
         return 1
     fi
+    APPLYING=0
+    rm -f "$UNDO_JOURNAL"
+    rm -rf "$UNDO_DIR"
 
     # --------------------------------------------------------
     # POST-APPLY: Run Steps 3 and 4 after patch files are merged
