@@ -89,13 +89,21 @@ def from_png(png: bytes, original: bytes) -> bytes:
 
 
 def _opaque(image, label: str):
-    """The RGB image of an RGBA image without transparent pixels."""
+    """The RGB image of an edited RGBA copy whose game file keeps no
+    transparency; a copy with transparent pixels can't be written so."""
     low, _high = image.getchannel("A").getextrema()
     if low < 255:
         raise ValueError(
             f"The game's {label} image has no transparency, but the edited copy has transparent pixels."
         )
     return image.convert("RGB")
+
+
+def _bgra(image):
+    """An image's pixels as KiriKiri keeps them, BGRA."""
+    import numpy as np
+
+    return np.asarray(image.convert("RGBA"), dtype=np.uint8)[:, :, [2, 1, 0, 3]].copy()
 
 
 def _bmp_header(raw: bytes) -> tuple[int, int, int, int, int]:
@@ -143,23 +151,24 @@ def _bmp_image(raw: bytes):
 
 
 def _bmp_file(image, original: bytes) -> bytes:
-    """A BMP with the original's bit depth where KiriKiri reads it: 32-bit
-    with the edited alpha, or every fourth byte zero as in an original that
-    leaves them so, else 24-bit."""
-    import numpy as np
+    """A BMP KiriKiri reads as the original: 32-bit with the edited alpha in
+    each pixel's fourth byte for an original with alpha, 32-bit with those
+    bytes zero for an original that leaves them so, else 24-bit."""
+    from PIL import Image
 
     _offset, _width, _height, bits, compression = _bmp_header(original)
-    if bits != 32 or compression != 0:
+    with Image.open(BytesIO(original)) as opened:
+        # Pillow reads the alpha of a BMP whose masks give one.
+        alpha = _bmp_alpha(original) is not None or "A" in opened.getbands()
+    if alpha:
+        pixels = _bgra(image)
+    elif bits == 32 and compression == 0:
+        pixels = _bgra(_opaque(image, "BMP"))
+        pixels[:, :, 3] = 0
+    else:
         stream = BytesIO()
         _opaque(image, "BMP").save(stream, format="BMP")
         return stream.getvalue()
-    pixels = np.asarray(image, dtype=np.uint8)[:, :, [2, 1, 0, 3]].copy()
-    if _bmp_alpha(original) is None:
-        if pixels[:, :, 3].min() < 255:
-            raise ValueError(
-                "The game's BMP image has no transparency, but the edited copy has transparent pixels."
-            )
-        pixels[:, :, 3] = 0
     height, width = pixels.shape[:2]
     data = pixels[::-1].tobytes()
     header = struct.pack(
@@ -198,6 +207,9 @@ def _tlg_image(raw: bytes):
             raise ValueError("The TLG image has an unknown version.")
     except (IndexError, struct.error) as exc:
         raise ValueError("The TLG image is damaged.") from exc
+    if colors == 1:
+        # A grayscale TLG6 holds its values in the first channel.
+        return Image.fromarray(pixels[:, :, 0].copy(), "L")
     # KiriKiri keeps pixels as BGRA.
     rgba = pixels[:, :, [2, 1, 0, 3]].copy()
     image = Image.fromarray(rgba, "RGBA")
@@ -321,17 +333,12 @@ def _tlg5_file(pixels, colors: int) -> bytes:
 
 
 def _tlg_file(image, original: bytes) -> bytes:
-    import numpy as np
-
     stream, tags = _tlg_parts(original)
-    colors = 3 if stream[11:12] == b"\x03" else 4
-    pixels = np.asarray(image, dtype=np.uint8)[:, :, [2, 1, 0, 3]].copy()
-    if colors == 3:
-        if pixels[:, :, 3].min() < 255:
-            raise ValueError(
-                "The game's TLG image has no transparency, but the edited copy has transparent pixels."
-            )
-    written = _tlg5_file(pixels, colors)
+    colors = stream[11]
+    if colors == 1:
+        # KiriKiri reads TLG5 in color only, and DazedTL writes no TLG6.
+        raise ValueError("DazedTL can't write a grayscale TLG image.")
+    written = _tlg5_file(_bgra(image if colors == 4 else _opaque(image, "TLG")), colors)
     if not original.startswith(_TLG_SDS):
         return written
     return _TLG_SDS + struct.pack("<I", len(written)) + written + tags
@@ -439,7 +446,7 @@ def _tlg6_pixels(stream: bytes):
     import numpy as np
 
     colors, flag, color_type, external = stream[11:15]
-    if colors not in (3, 4) or flag or color_type or external:
+    if colors not in (1, 3, 4) or flag or color_type or external:
         raise ValueError("The TLG image has an unsupported color type.")
     width, height, _longest = struct.unpack_from("<III", stream, 15)
     _tlg_size(width, height)

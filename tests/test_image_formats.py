@@ -216,7 +216,8 @@ def tlg6(pixels, colors):
         for column, left in enumerate(range(0, width, 8)):
             right = min(left + 8, width)
             span = right - left
-            kind = len(types) % 32
+            # A grayscale image has no colors to correlate.
+            kind = len(types) % (32 if colors > 1 else 2)
             types.append(kind)
             errors = np.zeros((lines, span, 4), np.int32)
             for y in range(top, bottom):
@@ -330,6 +331,17 @@ class TlgTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "transparent"):
             from_png(png(picture(8, 8, 2)), original)
 
+    def test_a_grayscale_tlg6_reads_as_its_first_channel(self):
+        # KiriKiri reads a one-color TLG6, such as a rule image; it was
+        # refused as an unsupported color type, so it couldn't be viewed.
+        pixels = picture(11, 13, 4)
+        raw = tlg6(bgra(pixels), 1)
+        with Image.open(BytesIO(to_png(raw))) as image:
+            self.assertEqual(image.mode, "L")
+            np.testing.assert_array_equal(np.asarray(image), pixels[:, :, 2])
+        with self.assertRaisesRegex(ValueError, "grayscale"):
+            from_png(to_png(raw), raw)
+
 
 class BmpAndJpegTests(unittest.TestCase):
     def test_a_32_bit_bmp_keeps_the_alpha_kirikiri_reads(self):
@@ -340,6 +352,26 @@ class BmpAndJpegTests(unittest.TestCase):
         written = from_png(png(edited), raw)
         self.assertEqual(written[28], 32)
         np.testing.assert_array_equal(pixels_of(written), edited)
+
+    def test_a_bmp_with_an_alpha_mask_keeps_its_alpha(self):
+        # A BMP whose header masks give alpha (BI_BITFIELDS) read with its
+        # alpha but was written back opaque, so even its untouched copy
+        # failed to apply.
+        original = picture(4, 5, 1)
+        data = bgra(original)[::-1].tobytes()
+        header = (
+            struct.pack("<IiiHHIIiiII", 108, 5, 4, 1, 32, 3, len(data), 0, 0, 0, 0)
+            + struct.pack("<4I", 0xFF0000, 0xFF00, 0xFF, 0xFF000000)
+            + bytes(52)
+        )
+        raw = (
+            struct.pack("<2sIHHI", b"BM", 14 + len(header) + len(data), 0, 0, 122)
+            + header
+            + data
+        )
+        np.testing.assert_array_equal(pixels_of(raw), original)
+        written = from_png(to_png(raw), raw)
+        np.testing.assert_array_equal(pixels_of(written), original)
 
     def test_a_32_bit_bmp_without_alpha_stays_so(self):
         # Every fourth byte zero: an opaque picture, whose edit keeps them so.
