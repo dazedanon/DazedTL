@@ -22,7 +22,7 @@ from dazedtl.api.contracts.validation import check_response
 from dazedtl.compatibility import original_files
 from dazedtl.compatibility.images import ImageCompatibility
 from dazedtl.foreign_work import ForeignWorkError
-from dazedtl.images import ImageService, recipes, validation
+from dazedtl.images import ImageService, families, recipes, validation
 from dazedtl.images import service as service_module
 from dazedtl.images.inventory import png_metadata
 from dazedtl.projects.store import Projects
@@ -1700,7 +1700,7 @@ class DecodedImagePatchTests(unittest.TestCase):
         # A BMP's PNG copy is made by Pillow, whose newer releases may encode
         # it differently: the saved hash then never matched, and Prepare
         # stopped with "A source image changed during preparation".
-        from util import image_formats
+        from util import image_formats, image_manager
 
         title = "decoded/Picture/title.bmp"
         stream = BytesIO()
@@ -1717,6 +1717,7 @@ class DecodedImagePatchTests(unittest.TestCase):
 
         with (
             patch.object(image_formats, "to_png", newer),
+            patch.object(image_manager, "to_png", newer),
             patch.object(image_formats, "decoder", lambda: "newer"),
         ):
             self.scan()
@@ -1724,6 +1725,12 @@ class DecodedImagePatchTests(unittest.TestCase):
             self.service.action(self.identity, "prepare")
             (row,) = self.service.list(self.identity, asset_id=title)["items"]
             self.assertTrue(row["editable"])
+        # Its kept original, a PNG from that reader, then differed from the
+        # copy read again, so its family said it was translated in the game.
+        self.scan()
+        self.assertEqual(
+            families.translated(self.service._index(self.identity).get(title)), ""
+        )
 
     def test_undoing_an_apply_into_a_decoded_folder_puts_its_original_back(self):
         # Undoing the apply deleted the decoded image, which only the apply
