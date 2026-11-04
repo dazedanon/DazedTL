@@ -292,6 +292,19 @@ class Translation:
     def options(self, project):
         return project.read(self.default_mode())
 
+    def shown_options(self, record, project):
+        """The options as the project's method shows them. A Manual project
+        has no assistant to install GameUpdate, so its choice is whether the
+        game holds GameUpdate, which saving another choice changes (save)."""
+        selected = self.options(project)
+        if record.get("method") != MANUAL:
+            return selected
+        installed = self.engine.gameupdate_installed(project.root)
+        return {
+            **selected,
+            "options": {**selected["options"], "install_gameupdate": installed},
+        }
+
     def run_mode(self, project, method=None):
         """The mode the project runs in: a saved Batch the connection cannot
         run is Live, which the page shows from the same rule. A Manual
@@ -351,8 +364,9 @@ class Translation:
             return None
         # Drafts saved before an option existed take its default.
         value = {**value, "options": {**ADDED, **value["options"]}}
-        _record, project = self.project(identity)
-        return None if value["options"] == self.options(project)["options"] else value
+        record, project = self.project(identity)
+        shown = self.shown_options(record, project)["options"]
+        return None if value["options"] == shown else value
 
     def draft(self, project_id, section, value):
         if section not in {"options", "documents"}:
@@ -399,7 +413,14 @@ class Translation:
 
     def save(self, project_id, revision, values):
         self.idle(project_id)
-        _record, project = self.project(project_id)
+        record, project = self.project(project_id)
+        if record.get("method") == MANUAL:
+            # Its GameUpdate choice goes into the game first, so a refusal,
+            # such as a WOLF patch's Data.wolf, saves nothing.
+            install = options(values)["install_gameupdate"]
+            if install != self.engine.gameupdate_installed(project.root):
+                project.current(revision, self.default_mode())
+                self.engine.set_gameupdate(project.root, install)
         saved = project.save(revision, values, self.default_mode())
         self.draft(project_id, "options", None)
         return saved
@@ -454,7 +475,7 @@ class Translation:
 
     def state(self, project_id):
         record, project = self.project(project_id)
-        selected = self.options(project)
+        selected = self.shown_options(record, project)
         warnings = []
         try:
             progress = self.engine.progress(project.root, selected["options"])

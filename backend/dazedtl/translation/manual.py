@@ -7,9 +7,10 @@ Translation files).
 Loading a file makes its lines the project's units, which estimates
 organize into requests; translations the file already holds are imported
 first, so only the lines without one are sent. The user's extractor
-decides what is in scope, so no census is needed, and DazedTL never writes
-the game, so no Git baseline is either (project MANUAL). The project's
-translation file comes back out with Export (exchange).
+decides what is in scope, so no census is needed, and DazedTL writes the
+game only to add or take out GameUpdate as Options choose
+(Translation.save), so no Git baseline is either (project MANUAL). The
+project's translation file comes back out with Export (exchange).
 """
 
 import json

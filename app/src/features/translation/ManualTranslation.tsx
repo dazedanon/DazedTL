@@ -45,7 +45,12 @@ import {
   latestApiRun,
 } from "./apiRun";
 import { ContextPanel } from "./ContextPanel";
-import { BaseGlossaryField, TranslationModeField } from "./OptionsPanel";
+import {
+  BaseGlossaryField,
+  GameUpdateConfig,
+  GameUpdateField,
+  TranslationModeField,
+} from "./OptionsPanel";
 import { ApiRun } from "./ProgressPanel";
 import { runnableMode } from "./runnableMode";
 import { useProjectOptions } from "./useProjectOptions";
@@ -436,7 +441,27 @@ function Workspace({
                 <CheckGroup id="manual-scope" label="Translate" stacked>
                   <BaseGlossaryField options={options} edit={edit} />
                 </CheckGroup>
+                {/* With no assistant to install it, saving does (Translation.save). */}
+                <CheckGroup
+                  id="manual-tools"
+                  label="Install in the game"
+                  stacked
+                >
+                  <GameUpdateField
+                    state={state}
+                    options={options}
+                    edit={edit}
+                    settings={settings}
+                    effect="Saving these options copies it into the game, or takes it out."
+                  />
+                </CheckGroup>
               </fieldset>
+              <GameUpdateConfig
+                project={project}
+                state={state}
+                disabled={disabled}
+                settings={settings}
+              />
             </PageBody>
             <ActionBar feedback={<Feedback dirty={draft.dirty} />}>
               {draft.dirty && (

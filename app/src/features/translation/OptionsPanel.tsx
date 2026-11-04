@@ -8,6 +8,7 @@ import { CheckField, CheckGroup, FieldRow } from "../../ui/FieldRow";
 import { Notice } from "../../ui/Notice";
 import { OptionCards, type OptionCard } from "../../ui/OptionCards";
 import { GameLanguagesRow } from "../project/GameLanguages";
+import { GameUpdatePanel } from "../project/GameUpdatePanel";
 import { ModelMenu } from "../settings/ModelMenu";
 import type { SettingsSection } from "../settings/Settings";
 
@@ -34,6 +35,78 @@ export function BaseGlossaryField({
       description="Common Japanese honorifics and interface words, added below the game's own glossary. Japanese games only."
       checked={options.include_glossary_base}
       onChange={(checked) => edit("include_glossary_base", checked)}
+    />
+  );
+}
+
+/**
+ * Whether players get GameUpdate. `effect` says how the choice reaches the
+ * game where no assistant installs it, such as Manual's.
+ */
+export function GameUpdateField({
+  state,
+  options,
+  edit,
+  settings,
+  effect,
+}: {
+  state: TranslationState;
+  options: TranslationOptions;
+  edit: (key: "install_gameupdate", value: boolean) => void;
+  settings: (section?: SettingsSection) => void;
+  effect?: string;
+}) {
+  const purpose = [
+    "Lets players download your newest translation by running GameUpdate.",
+    ...(effect ? [effect] : []),
+  ].join(" ");
+  return (
+    <CheckField
+      id="translation-gameupdate"
+      label="GameUpdate"
+      description={
+        options.install_gameupdate && state.gameUpdateNeedsOwner ? (
+          <>
+            {purpose} DazedTL sets it up once the owner of your patch
+            repositories is set in Settings.{" "}
+            <Button variant="link" onClick={() => settings("gameupdate")}>
+              Open GameUpdate settings
+            </Button>
+          </>
+        ) : (
+          purpose
+        )
+      }
+      checked={options.install_gameupdate}
+      onChange={(checked) => edit("install_gameupdate", checked)}
+    />
+  );
+}
+
+/**
+ * The game's GameUpdate config below Options, once the game holds
+ * GameUpdate and Settings name its owner; until then the GameUpdate choice
+ * links Settings itself.
+ */
+export function GameUpdateConfig({
+  project,
+  state,
+  disabled,
+  settings,
+}: {
+  project: Project;
+  state: TranslationState;
+  disabled: boolean;
+  settings: (section?: SettingsSection) => void;
+}) {
+  if (state.gameUpdate.state === "unconfigured") return null;
+  return (
+    <GameUpdatePanel
+      key={project.id}
+      projectId={project.id}
+      status={state.gameUpdate}
+      disabled={disabled}
+      openSettings={() => settings("gameupdate")}
     />
   );
 }
@@ -217,28 +290,11 @@ export function OptionsPanel({
       {(state.gameUpdateOffered || project.engine === "MVMZ") && (
         <CheckGroup id="translation-tools" label="Install in the game" stacked>
           {state.gameUpdateOffered && (
-            <CheckField
-              id="translation-gameupdate"
-              label="GameUpdate"
-              description={
-                options.install_gameupdate && state.gameUpdateNeedsOwner ? (
-                  <>
-                    Lets players download your newest translation by running
-                    GameUpdate. DazedTL sets it up once the owner of your patch
-                    repositories is set in Settings.{" "}
-                    <Button
-                      variant="link"
-                      onClick={() => settings("gameupdate")}
-                    >
-                      Open GameUpdate settings
-                    </Button>
-                  </>
-                ) : (
-                  "Lets players download your newest translation by running GameUpdate."
-                )
-              }
-              checked={options.install_gameupdate}
-              onChange={(checked) => edit("install_gameupdate", checked)}
+            <GameUpdateField
+              state={state}
+              options={options}
+              edit={edit}
+              settings={settings}
             />
           )}
           {project.engine === "MVMZ" && (

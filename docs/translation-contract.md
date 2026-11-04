@@ -160,7 +160,7 @@ An import writes a line only where the project's source at its ID is the file's 
 - The glossary gains, through the game-write gateway, terms no row covers.
 
 A Manual project's loaded file becomes its units ([manual](../backend/dazedtl/translation/manual.py)), and its estimate organizes the lines without a translation in Batch or Live.
-Its runs freeze `method: manual`: the user's extractor decides the scope and DazedTL never writes the game, so they need no census, Git baseline or progress report.
+Its runs freeze `method: manual`: the user's tools decide the scope and write the text, so they need no census, Git baseline or progress report.
 
 ## Delivery and future versions
 
