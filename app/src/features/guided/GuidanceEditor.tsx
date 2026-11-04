@@ -59,7 +59,9 @@ export function GuidanceEditor({
             <div className="guided-document-state">
               {name === assistantNotes ? (
                 <span className="context-document-path muted">
-                  <AssistantNotesNote />
+                  <span className="context-document-note">
+                    <AssistantNotesNote />
+                  </span>
                 </span>
               ) : (
                 <span className="context-document-path">
