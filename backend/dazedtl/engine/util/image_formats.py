@@ -602,43 +602,61 @@ def _tlg6_pixels(stream: bytes):
         rows, columns
     )
     position = 31 + size
-    residuals = np.zeros((height, width, 4), np.uint8)
-    for top in range(0, height, 8):
-        lines = min(8, height - top)
-        count = lines * width
-        order = _tlg6_order(width, lines)
-        for color in range(colors):
-            bits = struct.unpack_from("<I", stream, position)[0]
-            if bits >> 30:
-                raise ValueError("The TLG image uses an unsupported coding method.")
-            length = ((bits & 0x3FFFFFFF) + 7) // 8
-            values = _golomb(stream[position + 4 : position + 4 + length], count)
-            position += 4 + length
-            residuals[top : top + lines, :, color] = np.frombuffer(
-                bytes(values), np.uint8
-            )[order]
-    kind = np.repeat(np.repeat(filters, 8, axis=0), 8, axis=1)[:height, :width]
-    chroma = np.array(_CHROMA, np.uint8)[kind >> 1]
-    deltas = residuals.copy()
-    deltas[:, :, :3] = np.einsum("yxij,yxj->yxi", chroma, residuals[:, :, :3]).astype(
-        np.uint8
-    )
-    return _tlg6_predict(deltas, (kind & 1).astype(bool), colors), colors
+    edge = np.array([0, 0, 0, 255 if colors == 3 else 0], np.uint8)
+    pixels = np.empty((height, width, 4), np.uint8)
+    above = np.broadcast_to(edge, (width, 4))
+    # Bands of whole 8-line groups no taller than the image is wide, so the
+    # prediction's skewed arrays stay within a few times the band's pixels.
+    band = max(8, min(height, width) // 8 * 8)
+    for start in range(0, height, band):
+        end = min(start + band, height)
+        residuals = np.zeros((end - start, width, 4), np.uint8)
+        for top in range(start, end, 8):
+            lines = min(8, height - top)
+            count = lines * width
+            order = _tlg6_order(width, lines)
+            for color in range(colors):
+                bits = struct.unpack_from("<I", stream, position)[0]
+                if bits >> 30:
+                    raise ValueError(
+                        "The TLG image uses an unsupported coding method."
+                    )
+                length = ((bits & 0x3FFFFFFF) + 7) // 8
+                values = _golomb(stream[position + 4 : position + 4 + length], count)
+                position += 4 + length
+                residuals[top - start : top - start + lines, :, color] = (
+                    np.frombuffer(bytes(values), np.uint8)[order]
+                )
+        kind = np.repeat(
+            np.repeat(filters[start // 8 : (end - 1) // 8 + 1], 8, axis=0), 8, axis=1
+        )[: end - start, :width]
+        chroma = np.array(_CHROMA, np.uint8)[kind >> 1]
+        deltas = residuals.copy()
+        deltas[:, :, :3] = np.einsum(
+            "yxij,yxj->yxi", chroma, residuals[:, :, :3]
+        ).astype(np.uint8)
+        pixels[start:end] = _tlg6_predict(
+            deltas, (kind & 1).astype(bool), above, edge
+        )
+        above = pixels[end - 1]
+    return pixels, colors
 
 
-def _tlg6_predict(deltas, average, colors: int):
-    """TLG6's pixels from their prediction errors: each pixel is its MED or
-    average prediction from the pixels left of, above and above-left of it,
-    plus its error. Pixels on one anti-diagonal don't depend on each other,
-    so each diagonal is computed at once."""
+def _tlg6_predict(deltas, average, above, edge):
+    """A band of TLG6's pixels from their prediction errors, below the
+    pixels `above`: each pixel is its MED or average prediction from the
+    pixels left of, above and above-left of it, plus its error. Pixels on one
+    anti-diagonal don't depend on each other, so each diagonal is computed at
+    once."""
     import numpy as np
 
     height, width = deltas.shape[:2]
-    edge = np.array([0, 0, 0, 255 if colors == 3 else 0], np.int16)
-    # Row y + 1 and column x + y + 2 hold pixel (x, y); row 0 and the cells
-    # left of each row's first pixel are the edge KiriKiri predicts from.
+    # Row y + 1 and column x + y + 2 hold pixel (x, y), and row 0 the pixels
+    # above the band from column 1; the cells left of each row's first pixel
+    # are the edge KiriKiri predicts from.
     skewed = np.empty((height + 1, width + height + 1, 4), np.int16)
     skewed[:] = edge
+    skewed[0, 1 : width + 1] = above
     error = np.zeros_like(skewed)
     mean = np.zeros(skewed.shape[:2], bool)
     y = np.arange(height)[:, None] + 1

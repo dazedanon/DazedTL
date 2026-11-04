@@ -5,6 +5,7 @@ after KiriKiri Z's own (SaveTLG5.cpp, SaveTLG6.cpp): the decoder follows its
 loader (LoadTLG.cpp, tvpgl.c), so a misread of either side's format shows."""
 
 import struct
+import tracemalloc
 import unittest
 from io import BytesIO
 
@@ -306,6 +307,20 @@ class TlgTests(unittest.TestCase):
                 pixels = picture(height, width, height * width, alpha=colors == 4)
                 raw = tlg6(bgra(pixels), colors)
                 np.testing.assert_array_equal(pixels_of(raw), pixels)
+
+    def test_a_tall_tlg6_decodes_within_its_size(self):
+        # Decoding in one pass took memory growing with height * (width +
+        # height): a 1280x12000 staff roll needed about 2.7 GB.
+        pixels = picture(1600, 9, 7, alpha=False)
+        raw = tlg6(bgra(pixels), 3)
+        tracemalloc.start()
+        try:
+            decoded = pixels_of(raw)
+            _current, peak = tracemalloc.get_traced_memory()
+        finally:
+            tracemalloc.stop()
+        np.testing.assert_array_equal(decoded, pixels)
+        self.assertLess(peak, 8_000_000)
 
     def test_tlg5_reads_its_compressed_blocks(self):
         pixels = picture(10, 14, 3)
