@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import re
 from datetime import UTC, datetime
 
@@ -379,6 +380,16 @@ def uncached_usage(counts: dict) -> dict:
         "cache_creation_input_tokens": writes,
         "thinking_tokens": count("thinking_tokens"),
     }
+
+
+def valid_read_multiple(value) -> bool:
+    """Whether ``value`` is a cache read multiple a run can have frozen from
+    its route's own model list (settings/opencode cache_read_multiple): a
+    finite number from 0 up. The one check of a frozen one, which Guided's
+    request policy (compatibility/worker_policy install) and an
+    Assistant-led run's rates (compatibility/estimate_prices usage_cost)
+    both ask before usage_cost reads it."""
+    return type(value) in (int, float) and math.isfinite(value) and value >= 0
 
 
 def usage_cost(usage: dict, provider: str, model: str, input_rate: float,

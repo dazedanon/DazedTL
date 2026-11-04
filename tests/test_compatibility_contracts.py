@@ -1121,15 +1121,42 @@ class CompatibilityContracts(unittest.TestCase):
                 self.assertNotIn(
                     "thinking_effort", translation.estimateCostComparison()
                 )
-            plan["dazedtl_request_policy"] = {
-                **policy,
-                "generationParameters": "unsupported-future-policy",
-            }
-            write_json(root / "plan.json", plan)
-            before = native_prepare.call_count
-            with self.assertRaisesRegex(ValueError, "invalid or unsupported"):
-                environment.prepare(root)
-            self.assertEqual(native_prepare.call_count, before)
+            from dazedtl.compatibility.estimate_prices import usage_cost
+
+            # A corrupt frozen cache read multiple is refused by one check on
+            # both methods: Guided's run and Assistant-led's recorded spend.
+            for invalid in (
+                {"generationParameters": "unsupported-future-policy"},
+                {"cacheReadMultiple": "0.02"},
+                {"cacheReadMultiple": -1},
+                {"cacheReadMultiple": True},
+            ):
+                plan["dazedtl_request_policy"] = {**policy, **invalid}
+                write_json(root / "plan.json", plan)
+                before = native_prepare.call_count
+                with (
+                    self.subTest(invalid),
+                    self.assertRaisesRegex(ValueError, "invalid or unsupported"),
+                ):
+                    environment.prepare(root)
+                self.assertEqual(native_prepare.call_count, before)
+                if "cacheReadMultiple" not in invalid:
+                    continue
+                with self.assertRaisesRegex(ValueError, "invalid or unsupported"):
+                    usage_cost(
+                        {"input_tokens": 1000, "cache_read_input_tokens": 1000},
+                        {
+                            "mode": "live",
+                            "model": "glm-5.3-flash",
+                            "endpoint": "https://opencode.ai/inference/openai/v1",
+                            "rates": {
+                                "input": 1,
+                                "output": 2,
+                                "cache_read_multiple": invalid["cacheReadMultiple"],
+                            },
+                        },
+                        None,
+                    )
 
     def test_a_provider_error_every_request_gets_stops_a_frozen_run(self):
         # A Guided Live run whose every request got the same HTTP 400 sent

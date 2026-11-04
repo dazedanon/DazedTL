@@ -180,10 +180,15 @@ def usage_cost(usage, configuration, provider, rows=None):
         batch_price_factor,
         time_price_factor,
         time_priced_route,
+        valid_read_multiple,
     )
     from util.provider_costs import usage_cost as cost
 
     rates = configuration.get("rates") or {}
+    if "cache_read_multiple" in rates and not valid_read_multiple(
+        rates["cache_read_multiple"]
+    ):
+        raise ValueError("This run's saved model options are invalid or unsupported.")
     batch = configuration.get("mode") == "batch"
     if (
         rates.get("input") is None

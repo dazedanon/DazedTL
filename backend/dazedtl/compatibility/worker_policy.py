@@ -175,6 +175,8 @@ def install(*, coordinator=False):
                 if original_plan.is_file() and not original_plan.is_symlink()
                 else None
             )
+        from util.provider_costs import valid_read_multiple
+
         from dazedtl.settings.openrouter import STRUCTURED_OUTPUTS, validate_policy
 
         from . import openrouter_batch, openrouter_pricing
@@ -262,11 +264,7 @@ def install(*, coordinator=False):
                 for key in ("inputRate", "outputRate")
             )
             or "cacheReadMultiple" in policy
-            and (
-                type(policy["cacheReadMultiple"]) not in (int, float)
-                or not math.isfinite(policy["cacheReadMultiple"])
-                or policy["cacheReadMultiple"] < 0
-            )
+            and not valid_read_multiple(policy["cacheReadMultiple"])
         ):
             raise ValueError(
                 "This run's saved model options are invalid or unsupported."
