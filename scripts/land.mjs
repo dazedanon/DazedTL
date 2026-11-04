@@ -90,6 +90,9 @@ export function readReview(text) {
   }
   const filled = (/** @type {unknown} */ value) =>
     typeof value === "string" && value.trim() !== "";
+  // A count of reviews, or the number of one of them, from 1 to `most`.
+  const counted = (/** @type {unknown} */ value, /** @type {number} */ most) =>
+    Number.isInteger(value) && Number(value) >= 1 && Number(value) <= most;
   if (record?.reviewer !== "independent")
     throw new Error(
       'The review record needs "reviewer": "independent": a reviewer that never saw the work reviews every landing, not its author (Landing in docs/development.md).',
@@ -99,7 +102,7 @@ export function readReview(text) {
       `The review record needs a level of ${reviewLevels.join(", ")}.`,
     );
   const reviews = record.reviews === undefined ? 1 : record.reviews;
-  if (!Number.isInteger(reviews) || reviews < 1 || reviews > maxReviews)
+  if (!counted(reviews, maxReviews))
     throw new Error(
       `The review record needs "reviews", how many independent reviews ran, from 1 to ${maxReviews}.`,
     );
@@ -118,9 +121,9 @@ export function readReview(text) {
       if (!filled(item?.summary)) throw new Error(`${which} needs a summary.`);
       const review =
         item.review === undefined && reviews === 1 ? 1 : item.review;
-      if (!Number.isInteger(review) || review < 1 || review > reviews)
+      if (!counted(review, reviews))
         throw new Error(
-          `${which} needs a review number from 1 to ${reviews}, the record's "reviews": the independent review that reported it.`,
+          `${which} needs a review number from 1 to ${reviews}: the independent review that reported it, with "reviews" saying how many ran when more than one did.`,
         );
       if (item.outcome === "fixed")
         return { summary: item.summary, outcome: "fixed", review };
