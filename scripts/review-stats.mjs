@@ -138,7 +138,8 @@ export function summarize(landings, escapes) {
   for (const escape of escapes) {
     const landing = owner.get(escape.introduced);
     if (!landing) {
-      outside.push(escape);
+      if (!outside.some((other) => other.fix === escape.fix))
+        outside.push(escape);
       continue;
     }
     const key = `${escape.fix} ${landing.range}`;

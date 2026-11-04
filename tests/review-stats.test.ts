@@ -26,6 +26,7 @@ test("review stats put each escaped bug on the landing that let it in", () => {
       // One bug, however many of the landing's commits its fix names.
       { fix: "f1", introduced: "c1" },
       { fix: "f2", introduced: "old" },
+      { fix: "f2", introduced: "older" },
       // A bug its own landing fixed never got past that landing.
       { fix: "c3", introduced: "c1" },
     ],
