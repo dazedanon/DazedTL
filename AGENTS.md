@@ -14,7 +14,7 @@
   A session that starts others runs at the highest effort it hands out, since `start_session` cannot start one above its starter's.
 - Before fixing a bug, read the git history of the code involved.
   If the same behavior was fixed before, stop and report the root cause with a proposed rework instead of patching it again.
-  End each fix commit, after a blank line, with an `Introduced-by:` trailer naming the commit that brought the bug in, or `unknown` or `none`, and a `Found-by:` trailer saying who found it, as [fix-trailers](scripts/fix-trailers.mjs) defines; land.mjs refuses a fix without them, and [review-stats](scripts/review-stats.mjs) tells from them which landings' reviews let bugs through.
+  End each fix commit, after a blank line, with an `Introduced-by:` trailer naming the commit that brought the bug in, or `unknown` or `none`, and a `Found-by:` trailer, as [fix-trailers](scripts/fix-trailers.mjs) defines; land.mjs refuses a fix without them, and [review-stats](scripts/review-stats.mjs) measures which reviews let bugs through.
 - Give each rule one definition, such as how a text block's rows are grouped or how a file's status is counted, and call it from every place that needs it.
   When a fix touches a rule that is defined in more than one place, merge the copies first, or report them if merging is large.
 - Follow the ownership boundaries in [architecture](docs/architecture.md) and reuse its shared UI and state mechanisms.
