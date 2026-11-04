@@ -181,11 +181,16 @@ else
     PID_LOCK="$SCRIPT_DIR/gameupdate.pid"
     if ! ( set -C; printf '%s\n' "$$" > "$PID_LOCK" ) 2> /dev/null; then
         holder="$(cat "$PID_LOCK" 2> /dev/null || true)"
-        if [ -n "$holder" ] && kill -0 "$holder" 2> /dev/null \
-            && { ! command -v ps > /dev/null 2>&1 || ps -p "$holder" -o args= 2> /dev/null | grep -q patch; }; then
-            PID_LOCK=""
-            echo "$busy If none is, delete gameupdate/gameupdate.pid."
-            exit 1
+        # A live process whose command can't be read counts as a GameUpdate.
+        holder_args=""
+        if [ -n "$holder" ] && kill -0 "$holder" 2> /dev/null; then
+            holder_args="$(tr '\0' ' ' 2> /dev/null < "/proc/$holder/cmdline" \
+                || ps -p "$holder" -o args= 2> /dev/null || true)"
+            if [ -z "$holder_args" ] || [[ "$holder_args" == *patch* ]]; then
+                PID_LOCK=""
+                echo "$busy If none is, delete gameupdate/gameupdate.pid."
+                exit 1
+            fi
         fi
         if ! printf '%s\n' "$$" > "$PID_LOCK"; then
             PID_LOCK=""
