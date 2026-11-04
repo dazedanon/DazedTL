@@ -113,20 +113,17 @@ def paid(rows):
     return [row for row in rows if not price(row, "input") == price(row, "output") == 0]
 
 
-def catalog(rows):
-    """{model ID: what DazedTL keeps of its row}, bounded: its listed input,
-    output and cache read prices, its output limit and its price
-    multipliers (_multipliers).
-    Context-length price overrides apply only far above a translation
-    request's size, so they are left out."""
+def catalog(rows, models):
+    """{model ID: what DazedTL keeps of its row} for the *models* the
+    connection check keeps of *rows* (providers check), so each model it
+    lists has its row: its listed input, output and cache read prices, its output limit and its
+    price multipliers (_multipliers). Context-length price overrides apply
+    only far above a translation request's size, so they are left out."""
+    kept = set(models)
     result = {}
     for row in rows:
         model = row.get("id")
-        if (
-            not isinstance(model, str)
-            or not 0 < len(model) <= 200
-            or any(ord(c) < 32 for c in model)
-        ):
+        if model not in kept:
             continue
         cost = _object(row, "cost")
         prices = _object(cost, "text")
@@ -140,8 +137,6 @@ def catalog(rows):
             "peak": peak,
             "dated": dated,
         }
-        if len(result) >= MAX_MODELS:
-            break
     return result
 
 

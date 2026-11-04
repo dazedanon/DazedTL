@@ -671,7 +671,7 @@ def check(connection):
             known = (
                 catalog(rows)
                 if openrouter
-                else opencode.catalog(rows)
+                else opencode.catalog(rows, models)
                 if identity in OPENCODE
                 else None
             )

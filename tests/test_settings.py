@@ -892,6 +892,43 @@ class SettingsTests(unittest.TestCase):
                         {"model": {**stored["catalog"]["gemini-4-argon"], **invalid}}
                     )
 
+    def test_an_opencode_check_keeps_a_catalog_row_for_each_model_it_lists(self):
+        # Past 250 models the check kept the first 250 IDs in sorted order
+        # and its catalog the first 250 rows in list order, so a listed
+        # model could lack its price.
+        rows = [
+            {
+                "id": f"model-{index:03}",
+                "cost": {"text": {"input": {"price": 1}, "output": {"price": 2}}},
+            }
+            for index in reversed(range(300))
+        ]
+        body = json.dumps({"object": "list", "data": rows}).encode()
+        client = httpx.Client
+        with patch.object(
+            providers.httpx,
+            "Client",
+            side_effect=lambda **kwargs: client(
+                transport=httpx.MockTransport(
+                    lambda _request: httpx.Response(200, stream=httpx.ByteStream(body))
+                ),
+                **kwargs,
+            ),
+        ):
+            result = providers.check(
+                {
+                    "provider": "opencode",
+                    "protocol": "openai",
+                    "endpoint": "",
+                    "secret": "fixture-key",
+                    "keyless": False,
+                    "organization": "",
+                }
+            )
+        self.assertEqual(result["check"]["status"], "verified")
+        self.assertEqual(len(result["models"]), 250)
+        self.assertEqual(set(result["catalog"]), set(result["models"]))
+
     def test_openrouter_batch_catalog_survives_reopen_and_host_changes_cannot_reprice_saved_work(
         self,
     ):
