@@ -2606,6 +2606,12 @@ class GuidedTests(unittest.TestCase):
             return game_write(source, native, **options)
 
         self.backend.game_write = write
+        # Notes typed and cleared again write no empty AGENTS.md.
+        self.guided.save_documents(
+            self.identity, {"notes": {"text": "", "revision": ""}}
+        )
+        self.assertFalse((self.source / "AGENTS.md").exists())
+        self.assertEqual(summaries, [])
         self.guided.position(self.identity, "context", "guidance", "notes")
         self.assertEqual(
             read_json(self.guided.path(self.identity, "context-document")),
@@ -2647,6 +2653,12 @@ class GuidedTests(unittest.TestCase):
         (self.source / "CLAUDE.md").write_text("Shared notes", encoding="utf-8")
         (self.source / "AGENTS.md").symlink_to("CLAUDE.md")
         self.guided.position(self.identity, "context", "guidance", "notes")
+        # Nor may notes another program holds open, as Windows locks them.
+        with patch(
+            "desktop.backend.guidance.notes", side_effect=PermissionError("held")
+        ):
+            self.guided.position(self.identity, "context", "guidance", "glossary")
+            self.guided.context_status(self.identity)
 
     def test_measured_layout_applies_once_and_preserves_active_work_and_width_edits(
         self,
