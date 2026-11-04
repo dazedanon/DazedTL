@@ -63,7 +63,8 @@ def freeze_variables(plan):
         or policy.get("systemText") != SYSTEM_TEXT
         or not plan.get("context_source")
         or not any(
-            PurePosixPath(item["name"]).name == "System.json" for item in plan["files"]
+            PurePosixPath(name).name == "System.json"
+            for name in plan.get("selected") or ()
         )
     ):
         return

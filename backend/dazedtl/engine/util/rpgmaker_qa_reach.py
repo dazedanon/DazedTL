@@ -68,7 +68,7 @@ _NAME_MINIMUM = 4
 _EVENT_FILE_RE = re.compile(r"(?:Map\d+|CommonEvents|Troops)\.json")
 
 
-def _lex(source: str) -> tuple[str, list[str]]:
+def lex(source: str) -> tuple[str, list[str]]:
     """Code without its comments, and its string literals."""
     code: list[str] = []
     strings: list[str] = []
@@ -123,7 +123,7 @@ def _core(js: Path) -> _Core:
     core = _Core()
     for path in sorted(js.glob("rmmz_*.js")) or sorted(js.glob("rpg_*.js")):
         try:
-            code, _strings = _lex(path.read_text(encoding="utf-8-sig"))
+            code, _strings = lex(path.read_text(encoding="utf-8-sig"))
         except (OSError, UnicodeDecodeError):
             continue
         core.owners.update(
@@ -178,7 +178,7 @@ def _plugin(js: Path, entry: dict[str, Any], loaded: bool, core: _Core) -> _Plug
     except (OSError, UnicodeDecodeError):
         return plugin
     plugin.readable = True
-    code, strings = _lex(source)
+    code, strings = lex(source)
     plugin.strings += strings
     plugin.tokens.update(_IDENTIFIER_RE.findall(code))
     for string in strings:

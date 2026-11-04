@@ -10,8 +10,8 @@ A plugin draws the names of the variables its settings and its commands'
 arguments name when its code reads `$dataSystem.variables` and its header
 declares those settings and arguments `@type variable` (or `variable[]`).
 A name stays as it is wherever code could look it up: where it appears in a
-loaded plugin's file or settings, or in an event's script or plugin command
-(util/rpgmaker_qa_reach `scripts`).
+string of a loaded plugin's code or its settings, or in an event's script,
+plugin command (util/rpgmaker_qa_reach `scripts`) or comment.
 
 Guided's database pass (modules/rpgmakermvmz), its line counts
 (translation/file_lines), Text QA's never-translated report
@@ -29,7 +29,7 @@ from typing import Any, NamedTuple
 
 from util import rpgmaker_blocks as blocks
 from util.rpgmaker_markers import PluginList, beside_data, data_plugins
-from util.rpgmaker_qa_reach import event_commands, scripts
+from util.rpgmaker_qa_reach import event_commands, lex, scripts
 
 # A plugin's code reading the variables' names.
 _READS = re.compile(r"\$dataSystem\s*(?:\.\s*variables\b|\[\s*['\"]variables['\"]\s*\])")
@@ -38,6 +38,9 @@ _HEADER = re.compile(r"/\*:[\w-]*\s(.*?)\*/", re.S)
 _TAG = re.compile(r"^[\s*]*@(\w+)[ \t]*(\S*)", re.M)
 _TYPES = frozenset({"variable", "variable[]"})
 _EVENT_FILE = re.compile(r"(?:Map\d+|CommonEvents|Troops)\.json")
+# Event commands whose text a plugin may read a variable's name from: a
+# comment and its lines, and an MV plugin command.
+_NAMING = frozenset({108, 408, 356})
 
 
 class Drawing(NamedTuple):
@@ -121,7 +124,11 @@ def drawn(
     if not names or not drawings:
         return frozenset()
     ids: set[int] = set()
-    looked: list[str] = list(sources.values())
+    # What code could look a name up by: plugins' string literals, outside
+    # their help, and settings.
+    looked: list[str] = [
+        literal for text in sources.values() for literal in lex(text)[1]
+    ]
     for entry in loaded:
         parameters = entry.get("parameters")
         if not isinstance(parameters, dict):
@@ -132,7 +139,12 @@ def drawn(
             for setting in found.settings:
                 ids |= _ids(parameters.get(setting))
     events = [(name, read) for name, read in files if _EVENT_FILE.fullmatch(name)]
-    calls = [json.dumps(name) for name in drawings]
+    # Event files hold a plugin's name as the game writes it, or escaped.
+    calls = [
+        json.dumps(name, ensure_ascii=ascii)
+        for name in drawings
+        for ascii in (False, True)
+    ]
     for _name, document in _documents(events, lambda text: any(call in text for call in calls)):
         for command in event_commands(document):
             parameters = command["parameters"]
@@ -150,10 +162,18 @@ def drawn(
         if id < len(names) and isinstance(names[id], str) and names[id].strip()
     }
     # Only files that hold a drawn name can look it up.
-    wanted = {names[id] for id in ids}
+    wanted = {
+        form
+        for id in ids
+        for form in (names[id], json.dumps(names[id])[1:-1])
+    }
     for _name, document in _documents(events, lambda text: any(name in text for name in wanted)):
         for command in event_commands(document):
             looked += [value for value in scripts(command) if isinstance(value, str)]
+            if blocks.code(command) in _NAMING:
+                looked += [
+                    value for value in command["parameters"] if isinstance(value, str)
+                ]
     text = "\n".join(looked)
     return frozenset(id for id in ids if names[id] not in text)
 
@@ -168,10 +188,6 @@ def _documents(files, holds: Callable[[str], bool]) -> Iterator[tuple[str, Any]]
             yield name, json.loads(text)
         except ValueError:
             continue
-
-
-# Drawn ids per data folder, by the stat signatures of its files.
-_DRAWN: dict[tuple, frozenset[int]] = {}
 
 
 def _signature(paths: Iterable[Path]) -> tuple:
@@ -192,38 +208,71 @@ def _text(path: Path) -> str | None:
         return None
 
 
+class _Plugins(NamedTuple):
+    """A game's loaded plugins and their files' text, by plugin name, and
+    whether any of them draws a variable name."""
+
+    plugins: PluginList
+    sources: dict[str, str | None]
+    draws: bool
+
+
+# Each game's plugins, by data folder and its plugin list's and plugin files'
+# stat signatures, and the drawn ids, by those and its event files'.
+_PLUGINS: dict[tuple, _Plugins] = {}
+_DRAWN: dict[tuple, frozenset[int]] = {}
+
+
+def _plugins(data: Path) -> tuple[tuple, _Plugins]:
+    script = beside_data(data)
+    js = script.parent / "plugins"
+    listed = (str(data), _signature([script]))
+    known = next((found for key, found in _PLUGINS.items() if key[:2] == listed), None)
+    plugins = known.plugins if known else data_plugins(data)
+    names = [entry["name"] for entry in plugins.loaded() if isinstance(entry.get("name"), str)]
+    key = (*listed, _signature(js / f"{name}.js" for name in names))
+    found = _PLUGINS.get(key)
+    if found is None:
+        sources = {name: _text(js / f"{name}.js") for name in names}
+        found = _Plugins(
+            plugins,
+            sources,
+            any(drawing(text) for text in sources.values() if text),
+        )
+        if len(_PLUGINS) >= 16:
+            _PLUGINS.clear()
+        _PLUGINS[key] = found
+    return key, found
+
+
 def data_drawn(data_folder: str | Path) -> frozenset[int]:
     """The ids of the variable names the game whose data folder this is
-    draws (:func:`drawn`), read from its files; kept until one changes."""
+    draws (:func:`drawn`), read from its files; kept until one changes. A
+    game whose plugins draw none has no event file looked at."""
     data = Path(data_folder)
-    plugins = data_plugins(data)
-    js = data.parent / "js/plugins"
+    plugins_key, plugins = _plugins(data)
+    if not plugins.draws:
+        return frozenset()
     files = sorted(
         path for path in data.glob("*.json") if _EVENT_FILE.fullmatch(path.name)
     )
-    key = (
-        str(data),
-        _signature([data / "System.json", beside_data(data), *files]),
-        _signature(
-            js / f"{entry['name']}.js"
-            for entry in plugins.loaded()
-            if isinstance(entry.get("name"), str)
-        ),
-    )
-    if key not in _DRAWN:
+    key = (*plugins_key, _signature([data / "System.json", *files]))
+    found = _DRAWN.get(key)
+    if found is None:
         try:
             system = json.loads(_text(data / "System.json") or "null")
         except ValueError:
             system = None
-        if len(_DRAWN) >= 16:
-            _DRAWN.clear()
-        _DRAWN[key] = drawn(
-            plugins,
-            lambda name: _text(js / f"{name}.js"),
+        found = drawn(
+            plugins.plugins,
+            plugins.sources.get,
             [(path.name, lambda path=path: _text(path)) for path in files],
             system,
         )
-    return _DRAWN[key]
+        if len(_DRAWN) >= 16:
+            _DRAWN.clear()
+        _DRAWN[key] = found
+    return found
 
 
 def game_drawn(game_root: str | Path) -> frozenset[int]:

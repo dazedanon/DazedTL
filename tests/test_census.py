@@ -461,15 +461,18 @@ class CensusTests(unittest.TestCase):
             return "\n".join(("/*:", *(f" * {line}" for line in header), " */", code))
 
         draws = "this.drawText($dataSystem.variables[id], 0, 0, 200);"
+        # Event files hold a Japanese plugin name unescaped.
+        window = "変数窓"
         plugins = [
-            {"name": "Window", "status": True, "parameters": {"hudVariable": "3"}},
+            {"name": window, "status": True, "parameters": {"hudVariable": "3"}},
             {"name": "Store", "status": True, "parameters": {"target": "4"}},
+            {"name": "Chime", "status": True, "parameters": {}},
         ]
         names = ["", "ドローン", "作業用", "残り弾数", "保存先", "検索用"]
         game = {
             "www/js/plugins.js": f"var $plugins =\n{json.dumps(plugins)};\n".encode(),
-            "www/js/plugins/Window.js": plugin(
-                "Window",
+            f"www/js/plugins/{window}.js": plugin(
+                window,
                 draws,
                 "@param hudVariable",
                 "@type variable",
@@ -486,13 +489,19 @@ class CensusTests(unittest.TestCase):
                 "@param target",
                 "@type variable",
             ).encode(),
+            # Its help names a drawn variable; its code looks nothing up.
+            "www/js/plugins/Chime.js": plugin(
+                "Chime",
+                "AudioManager.playSe(se);",
+                "@plugindesc ドローンが増えると鳴ります。",
+            ).encode(),
             "www/data/System.json": {"currencyUnit": "円", "variables": names},
             "www/data/CommonEvents.json": [
                 None,
                 {
                     "list": [
-                        command(357, "Window", "show", "", {"variableId": "1"}),
-                        command(357, "Window", "show", "", {"variableId": "5"}),
+                        command(357, window, "show", "", {"variableId": "1"}),
+                        command(357, window, "show", "", {"variableId": "5"}),
                         command(357, "Store", "show", "", {"variableId": "2"}),
                         # A script looks variable 5 up by its name.
                         command(355, "$dataSystem.variables.indexOf('検索用');"),

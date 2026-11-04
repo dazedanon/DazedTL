@@ -363,7 +363,9 @@ class GuidedInputs:
                 sorted(markers) if phase == "dialogue" else None,
                 identities[name].get("original"),
                 list(pair),
-                sorted(variables) if name == "System.json" else None,
+                # Counted before it held the currency unit and drawn names,
+                # System.json alone is counted again.
+                *([sorted(variables)] if name == "System.json" else []),
             )
             used.add(key)
             if store.has(section, key):

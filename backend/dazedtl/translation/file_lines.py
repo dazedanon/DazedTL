@@ -478,8 +478,9 @@ def _is_blob(raw: bytes, blob: str | None) -> bool:
 # translated: the counts the profile keeps (translation/derived) are then read
 # again. What counts as a refusal note is refusals.RULES_VERSION, and what
 # reads as Japanese left engine util/source_text RULES_VERSION, which their
-# section names too (`counts_section`).
-COUNT_VERSION = 3
+# section names too (`counts_section`). System.json's counts are kept under
+# the drawn variables they read too (guided_inputs line_counts).
+COUNT_VERSION = 2
 
 
 def counts_section() -> str:
