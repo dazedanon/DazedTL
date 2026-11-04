@@ -115,8 +115,8 @@ GAME_SKILL_RESERVED_NAMES = frozenset({"quirks.md", "game.md", "translation.md"}
 # It is the project's, like the glossary: Git keeps it, translation requests
 # never carry it and players never download it.
 GAME_NOTES_FILENAME = "AGENTS.md"
-# The notes' name in any case as a .gitignore, .gitattributes and pathspec
-# pattern (is_game_notes).
+# The notes' name in any case as a .gitattributes and pathspec pattern
+# (is_game_notes); Git on Windows lets them in under any case already.
 GAME_NOTES_PATTERN = "".join(
     f"[{letter.lower()}{letter.upper()}]" if letter.isalpha() else letter
     for letter in GAME_NOTES_FILENAME
@@ -138,7 +138,7 @@ GAME_TOOL_GITIGNORE_BLOCK = "\n".join(
         "/.dazedtl/skills/*",
         # Any case, as Windows' Git and the skill loader read the extension.
         "!/.dazedtl/skills/*.[mM][dD]",
-        "!/" + GAME_NOTES_PATTERN,
+        "!/" + GAME_NOTES_FILENAME,
         GAME_TOOL_GITIGNORE_END,
     )
 ) + "\n"
