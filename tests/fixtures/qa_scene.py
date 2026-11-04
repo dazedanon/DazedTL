@@ -331,7 +331,6 @@ def apply(document):
         inventory,
         dry_run_name="dry-run.json",
         regression_name="regression.json",
-        nonblocking_introduced_flags=qa.APPROVED_NONBLOCKING_MECHANICAL_FLAGS,
     )["valid"]
 
 

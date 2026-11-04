@@ -29,6 +29,7 @@ from util.rpgmaker_qa_manifest import (
     resolve_pointer,
 )
 from util.rpgmaker_rewrap import rendered_rows, widest_line
+from util.source_text import source_left
 
 APPROVED_NONBLOCKING_MECHANICAL_FLAGS = frozenset({"suspicious-length-ratio"})
 
@@ -384,10 +385,11 @@ def correction_problems(
 
 def nameplate_problems(record: dict[str, Any] | None, name: str) -> list[str]:
     """Why a Show Text fix's *name* would trip the post-apply regression in
-    its header's nameplate *record*; a header without a name of its own has
-    no record, and the regression checks none."""
+    its header's nameplate *record*. A header without a name of its own has
+    no record and no source to read a name against, so its new name is read
+    for the source's language alone."""
     if record is None:
-        return []
+        return ["introduces source-language-residue"] if source_left(name, "") else []
     return _introduced_flags(
         record["source"], record["live"], name, record.get("event_code"),
         show_text_allowance(name),
@@ -400,21 +402,30 @@ def show_text_allowance(name: str) -> frozenset[str]:
     return frozenset({"empty-live"}) if name == "" else frozenset()
 
 
+def introduced_flags(
+    source: str, live: str, written: str, event_code: int | None,
+    allowed: Iterable[str],
+) -> set[str]:
+    """The mechanical flags *written* adds where *live* stood that no
+    allowance covers, by the current rules: the post-apply regression blocks
+    on all but APPROVED_NONBLOCKING_MECHANICAL_FLAGS."""
+    before = set(mechanical.evidence(source, live, event_code)["flags"])
+    after = set(mechanical.evidence(source, written, event_code)["flags"])
+    return _disallowed_flags(after - before, allowed, source, written)
+
+
 def _introduced_flags(
     source: str, live: str, written: str, event_code: int | None,
     allowed: Iterable[str],
 ) -> list[str]:
-    """The blocking mechanical flags *written* adds where *live* stood, as
-    the post-apply regression reads them, for a reviewer."""
-    before = set(mechanical.evidence(source, live, event_code)["flags"])
-    after = set(mechanical.evidence(source, written, event_code)["flags"])
-    introduced = sorted(_disallowed_flags(
-        after - before - APPROVED_NONBLOCKING_MECHANICAL_FLAGS, allowed,
-        source, written,
-    ))
-    if not introduced:
+    """The flags *written* adds that would block apply, for a reviewer."""
+    blocking = sorted(
+        introduced_flags(source, live, written, event_code, allowed)
+        - APPROVED_NONBLOCKING_MECHANICAL_FLAGS
+    )
+    if not blocking:
         return []
-    return ["introduces " + _flag_details(introduced, source, written)]
+    return ["introduces " + _flag_details(blocking, source, written)]
 
 
 def _flag_details(flags: Iterable[str], source: str, text: str) -> str:

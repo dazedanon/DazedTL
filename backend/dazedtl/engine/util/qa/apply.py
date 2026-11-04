@@ -14,13 +14,14 @@ from typing import Any
 
 from util import system
 from util.paths import unlink_with_retry
-from util.qa import mechanical
 from util.qa.fitting import (
-    _disallowed_flags,
+    APPROVED_NONBLOCKING_MECHANICAL_FLAGS,
     _flag_details,
     _message_record,
     _operation_writes,
     _written,
+    introduced_flags,
+    nameplate_problems,
     show_text_allowance,
 )
 from util.qa.ledger import REVIEWED_FILE
@@ -335,6 +336,29 @@ def _render_json_like(raw: bytes, document: Any) -> bytes:
     return (b"\xef\xbb\xbf" + payload) if has_bom else payload
 
 
+class RegressionError(ValueError):
+    """An apply the post-apply regression rolled back: each failed
+    correction's reason by its finding, and the errors that name none."""
+
+    def __init__(self, failed: dict[str, str], general: list[str]) -> None:
+        self.failed, self.general = failed, general
+        super().__init__(self.describe({}))
+
+    def describe(self, names: dict[str, str]) -> str:
+        """The error naming each failed correction as *names* gives it, such
+        as the sentence the user reads for it, or else by its finding."""
+        reasons = [
+            (f"\u201c{names[finding]}\u201d" if names.get(finding) else finding)
+            + f" {reason}"
+            for finding, reason in self.failed.items()
+        ] + self.general
+        return (
+            "QA regression failed; all game-file changes were rolled back: "
+            + "; ".join(reasons[:3])
+            + (f"; and {len(reasons) - 3} more" if len(reasons) > 3 else "")
+        )
+
+
 def apply_loaded_correction_map(
     root: Path,
     task: dict[str, Any],
@@ -343,9 +367,9 @@ def apply_loaded_correction_map(
     *,
     dry_run_name: str,
     regression_name: str,
-    nonblocking_introduced_flags: frozenset[str] = frozenset(),
 ) -> dict[str, Any]:
-    """Apply one validated map atomically and roll back on regression failure."""
+    """Apply one validated map atomically and roll back on regression failure,
+    raising RegressionError."""
     _dry_run_loaded_correction_map(root, task, correction_map, dry_run_name)
     data_root = Path(task["data_root"]).resolve()
     by_file: dict[str, list[dict]] = defaultdict(list)
@@ -392,12 +416,7 @@ def apply_loaded_correction_map(
     finally:
         for temporary in temporaries.values():
             system.unlink(temporary, ignore_errors=True)
-    regression = _regression_check_loaded(
-        task,
-        before,
-        correction_map,
-        nonblocking_introduced_flags=nonblocking_introduced_flags,
-    )
+    regression = _regression_check_loaded(task, before, correction_map)
     if not regression["valid"]:
         for path, raw in originals.items():
             rollback = path.with_name(path.name + ".qa.rollback")
@@ -406,13 +425,8 @@ def apply_loaded_correction_map(
         regression["rolled_back"] = True
         _atomic_write_json(root / regression_name, regression)
         # The report is written to the app's disposable copy, so the reason
-        # travels in the message, by the corrections the user reads.
-        reasons = regression["reasons"]
-        raise ValueError(
-            "QA regression failed; all game-file changes were rolled back: "
-            + "; ".join(reasons[:3])
-            + (f"; and {len(reasons) - 3} more" if len(reasons) > 3 else "")
-        )
+        # travels in the error.
+        raise RegressionError(regression["failed"], regression["general"])
     regression["applied_operations"] = applied
     _atomic_write_json(root / regression_name, regression)
     return regression
@@ -422,8 +436,6 @@ def _regression_check_loaded(
     task: dict[str, Any],
     before: dict[str, Any],
     corrections: dict[str, Any] | None,
-    *,
-    nonblocking_introduced_flags: frozenset[str] = frozenset(),
 ) -> dict[str, Any]:
     after = build_manifest(task["data_root"], task["focus"])
     validation = verify_manifest(task["data_root"], after)
@@ -437,44 +449,38 @@ def _regression_check_loaded(
         if before_records[identity]["source_sha256"] != after_records[identity]["source_sha256"]:
             errors.append(f"preserved source changed: {identity}")
     # The errors as the user reads them: a failed correction once by its
-    # finding, however many lines it changes, then these as they are.
+    # finding, however many lines it changes, and these as they are.
     general = list(errors)
     failed: dict[str, str] = {}
     if corrections is not None:
         for operation in corrections.get("operations") or []:
             header = operation.get("kind") == "show-text"
             if header and not operation["identity"]:
-                # A header without a translated name has no record to check.
+                # A header without a name of its own has no record.
+                for problem in nameplate_problems(None, operation["replacement"][4]):
+                    errors.append(
+                        f"approved correction {problem}: {operation['finding_id']}"
+                    )
+                    failed.setdefault(operation["finding_id"], problem)
                 continue
             record = after_records.get(operation["identity"])
             expected = operation["replacement"][4] if header else operation["replacement"]
             if record is None or record["live"] != expected:
                 errors.append(f"approved correction is missing: {operation['identity']}")
-                failed.setdefault(operation["finding_id"], "'s correction is missing")
+                failed.setdefault(operation["finding_id"], "was not written")
+                continue
+            before_record = before_records.get(operation["identity"])
+            if before_record is None:
+                # Coverage changed, which is an error above.
                 continue
             # The text QA reviewed, flagged by the current rules as the
             # correction is, whichever rules made its inventory.
-            before_record = before_records.get(operation["identity"])
-            before_flags = set(
-                mechanical.evidence(
-                    before_record["source"],
-                    before_record["live"],
-                    before_record.get("event_code"),
-                )["flags"]
-                if before_record
-                else ()
+            introduced = introduced_flags(
+                record["source"], before_record["live"], record["live"],
+                record.get("event_code"), operation.get("allowed_flags") or (),
             )
-            after_flags = set(record.get("mechanical", {}).get("flags") or [])
-            introduced_flags = _disallowed_flags(
-                after_flags - before_flags, operation.get("allowed_flags") or (),
-                record["source"], record["live"],
-            )
-            warning_flags = sorted(
-                introduced_flags & nonblocking_introduced_flags
-            )
-            blocking_flags = sorted(
-                introduced_flags - nonblocking_introduced_flags
-            )
+            warning_flags = sorted(introduced & APPROVED_NONBLOCKING_MECHANICAL_FLAGS)
+            blocking_flags = sorted(introduced - APPROVED_NONBLOCKING_MECHANICAL_FLAGS)
             if warning_flags:
                 warnings.append(
                     "approved correction introduced non-blocking mechanical flags: "
@@ -486,13 +492,14 @@ def _regression_check_loaded(
                     "approved correction introduced mechanical flags: "
                     f"{operation['identity']} " + details
                 )
-                failed.setdefault(operation["finding_id"], f" introduces {details}")
+                failed.setdefault(operation["finding_id"], f"introduces {details}")
     return {
         "schema": REGRESSION_SCHEMA,
         "created_at": _utc_now(),
         "valid": not errors,
         "errors": errors,
-        "reasons": [finding + reason for finding, reason in failed.items()] + general,
+        "failed": failed,
+        "general": general,
         "warnings": warnings,
         "before_manifest_sha256": before["content_sha256"],
         "after_manifest_sha256": after["content_sha256"],

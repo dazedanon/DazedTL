@@ -21,6 +21,7 @@ from util.qa import briefs as qa_briefs
 from util.qa import claims as qa_claims
 from util.qa import pace as qa_pace
 from util.qa import prepare as qa_prepare
+from util.qa import schema as qa_schema
 from util.qa import storage as qa_storage
 
 # Deep bundles open as soon as one screened cluster is ready.
@@ -1097,7 +1098,6 @@ def apply(document):
         inventory,
         dry_run_name="dry-run.json",
         regression_name="regression.json",
-        nonblocking_introduced_flags=qa.APPROVED_NONBLOCKING_MECHANICAL_FLAGS,
     )["valid"]
 
 
@@ -1147,6 +1147,21 @@ headers = [
     if command["code"] == 101
 ]
 assert ["owner", 0, 0, 2, "Owner"] in headers[2:], headers
+# A name put on a header that had none has no nameplate to check against, so
+# it is read for Japanese alone, and the apply rolls back naming its finding.
+owner = next(row["id"] for row in findings["findings"] if row["kind"] == "show-text")
+named = qa.correction_map(task, [owner], undo=True)
+(operation,) = named["operations"]
+operation["identity"] = ""
+operation["replacement"] = [*operation["replacement"][:4], "店主"]
+del named["content_sha256"]
+named["content_sha256"] = qa_schema._sha256(qa_schema._canonical_bytes(named))
+try:
+    apply(named)
+except qa.RegressionError as error:
+    assert error.failed == {owner: "introduces source-language-residue"}, error
+else:
+    raise AssertionError("A Japanese name on a header without one was applied.")
 assert qa.status(task)["screen"]["lint"] == {"accepted": 1, "total": 1, "declined": 0}
 # The declined scene and items are a coverage gap, reported once with their
 # reasons.

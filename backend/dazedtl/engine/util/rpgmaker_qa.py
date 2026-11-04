@@ -150,6 +150,7 @@ from util.qa.claims import (
     RUN_BUNDLES,
 )
 from util.qa.apply import (
+    RegressionError,
     answer,
     apply_loaded_correction_map,
     correction_map,

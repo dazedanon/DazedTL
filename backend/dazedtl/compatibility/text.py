@@ -1140,8 +1140,17 @@ def prepare_publication(plan):
                     read_json(task_root / "inventory.json"),
                     dry_run_name="dry-run.json",
                     regression_name="regression.json",
-                    nonblocking_introduced_flags=qa.APPROVED_NONBLOCKING_MECHANICAL_FLAGS,
                 )
+            except qa.RegressionError as exc:
+                # Each correction by the sentence the page shows for it.
+                raise ValueError(
+                    exc.describe(
+                        {
+                            row["id"]: row["reason"]
+                            for row in state["findings"] + state["questions"]
+                        }
+                    )
+                ) from exc
             except ValueError as exc:
                 if action == "qa_undo" and "Expected" in str(exc):
                     raise ValueError(

@@ -603,7 +603,6 @@ class PublicationTests(unittest.TestCase):
         engine.game_text = game_text
         engine.correction_map = corrections
         engine.apply_loaded_correction_map = apply
-        engine.APPROVED_NONBLOCKING_MECHANICAL_FLAGS = frozenset()
         actions = ModuleType("desktop.backend.workflow_actions")
         actions.validate_plan = lambda plan: None
         actions.action_guard = lambda *_: {}

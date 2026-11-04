@@ -247,7 +247,6 @@ assert qa.apply_loaded_correction_map(
     inventory,
     dry_run_name="dry-run.json",
     regression_name="regression.json",
-    nonblocking_introduced_flags=qa.APPROVED_NONBLOCKING_MECHANICAL_FLAGS,
 )["valid"]
 written = json.loads((data / "Map001.json").read_text(encoding="utf-8"))
 assert [
