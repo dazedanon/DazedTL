@@ -13,6 +13,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 import unittest
 import zipfile
 from pathlib import Path
@@ -89,7 +90,11 @@ POSIX_TOOLS = sys.platform != "win32" and all(
     shutil.which(tool) for tool in ("bash", "git", "jq", "unzip")
 )
 # Windows ships Windows PowerShell; PowerShell 7 goes first where installed.
-POWERSHELL = shutil.which("pwsh") or "powershell"
+POWERSHELL = shutil.which("pwsh") or shutil.which("powershell") or "powershell"
+# What GameUpdate.bat runs.
+WINDOWS_POWERSHELL = shutil.which("powershell")
+# Both, for what differs between them, such as file access.
+SHELLS = sorted({POWERSHELL, WINDOWS_POWERSHELL or POWERSHELL})
 PACKAGE_MANAGERS = {"apt-get", "dnf", "pacman", "zypper", "pkg", "steamos-readonly"}
 
 
@@ -120,6 +125,52 @@ def advertisement(refs):
     return pkt("# service=git-upload-pack\n") + b"0000" + b"".join(lines) + b"0000"
 
 
+def shell_env(shell: str, env) -> dict[str, str]:
+    """*env* for *shell*: PowerShell 7's module path, as CI's steps set it,
+    hides Windows PowerShell's own modules."""
+    if shell == POWERSHELL:
+        return dict(env)
+    return {key: value for key, value in env.items() if key.upper() != "PSMODULEPATH"}
+
+
+def fresh_namespaces() -> bool:
+    """Whether this user can start processes in a fresh process namespace."""
+    return (
+        shutil.which("unshare") is not None
+        and subprocess.run(
+            ["unshare", "-rpf", "--mount-proc", "true"],
+            capture_output=True,
+            check=False,
+        ).returncode
+        == 0
+    )
+
+
+def long_paths_enabled() -> bool:
+    """Whether Windows lets programs that ask for them use long paths."""
+    import winreg
+
+    try:
+        with winreg.OpenKey(
+            winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Control\FileSystem"
+        ) as key:
+            return winreg.QueryValueEx(key, "LongPathsEnabled")[0] == 1
+    except OSError:
+        return False
+
+
+def snapshot(folder: Path) -> dict[str, bytes | None]:
+    """Every file's bytes and every folder (None) under *folder*, a game, but
+    for the lock patch.sh leaves for the next run."""
+    return {
+        path.relative_to(folder).as_posix(): None
+        if path.is_dir()
+        else path.read_bytes()
+        for path in folder.rglob("*")
+        if path.relative_to(folder).as_posix() != "gameupdate/gameupdate.lock"
+    }
+
+
 class GameUpdateRequestTests(unittest.TestCase):
     def setUp(self):
         temporary = TemporaryDirectory()
@@ -135,12 +186,12 @@ class GameUpdateRequestTests(unittest.TestCase):
         (game / "gameupdate/patch-config.txt").write_text(CONFIG, encoding="utf-8")
         return game
 
-    def patch_repository(self, lfs=False):
+    def patch_repository(self, lfs=False, files=None):
         """A bare repository standing in for the patch repository on the
         forge, whose newest commit holds a translated map and DazedTL's
-        export-ignored settings, and with *lfs* an image kept in Git LFS;
-        returns the Git settings that send GitGud's address to it, and that
-        commit."""
+        export-ignored settings, *files* (path: text), and with *lfs* an
+        image kept in Git LFS; returns the Git settings that send GitGud's
+        address to it, and that commit."""
         work = self.root / "work"
         env = git_env(self.root)
 
@@ -163,6 +214,9 @@ class GameUpdateRequestTests(unittest.TestCase):
         (work / ".gitattributes").write_text(
             "/.dazedtl export-ignore\n", encoding="utf-8"
         )
+        for name, text in (files or {}).items():
+            (work / name).parent.mkdir(parents=True, exist_ok=True)
+            (work / name).write_text(text, encoding="utf-8")
         if lfs:
             (work / "img").mkdir()
             (work / "img/Title.png").write_text(
@@ -196,16 +250,18 @@ class GameUpdateRequestTests(unittest.TestCase):
 
     def without_git(self):
         """A PATH with every command but Git and the package managers."""
+        return self.path_without({"git"} | PACKAGE_MANAGERS)
+
+    def path_without(self, names):
+        """A PATH with every command but *names*."""
         tools = self.root / "tools"
         tools.mkdir()
         for folder in os.environ["PATH"].split(os.pathsep):
             if not os.path.isdir(folder):
                 continue
             for name in os.listdir(folder):
-                if (
-                    name != "git"
-                    and name not in PACKAGE_MANAGERS
-                    and not (tools / name).exists(follow_symlinks=False)
+                if name not in names and not (tools / name).exists(
+                    follow_symlinks=False
                 ):
                     (tools / name).symlink_to(Path(folder) / name)
         return f"{self.bin}{os.pathsep}{tools}"
@@ -378,6 +434,284 @@ class GameUpdateRequestTests(unittest.TestCase):
         POSIX_TOOLS,
         "patch.sh runs where bash, git, jq and unzip do; Windows players run patch.ps1",
     )
+    def test_patch_sh_leaves_the_game_as_it_was_when_a_copy_fails(self):
+        # The second file the patch writes into the game fails after part of
+        # it: the first file used to stay, half patching the game.
+        self.stand_in_curl()
+        config, _head = self.patch_repository(files={"img/pictures/Title.png": "new"})
+        env = {**git_env(self.root, **config), "API": "403"}
+        mv = shutil.which("mv")
+        for name, fail in (
+            (
+                "full disk",
+                """echo "cp: error writing '$target': No space left on device" >&2\n""",
+            ),
+            ("closed terminal", "sleep 0.5\n"),
+            # Again while the game is put back.
+            ("ctrl+c twice", "kill -INT $PPID; sleep 0.2\n"),
+            # The next run puts it back, before it asks for the patch.
+            ("killed", "kill -KILL $PPID\n"),
+        ):
+            with self.subTest(name):
+                game = self.game(name=name.replace(" ", "-"))
+                (game / "www/data").mkdir(parents=True)
+                (game / "www/data/Map001.json").write_text("{}", encoding="utf-8")
+                (game / "gameupdate/previous_patch_sha.txt").write_text(
+                    "a" * 40 + "\n", encoding="utf-8"
+                )
+                before = snapshot(game)
+                writes = self.root / f"{game.name}-writes"
+                self.command(
+                    "cp",
+                    "for target; do :; done\n"
+                    f'case "$target" in "{game}"/*)\n'
+                    f'    count=$(cat "{writes}" 2>/dev/null || echo 0)\n'
+                    f'    echo $((count + 1)) > "{writes}"\n'
+                    '    if [ "$count" -eq 1 ]; then\n'
+                    '        : > "$target"\n'
+                    f"        {fail}"
+                    "        exit 1\n"
+                    "    fi\n"
+                    "esac\n"
+                    f'exec "{shutil.which("cp")}" "$@"\n',
+                )
+                self.command(
+                    "mv",
+                    f'case "$*" in *"/gameupdate/undo/"*" {game}/"*) '
+                    + (
+                        "kill -INT $PPID; sleep 0.2;; "
+                        if name == "ctrl+c twice"
+                        else ";; "
+                    )
+                    + f'esac\nexec "{mv}" "$@"\n',
+                )
+                if name == "closed terminal":
+                    output = self.patch_sh_in_a_terminal_closed_at(game, env, writes)
+                else:
+                    result = self.patch_sh(game, env)
+                    output = result.stdout + result.stderr
+                    self.assertNotEqual(result.returncode, 0)
+                if name == "killed":
+                    self.assertNotEqual(snapshot(game), before, output)
+                    (self.bin / "cp").unlink()
+                    result = self.patch_sh(
+                        game, {**env, "REFS": "offline", "API": "offline"}
+                    )
+                    output = result.stdout + result.stderr
+                if name != "closed terminal":
+                    self.assertIn("left as it was", output)
+                self.assertEqual(snapshot(game), before, output)
+
+    @unittest.skipUnless(
+        POSIX_TOOLS and shutil.which("flock"),
+        "patch.sh locks with flock where it has it",
+    )
+    def test_patch_sh_lets_one_gameupdate_run_at_a_time(self):
+        # A second run's undo of the first run's journal while that run
+        # copied left the game half patched; so did a third run, once the
+        # second locked a lock file an ending run had removed.
+        import fcntl
+
+        self.stand_in_curl()
+        without_flock = self.path_without({"flock"})
+        for name in ("held", "opened as a run ended", "held without flock"):
+            with self.subTest(name):
+                game = self.game(name=name.replace(" ", "-"))
+                lock = game / "gameupdate/gameupdate.lock"
+                path = None
+                with open(lock, "ab") as other:
+                    if name == "opened as a run ended":
+                        (game / "gameupdate/previous_patch_sha.txt").write_text(
+                            SHA, encoding="utf-8"
+                        )
+                        ended = self.patch_sh(game, os.environ)
+                        self.assertIn("Already up to date", ended.stdout)
+                    if name == "held without flock":
+                        path = without_flock
+                        # A process that reads as patch.sh's.
+                        holder = subprocess.Popen(
+                            [
+                                sys.executable,
+                                "-c",
+                                "import time; time.sleep(60)",
+                                "patch.sh",
+                            ],
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
+                        )
+                        self.addCleanup(holder.wait)
+                        self.addCleanup(holder.kill)
+                        (game / "gameupdate/gameupdate.pid").write_text(
+                            f"{holder.pid}\n", encoding="utf-8"
+                        )
+                    undo = game / "gameupdate/undo"
+                    undo.mkdir()
+                    (undo / "journal.txt").write_text("added a.txt\n", encoding="utf-8")
+                    (game / "a.txt").write_text("being copied", encoding="utf-8")
+                    before = snapshot(game)
+                    fcntl.flock(other, fcntl.LOCK_EX)
+                    result = self.patch_sh(game, os.environ, path=path)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("Another GameUpdate is already running", result.stdout)
+                self.assertEqual(snapshot(game), before)
+
+    @unittest.skipUnless(
+        POSIX_TOOLS,
+        "patch.sh runs where bash, git, jq and unzip do; Windows players run patch.ps1",
+    )
+    def test_patch_sh_takes_over_the_lock_a_killed_run_left_without_flock(self):
+        self.stand_in_curl()
+        path = self.path_without({"flock"})
+        # A killed run's process number, which may since be another
+        # program's.
+        ended = subprocess.Popen(["true"])
+        ended.wait()
+        other = subprocess.Popen(
+            ["sleep", "60"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
+        self.addCleanup(other.wait)
+        self.addCleanup(other.kill)
+        for name, holder in (("ended", ended.pid), ("reused", other.pid)):
+            with self.subTest(name):
+                game = self.game(name=name)
+                (game / "gameupdate/previous_patch_sha.txt").write_text(
+                    SHA, encoding="utf-8"
+                )
+                (game / "gameupdate/gameupdate.pid").write_text(
+                    f"{holder}\n", encoding="utf-8"
+                )
+                result = self.patch_sh(game, os.environ, path=path)
+                output = result.stdout + result.stderr
+                self.assertIn("Already up to date", result.stdout, output)
+                self.assertFalse((game / "gameupdate/gameupdate.pid").exists())
+
+    @unittest.skipUnless(
+        POSIX_TOOLS,
+        "patch.sh runs where bash, git, jq and unzip do; Windows players run patch.ps1",
+    )
+    def test_patch_sh_keeps_the_mode_of_a_game_file_it_replaces(self):
+        # A launcher the player made executable stopped starting after an
+        # update whose patch keeps it as a plain file.
+        self.stand_in_curl()
+        config, _head = self.patch_repository(files={"Game.sh": "new"})
+        game = self.game()
+        (game / "Game.sh").write_text("old", encoding="utf-8")
+        (game / "Game.sh").chmod(0o755)
+        result = self.patch_sh(game, {**git_env(self.root, **config), "API": "403"})
+        output = result.stdout + result.stderr
+        self.assertEqual((game / "Game.sh").read_text(encoding="utf-8"), "new", output)
+        self.assertEqual((game / "Game.sh").stat().st_mode & 0o777, 0o755)
+
+    @unittest.skipUnless(
+        POSIX_TOOLS,
+        "patch.sh runs where bash, git, jq and unzip do; Windows players run patch.ps1",
+    )
+    def test_patch_sh_puts_back_its_own_game_whatever_folder_it_runs_from(self):
+        # Run from gameupdate/, a stopped run's undo moved the game's files
+        # there instead.
+        self.stand_in_curl()
+        game = self.game()
+        (game / "Game.ini").write_text("original", encoding="utf-8")
+        before = snapshot(game)
+        undo = game / "gameupdate/undo"
+        undo.mkdir()
+        (game / "Game.ini").replace(undo / "0")
+        (game / "Game.ini").write_text("patched", encoding="utf-8")
+        (undo / "journal.txt").write_text("moved 0 Game.ini\n", encoding="utf-8")
+        result = subprocess.run(
+            ["bash", "patch.sh"],
+            cwd=game / "gameupdate",
+            env={
+                **os.environ,
+                "PATH": f"{self.bin}{os.pathsep}{os.environ['PATH']}",
+                "API": "offline",
+                "REFS": "offline",
+                "GAMEUPDATE_DL_ATTEMPTS": "1",
+            },
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            encoding="utf-8",
+            check=False,
+            timeout=120,
+        )
+        self.assertIn("left as it was", result.stdout, result.stdout + result.stderr)
+        self.assertEqual(snapshot(game), before)
+
+    @unittest.skipUnless(
+        POSIX_TOOLS and fresh_namespaces(),
+        "a fresh process namespace needs unshare and user namespaces",
+    )
+    def test_patch_sh_takes_over_a_lock_holding_its_own_process_number(self):
+        # In a fresh process namespace each run is process 1, so a killed
+        # run's gameupdate.pid named the new run itself.
+        self.stand_in_curl()
+        game = self.game()
+        (game / "gameupdate/previous_patch_sha.txt").write_text(SHA, encoding="utf-8")
+        (game / "gameupdate/gameupdate.pid").write_text("1\n", encoding="utf-8")
+        result = subprocess.run(
+            ["unshare", "-rpf", "--mount-proc", "bash", "gameupdate/patch.sh"],
+            cwd=game,
+            env={**os.environ, "PATH": self.path_without({"flock"})},
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            encoding="utf-8",
+            check=False,
+            timeout=120,
+        )
+        self.assertIn(
+            "Already up to date", result.stdout, result.stdout + result.stderr
+        )
+
+    @unittest.skipUnless(
+        POSIX_TOOLS,
+        "patch.sh runs where bash, git, jq and unzip do; Windows players run patch.ps1",
+    )
+    def test_patch_sh_refuses_a_folder_where_the_game_has_a_file(self):
+        # Its undo used to remove the game's file as a folder the patch added.
+        self.stand_in_curl()
+        config, _head = self.patch_repository(files={"img/pictures/Title.png": "new"})
+        game = self.game()
+        (game / "img").mkdir()
+        (game / "img/pictures").write_text("the game's own", encoding="utf-8")
+        before = snapshot(game)
+        result = self.patch_sh(game, {**git_env(self.root, **config), "API": "403"})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("a folder where the game has a file: img/pictures", result.stdout)
+        self.assertEqual(snapshot(game), before, result.stdout + result.stderr)
+
+    def patch_sh_in_a_terminal_closed_at(self, game, env, written):
+        """Runs patch.sh in a terminal that closes once *written* says patch.sh
+        failed to write its second game file; returns what it showed."""
+        import pty
+        import select
+
+        pid, terminal = pty.fork()
+        if pid == 0:
+            os.chdir(game)
+            os.execve(
+                shutil.which("bash"),
+                ["bash", "gameupdate/patch.sh"],
+                {
+                    **env,
+                    "PATH": f"{self.bin}{os.pathsep}{os.environ['PATH']}",
+                    "GAMEUPDATE_DL_ATTEMPTS": "1",
+                },
+            )
+        output = b""
+        deadline = time.monotonic() + 60
+        while time.monotonic() < deadline and not (
+            written.exists() and written.read_text(encoding="utf-8").strip() == "2"
+        ):
+            if select.select([terminal], [], [], 0.05)[0]:
+                output += os.read(terminal, 65536)
+        os.close(terminal)
+        os.waitpid(pid, 0)
+        return output.decode(errors="replace")
+
+    @unittest.skipUnless(
+        POSIX_TOOLS,
+        "patch.sh runs where bash, git, jq and unzip do; Windows players run patch.ps1",
+    )
     def test_the_linux_launcher_removes_its_script_copy_when_closed(self):
         # A patch.sh that closes the terminal mid-run.
         game = self.game()
@@ -440,7 +774,7 @@ class PatchPs1Tests(unittest.TestCase):
     patch_repository = GameUpdateRequestTests.patch_repository
     assert_applied = GameUpdateRequestTests.assert_applied
 
-    def powershell(self, body, env=None):
+    def powershell(self, body, env=None, shell=POWERSHELL):
         script = (
             "$ErrorActionPreference = 'Stop'; "
             "$ast = [System.Management.Automation.Language.Parser]::ParseFile("
@@ -456,14 +790,16 @@ class PatchPs1Tests(unittest.TestCase):
         )
         result = subprocess.run(
             [
-                POWERSHELL,
+                shell,
                 "-NoProfile",
                 "-ExecutionPolicy",
                 "Bypass",
                 "-Command",
                 script,
             ],
-            env={**os.environ, "GAMEUPDATE_DL_ATTEMPTS": "1", **(env or {})},
+            env=shell_env(
+                shell, {**os.environ, "GAMEUPDATE_DL_ATTEMPTS": "1", **(env or {})}
+            ),
             stdin=subprocess.DEVNULL,
             capture_output=True,
             encoding="utf-8",
@@ -472,7 +808,7 @@ class PatchPs1Tests(unittest.TestCase):
         )
         return result.stdout + result.stderr
 
-    def update(self, game, stand_ins, env):
+    def update(self, game, stand_ins, env, shell=POWERSHELL):
         """Runs Invoke-PatchDownloadExtract on *game* after *stand_ins*,
         PowerShell that replaces some of its functions, and prints its
         result."""
@@ -484,6 +820,20 @@ class PatchPs1Tests(unittest.TestCase):
             f"Write-Output ('RESULT ' + (Invoke-PatchDownloadExtract -Root '{game}' "
             f"-StateFilePath '{state}' -Resolved $resolved -BundleRoot '{game / 'gameupdate'}'))",
             env,
+            shell,
+        )
+
+    def serve(self, files):
+        """PowerShell standing in for the forge, whose newest patch holds
+        *files* (path: text) under an archive's root folder."""
+        archive = self.root / "served.zip"
+        with zipfile.ZipFile(archive, "w") as zipped:
+            for name, text in files.items():
+                zipped.writestr(f"Game-{SHA}/{name}", text)
+        return (
+            f"function Get-PatchLatestSha {{ '{SHA}' }}; "
+            "function Invoke-PatchArchiveDownload { param($Url, $OutFile) "
+            f"Copy-Item -LiteralPath '{archive}' -Destination $OutFile }}; "
         )
 
     def test_patch_ps1_names_gameupdate_to_gitgud(self):
@@ -611,7 +961,8 @@ class PatchPs1Tests(unittest.TestCase):
         game = self.game()
         output = self.update(
             game,
-            f"function Get-PatchPathLimit {{ {len(str(game)) + len('/www/data')} }}; "
+            f"function Get-PatchPathLimit {{ $limit = {len(str(game)) + len('/www/data')}; "
+            "@{ File = $limit; Folder = $limit } }; "
             # An unpack folder shorter than the game's, as a usual %TEMP% is.
             f"function New-GameUpdateTempPath {{ param($Kind) '{self.root / 'x'}' }}; "
             "function Get-PatchLatestSha { '" + SHA + "' }; "
@@ -627,6 +978,127 @@ class PatchPs1Tests(unittest.TestCase):
         self.assertNotIn("trying Git instead", output)
         self.assertFalse((game / "a.txt").exists())
         self.assertFalse((game / "gameupdate/previous_patch_sha.txt").exists())
+
+    def test_patch_ps1_refuses_a_folder_too_deep_where_windows_limits_paths(self):
+        # Windows makes no folder of 248 characters or more there, while its
+        # files may have 259: a deep folder of short file names passed the
+        # check, then stopped the copy partway.
+        game = self.game(name="game-folder")
+        depth = 248 - len(str(game)) - 1
+        folder = ("abcdefghi/" * depth)[:depth].rstrip("/").ljust(depth, "z")
+        output = self.update(
+            game,
+            "function Get-PatchPathLimit { @{ File = 259; Folder = 247 } }; "
+            # An unpack folder shorter than the game's, as a usual %TEMP% is.
+            f"function New-GameUpdateTempPath {{ param($Kind) Join-Path '{self.root}' $Kind }}; "
+            + self.serve({"a.txt": "{}", f"{folder}/a.js": "{}"}),
+            {},
+        )
+        self.assertIn("Move the game to a shorter folder", output)
+        self.assertIn("Windows allows 247 for a folder", output)
+        self.assertFalse((game / "a.txt").exists())
+        self.assertFalse((game / "gameupdate/previous_patch_sha.txt").exists())
+
+    @unittest.skipUnless(
+        WINDOWS_POWERSHELL and long_paths_enabled(),
+        "Windows allows long paths only with LongPathsEnabled",
+    )
+    def test_patch_ps1_applies_long_paths_only_with_powershell_7(self):
+        # Windows PowerShell, GameUpdate.bat's fallback, keeps Windows' limits.
+        deep = "/".join(letter * 100 for letter in "abc") + "/Map.json"
+        for shell in SHELLS:
+            with self.subTest(shell):
+                game = self.game(name=Path(shell).stem)
+                temporary = self.root / f"tmp-{game.name}"
+                temporary.mkdir()
+                output = self.update(
+                    game,
+                    self.serve({deep: "{}"}),
+                    {"TEMP": str(temporary), "TMP": str(temporary)},
+                    shell,
+                )
+                if Path(shell).stem.lower() == "pwsh":
+                    self.assertIn("RESULT 0", output)
+                    self.assertTrue((game / deep).is_file(), output)
+                else:
+                    self.assertIn("This patch has files too deep", output)
+                    self.assertFalse((game / ("a" * 100)).exists(), output)
+                self.assertEqual(list(temporary.glob("gu_*")), [], output)
+
+    def test_patch_ps1_leaves_the_game_as_it_was_when_a_copy_fails(self):
+        # A file the running game holds, copied after part of the patch:
+        # that part used to stay, half patching the game.
+        for shell in SHELLS:
+            with self.subTest(shell):
+                game = self.game(name=Path(shell).stem)
+                (game / "www/data").mkdir(parents=True)
+                (game / "www/data/Map001.json").write_text("{}", encoding="utf-8")
+                (game / "zz").mkdir()
+                (game / "zz/held.txt").write_text("held", encoding="utf-8")
+                (game / "gameupdate/previous_patch_sha.txt").write_text(
+                    "a" * 40 + "\n", encoding="utf-8"
+                )
+                before = snapshot(game)
+                temporary = self.root / f"tmp-{game.name}"
+                temporary.mkdir()
+                output = self.update(
+                    game,
+                    f"$held = [IO.File]::Open('{game / 'zz/held.txt'}', 'Open', 'Read', 'Read'); "
+                    + self.serve(
+                        {
+                            "a.txt": "new",
+                            "img/pictures/Title.png": "new",
+                            "www/data/Map001.json": '{"translated": true}',
+                            "zz/held.txt": "new",
+                        }
+                    ),
+                    {"TEMP": str(temporary), "TMP": str(temporary)},
+                    shell,
+                )
+                self.assertIn("being used by another process", output)
+                self.assertIn("left as it was", output)
+                self.assertNotIn("RESULT", output)
+                self.assertEqual(snapshot(game), before, output)
+                self.assertEqual(list(temporary.glob("gu_*")), [], output)
+
+    def test_patch_ps1_refuses_a_folder_where_the_game_has_a_file(self):
+        # Its undo used to remove the game's file as a folder the patch added.
+        game = self.game()
+        (game / "img").mkdir()
+        (game / "img/pictures").write_text("the game's own", encoding="utf-8")
+        before = snapshot(game)
+        output = self.update(
+            game, self.serve({"a.txt": "new", "img/pictures/Title.png": "new"}), {}
+        )
+        self.assertIn("a folder where the game has a file: img/pictures", output)
+        self.assertEqual(snapshot(game), before, output)
+
+    def test_patch_ps1_puts_back_a_game_a_stopped_run_left_half_patched(self):
+        # What a run leaves when its window is closed while it copies; the
+        # journal's last line, cut short, names a change never made.
+        for shell in SHELLS:
+            with self.subTest(shell):
+                game = self.game(name=Path(shell).stem)
+                (game / "www/data").mkdir(parents=True)
+                (game / "www/data/Map001.json").write_text("{}", encoding="utf-8")
+                (game / "zz.txt").write_text("the game's own", encoding="utf-8")
+                before = snapshot(game)
+                (game / "a.txt").write_text("new", encoding="utf-8")
+                (game / "img").mkdir()
+                (game / "img/Title.png").write_text("new", encoding="utf-8")
+                undo = game / "gameupdate/undo"
+                undo.mkdir()
+                (game / "www/data/Map001.json").replace(undo / "0")
+                (game / "www/data/Map001.json").write_text("{", encoding="utf-8")
+                (undo / "journal.txt").write_text(
+                    "added a.txt\nadded img\nadded img/Title.png\n"
+                    "moved 0 www/data/Map001.json\nadded zz.txt",
+                    encoding="utf-8",
+                    newline="",
+                )
+                output = self.script(game, "", os.environ, status=404, shell=shell)
+                self.assertIn("left as it was", output)
+                self.assertEqual(snapshot(game), before, output)
 
     def test_patch_ps1_names_the_git_command_that_failed(self):
         output = self.powershell(
@@ -730,7 +1202,7 @@ class PatchPs1Tests(unittest.TestCase):
         self.assertFalse(folder.exists())
         self.assertFalse(folder.with_name("mingit.partial").exists())
 
-    def script(self, game, prelude, env, status=403):
+    def script(self, game, prelude, env, status=403, shell=POWERSHELL):
         """Runs the whole patch.ps1 on *game* after *prelude*, with the API
         refused and every other web request answered *status*, and its input
         redirected, so it must not wait for a key."""
@@ -743,14 +1215,14 @@ class PatchPs1Tests(unittest.TestCase):
         )
         result = subprocess.run(
             [
-                POWERSHELL,
+                shell,
                 "-NoProfile",
                 "-ExecutionPolicy",
                 "Bypass",
                 "-Command",
                 script,
             ],
-            env={**env, "GAMEUPDATE_DL_ATTEMPTS": "1"},
+            env=shell_env(shell, {**env, "GAMEUPDATE_DL_ATTEMPTS": "1"}),
             stdin=subprocess.DEVNULL,
             capture_output=True,
             encoding="utf-8",

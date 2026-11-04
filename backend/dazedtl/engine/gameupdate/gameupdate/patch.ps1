@@ -689,17 +689,19 @@ function Save-GitPatchZip {
 
 function Get-PatchPathLimit {
     <#
-    The longest full path a patch file may have. Windows allows 259
-    characters, unless long paths are on and the shell is PowerShell 7, which
-    can use them; Windows PowerShell never can.
+    The longest full paths a patch's files and folders may have: Windows'
+    259 characters for a file and 247 for a folder, unless long paths are on
+    (LongPathsEnabled) and the shell is PowerShell 7, which can use them.
+    Windows PowerShell is the fallback for players without PowerShell 7, and
+    a game may not open long paths either, so it keeps the limits.
     #>
     if ($PSVersionTable.PSEdition -eq 'Core') {
         $long = Get-ItemProperty -LiteralPath 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem' -Name LongPathsEnabled -ErrorAction SilentlyContinue
         if ($long -and $long.LongPathsEnabled -eq 1) {
-            return [int]::MaxValue
+            return @{ File = [int]::MaxValue; Folder = [int]::MaxValue }
         }
     }
-    return 259
+    return @{ File = 259; Folder = 247 }
 }
 
 function Expand-PatchZip {
@@ -707,8 +709,7 @@ function Expand-PatchZip {
     Unpacks a patch archive's files into $Destination without the archive's
     own root folder, such as GitLab's <repo>-<sha>-<sha>, which would push deep
     patch paths past Windows' 260-character limit. Refuses before unpacking
-    anything when a file would not fit in $GameRoot, so a patch is never
-    applied halfway.
+    anything when a file or folder would not fit there or in $GameRoot.
     #>
     param(
         [Parameter(Mandatory = $true)][string]$ZipPath,
@@ -729,13 +730,27 @@ function Expand-PatchZip {
         $files = foreach ($entry in $archive.Entries) {
             $relative = $entry.FullName.Replace('\', '/').Substring($roots[0].Length).TrimStart('/')
             if (-not $relative) { continue }
-            if ($folder + 1 + $relative.TrimEnd('/').Length -gt $limit) {
+            # A file, and the folder an entry is or lies in, which Windows
+            # limits further.
+            $path = $relative.TrimEnd('/')
+            $isFolder = $relative.EndsWith('/')
+            $parent = if ($isFolder) { $path } elseif ($path.Contains('/')) { $path.Substring(0, $path.LastIndexOf('/')) } else { '' }
+            $tooLong = $null
+            if (-not $isFolder -and $folder + 1 + $path.Length -gt $limit.File) {
+                $tooLong = $path
+                $allowed = $limit.File
+            }
+            elseif ($parent -and $folder + 1 + $parent.Length -gt $limit.Folder) {
+                $tooLong = $parent + '/'
+                $allowed = '{0} for a folder' -f $limit.Folder
+            }
+            if ($tooLong) {
                 if ($game.Length -lt $base.Length - 1) {
                     throw ('PATCH_ERR:PATH:This patch has files too deep for Windows'' temporary folder, such as {0} ({1} characters there; Windows allows {2}). Set the TEMP variable to a shorter folder, such as C:\Temp, then run GameUpdate again.' -f `
-                        $relative, ($base.Length + $relative.Length), $limit)
+                        $tooLong, ($base.Length + $tooLong.TrimEnd('/').Length), $allowed)
                 }
                 throw ('PATCH_ERR:PATH:This patch has files too deep for this folder, such as {0} ({1} characters with the game''s folder; Windows allows {2}). Move the game to a shorter folder, such as C:\Games\{3}, then run GameUpdate again.' -f `
-                    $relative, ($game.Length + 1 + $relative.Length), $limit, (Split-Path -Leaf $game))
+                    $tooLong, ($game.Length + 1 + $tooLong.TrimEnd('/').Length), $allowed, (Split-Path -Leaf $game))
             }
             @{ Entry = $entry; Relative = $relative }
         }
@@ -1240,6 +1255,172 @@ function Remove-DownloadedRepoZip {
     Remove-FileOrDirectoryViaCmd -LiteralPath $LiteralPath
 }
 
+function Get-PatchUndoFolder {
+    <#
+    Where Copy-PatchFiles keeps what it changed: on the game's own drive, so
+    setting a game file aside is a rename that needs no space. DazedTL keeps
+    it out of patches (gameupdate_local in project_preparation.py).
+    #>
+    param([Parameter(Mandatory = $true)][string]$BundleRoot)
+    return Join-Path $BundleRoot 'undo'
+}
+
+function Undo-PatchFiles {
+    <#
+    Puts the game back as it was before a Copy-PatchFiles that did not
+    finish, from its journal, newest change first: moves each game file it
+    set aside back, removes each file it added, and each folder it added once
+    that is empty. Each step checks what is there first, so running it again
+    after it stopped finishes it. Throws when a file can't be put back,
+    keeping the journal for the next run.
+    #>
+    param(
+        [Parameter(Mandatory = $true)][string]$Root,
+        [Parameter(Mandatory = $true)][string]$BundleRoot
+    )
+    $undo = Get-PatchUndoFolder -BundleRoot $BundleRoot
+    $journal = Join-Path $undo 'journal.txt'
+    if ([IO.File]::Exists($journal)) {
+        Write-Host 'Putting the game back as it was...'
+        # A line cut short, when the run ended while writing it, has no
+        # newline, and the change it names was never made.
+        $lines = [IO.File]::ReadAllText($journal, (New-Object Text.UTF8Encoding($false))).Split("`n")
+        $left = New-Object Collections.Generic.List[string]
+        for ($i = $lines.Count - 2; $i -ge 0; $i--) {
+            $kind, $relative = $lines[$i] -split ' ', 2
+            if ($kind -eq 'moved') {
+                $number, $relative = $relative -split ' ', 2
+            }
+            if (-not $relative) {
+                continue
+            }
+            $path = Join-Path $Root $relative
+            try {
+                if ($kind -eq 'moved') {
+                    $copy = Join-Path $undo $number
+                    if ([IO.File]::Exists($copy)) {
+                        Invoke-Settled -Tries 50 -Action {
+                            if ([IO.File]::Exists($path)) { [IO.File]::Delete($path) }
+                            [IO.File]::Move($copy, $path)
+                        }
+                    }
+                }
+                elseif ([IO.Directory]::Exists($path)) {
+                    # Another program may have put files in it since; an
+                    # empty folder changes nothing for the game.
+                    try { [IO.Directory]::Delete($path) } catch { }
+                }
+                elseif ([IO.File]::Exists($path)) {
+                    Invoke-Settled -Tries 50 -Action { [IO.File]::Delete($path) }
+                }
+            }
+            catch {
+                $left.Add(('{0} ({1})' -f $relative, $_.Exception.Message))
+            }
+        }
+        if ($left.Count -gt 0) {
+            throw ('PATCH_ERR:UNDO:GameUpdate could not put back {0}. Close the game, then run GameUpdate again to finish putting it back.' -f ($left -join '; '))
+        }
+        # Once the journal is gone the game is as it was; the rest of the
+        # folder is only left over.
+        [IO.File]::Delete($journal)
+        Write-Host 'The game was left as it was before this update.'
+    }
+    if ([IO.Directory]::Exists($undo)) {
+        # What is left over changes nothing for the game.
+        try { Remove-SettledItem -LiteralPath $undo } catch { }
+    }
+}
+
+function Copy-PatchFiles {
+    <#
+    Copies the unpacked patch in $Stage into $Root all or nothing. Before each
+    change it writes the change to a journal in Get-PatchUndoFolder: each game
+    file the patch replaces is moved there, and each file and folder it adds
+    is listed. When a copy fails, such as on a file the running game holds or
+    a full disk, or the run is stopped, Undo-PatchFiles puts the game back
+    before the error goes on; when the window was closed, the next run does.
+    Files named in $Skip stay out.
+    #>
+    param(
+        [Parameter(Mandatory = $true)][string]$Stage,
+        [Parameter(Mandatory = $true)][string]$Root,
+        [Parameter(Mandatory = $true)][string]$BundleRoot,
+        [string[]]$Skip = @()
+    )
+    $stageFolder = [IO.Path]::GetFullPath($Stage).TrimEnd('\', '/')
+    $undo = Get-PatchUndoFolder -BundleRoot $BundleRoot
+    $journalPath = Join-Path $undo 'journal.txt'
+    # The startup undo finished any earlier journal. Copies a removal left
+    # behind must not stand in for this patch's.
+    if ([IO.File]::Exists($journalPath)) {
+        throw 'PATCH_ERR:UNDO:An earlier update is not put back yet. Close the game, then run GameUpdate again to finish putting it back.'
+    }
+    if ([IO.Directory]::Exists($undo)) {
+        Remove-SettledItem -LiteralPath $undo
+    }
+    [void][IO.Directory]::CreateDirectory($undo)
+    $journal = New-Object IO.StreamWriter($journalPath, $false, (New-Object Text.UTF8Encoding($false)))
+    $journal.AutoFlush = $true
+    $journal.NewLine = "`n"
+    # Moved files are named by their order, so their paths stay short.
+    $moved = 0
+    $copied = $false
+    try {
+        foreach ($source in [IO.Directory]::EnumerateFiles($stageFolder, '*', [IO.SearchOption]::AllDirectories)) {
+            if ([IO.Path]::GetFileName($source) -in $Skip) {
+                continue
+            }
+            # With / as patch.sh writes it, for a game folder both use.
+            $relative = $source.Substring($stageFolder.Length + 1).Replace('\', '/')
+            $destination = Join-Path $Root $relative
+            $folders = New-Object Collections.Generic.List[string]
+            $folder = [IO.Path]::GetDirectoryName($relative)
+            while ($folder -and -not [IO.Directory]::Exists((Join-Path $Root $folder))) {
+                if ([IO.File]::Exists((Join-Path $Root $folder))) {
+                    throw ('PATCH_ERR:APPLY:This patch has a folder where the game has a file: {0}' -f $folder.Replace('\', '/'))
+                }
+                $folders.Insert(0, $folder)
+                $folder = [IO.Path]::GetDirectoryName($folder)
+            }
+            foreach ($folder in $folders) {
+                # GetDirectoryName gives Windows' separator back.
+                $journal.WriteLine('added ' + $folder.Replace('\', '/'))
+                [void][IO.Directory]::CreateDirectory((Join-Path $Root $folder))
+            }
+            if ([IO.Directory]::Exists($destination)) {
+                throw ('PATCH_ERR:APPLY:This patch has a file where the game has a folder: {0}' -f $relative)
+            }
+            if ([IO.File]::Exists($destination)) {
+                $journal.WriteLine(('moved {0} {1}' -f $moved, $relative))
+                [IO.File]::Move($destination, (Join-Path $undo $moved))
+                $moved++
+            }
+            else {
+                $journal.WriteLine('added ' + $relative)
+            }
+            [IO.File]::Copy($source, $destination)
+        }
+        $copied = $true
+    }
+    finally {
+        # Here rather than in a catch, so a stopped run is undone too.
+        $journal.Dispose()
+        if ($copied) {
+            [IO.File]::Delete($journalPath)
+            try { Remove-SettledItem -LiteralPath $undo } catch { }
+        }
+        else {
+            try {
+                Undo-PatchFiles -Root $Root -BundleRoot $BundleRoot
+            }
+            catch {
+                Write-Host ('ERROR: ' + (Format-PatchMessage -Message $_.Exception.Message))
+            }
+        }
+    }
+}
+
 function Invoke-PatchDownloadExtract {
     param(
         [Parameter(Mandatory = $true)][string]$Root,
@@ -1368,7 +1549,9 @@ function Invoke-PatchDownloadExtract {
 
         if ($isWolfGame) {
             # Stage UberWolfCli before unpack so packed WOLF games can
-            # convert Data.wolf -> Data/ before English files land.
+            # convert Data.wolf -> Data/ before English files land. This
+            # stays outside Copy-PatchFiles' undo: the loose Data/ it unpacks
+            # is the same game, which a later run would unpack again.
             foreach ($cliName in $wolfOnlyNames) {
                 $stagedCli = Join-Path $stage $cliName
                 $destCli = Join-Path $Root $cliName
@@ -1380,31 +1563,18 @@ function Invoke-PatchDownloadExtract {
             Invoke-WolfPreSetup -Root $Root
         }
 
-        # Copy file-by-file so WOLF-only tools never leak into RPG Maker,
-        # SRPG, or other game roots through a downloaded patch archive.
-        $sourcePrefix = [IO.Path]::GetFullPath($stage).TrimEnd(
-            [IO.Path]::DirectorySeparatorChar,
-            [IO.Path]::AltDirectorySeparatorChar
-        ) + [IO.Path]::DirectorySeparatorChar
-        foreach ($file in Get-ChildItem -LiteralPath $stage -Recurse -File -Force) {
-            if ((-not $isWolfGame) -and ($file.Name -in $wolfOnlyNames)) {
-                continue
-            }
-            $relative = $file.FullName.Substring($sourcePrefix.Length)
-            $destination = Join-Path $Root $relative
-            $destinationDir = Split-Path -Parent $destination
-            if (-not (Test-Path -LiteralPath $destinationDir -PathType Container)) {
-                New-Item -ItemType Directory -Path $destinationDir -Force | Out-Null
-            }
-            Copy-Item -LiteralPath $file.FullName -Destination $destination -Force
-        }
+        # WOLF-only tools never leak into RPG Maker, SRPG, or other game
+        # roots through a downloaded patch archive.
+        $skip = if ($isWolfGame) { @() } else { $wolfOnlyNames }
+        Copy-PatchFiles -Stage $stage -Root $Root -BundleRoot $BundleRoot -Skip $skip
     }
     finally {
         if (Test-Path -LiteralPath $zipPath) {
             Remove-DownloadedRepoZip -LiteralPath $zipPath
         }
-        if (Test-Path -LiteralPath $stage) {
-            Remove-FileOrDirectoryViaCmd -LiteralPath $stage
+        if ([IO.Directory]::Exists($stage)) {
+            # .NET, unlike cmd.exe, reaches the long paths PowerShell 7 may make.
+            try { [IO.Directory]::Delete($stage, $true) } catch { Remove-FileOrDirectoryViaCmd -LiteralPath $stage }
         }
     }
 
@@ -1489,6 +1659,8 @@ try {
     # first is using; held until the process ends.
     $gameUpdateLock = Enter-GameUpdateLock -BundleRoot $PatchBundleRoot
     Remove-StaleGameUpdateTemp
+    # An update stopped partway, such as by a closed window, is undone first.
+    Undo-PatchFiles -Root $GameRoot -BundleRoot $PatchBundleRoot
     Remove-StalePatchZipArtifactsInGameRoot -Root $GameRoot
 
     $configPath = Join-Path $PatchBundleRoot 'patch-config.txt'
