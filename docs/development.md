@@ -171,8 +171,8 @@ A fix you found in a game but didn't code can go through the guide's [Share a fi
 `node scripts/land.mjs --review <file.json>` lands a finished branch on `dev` from its worktree: it formats the branch, merges `dev` into it, runs the tests and build checks, fast-forwards the main checkout's `dev` and pushes it to every mirror.
 One landing runs at a time, under a lock that a release also holds.
 
-- Every landing passes an independent review first: a reviewer that never saw the work runs `code-review` at `high` or above on the branch against `dev`, the author fixes each finding or dismisses it with a reason, and that reviewer checks both; the dazedtl-land skill says when a fresh reviewer follows, up to three.
-  land.mjs refuses a review record without the fields [readReview](../scripts/land.mjs) names, and a branch with commits after its head other than merges of `dev` and the formatter's.
+- Every landing passes an independent review first: a reviewer that never saw the work runs `code-review` at `high` or above on the branch against `dev`, the author fixes each finding or dismisses it with a reason, and that reviewer checks both; the dazedtl-land skill says when a fresh reviewer follows.
+  land.mjs refuses a review record [readReview](../scripts/land.mjs) can't read, and a branch with commits after its head other than merges of `dev` and the formatter's.
   Each landed record joins `dazedtl-reviews.jsonl` in the shared Git directory with its branch and range, to show what reviews catch.
 - A failed test run runs once more after the machine's load drops; a pass then is reported as `Flaky:`, and a second failure stops the landing.
 - Both sides' [release notes](#release-notes) are joined, and conflicts only in the generated API contracts are resolved by writing them again.

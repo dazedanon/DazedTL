@@ -257,7 +257,7 @@ test("a landing's review record comes from an independent reviewer and accounts 
       reviews: 2,
       head: "abc1234",
       findings: [
-        { summary: "Off by one", outcome: "fixed", reason: "" },
+        { summary: "Off by one", outcome: "fixed", reason: "", review: 1 },
         {
           summary: "Slow loop",
           outcome: "dismissed",
@@ -322,6 +322,7 @@ test("a landing's review record comes from an independent reviewer and accounts 
     ["dismissed", "2"],
     ["dismissed", null],
     ["fixed", 3],
+    ["fixed", undefined],
   ])
     assert.throws(
       () =>
