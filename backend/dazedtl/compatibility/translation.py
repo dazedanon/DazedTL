@@ -200,11 +200,12 @@ class TranslationEngine:
             return "WOLF"
         if (root / "tyrano").is_dir() or (root / "resources/app/tyrano").is_dir():
             return "TyranoScript"
-        # KiriKiri reads its game from xp3 archives beside its exe.
-        if any(path.is_file() for path in root.glob("*.xp3", case_sensitive=False)):
-            return "KiriKiri"
         if any(root.glob("*_Data")):
             return "Unity"
+        # KiriKiri reads its game from xp3 archives beside its exe. Checked
+        # last, so a stray archive never renames a game recognized above.
+        if any(path.is_file() for path in root.glob("*.xp3", case_sensitive=False)):
+            return "KiriKiri"
         return UNRECOGNIZED
 
     def documents(self, source):
