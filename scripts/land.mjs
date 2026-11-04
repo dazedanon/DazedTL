@@ -4,9 +4,9 @@
 // session that cuts the next release answers for a run still red. Runs on
 // Linux and macOS. A wait on the user's DazedTL or a slow landing lock is
 // told to the user on the desktop too, since agents run this in the
-// background. Each landing carries a record of its code review, kept in the
-// shared Git directory to measure what reviews catch. See "Landing" in
-// docs/development.md.
+// background. Each landing carries a record of the code review a reviewer
+// other than its author ran, kept in the shared Git directory to measure what
+// reviews catch. See "Landing" in docs/development.md.
 //
 //   node scripts/land.mjs --review <file.json>
 //
@@ -34,17 +34,19 @@ const appPoll = 30_000;
 const pushRetry = 60_000;
 const pushTimeout = 5 * 60_000;
 const icon = path.join(import.meta.dirname, "..", "resources", "icon.png");
-const reviewLevels = ["low", "medium", "high", "xhigh", "max", "ultra"];
+/** The code-review levels a landing's review may run at: high and up. */
+const reviewLevels = ["high", "xhigh", "max", "ultra"];
 const reviewShape =
-  '{"level": "medium", "findings": [{"summary": "...", "outcome": "fixed"}, {"summary": "...", "outcome": "dismissed", "reason": "..."}]}, or {"skipped": "why"}';
+  '{"level": "high", "reviewer": "independent", "findings": [{"summary": "...", "outcome": "fixed"}, {"summary": "...", "outcome": "dismissed", "reason": "..."}]}';
 /** Where landed reviews are recorded, one JSON line each, in the shared Git directory. */
 const reviewLog = "dazedtl-reviews.jsonl";
 
 /**
- * Reads a landing's review record: the code-review level and what became of
- * each finding it reported, or why no review ran. Throws with what is wrong.
+ * Reads a landing's review record: the code-review level a reviewer that
+ * never saw the work ran, and what became of each finding it reported.
+ * Throws with what is wrong, so no branch lands on its author's review alone.
  * @param {string} text
- * @returns {{ skipped: string } | { level: string, findings: { summary: string, outcome: "fixed" | "dismissed", reason?: string }[] }}
+ * @returns {{ level: string, reviewer: "independent", findings: { summary: string, outcome: "fixed" | "dismissed", reason?: string }[] }}
  */
 export function readReview(text) {
   let record;
@@ -55,10 +57,13 @@ export function readReview(text) {
   }
   const filled = (/** @type {unknown} */ value) =>
     typeof value === "string" && value.trim() !== "";
-  if (record && filled(record.skipped)) return { skipped: record.skipped };
-  if (!record || !reviewLevels.includes(record.level))
+  if (record?.reviewer !== "independent")
     throw new Error(
-      `The review record needs a level (${reviewLevels.join(", ")}) or a skipped reason.`,
+      'The review record needs "reviewer": "independent": a reviewer that never saw the work reviews every landing, not its author (the dazedtl-land skill\'s Review step).',
+    );
+  if (!reviewLevels.includes(record.level))
+    throw new Error(
+      `The review record needs a level of ${reviewLevels.join(", ")}.`,
     );
   if (!Array.isArray(record.findings))
     throw new Error(
@@ -81,7 +86,7 @@ export function readReview(text) {
       };
     },
   );
-  return { level: record.level, findings };
+  return { level: record.level, reviewer: "independent", findings };
 }
 
 /** Whether the user's own DazedTL runs from the main checkout. */
@@ -246,7 +251,7 @@ export async function land(cwd, deps, reviewFile) {
   }
   if (!reviewFile) {
     log(
-      `Land with --review <file.json> holding the branch's code review: ${reviewShape}.`,
+      `Land with --review <file.json> holding the branch's independent code review: ${reviewShape}.`,
     );
     return 1;
   }

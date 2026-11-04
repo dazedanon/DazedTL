@@ -230,33 +230,50 @@ test("a landing commits what the formatter changed, and only that", async (t) =>
   assert.equal(git(["rev-list", "--count", "HEAD"]).stdout, "2\n");
 });
 
-test("a landing's review record accounts for every finding, or says why no review ran", () => {
+test("a landing's review record comes from an independent reviewer and accounts for every finding", () => {
   const record = (value: unknown) => readReview(JSON.stringify(value));
   assert.deepEqual(
     record({
-      level: "medium",
+      level: "high",
+      reviewer: "independent",
       findings: [
         { summary: "Off by one", outcome: "fixed", reason: "" },
         { summary: "Slow loop", outcome: "dismissed", reason: "Runs once" },
       ],
     }),
     {
-      level: "medium",
+      level: "high",
+      reviewer: "independent",
       findings: [
         { summary: "Off by one", outcome: "fixed" },
         { summary: "Slow loop", outcome: "dismissed", reason: "Runs once" },
       ],
     },
   );
-  assert.deepEqual(record({ skipped: "Docs only" }), { skipped: "Docs only" });
+  // The author's own review, or none, no longer lands a branch.
+  for (const unreviewed of [
+    { level: "high", findings: [] },
+    { level: "high", reviewer: "author", findings: [] },
+    { skipped: "Docs only" },
+    null,
+  ])
+    assert.throws(() => record(unreviewed), /"reviewer": "independent"/);
+  assert.throws(
+    () => record({ level: "medium", reviewer: "independent", findings: [] }),
+    /level of high/,
+  );
   assert.throws(
     () =>
       record({
-        level: "medium",
+        level: "high",
+        reviewer: "independent",
         findings: [{ summary: "Slow loop", outcome: "dismissed" }],
       }),
     /Finding 1 .* without a reason/,
   );
-  assert.throws(() => record({ level: "medium" }), /findings list/);
-  assert.throws(() => readReview("level: medium"), /not JSON/);
+  assert.throws(
+    () => record({ level: "high", reviewer: "independent" }),
+    /findings list/,
+  );
+  assert.throws(() => readReview("level: high"), /not JSON/);
 });
