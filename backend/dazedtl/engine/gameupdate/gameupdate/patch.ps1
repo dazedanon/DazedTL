@@ -689,17 +689,18 @@ function Save-GitPatchZip {
 
 function Get-PatchPathLimit {
     <#
-    The longest full path a patch file may have. Windows allows 259
-    characters, unless long paths are on and the shell is PowerShell 7, which
-    can use them; Windows PowerShell never can.
+    The longest full paths a patch's files and folders may have. Windows
+    allows 259 characters for a file and 247 for a folder, unless long paths
+    are on and the shell is PowerShell 7, which can use them; Windows
+    PowerShell never can.
     #>
     if ($PSVersionTable.PSEdition -eq 'Core') {
         $long = Get-ItemProperty -LiteralPath 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem' -Name LongPathsEnabled -ErrorAction SilentlyContinue
         if ($long -and $long.LongPathsEnabled -eq 1) {
-            return [int]::MaxValue
+            return @{ File = [int]::MaxValue; Folder = [int]::MaxValue }
         }
     }
-    return 259
+    return @{ File = 259; Folder = 247 }
 }
 
 function Expand-PatchZip {
@@ -707,8 +708,7 @@ function Expand-PatchZip {
     Unpacks a patch archive's files into $Destination without the archive's
     own root folder, such as GitLab's <repo>-<sha>-<sha>, which would push deep
     patch paths past Windows' 260-character limit. Refuses before unpacking
-    anything when a file would not fit in $GameRoot, so a patch is never
-    applied halfway.
+    anything when a file or folder would not fit there or in $GameRoot.
     #>
     param(
         [Parameter(Mandatory = $true)][string]$ZipPath,
@@ -729,13 +729,27 @@ function Expand-PatchZip {
         $files = foreach ($entry in $archive.Entries) {
             $relative = $entry.FullName.Replace('\', '/').Substring($roots[0].Length).TrimStart('/')
             if (-not $relative) { continue }
-            if ($folder + 1 + $relative.TrimEnd('/').Length -gt $limit) {
+            # A file, and the folder an entry is or lies in, which Windows
+            # limits further.
+            $path = $relative.TrimEnd('/')
+            $isFolder = $relative.EndsWith('/')
+            $parent = if ($isFolder) { $path } elseif ($path.Contains('/')) { $path.Substring(0, $path.LastIndexOf('/')) } else { '' }
+            $tooLong = $null
+            if (-not $isFolder -and $folder + 1 + $path.Length -gt $limit.File) {
+                $tooLong = $path
+                $allowed = $limit.File
+            }
+            elseif ($parent -and $folder + 1 + $parent.Length -gt $limit.Folder) {
+                $tooLong = $parent + '/'
+                $allowed = '{0} for a folder' -f $limit.Folder
+            }
+            if ($tooLong) {
                 if ($game.Length -lt $base.Length - 1) {
                     throw ('PATCH_ERR:PATH:This patch has files too deep for Windows'' temporary folder, such as {0} ({1} characters there; Windows allows {2}). Set the TEMP variable to a shorter folder, such as C:\Temp, then run GameUpdate again.' -f `
-                        $relative, ($base.Length + $relative.Length), $limit)
+                        $tooLong, ($base.Length + $tooLong.TrimEnd('/').Length), $allowed)
                 }
                 throw ('PATCH_ERR:PATH:This patch has files too deep for this folder, such as {0} ({1} characters with the game''s folder; Windows allows {2}). Move the game to a shorter folder, such as C:\Games\{3}, then run GameUpdate again.' -f `
-                    $relative, ($game.Length + 1 + $relative.Length), $limit, (Split-Path -Leaf $game))
+                    $tooLong, ($game.Length + 1 + $tooLong.TrimEnd('/').Length), $allowed, (Split-Path -Leaf $game))
             }
             @{ Entry = $entry; Relative = $relative }
         }
@@ -1240,6 +1254,138 @@ function Remove-DownloadedRepoZip {
     Remove-FileOrDirectoryViaCmd -LiteralPath $LiteralPath
 }
 
+function Test-SameFile {
+    param(
+        [Parameter(Mandatory = $true)][string]$LiteralPath,
+        [Parameter(Mandatory = $true)][string]$Other
+    )
+    if (-not (Test-Path -LiteralPath $LiteralPath -PathType Leaf)) {
+        return $false
+    }
+    if ((Get-Item -LiteralPath $LiteralPath -Force).Length -ne (Get-Item -LiteralPath $Other -Force).Length) {
+        return $false
+    }
+    return (Get-FileHash -LiteralPath $LiteralPath).Hash -eq (Get-FileHash -LiteralPath $Other).Hash
+}
+
+function Undo-PatchFiles {
+    <#
+    Puts the game back as it was before Copy-PatchFiles: copies each replaced
+    file back from $Undo, then removes what it added, newest first. Says what
+    could not be put back, and keeps $Undo then.
+    #>
+    param(
+        [Parameter(Mandatory = $true)][string]$Undo,
+        [Collections.Generic.List[string]]$Replaced,
+        [Collections.Generic.List[string]]$Added
+    )
+    Write-Host 'Putting the game back as it was...'
+    $left = 0
+    for ($i = 0; $i -lt $Replaced.Count; $i++) {
+        $copy = Join-Path $Undo $i
+        try {
+            # A file the running game holds was never replaced.
+            if (-not (Test-SameFile -LiteralPath $Replaced[$i] -Other $copy)) {
+                Invoke-Settled -Action { Copy-Item -LiteralPath $copy -Destination $Replaced[$i] -Force }
+            }
+        }
+        catch {
+            Write-Host ('GameUpdate could not put back {0}: {1}' -f $Replaced[$i], $_.Exception.Message)
+            $left++
+        }
+    }
+    for ($i = $Added.Count - 1; $i -ge 0; $i--) {
+        $path = $Added[$i]
+        try {
+            Invoke-Settled -Action {
+                if (Test-Path -LiteralPath $path -PathType Container) {
+                    [IO.Directory]::Delete($path)
+                }
+                elseif (Test-Path -LiteralPath $path) {
+                    Remove-Item -LiteralPath $path -Force
+                }
+            }
+        }
+        catch {
+            Write-Host ('GameUpdate could not remove {0}: {1}' -f $path, $_.Exception.Message)
+            $left++
+        }
+    }
+    if ($left -eq 0) {
+        Remove-FileOrDirectoryViaCmd -LiteralPath $Undo
+        Write-Host 'The game was left as it was before this update.'
+    }
+    else {
+        Write-Host ('Copies of the game''s own files are in {0}.' -f $Undo)
+    }
+}
+
+function Copy-PatchFiles {
+    <#
+    Copies the unpacked patch in $Stage into $Root all or nothing: each game
+    file it replaces is first copied aside into GameUpdate's temporary folder,
+    and each file and folder it adds is listed, so when a copy fails, such as
+    on a file the running game holds or a full disk, or the run is stopped,
+    the game is put back as it was before the error goes on. Files named in
+    $Skip stay out.
+    #>
+    param(
+        [Parameter(Mandatory = $true)][string]$Stage,
+        [Parameter(Mandatory = $true)][string]$Root,
+        [string[]]$Skip = @()
+    )
+    $sourcePrefix = [IO.Path]::GetFullPath($Stage).TrimEnd(
+        [IO.Path]::DirectorySeparatorChar,
+        [IO.Path]::AltDirectorySeparatorChar
+    ) + [IO.Path]::DirectorySeparatorChar
+    $undo = New-GameUpdateTempPath -Kind 'undo'
+    [void][IO.Directory]::CreateDirectory($undo)
+    # Copies in $undo are named by their place in $replaced, so their paths
+    # stay short.
+    $replaced = New-Object Collections.Generic.List[string]
+    $added = New-Object Collections.Generic.List[string]
+    $copied = $false
+    try {
+        foreach ($file in Get-ChildItem -LiteralPath $Stage -Recurse -File -Force) {
+            if ($file.Name -in $Skip) {
+                continue
+            }
+            $destination = Join-Path $Root $file.FullName.Substring($sourcePrefix.Length)
+            $folders = New-Object Collections.Generic.List[string]
+            $folder = [IO.Path]::GetDirectoryName($destination)
+            while (-not (Test-Path -LiteralPath $folder -PathType Container)) {
+                $folders.Insert(0, $folder)
+                $folder = [IO.Path]::GetDirectoryName($folder)
+            }
+            foreach ($folder in $folders) {
+                [void][IO.Directory]::CreateDirectory($folder)
+                $added.Add($folder)
+            }
+            if (Test-Path -LiteralPath $destination -PathType Container) {
+                throw ('PATCH_ERR:APPLY:This patch has a file where the game has a folder: {0}' -f $destination)
+            }
+            if (Test-Path -LiteralPath $destination) {
+                Copy-Item -LiteralPath $destination -Destination (Join-Path $undo $replaced.Count) -Force
+                $replaced.Add($destination)
+            }
+            else {
+                $added.Add($destination)
+            }
+            Copy-Item -LiteralPath $file.FullName -Destination $destination -Force
+        }
+        $copied = $true
+    }
+    finally {
+        # Here rather than in a catch, so a stopped run is undone too.
+        if ($copied) {
+            Remove-FileOrDirectoryViaCmd -LiteralPath $undo
+        }
+        else {
+            Undo-PatchFiles -Undo $undo -Replaced $replaced -Added $added
+        }
+    }
+}
+
 function Invoke-PatchDownloadExtract {
     param(
         [Parameter(Mandatory = $true)][string]$Root,
@@ -1368,7 +1514,9 @@ function Invoke-PatchDownloadExtract {
 
         if ($isWolfGame) {
             # Stage UberWolfCli before unpack so packed WOLF games can
-            # convert Data.wolf -> Data/ before English files land.
+            # convert Data.wolf -> Data/ before English files land. This
+            # stays outside Copy-PatchFiles' undo: the loose Data/ it unpacks
+            # is the same game, which a later run would unpack again.
             foreach ($cliName in $wolfOnlyNames) {
                 $stagedCli = Join-Path $stage $cliName
                 $destCli = Join-Path $Root $cliName
@@ -1380,24 +1528,10 @@ function Invoke-PatchDownloadExtract {
             Invoke-WolfPreSetup -Root $Root
         }
 
-        # Copy file-by-file so WOLF-only tools never leak into RPG Maker,
-        # SRPG, or other game roots through a downloaded patch archive.
-        $sourcePrefix = [IO.Path]::GetFullPath($stage).TrimEnd(
-            [IO.Path]::DirectorySeparatorChar,
-            [IO.Path]::AltDirectorySeparatorChar
-        ) + [IO.Path]::DirectorySeparatorChar
-        foreach ($file in Get-ChildItem -LiteralPath $stage -Recurse -File -Force) {
-            if ((-not $isWolfGame) -and ($file.Name -in $wolfOnlyNames)) {
-                continue
-            }
-            $relative = $file.FullName.Substring($sourcePrefix.Length)
-            $destination = Join-Path $Root $relative
-            $destinationDir = Split-Path -Parent $destination
-            if (-not (Test-Path -LiteralPath $destinationDir -PathType Container)) {
-                New-Item -ItemType Directory -Path $destinationDir -Force | Out-Null
-            }
-            Copy-Item -LiteralPath $file.FullName -Destination $destination -Force
-        }
+        # WOLF-only tools never leak into RPG Maker, SRPG, or other game
+        # roots through a downloaded patch archive.
+        $skip = if ($isWolfGame) { @() } else { $wolfOnlyNames }
+        Copy-PatchFiles -Stage $stage -Root $Root -Skip $skip
     }
     finally {
         if (Test-Path -LiteralPath $zipPath) {

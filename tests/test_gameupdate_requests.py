@@ -90,6 +90,8 @@ POSIX_TOOLS = sys.platform != "win32" and all(
 )
 # Windows ships Windows PowerShell; PowerShell 7 goes first where installed.
 POWERSHELL = shutil.which("pwsh") or "powershell"
+# What GameUpdate.bat runs.
+WINDOWS_POWERSHELL = shutil.which("powershell")
 PACKAGE_MANAGERS = {"apt-get", "dnf", "pacman", "zypper", "pkg", "steamos-readonly"}
 
 
@@ -120,6 +122,16 @@ def advertisement(refs):
     return pkt("# service=git-upload-pack\n") + b"0000" + b"".join(lines) + b"0000"
 
 
+def snapshot(folder: Path) -> dict[str, bytes | None]:
+    """Every file's bytes and every folder (None) under *folder*."""
+    return {
+        path.relative_to(folder).as_posix(): None
+        if path.is_dir()
+        else path.read_bytes()
+        for path in folder.rglob("*")
+    }
+
+
 class GameUpdateRequestTests(unittest.TestCase):
     def setUp(self):
         temporary = TemporaryDirectory()
@@ -135,12 +147,12 @@ class GameUpdateRequestTests(unittest.TestCase):
         (game / "gameupdate/patch-config.txt").write_text(CONFIG, encoding="utf-8")
         return game
 
-    def patch_repository(self, lfs=False):
+    def patch_repository(self, lfs=False, files=None):
         """A bare repository standing in for the patch repository on the
         forge, whose newest commit holds a translated map and DazedTL's
-        export-ignored settings, and with *lfs* an image kept in Git LFS;
-        returns the Git settings that send GitGud's address to it, and that
-        commit."""
+        export-ignored settings, *files* (path: text), and with *lfs* an
+        image kept in Git LFS; returns the Git settings that send GitGud's
+        address to it, and that commit."""
         work = self.root / "work"
         env = git_env(self.root)
 
@@ -163,6 +175,9 @@ class GameUpdateRequestTests(unittest.TestCase):
         (work / ".gitattributes").write_text(
             "/.dazedtl export-ignore\n", encoding="utf-8"
         )
+        for name, text in (files or {}).items():
+            (work / name).parent.mkdir(parents=True, exist_ok=True)
+            (work / name).write_text(text, encoding="utf-8")
         if lfs:
             (work / "img").mkdir()
             (work / "img/Title.png").write_text(
@@ -378,6 +393,54 @@ class GameUpdateRequestTests(unittest.TestCase):
         POSIX_TOOLS,
         "patch.sh runs where bash, git, jq and unzip do; Windows players run patch.ps1",
     )
+    def test_patch_sh_leaves_the_game_as_it_was_when_a_copy_fails(self):
+        # A disk that fills up on the second file the patch writes into the
+        # game, after part of it, or a terminal closed then: the first file
+        # used to stay, half patching the game.
+        self.stand_in_curl()
+        config, _head = self.patch_repository(files={"img/pictures/Title.png": "new"})
+        for name, fail in (
+            (
+                "full",
+                """echo "cp: error writing '$target': No space left on device" >&2\n""",
+            ),
+            ("stopped", "kill -HUP $PPID; sleep 0.2\n"),
+        ):
+            with self.subTest(name):
+                game = self.game(name=name)
+                (game / "www/data").mkdir(parents=True)
+                (game / "www/data/Map001.json").write_text("{}", encoding="utf-8")
+                (game / "gameupdate/previous_patch_sha.txt").write_text(
+                    "a" * 40 + "\n", encoding="utf-8"
+                )
+                before = snapshot(game)
+                writes = self.root / f"{name}-writes"
+                self.command(
+                    "cp",
+                    "for target; do :; done\n"
+                    f'case "$target" in "{game}"/*)\n'
+                    f'    count=$(cat "{writes}" 2>/dev/null || echo 0)\n'
+                    f'    echo $((count + 1)) > "{writes}"\n'
+                    '    if [ "$count" -eq 1 ]; then\n'
+                    '        : > "$target"\n'
+                    f"        {fail}"
+                    "        exit 1\n"
+                    "    fi\n"
+                    "esac\n"
+                    f'exec "{shutil.which("cp")}" "$@"\n',
+                )
+                result = self.patch_sh(
+                    game, {**git_env(self.root, **config), "API": "403"}
+                )
+                output = result.stdout + result.stderr
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("left as it was", result.stdout, output)
+                self.assertEqual(snapshot(game), before, output)
+
+    @unittest.skipUnless(
+        POSIX_TOOLS,
+        "patch.sh runs where bash, git, jq and unzip do; Windows players run patch.ps1",
+    )
     def test_the_linux_launcher_removes_its_script_copy_when_closed(self):
         # A patch.sh that closes the terminal mid-run.
         game = self.game()
@@ -440,7 +503,7 @@ class PatchPs1Tests(unittest.TestCase):
     patch_repository = GameUpdateRequestTests.patch_repository
     assert_applied = GameUpdateRequestTests.assert_applied
 
-    def powershell(self, body, env=None):
+    def powershell(self, body, env=None, shell=POWERSHELL):
         script = (
             "$ErrorActionPreference = 'Stop'; "
             "$ast = [System.Management.Automation.Language.Parser]::ParseFile("
@@ -454,16 +517,23 @@ class PatchPs1Tests(unittest.TestCase):
             + body
             + " } catch { Write-Output ('ERROR ' + $_.Exception.Message); exit 3 }"
         )
+        # PowerShell 7's module path, as CI's steps set it, hides Windows
+        # PowerShell's own modules.
+        inherited = {
+            key: value
+            for key, value in os.environ.items()
+            if shell == POWERSHELL or key.upper() != "PSMODULEPATH"
+        }
         result = subprocess.run(
             [
-                POWERSHELL,
+                shell,
                 "-NoProfile",
                 "-ExecutionPolicy",
                 "Bypass",
                 "-Command",
                 script,
             ],
-            env={**os.environ, "GAMEUPDATE_DL_ATTEMPTS": "1", **(env or {})},
+            env={**inherited, "GAMEUPDATE_DL_ATTEMPTS": "1", **(env or {})},
             stdin=subprocess.DEVNULL,
             capture_output=True,
             encoding="utf-8",
@@ -472,7 +542,7 @@ class PatchPs1Tests(unittest.TestCase):
         )
         return result.stdout + result.stderr
 
-    def update(self, game, stand_ins, env):
+    def update(self, game, stand_ins, env, shell=POWERSHELL):
         """Runs Invoke-PatchDownloadExtract on *game* after *stand_ins*,
         PowerShell that replaces some of its functions, and prints its
         result."""
@@ -484,6 +554,20 @@ class PatchPs1Tests(unittest.TestCase):
             f"Write-Output ('RESULT ' + (Invoke-PatchDownloadExtract -Root '{game}' "
             f"-StateFilePath '{state}' -Resolved $resolved -BundleRoot '{game / 'gameupdate'}'))",
             env,
+            shell,
+        )
+
+    def serve(self, files):
+        """PowerShell standing in for the forge, whose newest patch holds
+        *files* (path: text) under an archive's root folder."""
+        archive = self.root / "served.zip"
+        with zipfile.ZipFile(archive, "w") as zipped:
+            for name, text in files.items():
+                zipped.writestr(f"Game-{SHA}/{name}", text)
+        return (
+            f"function Get-PatchLatestSha {{ '{SHA}' }}; "
+            "function Invoke-PatchArchiveDownload { param($Url, $OutFile) "
+            f"Copy-Item -LiteralPath '{archive}' -Destination $OutFile }}; "
         )
 
     def test_patch_ps1_names_gameupdate_to_gitgud(self):
@@ -611,7 +695,8 @@ class PatchPs1Tests(unittest.TestCase):
         game = self.game()
         output = self.update(
             game,
-            f"function Get-PatchPathLimit {{ {len(str(game)) + len('/www/data')} }}; "
+            f"function Get-PatchPathLimit {{ $limit = {len(str(game)) + len('/www/data')}; "
+            "@{ File = $limit; Folder = $limit } }; "
             # An unpack folder shorter than the game's, as a usual %TEMP% is.
             f"function New-GameUpdateTempPath {{ param($Kind) '{self.root / 'x'}' }}; "
             "function Get-PatchLatestSha { '" + SHA + "' }; "
@@ -627,6 +712,60 @@ class PatchPs1Tests(unittest.TestCase):
         self.assertNotIn("trying Git instead", output)
         self.assertFalse((game / "a.txt").exists())
         self.assertFalse((game / "gameupdate/previous_patch_sha.txt").exists())
+
+    @unittest.skipUnless(WINDOWS_POWERSHELL, "Windows PowerShell runs GameUpdate.bat")
+    def test_patch_ps1_refuses_a_folder_too_deep_for_windows_powershell(self):
+        # Windows PowerShell makes no folder of 248 characters or more, while
+        # its files may have 259: a deep folder of short file names passed
+        # the check, then stopped the copy partway.
+        game = self.game(name="game-folder")
+        depth = 248 - len(str(game)) - 1
+        folder = ("abcdefghi/" * depth)[:depth].rstrip("/").ljust(depth, "z")
+        output = self.update(
+            game,
+            # An unpack folder shorter than the game's, as a usual %TEMP% is.
+            f"function New-GameUpdateTempPath {{ param($Kind) Join-Path '{self.root}' $Kind }}; "
+            + self.serve({"a.txt": "{}", f"{folder}/a.js": "{}"}),
+            {},
+            WINDOWS_POWERSHELL,
+        )
+        self.assertIn("Move the game to a shorter folder", output)
+        self.assertIn("Windows allows 247 for a folder", output)
+        self.assertFalse((game / "a.txt").exists())
+        self.assertFalse((game / "gameupdate/previous_patch_sha.txt").exists())
+
+    def test_patch_ps1_leaves_the_game_as_it_was_when_a_copy_fails(self):
+        # A file the running game holds, copied after part of the patch:
+        # that part used to stay, half patching the game.
+        game = self.game()
+        (game / "www/data").mkdir(parents=True)
+        (game / "www/data/Map001.json").write_text("{}", encoding="utf-8")
+        (game / "zz").mkdir()
+        (game / "zz/held.txt").write_text("held", encoding="utf-8")
+        (game / "gameupdate/previous_patch_sha.txt").write_text(
+            "a" * 40 + "\n", encoding="utf-8"
+        )
+        before = snapshot(game)
+        temporary = self.root / "tmp"
+        temporary.mkdir()
+        output = self.update(
+            game,
+            f"$held = [IO.File]::Open('{game / 'zz/held.txt'}', 'Open', 'Read', 'Read'); "
+            + self.serve(
+                {
+                    "a.txt": "new",
+                    "img/pictures/Title.png": "new",
+                    "www/data/Map001.json": '{"translated": true}',
+                    "zz/held.txt": "new",
+                }
+            ),
+            {"TEMP": str(temporary), "TMP": str(temporary)},
+        )
+        self.assertIn("being used by another process", output)
+        self.assertIn("left as it was", output)
+        self.assertNotIn("RESULT", output)
+        self.assertEqual(snapshot(game), before, output)
+        self.assertEqual(list(temporary.glob("gu_*")), [], output)
 
     def test_patch_ps1_names_the_git_command_that_failed(self):
         output = self.powershell(

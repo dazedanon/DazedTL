@@ -8,11 +8,73 @@ CONFIG_FILE="$SCRIPT_DIR/patch-config.txt"
 STATE_FILE="$SCRIPT_DIR/previous_patch_sha.txt"
 API_HEADERS=( -H "User-Agent: GameUpdate/1.0" )
 
+# What applying the patch has changed so far: UNDO_DIR holds a copy of each
+# game file it replaced, listed in UNDO_REPLACED, and UNDO_ADDED lists the
+# files and folders it added, in the order it made them.
+UNDO_DIR=""
+UNDO_REPLACED=()
+UNDO_ADDED=()
+
+# Puts the game back as it was before the patch was applied, and says what
+# could not be put back.
+undo_patch() {
+    local i path left=0
+    echo "Putting the game back as it was..."
+    for i in "${!UNDO_REPLACED[@]}"; do
+        path="${UNDO_REPLACED[i]}"
+        if ! cp -pf "$UNDO_DIR/$i" "$path"; then
+            echo "GameUpdate could not put back ${path#"$ROOT_DIR"/}."
+            left=1
+        fi
+    done
+    for ((i = ${#UNDO_ADDED[@]} - 1; i >= 0; i--)); do
+        path="${UNDO_ADDED[i]}"
+        if [ -d "$path" ] && [ ! -L "$path" ]; then
+            rmdir "$path" 2> /dev/null || left=1
+        else
+            rm -f "$path" || left=1
+        fi
+    done
+    if [ "$left" -eq 0 ]; then
+        rm -rf "$UNDO_DIR"
+        echo "The game was left as it was before this update."
+    else
+        echo "Some files could not be put back; copies of the game's own files are in $UNDO_DIR."
+    fi
+    UNDO_DIR=""
+}
+
+# Copies patch file $1 to game path $2, first copying aside the game file it
+# replaces, or listing it and the folders it adds, for undo_patch.
+copy_patch_file() {
+    local source="$1" target="$2" folder i
+    local folders=()
+    folder="$(dirname "$target")"
+    while [ ! -d "$folder" ]; do
+        folders+=( "$folder" )
+        folder="$(dirname "$folder")"
+    done
+    for ((i = ${#folders[@]} - 1; i >= 0; i--)); do
+        mkdir "${folders[i]}" || return 1
+        UNDO_ADDED+=( "${folders[i]}" )
+    done
+    if [ -e "$target" ] || [ -L "$target" ]; then
+        cp -p "$target" "$UNDO_DIR/${#UNDO_REPLACED[@]}" || return 1
+        UNDO_REPLACED+=( "$target" )
+    else
+        UNDO_ADDED+=( "$target" )
+    fi
+    cp -f "$source" "$target"
+}
+
 # Temporary folders and the downloaded ZIP go however the run ends, closed
-# window and Ctrl+C included.
+# window and Ctrl+C included; a patch stopped while it is applied is undone.
 TEMP_PATHS=()
 remove_temp_paths() {
     local path
+    if [ -n "$UNDO_DIR" ]; then
+        undo_patch
+    fi
     for path in "${TEMP_PATHS[@]}"; do
         rm -rf "$path"
     done
@@ -579,7 +641,9 @@ download_extract() {
     if is_wolf_game; then
         wolf_patch=1
         # Stage UberWolfCli before unpack so Data.wolf -> Data/ happens before
-        # English patch files are copied on top.
+        # English patch files are copied on top. This stays outside the
+        # patch's undo: the loose Data/ it unpacks is the same game, which a
+        # later run would unpack again.
         for cli_name in UberWolfCli.exe UberWolfCli.LICENSE.txt; do
             if [ -f "$inner/$cli_name" ] && [ ! -f "$ROOT_DIR/$cli_name" ]; then
                 cp -f "$inner/$cli_name" "$ROOT_DIR/$cli_name"
@@ -589,6 +653,9 @@ download_extract() {
     fi
 
     echo "Applying patch..."
+    UNDO_DIR="$(mktemp -d)"
+    UNDO_REPLACED=()
+    UNDO_ADDED=()
     copy_failed=0
     while IFS= read -r -d '' patch_file; do
         relative_path="${patch_file#"$inner"/}"
@@ -597,18 +664,20 @@ download_extract() {
            { [ "$file_name" = "UberWolfCli.exe" ] || [ "$file_name" = "UberWolfCli.LICENSE.txt" ]; }; then
             continue
         fi
-        target_path="$ROOT_DIR/$relative_path"
-        if ! mkdir -p "$(dirname "$target_path")" || ! cp -f "$patch_file" "$target_path"; then
+        if ! copy_patch_file "$patch_file" "$ROOT_DIR/$relative_path"; then
             copy_failed=1
             break
         fi
     done < <(find "$inner" -type f -print0)
     if [ "$copy_failed" -ne 0 ]; then
         echo "Patch application failed!"
+        undo_patch
         rm -rf "$TMP_EX"
         rm -f "$ROOT_DIR/repo.zip"
         return 1
     fi
+    rm -rf "$UNDO_DIR"
+    UNDO_DIR=""
 
     # --------------------------------------------------------
     # POST-APPLY: Run Steps 3 and 4 after patch files are merged
