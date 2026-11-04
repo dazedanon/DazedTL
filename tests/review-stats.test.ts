@@ -3,7 +3,11 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { commitFormat, readCommits } from "../scripts/fix-trailers.mjs";
+import {
+  commitFormat,
+  readCommits,
+  tracedFix,
+} from "../scripts/fix-trailers.mjs";
 import { gitIn } from "../scripts/land-lock.mjs";
 import {
   codeLines,
@@ -172,6 +176,8 @@ test("review stats read real trailers by their first word, code lines from numst
   };
   const sha256 = "a".repeat(64);
   commit("feat: base");
+  // Its bug is no escape: only a fix's is.
+  commit("refactor: tidy", "Introduced-by: abc1234", "Found-by: review");
   commit(
     "fix: one",
     "Introduced-by: abc1234 defaced the cache",
@@ -230,8 +236,19 @@ test("review stats read real trailers by their first word, code lines from numst
       found: ["user"],
       unread: [],
     },
+    {
+      subject: "refactor: tidy",
+      hashes: ["abc1234"],
+      marks: [],
+      found: ["review"],
+      unread: [],
+    },
     { subject: "feat: base", hashes: [], marks: [], found: [], unread: [] },
   ]);
+  assert.deepEqual(
+    read.map((commit) => tracedFix({ commit: "", ...commit })),
+    [false, true, true, true, true, false, false],
+  );
 
   const base = git(["rev-parse", "HEAD"]).stdout.trim();
   for (const [file, text] of [
@@ -247,12 +264,12 @@ test("review stats read real trailers by their first word, code lines from numst
   fs.writeFileSync(path.join(dir, "code.mjs"), "y\n");
   git(["add", "-A"]);
   git(["commit", "-qm", "feat: more"]);
-  // code.mjs: six lines removed, one added.
+  // code.mjs: seven lines removed, one added.
   assert.equal(
     codeLines(
       git(["diff", "--numstat", "--no-renames", "-z", `${base}..HEAD`]).stdout,
     ),
-    7,
+    8,
   );
 
   const { landings, unread } = loggedLandings(

@@ -94,6 +94,15 @@ export function traced({ hashes, marks, unread }) {
 }
 
 /**
+ * Whether a commit is a fix that has an Introduced-by trailer: one whose bug
+ * can have got past a landing, as no other commit's can.
+ * @param {ReturnType<typeof readCommits>[number]} commit
+ */
+export function tracedFix(commit) {
+  return isFix(commit.subject) && traced(commit);
+}
+
+/**
  * What a fix commit's trailers lack, each as a short clause; empty when they
  * say where its bug came from and who found it. The hashes they name are
  * the caller's to resolve.

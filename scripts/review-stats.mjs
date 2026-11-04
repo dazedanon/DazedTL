@@ -13,7 +13,7 @@ import {
   commitFormat,
   isFix,
   readCommits,
-  traced as isTraced,
+  tracedFix,
 } from "./fix-trailers.mjs";
 import { gitIn, reviewLog } from "./land-lock.mjs";
 
@@ -349,7 +349,7 @@ function main() {
       .filter((commit) => isFix(commit.subject))
       .map((commit) => commit.commit),
   );
-  const traced = commits.filter(isTraced);
+  const traced = commits.filter(tracedFix);
   // One Git process resolves every name: its full hash, or why not.
   const names = traced.flatMap((commit) => commit.hashes);
   const resolving = git(
