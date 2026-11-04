@@ -14,7 +14,7 @@
   A session that starts others runs at the highest effort it hands out, since `start_session` cannot start one above its starter's.
 - Before fixing a bug, read the git history of the code involved.
   If the same behavior was fixed before, stop and report the root cause with a proposed rework instead of patching it again.
-  When it shows the commit that brought the bug in, end the fix commit with an `Introduced-by: <hash>` trailer, so [review-stats](scripts/review-stats.mjs) can tell which landings' reviews let bugs through.
+  When it shows the commit that brought the bug in, end the fix commit with an `Introduced-by: <hash>` trailer after a blank line, so [review-stats](scripts/review-stats.mjs) can tell which landings' reviews let bugs through.
 - Give each rule one definition, such as how a text block's rows are grouped or how a file's status is counted, and call it from every place that needs it.
   When a fix touches a rule that is defined in more than one place, merge the copies first, or report them if merging is large.
 - Follow the ownership boundaries in [architecture](docs/architecture.md) and reuse its shared UI and state mechanisms.
