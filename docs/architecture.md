@@ -355,7 +355,7 @@ Drafts and actions:
 - The assistant notes, `AGENTS.md` at the game's root, are the project's like its glossary: Git keeps them and Start over leaves them, while no translation request, patch or download carries them.
   No original record holds them and game updates leave them, in any case ([is_project_file](../backend/dazedtl/engine/util/paths.py)).
   Every task DazedTL hands an assistant to work on the game opens by saying to read them and keep them to lasting facts ([task_opening](../backend/dazedtl/translation/helper_command.py)).
-  An assistant's edits to them are their own checkpoint, which alone moves them on undo; Go back leaves them.
+  An assistant's edits to them are their own checkpoint, so translation undos leave them, as Go back does.
 - Opening and selecting a project publish ownership only after it is saved, and removing a game from the recent list hides its record, so its runs keep their owner.
 - The project registry is the only record of where a project's game is ([location](../backend/dazedtl/projects/location.py)): the game folder names its project in a marker Git never commits, so a moved game keeps its project and a copy opens a new one.
   Other records find the game through the registry, and no saved key names the game folder: estimates, Text QA context and bindings name the game's files relative to it, so a move changes one record, outdates nothing and needs no new approval.

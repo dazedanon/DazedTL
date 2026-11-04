@@ -81,7 +81,7 @@ if TYPE_CHECKING:
 
 ACTION_TRAILER = "DazedTL-Action"
 STAGE_TRAILER = "DazedTL-Stage"
-# The checkpoint a go back put the game back to, or an undo took out.
+# The checkpoint a go back put the game back to.
 TARGET_TRAILER = "DazedTL-Target"
 # The action of a checkpoint holding changes made outside DazedTL.
 OUTSIDE_EDITS = "outside_edits"
@@ -730,20 +730,26 @@ def _saving(root, change, named, claimed, log=lambda _line: None):
     """`_save`'s commit, and the commit HEAD is at once it is done.
 
     The assistant notes the write didn't name, as an assistant edits them
-    with its own tools, are a checkpoint of their own before it, so they
-    never move with the translation's checkpoints (checkpoint_history
-    `_moved`). Notes that can't be read, as a file another program holds on
-    Windows, wait for a checkpoint that can read them, which `log` says, so
-    the write goes on."""
+    with its own tools, are edits made outside DazedTL of their own before
+    it, so the translation's checkpoints never take them out on undo. Notes
+    that can't be read, as a file another program holds on Windows, wait for
+    a checkpoint that can read them, which `log` says, so the write goes on."""
     from util.len_patch_scope import dazedtl_files, grow_scope, keep_out_of_downloads
     from util.paths import is_game_notes
 
     named = set(_relative(named))
     status = _status(root)
     # The rules keeping DazedTL's files out of players' downloads grew after
-    # many games took them, the notes' in any case last, so a checkpoint
-    # records those its game lacks.
-    rule = {".gitattributes"} if keep_out_of_downloads(Path(root)) else set()
+    # many games took them, the notes' in any case last, so a checkpoint of
+    # DazedTL's own write, or one taking the notes, records those its game
+    # lacks; another write's .gitattributes is left to it.
+    rule = (
+        {".gitattributes"}
+        if (change is not OUTSIDE or any(map(is_game_notes, status.paths)))
+        and ".gitattributes" not in (claimed or set())
+        and keep_out_of_downloads(Path(root))
+        else set()
+    )
     if rule:
         status = _status(root)
     # DazedTL's own files are never edits made outside it.
@@ -768,22 +774,17 @@ def _saving(root, change, named, claimed, log=lambda _line: None):
             # New rules can let in files they hid, such as the portable
             # settings an old rule order kept out.
             status = _status(root)
-    notes = set(filter(is_game_notes, status.paths))
+    taken = status.paths & named if claimed is None else status.paths - claimed
+    notes = set(filter(is_game_notes, taken))
     if unreadable := {path for path in notes if not _readable(Path(root) / path)}:
         log(
             f"{', '.join(sorted(unreadable))} in the game folder can't be read,"
             " as when another program holds it, so its edits wait for a later"
             " checkpoint."
         )
-    pending = status.paths - unreadable
-    chosen = joined | rule | (pending & named if claimed is None else pending - claimed)
-    apart = set() if any(map(is_game_notes, named)) else notes & chosen
-    if apart:
-        from desktop.backend.guidance import NOTES_SAVE
-
-        notes_commit = _commit(
-            root, apart | rule, Change(NOTES_SAVE, "Context"), status
-        )
+    chosen = joined | rule | (taken - unreadable)
+    if (apart := notes - unreadable) and not any(map(is_game_notes, named)):
+        notes_commit = _commit(root, apart | rule, OUTSIDE, status)
         if notes_commit is not None:
             # The rest is built on HEAD's tree, never on an index that may
             # not have taken the notes' commit.

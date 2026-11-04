@@ -2257,36 +2257,12 @@ class WorkflowTests(unittest.TestCase):
             "AGENTS.md",
             _git(self.game, "show", "--name-only", "--format=", older).stdout.split(),
         )
-        # Phase checkpoints committed before then, which hold the notes with
-        # their files, undo apart too and leave the notes. A notes
-        # checkpoint's undo waits on one until it is undone, so it never
-        # takes back notes the assistant wrote there.
-        saved = _git(
-            self.game, "log", "-1", "--format=%H", "--grep=Save Assistant notes"
-        ).stdout.strip()
-        agents.write_text("Names are in names.json.\n", encoding="utf-8")
-        write_json(self.game / "names.json", {"name": "Lily"})
-        save(self.game, Change("Extraction", "Assistant-led"), ["AGENTS.md"])
-        older = _git(self.game, "rev-parse", "HEAD").stdout.strip()
-        agents.write_text("Repack Data.wolf.\n", encoding="utf-8")
-        write_json(self.game / "source.json", {"line": "No."})
-        save(self.game, Change("Injection", "Assistant-led"), ["AGENTS.md"])
-        later = _git(self.game, "rev-parse", "HEAD").stdout.strip()
-        self.assertIsNone(checkpoint_history.blockers(self.game, [older])[older])
-        checkpoint_history.undo(self.game, older)
-        self.assertEqual(read_json(self.game / "names.json"), {"name": "リリ"})
-        self.assertEqual(agents.read_text(encoding="utf-8"), "Repack Data.wolf.\n")
-        found = checkpoint_history.blocker(self.game, saved)
-        self.assertEqual(found and found["commit"], later)
-        checkpoint_history.undo(self.game, later)
-        self.assertEqual(agents.read_text(encoding="utf-8"), "Repack Data.wolf.\n")
-        self.assertIsNone(checkpoint_history.blockers(self.game, [saved])[saved])
-        # Redoing it, by undoing its undo, blocks it again.
-        checkpoint_history.undo(
-            self.game, _git(self.game, "rev-parse", "HEAD").stdout.strip()
+        # They are edits made outside DazedTL, as the Checkpoints tab names
+        # them until a checkpoint takes them.
+        self.assertEqual(
+            _git(self.game, "log", "-1", "--format=%s", "--", "AGENTS.md").stdout,
+            "Edits made outside DazedTL\n",
         )
-        found = checkpoint_history.blocker(self.game, saved)
-        self.assertEqual(found and found["commit"], later)
 
     def test_start_over_restores_the_original_and_sets_the_attempt_aside(self):
         # Starting over must put every original file back as one checkpoint,
@@ -2518,6 +2494,12 @@ class WorkflowTests(unittest.TestCase):
             write_game(self.game, paths=["source.json"]) as written,
         ):
             written.put("source.json", b'{"line": "Yes."}')
+        # The write's own checkpoint takes the rule; no edits were made
+        # outside DazedTL.
+        self.assertEqual(
+            _git(self.game, "log", "-2", "--format=%s").stdout,
+            "Translate: Apply selected saved outputs\nTook the notes\n",
+        )
         self.assertTrue(is_game_tool_file("agents.md"))
         download = self.root / "download.tar"
         case_sensitive = ("-c", "core.ignorecase=false")

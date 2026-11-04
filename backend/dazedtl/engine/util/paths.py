@@ -468,9 +468,9 @@ def is_project_file(relative: str) -> bool:
     """Whether a game-relative path is the project's own, never the original
     game's: a file under DazedTL's folder, or the assistant notes, even ones
     the game folder held before Set up. No record of the original game holds
-    them, a game update leaves them as they are, Go back and Start over leave
-    the notes, and an undo takes them back only with a checkpoint of their
-    own (checkpoint_history)."""
+    them, a game update leaves them as they are, and Go back and Start over
+    leave the notes, whose edits by an assistant are a checkpoint of their
+    own (checkpoint_commits `_saving`)."""
     return relative.partition("/")[0] == GAME_METADATA_RELATIVE.as_posix() or is_game_notes(relative)
 
 
