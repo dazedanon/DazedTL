@@ -90,7 +90,8 @@ test("review stats put each escaped bug on the landing that let it in, once it i
     ["under 100", { landings: 1, escapes: 0 }],
     ["1000 or more", { landings: 1, escapes: 1 }],
   ]);
-  assert.equal(summary.recent, 2);
+  assert.equal(summary.recent, 1);
+  assert.equal(summary.undated, 1);
   assert.deepEqual(summary.rounds, [
     [
       1,
@@ -116,8 +117,14 @@ test("review stats put each escaped bug on the landing that let it in, once it i
   assert.deepEqual(summary.foundBy, [["user", 1]]);
   // Got past b..c, so f1 is not also counted among the outside ones.
   assert.deepEqual(summary.outside, [{ fix: "f2", introduced: "old" }]);
-  assert.deepEqual(summary.origins, { named: 4, unknown: 2, none: 1 });
-  assert.equal(highEnd(4, summary.origins), 6);
+  // c3 is b..c's review catch, so it scales no band.
+  assert.deepEqual(summary.origins, {
+    named: 3,
+    caught: 1,
+    unknown: 2,
+    none: 1,
+  });
+  assert.equal(highEnd(3, summary.origins), 5);
   assert.equal(highEnd(0, { named: 0, unknown: 2 }), Infinity);
   // e1's bug came from d1, a fix another landing held.
   assert.deepEqual(summary.chains, [["e1", "d1"]]);

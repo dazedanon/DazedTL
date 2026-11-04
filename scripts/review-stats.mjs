@@ -116,7 +116,7 @@ export function codeLines(text) {
 /**
  * The most bugs that got past landings that `low` known ones suggest, when
  * the fixes marked `unknown`, or naming no commit Git can find, got past
- * landings as often as those that name one.
+ * landings as often as those that name one outside their own landing.
  * @param {number} low
  * @param {{ named: number, unknown: number }} origins
  */
@@ -169,6 +169,7 @@ export function summarize(landings, fixes, { now, fixCommits }) {
     }
   };
   let recent = 0;
+  let undated = 0;
   for (const landing of landings) {
     for (const commit of landing.commits) owner.set(commit, landing);
     if (
@@ -177,7 +178,8 @@ export function summarize(landings, fixes, { now, fixCommits }) {
     ) {
       exposed.add(landing);
       tally(landing, "landings");
-    } else recent += 1;
+    } else if (landing.landed === null) undated += 1;
+    else recent += 1;
     for (const finding of landing.findings) {
       const round = rounds.get(finding.review) ?? {};
       const kind = (round[finding.kind ?? "unsorted"] ??= {
@@ -232,8 +234,18 @@ export function summarize(landings, fixes, { now, fixCommits }) {
       !firsts.has(escape.fix) &&
       firsts.add(escape.fix),
   );
-  // A fix naming no commit Git can find doesn't say where its bug came from.
-  const named = fixes.filter((fix) => fix.introduced.length).length;
+  // A review's catch names a commit of its own landing and never got past
+  // one, so it says nothing of how often the unknown ones did. A fix naming
+  // no commit Git can find doesn't say where its bug came from.
+  const caught = fixes.filter(
+    (fix) =>
+      fix.introduced.length &&
+      owner.has(fix.fix) &&
+      fix.introduced.every(
+        (commit) => owner.get(commit) === owner.get(fix.fix),
+      ),
+  ).length;
+  const named = fixes.filter((fix) => fix.introduced.length).length - caught;
   const none = fixes.filter(
     (fix) =>
       !fix.introduced.length &&
@@ -253,11 +265,13 @@ export function summarize(landings, fixes, { now, fixCommits }) {
       group,
     ]),
     recent,
+    undated,
     rounds: sorted(rounds),
     foundBy: [...foundBy].sort(([, a], [, b]) => b - a),
     origins: {
       named,
-      unknown: fixes.length - named - none,
+      caught,
+      unknown: fixes.length - named - caught - none,
       none,
     },
     chains: fixChains(fixes, owner, fixCommits),
@@ -424,8 +438,12 @@ function main() {
   console.log(
     `${count(summary.recent, "landing")} under ${exposureDays} days old ${summary.recent === 1 ? "is" : "are"} left out of these until then.`,
   );
+  if (summary.undated)
+    console.log(
+      `${count(summary.undated, "landing")} with no landing time in the log ${summary.undated === 1 ? "is" : "are"} left out of these.`,
+    );
   console.log(
-    `Introduced-by: ${origins.named} name a commit, ${origins.unknown} unknown, ${origins.none} none; a range's high end counts the unknown ones as getting past landings as often as the named ones.`,
+    `Introduced-by: ${origins.named} name a commit of another landing, ${origins.caught} one of their own, ${origins.unknown} unknown, ${origins.none} none; a range's high end counts the unknown ones as getting past landings as often as the first.`,
   );
   if (untraced)
     console.log(
