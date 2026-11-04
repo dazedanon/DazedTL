@@ -2898,8 +2898,134 @@ export type PluginActionResult = {
   stage?: string;
 };
 
+export type CompareKind = "single" | "versus" | "tune";
+
+/** A model on one of Settings' connections, and for Tune settings what
+its test changes. */
+export type CompareChoice = {
+  connection_id: string;
+  model: string;
+  /** Tune settings: the thinking effort sent. */
+  effort?: EffortLevel | null;
+  /** Tune settings: the whole glossary this test sends. */
+  glossary?: string;
+  /** Tune settings: guidance this test adds to the game's. */
+  instruction?: string;
+};
+
+export type ComparePrice = {
+  /** The Live price of the model's requests, in USD. */
+  cost: number;
+  requests: number;
+};
+
+export type CompareModel = {
+  index: number;
+  /** The connection's name in Settings. */
+  connection: string;
+  connectionId: string;
+  model: string;
+  effort?: EffortLevel | null;
+  glossary?: string;
+  instruction?: string;
+  estimate?: ComparePrice;
+  /** Why the model has no estimate or lines. */
+  error?: string;
+  /** What its translation cost, in USD. */
+  cost?: number;
+  seconds?: number;
+  requests?: number;
+};
+
+export type CompareTranslation = {
+  /** The name its name box shows, translated. */
+  speaker: string;
+  text: string;
+};
+
+export type CompareRow = {
+  /** The line's place in its file. */
+  id: string;
+  /** Its speaker's name in the source. */
+  speaker: string;
+  source: string;
+  /** Each model's, in the models' order. */
+  translations: (CompareTranslation | null)[];
+  /** What the checks found in each model's, in words. */
+  problems: string[][];
+};
+
+export type Comparison = {
+  /** Its estimate's operation. */
+  id: string;
+  /** Its translation's operation, once approved. */
+  translationId: string | null;
+  kind: CompareKind;
+  file: string;
+  /** The first lines it holds; 0 for the whole file. */
+  lines: number;
+  created: string;
+  stage: "estimate" | "translation";
+  status: string;
+  message: string;
+  candidates: CompareModel[];
+  rows: CompareRow[];
+  /** The model picked as best, by row ID. */
+  marks: Record<string, number>;
+  blind: boolean;
+  revealed: boolean;
+};
+
+export type CompareScene = {
+  file: string;
+  /** Its map's name, where it has one. */
+  title: string;
+  /** Lines whose source holds the game's language. */
+  lines: number;
+};
+
+/** A model's estimate for the whole game, started on request. */
+export type CompareWholeGame = {
+  connectionId: string;
+  model: string;
+  effort?: EffortLevel | null;
+  jobId: string;
+  status: string;
+  message: string;
+  /** Live, in USD. */
+  cost?: number;
+  /** Batch, where its route runs one. */
+  batchCost?: number | null;
+};
+
+export type CompareState = {
+  available: boolean;
+  /** Why the game can't be compared yet. */
+  reason: string;
+  scenes: CompareScene[];
+  /** The game's glossary, which a Tune test starts from. */
+  glossary: string;
+  /** Newest first. */
+  comparisons: Comparison[];
+  /** Newest first. */
+  wholeGame: CompareWholeGame[];
+};
+
+/** What a model on a connection may be sent. */
+export type CompareModelInfo = {
+  efforts: EffortOption[];
+  /** Whether its rates are known, so a run can be priced. */
+  priced: boolean;
+};
+
 export type Screen =
-  "project" | "translation" | "guided" | "manual" | "settings" | "guide";
+  | "project"
+  | "translation"
+  | "guided"
+  | "manual"
+  | "compare"
+  | "settings"
+  | "guide";
 
 export type TranslationMethod = "guided" | "len" | "manual";
 
@@ -3530,6 +3656,49 @@ export type GuidedPayloadRequest = RunIndexRequest & {
   prepared?: boolean;
 };
 
+export type CompareEstimateRequest = {
+  project_id: string;
+  kind: CompareKind;
+  file: string;
+  /** The file's first lines to compare; 0 for all of them. */
+  lines: number;
+  candidates: CompareChoice[];
+};
+
+export type CompareTranslateRequest = {
+  project_id: string;
+  /** The estimate whose price the click approves. */
+  estimate_id: string;
+};
+
+export type CompareMarksRequest = {
+  project_id: string;
+  comparison_id: string;
+  /** The model picked as best, by row ID. */
+  marks: Record<string, number>;
+  blind: boolean;
+  revealed: boolean;
+};
+
+export type CompareModelRequest = {
+  connection_id: string;
+  model: string;
+};
+
+export type CompareUseRequest = {
+  project_id: string;
+  comparison_id: string;
+  /** The model's index in the comparison. */
+  model: number;
+};
+
+export type CompareRequestRequest = {
+  project_id: string;
+  comparison_id: string;
+  model: number;
+  index: number;
+};
+
 export type GuidedNameResultsRequest = {
   project_id: string;
   run_id: string;
@@ -3673,6 +3842,14 @@ export type RpcContract = {
   };
   guided_full_estimate: { request: ProjectRequest; response: Job };
   guided_provider_details: { request: RunRequest; response: ProviderDetails };
+  compare_state: { request: ProjectRequest; response: CompareState };
+  compare_estimate: { request: CompareEstimateRequest; response: Job };
+  compare_translate: { request: CompareTranslateRequest; response: Job };
+  compare_marks: { request: CompareMarksRequest; response: Saved };
+  compare_request: { request: CompareRequestRequest; response: RunPayload };
+  compare_model: { request: CompareModelRequest; response: CompareModelInfo };
+  compare_use: { request: CompareUseRequest; response: Saved };
+  compare_whole_game: { request: CompareUseRequest; response: Job };
   guided_batch_cancel_preview: {
     request: GuidedBatchCancelPreviewRequest;
     response: BatchCancellation;
@@ -4165,6 +4342,18 @@ export const ACTIONS = {
   },
   full_estimate: {
     label: "Estimate the translation cost",
+    family: "background",
+    restorable: false,
+    reports_outcome: false,
+  },
+  compare_estimate: {
+    label: "Estimate a model comparison",
+    family: "background",
+    restorable: false,
+    reports_outcome: false,
+  },
+  compare_translate: {
+    label: "Compare models",
     family: "background",
     restorable: false,
     reports_outcome: false,

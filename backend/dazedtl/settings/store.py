@@ -609,7 +609,7 @@ class Settings:
         if connection_id != state["active"]:
             raise ValueError("The active connection changed. Reopen Settings.")
         active = self._connection(state)
-        value = self._model_defaults(
+        value = self.connection_defaults(
             active, model, cached_only=cached_only, batch_endpoints=batch_endpoints
         )
         if active and value:
@@ -620,7 +620,11 @@ class Settings:
                 value = {**value, "rateNote": note}
         return value
 
-    def _model_defaults(self, active, model, *, cached_only, batch_endpoints):
+    def connection_defaults(
+        self, active, model, *, cached_only=False, batch_endpoints=None
+    ):
+        """The rates, output allowance and efforts of *model* on the saved
+        connection *active*, which needn't be the active one."""
         if active and active["provider"] == "openrouter":
             if batch_endpoints is not None:
                 active = {**active, "batch_endpoints": batch_endpoints}

@@ -1006,6 +1006,23 @@ def routes(app):
             app.guided.provider_details,
             lambda value, _params: value,
         ),
+        "compare_state": (app.guided.compare.state, lambda value, _params: value),
+        "compare_estimate": (
+            app.guided.compare.estimate,
+            lambda value, _params: views.job(value),
+        ),
+        "compare_translate": (
+            app.guided.compare.translate,
+            lambda value, _params: views.job(value),
+        ),
+        "compare_marks": (app.guided.compare.marks, lambda value, _params: value),
+        "compare_request": (app.guided.compare.request, lambda value, _params: value),
+        "compare_model": (app.guided.compare.model, lambda value, _params: value),
+        "compare_use": (app.guided.compare.use, lambda value, _params: value),
+        "compare_whole_game": (
+            app.guided.compare.whole_game,
+            lambda value, _params: views.job(value),
+        ),
         "guided_batch_cancel_preview": (
             app.guided.batch_cancel_preview,
             lambda value, _params: value,

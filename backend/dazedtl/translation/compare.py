@@ -1,0 +1,672 @@
+"""Compare models: the same lines of one game file translated by up to four
+models, or by one model with changed settings, to choose between them in
+equal conditions.
+
+A comparison is two operations (compatibility/compare). Its estimate prices
+each model's requests offline, built as a Translate run builds them; the
+Translate button carries that price, and its click approves it once: the
+translate operation starts only from a finished estimate whose inputs are
+unchanged and that no translate used before. Results are the operations'
+own records, as the whole-game estimate's are, so History lists every
+comparison with what it spent; the best line a person picks in each row,
+and whether model names stay hidden, are kept beside them here.
+"""
+
+from copy import deepcopy
+
+from dazedtl import system
+from dazedtl.actions import label
+from dazedtl.compatibility.compare import ESTIMATE, TRANSLATE
+from dazedtl.settings import providers
+from dazedtl.settings.execution import Choice, request_policy
+from dazedtl.storage import read_versioned_json, write_json
+
+from .files import digest, project_path
+
+# Raise when the same choices would be estimated or translated differently,
+# or the saved record changes shape.
+VERSION = 1
+# What fits side by side on a laptop screen.
+MODELS = 4
+KINDS = ("single", "versus", "tune")
+# How many lines a comparison may hold, so its requests stay a few.
+MAX_LINES = 200
+# A test-only glossary or instruction, as the guidance editors take them.
+TEXT_LIMIT = 200_000
+# The comparisons a page lists.
+HISTORY = 20
+
+
+class Compare:
+    def __init__(self, guided):
+        self.guided = guided
+
+    # Records
+
+    def _path(self, project_id):
+        return (
+            self.guided.translation.workspace
+            / "translation/projects"
+            / project_id
+            / "compare.json"
+        )
+
+    def _read(self, project_id):
+        path = self._path(project_id)
+        return read_versioned_json(
+            path,
+            {"version": VERSION, "used": {}, "marks": {}},
+            {},
+            _validate,
+        )
+
+    def _write(self, project_id, value):
+        path = self._path(project_id)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        write_json(path, value)
+
+    # Choices
+
+    @staticmethod
+    def _candidates(kind, value):
+        if kind not in KINDS:
+            raise ValueError("Choose Single model, Model vs model or Tune settings.")
+        if not isinstance(value, list) or not value:
+            raise ValueError("Add a model to compare.")
+        if kind in {"single", "tune"} and len(value) != 1:
+            raise ValueError("Choose one model.")
+        if kind == "versus" and not 2 <= len(value) <= MODELS:
+            raise ValueError(f"Add two to {MODELS} models to compare.")
+        rows = []
+        for item in value:
+            if not isinstance(item, dict) or set(item) - {
+                "connection_id",
+                "model",
+                "effort",
+                "glossary",
+                "instruction",
+            }:
+                raise ValueError("Choose each model from a connection.")
+            connection, model = item.get("connection_id"), item.get("model")
+            if not isinstance(connection, str) or not connection:
+                raise ValueError("Choose each model's connection.")
+            model = providers_model(model)
+            row: dict[str, object] = {"connection_id": connection, "model": model}
+            if kind == "tune":
+                if "effort" in item:
+                    from dazedtl.settings.effort import checked
+
+                    row["effort"] = checked(item["effort"])
+                for key in ("glossary", "instruction"):
+                    text = item.get(key)
+                    if text is None:
+                        continue
+                    if not isinstance(text, str) or len(text) > TEXT_LIMIT:
+                        raise ValueError(
+                            "Keep the test glossary and instruction shorter."
+                        )
+                    row[key] = text
+            elif set(item) - {"connection_id", "model"}:
+                raise ValueError("Only Tune settings changes a model's settings.")
+            rows.append(row)
+        keys = [(row["connection_id"], row["model"]) for row in rows]
+        if kind == "versus" and len(set(keys)) != len(keys):
+            raise ValueError("Each model is in the comparison once.")
+        return rows
+
+    def _scope(self, project_id, file, lines):
+        """The game, its file and the file's phase, refusing what the
+        comparison can't translate."""
+        guided = self.guided
+        _, native = guided.record(project_id)
+        guided.require_preparation(project_id, native)
+        if native.get("collection_error"):
+            raise ValueError(native["collection_error"])
+        phase = next(
+            (
+                phase
+                for phase in ("database", "dialogue")
+                if file in guided.full_estimate.files(native, phase)
+            ),
+            None,
+        )
+        if phase is None:
+            raise ValueError("Choose a Database files or Maps & events file.")
+        if type(lines) is not int or not 0 <= lines <= MAX_LINES:
+            raise ValueError(f"Compare up to {MAX_LINES} lines.")
+        return native, phase
+
+    def _plan(self, project_id, kind, file, lines, candidates):
+        """The operation plan that estimates the comparison, with the inputs
+        its approval binds."""
+        from . import comment_text
+
+        guided = self.guided
+        candidates = self._candidates(kind, candidates)
+        native, phase = self._scope(project_id, file, lines)
+        settings = guided.settings
+        pair = guided.runs.pair(native)
+        state = settings._read()
+        rows = []
+        for index, candidate in enumerate(candidates):
+            connection = settings._connection(state, candidate["connection_id"])
+            if not settings._configured(connection):
+                raise ValueError("That connection is no longer set up in Settings.")
+            options = (
+                {"thinkingEffort": candidate["effort"]}
+                if "effort" in candidate
+                else None
+            )
+            choice = Choice(connection["id"], candidate["model"], options)
+            row = {
+                "index": index,
+                "label": candidate["model"],
+                "connection": connection["name"],
+                "connection_id": connection["id"],
+                "model": candidate["model"],
+                **{
+                    key: candidate[key]
+                    for key in ("effort", "glossary", "instruction")
+                    if key in candidate
+                },
+            }
+            try:
+                policy = request_policy(settings, "translate", choice)
+            except ValueError as error:
+                # Its column says why, such as a model without a price.
+                rows.append({**row, "error": str(error)})
+                continue
+            rows.append(
+                {
+                    **row,
+                    "key_name": connection["runtime_name"],
+                    "values": {
+                        "model": candidate["model"],
+                        "API_PROVIDER": connection["protocol"],
+                        "api": providers.address(connection),
+                        "organization": connection["organization"],
+                        "batchsize": policy["entriesPerRequest"],
+                    },
+                    "policy": policy,
+                }
+            )
+        inputs = guided.inputs(native)
+        sources = inputs.sources([file], inputs.record()["inputs"])
+        folder = guided.backend.workflows.folder(native["id"])
+        markers = (
+            sorted(comment_text.markers(native["source"]))
+            if phase == "dialogue" and native["phase1_comments"]
+            else []
+        )
+        workflow = guided.backend.workflows.phase_workflow(native["id"], phase)
+        options = {
+            "projectId": project_id,
+            "kind": kind,
+            "file": file,
+            "phase": phase,
+            "relative": sources[file]["relative"],
+            "lines": lines,
+            "markers": markers,
+            "workflow": workflow,
+            "pair": pair,
+            "claudeCount": guided.backend.manual.allow_providers,
+            "candidates": rows,
+        }
+        guard = guided.backend.guided_guard(native, folder)
+        options["inputs"] = digest(
+            {
+                "version": VERSION,
+                "options": {
+                    key: value
+                    for key, value in options.items()
+                    if key not in {"claudeCount", "inputs"}
+                },
+                "guard": guard,
+            }
+        )
+        return native, folder, guard, options
+
+    def _start(self, native, folder, guard, action, options):
+        return self.guided.backend.operations.start(
+            {
+                "project_id": native["id"],
+                "project": deepcopy(native),
+                "folder": str(folder),
+                "action": action,
+                "label": label(action),
+                "guard": guard,
+                "options": options,
+            }
+        )
+
+    # Methods
+
+    def estimate(self, project_id, kind, file, lines, candidates):
+        """Starts pricing each model's requests for the lines, offline."""
+        guided = self.guided
+        guided.idle(isolated_workers=True)
+        native, _phase = self._scope(project_id, file, lines)
+        # Every connection's credential and the game's languages, which the
+        # runs read as a Translate run does.
+        guided.settings.prepare_engine(pair=guided.runs.pair(native))
+        native, folder, guard, options = self._plan(
+            project_id, kind, file, lines, candidates
+        )
+        return self._start(native, folder, guard, ESTIMATE, options)
+
+    def translate(self, project_id, estimate_id):
+        """Sends the requests an estimate priced, once: the click on its
+        price approves it."""
+        guided = self.guided
+        guided.idle(isolated_workers=True)
+        job = guided.backend.operations.jobs.get(estimate_id)
+        _, native = guided.record(project_id)
+        if (
+            not job
+            or job["action"] != ESTIMATE
+            or job["project_id"] != native["id"]
+            or job["status"] != "complete"
+            or not isinstance(job.get("result"), dict)
+        ):
+            raise ValueError("Estimate the comparison before translating it.")
+        saved = system.read_bytes(
+            guided.backend.operations.root / estimate_id / "plan.json"
+        )
+        import json
+
+        options = json.loads(saved)["options"]
+        record = self._read(project_id)
+        if estimate_id in record["used"]:
+            raise ValueError("These lines were already translated. Estimate again.")
+        guided.settings.prepare_engine(pair=guided.runs.pair(native))
+        candidates = [
+            {
+                "connection_id": row["connection_id"],
+                "model": row["model"],
+                **{
+                    key: row[key]
+                    for key in ("effort", "glossary", "instruction")
+                    if key in row
+                },
+            }
+            for row in options["candidates"]
+        ]
+        native, folder, guard, current = self._plan(
+            project_id, options["kind"], options["file"], options["lines"], candidates
+        )
+        if current["inputs"] != options["inputs"]:
+            raise ValueError(
+                "The game, its guidance or a model's settings changed. Estimate again."
+            )
+        priced = {
+            row["index"]: row["estimate"]
+            for row in job["result"].get("models", [])
+            if isinstance(row.get("estimate"), dict)
+        }
+        if not priced:
+            raise ValueError("No model could be estimated. Check its connection.")
+        current["candidates"] = [
+            row for row in current["candidates"] if row["index"] in priced
+        ]
+        current["estimate"] = estimate_id
+        # Saved before the operation starts, so a second click or a retry
+        # can't send the same requests again.
+        record["used"][estimate_id] = ""
+        self._write(project_id, record)
+        try:
+            started = self._start(native, folder, guard, TRANSLATE, current)
+        except Exception:
+            record["used"].pop(estimate_id, None)
+            self._write(project_id, record)
+            raise
+        record["used"][estimate_id] = started["id"]
+        self._write(project_id, record)
+        return started
+
+    def marks(self, project_id, comparison_id, marks, blind, revealed):
+        """Keeps the line a person picked as best in each row, and whether
+        the models' names stay hidden until every row has a pick."""
+        guided = self.guided
+        _, native = guided.record(project_id)
+        job = guided.backend.operations.jobs.get(comparison_id)
+        if not job or job["action"] != TRANSLATE or job["project_id"] != native["id"]:
+            raise ValueError("This comparison is no longer available.")
+        if (
+            not isinstance(marks, dict)
+            or len(marks) > MAX_LINES
+            or any(
+                not isinstance(key, str)
+                or type(value) is not int
+                or not 0 <= value < MODELS
+                for key, value in marks.items()
+            )
+            or type(blind) is not bool
+            or type(revealed) is not bool
+        ):
+            raise ValueError("Pick one model's line per row.")
+        record = self._read(project_id)
+        record["marks"][comparison_id] = {
+            "marks": marks,
+            "blind": blind,
+            "revealed": revealed,
+        }
+        self._write(project_id, record)
+        return {"saved": True}
+
+    def scenes(self, native):
+        """The files a comparison may translate, with their map names and
+        lines, as Translate's file lists count them."""
+        from . import comment_text
+
+        guided = self.guided
+        phases = {
+            name: phase
+            for phase in ("database", "dialogue")
+            for name in guided.full_estimate.files(native, phase)
+        }
+        counts = guided.inputs(native).line_counts(
+            phases,
+            comment_text.markers(native["source"])
+            if native["phase1_comments"]
+            else frozenset(),
+            [],
+        )
+        titles = guided.backend.guided_titles(native)
+        return [
+            {
+                "file": name,
+                "title": titles.get(name) or "",
+                "lines": counts[name]["lines"],
+            }
+            for name in sorted(phases, key=_order)
+            if counts.get(name, {}).get("lines")
+        ]
+
+    def state(self, project_id):
+        """The project's comparisons, newest first: each estimate with its
+        translation once approved, the lines and each model's result."""
+        guided = self.guided
+        try:
+            _, native = guided.record(project_id)
+            guided.require_preparation(project_id, native)
+        except ValueError as error:
+            return {
+                "available": False,
+                "reason": str(error),
+                "scenes": [],
+                "glossary": "",
+                "comparisons": [],
+                "wholeGame": [],
+            }
+        record = self._read(project_id)
+        jobs = guided.backend.operations.jobs
+        rows = []
+        for job in sorted(
+            (
+                item
+                for item in jobs.values()
+                if item["project_id"] == native["id"] and item["action"] == ESTIMATE
+            ),
+            key=lambda item: item["created"],
+            reverse=True,
+        ):
+            options = _options(guided.backend.operations.root, job["id"])
+            if options is None:
+                continue
+            translated = jobs.get(record["used"].get(job["id"]) or "")
+            rows.append(
+                view(
+                    job,
+                    options,
+                    translated,
+                    record["marks"].get(translated["id"] if translated else "", {}),
+                )
+            )
+            if len(rows) == HISTORY:
+                break
+        return {
+            "available": True,
+            "reason": "",
+            "scenes": self.scenes(native),
+            "glossary": _glossary(native["source"]),
+            "comparisons": rows,
+            "wholeGame": [],
+        }
+
+    def model(self, connection_id, model):
+        """The thinking efforts a model on a connection may be sent, and
+        whether its price is known, from what Settings has looked up."""
+        settings = self.guided.settings
+        state = settings._read()
+        connection = settings._connection(state, connection_id)
+        if connection is None:
+            raise ValueError("That connection is no longer in Settings.")
+        model = providers_model(model)
+        defaults = settings.connection_defaults(connection, model, cached_only=True)
+        options = connection["model_options"].get(model) or {}
+        custom = options.get("pricing") == "custom"
+        rates = (
+            (options.get("inputRate"), options.get("outputRate"))
+            if custom
+            else (defaults.get("inputRate"), defaults.get("outputRate"))
+        )
+        efforts = defaults.get("thinkingEffort") or settings._effort(connection, model)
+        return {
+            "efforts": efforts.get("options", []),
+            "priced": all(rate not in (None, "") for rate in rates),
+        }
+
+    def use(self, project_id, comparison_id, model):
+        """Makes a compared model the one the game translates with: Settings'
+        connection and model, and, from Tune settings, the effort it was sent
+        with, its glossary and its instruction, saved as the game's guidance."""
+        guided = self.guided
+        _, native = guided.record(project_id)
+        job = guided.backend.operations.jobs.get(comparison_id)
+        options = (
+            _options(guided.backend.operations.root, comparison_id)
+            if job and job["action"] == ESTIMATE and job["project_id"] == native["id"]
+            else None
+        )
+        row = next(
+            (
+                item
+                for item in (options or {}).get("candidates", [])
+                if item["index"] == model
+            ),
+            None,
+        )
+        if row is None:
+            raise ValueError("This comparison is no longer available.")
+        settings = guided.settings
+        described = settings.describe()
+        if described.get("draft"):
+            raise ValueError(
+                "Save or discard your Settings changes before switching models."
+            )
+        if described["activeConnectionId"] != row["connection_id"]:
+            described = settings.select(described["revision"], row["connection_id"])
+        model_options = deepcopy(described["modelOptions"])
+        if "effort" in row:
+            from dazedtl.settings.preferences import DEFAULT_OPTIONS
+
+            model_options[row["model"]] = {
+                **deepcopy(model_options.get(row["model"]) or DEFAULT_OPTIONS),
+                "thinkingEffort": row["effort"],
+            }
+        settings.save(
+            described["revision"],
+            row["connection_id"],
+            {**described["values"], "model": row["model"]},
+            model_options,
+        )
+        documents = {}
+        if row.get("glossary") is not None:
+            documents["glossary"] = {"text": row["glossary"]}
+        if (row.get("instruction") or "").strip():
+            current = guided.backend.workflows.editable(native["id"]).get("game") or {}
+            text = (current.get("text") or "").rstrip()
+            documents["game"] = {
+                "text": (text + "\n\n" if text else "")
+                + row["instruction"].strip()
+                + "\n"
+            }
+        if documents:
+            guided.save_documents(project_id, documents)
+        return {"saved": True}
+
+    def whole_game(self, project_id, comparison_id, model):
+        """Starts Context's Cost estimate for a compared model."""
+        raise ValueError("Whole-game estimates for a compared model come next.")
+
+    def request(self, project_id, comparison_id, model, index):
+        """One request a model's translation sent, as Show request shows it."""
+        guided = self.guided
+        _, native = guided.record(project_id)
+        job = guided.backend.operations.jobs.get(comparison_id)
+        if not job or job["action"] != TRANSLATE or job["project_id"] != native["id"]:
+            raise ValueError("This comparison is no longer available.")
+        found = next(
+            (
+                row
+                for row in (job.get("result") or {}).get("models", [])
+                if row.get("index") == model
+            ),
+            None,
+        )
+        requests = (found or {}).get("requests") or []
+        if type(index) is not int or not 0 <= index < len(requests):
+            raise ValueError("This request is no longer available.")
+        return requests[index]
+
+
+def providers_model(value):
+    from dazedtl.settings.preferences import text
+
+    return text(value, "model ID", required=True)
+
+
+def _order(name):
+    """Database files first, then maps in their number's order."""
+    import re
+
+    found = re.fullmatch(r"Map(\d+)\.json", name)
+    return (1, int(found[1]), name) if found else (0, 0, name)
+
+
+def _glossary(source):
+    from util.paths import GAME_GLOSSARY_RELATIVE
+
+    path = project_path(source, GAME_GLOSSARY_RELATIVE.as_posix(), exists=False)
+    try:
+        return system.read_bytes(path).decode("utf-8-sig")
+    except OSError:
+        return ""
+
+
+def _validate(value):
+    if (
+        not isinstance(value, dict)
+        or value.get("version") != VERSION
+        or not isinstance(value.get("used"), dict)
+        or not isinstance(value.get("marks"), dict)
+    ):
+        raise ValueError("The saved comparisons can't be read.")
+    return value
+
+
+def _options(root, identity):
+    import json
+
+    try:
+        return json.loads(system.read_bytes(root / identity / "plan.json"))["options"]
+    except OSError, ValueError, KeyError, TypeError:
+        return None
+
+
+def view(estimate, options, translated, marks):
+    """How a comparison reads on the page."""
+    models = {
+        row["index"]: row for row in (estimate.get("result") or {}).get("models", [])
+    }
+    results = {
+        row["index"]: row
+        for row in ((translated or {}).get("result") or {}).get("models", [])
+    }
+    candidates = []
+    for row in options["candidates"]:
+        priced = models.get(row["index"], {})
+        done = results.get(row["index"], {})
+        candidates.append(
+            {
+                "index": row["index"],
+                "connection": row["connection"],
+                "connectionId": row["connection_id"],
+                "model": row["model"],
+                **({"effort": row["effort"]} if "effort" in row else {}),
+                **({"glossary": row["glossary"]} if "glossary" in row else {}),
+                **({"instruction": row["instruction"]} if "instruction" in row else {}),
+                **(
+                    {"estimate": _price(priced["estimate"])}
+                    if isinstance(priced.get("estimate"), dict)
+                    else {}
+                ),
+                **(
+                    {"error": done.get("error") or priced.get("error")}
+                    if done.get("error") or priced.get("error")
+                    else {}
+                ),
+                **(
+                    {
+                        "cost": done.get("cost", 0),
+                        "seconds": done.get("seconds", 0),
+                        "requests": done.get("requestCount", 0),
+                    }
+                    if done and not done.get("error")
+                    else {}
+                ),
+            }
+        )
+    source = (translated or estimate).get("result") or {}
+    lines = []
+    for line in source.get("lines", []):
+        lines.append(
+            {
+                **line,
+                "translations": [
+                    (results.get(row["index"], {}).get("lines") or {}).get(line["id"])
+                    for row in options["candidates"]
+                ],
+                "problems": [
+                    (results.get(row["index"], {}).get("problems") or {}).get(
+                        line["id"], []
+                    )
+                    for row in options["candidates"]
+                ],
+            }
+        )
+    status = translated["status"] if translated else estimate["status"]
+    return {
+        "id": estimate["id"],
+        "translationId": translated["id"] if translated else None,
+        "kind": options["kind"],
+        "file": options["file"],
+        "lines": options["lines"],
+        "created": estimate["created"],
+        "stage": "translation" if translated else "estimate",
+        "status": status,
+        "message": (translated or estimate).get("message", ""),
+        "candidates": candidates,
+        "rows": lines,
+        "marks": marks.get("marks", {}),
+        "blind": marks.get("blind", False),
+        "revealed": marks.get("revealed", False),
+    }
+
+
+def _price(estimate):
+    """A model's estimate as its Translate button prices it: Live."""
+    return {
+        "cost": float(estimate.get("live_cost") or 0),
+        "requests": int(estimate.get("requests") or 0),
+    }

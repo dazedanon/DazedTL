@@ -8,7 +8,9 @@ from dazedtl.api.contracts.plugins import PluginForeignWork, PluginState
 from dazedtl.api.contracts.settings import SourceLanguage
 from dazedtl.api.contracts.translation import TranslationState
 
-type Screen = Literal["project", "translation", "guided", "manual", "settings", "guide"]
+type Screen = Literal[
+    "project", "translation", "guided", "manual", "compare", "settings", "guide"
+]
 type TranslationMethod = Literal["guided", "len", "manual"]
 
 

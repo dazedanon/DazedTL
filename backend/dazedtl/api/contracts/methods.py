@@ -9,6 +9,12 @@ from dataclasses import dataclass
 from typing import Annotated, Literal, NotRequired, TypedDict
 
 from dazedtl.api.contracts.common import Documents, ExportedFiles, Phase, Saved
+from dazedtl.api.contracts.compare import (
+    CompareChoice,
+    CompareKind,
+    CompareModelInfo,
+    CompareState,
+)
 from dazedtl.api.contracts.guided import (
     ContextSetup,
     EventTextPicker,
@@ -688,6 +694,45 @@ class GuidedPayloadRequest(RunIndexRequest):
     prepared: NotRequired[bool]
 
 
+class CompareEstimateRequest(TypedDict):
+    project_id: str
+    kind: CompareKind
+    file: str
+    lines: Annotated[int, "The file's first lines to compare; 0 for all of them."]
+    candidates: list[CompareChoice]
+
+
+class CompareTranslateRequest(TypedDict):
+    project_id: str
+    estimate_id: Annotated[str, "The estimate whose price the click approves."]
+
+
+class CompareMarksRequest(TypedDict):
+    project_id: str
+    comparison_id: str
+    marks: Annotated[dict[str, int], "The model picked as best, by row ID."]
+    blind: bool
+    revealed: bool
+
+
+class CompareModelRequest(TypedDict):
+    connection_id: str
+    model: str
+
+
+class CompareUseRequest(TypedDict):
+    project_id: str
+    comparison_id: str
+    model: Annotated[int, "The model's index in the comparison."]
+
+
+class CompareRequestRequest(TypedDict):
+    project_id: str
+    comparison_id: str
+    model: int
+    index: int
+
+
 class GuidedNameResultsRequest(TypedDict):
     project_id: str
     run_id: str
@@ -823,6 +868,19 @@ METHODS: dict[str, Method] = {
     # Context's Cost estimate: every Translate task over all its files.
     "guided_full_estimate": Method(ProjectRequest, Job),
     "guided_provider_details": Method(RunRequest, ProviderDetails, refresh=False),
+    # Compare models
+    "compare_state": Method(ProjectRequest, CompareState, refresh=False),
+    "compare_estimate": Method(CompareEstimateRequest, Job),
+    # Sends paid requests once, only for an estimate whose price was shown.
+    "compare_translate": Method(CompareTranslateRequest, Job),
+    "compare_marks": Method(CompareMarksRequest, Saved),
+    "compare_request": Method(CompareRequestRequest, RunPayload, refresh=False),
+    "compare_model": Method(CompareModelRequest, CompareModelInfo, refresh=False),
+    # Makes a compared model the game's: Settings' model, and for Tune
+    # settings its effort, glossary and instruction.
+    "compare_use": Method(CompareUseRequest, Saved),
+    # Context's Cost estimate, for a compared model.
+    "compare_whole_game": Method(CompareUseRequest, Job),
     "guided_batch_cancel_preview": Method(
         GuidedBatchCancelPreviewRequest, BatchCancellation, refresh=False
     ),

@@ -66,6 +66,16 @@ def entries_per_request(settings):
 LOOKED_UP = ("rates", "maxOutputTokens", "openrouterBatch", openrouter.UNREAD)
 
 
+class Choice(NamedTuple):
+    """A saved connection and model other than the active ones, and the
+    model options a comparison sends in place of its saved ones, such as a
+    thinking effort (preferences.DEFAULT_OPTIONS keys)."""
+
+    connection_id: str
+    model: str
+    options: dict | None = None
+
+
 class _Frozen(NamedTuple):
     """What a new run freezes from the active connection, read once for both
     shapes it is saved in (``configuration`` and ``request_policy``)."""
@@ -81,18 +91,23 @@ class _Frozen(NamedTuple):
     requests: dict
 
 
-def _frozen(settings, mode, *, cached_only, unpriced):
+def _frozen(settings, mode, *, cached_only, unpriced, choice=None):
     """An OpenRouter Batch policy no lookup could read yet
     (openrouter.Unread) is frozen as not read yet in a Live mode, and a Batch
     refuses it before anything else is priced (openrouter.frozen).
     ``unpriced`` reads unknown rates instead of refusing, and leaves such a
-    Batch's policy out."""
-    connection = settings._connection(settings._read())
-    if not settings._configured(connection) or not connection["model"].strip():
+    Batch's policy out. ``choice`` reads another saved connection and model
+    than the active ones, with its own options over the model's saved
+    ones (``Choice``), as a model comparison sends them."""
+    state = settings._read()
+    connection = settings._connection(state, choice.connection_id if choice else None)
+    if choice and connection is None:
+        raise ValueError("That connection is no longer in Settings.")
+    model = choice.model if choice else (connection or {}).get("model", "")
+    if not settings._configured(connection) or not model.strip():
         raise ValueError(
             "Choose a connection and model in Settings before preparing API requests."
         )
-    model = connection["model"]
     # The preserved engine's route validation, before anything is priced.
     settings.adapter.validate_route(
         {
@@ -103,6 +118,8 @@ def _frozen(settings, mode, *, cached_only, unpriced):
     )
     providers.validate_model_name(model, providers.address(connection))
     selected = connection["model_options"].get(model, preferences.DEFAULT_OPTIONS)
+    if choice and choice.options:
+        selected = {**selected, **choice.options}
     custom = selected["pricing"] == "custom"
     batch = {}
     if connection["provider"] == "openrouter":
@@ -113,8 +130,8 @@ def _frozen(settings, mode, *, cached_only, unpriced):
         except openrouter.Unread:
             if not unpriced:
                 raise
-    defaults = settings.model_defaults(
-        connection["id"], model, cached_only=cached_only or custom
+    defaults = settings.connection_defaults(
+        connection, model, cached_only=cached_only or custom
     )
     # Cached defaults are empty until the model's prices are first looked up.
     rates = {
@@ -166,7 +183,9 @@ def _frozen(settings, mode, *, cached_only, unpriced):
     )
 
 
-def configuration(settings, mode, *, cached_only=False, unpriced=False, pair=None):
+def configuration(
+    settings, mode, *, cached_only=False, unpriced=False, pair=None, choice=None
+):
     """The settings an estimate or an Assistant-led run freezes (``_frozen``),
     translating between the game's language *pair* (settings/language_pair),
     Japanese into Settings' target when none is given. ``unpriced`` returns
@@ -181,7 +200,9 @@ def configuration(settings, mode, *, cached_only=False, unpriced=False, pair=Non
             "connection_id": "",
             "entries_per_request": None,
         }
-    read = _frozen(settings, mode, cached_only=cached_only, unpriced=unpriced)
+    read = _frozen(
+        settings, mode, cached_only=cached_only, unpriced=unpriced, choice=choice
+    )
     connection = read.connection
     rates = dict(read.rates)
     if read.batch:
@@ -189,7 +210,7 @@ def configuration(settings, mode, *, cached_only=False, unpriced=False, pair=Non
     return {
         "mode": mode,
         **languages,
-        "model": connection["model"],
+        "model": choice.model if choice else connection["model"],
         "connection_id": connection["id"],
         "provider": connection["provider"],
         "protocol": connection["protocol"],
@@ -205,14 +226,14 @@ def configuration(settings, mode, *, cached_only=False, unpriced=False, pair=Non
     }
 
 
-def request_policy(settings, mode):
+def request_policy(settings, mode, choice=None):
     """The request policy a new Guided or image run's engine freezes into its
     plan: the settings ``configuration`` freezes (``_frozen``) with the
     policies only the engine reads."""
-    read = _frozen(settings, mode, cached_only=False, unpriced=False)
+    read = _frozen(settings, mode, cached_only=False, unpriced=False, choice=choice)
     return {
         "version": 1,
-        "model": read.connection["model"],
+        "model": choice.model if choice else read.connection["model"],
         "generationParameters": preferences.GENERATION_PARAMETERS,
         "maxOutputTokens": read.max_output,
         **read.effort,

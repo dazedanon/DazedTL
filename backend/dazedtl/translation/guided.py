@@ -96,6 +96,9 @@ class Guided:
         self.event_text = EventText(self)
         self.text_fit = TextFit(self)
         self.full_estimate = FullEstimate(self)
+        from .compare import Compare
+
+        self.compare = Compare(self)
         from .batch_monitor import BatchMonitor
 
         self.batch_monitor = BatchMonitor(self)

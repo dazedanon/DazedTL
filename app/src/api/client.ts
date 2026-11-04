@@ -3,6 +3,8 @@ import { imagesApi } from "./images";
 import type {
   AssistantReleaseForm,
   AssistantTaskKind,
+  CompareChoice,
+  CompareKind,
   ImageEditorSave,
   Screen,
   TranslationMethod,
@@ -271,6 +273,52 @@ export const api = {
   ) => request("guided_preview", { project_id, action, files, options }),
   execute: (project_id: string, token: string) =>
     request("guided_execute", { project_id, token }),
+  compare: {
+    state: (project_id: string) => request("compare_state", { project_id }),
+    estimate: (
+      project_id: string,
+      kind: CompareKind,
+      file: string,
+      lines: number,
+      candidates: CompareChoice[],
+    ) =>
+      request("compare_estimate", {
+        project_id,
+        kind,
+        file,
+        lines,
+        candidates,
+      }),
+    translate: (project_id: string, estimate_id: string) =>
+      request("compare_translate", { project_id, estimate_id }),
+    marks: (
+      project_id: string,
+      comparison_id: string,
+      marks: Record<string, number>,
+      blind: boolean,
+      revealed: boolean,
+    ) =>
+      request("compare_marks", {
+        project_id,
+        comparison_id,
+        marks,
+        blind,
+        revealed,
+      }),
+    request: (
+      project_id: string,
+      comparison_id: string,
+      model: number,
+      index: number,
+    ) =>
+      request("compare_request", { project_id, comparison_id, model, index }),
+    model: (connection_id: string, model: string) =>
+      request("compare_model", { connection_id, model }),
+    use: (project_id: string, comparison_id: string, model: number) =>
+      request("compare_use", { project_id, comparison_id, model }),
+    wholeGame: (project_id: string, comparison_id: string, model: number) =>
+      request("compare_whole_game", { project_id, comparison_id, model }),
+  },
   guided: {
     outputFolder: (project_id: string) =>
       request("guided_output_folder", { project_id }),
