@@ -182,6 +182,11 @@ One landing runs at a time, under a lock that a release also holds.
 - Lines starting with `Notice:`, also shown as desktop notifications, say when your own DazedTL or another landing holds it up.
 - CI runs on `dev` after the push; a run still red is fixed forward or reverted by the session cutting the next release.
 
+A Discord intake worker lands in two steps, since it works in its own clone and may never write the main checkout.
+It runs `node scripts/land.mjs --review <file.json> --hand-off <dir>` with the directory its prompt gives: the same format, merge and checks against `origin`'s `dev`, leaving the branch as `handoff.bundle` and `handoff.json` there, with no lock, app wait or push.
+The intake then runs the main checkout's own `node scripts/land.mjs --finish <dir>`, which under the lock checks the bundle with Git alone and runs nothing from it, then fast-forwards `dev`, records the review and pushes as a landing does.
+It exits 3 when `dev` moved after the checks, so the worker merges `dev` and hands off again, and 4 at once while your DazedTL is open, to retry later.
+
 ### Releasing
 
 From a clean `dev`, once the [release check](#ci) passes on that commit:

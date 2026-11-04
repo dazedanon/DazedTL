@@ -9,8 +9,11 @@ import {
   lockRef,
   releaseLock,
 } from "../scripts/land-lock.mjs";
+import { spawnSync } from "node:child_process";
 import {
+  finishHandOff,
   formatBranch,
+  land,
   mergeDev,
   readReview,
   reviewedHead,
@@ -328,4 +331,147 @@ test("a landing's review covers every commit of the branch but merges of dev and
   git(["checkout", "-q", "work"]);
   for (const head of [elsewhere, "no-such-commit"])
     assert.throws(() => reviewedHead(git, head), /not a commit on this branch/);
+});
+
+test("a sandboxed worker hands off a checked branch without writing the main checkout, and --finish lands it", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "dazedtl-land-"));
+  const main = path.join(root, "main");
+  const clone = path.join(root, "clone");
+  const mirror = path.join(root, "mirror.git");
+  const dir = path.join(root, "handoff");
+  // Undoes the worker's read-only view of the main checkout.
+  const writable = () => spawnSync("chmod", ["-R", "u+w", main]);
+  t.after(() => {
+    writable();
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+  const atMain = gitIn(main);
+  const atClone = gitIn(clone);
+  const rev = (git: ReturnType<typeof gitIn>, ref: string) =>
+    git(["rev-parse", ref]).stdout.trim();
+  const commit = (top: string, file: string, text: string) => {
+    const git = gitIn(top);
+    fs.mkdirSync(path.dirname(path.join(top, file)), { recursive: true });
+    fs.writeFileSync(path.join(top, file), text);
+    git(["add", "-A"]);
+    git(["commit", "-qm", `change ${file}`]);
+    return rev(git, "HEAD");
+  };
+  fs.mkdirSync(main);
+  atMain(["init", "-q", "-b", "dev"]);
+  atMain(["config", "user.name", "Test"]);
+  atMain(["config", "user.email", "test@example.com"]);
+  gitIn(root)(["init", "-q", "--bare", mirror]);
+  commit(
+    main,
+    "release/mirrors.json",
+    JSON.stringify([{ name: "Mirror", type: "forgejo", url: mirror }]),
+  );
+  gitIn(root)(["clone", "-q", "--no-hardlinks", main, clone]);
+  atClone(["config", "user.name", "Test"]);
+  atClone(["config", "user.email", "test@example.com"]);
+  atClone(["switch", "-qc", "work"]);
+  const reviewFile = path.join(root, "review.json");
+  const review = (head: string) =>
+    fs.writeFileSync(
+      reviewFile,
+      JSON.stringify({
+        level: "high",
+        reviewer: "independent",
+        head,
+        findings: [],
+      }),
+    );
+  // Git runs for real; the format, test, build and contract scripts pass.
+  let appOpen = false;
+  const logged: string[] = [];
+  const deps = {
+    run: async (cwd: string, command: string, args: string[]) => {
+      if (command !== "git") return { status: 0, output: "" };
+      const ran = spawnSync("git", args, { cwd, encoding: "utf8" });
+      return { status: ran.status ?? 1, output: ran.stdout + ran.stderr };
+    },
+    processes: () =>
+      appOpen
+        ? `${path.join(main, "app", "node_modules", "electron")}/dist/electron .`
+        : "",
+    read: null,
+    wait: async () => {},
+    log: (line: string) => logged.push(line),
+    notify: () => {},
+    onStop: () => {},
+  };
+  const handoffFile = path.join(dir, "handoff.json");
+  const record = () => JSON.parse(fs.readFileSync(handoffFile, "utf8"));
+  const refs = () => atMain(["for-each-ref"]).stdout;
+
+  // dev moved after the worker branched, so the hand-off merges it in.
+  const reviewed = commit(clone, "work.txt", "work\n");
+  const base = commit(main, "dev.txt", "dev\n");
+  review(reviewed.slice(0, 8));
+  const before = refs();
+  spawnSync("chmod", ["-R", "a-w", main]);
+  assert.equal(await land(clone, deps, reviewFile, dir), 0, logged.join("\n"));
+  writable();
+  const head = rev(atClone, "HEAD");
+  assert.ok(
+    logged.includes(`Handed off ${base.slice(0, 7)}..${head.slice(0, 7)}`),
+  );
+  const { checkedAt, ...handoff } = record();
+  assert.ok(checkedAt);
+  assert.deepEqual(handoff, {
+    format: 1,
+    branch: "work",
+    head,
+    base,
+    review: {
+      ...JSON.parse(fs.readFileSync(reviewFile, "utf8")),
+      head: reviewed,
+    },
+  });
+  assert.equal(refs(), before);
+  assert.equal(
+    fs.existsSync(path.join(main, ".git", "dazedtl-reviews.jsonl")),
+    false,
+  );
+
+  // The caller retries later while the user's DazedTL is open.
+  appOpen = true;
+  assert.equal(await finishHandOff(main, deps, dir), 4);
+  appOpen = false;
+  // A bundle holding another head than its record names lands nothing.
+  fs.writeFileSync(
+    handoffFile,
+    JSON.stringify({ ...handoff, checkedAt, head: reviewed }),
+  );
+  logged.length = 0;
+  assert.equal(await finishHandOff(main, deps, dir), 1);
+  assert.match(logged.join("\n"), /not the head/);
+  assert.equal(refs(), before);
+  fs.writeFileSync(handoffFile, JSON.stringify({ ...handoff, checkedAt }));
+
+  logged.length = 0;
+  assert.equal(await finishHandOff(main, deps, dir), 0, logged.join("\n"));
+  assert.ok(
+    logged.includes(`Landed ${base.slice(0, 7)}..${head.slice(0, 7)} on dev`),
+  );
+  assert.equal(fs.readFileSync(path.join(main, "work.txt"), "utf8"), "work\n");
+  assert.equal(rev(gitIn(mirror), "dev"), head);
+  const entries = fs
+    .readFileSync(path.join(main, ".git", "dazedtl-reviews.jsonl"), "utf8")
+    .trim()
+    .split("\n");
+  assert.equal(entries.length, 1);
+  assert.equal(JSON.parse(entries[0]).range, `${base}..${head}`);
+  // Only dev moved: the fetched ref and the lock are gone.
+  assert.equal(refs(), before.replace(base, head));
+
+  // dev moving after the checks sends the worker back to merge it.
+  review(commit(clone, "more.txt", "more\n"));
+  assert.equal(await land(clone, deps, reviewFile, dir), 0, logged.join("\n"));
+  assert.equal(record().base, head);
+  commit(main, "later.txt", "later\n");
+  logged.length = 0;
+  assert.equal(await finishHandOff(main, deps, dir), 3);
+  assert.match(logged.join("\n"), /^dev moved since the hand-off's checks/m);
 });
