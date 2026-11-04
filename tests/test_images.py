@@ -1444,6 +1444,15 @@ class ImageFolderTests(unittest.TestCase):
             )
             self.assertEqual(service.state(identity)["counts"]["missing"], 0)
 
+    def test_a_game_without_a_chosen_folder_reads_its_data_folder(self):
+        # A KiriKiri game without archives keeps its images in data, and a
+        # WOLF game in Data.
+        for folder in ("data/image", "Data/Picture"):
+            with self.subTest(folder=folder), TemporaryDirectory() as root:
+                write_bytes(Path(root) / folder / "title.bmp", b"BM")
+                profile = ImageCompatibility(None).profile(Path(root), "KiriKiri")
+                self.assertEqual(profile["imageRoot"], folder.split("/")[0])
+
 
 class AppliedImagePatchTests(unittest.TestCase):
     """The Image Manager's own engine adapter on an MZ game whose Git is set
@@ -1648,10 +1657,20 @@ class DecodedImagePatchTests(unittest.TestCase):
         Image.new("RGB", (8, 8), (9, 9, 9)).save(stream, format="BMP")
         write_bytes(self.game / title, stream.getvalue())
         write_bytes(self.game / menu, tlg6(bgra(picture(8, 8, 1)), 4))
+        # A PNG keeps the ID it had, its extension in lowercase, so its
+        # saved work stays with it.
+        write_bytes(self.game / "decoded/Picture/Logo.PNG", png())
         self.scan()
         self.assertEqual(
             sorted(row["id"] for row in self.service.list(self.identity)["items"]),
-            sorted([title, menu, "decoded/Picture/title.png"]),
+            sorted(
+                [
+                    title,
+                    menu,
+                    "decoded/Picture/title.png",
+                    "decoded/Picture/Logo.png",
+                ]
+            ),
         )
         # Saved as an assistant's editor may, unlike the copy DazedTL makes.
         stream = BytesIO()
@@ -1676,6 +1695,35 @@ class DecodedImagePatchTests(unittest.TestCase):
         for name in candidates:
             self.assertEqual(rows[name]["state"], "applied")
             self.assertFalse(rows[name].get("staleReason"))
+
+    def test_an_image_is_read_again_when_what_reads_it_changes(self):
+        # A BMP's PNG copy is made by Pillow, whose newer releases may encode
+        # it differently: the saved hash then never matched, and Prepare
+        # stopped with "A source image changed during preparation".
+        from util import image_formats
+
+        title = "decoded/Picture/title.bmp"
+        stream = BytesIO()
+        Image.new("RGB", (8, 8), (9, 9, 9)).save(stream, format="BMP")
+        write_bytes(self.game / title, stream.getvalue())
+        self.scan()
+        encode = image_formats.to_png
+
+        def newer(raw):
+            with Image.open(BytesIO(encode(raw))) as image:
+                stream = BytesIO()
+                image.save(stream, format="PNG", compress_level=1)
+                return stream.getvalue()
+
+        with (
+            patch.object(image_formats, "to_png", newer),
+            patch.object(image_formats, "decoder", lambda: "newer"),
+        ):
+            self.scan()
+            self.choose([title])
+            self.service.action(self.identity, "prepare")
+            (row,) = self.service.list(self.identity, asset_id=title)["items"]
+            self.assertTrue(row["editable"])
 
     def test_undoing_an_apply_into_a_decoded_folder_puts_its_original_back(self):
         # Undoing the apply deleted the decoded image, which only the apply

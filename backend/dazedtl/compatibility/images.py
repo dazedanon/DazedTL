@@ -102,8 +102,9 @@ class ImageCompatibility:
             extension = path.suffix.casefold()
             if extension not in extensions:
                 continue
+            # A PNG's ID ends in .png, whatever case the file's name has.
             identity = (
-                (path.with_suffix(".png") if mvmz else path)
+                (path.with_suffix(".png") if mvmz or extension == ".png" else path)
                 .relative_to(base)
                 .as_posix()
             )
@@ -135,6 +136,13 @@ class ImageCompatibility:
                 "editable": path.relative_to(root).as_posix(),
                 "encrypted": False,
             }
+
+    @staticmethod
+    def decoder():
+        """What turns a game image in another format into its PNG copy."""
+        from util.image_formats import decoder
+
+        return decoder()
 
     def key(self, root, profile):
         if profile["id"] != "rpgmaker_mvmz":

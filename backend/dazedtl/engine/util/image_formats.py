@@ -23,6 +23,18 @@ _TLG6 = b"TLG6.0\x00raw\x1a"
 _MAX_PIXELS = 178_956_970  # Pillow's decompression-bomb limit
 
 
+# Raised when this module turns a game image into other PNG bytes.
+_DECODER_VERSION = 1
+
+
+def decoder() -> str:
+    """What makes a game image's PNG copy: this module and Pillow, which
+    encodes the PNG. Saved hashes of copies hold while it stays the same."""
+    import PIL
+
+    return f"{_DECODER_VERSION}/Pillow {PIL.__version__}"
+
+
 def png_name(relative: str) -> str:
     """The name of an image's PNG copy: its own for a PNG, else its name with
     `.png` added, so `title.bmp` and `title.png` keep separate copies."""
