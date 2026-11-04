@@ -729,9 +729,10 @@ def _save(root, change, named, claimed, log=lambda _line: None):
 def _saving(root, change, named, claimed, log=lambda _line: None):
     """`_save`'s commit, and the commit HEAD is at once it is done.
 
-    The assistant notes the write didn't name, as an assistant edits them
-    with its own tools, are edits made outside DazedTL of their own before
-    it, so the translation's checkpoints never take them out on undo. Notes
+    The assistant notes a DazedTL write didn't name, as an assistant edits
+    them with its own tools, are edits made outside DazedTL of their own
+    before it, so the translation's checkpoints never take them out on undo;
+    the edits made outside DazedTL stay one checkpoint. Notes
     that can't be read, as a file another program holds on Windows, wait for
     a checkpoint that can read them, which `log` says, so the write goes on."""
     from util.len_patch_scope import dazedtl_files, grow_scope, keep_out_of_downloads
@@ -783,7 +784,8 @@ def _saving(root, change, named, claimed, log=lambda _line: None):
             " checkpoint."
         )
     chosen = joined | rule | (taken - unreadable)
-    if (apart := notes - unreadable) and not any(map(is_game_notes, named)):
+    apart = notes - unreadable
+    if apart and change is not OUTSIDE and not any(map(is_game_notes, named)):
         notes_commit = _commit(root, apart | rule, OUTSIDE, status)
         if notes_commit is not None:
             # The rest is built on HEAD's tree, never on an index that may
