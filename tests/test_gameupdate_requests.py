@@ -90,9 +90,11 @@ POSIX_TOOLS = sys.platform != "win32" and all(
     shutil.which(tool) for tool in ("bash", "git", "jq", "unzip")
 )
 # Windows ships Windows PowerShell; PowerShell 7 goes first where installed.
-POWERSHELL = shutil.which("pwsh") or "powershell"
+POWERSHELL = shutil.which("pwsh") or shutil.which("powershell") or "powershell"
 # What GameUpdate.bat runs.
 WINDOWS_POWERSHELL = shutil.which("powershell")
+# Both, for what differs between them, such as file access.
+SHELLS = sorted({POWERSHELL, WINDOWS_POWERSHELL or POWERSHELL})
 PACKAGE_MANAGERS = {"apt-get", "dnf", "pacman", "zypper", "pkg", "steamos-readonly"}
 
 
@@ -121,6 +123,14 @@ def advertisement(refs):
         for index, (sha, ref) in enumerate(refs)
     ]
     return pkt("# service=git-upload-pack\n") + b"0000" + b"".join(lines) + b"0000"
+
+
+def shell_env(shell: str, env) -> dict[str, str]:
+    """*env* for *shell*: PowerShell 7's module path, as CI's steps set it,
+    hides Windows PowerShell's own modules."""
+    if shell == POWERSHELL:
+        return dict(env)
+    return {key: value for key, value in env.items() if key.upper() != "PSMODULEPATH"}
 
 
 def long_paths_enabled() -> bool:
@@ -584,13 +594,6 @@ class PatchPs1Tests(unittest.TestCase):
             + body
             + " } catch { Write-Output ('ERROR ' + $_.Exception.Message); exit 3 }"
         )
-        # PowerShell 7's module path, as CI's steps set it, hides Windows
-        # PowerShell's own modules.
-        inherited = {
-            key: value
-            for key, value in os.environ.items()
-            if shell == POWERSHELL or key.upper() != "PSMODULEPATH"
-        }
         result = subprocess.run(
             [
                 shell,
@@ -600,7 +603,9 @@ class PatchPs1Tests(unittest.TestCase):
                 "-Command",
                 script,
             ],
-            env={**inherited, "GAMEUPDATE_DL_ATTEMPTS": "1", **(env or {})},
+            env=shell_env(
+                shell, {**os.environ, "GAMEUPDATE_DL_ATTEMPTS": "1", **(env or {})}
+            ),
             stdin=subprocess.DEVNULL,
             capture_output=True,
             encoding="utf-8",
@@ -807,7 +812,7 @@ class PatchPs1Tests(unittest.TestCase):
     def test_patch_ps1_applies_long_paths_where_windows_allows_them(self):
         # Windows PowerShell can use them too, on a Windows that allows them.
         deep = "/".join(letter * 100 for letter in "abc") + "/Map.json"
-        for shell in sorted({POWERSHELL, WINDOWS_POWERSHELL}):
+        for shell in SHELLS:
             with self.subTest(shell):
                 game = self.game(name=Path(shell).stem)
                 output = self.update(game, self.serve({deep: "{}"}), {}, shell)
@@ -817,60 +822,65 @@ class PatchPs1Tests(unittest.TestCase):
     def test_patch_ps1_leaves_the_game_as_it_was_when_a_copy_fails(self):
         # A file the running game holds, copied after part of the patch:
         # that part used to stay, half patching the game.
-        game = self.game()
-        (game / "www/data").mkdir(parents=True)
-        (game / "www/data/Map001.json").write_text("{}", encoding="utf-8")
-        (game / "zz").mkdir()
-        (game / "zz/held.txt").write_text("held", encoding="utf-8")
-        (game / "gameupdate/previous_patch_sha.txt").write_text(
-            "a" * 40 + "\n", encoding="utf-8"
-        )
-        before = snapshot(game)
-        temporary = self.root / "tmp"
-        temporary.mkdir()
-        output = self.update(
-            game,
-            f"$held = [IO.File]::Open('{game / 'zz/held.txt'}', 'Open', 'Read', 'Read'); "
-            + self.serve(
-                {
-                    "a.txt": "new",
-                    "img/pictures/Title.png": "new",
-                    "www/data/Map001.json": '{"translated": true}',
-                    "zz/held.txt": "new",
-                }
-            ),
-            {"TEMP": str(temporary), "TMP": str(temporary)},
-        )
-        self.assertIn("being used by another process", output)
-        self.assertIn("left as it was", output)
-        self.assertNotIn("RESULT", output)
-        self.assertEqual(snapshot(game), before, output)
-        self.assertEqual(list(temporary.glob("gu_*")), [], output)
+        for shell in SHELLS:
+            with self.subTest(shell):
+                game = self.game(name=Path(shell).stem)
+                (game / "www/data").mkdir(parents=True)
+                (game / "www/data/Map001.json").write_text("{}", encoding="utf-8")
+                (game / "zz").mkdir()
+                (game / "zz/held.txt").write_text("held", encoding="utf-8")
+                (game / "gameupdate/previous_patch_sha.txt").write_text(
+                    "a" * 40 + "\n", encoding="utf-8"
+                )
+                before = snapshot(game)
+                temporary = self.root / f"tmp-{game.name}"
+                temporary.mkdir()
+                output = self.update(
+                    game,
+                    f"$held = [IO.File]::Open('{game / 'zz/held.txt'}', 'Open', 'Read', 'Read'); "
+                    + self.serve(
+                        {
+                            "a.txt": "new",
+                            "img/pictures/Title.png": "new",
+                            "www/data/Map001.json": '{"translated": true}',
+                            "zz/held.txt": "new",
+                        }
+                    ),
+                    {"TEMP": str(temporary), "TMP": str(temporary)},
+                    shell,
+                )
+                self.assertIn("being used by another process", output)
+                self.assertIn("left as it was", output)
+                self.assertNotIn("RESULT", output)
+                self.assertEqual(snapshot(game), before, output)
+                self.assertEqual(list(temporary.glob("gu_*")), [], output)
 
     def test_patch_ps1_puts_back_a_game_a_stopped_run_left_half_patched(self):
         # What a run leaves when its window is closed while it copies; the
         # journal's last line, cut short, names a change never made.
-        game = self.game()
-        (game / "www/data").mkdir(parents=True)
-        (game / "www/data/Map001.json").write_text("{}", encoding="utf-8")
-        (game / "zz.txt").write_text("the game's own", encoding="utf-8")
-        before = snapshot(game)
-        (game / "a.txt").write_text("new", encoding="utf-8")
-        (game / "img").mkdir()
-        (game / "img/Title.png").write_text("new", encoding="utf-8")
-        undo = game / "gameupdate/undo"
-        undo.mkdir()
-        (game / "www/data/Map001.json").replace(undo / "0")
-        (game / "www/data/Map001.json").write_text("{", encoding="utf-8")
-        (undo / "journal.txt").write_text(
-            "added a.txt\nadded img\nadded img/Title.png\n"
-            "moved 0 www/data/Map001.json\nadded zz.txt",
-            encoding="utf-8",
-            newline="",
-        )
-        output = self.script(game, "", os.environ, status=404)
-        self.assertIn("left as it was", output)
-        self.assertEqual(snapshot(game), before, output)
+        for shell in SHELLS:
+            with self.subTest(shell):
+                game = self.game(name=Path(shell).stem)
+                (game / "www/data").mkdir(parents=True)
+                (game / "www/data/Map001.json").write_text("{}", encoding="utf-8")
+                (game / "zz.txt").write_text("the game's own", encoding="utf-8")
+                before = snapshot(game)
+                (game / "a.txt").write_text("new", encoding="utf-8")
+                (game / "img").mkdir()
+                (game / "img/Title.png").write_text("new", encoding="utf-8")
+                undo = game / "gameupdate/undo"
+                undo.mkdir()
+                (game / "www/data/Map001.json").replace(undo / "0")
+                (game / "www/data/Map001.json").write_text("{", encoding="utf-8")
+                (undo / "journal.txt").write_text(
+                    "added a.txt\nadded img\nadded img/Title.png\n"
+                    "moved 0 www/data/Map001.json\nadded zz.txt",
+                    encoding="utf-8",
+                    newline="",
+                )
+                output = self.script(game, "", os.environ, status=404, shell=shell)
+                self.assertIn("left as it was", output)
+                self.assertEqual(snapshot(game), before, output)
 
     def test_patch_ps1_names_the_git_command_that_failed(self):
         output = self.powershell(
@@ -974,7 +984,7 @@ class PatchPs1Tests(unittest.TestCase):
         self.assertFalse(folder.exists())
         self.assertFalse(folder.with_name("mingit.partial").exists())
 
-    def script(self, game, prelude, env, status=403):
+    def script(self, game, prelude, env, status=403, shell=POWERSHELL):
         """Runs the whole patch.ps1 on *game* after *prelude*, with the API
         refused and every other web request answered *status*, and its input
         redirected, so it must not wait for a key."""
@@ -987,14 +997,14 @@ class PatchPs1Tests(unittest.TestCase):
         )
         result = subprocess.run(
             [
-                POWERSHELL,
+                shell,
                 "-NoProfile",
                 "-ExecutionPolicy",
                 "Bypass",
                 "-Command",
                 script,
             ],
-            env={**env, "GAMEUPDATE_DL_ATTEMPTS": "1"},
+            env=shell_env(shell, {**env, "GAMEUPDATE_DL_ATTEMPTS": "1"}),
             stdin=subprocess.DEVNULL,
             capture_output=True,
             encoding="utf-8",
