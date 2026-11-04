@@ -267,7 +267,7 @@ def _ledger_records(root, signature, consumed, filename=None):
 
 def _read_ledger(root, consumed, filename):
     from dazedtl.translation import derived
-    from dazedtl.translation.refusals import CLARIFICATION, RULES_VERSION, refused
+    from dazedtl.translation.refusals import RULES_VERSION, is_clarification, refused
 
     connection = ledger(root)
     if connection is None:
@@ -367,10 +367,7 @@ def _read_ledger(root, consumed, filename):
                     },
                 )
             messages = params.get("messages") or []
-            asks = bool(messages) and messages[-1] == {
-                "role": "user",
-                "content": CLARIFICATION,
-            }
+            asks = bool(messages) and is_clarification(messages[-1])
             signatures.append(
                 (
                     request_signature(entry, {**params, "messages": messages[:-1]})
