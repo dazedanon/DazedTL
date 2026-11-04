@@ -9,9 +9,10 @@ translates only the names a plugin draws, never all of them.
 A plugin draws the names of the variables its settings and its commands'
 arguments name when its code reads `$dataSystem.variables` and its header
 declares those settings and arguments `@type variable` (or `variable[]`).
-A name stays as it is wherever code could look it up: where it appears in a
-string of a loaded plugin's code or its settings, or in an event's script,
-plugin command (util/rpgmaker_qa_reach `scripts`) or comment.
+A name stays as it is wherever code could look it up: where it is a whole
+string of a loaded plugin's code or settings, an argument or word of an
+event's plugin command, or a quoted string of an event's script
+(util/rpgmaker_qa_reach `scripts`).
 
 Guided's database pass (modules/rpgmakermvmz), its line counts
 (translation/file_lines), Text QA's never-translated report
@@ -38,9 +39,6 @@ _HEADER = re.compile(r"/\*:[\w-]*\s(.*?)\*/", re.S)
 _TAG = re.compile(r"^[\s*]*@(\w+)[ \t]*(\S*)", re.M)
 _TYPES = frozenset({"variable", "variable[]"})
 _EVENT_FILE = re.compile(r"(?:Map\d+|CommonEvents|Troops)\.json")
-# Event commands whose text a plugin may read a variable's name from: a
-# comment and its lines, and an MV plugin command.
-_NAMING = frozenset({108, 408, 356})
 
 
 class Drawing(NamedTuple):
@@ -124,16 +122,14 @@ def drawn(
     if not names or not drawings:
         return frozenset()
     ids: set[int] = set()
-    # What code could look a name up by: plugins' string literals, outside
-    # their help, and settings.
-    looked: list[str] = [
-        literal for text in sources.values() for literal in lex(text)[1]
-    ]
+    # The values code could look a name up by, whole: plugins' string
+    # literals, outside their help, and settings.
+    values = {literal for text in sources.values() for literal in lex(text)[1]}
     for entry in loaded:
         parameters = entry.get("parameters")
         if not isinstance(parameters, dict):
             continue
-        looked += [value for value in parameters.values() if isinstance(value, str)]
+        values.update(_leaves(parameters))
         found = drawings.get(entry["name"])
         if found is not None:
             for setting in found.settings:
@@ -167,15 +163,43 @@ def drawn(
         for id in ids
         for form in (names[id], json.dumps(names[id])[1:-1])
     }
+    # Event scripts, whose strings hold a name between quote marks.
+    code: list[str] = []
     for _name, document in _documents(events, lambda text: any(name in text for name in wanted)):
         for command in event_commands(document):
-            looked += [value for value in scripts(command) if isinstance(value, str)]
-            if blocks.code(command) in _NAMING:
-                looked += [
-                    value for value in command["parameters"] if isinstance(value, str)
-                ]
-    text = "\n".join(looked)
-    return frozenset(id for id in ids if names[id] not in text)
+            texts = [value for value in scripts(command) if isinstance(value, str)]
+            first = command["parameters"][:1]
+            if blocks.code(command) == 357:
+                values.update(texts)
+            elif blocks.code(command) == 356 and first and isinstance(first[0], str):
+                values.update(first[0].split())
+            else:
+                code += texts
+    script = "\n".join(code)
+    return frozenset(
+        id
+        for id in ids
+        if names[id] not in values
+        and not any(f"{mark}{names[id]}{mark}" in script for mark in "'\"`")
+    )
+
+
+def _leaves(value: Any) -> Iterator[str]:
+    """Every string in a plugin's settings, those its settings hold as JSON
+    text included."""
+    if isinstance(value, str):
+        yield value.strip()
+        if value.strip()[:1] in ("[", "{"):
+            try:
+                yield from _leaves(json.loads(value))
+            except ValueError:
+                pass
+    elif isinstance(value, list):
+        for item in value:
+            yield from _leaves(item)
+    elif isinstance(value, dict):
+        for item in value.values():
+            yield from _leaves(item)
 
 
 def _documents(files, holds: Callable[[str], bool]) -> Iterator[tuple[str, Any]]:
@@ -217,8 +241,11 @@ class _Plugins(NamedTuple):
     draws: bool
 
 
-# Each game's plugins, by data folder and its plugin list's and plugin files'
-# stat signatures, and the drawn ids, by those and its event files'.
+# Each game's plugin list, by data folder and the list's stat signature; its
+# plugins, by those and its plugin files' signatures; and the drawn ids, by
+# those and its event files'. Each is only read and written whole, so threads
+# may share them.
+_LISTS: dict[tuple, PluginList] = {}
 _PLUGINS: dict[tuple, _Plugins] = {}
 _DRAWN: dict[tuple, frozenset[int]] = {}
 
@@ -227,8 +254,12 @@ def _plugins(data: Path) -> tuple[tuple, _Plugins]:
     script = beside_data(data)
     js = script.parent / "plugins"
     listed = (str(data), _signature([script]))
-    known = next((found for key, found in _PLUGINS.items() if key[:2] == listed), None)
-    plugins = known.plugins if known else data_plugins(data)
+    plugins = _LISTS.get(listed)
+    if plugins is None:
+        plugins = data_plugins(data)
+        if len(_LISTS) >= 16:
+            _LISTS.clear()
+        _LISTS[listed] = plugins
     names = [entry["name"] for entry in plugins.loaded() if isinstance(entry.get("name"), str)]
     key = (*listed, _signature(js / f"{name}.js" for name in names))
     found = _PLUGINS.get(key)

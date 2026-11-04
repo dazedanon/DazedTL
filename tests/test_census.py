@@ -503,6 +503,11 @@ class CensusTests(unittest.TestCase):
                         command(357, window, "show", "", {"variableId": "1"}),
                         command(357, window, "show", "", {"variableId": "5"}),
                         command(357, "Store", "show", "", {"variableId": "2"}),
+                        # Text that only mentions a drawn name looks nothing up.
+                        command(108, "ここでドローン+1"),
+                        command(
+                            357, "Popup", "say", "", {"text": "残り弾数が減った！"}
+                        ),
                         # A script looks variable 5 up by its name.
                         command(355, "$dataSystem.variables.indexOf('検索用');"),
                     ]
