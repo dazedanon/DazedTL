@@ -53,6 +53,7 @@ from .operations import (
     checkout_issue,
     lifecycle,
     names_census,
+    release_plan,
     require_baseline,
     require_run_baseline,
     runtime_manifest,
@@ -1182,52 +1183,93 @@ Additional project instructions:
                 "Package needs the whole census extracted: run organize --complete with your units after the latest census.",
                 "Your assistant finishes extracting the game's text first.",
             )
-        if translated < inventory["units"]:
+        if translated is not None and translated < inventory["units"]:
             raise PackageRefusal(
                 f"The text export counts {translated:,} lines, fewer than the {inventory['units']:,} organize --complete accepted. Export every unit before packaging.",
                 "Your assistant saves every translated line first.",
             )
 
-    def package_ready(self, project_id):
-        """Refuses a patch of a translation that isn't finished and checked:
-        QA complete with current evidence, the audited scope translated and
-        the whole census extracted. Each refusal also says why in the user's
-        terms, which Release shows."""
-        _record, project = self.project(project_id)
-        selected = project.read()["options"]
+    def patch_manifest(self, project_id):
+        """The runtime manifest a patch is built from, which Git setup
+        registers; no patch exists without it."""
         manifest = lifecycle(self.workspace, project_id).get("runtime_manifest")
         if not manifest:
             raise PackageRefusal(
                 "Register the patch's runtime manifest with Git setup first.",
                 "Your assistant sets up the game's version tracking first.",
             )
-        self.sync_images(project_id)
+        return manifest
+
+    def unfinished(self, project_id):
+        """The checks a finished translation's patch passes that this one
+        doesn't, each a PackageRefusal, in the order the assistant meets them:
+        QA complete with current evidence, the audited scope translated, the
+        whole census extracted, the game's tools as Options choose, and QA's
+        record of the runtime files. Refuses only a patch that can't exist."""
+        _record, project = self.project(project_id)
+        selected = project.read()["options"]
+        manifest = self.patch_manifest(project_id)
+        unmet = []
+        try:
+            self.sync_images(project_id)
+        except ValueError:
+            # The last report no longer passes its checks, as after a scope
+            # change: its snapshot stands, and the evidence checked next says
+            # whether its image counts are still current.
+            pass
         progress = self.engine.progress(project.root, selected, verify=True)
         if progress.get("warnings") or progress["phases"].get("qa") != "complete":
-            raise PackageRefusal(
-                "Complete and record current QA evidence before packaging the translation.",
-                "The patch waits for your assistant's QA.",
+            unmet.append(
+                PackageRefusal(
+                    "Complete and record current QA evidence before packaging the translation.",
+                    "The patch waits for your assistant's QA.",
+                )
             )
         images = selected["include_images"]
-        for metric in ("text", "images") if images else ("text",):
-            counts = progress["metrics"][metric]
-            if counts["total"] is None or counts["translated"] != counts["total"]:
-                raise PackageRefusal(
+        if any(
+            counts["total"] is None or counts["translated"] != counts["total"]
+            for counts in (
+                progress["metrics"][metric]
+                for metric in (("text", "images") if images else ("text",))
+            )
+        ):
+            unmet.append(
+                PackageRefusal(
                     "Finish the audited translation scope before packaging; unknown totals are not complete.",
                     "Your assistant finishes translating the game's text and images first."
                     if images
                     else "Your assistant finishes translating the game first.",
                 )
-        self.require_inventory(project_id, progress["metrics"]["text"]["total"])
+            )
+        try:
+            self.require_inventory(project_id, progress["metrics"]["text"]["total"])
+        except PackageRefusal as refusal:
+            unmet.append(refusal)
         if mismatch := self.engine.setup_mismatch(project.root, selected):
-            raise PackageRefusal(*mismatch)
+            unmet.append(PackageRefusal(*mismatch))
         try:
             delivery.require_patch(project.root, manifest)
         except ValueError as error:
             # Missing, older or stale QA evidence: QA is to record again.
-            raise PackageRefusal(
-                str(error), "The patch waits for your assistant's QA."
-            ) from error
+            unmet.append(
+                PackageRefusal(str(error), "The patch waits for your assistant's QA.")
+            )
+        return unmet
+
+    def package_ready(self, project_id):
+        """Refuses the assistant's patch of a translation that isn't finished
+        and checked (`unfinished`). Each refusal also says why in the user's
+        terms."""
+        if unmet := self.unfinished(project_id):
+            raise unmet[0]
+
+    def unfinished_reasons(self, project_id):
+        """Why the user's patch isn't of a finished translation, each once in
+        the user's terms, which Release's review lists: the user may build it
+        anyway, as Guided's patch waits for no QA."""
+        return list(
+            dict.fromkeys(refusal.reason for refusal in self.unfinished(project_id))
+        )
 
     def validate_current(self, project_id, plan, *, compiled=True, index=None):
         """Refuses a plan its project, sources or baseline no longer match.
@@ -1817,7 +1859,15 @@ If you won't translate a request, skip it and go on; it stays declined. Use the 
         value = self.image_units(project_id)
         if value is None:
             return None
-        write_json(project_path(project.root, IMAGE_UNITS, exists=False), value)
+        # Rewriting the same records would read as changed to Progress, which
+        # compares their timestamp.
+        path = project_path(project.root, IMAGE_UNITS, exists=False)
+        try:
+            unchanged = path.is_file() and read_json(path) == value
+        except ValueError:
+            unchanged = False
+        if not unchanged:
+            write_json(path, value)
         return IMAGE_UNITS
 
     def sync_images(self, project_id):
@@ -1844,10 +1894,11 @@ If you won't translate a request, skip it and go on; it stays declined. Use the 
         images = self.image_progress(project_id)
         if images and isinstance(report, dict):
             report = {**report, "images": images}
-        if (
-            isinstance(report, dict)
-            and report.get("phases", {}).get("qa") == "complete"
-        ):
+        # A refused report changes nothing: it is checked before QA's runtime
+        # evidence is recorded and its work checkpointed.
+        options = project.read()["options"]
+        self.engine.check_progress(project.root, options, report)
+        if report.get("phases", {}).get("qa") == "complete":
             state = lifecycle(self.workspace, project_id)
             manifest_path = state.get("runtime_manifest") or state.get(
                 "checkpoint", {}
@@ -1867,19 +1918,10 @@ If you won't translate a request, skip it and go on; it stays declined. Use the 
         # Each report ends a stretch of the assistant's work, saved as a
         # checkpoint of the phase it was in.
         progress_report.checkpoint(
-            self.engine,
-            self.workspace,
-            project_id,
-            project.root,
-            report if isinstance(report, dict) else None,
+            self.engine, self.workspace, project_id, project.root, report
         )
         return progress_report.publish(
-            self.workspace,
-            project_id,
-            self.engine,
-            project.root,
-            project.read()["options"],
-            report,
+            self.workspace, project_id, self.engine, project.root, options, report
         )
 
     def operation(self, project_id, action, arguments):
@@ -2022,7 +2064,18 @@ If you won't translate a request, skip it and go on; it stays declined. Use the 
             if folder is not None:
                 extra = {**(extra or {}), "publications": str(folder)}
         if action == "package":
-            self.package_ready(project_id)
+            if arguments.get("plan"):
+                # The user's build from Release, whose review listed the
+                # checks it builds without.
+                reviewed = release_plan(self.workspace, project_id, arguments, "patch")
+                if not set(self.unfinished_reasons(project_id)) <= set(
+                    reviewed.get("unfinished", [])
+                ):
+                    raise ValueError(
+                        "Your assistant's checks changed since the review. Review the patch again."
+                    )
+            else:
+                self.package_ready(project_id)
             # The patch carries GameUpdate's current config.
             self.game_update.sync(project_id)
         self.settings.prepare_engine()

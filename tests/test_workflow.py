@@ -27,6 +27,7 @@ from dazedtl.translation import (
     progress_report,
     publication,
 )
+from dazedtl.translation.assistant_release import PackageRefusal
 from dazedtl.translation.compilation import compile_requests
 from dazedtl.translation.files import digest, evidence, read_json
 from dazedtl.translation.game_update import ABSENT
@@ -37,6 +38,7 @@ from dazedtl.translation.operations import (
     execute,
     lifecycle,
     lifecycle_path,
+    release_plan_path,
     require_baseline,
     take_census,
 )
@@ -159,8 +161,18 @@ class Engine:
     def pending_checkpoint(self, _source, change, _named=()):
         self.checkpoints.append(f"{change.stage}: {change.summary}")
 
-    def progress(self, _source, _options, report=None, **_kwargs):
+    def check_progress(self, _source, _options, report):
+        # The rule the assistant's report broke in the user's game.
+        phase = report.get("phase")
+        if phase and report.get("phases", {}).get(phase, "active") not in {
+            "active",
+            "blocked",
+        }:
+            raise ValueError("The current phase must be active or blocked.")
+
+    def progress(self, source, options, report=None, **_kwargs):
         if report is not None:
+            self.check_progress(source, options, report)
             self.reports.append(deepcopy(report))
         return self.reports[-1] if self.reports else {}
 
@@ -290,6 +302,16 @@ class WorkflowTests(unittest.TestCase):
             },
         )
 
+    def kept_report(self):
+        """The last report the app published."""
+        return read_json(progress_report.kept(self.profile, self.identity))["report"]
+
+    def keep_report(self, report):
+        write_json(
+            progress_report.kept(self.profile, self.identity),
+            {"version": progress_report.VERSION, "report": report},
+        )
+
     def prepared(self, operation):
         """Runs the operation organize or compile started, as its worker
         would, and returns the run it saved with organize's counts; a refusal
@@ -328,10 +350,14 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(accepted["status"], "complete")
         # The finished run, and each later report, save the assistant's work
         # as a checkpoint of the phase it was done in.
-        report = read_json(self.game / (WORK + "/progress-report.json"))
+        report = self.kept_report()
         write_json(
             self.game / (WORK + "/work/injection.json"),
-            {**report, "phase": "injection"},
+            {
+                **report,
+                "phase": "injection",
+                "phases": {**report["phases"], "injection": "active"},
+            },
         )
         self.service.progress(self.identity, WORK + "/work/injection.json")
         self.assertEqual(
@@ -340,7 +366,7 @@ class WorkflowTests(unittest.TestCase):
         )
         self.service.progress(self.identity, WORK + "/work/injection.json")
         self.assertEqual(self.engine.checkpoints[-1], "Assistant-led: Injection")
-        report = read_json(self.game / (WORK + "/progress-report.json"))
+        report = self.kept_report()
         report.update(phase=None)
         report["phases"].update(
             translation="complete",
@@ -348,7 +374,7 @@ class WorkflowTests(unittest.TestCase):
             qa="complete",
             patch="complete",
         )
-        write_json(self.game / (WORK + "/progress-report.json"), report)
+        self.keep_report(report)
         self.service.review(
             self.identity, run["id"], "scene", preview["request"]["fingerprint"]
         )
@@ -749,7 +775,7 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(written["missing"], {"pending": 1})
         results.accept(plan["requests"][0], {"a/2": "No."}, {"run_id": second["id"]})
         self.service.refresh_progress(self.identity, plan)
-        report = read_json(self.game / (WORK + "/progress-report.json"))
+        report = self.kept_report()
         report.update(phase=None)
         report["phases"].update(
             translation="complete",
@@ -757,7 +783,7 @@ class WorkflowTests(unittest.TestCase):
             qa="complete",
             patch="complete",
         )
-        write_json(self.game / (WORK + "/progress-report.json"), report)
+        self.keep_report(report)
         # With every line translated, the next organize has nothing to send,
         # and no translation changed, so finished phases stay finished.
         third, plan = organized()
@@ -1793,6 +1819,96 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(read_json(self.game / IMAGE_UNITS), records)
         self.assertEqual(self.engine.reports[-1]["phase"], "translation")
 
+    def test_a_refused_report_changes_nothing_and_never_blocks_the_patch(self):
+        # The assistant sent the app's copy of its last report, kept in the
+        # game, marking every phase done while still naming the patch. The
+        # refusal still saved QA's evidence anew, so Progress warned, and left
+        # the copy refused, so every republish, as Release's, refused it too.
+        selected = self.project.read()
+        self.service.save(
+            self.identity,
+            selected["revision"],
+            {**selected["options"], "include_images": True},
+        )
+        self.service.image_units = lambda _identity: {"complete": True, "units": []}
+        manifest = WORK + "/work/patch-files.json"
+        write_json(self.game / manifest, ["source.json"])
+        write_json(self.game / "source.json", {"line": "Yes."})
+        write_json(
+            lifecycle_path(self.profile, self.identity),
+            {**lifecycle(self.profile, self.identity), "runtime_manifest": manifest},
+        )
+        self.engine.runtime_paths = lambda _manifest: ["source.json"]
+        path = progress_report.LEGACY
+        done = dict.fromkeys(
+            ("preparation", "extraction", "translation", "images", "injection", "qa"),
+            "complete",
+        )
+        active = {"phase": "patch", "phases": {**done, "patch": "active"}}
+        write_json(self.game / path, active)
+        self.service.progress(self.identity, path)
+        published = (len(self.engine.reports), list(self.engine.checkpoints))
+        evidence = (self.game / delivery.RELATIVE).stat().st_mtime_ns
+        write_json(
+            self.game / path,
+            {"phase": "patch", "phases": {**done, "patch": "complete"}},
+        )
+        with self.assertRaisesRegex(ValueError, "must be active or blocked"):
+            self.service.progress(self.identity, path)
+        self.assertEqual((len(self.engine.reports), self.engine.checkpoints), published)
+        self.assertEqual((self.game / delivery.RELATIVE).stat().st_mtime_ns, evidence)
+        self.service.sync_images(self.identity)
+        self.assertEqual(self.engine.reports[-1]["phases"]["patch"], "active")
+        # An earlier app's copy in the game is read once, kept if it passes.
+        kept = progress_report.kept(self.profile, self.identity)
+        kept.unlink()
+        count = len(self.engine.reports)
+        self.service.sync_images(self.identity)
+        write_json(self.game / path, active)
+        self.service.sync_images(self.identity)
+        self.assertEqual(len(self.engine.reports), count)
+        kept.unlink()
+        self.service.sync_images(self.identity)
+        self.assertEqual(self.engine.reports[-1]["phases"]["patch"], "active")
+
+    def test_the_users_patch_builds_without_the_checks_its_review_listed(self):
+        # The user's patch waited for the assistant's QA, however long it
+        # took; it builds with what the review listed unfinished, while the
+        # assistant's own package keeps every check.
+        qa = PackageRefusal(
+            "Complete and record current QA evidence before packaging the translation.",
+            "The patch waits for your assistant's QA.",
+        )
+
+        def reviewed(unfinished):
+            path = release_plan_path(self.profile, self.identity, "patch")
+            payload = {
+                "version": 1,
+                "project_id": self.identity,
+                "kind": "patch",
+                "unfinished": unfinished,
+            }
+            write_json(path, payload)
+            return {
+                "plan": path.relative_to(self.profile).as_posix(),
+                "sha256": digest(payload),
+            }
+
+        with (
+            patch.object(self.service, "unfinished", return_value=[qa]),
+            patch.object(
+                self.service.game_update, "sync", side_effect=RuntimeError("built")
+            ),
+        ):
+            with self.assertRaisesRegex(ValueError, "^Complete and record"):
+                self.service.operation(self.identity, "package", {})
+            with self.assertRaisesRegex(ValueError, "changed since the review"):
+                self.service.user_operation(self.identity, "package", reviewed([]))
+            with self.assertRaisesRegex(RuntimeError, "built"):
+                self.service.user_operation(
+                    self.identity, "package", reviewed([qa.reason])
+                )
+
     def test_an_api_run_answers_its_approval_and_keeps_later_questions(self):
         selected = self.project.read()
         self.service.save(
@@ -2063,7 +2179,11 @@ class WorkflowTests(unittest.TestCase):
         save(self.game, Change("Injection", "Assistant-led", "assistant_phase"))
         injected = _git(self.game, "rev-parse", "HEAD").stdout.strip()
         (self.game / "notes.txt").write_text("QA\n", encoding="utf-8")
-        save(self.game, progress_report.phase(self.game), ["notes.txt"])
+        save(
+            self.game,
+            progress_report.phase(self.profile, self.identity, self.game),
+            ["notes.txt"],
+        )
         write_json(
             lifecycle_path(self.profile, self.identity),
             {**lifecycle(self.profile, self.identity), "delivery": {"path": "p.zip"}},

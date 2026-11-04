@@ -230,7 +230,7 @@ def execute(engine, workspace, job, plan, stopped, progress=lambda _message: Non
     # An assistant writes the game's text one file at a time; those writes
     # wait for their phase's checkpoint rather than each being one.
     phase = (
-        progress_report.phase(plan["source"])
+        progress_report.phase(workspace, job["project_id"], plan["source"])
         if plan["action"] in {"write_rpgmaker", "rebase_rpgmaker"}
         else None
     )
@@ -455,13 +455,16 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
             raise ValueError(
                 "Register the patch's runtime manifest with Git setup first."
             )
-        require_patch(source, manifest_path)
         # Release saves the patch where the user chose, as its review read it.
         planned = (
             release_plan(workspace, job["project_id"], arguments, "patch")
             if arguments.get("plan")
             else None
         )
+        if planned is None:
+            # The user's build may go without QA's record, which its review
+            # listed and the service checked against it.
+            require_patch(source, manifest_path)
         if planned and (
             git_identity(engine.git_status(source, options)) != planned["git"]
         ):
@@ -727,11 +730,14 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
             progress=progress,
             publications=plan.get("publications"),
         )
-        # The engine the assistant identified and when it last called belong
-        # to the attempt set aside.
+        # The engine the assistant identified, when it last called and its
+        # last report belong to the attempt set aside.
         records = Path(workspace) / "translation/projects" / job["project_id"]
         for name in ("engine.json", "assistant.json"):
             system.unlink(records / name, missing_ok=True)
+        system.unlink(
+            progress_report.kept(workspace, job["project_id"]), missing_ok=True
+        )
     elif action in {"checkpoint_back", "checkpoint_undo"}:
         from . import checkpoint_records
 

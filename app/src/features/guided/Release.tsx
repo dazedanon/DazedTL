@@ -14,6 +14,7 @@ import { Section } from "../../ui/Section";
 import { VirtualList } from "../../ui/VirtualList";
 import { OptionCards } from "../../ui/OptionCards";
 import { HelpPopover } from "../../ui/HelpPopover";
+import { Notice } from "../../ui/Notice";
 
 /** The release options both workflows' forms hold. */
 type Options = Pick<
@@ -323,12 +324,15 @@ export function ReleaseReview({
   inspectOnly,
   busy,
   editAssets,
+  unfinished = [],
 }: {
   preview: ReleaseReviewValue;
   inspectOnly: boolean;
   busy: boolean;
   /** Opens the patch's runtime asset editor, where the workflow has one. */
   editAssets?: () => void;
+  /** Why the patch isn't of a finished translation, which it is built without. */
+  unfinished?: readonly string[];
 }) {
   const patch = preview.action === "release_patch";
   return (
@@ -339,6 +343,21 @@ export function ReleaseReview({
           {preview.game_version ? `, version ${preview.game_version}` : ""}.
           Extract over that game.
         </p>
+      )}
+      {!!unfinished.length && (
+        <Notice tone="warning">
+          <div className="release-unfinished">
+            <strong>Your assistant hasn&apos;t finished</strong>
+            <ul>
+              {unfinished.map((reason) => (
+                <li key={reason}>{reason}</li>
+              ))}
+            </ul>
+            <span>
+              A patch built now can ship untranslated or unchecked text.
+            </span>
+          </div>
+        </Notice>
       )}
       {preview.overwrite && (
         <div className="release-overwrite">

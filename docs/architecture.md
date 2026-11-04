@@ -136,10 +136,11 @@ The engine probe ([engine_runtime](../tests/fixtures/engine_runtime.py)) checks 
 - New Line widths queue a [fit_text](../backend/dazedtl/translation/text_fit.py) publication that rewraps only lines that no longer fit, so hand layout that fits stays.
 - Release freezes the runtime scope and commits through a one-use preview, and a clean game ZIP holds only that scope and files a saved snapshot holds, so a translator's notes stay out.
 - Both methods release by the same [release](../backend/dazedtl/translation/release.py) rules: `release.current` reads a ZIP Outdated once a later checkpoint changes a file it would ship, and `release.public_version` is the one rule for GameUpdate's config in a ZIP.
-  Assistant-led's patch checks refuse with a `PackageRefusal`, whose message is the assistant's next step and whose reason Release shows.
+  Assistant-led's patch checks are each a `PackageRefusal`, whose message is the assistant's next step and whose reason is the user's (`unfinished` in [service](../backend/dazedtl/translation/service.py)).
+  The assistant's `operation package` refuses with the first, while the user's patch needs only Git setup with its runtime manifest and GameUpdate's repository: its review lists the unmet checks and builds anyway, as Guided's patch waits for no QA, and the build refuses a check its review didn't list.
 - A VX Ace game ZIP's name must be ASCII: its Game.exe fails as "RGSS301.dll File corrupted" from a Japanese-named folder on English Windows.
 - Writing the GameUpdate config never marks saved work Outdated, and outside RPG Maker, GameUpdate installs only for engines whose patch layouts were checked (`GAMEUPDATE_ENGINES` in [translation](../backend/dazedtl/compatibility/translation.py)).
-- Assistant-led's preparation installs or takes out GameUpdate, Forge and TL Inspector as the project's options choose, and `setup_mismatch` in [translation](../backend/dazedtl/compatibility/translation.py) is the one rule that holds a patch while the game's GameUpdate or Forge differs from them.
+- Assistant-led's preparation installs or takes out GameUpdate, Forge and TL Inspector as the project's options choose, and `setup_mismatch` in [translation](../backend/dazedtl/compatibility/translation.py) is the one rule that holds the assistant's patch, and warns in the user's, while the game's GameUpdate or Forge differs from them.
 
 ## Plugins and images
 
@@ -393,6 +394,7 @@ The protocol version is a hash of the contracts, so any change rejects a stale r
 - The starting prompt drives `scripts/project.py` against an authenticated loopback endpoint in the running backend; its connection descriptor is profile-local, permission-restricted and removed on shutdown, and its token never enters a handoff.
 - Agent operations use the same locked dispatch and ownership checks as Electron; the helper has no settings or general shell endpoint, and no route to what only the user starts, such as going back, undoing, saving a copy or Start over.
 - The app controls its workers; an assistant's activity is read from saved artifacts and never shown as an app-owned process.
+- A progress report is checked before the app records QA's evidence or checkpoints, so a refused one changes nothing, and the app keeps the last report it published in the project's records, out of the game where the assistant writes, so later refreshes never build on one the assistant sent or edited ([progress_report](../backend/dazedtl/translation/progress_report.py)).
 - On Windows every copied task opens with a [note](../backend/dazedtl/translation/helper_command.py) naming DazedTL's own Python with `-X utf8` and its bundled Git, since a fresh Windows has neither and Python's pipes can't carry Japanese in the ANSI code page; its commands are PowerShell, and the note says how to run them from Git Bash or WSL ([shell_note](../backend/dazedtl/system.py)).
 
 Guided and Assistant-led differ in who extracts, drives and reviews the work, never in the quality of the text.

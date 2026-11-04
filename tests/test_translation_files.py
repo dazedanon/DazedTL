@@ -7,7 +7,7 @@ from pathlib import Path
 
 from dazedtl.api.contracts.validation import check_response
 from dazedtl.storage import write_json
-from dazedtl.translation import translation_file, unit_results
+from dazedtl.translation import progress_report, translation_file, unit_results
 from dazedtl.translation.exchange import Exchange
 from dazedtl.translation.files import read_json
 from dazedtl.translation.manual import Manual
@@ -125,7 +125,7 @@ class TranslationFileTests(unittest.TestCase):
             ("manual", "https://other.invalid/v1"),
         )
         self.accept(run, {"b/1": "No."})
-        self.assertFalse((self.game / WORK / "progress-report.json").exists())
+        self.assertFalse(progress_report.kept(self.profile, self.identity).exists())
         exchange = Exchange(self.service, None)
         exported = exchange.export(self.identity, str(self.root / "out.json"))
         check_response("project_translation_export", exported)

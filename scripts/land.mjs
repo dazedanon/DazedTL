@@ -4,9 +4,9 @@
 // session that cuts the next release answers for a run still red. Runs on
 // Linux and macOS. A wait on the user's DazedTL or a slow landing lock is
 // told to the user on the desktop too, since agents run this in the
-// background. Each landing carries a record of its code review, kept in the
-// shared Git directory to measure what reviews catch. See "Landing" in
-// docs/development.md.
+// background. Each landing carries a record of the code review a reviewer
+// other than its author ran, kept in the shared Git directory to measure what
+// reviews catch. See "Landing" in docs/development.md.
 //
 //   node scripts/land.mjs --review <file.json>
 //
@@ -34,17 +34,22 @@ const appPoll = 30_000;
 const pushRetry = 60_000;
 const pushTimeout = 5 * 60_000;
 const icon = path.join(import.meta.dirname, "..", "resources", "icon.png");
-const reviewLevels = ["low", "medium", "high", "xhigh", "max", "ultra"];
+/** The code-review levels a landing's review may run at: high and up. */
+const reviewLevels = ["high", "xhigh", "max", "ultra"];
 const reviewShape =
-  '{"level": "medium", "findings": [{"summary": "...", "outcome": "fixed"}, {"summary": "...", "outcome": "dismissed", "reason": "..."}]}, or {"skipped": "why"}';
+  '{"level": "high", "reviewer": "independent", "head": "<hash of the last commit the reviewer checked>", "findings": [{"summary": "...", "outcome": "fixed"}, {"summary": "...", "outcome": "dismissed", "reason": "..."}]}';
 /** Where landed reviews are recorded, one JSON line each, in the shared Git directory. */
 const reviewLog = "dazedtl-reviews.jsonl";
+/** The subject of the commit holding what the formatter changed. */
+const formatSubject = "style: format";
 
 /**
- * Reads a landing's review record: the code-review level and what became of
- * each finding it reported, or why no review ran. Throws with what is wrong.
+ * Reads a landing's review record: the code-review level a reviewer that
+ * never saw the work ran, the last commit it checked and what became of each
+ * finding it reported. Throws with what is wrong, so no branch lands on its
+ * author's review alone.
  * @param {string} text
- * @returns {{ skipped: string } | { level: string, findings: { summary: string, outcome: "fixed" | "dismissed", reason?: string }[] }}
+ * @returns {{ level: string, reviewer: "independent", head: string, findings: { summary: string, outcome: "fixed" | "dismissed", reason?: string }[] }}
  */
 export function readReview(text) {
   let record;
@@ -55,10 +60,18 @@ export function readReview(text) {
   }
   const filled = (/** @type {unknown} */ value) =>
     typeof value === "string" && value.trim() !== "";
-  if (record && filled(record.skipped)) return { skipped: record.skipped };
-  if (!record || !reviewLevels.includes(record.level))
+  if (record?.reviewer !== "independent")
     throw new Error(
-      `The review record needs a level (${reviewLevels.join(", ")}) or a skipped reason.`,
+      'The review record needs "reviewer": "independent": a reviewer that never saw the work reviews every landing, not its author (Landing in docs/development.md).',
+    );
+  if (!reviewLevels.includes(record.level))
+    throw new Error(
+      `The review record needs a level of ${reviewLevels.join(", ")}.`,
+    );
+  // A name such as HEAD would follow the branch past what was reviewed.
+  if (typeof record.head !== "string" || !/^[0-9a-f]{7,40}$/i.test(record.head))
+    throw new Error(
+      "The review record needs the hash of the head commit its reviewer last checked.",
     );
   if (!Array.isArray(record.findings))
     throw new Error(
@@ -81,7 +94,54 @@ export function readReview(text) {
       };
     },
   );
-  return { level: record.level, findings };
+  return {
+    level: record.level,
+    reviewer: "independent",
+    head: record.head,
+    findings,
+  };
+}
+
+/**
+ * Resolves the commit a landing's reviewer last checked to its full hash.
+ * Throws when it is not on the branch at `git`, or when the branch has
+ * commits of its own after it: apart from merges of dev and the formatter's
+ * commits, a change made after the review lands only once it is reviewed.
+ * @param {ReturnType<typeof gitIn>} git
+ * @param {string} head
+ */
+export function reviewedHead(git, head) {
+  const commit = git([
+    "rev-parse",
+    "--verify",
+    "--quiet",
+    `${head}^{commit}`,
+  ]).stdout.trim();
+  if (
+    !commit ||
+    git(["merge-base", "--is-ancestor", commit, "HEAD"]).status !== 0
+  )
+    throw new Error(
+      `The review record's head ${head} is not a commit on this branch.`,
+    );
+  const onDev = (/** @type {string} */ parent) =>
+    git(["merge-base", "--is-ancestor", parent, "dev"]).status === 0;
+  const after = lines(
+    git(["log", "--first-parent", "--format=%P\t%h %s", `${commit}..HEAD`])
+      .stdout,
+  ).flatMap((line) => {
+    const [parents, title] = line.split("\t", 2);
+    const merged = parents.split(" ").slice(1);
+    const reviewed = merged.length
+      ? merged.every(onDev)
+      : title.slice(title.indexOf(" ") + 1) === formatSubject;
+    return reviewed ? [] : [title];
+  });
+  if (after.length)
+    throw new Error(
+      `These commits came after the review record's head; have the reviewer check them and record the new head:\n${after.join("\n")}`,
+    );
+  return commit;
 }
 
 /** Whether the user's own DazedTL runs from the main checkout. */
@@ -246,7 +306,7 @@ export async function land(cwd, deps, reviewFile) {
   }
   if (!reviewFile) {
     log(
-      `Land with --review <file.json> holding the branch's code review: ${reviewShape}.`,
+      `Land with --review <file.json> holding the branch's independent code review: ${reviewShape}.`,
     );
     return 1;
   }
@@ -271,6 +331,12 @@ export async function land(cwd, deps, reviewFile) {
   const dirty = out("status", "--porcelain");
   if (dirty) {
     log(`Commit or remove these changes first:\n${dirty}`);
+    return 1;
+  }
+  try {
+    review = { ...review, head: reviewedHead(git, review.head) };
+  } catch (error) {
+    log(reason(error));
     return 1;
   }
   const common = path.resolve(top, out("rev-parse", "--git-common-dir"));
@@ -336,13 +402,13 @@ export async function formatBranch(git, top, run, log) {
     "commit",
     "--quiet",
     "-m",
-    "style: format",
+    formatSubject,
     "-m",
     `- Format ${changed.join(", ")} as format.mjs does`,
   ]);
   if (commit.status !== 0)
     return { code: 1, report: [tail(commit.stdout + commit.stderr)] };
-  log(`Formatted ${changed.join(", ")}; committed as "style: format".`);
+  log(`Formatted ${changed.join(", ")}; committed as "${formatSubject}".`);
   return null;
 }
 

@@ -29,14 +29,13 @@ import { ReleaseContent, ReleaseReview } from "../guided/Release";
 
 const builds = { game: "release-build:game", patch: "release-build:patch" };
 
-/** Why the patch can't be built yet, as far as the state tells, or "". The
- * patch's own checks say the rest when the build is reviewed. */
+/** Why the patch can't be built yet, as far as the state tells, or "". A
+ * patch needs only the game's version tracking; the review lists the checks
+ * of a finished translation it is built without. */
 export const patchWaiting = (state: TranslationState) =>
   !state.git?.configured
     ? "Your assistant sets up the game's version tracking first."
-    : state.progress?.phases.qa !== "complete"
-      ? "The patch waits for your assistant's QA."
-      : "";
+    : "";
 
 /** Opens the folder a saved release ZIP is in. */
 export function OpenReleaseFolder({
@@ -228,6 +227,11 @@ export function ReleaseTab({
           }
           disabled={disabled || !!reason}
           disabledReason={reason}
+          note={
+            kind === "patch" && state.progress?.phases.qa !== "complete"
+              ? "Your assistant hasn't finished QA. The review lists what's left."
+              : ""
+          }
           feedbackKey={builds[kind]}
           pending={action.busy && action.key === builds[kind]}
           pendingText="Reading archive contents…"
@@ -267,6 +271,7 @@ export function ReleaseTab({
               preview={preview}
               inspectOnly={review.inspect}
               busy={action.busy}
+              unfinished={preview.unfinished}
             />
           </DialogBody>
           {!review.inspect && (
@@ -287,7 +292,9 @@ export function ReleaseTab({
                   void action.run(() => startBuild(preview), "", builds[kind])
                 }
               >
-                {`${preview.overwrite ? "Replace & build" : "Build"} ${kind === "patch" ? "patch" : "game"} ZIP`}
+                {preview.unfinished.length
+                  ? `${preview.overwrite ? "Replace & build" : "Build"} anyway`
+                  : `${preview.overwrite ? "Replace & build" : "Build"} ${kind === "patch" ? "patch" : "game"} ZIP`}
               </Button>
             </ActionBar>
           )}

@@ -39,6 +39,7 @@ report template in the pipeline if needed, updating phase states as work advance
 - `phase`: `preparation`, `extraction`, `translation`, `images`, `injection`, `qa`,
   `patch`, or null when no phase is active. This is the last reported activity, not a claim
   that a process is currently running.
+  The phase it names must be active or blocked, so once every phase is done, leave `phase` out.
 - `phases`: those same keys with `pending`, `active`, `complete`, `blocked`, or
   `out_of_scope`. Several phases can be active when work overlaps; `phase` identifies the current focus and defaults to active.
   Set later phases out of scope only for an explicit preparation-only request. Mark QA/playtesting and
