@@ -247,8 +247,11 @@ export function untrailedFixes(git, base, then = "") {
           "--quiet",
           `${hash}^{commit}`,
         ]).stdout.trim();
-        if (
-          !named ||
+        if (!named)
+          lacks.push(
+            `Introduced-by ${hash} names no commit Git can find, or several; give more of the hash`,
+          );
+        else if (
           named === commit.commit ||
           git(["merge-base", "--is-ancestor", named, commit.commit]).status !==
             0

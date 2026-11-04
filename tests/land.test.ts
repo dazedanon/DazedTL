@@ -511,7 +511,7 @@ test("a landing refuses a fix of its own without the trailers saying where its b
   reword("Introduced-by: deadbeef1", "Found-by: user", "Found-by: ci");
   assert.match(
     untrailedFixes(git, "dev") ?? "",
-    /2 Found-by trailers, not the one that found it; Introduced-by deadbeef1 names no commit before it/,
+    /2 Found-by trailers, not the one that found it; Introduced-by deadbeef1 names no commit Git can find/,
   );
 });
 
