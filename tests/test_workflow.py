@@ -2226,6 +2226,51 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(kept["path"], "p.zip")
         self.assertIs(current(kept, self.game), False)
 
+    def test_phase_checkpoints_leave_the_assistant_notes_out_of_their_undo(self):
+        # Every phase's checkpoint took the assistant's notes edits with its
+        # files, so an older phase's undo was refused, "it also changed
+        # AGENTS.md", and an undo put back older notes.
+        from dazedtl.compatibility import checkpoint_history
+        from dazedtl.compatibility.checkpoint_commits import Change, _git, save
+        from util.len_git import setup_git
+        from util.len_translation import LenProject
+
+        write_json(self.game / "names.json", {"name": "リリ"})
+        setup_git(LenProject(self.game), version="1.0", current_is_untranslated=True)
+        agents = self.game / "AGENTS.md"
+        agents.write_text("Names are in names.json.\n", encoding="utf-8")
+        write_json(self.game / "names.json", {"name": "Lili"})
+        save(self.game, Change("Extraction", "Assistant-led", "assistant_phase"))
+        older = _git(self.game, "rev-parse", "HEAD").stdout.strip()
+        agents.write_text("Repack Data.wolf after injection.\n", encoding="utf-8")
+        write_json(self.game / "source.json", {"line": "Yes."})
+        save(self.game, Change("Injection", "Assistant-led", "assistant_phase"))
+        self.assertIsNone(checkpoint_history.blockers(self.game, [older])[older])
+        checkpoint_history.undo(self.game, older)
+        self.assertEqual(read_json(self.game / "names.json"), {"name": "リリ"})
+        self.assertEqual(read_json(self.game / "source.json"), {"line": "Yes."})
+        self.assertEqual(
+            agents.read_text(encoding="utf-8"), "Repack Data.wolf after injection.\n"
+        )
+        # The notes are their own checkpoint.
+        self.assertNotIn(
+            "AGENTS.md",
+            _git(self.game, "show", "--name-only", "--format=", older).stdout.split(),
+        )
+        # Phase checkpoints committed before then, which hold the notes with
+        # their files, undo apart too and leave the notes.
+        agents.write_text("Names are in names.json.\n", encoding="utf-8")
+        write_json(self.game / "names.json", {"name": "Lily"})
+        save(self.game, Change("Extraction", "Assistant-led"), ["AGENTS.md"])
+        older = _git(self.game, "rev-parse", "HEAD").stdout.strip()
+        agents.write_text("Repack Data.wolf.\n", encoding="utf-8")
+        write_json(self.game / "source.json", {"line": "No."})
+        save(self.game, Change("Injection", "Assistant-led"), ["AGENTS.md"])
+        self.assertIsNone(checkpoint_history.blockers(self.game, [older])[older])
+        checkpoint_history.undo(self.game, older)
+        self.assertEqual(read_json(self.game / "names.json"), {"name": "リリ"})
+        self.assertEqual(agents.read_text(encoding="utf-8"), "Repack Data.wolf.\n")
+
     def test_start_over_restores_the_original_and_sets_the_attempt_aside(self):
         # Starting over must put every original file back as one checkpoint,
         # keeping the attempt in the game's Git history and the record of its

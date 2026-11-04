@@ -13,6 +13,7 @@ DOCUMENTS = {"glossary": (".dazedtl/glossary.txt", "glossary.txt"),
 NOTES = "notes"
 # Their name in both methods' editors and the checkpoints that save them.
 NOTES_TITLE = "Assistant notes"
+NOTES_SAVE = f"Save {NOTES_TITLE}"
 
 def documents(root):
     root = Path(root)

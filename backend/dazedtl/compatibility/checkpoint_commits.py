@@ -727,17 +727,23 @@ def _save(root, change, named, claimed):
 
 
 def _saving(root, change, named, claimed):
-    """`_save`'s commit, and the commit HEAD is at once it is done."""
+    """`_save`'s commit, and the commit HEAD is at once it is done.
+
+    The assistant notes the write didn't name, as an assistant edits them
+    with its own tools, are a checkpoint of their own before it, so they
+    never move with the translation's checkpoints (checkpoint_history
+    `_moved`)."""
     from util.len_patch_scope import dazedtl_files, grow_scope, keep_out_of_downloads
-    from util.paths import GAME_NOTES_FILENAME
+    from util.paths import is_game_notes
 
     named = set(_relative(named))
     status = _status(root)
+    notes = set(filter(is_game_notes, status.paths))
     # The assistant notes joined the rules keeping DazedTL's files out of
     # players' downloads after many games took them, so the checkpoint that
     # records the notes records the rule too.
-    notes = GAME_NOTES_FILENAME in status.paths and keep_out_of_downloads(Path(root))
-    if notes:
+    rule = bool(notes) and keep_out_of_downloads(Path(root))
+    if rule:
         status = _status(root)
     # DazedTL's own files are never edits made outside it.
     own = (
@@ -762,9 +768,23 @@ def _saving(root, change, named, claimed):
             # settings an old rule order kept out.
             status = _status(root)
     pending = status.paths
-    if notes:
-        joined |= {".gitattributes"}
-    chosen = joined | (pending & named if claimed is None else pending - claimed)
+    notes_rule = {".gitattributes"} if rule else set()
+    chosen = (
+        joined
+        | notes_rule
+        | (pending & named if claimed is None else pending - claimed)
+    )
+    if apart := {path for path in chosen if is_game_notes(path)} - named:
+        from desktop.backend.guidance import NOTES_SAVE
+
+        notes_commit = _commit(
+            root, apart | notes_rule, Change(NOTES_SAVE, "Context"), status
+        )
+        if notes_commit is not None:
+            # The rest is built on HEAD's tree, never on an index that may
+            # not have taken the notes' commit.
+            status = status._replace(head=notes_commit, index=None)
+        chosen -= apart | notes_rule
     commit = _commit(root, chosen, change, status) if chosen else None
     return commit, commit or (status.head if status.head != "(initial)" else None)
 
