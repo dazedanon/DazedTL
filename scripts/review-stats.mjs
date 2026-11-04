@@ -9,7 +9,12 @@
 import fs from "node:fs";
 import path from "node:path";
 import { generated } from "./contracts.mjs";
-import { commitFormat, isFix, readCommits } from "./fix-trailers.mjs";
+import {
+  commitFormat,
+  isFix,
+  readCommits,
+  traced as isTraced,
+} from "./fix-trailers.mjs";
 import { gitIn, reviewLog } from "./land-lock.mjs";
 
 /**
@@ -334,12 +339,7 @@ function main() {
       .filter((commit) => isFix(commit.subject))
       .map((commit) => commit.commit),
   );
-  const traced = commits.filter(
-    (commit) =>
-      commit.hashes.length ||
-      commit.marks.length ||
-      commit.unread.some(({ key }) => key === "Introduced-by"),
-  );
+  const traced = commits.filter(isTraced);
   // One Git process resolves every name: its full hash, or why not.
   const names = traced.flatMap((commit) => commit.hashes);
   const resolving = git(

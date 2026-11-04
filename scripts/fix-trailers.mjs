@@ -81,6 +81,18 @@ export function readCommits(text) {
 }
 
 /**
+ * Whether a commit has an Introduced-by trailer, readable or not.
+ * @param {Pick<ReturnType<typeof readCommits>[number], "hashes" | "marks" | "unread">} commit
+ */
+export function traced({ hashes, marks, unread }) {
+  return (
+    hashes.length > 0 ||
+    marks.length > 0 ||
+    unread.some(({ key }) => key === "Introduced-by")
+  );
+}
+
+/**
  * What a fix commit's trailers lack, each as a short clause; empty when they
  * say where its bug came from and who found it. The hashes they name are
  * the caller's to resolve.
@@ -94,11 +106,7 @@ export function missingTrailers({ hashes, marks, found, unread }) {
         ? `Found-by "${value}" is none of ${finders.join(", ")}`
         : `Introduced-by "${value}" is no commit hash, unknown or none`,
     );
-  if (
-    !hashes.length &&
-    !marks.length &&
-    !unread.some(({ key }) => key === "Introduced-by")
-  )
+  if (!traced({ hashes, marks, unread }))
     lacks.push("no Introduced-by trailer");
   if (found.length > 1)
     lacks.push(`${found.length} Found-by trailers, not the one that found it`);
