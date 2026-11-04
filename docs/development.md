@@ -218,7 +218,8 @@ The [updater](architecture.md#distribution-and-updates) accepts only releases si
 ### Release notes
 
 Every stable release needs notes for users in [release/notes.md](../release/notes.md), and `release.mjs` stops until they're there.
-Write them just before releasing, from `git log` since the last tag, under the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) headings `### Added`, `Changed`, `Deprecated`, `Removed`, `Fixed` and `Security`, one `- ` line per change:
+Each landing users would notice adds its own line there, in its own `docs(release): note ...` commit, since a release can run with no session to write them, such as from the Discord intake.
+Put each line under the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) headings `### Added`, `Changed`, `Deprecated`, `Removed`, `Fixed` and `Security`, one `- ` line per change:
 
 ```markdown
 ### Fixed
@@ -229,7 +230,7 @@ Write them just before releasing, from `git log` since the last tag, under the [
 - Start with where it happens, in bold, such as **Set up**, **Progress** or **Settings**.
 - Say what the user sees, in the app's own words, never internal names such as census, helper or baseline.
 - For a fix, name the old symptom so people recognize it, and quote an error only if users saw it.
-- Merge related commits into one line, and leave out changes nobody would notice.
+- Fold a change into the pending line it extends, and add none for changes nobody would notice.
 
 The release moves the notes into [CHANGELOG.md](../CHANGELOG.md) under the version, which [changelog.mjs](../scripts/changelog.mjs) writes, so never edit it by hand.
 A prerelease leaves them pending, and the app shows a beta's pending notes as that version's.
