@@ -521,6 +521,8 @@ class SettingsTests(unittest.TestCase):
         lookup = socket.getaddrinfo
 
         def getaddrinfo(host, port, *args, **kwargs):
+            if host == "lost.test":
+                time.sleep(2)
             if host != "models.test":
                 return lookup(host, port, *args, **kwargs)
             return [
@@ -542,11 +544,19 @@ class SettingsTests(unittest.TestCase):
             patch.object(socket, "getaddrinfo", getaddrinfo),
             patch.object(socket, "socket", Socket),
         ):
+            started = time.monotonic()
             checked = providers.check(
                 model_list(server.getsockname()[1], "models.test")
             )
+            # The addresses were raced, not tried a whole second each.
+            self.assertLess(time.monotonic() - started, 1)
+            # An address lookup that never answers ends with connecting.
+            with patch.object(providers, "SETUP_SECONDS", 0.2):
+                lost = providers.check(model_list(server.getsockname()[1], "lost.test"))
+            self.assertLess(time.monotonic() - started, 1.2)
         self.assertEqual(checked["check"]["status"], "reachable")
         self.assertEqual(checked["models"], ["fixture-model"])
+        self.assertIn("timed out", lost["check"]["message"])
 
     def test_a_check_ends_a_trickling_reply_and_tells_it_from_an_oversized_list(
         self,
@@ -563,15 +573,25 @@ class SettingsTests(unittest.TestCase):
             ]
         )
         self.addCleanup(large.close)
+        rejected = stand_in(
+            [
+                (0, b"HTTP/1.1 401 Unauthorized\r\nContent-Length: 2000001\r\n\r\n"),
+                (0, b" " * 2_000_001),
+            ]
+        )
+        self.addCleanup(rejected.close)
         with patch.object(providers, "REPLY_SECONDS", 0.2):
             started = time.monotonic()
             slow = providers.check(model_list(trickle.getsockname()[1]))["check"]
             self.assertLess(time.monotonic() - started, 1)
             oversized = providers.check(model_list(large.getsockname()[1]))["check"]
+            # A rejection's body is never read, so its size can't hide it.
+            refused = providers.check(model_list(rejected.getsockname()[1]))["check"]
         self.assertEqual(slow["status"], "unavailable")
         self.assertIn("took too long", slow["message"])
-        self.assertEqual(oversized["status"], "unsupported")
+        self.assertEqual(oversized["status"], "unavailable")
         self.assertIn("too large", oversized["message"])
+        self.assertIn("Authentication was rejected", refused["message"])
 
     def test_openrouter_checks_authenticated_catalog_without_truncating_it_to_250_models(
         self,

@@ -194,7 +194,13 @@ def describe(connection, model):
 
 def live_prices(model, host=""):
     """Resolve public prices for an explicit lookup; no key or inference call."""
-    from .providers import OWN_APIS, TooLarge, bounded_request, openrouter_host
+    from .providers import (
+        OWN_APIS,
+        TooLarge,
+        TooSlow,
+        bounded_request,
+        openrouter_host,
+    )
 
     host = openrouter_host(host)
     model = text(model, "OpenRouter model ID", required=True)
@@ -270,7 +276,7 @@ def live_prices(model, host=""):
         raise ValueError(
             "OpenRouter's price list is too large to read. Enter custom Live rates."
         ) from None
-    except httpx.ReadTimeout, httpx.WriteTimeout:
+    except TooSlow:
         raise ValueError(
             "OpenRouter's prices took too long to arrive. Try again, or enter custom Live rates."
         ) from None
@@ -311,7 +317,7 @@ def _endpoint_rows(model, secret):
 
 def check_endpoints(connection, known):
     """Verify Batch separately; an endpoint outage cannot revoke a valid key."""
-    from .providers import TooLarge, openrouter_host
+    from .providers import TooLarge, TooSlow, openrouter_host
 
     model, host = connection.get("model", ""), connection.get("openrouter_host", "")
     if not model or model + ":batch" not in known:
@@ -325,7 +331,7 @@ def check_endpoints(connection, known):
     }
     try:
         rows = _endpoint_rows(model, connection["secret"])
-    except httpx.HTTPError, TooLarge, ValueError, UnicodeError:
+    except httpx.HTTPError, TooLarge, TooSlow, ValueError, UnicodeError:
         return unavailable
     selected_endpoints, eligible, unsupported = [], set(), set()
     for row in rows:

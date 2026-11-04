@@ -459,8 +459,9 @@ def openrouter_host(value):
 
 
 # Settings' own requests to a provider (bounded_request) give connecting,
-# TLS included, SETUP_SECONDS and the reply, from sending the request on,
-# REPLY_SECONDS, so a slow way in can't eat the reply's time. Every other
+# the address lookup, a proxy's handshake and TLS included, SETUP_SECONDS
+# and the reply, from sending the request on, REPLY_SECONDS, so a slow way
+# in can't eat the reply's time. Every other
 # backend request waits behind them, so even OpenRouter's check, which reads
 # its Batch endpoints after its list, ends before the backend counts as
 # stalled (api/server REQUEST_STALL_SECONDS).
@@ -476,9 +477,14 @@ class TooLarge(Exception):
     """A reply longer than bounded_request's byte limit."""
 
 
+class TooSlow(Exception):
+    """A reply that ran past bounded_request's time."""
+
+
 class _Clock:
     """The two budgets of one bounded_request: connecting's, from its first
-    connect, and the reply's, from the first byte sent."""
+    connect, and the reply's, from the first byte sent since the last TLS
+    start, so a proxy's handshake counts as connecting."""
 
     def __init__(self, reply):
         self.reply_seconds = reply
@@ -528,6 +534,7 @@ class _Stream(httpcore.NetworkStream):
         if left <= 0:
             raise httpcore.ConnectTimeout("Connecting ran out of time.")
         stream = self.stream.start_tls(ssl_context, server_hostname, left)
+        self.clock.reply_end = None
         return _Stream(stream, self.clock)
 
     def get_extra_info(self, info):
@@ -545,23 +552,18 @@ class _Backend(httpcore.NetworkBackend):
     def connect_tcp(
         self, host, port, timeout=None, local_address=None, socket_options=None
     ):
-        self.clock.setup(timeout)
-        try:
-            found = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
-        except OSError as error:
-            raise httpcore.ConnectError(str(error)) from error
-        # The first family listed goes first, then the families alternate.
-        families = {}
-        for family, *_, sockaddr in found:
-            families.setdefault(family, []).append(sockaddr[0])
-        hosts = iter(
-            dict.fromkeys(
-                each
-                for row in zip_longest(*families.values())
-                for each in row
-                if each is not None
+        addresses = self._addresses(host, port, self.clock.setup(timeout))
+        if not addresses:
+            raise httpcore.ConnectError(f"{host} has no address.")
+        if len(addresses) == 1:
+            left = self.clock.setup(timeout)
+            if left <= 0:
+                raise httpcore.ConnectTimeout("No address answered in time.")
+            stream = self.backend.connect_tcp(
+                addresses[0], port, left, local_address, socket_options
             )
-        )
+            return _Stream(stream, self.clock)
+        hosts = iter(addresses)
         results = queue.SimpleQueue()
         lock = threading.Lock()
         over = threading.Event()
@@ -574,6 +576,10 @@ class _Backend(httpcore.NetworkBackend):
             except (httpcore.ConnectError, httpcore.ConnectTimeout) as error:
                 results.put(error)
                 return
+            except BaseException as error:
+                # Never left waiting for an attempt that failed otherwise.
+                results.put(error)
+                raise
             with lock:
                 if not over.is_set():
                     results.put(stream)
@@ -593,7 +599,7 @@ class _Backend(httpcore.NetworkBackend):
                     ).start()
                     running += 1
                 elif not running:
-                    raise failure or httpcore.ConnectError(f"{host} has no address.")
+                    raise failure or httpcore.ConnectError("No address answered.")
                 try:
                     result = results.get(
                         timeout=left if address is None else min(left, ATTEMPT_DELAY)
@@ -614,20 +620,69 @@ class _Backend(httpcore.NetworkBackend):
                 if not isinstance(result, Exception):
                     result.close()
 
+    @staticmethod
+    def _addresses(host, port, left):
+        """*host*'s addresses, its first family first and then the families
+        alternating; the lookup, which no socket timeout bounds, waits *left*
+        seconds at most."""
+        try:
+            ipaddress.ip_address(host)
+            return [host]
+        except ValueError:
+            pass
+        found = queue.SimpleQueue()
+
+        def lookup():
+            try:
+                found.put(socket.getaddrinfo(host, port, type=socket.SOCK_STREAM))
+            except OSError as error:
+                found.put(httpcore.ConnectError(str(error)))
+
+        threading.Thread(target=lookup, daemon=True).start()
+        try:
+            rows = found.get(timeout=max(left, 0))
+        except queue.Empty:
+            raise httpcore.ConnectTimeout(
+                f"Looking up {host} ran out of time."
+            ) from None
+        if isinstance(rows, Exception):
+            raise rows
+        families = {}
+        for family, *_, sockaddr in rows:
+            families.setdefault(family, []).append(sockaddr[0])
+        return list(
+            dict.fromkeys(
+                each
+                for row in zip_longest(*families.values())
+                for each in row
+                if each is not None
+            )
+        )
+
     def sleep(self, seconds):
         self.backend.sleep(seconds)
 
 
-def bounded_request(method, url, *, headers, limit, content=None, reply=None):
+def bounded_request(
+    method,
+    url,
+    *,
+    headers,
+    limit,
+    content=None,
+    reply=None,
+    bodies=None,
+):
     """The status and body of one request with no retries or redirects:
     connecting may take SETUP_SECONDS and the reply *reply* seconds, by
     default REPLY_SECONDS, each step held to what is left (_Clock), so a slow
     address or route doesn't fail a working server and a stalled or
-    trickling one still ends.
+    trickling one still ends. Only a status in *bodies*, by default a 2xx
+    one, has its body read; any other comes with none.
 
-    Raises TooLarge past *limit* bytes, httpx.ReadTimeout or WriteTimeout
-    when the reply runs out of time, and another httpx.HTTPError, such as
-    ConnectTimeout, when the server can't be reached.
+    Raises TooLarge past *limit* bytes, TooSlow when the reply runs out of
+    time, and httpx.HTTPError, such as ConnectTimeout, when the server can't
+    be reached.
     """
     clock = _Clock(REPLY_SECONDS if reply is None else reply)
     with httpx.Client(
@@ -639,14 +694,24 @@ def bounded_request(method, url, *, headers, limit, content=None, reply=None):
         # requirements.lock).
         for transport in (client._transport, *client._mounts.values()):
             if isinstance(transport, httpx.HTTPTransport):
+                if not hasattr(transport._pool, "_network_backend"):
+                    raise RuntimeError(
+                        "httpx no longer takes bounded_request's backend."
+                    )
                 transport._pool._network_backend = _Backend(clock)
-        with client.stream(method, url, headers=headers, content=content) as response:
-            body = bytearray()
-            for chunk in response.iter_bytes():
-                body.extend(chunk)
-                if len(body) > limit:
-                    raise TooLarge
-            return response.status_code, bytes(body)
+        try:
+            with client.stream(
+                method, url, headers=headers, content=content
+            ) as response:
+                body = bytearray()
+                if response.status_code in (bodies or range(200, 300)):
+                    for chunk in response.iter_bytes():
+                        body.extend(chunk)
+                        if len(body) > limit:
+                            raise TooLarge
+                return response.status_code, bytes(body)
+        except httpx.ReadTimeout, httpx.WriteTimeout:
+            raise TooSlow from None
 
 
 def openrouter_hosts(model=""):
@@ -675,7 +740,7 @@ def openrouter_hosts(model=""):
         raise ValueError(
             "OpenRouter's host list is too large to read. Leave the host on Automatic."
         ) from None
-    except httpx.ReadTimeout, httpx.WriteTimeout:
+    except TooSlow:
         raise ValueError(
             "OpenRouter's host list took too long to arrive. Check your connection and try again."
         ) from None
@@ -886,10 +951,10 @@ def check(connection):
         )
     except TooLarge:
         return result(
-            "unsupported",
-            "The model list is too large to read. Check the server's base URL.",
+            "unavailable",
+            "The model list is too large to read. The connection was saved, but could not be verified.",
         )
-    except httpx.ReadTimeout, httpx.WriteTimeout:
+    except TooSlow:
         return result(
             "unavailable",
             "The model list took too long to arrive. Check the network, then check again.",
@@ -1041,10 +1106,12 @@ def check_effort(connection, model, level, listed=None):
             content=json.dumps(body).encode(),
             limit=1_000_000,
             reply=CHECK_SECONDS,
+            # A refusal's reason is in its body (_reason).
+            bodies=(*range(200, 300), 400, 422),
         )
     except TooLarge:
         return failed("The server's reply was too large to read.")
-    except httpx.ReadTimeout, httpx.WriteTimeout:
+    except TooSlow:
         return failed(
             "The server didn't answer in time. If it was loading the model, check again once it has."
         )

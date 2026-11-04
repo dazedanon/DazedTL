@@ -658,11 +658,12 @@ export async function startProvider({ folder, port = 0 }) {
         );
         const settings = mode();
         const list = request.method === "GET" && /\/models(\/user)?$/.test(url);
-        const content =
-          raw ||
-          Buffer.from(
-            JSON.stringify(value).padEnd(list ? settings.listBytes || 0 : 0),
-          );
+        let content = raw || Buffer.from(JSON.stringify(value));
+        if (list && settings.listBytes > content.length)
+          content = Buffer.concat([
+            content,
+            Buffer.alloc(settings.listBytes - content.length, " "),
+          ]);
         const head = () =>
           response.writeHead(status, {
             "Content-Type": raw
