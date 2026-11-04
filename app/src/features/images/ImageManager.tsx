@@ -1229,7 +1229,10 @@ function Manager({
               <Button
                 variant="link"
                 className="image-task-note"
-                onClick={() => changeView(views.noted, true)}
+                // Every noted image, whichever folder or search is open.
+                onClick={() =>
+                  changeView({ ...views.noted, folder: "", query: "" }, true)
+                }
               >
                 {noted === 1
                   ? "1 image has a revision note"

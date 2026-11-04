@@ -253,9 +253,10 @@ class Index:
             ),
         )
 
-    def where(self, query="", folder="", filter="all", selected_only=False, noted=()):
+    def where(self, query="", folder="", filter="all", selected_only=False, noted=None):
         """The SQL that picks the images a view shows; `noted` are the ids of
-        the images with revision notes, which the "noted" view lists."""
+        the images with revision notes, which the "noted" view lists and so
+        requires."""
         within, parameters = self.within()
         parts, parameters = [within], list(parameters)
         if query:
@@ -271,6 +272,8 @@ class Index:
         elif filter == "remaining":
             parts.append(REMAINING)
         elif filter == "noted":
+            if noted is None:
+                raise ValueError("The Notes view needs the saved revision notes.")
             parts.append(LISTED)
             parameters.append(json.dumps(list(noted)))
         elif filter and filter != "all":
@@ -337,7 +340,7 @@ class Index:
                     " total(classification='applied' OR state='applied'),"
                     f" total({LISTED})"
                     " FROM assets" + scope,
-                    (json.dumps(list(filters.get("noted", ()))), *values),
+                    (json.dumps(list(filters.get("noted") or ())), *values),
                 ).fetchone()
                 result["views"] = dict(
                     zip(
