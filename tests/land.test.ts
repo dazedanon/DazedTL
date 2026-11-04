@@ -257,7 +257,12 @@ test("a landing's review record comes from an independent reviewer and accounts 
       head: "abc1234",
       findings: [
         { summary: "Off by one", outcome: "fixed", reason: "" },
-        { summary: "Slow loop", outcome: "dismissed", reason: "Runs once" },
+        {
+          summary: "Slow loop",
+          outcome: "dismissed",
+          reason: "Runs once",
+          review: 2,
+        },
       ],
     }),
     {
@@ -265,8 +270,13 @@ test("a landing's review record comes from an independent reviewer and accounts 
       reviewer: "independent",
       head: "abc1234",
       findings: [
-        { summary: "Off by one", outcome: "fixed" },
-        { summary: "Slow loop", outcome: "dismissed", reason: "Runs once" },
+        { summary: "Off by one", outcome: "fixed", review: 1 },
+        {
+          summary: "Slow loop",
+          outcome: "dismissed",
+          reason: "Runs once",
+          review: 2,
+        },
       ],
     },
   );
@@ -298,6 +308,16 @@ test("a landing's review record comes from an independent reviewer and accounts 
       }),
     /Finding 1 .* without a reason/,
   );
+  for (const review of [0, 1.5, "2"])
+    assert.throws(
+      () =>
+        record({
+          ...reviewed,
+          level: "high",
+          findings: [{ summary: "Off by one", outcome: "fixed", review }],
+        }),
+      /Finding 1 .* needs a review number/,
+    );
   assert.throws(() => record({ ...reviewed, level: "high" }), /findings list/);
   assert.throws(() => readReview("level: high"), /not JSON/);
 });

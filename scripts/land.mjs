@@ -50,7 +50,7 @@ const icon = path.join(import.meta.dirname, "..", "resources", "icon.png");
 /** The code-review levels a landing's review may run at: high and up. */
 const reviewLevels = ["high", "xhigh", "max", "ultra"];
 const reviewShape =
-  '{"level": "high", "reviewer": "independent", "head": "<hash of the last commit the reviewer checked>", "findings": [{"summary": "...", "outcome": "fixed"}, {"summary": "...", "outcome": "dismissed", "reason": "..."}]}';
+  '{"level": "high", "reviewer": "independent", "head": "<hash of the last commit the reviewer checked>", "findings": [{"summary": "...", "outcome": "fixed", "review": 1}, {"summary": "...", "outcome": "dismissed", "reason": "...", "review": 2}]}';
 /** Where landed reviews are recorded, one JSON line each, in the shared Git directory. */
 const reviewLog = "dazedtl-reviews.jsonl";
 /** The subject of the commit holding what the formatter changed. */
@@ -73,10 +73,11 @@ const lockLimit = 10 * 60_000;
 /**
  * Reads a landing's review record: the code-review level a reviewer that
  * never saw the work ran, the last commit it checked and what became of each
- * finding it reported. Throws with what is wrong, so no branch lands on its
+ * finding it reported, with which of the branch's independent reviews found
+ * it (1 when not given). Throws with what is wrong, so no branch lands on its
  * author's review alone.
  * @param {string} text
- * @returns {{ level: string, reviewer: "independent", head: string, findings: { summary: string, outcome: "fixed" | "dismissed", reason?: string }[] }}
+ * @returns {{ level: string, reviewer: "independent", head: string, findings: { summary: string, outcome: "fixed" | "dismissed", reason?: string, review: number }[] }}
  */
 export function readReview(text) {
   let record;
@@ -108,8 +109,13 @@ export function readReview(text) {
     (/** @type {any} */ item, /** @type {number} */ index) => {
       const which = `Finding ${index + 1} of the review record`;
       if (!filled(item?.summary)) throw new Error(`${which} needs a summary.`);
+      const review = item.review ?? 1;
+      if (!Number.isInteger(review) || review < 1)
+        throw new Error(
+          `${which} needs a review number of 1 or more: the independent review that found it.`,
+        );
       if (item.outcome === "fixed")
-        return { summary: item.summary, outcome: "fixed" };
+        return { summary: item.summary, outcome: "fixed", review };
       if (item.outcome !== "dismissed")
         throw new Error(`${which} needs an outcome of fixed or dismissed.`);
       if (!filled(item.reason))
@@ -118,6 +124,7 @@ export function readReview(text) {
         summary: item.summary,
         outcome: "dismissed",
         reason: item.reason,
+        review,
       };
     },
   );
