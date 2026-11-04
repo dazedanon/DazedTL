@@ -743,11 +743,13 @@ def _saving(root, change, named, claimed, log=lambda _line: None):
     # The rules keeping DazedTL's files out of players' downloads grew after
     # many games took them, the notes' in any case last, so a checkpoint of
     # DazedTL's own write, or one taking the notes, records those its game
-    # lacks; another write's .gitattributes is left to it.
+    # lacks; one recording a write that ended, or beside a write that named
+    # no files, leaves .gitattributes to that write.
     rule = (
         {".gitattributes"}
         if (change is not OUTSIDE or any(map(is_game_notes, status.paths)))
-        and ".gitattributes" not in (claimed or set())
+        and claimed is not None
+        and ".gitattributes" not in claimed
         and keep_out_of_downloads(Path(root))
         else set()
     )
@@ -786,12 +788,12 @@ def _saving(root, change, named, claimed, log=lambda _line: None):
     chosen = joined | rule | (taken - unreadable)
     apart = notes - unreadable
     if apart and change is not OUTSIDE and not any(map(is_game_notes, named)):
-        notes_commit = _commit(root, apart | rule, OUTSIDE, status)
+        notes_commit = _commit(root, apart, OUTSIDE, status)
         if notes_commit is not None:
             # The rest is built on HEAD's tree, never on an index that may
             # not have taken the notes' commit.
             status = status._replace(head=notes_commit, index=None)
-        chosen -= apart | rule
+        chosen -= apart
     commit = _commit(root, chosen, change, status) if chosen else None
     return commit, commit or (status.head if status.head != "(initial)" else None)
 
