@@ -44,9 +44,13 @@ export function ContextPanel({
     {
       persist: (value) =>
         api.translation.draft(state.projectId, "documents", value),
-      // This editor saves one document at a time.
+      // This editor saves one document at a time; a save that finds its
+      // draft already saved or discarded saves nothing.
       save: (documents) => {
-        const [[name, { revision, text }]] = Object.entries(documents);
+        const [chosen] = Object.entries(documents);
+        if (!chosen)
+          return Promise.resolve({ documents: state.documents, saved: [] });
+        const [name, { revision, text }] = chosen;
         return api.translation.document(state.projectId, name, revision, text);
       },
     },
