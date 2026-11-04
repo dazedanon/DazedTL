@@ -104,6 +104,15 @@ export async function startDisplay({
     throw new Error(
       `A private display cannot start here: ${sandboxed}. Run scenarios outside the sandbox.`,
     );
+  // A private /tmp, such as a systemd unit's PrivateTmp, starts without the X
+  // socket folder that the system makes in a shared one, and KWin makes no X
+  // socket without it.
+  try {
+    fs.mkdirSync(sockets);
+    fs.chmodSync(sockets, 0o1777);
+  } catch (error) {
+    if (error.code !== "EEXIST") throw error;
+  }
   const output = fs.openSync(log, "a");
   const child = spawnGroup(
     "dbus-run-session",
