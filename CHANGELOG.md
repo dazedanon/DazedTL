@@ -3,6 +3,13 @@
 Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 [release.mjs](scripts/release.mjs) writes each entry from [release/notes.md](release/notes.md).
 
+## [2.64.0] - 2026-11-04
+
+### Added
+
+- **Manual:** Options can copy GameUpdate into the game, so players can download your newest translation by running it.
+- **Images:** images with revision notes carry a note mark, the preview shows the note, and a **Notes** view lists them, so **Copy revision task (N)** no longer counts notes you can't find.
+
 ## [2.63.0] - 2026-11-04
 
 ### Added
@@ -1672,6 +1679,7 @@ Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachan
 - The first release of DazedTL as a desktop app, installed from a ZIP with a START launcher and updated from inside the app.
 - **Guided steps** for RPG Maker MV, MZ and VX Ace games, and **Assistant-led** for any game.
 
+[2.64.0]: https://github.com/dazedanon/DazedTL/compare/v2.63.0...v2.64.0
 [2.63.0]: https://github.com/dazedanon/DazedTL/compare/v2.62.0...v2.63.0
 [2.62.0]: https://github.com/dazedanon/DazedTL/compare/v2.61.0...v2.62.0
 [2.61.0]: https://github.com/dazedanon/DazedTL/compare/v2.60.0...v2.61.0
