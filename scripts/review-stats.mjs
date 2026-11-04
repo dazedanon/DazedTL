@@ -46,8 +46,8 @@ export const exposureDays = 14;
  */
 const dayOf = (time) => {
   const date = new Date(time);
-  return Math.round(
-    Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) / 86_400_000,
+  return (
+    Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) / 86_400_000
   );
 };
 
@@ -77,7 +77,8 @@ export function loggedLandings(text) {
       unread.push(`${where} is not JSON.`);
       continue;
     }
-    const landed = Date.parse(row?.landed);
+    const landed =
+      typeof row?.landed === "string" ? Date.parse(row.landed) : NaN;
     if (Number.isFinite(landed)) times.push(landed);
     const independent = row?.reviewer === "independent";
     // An early landing could skip its review, recording why instead.
@@ -202,7 +203,7 @@ export function summarize(landings, fixes, { landed, fixCommits }) {
     ) {
       exposed.add(landing);
       tally(landing, "landings");
-    } else if (landing.landed === null) undated += 1;
+    } else if (from === null) undated += 1;
     else recent += 1;
     for (const finding of landing.findings) {
       const round = rounds.get(finding.review) ?? {};
