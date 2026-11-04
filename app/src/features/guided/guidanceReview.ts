@@ -9,7 +9,7 @@ export const guidanceTitle = (name: string) =>
     glossary: "Glossary",
     quirks: "Style & quirks",
     game: "Game context",
-    notes: "Assistant notes",
+    [assistantNotes]: "Assistant notes",
   })[name] || name.replace("custom:", "Skill: ");
 
 /** The documents the Guidance task shows and Save guidance sends: the core

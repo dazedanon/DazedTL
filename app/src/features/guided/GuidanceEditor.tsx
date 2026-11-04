@@ -1,7 +1,7 @@
 import type { ContextSetup, Documents } from "../../api/contracts";
 import { useLanguages } from "../../app/LanguagesProvider";
 import { AssistantNotesNote } from "./AssistantNotesNote";
-import { assistantNotes, coreGuidance, guidanceTitle } from "./guidanceReview";
+import { assistantNotes, guidanceTitle } from "./guidanceReview";
 import { guidanceFormats } from "./guidanceFormats";
 import { DocumentEditor } from "../../ui/DocumentEditor";
 import { HelpPopover } from "../../ui/HelpPopover";
@@ -35,8 +35,7 @@ export function GuidanceEditor({
         disabled={disabled}
         names={names}
         tabNames={[
-          ...coreGuidance,
-          ...names.filter((name) => name === assistantNotes),
+          ...names.filter((name) => !name.startsWith("custom:")),
           ...(selectedName.startsWith("custom:") ? [selectedName] : []),
         ]}
         titles={{ quirks: "Style & quirks" }}
