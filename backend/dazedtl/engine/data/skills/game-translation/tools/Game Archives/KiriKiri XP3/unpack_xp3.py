@@ -2,7 +2,8 @@
 """Unpack a standard KiriKiri XP3 archive.
 
 A file it can't read, such as one a game-specific cipher encrypts, is named
-at the end and left out; the rest are extracted, and the exit code is 2."""
+at the end and left out; the rest are extracted, and the exit code is 2. An
+archive whose index lists no file it can read exits with 1."""
 import argparse
 import shutil
 import struct

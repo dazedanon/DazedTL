@@ -236,9 +236,10 @@ def _paletted_bmp(image, original: bytes, bits: int) -> bytes:
 
 
 # TLG, KiriKiri's own lossless format. TLG5 and TLG6 are read as KiriKiri Z's
-# LoadTLG.cpp and tvpgl.c read them; edits are written as TLG5 with every
-# block stored uncompressed, which KiriKiri reads as its own encoder writes a
-# block that doesn't compress. An XP3 archive compresses it again.
+# LoadTLG.cpp and tvpgl.c read them. Color edits are written as TLG5 with
+# every block stored uncompressed, which KiriKiri reads as its own encoder
+# writes a block that doesn't compress, and grayscale ones as TLG6, since
+# KiriKiri reads TLG5 in color only. An XP3 archive compresses them again.
 
 
 def _tlg_parts(raw: bytes) -> tuple[bytes, bytes]:
