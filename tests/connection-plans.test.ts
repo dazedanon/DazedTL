@@ -32,32 +32,36 @@ test("a provider's plans are one provider choice, at its first plan", () => {
   );
 });
 
-test("a saved connection keeps its key and automatic name across plans", () => {
-  const saved = { provider: "opencode-go" as const, has_secret: true };
+test("a saved connection keeps its key across plans, and its name if chosen", () => {
+  const name = "OpenCode (Go subscription) 2";
+  const saved = { provider: "opencode-go" as const, has_secret: true, name };
   const initial = {
     provider: "opencode-go",
-    name: "OpenCode (Go subscription)",
+    name,
     secret: "",
     reuse_secret: false,
   };
+  // The backend names it for the new plan, with a number if that is taken.
   const moved = choosePlan(presets, initial, "opencode", saved);
   assert.deepEqual(moved, {
     provider: "opencode",
-    name: "OpenCode (Pay-as-you-go balance)",
+    name: "",
     secret: "",
     reuse_secret: true,
   });
   // Moving back leaves nothing to save.
   assert.deepEqual(choosePlan(presets, moved, "opencode-go", saved), initial);
-  // So does a name 2.61.0 gave before plans were one provider.
+  // A name 2.61.0 gave before plans were one provider follows too.
+  const former = { ...saved, name: "OpenCode Go" };
   assert.equal(
-    choosePlan(presets, { ...initial, name: "OpenCode Go" }, "opencode", saved)
+    choosePlan(presets, { ...initial, name: former.name }, "opencode", former)
       .name,
-    "OpenCode (Pay-as-you-go balance)",
+    "",
   );
   // A name the user chose stays.
+  const mine = { ...saved, name: "Mine" };
   assert.equal(
-    choosePlan(presets, { ...initial, name: "Mine" }, "opencode", saved).name,
+    choosePlan(presets, { ...initial, name: mine.name }, "opencode", mine).name,
     "Mine",
   );
 });
@@ -69,7 +73,11 @@ test("another provider's saved key never moves to a plan", () => {
     secret: "",
     reuse_secret: false,
   };
-  const saved = { provider: "deepseek" as const, has_secret: true };
+  const saved = {
+    provider: "deepseek" as const,
+    has_secret: true,
+    name: "DeepSeek",
+  };
   assert.equal(
     choosePlan(presets, value, "opencode", saved).reuse_secret,
     false,
