@@ -220,46 +220,15 @@ def _current_span(entries):
     return entries
 
 
-def _moved(entry):
-    """The changes of `entry` its undo takes out: all of them, but the
-    assistant notes only from a Context checkpoint, which saved them as
-    guidance, an undo, which put back such a checkpoint's, or one that
-    changed nothing else. An assistant's notes edits are their own
-    checkpoint (checkpoint_commits `_saving`), but earlier Assistant-led
-    checkpoints hold them beside their phase's files, and the notes never
-    move with the translation, as Go back leaves them."""
-    from util.paths import is_game_notes
-
-    if (
-        entry.stage == "Context"
-        or entry.action == UNDO
-        or all(map(is_game_notes, entry.changes))
-    ):
-        return entry.changes
-    return {
-        path: change
-        for path, change in entry.changes.items()
-        if not is_game_notes(path)
-    }
-
-
 def _blockers(entries):
     """For each entry of the current version, the newest later entry it must
-    wait for and the files they share, or None; one pass over the changes.
-    An entry waits only on a change to a file its undo takes out (`_moved`),
-    and on an earlier checkpoint's notes edit that its undo leaves only until
-    that checkpoint is undone, so no undo takes back notes an assistant wrote
-    after it while the checkpoint holding them stands."""
+    wait for and the files they share, or None; one pass over the changes."""
     newest = {}
     result = {}
-    undone = set()
     for index, entry in enumerate(entries):
-        # An undo that a later one took out, a redo, undoes nothing.
-        if entry.action == UNDO and entry.commit not in undone:
-            undone.add(_trailer(entry.message, TARGET_TRAILER))
         differing = {
             path
-            for path, change in _moved(entry).items()
+            for path, change in entry.changes.items()
             if path in newest and newest[path][1] != change[3]
         }
         if differing:
@@ -268,8 +237,7 @@ def _blockers(entries):
             result[entry.commit] = (entries[later], shared)
         else:
             result[entry.commit] = None
-        kept = _moved(entry) if entry.commit in undone else entry.changes
-        for path, change in kept.items():
+        for path, change in entry.changes.items():
             newest.setdefault(path, (index, change[3]))
     return result
 
@@ -285,7 +253,7 @@ def _outside_view(entry, outside):
     """The edits made outside DazedTL to a checkpoint's files, which become
     the later checkpoint its undo waits for once DazedTL next changes the
     game; no commit names them yet."""
-    files = sorted(set(_moved(entry)) & set(outside))
+    files = sorted(set(entry.changes) & set(outside))
     if not files:
         return None
     return {"commit": "", "title": OUTSIDE.summary, "files": files}
@@ -737,8 +705,9 @@ def go_back(
     checkpoint, and names the checkpoints it took out (`undone`, newest
     first). The assistant notes describe the game, not a state of its
     translation, so they stay as they are, as Start over leaves them; an undo
-    still takes out a checkpoint's own change to them (`_moved`). `original`
-    is the saved original game of a game set up before
+    still takes out a checkpoint's own change to them, which are their own
+    checkpoint once an assistant made them (checkpoint_commits `_saving`).
+    `original` is the saved original game of a game set up before
     Git kept its original files, and `folder` the game's Guided workspace,
     whose packing receipt a VX Ace game's pack keeps current, as every
     write's does."""
@@ -865,7 +834,7 @@ def undo(
         raise ValueError(
             "A game version's first checkpoint can't be undone; go back to it instead."
         )
-    change = Change(" ".join(_undoing(target)), None, UNDO, target.commit)
+    change = Change(" ".join(_undoing(target)), None, UNDO)
     with running(change), write_game(root, folder, log=log, restores=True) as game:
         entries = _since(root, game, entries)
         index = _restorable(entries, commit)
@@ -881,7 +850,7 @@ def undo(
         # It puts back the state before the checkpoint, which came later.
         state = _Game(root, target, original, entries[: index + 1])
         parent = entries[index + 1].commit if index + 1 < len(entries) else None
-        plan = _plan(state, _moved(target), state.tree(parent) if parent else {})
+        plan = _plan(state, target.changes, state.tree(parent) if parent else {})
         written = _apply(game, root, plan, stopped, state)
     return {"files": written, "commit": _head(root, game), "undone": [commit]}
 
