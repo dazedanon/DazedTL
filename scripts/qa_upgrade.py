@@ -251,17 +251,19 @@ def apply(qa, task, undo=False):
     shutil.rmtree(staging, ignore_errors=True)
     shutil.copytree(descriptor["data_root"], staging / "data")
     shutil.copyfile(task / "inventory.json", staging / "inventory.json")
-    regression = qa.apply_loaded_correction_map(
-        staging,
-        {**descriptor, "data_root": str(staging / "data")},
-        selected,
-        inventory,
-        dry_run_name="dry-run.json",
-        regression_name="regression.json",
-        nonblocking_introduced_flags=qa.APPROVED_NONBLOCKING_MECHANICAL_FLAGS,
-    )
-    if not regression["valid"]:
-        fail(f"applying {task}'s corrections failed: {regression['errors']}")
+    try:
+        qa.apply_loaded_correction_map(
+            staging,
+            {**descriptor, "data_root": str(staging / "data")},
+            selected,
+            inventory,
+            dry_run_name="dry-run.json",
+            regression_name="regression.json",
+        )
+    # A failed regression raises RegressionError, and a dry run that refuses
+    # the map a ValueError.
+    except ValueError as exc:
+        fail(f"applying {task}'s corrections failed: {exc}")
     for name in {operation["file"] for operation in selected["operations"]}:
         shutil.copyfile(staging / "data" / name, Path(descriptor["data_root"]) / name)
     shutil.rmtree(staging)

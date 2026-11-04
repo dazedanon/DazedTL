@@ -2629,6 +2629,22 @@ class GuidedTests(unittest.TestCase):
         self.assertTrue(
             self.guided.context_status(self.identity)["documents"]["notes"]["exists"]
         )
+        # Notes an assistant wrote after the draft began are never silently
+        # replaced by it: Save guidance said "Guidance saved." over them.
+        began = editable(self.source)["notes"]["revision"]
+        assistant = "Repack Data.wolf, then run the patcher."
+        (self.source / "AGENTS.md").write_text(assistant, encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "Assistant notes"):
+            self.guided.save_documents(
+                self.identity, {"notes": {"text": "My notes", "revision": began}}
+            )
+        self.assertEqual(
+            (self.source / "AGENTS.md").read_text(encoding="utf-8"), assistant
+        )
+        self.guided.save_documents(
+            self.identity, {"game": {"text": "A village story.", "revision": ""}}
+        )
+        self.assertEqual(documents(self.source)["game"]["text"], "A village story.")
         # Notes an assistant wrote that can't be read keep a draft of them
         # selectable, so it can be discarded: Guidance once refused to select
         # it. A Save guidance that sends it stays refused whole, leaving every

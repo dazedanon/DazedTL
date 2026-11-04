@@ -296,7 +296,7 @@ def write_game(
         raise ValueError(blocked)
     change = checkpoint_commits.current(action, summary, stage)
     point = (
-        checkpoint_commits.Checkpoint(root, paths, change, status)
+        checkpoint_commits.Checkpoint(root, paths, change, status, log)
         if outermost and status is not None
         else None
     )

@@ -2226,6 +2226,44 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(kept["path"], "p.zip")
         self.assertIs(current(kept, self.game), False)
 
+    def test_phase_checkpoints_leave_the_assistant_notes_out_of_their_undo(self):
+        # Every phase's checkpoint took the assistant's notes edits with its
+        # files, so an older phase's undo was refused, "it also changed
+        # AGENTS.md", and an undo put back older notes.
+        from dazedtl.compatibility import checkpoint_history
+        from dazedtl.compatibility.checkpoint_commits import Change, _git, save
+        from util.len_git import setup_git
+        from util.len_translation import LenProject
+
+        write_json(self.game / "names.json", {"name": "リリ"})
+        setup_git(LenProject(self.game), version="1.0", current_is_untranslated=True)
+        agents = self.game / "AGENTS.md"
+        agents.write_text("Names are in names.json.\n", encoding="utf-8")
+        write_json(self.game / "names.json", {"name": "Lili"})
+        save(self.game, Change("Extraction", "Assistant-led", "assistant_phase"))
+        older = _git(self.game, "rev-parse", "HEAD").stdout.strip()
+        agents.write_text("Repack Data.wolf after injection.\n", encoding="utf-8")
+        write_json(self.game / "source.json", {"line": "Yes."})
+        save(self.game, Change("Injection", "Assistant-led", "assistant_phase"))
+        self.assertIsNone(checkpoint_history.blockers(self.game, [older])[older])
+        checkpoint_history.undo(self.game, older)
+        self.assertEqual(read_json(self.game / "names.json"), {"name": "リリ"})
+        self.assertEqual(read_json(self.game / "source.json"), {"line": "Yes."})
+        self.assertEqual(
+            agents.read_text(encoding="utf-8"), "Repack Data.wolf after injection.\n"
+        )
+        # The notes are their own checkpoint.
+        self.assertNotIn(
+            "AGENTS.md",
+            _git(self.game, "show", "--name-only", "--format=", older).stdout.split(),
+        )
+        # They are edits made outside DazedTL, as the Checkpoints tab names
+        # them until a checkpoint takes them.
+        self.assertEqual(
+            _git(self.game, "log", "-1", "--format=%s", "--", "AGENTS.md").stdout,
+            "Edits made outside DazedTL\n",
+        )
+
     def test_start_over_restores_the_original_and_sets_the_attempt_aside(self):
         # Starting over must put every original file back as one checkpoint,
         # keeping the attempt in the game's Git history and the record of its
@@ -2423,6 +2461,87 @@ class WorkflowTests(unittest.TestCase):
         checkpoint_history.go_back(self.game, before)
         self.assertEqual(
             agents.read_text(encoding="utf-8"), "Repack Data.wolf after injection."
+        )
+
+    def test_assistant_notes_in_another_case_never_reach_players(self):
+        # Windows ignores case, so `!/AGENTS.md` let an `agents.md` into Git
+        # under its own case, and the forges' archives, which never ignore
+        # case, shipped it to players, as did the patch ZIP.
+        import tarfile
+
+        from dazedtl.compatibility.checkpoint_commits import _git, for_action, running
+        from dazedtl.compatibility.game_write import write_game
+        from util.len_git import setup_git
+        from util.len_translation import LenProject
+        from util.paths import is_game_tool_file
+
+        setup_git(LenProject(self.game), version="1.0", current_is_untranslated=True)
+        _git(self.game, "config", "core.ignorecase", "true")
+        # A game that took them before then still holds the exact-case rule.
+        attributes = self.game / ".gitattributes"
+        attributes.write_text(
+            attributes.read_text(encoding="utf-8").replace(
+                "/[aA][gG][eE][nN][tT][sS].[mM][dD]", "/AGENTS.md"
+            ),
+            encoding="utf-8",
+        )
+        (self.game / "agents.md").write_text("Repack Data.wolf.", encoding="utf-8")
+        write_json(self.game / "source.json", {"line": "はい。"})
+        _git(self.game, "add", "-f", ".gitattributes", "agents.md", "source.json")
+        # Made outside DazedTL. The identity is the test's own, since CI's
+        # runners have none.
+        player = ("-c", "user.name=Player", "-c", "user.email=player@example.invalid")
+        _git(self.game, *player, "commit", "-m", "Took the notes")
+        with (
+            running(for_action("export_selected")),
+            write_game(self.game, paths=["source.json"]) as written,
+        ):
+            written.put("source.json", b'{"line": "Yes."}')
+        # The write's own checkpoint takes the rule; no edits were made
+        # outside DazedTL.
+        self.assertEqual(
+            _git(self.game, "log", "-2", "--format=%s").stdout,
+            "Translate: Apply selected saved outputs\nTook the notes\n",
+        )
+        self.assertTrue(is_game_tool_file("agents.md"))
+        download = self.root / "download.tar"
+        case_sensitive = ("-c", "core.ignorecase=false")
+        _git(self.game, *case_sensitive, "archive", "-o", str(download), "HEAD")
+        with tarfile.open(download) as archive:
+            self.assertIn("source.json", archive.getnames())
+            self.assertNotIn("agents.md", archive.getnames())
+        patch_files = TranslationEngine(self.profile).patch_files(self.game, [])
+        self.assertEqual(patch_files["files"], ["source.json"])
+
+    @unittest.skipIf(
+        os.name == "nt" or os.geteuid() == 0, "Only a user's Linux file has no read."
+    )
+    def test_notes_another_program_holds_never_stop_a_game_write(self):
+        # Notes Windows keeps locked while another program holds them failed
+        # every game write with raw Git text: the checkpoint of edits made
+        # outside DazedTL could not add them. A file without read permission
+        # stands in for the lock.
+        from dazedtl.compatibility.checkpoint_commits import _git, for_action, running
+        from dazedtl.compatibility.game_write import write_game
+        from desktop.backend.guidance import notes
+        from util.len_git import setup_git
+        from util.len_translation import LenProject
+
+        setup_git(LenProject(self.game), version="1.0", current_is_untranslated=True)
+        TranslationEngine(self.profile).document_save(
+            self.game, "notes", notes(self.game)["revision"], "Repack Data.wolf."
+        )
+        agents = self.game / "AGENTS.md"
+        agents.write_text("Repack Data.wolf after injection.", encoding="utf-8")
+        agents.chmod(0)
+        self.addCleanup(agents.chmod, 0o644)
+        with (
+            running(for_action("export_selected")),
+            write_game(self.game, paths=["source.json"]) as written,
+        ):
+            written.put("source.json", b'{"line": "Yes."}')
+        self.assertEqual(
+            _git(self.game, "show", "HEAD:source.json").stdout, '{"line": "Yes."}'
         )
 
     def test_a_patch_update_records_an_older_projects_new_originals(self):
@@ -2643,6 +2762,104 @@ class WorkflowTests(unittest.TestCase):
         update = reads()
         self.assertNotEqual(update, legacy)
         self.assertIn("extra.json", original_files.files(self.game, update))
+
+    def test_a_full_update_keeps_assistant_notes_written_before_set_up(self):
+        # Notes in the game's folder before Set up were recorded as an
+        # original game file, so a new release without them deleted the
+        # notes, with what the user saved since, and reported complete.
+        from dazedtl.compatibility.checkpoint_commits import _git
+        from util.len_git import setup_git
+        from util.len_translation import LenProject
+
+        (self.game / "AGENTS.md").write_text("Repack Data.wolf.", encoding="utf-8")
+        original_files.record(self.game, original_files.PREPARED, "1.0")
+        setup_git(LenProject(self.game), version="1.0", current_is_untranslated=True)
+        # The notes are the translation's, never the game's original.
+        self.assertNotIn(
+            "AGENTS.md",
+            _git(self.game, "ls-tree", "--name-only", "original").stdout.split(),
+        )
+        recorded = original_files.records(self.game)[-1].commit
+        self.assertNotIn("AGENTS.md", original_files.files(self.game, recorded))
+        self._assert_a_full_update_keeps_the_notes()
+
+    def test_a_full_update_keeps_notes_a_game_set_up_earlier_holds_as_original(self):
+        # A game set up before the notes were the project's holds them in its
+        # original record and `original` branch, which nothing rewrites.
+        from dazedtl.compatibility.checkpoint_commits import _git
+        from util.len_git import setup_git
+        from util.len_translation import LenProject
+
+        def earlier(relative):
+            return relative.partition("/")[0] == ".dazedtl"
+
+        def held(relative):
+            return relative.partition("/")[0] not in {".git", ".dazedtl"}
+
+        (self.game / "AGENTS.md").write_text("Repack Data.wolf.", encoding="utf-8")
+        with (
+            patch.object(original_files, "held", held),
+            patch("util.version_update.git_workflow.is_project_file", earlier),
+        ):
+            original_files.record(self.game, original_files.PREPARED, "1.0")
+            setup_git(
+                LenProject(self.game), version="1.0", current_is_untranslated=True
+            )
+        self.assertIn(
+            "AGENTS.md",
+            _git(self.game, "ls-tree", "--name-only", "original").stdout.split(),
+        )
+        recorded = original_files.records(self.game)[-1].commit
+        self.assertIn(
+            "AGENTS.md", _git(self.game, "ls-tree", "--name-only", recorded).stdout
+        )
+        # Readers take no notes from such a record.
+        self.assertNotIn("AGENTS.md", original_files.files(self.game, recorded))
+        self._assert_a_full_update_keeps_the_notes()
+
+    def _assert_a_full_update_keeps_the_notes(self):
+        """Saves the notes, then lays a full release without them over the
+        game, which must leave the saved notes as they are."""
+        from dataclasses import asdict
+
+        from desktop.backend.guidance import notes
+        from util import version_update
+
+        agents = self.game / "AGENTS.md"
+        engine = TranslationEngine(self.profile)
+        engine.document_save(
+            self.game,
+            "notes",
+            notes(self.game)["revision"],
+            "Repack Data.wolf after injection.",
+        )
+        official = self.root / "release"
+        official.mkdir()
+        write_json(official / "source.json", {"line": "いいえ。"})
+        self.engine.version = engine.version
+        preview = asdict(
+            version_update.preview_official_update(self.game, official, "1.1")
+        )
+        result = execute(
+            self.engine,
+            self.profile,
+            {"project_id": self.identity},
+            {
+                "source": str(self.game),
+                "options": DEFAULTS,
+                "action": "version_apply",
+                "arguments": {
+                    "official": str(official),
+                    "version": "1.1",
+                    "preview": preview,
+                },
+            },
+            lambda: False,
+        )
+        self.assertTrue(result["complete"])
+        self.assertEqual(
+            agents.read_text(encoding="utf-8"), "Repack Data.wolf after injection."
+        )
 
     def test_helper_checkpoints_save_through_git_with_dazedtls_own_files(self):
         # The helper's checkpoint once restored originals from the backup and

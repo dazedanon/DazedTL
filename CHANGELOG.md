@@ -3,6 +3,22 @@
 Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 [release.mjs](scripts/release.mjs) writes each entry from [release/notes.md](release/notes.md).
 
+## [2.66.0] - 2026-11-04
+
+### Added
+
+- **Context:** Guided's **Guidance** now has the **Assistant notes** tab too, so you can read and edit what your assistant keeps about the game in `AGENTS.md`.
+
+### Changed
+
+- **Text QA:** corrections and proposals show the text they change in red and green, with the changed words marked, as soon as they appear instead of only once applied.
+
+### Fixed
+
+- **GameUpdate:** an update that fails partway, such as on a file the running game holds, a full disk or a folder too deep for Windows ("Could not find a part of the path"), now puts the game back as it was instead of leaving it half patched; a game gets this with its next copy of GameUpdate, such as from **Recreate GameUpdate files**.
+- **Text QA:** reviews no longer propose a speaker fix that names the character in Japanese, which stopped **Apply corrections** with "QA regression failed; all game-file changes were rolled back"; a failed apply now names the correction that stopped it.
+- **Context:** the **Assistant notes** (`AGENTS.md`) are no longer deleted by a game update when the game had them before Set up, are no longer saved with the files of new Assistant-led checkpoints, so undoing an older one no longer waits on a later one or brings back older notes, and an older Guided draft no longer replaces them: Save says how to keep either; one another program holds no longer fails every change to the game, and on Windows an `agents.md` in another case no longer reaches players' downloads.
+
 ## [2.65.0] - 2026-11-04
 
 ### Added
@@ -1685,6 +1701,7 @@ Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachan
 - The first release of DazedTL as a desktop app, installed from a ZIP with a START launcher and updated from inside the app.
 - **Guided steps** for RPG Maker MV, MZ and VX Ace games, and **Assistant-led** for any game.
 
+[2.66.0]: https://github.com/dazedanon/DazedTL/compare/v2.65.0...v2.66.0
 [2.65.0]: https://github.com/dazedanon/DazedTL/compare/v2.64.0...v2.65.0
 [2.64.0]: https://github.com/dazedanon/DazedTL/compare/v2.63.0...v2.64.0
 [2.63.0]: https://github.com/dazedanon/DazedTL/compare/v2.62.0...v2.63.0

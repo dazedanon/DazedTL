@@ -13,6 +13,7 @@ DOCUMENTS = {"glossary": (".dazedtl/glossary.txt", "glossary.txt"),
 NOTES = "notes"
 # Their name in both methods' editors and the checkpoints that save them.
 NOTES_TITLE = "Assistant notes"
+NOTES_SAVE = f"Save {NOTES_TITLE}"
 
 def documents(root):
     root = Path(root)
@@ -123,6 +124,8 @@ def documents_save(root, changes):
             revision = digest(b"")
         held = current.get(name, {"text": None, "revision": digest(b"")})
         if held["revision"] != revision and not holds(name, held, text) and not _replaced(root, name, held, revision):
+            if name == NOTES:
+                raise ValueError(f"AGENTS.md changed on disk after you began editing the {NOTES_TITLE}, as an assistant does. To keep the file, discard the {NOTES_TITLE} draft; to keep your text, copy it, discard the draft, then paste it back and save.")
             raise ValueError("This guidance changed on disk. Reload before saving.")
     for name, change in changes.items():
         text = change["text"]
@@ -135,8 +138,11 @@ def documents_save(root, changes):
             path = Path(current[NOTES]["path"])
         else:
             path = custom_skill_path_for_game(root, name.removeprefix("custom:")) if name.startswith("custom:") else (game_skill_path_for_game if name == "game" else quirks_path_for_game)(root)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        temporary = path.with_name(path.name + ".desktop-tmp")
+        # The notes' file is written beside DazedTL's own, which no record
+        # of the original game holds, as the notes aren't.
+        staging = root / ".dazedtl" if name == NOTES else path.parent
+        staging.mkdir(parents=True, exist_ok=True)
+        temporary = staging / (path.name + ".desktop-tmp")
         regular(root, temporary).write_text(text, encoding="utf-8", newline="\n")
         system.replace(temporary, path)
         if name == NOTES:
