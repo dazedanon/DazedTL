@@ -1127,14 +1127,17 @@ class Guided:
             for name, document in documents.items()
         ):
             raise ValueError("Choose a guidance document.")
-        from desktop.backend.guidance import holds
+        from desktop.backend.guidance import NOTES, holds
 
         current = self.backend.workflows.editable(native["id"])
-        # Explicit Save replaces the current guidance. The editor's older
-        # revision is recovery metadata, not a conflict-review prerequisite.
+        # Explicit Save replaces the current guidance, which only DazedTL
+        # writes: the editor's older revision is recovery metadata, not a
+        # conflict-review prerequisite. Notes an assistant wrote since the
+        # draft began are not replaced (documents_save refuses).
         changes = {
             name: {
-                "revision": current.get(name, {}).get("revision", ""),
+                "revision": (name == NOTES and document.get("revision"))
+                or current.get(name, {}).get("revision", ""),
                 "text": document["text"],
             }
             for name, document in documents.items()
