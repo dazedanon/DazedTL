@@ -6,6 +6,7 @@ import test from "node:test";
 import {
   acquireLock,
   gitIn,
+  LockBusy,
   lockRef,
   releaseLock,
 } from "../scripts/land-lock.mjs";
@@ -13,7 +14,7 @@ import { spawnSync } from "node:child_process";
 import {
   finishHandOff,
   formatBranch,
-  land,
+  handOff,
   mergeDev,
   readReview,
   reviewedHead,
@@ -57,6 +58,18 @@ test("a landing waits for a live lock, takes over a dead or unrenewed one and te
   assert.equal(notices.length, 2);
   assert.match(notices[1], /^Took over/);
   assert.equal(eleven.holder.started, new Date(21 * 60_000).toISOString());
+  // A waiter with a limit gives up on a live holder rather than wait on.
+  await assert.rejects(
+    acquireLock(git, who(12), {
+      ...context,
+      alive: () => true,
+      limit: 10 * 60_000,
+      wait: async () => {
+        clock += 7 * 60_000;
+      },
+    }),
+    LockBusy,
+  );
   // The holder it replaced cannot release the new one.
   assert.equal(releaseLock(git, ten), false);
   assert.equal(releaseLock(git, eleven), true);
@@ -404,31 +417,21 @@ test("a sandboxed worker hands off a checked branch without writing the main che
   const handoffFile = path.join(dir, "handoff.json");
   const record = () => JSON.parse(fs.readFileSync(handoffFile, "utf8"));
   const refs = () => atMain(["for-each-ref"]).stdout;
+  const finish = () => finishHandOff(main, deps, dir, reviewFile);
 
   // dev moved after the worker branched, so the hand-off merges it in.
-  const reviewed = commit(clone, "work.txt", "work\n");
+  const work = commit(clone, "work.txt", "work\n");
   const base = commit(main, "dev.txt", "dev\n");
-  review(reviewed.slice(0, 8));
   const before = refs();
   spawnSync("chmod", ["-R", "a-w", main]);
-  assert.equal(await land(clone, deps, reviewFile, dir), 0, logged.join("\n"));
+  assert.equal(await handOff(clone, deps, dir), 0, logged.join("\n"));
   writable();
   const head = rev(atClone, "HEAD");
   assert.ok(
     logged.includes(`Handed off ${base.slice(0, 7)}..${head.slice(0, 7)}`),
   );
-  const { checkedAt, ...handoff } = record();
-  assert.ok(checkedAt);
-  assert.deepEqual(handoff, {
-    format: 1,
-    branch: "work",
-    head,
-    base,
-    review: {
-      ...JSON.parse(fs.readFileSync(reviewFile, "utf8")),
-      head: reviewed,
-    },
-  });
+  const handoff = record();
+  assert.deepEqual(handoff, { format: 1, branch: "work", head, base });
   assert.equal(refs(), before);
   assert.equal(
     fs.existsSync(path.join(main, ".git", "dazedtl-reviews.jsonl")),
@@ -436,22 +439,30 @@ test("a sandboxed worker hands off a checked branch without writing the main che
   );
 
   // The caller retries later while the user's DazedTL is open.
+  review(head);
   appOpen = true;
-  assert.equal(await finishHandOff(main, deps, dir), 4);
+  assert.equal(await finish(), 4);
   appOpen = false;
-  // A bundle holding another head than its record names lands nothing.
-  fs.writeFileSync(
-    handoffFile,
-    JSON.stringify({ ...handoff, checkedAt, head: reviewed }),
-  );
+  // The review covers exactly the bundle, with nothing after it.
+  review(work);
   logged.length = 0;
-  assert.equal(await finishHandOff(main, deps, dir), 1);
+  assert.equal(await finish(), 1);
+  assert.match(logged.join("\n"), /not the hand-off's head/);
+  // A bundle holding another head than its record names lands nothing.
+  fs.writeFileSync(handoffFile, JSON.stringify({ ...handoff, head: work }));
+  logged.length = 0;
+  assert.equal(await finish(), 1);
   assert.match(logged.join("\n"), /not the head/);
+  fs.writeFileSync(handoffFile, JSON.stringify(handoff));
+  review(head);
+  // A main checkout with changes of its own takes it later.
+  fs.writeFileSync(path.join(main, "dev.txt"), "local\n");
+  assert.equal(await finish(), 5);
+  atMain(["checkout", "--", "dev.txt"]);
   assert.equal(refs(), before);
-  fs.writeFileSync(handoffFile, JSON.stringify({ ...handoff, checkedAt }));
 
   logged.length = 0;
-  assert.equal(await finishHandOff(main, deps, dir), 0, logged.join("\n"));
+  assert.equal(await finish(), 0, logged.join("\n"));
   assert.ok(
     logged.includes(`Landed ${base.slice(0, 7)}..${head.slice(0, 7)} on dev`),
   );
@@ -466,12 +477,20 @@ test("a sandboxed worker hands off a checked branch without writing the main che
   // Only dev moved: the fetched ref and the lock are gone.
   assert.equal(refs(), before.replace(base, head));
 
+  logged.length = 0;
+  assert.equal(await handOff(clone, deps, dir), 0);
+  assert.ok(
+    logged.includes(`Nothing to hand off: dev already has ${head.slice(0, 7)}`),
+  );
+  assert.equal(fs.existsSync(handoffFile), false);
+
   // dev moving after the checks sends the worker back to merge it.
-  review(commit(clone, "more.txt", "more\n"));
-  assert.equal(await land(clone, deps, reviewFile, dir), 0, logged.join("\n"));
+  commit(clone, "more.txt", "more\n");
+  assert.equal(await handOff(clone, deps, dir), 0, logged.join("\n"));
   assert.equal(record().base, head);
+  review(record().head);
   commit(main, "later.txt", "later\n");
   logged.length = 0;
-  assert.equal(await finishHandOff(main, deps, dir), 3);
+  assert.equal(await finish(), 3);
   assert.match(logged.join("\n"), /^dev moved since the hand-off's checks/m);
 });

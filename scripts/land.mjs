@@ -11,16 +11,19 @@
 // A worker that may never write the main checkout, such as a Discord intake
 // worker in its own clone, lands in two steps. --hand-off runs the same
 // format, merge and checks against origin's dev and leaves the checked branch
-// as a bundle and record in <dir>; --finish, run outside the worker's sandbox
-// by the main checkout's own land.mjs, moves dev to it with Git alone.
+// as a bundle and record in <dir>. The intake has the bundle reviewed, then
+// --finish, run outside the worker's sandbox by the main checkout's own
+// land.mjs, moves dev to it with Git alone.
 //
 //   node scripts/land.mjs --review <file.json>
-//   node scripts/land.mjs --review <file.json> --hand-off <dir>
-//   node scripts/land.mjs --finish <dir>
+//   node scripts/land.mjs --hand-off <dir>
+//   node scripts/land.mjs --finish <dir> --review <file.json>
 //
-// Exits 0 when landed or handed off, 1 when refused or a check failed and 2
-// on a merge conflict. --finish exits 3 when dev moved after the hand-off's
-// checks, and 4 at once while the user's DazedTL runs from the main checkout.
+// Exits 0 when landed, handed off or with nothing to hand off, 1 when refused
+// or a check failed and 2 on a merge conflict. --finish never waits without
+// a limit: it exits 3 when dev moved after the hand-off's checks, 4 at once
+// while the user's DazedTL runs from the main checkout, and 5 when the main
+// checkout cannot take it now, such as while another session holds the lock.
 import fs from "node:fs";
 import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
@@ -35,7 +38,7 @@ import {
 } from "./ci-wait.mjs";
 import { NOTES } from "./changelog.mjs";
 import { generated } from "./contracts.mjs";
-import { gitIn, withLock } from "./land-lock.mjs";
+import { gitIn, LockBusy, withLock } from "./land-lock.mjs";
 import { repository } from "./release.mjs";
 import { failureReport, tail, testsWithRetry } from "./testkit/retry.mjs";
 import { mirrors } from "./update.mjs";
@@ -64,6 +67,9 @@ const sealed = ["-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false"];
 /** --finish's exit codes for a hand-off to make again or to retry later. */
 const devMoved = 3;
 const appOpen = 4;
+const mainBusy = 5;
+/** How long --finish waits for another session's landing lock. */
+const lockLimit = 10 * 60_000;
 
 /**
  * Reads a landing's review record: the code-review level a reviewer that
@@ -91,7 +97,7 @@ export function readReview(text) {
       `The review record needs a level of ${reviewLevels.join(", ")}.`,
     );
   // A name such as HEAD would follow the branch past what was reviewed.
-  if (typeof record.head !== "string" || !/^[0-9a-f]{7,40}$/i.test(record.head))
+  if (typeof record.head !== "string" || !/^[0-9a-f]{7,64}$/i.test(record.head))
     throw new Error(
       "The review record needs the hash of the head commit its reviewer last checked.",
     );
@@ -126,28 +132,30 @@ export function readReview(text) {
 
 /**
  * Resolves the commit a landing's reviewer last checked to its full hash.
- * Throws when it is not on the branch at `tip`, or when the branch has
- * commits of its own after it: apart from merges of `dev` and the formatter's
+ * Throws when it is not on the branch at `git`, or when the branch has
+ * commits of its own after it: apart from merges of dev and the formatter's
  * commits, a change made after the review lands only once it is reviewed.
  * @param {ReturnType<typeof gitIn>} git
  * @param {string} head
- * @param {{ tip?: string, dev?: string }} [refs] the branch and dev to check against
  */
-export function reviewedHead(git, head, { tip = "HEAD", dev = "dev" } = {}) {
+export function reviewedHead(git, head) {
   const commit = git([
     "rev-parse",
     "--verify",
     "--quiet",
     `${head}^{commit}`,
   ]).stdout.trim();
-  if (!commit || git(["merge-base", "--is-ancestor", commit, tip]).status !== 0)
+  if (
+    !commit ||
+    git(["merge-base", "--is-ancestor", commit, "HEAD"]).status !== 0
+  )
     throw new Error(
       `The review record's head ${head} is not a commit on this branch.`,
     );
   const onDev = (/** @type {string} */ parent) =>
-    git(["merge-base", "--is-ancestor", parent, dev]).status === 0;
+    git(["merge-base", "--is-ancestor", parent, "dev"]).status === 0;
   const after = lines(
-    git(["log", "--first-parent", "--format=%P\t%h %s", `${commit}..${tip}`])
+    git(["log", "--first-parent", "--format=%P\t%h %s", `${commit}..HEAD`])
       .stdout,
   ).flatMap((line) => {
     const [parents, title] = line.split("\t", 2);
@@ -276,6 +284,14 @@ const lines = (/** @type {string} */ text) =>
 const reason = (/** @type {unknown} */ error) =>
   error instanceof Error ? error.message : String(error);
 
+/** @typedef {{ code: number, report: string[] }} Outcome */
+
+/** An exit code and the lines that report it. @returns {Outcome} */
+const outcome = (
+  /** @type {number} */ code,
+  /** @type {string[]} */ ...report
+) => ({ code, report });
+
 /**
  * @typedef {{
  *   run: (cwd: string, command: string, args: string[], timeout?: number) => Promise<{ status: number, output: string }>,
@@ -312,47 +328,22 @@ async function warnRedDev(/** @type {Deps} */ { read, log }, main) {
   }
 }
 
+/** Refuses to run on Windows, saying so. */
+function onWindows(/** @type {Deps["log"]} */ log) {
+  if (process.platform !== "win32") return false;
+  log("Land from Linux or macOS; land.mjs does not run on Windows.");
+  return true;
+}
+
 /**
- * Lands the branch checked out at `cwd`, or with `handOff` checks it against
- * origin's dev and leaves it in that directory for --finish. Resolves the exit
- * code.
+ * The feature branch checked out at `cwd`, with every change committed.
+ * Returns exit code 1 instead, saying why, when it is not one.
  * @param {string} cwd
- * @param {Deps} deps
- * @param {string | undefined} reviewFile the review record's path
- * @param {string} [handOff] the directory a hand-off writes to
+ * @param {Deps["log"]} log
+ * @returns {{ top: string, git: ReturnType<typeof gitIn>, branch: string } | number}
  */
-export async function land(cwd, deps, reviewFile, handOff) {
-  const { log } = deps;
-  if (process.platform === "win32") {
-    log("Land from Linux or macOS; land.mjs does not run on Windows.");
-    return 1;
-  }
-  if (!reviewFile) {
-    log(
-      `Land with --review <file.json> holding the branch's independent code review: ${reviewShape}.`,
-    );
-    return 1;
-  }
-  if (handOff) {
-    // A hand-off that fails never leaves an earlier one behind to finish.
-    try {
-      fs.mkdirSync(handOff, { recursive: true });
-      for (const name of [handoffRecord, handoffBundle])
-        fs.rmSync(path.join(handOff, name), { force: true });
-    } catch (error) {
-      log(`Could not prepare ${handOff} for the hand-off: ${reason(error)}`);
-      return 1;
-    }
-  }
-  let review;
-  try {
-    review = readReview(fs.readFileSync(reviewFile, "utf8"));
-  } catch (error) {
-    log(`${reason(error)} Expected: ${reviewShape}.`);
-    return 1;
-  }
-  const here = gitIn(cwd);
-  const top = here(["rev-parse", "--show-toplevel"]).stdout.trim();
+function featureBranch(cwd, log) {
+  const top = gitIn(cwd)(["rev-parse", "--show-toplevel"]).stdout.trim();
   const git = gitIn(top);
   const out = (/** @type {string[]} */ ...args) => git(args).stdout.trim();
   const branch = out("symbolic-ref", "--quiet", "--short", "HEAD");
@@ -367,42 +358,90 @@ export async function land(cwd, deps, reviewFile, handOff) {
     log(`Commit or remove these changes first:\n${dirty}`);
     return 1;
   }
-  // A hand-off's clone may never write the main repository, so it checks
-  // against origin's dev, fetched into the clone.
-  let dev = "dev";
-  if (handOff) {
-    const fetched = git([
-      "fetch",
-      "--quiet",
-      "--no-tags",
-      "origin",
-      `+refs/heads/dev:${originDev}`,
-    ]);
-    if (fetched.status !== 0) {
-      log(tail(fetched.stdout + fetched.stderr));
-      log("Fetching dev from origin failed; nothing was handed off.");
-      return 1;
-    }
-    dev = originDev;
-  }
+  return { top, git, branch };
+}
+
+/** Prints an outcome's report and where the minutes went. Returns its code. */
+function reported(
+  /** @type {Deps} */ { log },
+  /** @type {Outcome} */ result,
+  /** @type {ReturnType<typeof timer>} */ time,
+) {
+  for (const line of result.report) log(line);
+  log(time.summary());
+  return result.code;
+}
+
+/**
+ * Runs `task` holding the landing lock and reports its outcome. A wait on
+ * something outside it reaches the user on the desktop, and its line is
+ * marked for an agent watching the output. With `limit`, a lock held longer
+ * than that by another session ends it with exit code 5. Resolves the code.
+ * @param {Deps} deps
+ * @param {ReturnType<typeof gitIn>} git
+ * @param {{ branch: string, worktree: string }} who
+ * @param {ReturnType<typeof timer>} time
+ * @param {(tell: (line: string) => void) => Promise<Outcome>} task
+ * @param {number} [limit]
+ */
+async function lockedRun(deps, git, who, time, task, limit) {
+  const tell = (/** @type {string} */ line) => {
+    deps.log(`Notice: ${line}`);
+    deps.notify(`Landing ${who.branch}`, line);
+  };
+  let result;
   try {
-    review = { ...review, head: reviewedHead(git, review.head, { dev }) };
+    result = await withLock(git, who, () => task(tell), {
+      log: deps.log,
+      notify: tell,
+      onStop: deps.onStop,
+      limit,
+    });
+  } catch (error) {
+    if (!(error instanceof LockBusy)) throw error;
+    result = outcome(
+      mainBusy,
+      `${error.message} Nothing changed; try again later.`,
+    );
+  }
+  return reported(deps, result, time);
+}
+
+/**
+ * Lands the branch checked out at `cwd`. Resolves the exit code.
+ * @param {string} cwd
+ * @param {Deps} deps
+ * @param {string | undefined} reviewFile the review record's path
+ */
+export async function land(cwd, deps, reviewFile) {
+  const { log } = deps;
+  if (onWindows(log)) return 1;
+  if (!reviewFile) {
+    log(
+      `Land with --review <file.json> holding the branch's independent code review: ${reviewShape}.`,
+    );
+    return 1;
+  }
+  let review;
+  try {
+    review = readReview(fs.readFileSync(reviewFile, "utf8"));
+  } catch (error) {
+    log(`${reason(error)} Expected: ${reviewShape}.`);
+    return 1;
+  }
+  const found = featureBranch(cwd, log);
+  if (typeof found === "number") return found;
+  const { top, git, branch } = found;
+  try {
+    review = { ...review, head: reviewedHead(git, review.head) };
   } catch (error) {
     log(reason(error));
     return 1;
   }
-  if (handOff) {
-    const time = timer(deps.now);
-    const { code, report } = await handOffBranch(
-      deps,
-      { top, branch, dev, dir: handOff, review },
-      time,
-    );
-    for (const line of report) log(line);
-    log(time.summary());
-    return code;
-  }
-  const common = path.resolve(top, out("rev-parse", "--git-common-dir"));
+  const common = path.resolve(
+    top,
+    git(["rev-parse", "--git-common-dir"]).stdout.trim(),
+  );
   const main = path.dirname(common);
   await warnRedDev(deps, main);
   const time = timer(deps.now);
@@ -412,24 +451,11 @@ export async function land(cwd, deps, reviewFile, handOff) {
     return unformatted.code;
   }
   time.lap("format");
-  // A wait on something outside the landing reaches the user on the desktop,
-  // and its line is marked for an agent watching the output.
-  const tell = (/** @type {string} */ line) => {
-    log(`Notice: ${line}`);
-    deps.notify(`Landing ${branch}`, line);
-  };
-  const { code, report } = await withLock(
-    git,
-    { branch, worktree: top },
-    () =>
-      underLock(deps, { top, main, branch }, time, tell, (range) =>
-        recordReview(deps, common, { branch, range, review }),
-      ),
-    { log, notify: tell, onStop: deps.onStop },
+  return lockedRun(deps, git, { branch, worktree: top }, time, (tell) =>
+    underLock(deps, { top, main, branch }, time, tell, (range) =>
+      recordReview(deps, common, { branch, range, review }),
+    ),
   );
-  for (const line of report) log(line);
-  log(time.summary());
-  return code;
 }
 
 /**
@@ -460,15 +486,16 @@ function recordReview({ log, now }, common, { branch, range, review }) {
  * @param {string} top
  * @param {Deps["run"]} run
  * @param {Deps["log"]} log
- * @returns {Promise<{ code: number, report: string[] } | null>}
+ * @returns {Promise<Outcome | null>}
  */
 export async function formatBranch(git, top, run, log) {
   const formatted = await run(top, process.execPath, ["scripts/format.mjs"]);
   if (formatted.status !== 0)
-    return {
-      code: 1,
-      report: [tail(formatted.output), "node scripts/format.mjs failed."],
-    };
+    return outcome(
+      1,
+      tail(formatted.output),
+      "node scripts/format.mjs failed.",
+    );
   const changed = lines(git(["diff", "--name-only"]).stdout);
   if (!changed.length) return null;
   git(["add", "--update"]);
@@ -481,7 +508,7 @@ export async function formatBranch(git, top, run, log) {
     `- Format ${changed.join(", ")} as format.mjs does`,
   ]);
   if (commit.status !== 0)
-    return { code: 1, report: [tail(commit.stdout + commit.stderr)] };
+    return outcome(1, tail(commit.stdout + commit.stderr));
   log(`Formatted ${changed.join(", ")}; committed as "${formatSubject}".`);
   return null;
 }
@@ -495,14 +522,10 @@ export async function formatBranch(git, top, run, log) {
  * @param {Deps["run"]} run
  * @param {Deps["log"]} log
  * @param {string} [dev] the ref holding dev, such as a hand-off's origin/dev
- * @returns {Promise<{ code: number, report: string[] } | null>}
+ * @returns {Promise<Outcome | null>}
  */
 export async function mergeDev(git, top, run, log, dev = "dev") {
   const out = (/** @type {string[]} */ ...args) => git(args).stdout.trim();
-  const finish = (
-    /** @type {number} */ code,
-    /** @type {string[]} */ ...report
-  ) => ({ code, report });
   // The notes merge reads what dev's CHANGELOG.md has released.
   const notes = `"${process.execPath}" "${path.join(import.meta.dirname, "changelog.mjs")}" merge %O %A %B ${out("rev-parse", "--verify", dev)}`;
   const merge = git([
@@ -522,7 +545,7 @@ export async function mergeDev(git, top, run, log, dev = "dev") {
     };
     if (!conflicted.length) {
       abort();
-      return finish(
+      return outcome(
         1,
         tail(merge.stdout + merge.stderr),
         "Merging dev failed.",
@@ -533,7 +556,7 @@ export async function mergeDev(git, top, run, log, dev = "dev") {
     // only these files need resolving; a merge run again by hand would merge
     // the notes as text.
     if (!conflicted.every((file) => generated.includes(file)))
-      return finish(
+      return outcome(
         2,
         `Merging dev conflicts in ${conflicted.join(", ")}. The merge is left in progress with everything else merged: resolve these files, commit, and land again.`,
         // Why the notes merge refused, as changelog.mjs printed it.
@@ -548,7 +571,7 @@ export async function mergeDev(git, top, run, log, dev = "dev") {
     const written = await run(top, process.execPath, ["scripts/contracts.mjs"]);
     if (written.status !== 0) {
       abort();
-      return finish(
+      return outcome(
         2,
         tail(written.output),
         `node scripts/contracts.mjs failed after merging dev: ${resolve}.`,
@@ -558,17 +581,11 @@ export async function mergeDev(git, top, run, log, dev = "dev") {
     const commit = git(["commit", "--no-edit"]);
     if (commit.status !== 0) {
       abort();
-      return finish(1, tail(commit.stdout + commit.stderr));
+      return outcome(1, tail(commit.stdout + commit.stderr));
     }
   }
   return null;
 }
-
-/** An exit code and the lines that report it. */
-const outcome = (
-  /** @type {number} */ code,
-  /** @type {string[]} */ ...report
-) => ({ code, report });
 
 /**
  * Runs the tests, once more when they fail, and the build on the branch at
@@ -577,7 +594,7 @@ const outcome = (
  * @param {string} top
  * @param {string} branch
  * @param {ReturnType<typeof timer>} time
- * @returns {Promise<{ code: number, report: string[] } | null>}
+ * @returns {Promise<Outcome | null>}
  */
 async function runChecks(deps, top, branch, time) {
   const { run, log } = deps;
@@ -616,7 +633,8 @@ async function runChecks(deps, top, branch, time) {
 
 /**
  * Where dev is pushed: the mirrors the main checkout's release/mirrors.json
- * names, at the "all" remote's push URLs.
+ * names, at the "all" remote's push URLs. Read before dev moves, so a branch
+ * never chooses where its own landing is pushed.
  * @param {ReturnType<typeof gitIn>} atMain
  * @param {string} main
  */
@@ -628,11 +646,12 @@ function mirrorTargets(atMain, main) {
 }
 
 /**
- * Fast-forwards the main checkout's dev to `head`. Resolves null once it
- * moved, else exit code 1 and the report.
+ * Fast-forwards the main checkout's dev to `head`. Returns null once it
+ * moved, else why the main checkout could not take it.
  * @param {ReturnType<typeof gitIn>} atMain
  * @param {string} main
  * @param {string} head
+ * @returns {string[] | null}
  */
 function moveDev(atMain, main, head) {
   const checkedOut = atMain([
@@ -642,30 +661,25 @@ function moveDev(atMain, main, head) {
     "HEAD",
   ]).stdout.trim();
   if (checkedOut !== "dev")
-    return outcome(
-      1,
+    return [
       `${main} has ${checkedOut || "a detached HEAD"} checked out instead of dev; nothing landed.`,
-    );
+    ];
   const changes = atMain([
     "status",
     "--porcelain",
     "--untracked-files=no",
   ]).stdout.trimEnd();
   if (changes)
-    return outcome(
-      1,
-      `${main} has uncommitted changes; nothing landed:\n${changes}`,
-    );
+    return [`${main} has uncommitted changes; nothing landed:\n${changes}`];
   // Never replace a file the main checkout ignores, such as local settings.
   const forward = atMain(["merge", "--ff-only", "--no-overwrite-ignore", head]);
   if (forward.status !== 0)
-    return outcome(
-      1,
+    return [
       tail(forward.stdout + forward.stderr),
       atMain(["merge-base", "--is-ancestor", "dev", head]).status === 0
         ? `dev could not move to ${head.slice(0, 7)}; nothing landed.`
         : "dev moved without the landing lock; land again.",
-    );
+    ];
   return null;
 }
 
@@ -730,7 +744,7 @@ function landed(git, before, head, unpushed) {
  * @param {ReturnType<typeof timer>} time
  * @param {(line: string) => void} tell
  * @param {(range: string) => void} record records the review of a landed range
- * @returns {Promise<{ code: number, report: string[] }>}
+ * @returns {Promise<Outcome>}
  */
 async function underLock(deps, { top, main, branch }, time, tell, record) {
   const { run, log } = deps;
@@ -751,42 +765,88 @@ async function underLock(deps, { top, main, branch }, time, tell, record) {
 
   // The fast-forward rewrites the files the user's DazedTL runs from.
   if (await waitForApp(main, deps, tell)) time.lap("app wait");
-  const stuck = moveDev(atMain, main, head);
-  if (stuck) return stuck;
+  const targets = mirrorTargets(atMain, main);
+  const refused = moveDev(atMain, main, head);
+  if (refused) return outcome(1, ...refused);
   // dev has the commits now, whether or not every mirror takes them.
   record(`${before}..${head}`);
-  const unpushed = await pushDev(deps, main, mirrorTargets(atMain, main));
+  const unpushed = await pushDev(deps, main, targets);
   time.lap("push");
   return landed(git, before, head, unpushed);
 }
 
 /**
- * A hand-off's checks and output: formats the branch, merges `dev` (origin's
- * dev, fetched into the worker's clone) into it, runs the tests and build,
- * then writes the branch's commits since that dev as a bundle and the record
- * --finish reads. Writes nothing outside the clone and `dir`.
+ * Hands off the branch checked out in a worker's clone at `cwd`: formats it,
+ * merges origin's dev into it and runs the tests and build, then leaves its
+ * commits since that dev in `dir` as a bundle and a record for --finish.
+ * Writes nothing outside the clone and `dir`. Resolves the exit code.
+ * @param {string} cwd
  * @param {Deps} deps
- * @param {{ top: string, branch: string, dev: string, dir: string, review: ReturnType<typeof readReview> }} handOff
- * @param {ReturnType<typeof timer>} time
- * @returns {Promise<{ code: number, report: string[] }>}
+ * @param {string | undefined} dir
  */
-async function handOffBranch(deps, { top, branch, dev, dir, review }, time) {
+export async function handOff(cwd, deps, dir) {
+  const { log } = deps;
+  if (onWindows(log)) return 1;
+  if (!dir) {
+    log("Hand off with --hand-off <dir>, the directory your prompt gives.");
+    return 1;
+  }
+  // A hand-off that fails never leaves an earlier one behind to finish.
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    for (const name of [handoffRecord, handoffBundle])
+      fs.rmSync(path.join(dir, name), { force: true });
+  } catch (error) {
+    log(`Could not prepare ${dir} for the hand-off: ${reason(error)}`);
+    return 1;
+  }
+  const found = featureBranch(cwd, log);
+  if (typeof found === "number") return found;
+  const { top, git, branch } = found;
+  // The clone may never write the main repository, so it checks against
+  // origin's dev, fetched into the clone.
+  const fetched = git([
+    "fetch",
+    "--quiet",
+    "--no-tags",
+    "origin",
+    `+refs/heads/dev:${originDev}`,
+  ]);
+  if (fetched.status !== 0) {
+    log(tail(fetched.stdout + fetched.stderr));
+    log("Fetching dev from origin failed; nothing was handed off.");
+    return 1;
+  }
+  const time = timer(deps.now);
+  return reported(
+    deps,
+    await handOffBranch(deps, { top, git, branch, dir }, time),
+    time,
+  );
+}
+
+/**
+ * A hand-off's checks and output, once origin's dev is fetched.
+ * @param {Deps} deps
+ * @param {{ top: string, git: ReturnType<typeof gitIn>, branch: string, dir: string }} where
+ * @param {ReturnType<typeof timer>} time
+ * @returns {Promise<Outcome>}
+ */
+async function handOffBranch(deps, { top, git, branch, dir }, time) {
   const { run, log } = deps;
-  const git = gitIn(top);
   const out = (/** @type {string[]} */ ...args) => git(args).stdout.trim();
   const unformatted = await formatBranch(git, top, run, log);
   if (unformatted) return unformatted;
   time.lap("format");
-  const base = out("rev-parse", "--verify", `${dev}^{commit}`);
-
-  const merged = await mergeDev(git, top, run, log, dev);
+  const base = out("rev-parse", "--verify", `${originDev}^{commit}`);
+  const merged = await mergeDev(git, top, run, log, originDev);
   if (merged) return merged;
   const head = out("rev-parse", "HEAD");
   time.lap("merge");
   if (head === base)
     return outcome(
-      1,
-      `dev already has every commit of ${branch}; nothing to hand off.`,
+      0,
+      `Nothing to hand off: dev already has ${head.slice(0, 7)}`,
     );
   const failed = await runChecks(deps, top, branch, time);
   if (failed) return failed;
@@ -805,12 +865,11 @@ async function handOffBranch(deps, { top, branch, dev, dir, review }, time) {
       "Writing the hand-off's bundle failed; nothing was handed off.",
     );
   const record = path.join(dir, handoffRecord);
-  const checkedAt = new Date(deps.now?.() ?? Date.now()).toISOString();
   try {
     // --finish never reads a record half written.
     fs.writeFileSync(
       `${record}.tmp`,
-      `${JSON.stringify({ format: 1, branch, head, base, review, checkedAt }, null, 2)}\n`,
+      `${JSON.stringify({ format: 1, branch, head, base }, null, 2)}\n`,
     );
     fs.renameSync(`${record}.tmp`, record);
   } catch (error) {
@@ -825,7 +884,7 @@ async function handOffBranch(deps, { top, branch, dev, dir, review }, time) {
 /**
  * Reads a hand-off's record. Throws with what is wrong.
  * @param {string} text
- * @returns {{ branch: string, head: string, base: string, review: ReturnType<typeof readReview> }}
+ * @returns {{ branch: string, head: string, base: string }}
  */
 export function readHandoff(text) {
   let record;
@@ -848,12 +907,7 @@ export function readHandoff(text) {
     throw new Error(
       "The hand-off's record needs the full hashes of its head and base.",
     );
-  return {
-    branch: record.branch,
-    head: record.head,
-    base: record.base,
-    review: readReview(JSON.stringify(record.review)),
-  };
+  return { branch: record.branch, head: record.head, base: record.base };
 }
 
 /** Runs Git in `cwd` with no hook or file system monitor. */
@@ -864,27 +918,32 @@ function sealedGit(/** @type {string} */ cwd) {
   );
 }
 
+const appOpenLine = (/** @type {string} */ main) =>
+  `Your DazedTL is open from ${main}; nothing landed. Finish again once it closes.`;
+
 /**
- * Lands what a hand-off in `dir` checked on the main checkout's dev: under the
- * landing lock it fetches the bundle, checks it holds the record's head on top
- * of the dev it was checked against, fast-forwards dev, records the review and
- * pushes the mirrors. It runs Git alone, with no hook, and nothing from the
- * bundle; `dir` stays for the caller. Resolves the exit code.
+ * Lands the hand-off in `dir` on the main checkout's dev, with the review
+ * of exactly its bundle: under the landing lock it fetches the bundle, checks
+ * it holds the record's head on top of the dev it was checked against,
+ * fast-forwards dev, records the review and pushes the mirrors. It runs Git
+ * alone, with no hook, and nothing from the bundle; `dir` stays for the
+ * caller. Resolves the exit code.
  * @param {string} cwd
  * @param {Deps} deps
  * @param {string | undefined} dir
+ * @param {string | undefined} reviewFile
  */
-export async function finishHandOff(cwd, deps, dir) {
+export async function finishHandOff(cwd, deps, dir, reviewFile) {
   const { log } = deps;
-  if (process.platform === "win32") {
-    log("Finish from Linux or macOS; land.mjs does not run on Windows.");
-    return 1;
-  }
-  if (!dir) {
-    log("Finish with --finish <dir>, the directory a hand-off wrote.");
+  if (onWindows(log)) return 1;
+  if (!dir || !reviewFile) {
+    log(
+      `Finish with --finish <dir> --review <file.json>: the hand-off's directory and the independent review of its bundle, ${reviewShape}.`,
+    );
     return 1;
   }
   let handoff;
+  let review;
   try {
     let text;
     try {
@@ -893,10 +952,19 @@ export async function finishHandOff(cwd, deps, dir) {
       throw new Error(`${dir} holds no hand-off: ${reason(error)}.`);
     }
     handoff = readHandoff(text);
+    review = readReview(fs.readFileSync(reviewFile, "utf8"));
   } catch (error) {
     log(`${reason(error)} Nothing landed.`);
     return 1;
   }
+  // The reviewer reviewed exactly the bundle, so nothing lands after it.
+  if (review.head.toLowerCase() !== handoff.head) {
+    log(
+      `The review record's head ${review.head} is not the hand-off's head ${handoff.head}; nothing landed.`,
+    );
+    return 1;
+  }
+  review = { ...review, head: handoff.head };
   const here = sealedGit(cwd);
   const top = here(["rev-parse", "--show-toplevel"]).stdout.trim();
   if (!top) {
@@ -919,38 +987,41 @@ export async function finishHandOff(cwd, deps, dir) {
     log(appOpenLine(main));
     return appOpen;
   }
+  await warnRedDev(deps, main);
   const time = timer(deps.now);
-  const tell = (/** @type {string} */ line) => {
-    log(`Notice: ${line}`);
-    deps.notify(`Landing ${handoff.branch}`, line);
-  };
-  const { code, report } = await withLock(
+  return lockedRun(
+    deps,
     git,
     { branch: handoff.branch, worktree: path.resolve(dir) },
+    time,
     () =>
       finishUnderLock(
         deps,
-        { main, common, bundle: path.resolve(dir, handoffBundle), handoff },
+        {
+          main,
+          common,
+          bundle: path.resolve(dir, handoffBundle),
+          handoff,
+          review,
+        },
         time,
       ),
-    { log, notify: tell, onStop: deps.onStop },
+    lockLimit,
   );
-  for (const line of report) log(line);
-  log(time.summary());
-  return code;
 }
-
-const appOpenLine = (/** @type {string} */ main) =>
-  `Your DazedTL is open from ${main}; nothing landed. Finish again once it closes.`;
 
 /**
  * --finish while this session holds the lock.
  * @param {Deps} deps
- * @param {{ main: string, common: string, bundle: string, handoff: ReturnType<typeof readHandoff> }} where
+ * @param {{ main: string, common: string, bundle: string, handoff: ReturnType<typeof readHandoff>, review: ReturnType<typeof readReview> }} where
  * @param {ReturnType<typeof timer>} time
- * @returns {Promise<{ code: number, report: string[] }>}
+ * @returns {Promise<Outcome>}
  */
-async function finishUnderLock(deps, { main, common, bundle, handoff }, time) {
+async function finishUnderLock(
+  deps,
+  { main, common, bundle, handoff, review },
+  time,
+) {
   const { branch, head, base } = handoff;
   const git = sealedGit(main);
   const out = (/** @type {string[]} */ ...args) => git(args).stdout.trim();
@@ -993,18 +1064,6 @@ async function finishUnderLock(deps, { main, common, bundle, handoff }, time) {
         1,
         `The hand-off's head ${head.slice(0, 7)} does not build on its base ${base.slice(0, 7)}; nothing landed.`,
       );
-    let review;
-    try {
-      review = {
-        ...handoff.review,
-        head: reviewedHead(git, handoff.review.head, {
-          tip: handoffRef,
-          dev: base,
-        }),
-      };
-    } catch (error) {
-      return outcome(1, reason(error), "Nothing landed.");
-    }
     time.lap("verify");
     const dev = out("rev-parse", "--verify", "refs/heads/dev");
     if (dev !== base)
@@ -1014,11 +1073,14 @@ async function finishUnderLock(deps, { main, common, bundle, handoff }, time) {
       );
     if (appRunning(main, deps.processes()))
       return outcome(appOpen, appOpenLine(main));
-    // Read while dev is still what it was, so a hand-off never chooses where
-    // dev is pushed.
     const targets = mirrorTargets(git, main);
-    const stuck = moveDev(git, main, head);
-    if (stuck) return stuck;
+    const refused = moveDev(git, main, head);
+    if (refused)
+      return outcome(
+        mainBusy,
+        ...refused,
+        "The main checkout can't take it now; nothing changed; finish again later.",
+      );
     recordReview(deps, common, { branch, range: `${base}..${head}`, review });
     const unpushed = await pushDev(deps, main, targets, sealed);
     time.lap("push");
@@ -1069,10 +1131,12 @@ function realDeps() {
 
 if (import.meta.main) {
   const usage = [
-    "Usage: node scripts/land.mjs --review <file.json> [--hand-off <dir>]",
-    "       node scripts/land.mjs --finish <dir>",
+    "Usage: node scripts/land.mjs --review <file.json>",
+    "       node scripts/land.mjs --hand-off <dir>",
+    "       node scripts/land.mjs --finish <dir> --review <file.json>",
   ].join("\n");
-  let values;
+  /** @type {{ review?: string, "hand-off"?: string, finish?: string }} */
+  let values = {};
   try {
     ({ values } = parseArgs({
       options: {
@@ -1085,27 +1149,27 @@ if (import.meta.main) {
     console.error(usage);
     process.exit(1);
   }
-  if (values.finish !== undefined) {
-    if (values.review !== undefined || values["hand-off"] !== undefined) {
-      console.error(usage);
-      process.exit(1);
-    }
+  const { review, "hand-off": handOffDir, finish } = values;
+  if (finish !== undefined && handOffDir === undefined)
     process.exitCode = await finishHandOff(
       process.cwd(),
       realDeps(),
-      values.finish,
+      finish,
+      review,
     );
-  } else {
-    // An empty --hand-off must never fall back to landing on the main checkout.
-    if (values["hand-off"] !== undefined && !values["hand-off"]) {
-      console.error(usage);
+  else if (handOffDir !== undefined && finish === undefined) {
+    // The intake reviews what a worker hands off.
+    if (review !== undefined) {
+      console.error(
+        `--hand-off takes no --review: the intake reviews the hand-off.\n${usage}`,
+      );
       process.exit(1);
     }
-    process.exitCode = await land(
-      process.cwd(),
-      realDeps(),
-      values.review,
-      values["hand-off"],
-    );
+    process.exitCode = await handOff(process.cwd(), realDeps(), handOffDir);
+  } else if (handOffDir === undefined && finish === undefined)
+    process.exitCode = await land(process.cwd(), realDeps(), review);
+  else {
+    console.error(usage);
+    process.exit(1);
   }
 }

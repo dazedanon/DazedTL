@@ -22,6 +22,9 @@ const lockNotice = 5 * 60_000;
  * @typedef {{ blob: string, holder: Holder }} Lock
  */
 
+/** Thrown when a live holder keeps the lock past a waiter's limit. */
+export class LockBusy extends Error {}
+
 /** Runs Git in `cwd`. @returns {Git} */
 export function gitIn(/** @type {string} */ cwd) {
   return (args, input) => {
@@ -97,9 +100,10 @@ function stamp(
  * Takes the lock for `who`, waiting while a live holder has it and taking
  * over a stale one. A wait past 5 minutes goes to `notify` once, and so does
  * its end, so the user hears of it while the waiter runs in the background.
+ * A wait past `limit` throws LockBusy.
  * @param {Git} git
  * @param {{ branch: string, worktree: string, pid?: number }} who
- * @param {{ now?: () => number, alive?: (pid: number) => boolean, namespace?: string | null, wait?: (ms: number) => Promise<unknown>, log?: (line: string) => void, notify?: (line: string) => void }} [options]
+ * @param {{ now?: () => number, alive?: (pid: number) => boolean, namespace?: string | null, wait?: (ms: number) => Promise<unknown>, log?: (line: string) => void, notify?: (line: string) => void, limit?: number }} [options]
  * @returns {Promise<Lock>}
  */
 export async function acquireLock(
@@ -112,6 +116,7 @@ export async function acquireLock(
     wait = sleep,
     log = () => {},
     notify = log,
+    limit = Infinity,
   } = {},
 ) {
   const self = { pid: process.pid, pidNamespace: namespace, ...who };
@@ -142,6 +147,10 @@ export async function acquireLock(
     const name = `${held.holder?.branch} (pid ${held.holder?.pid})`;
     if (name !== shown) log(`Waiting for the landing lock, held by ${name}.`);
     shown = name;
+    if (now() - since >= limit)
+      throw new LockBusy(
+        `The landing lock is still held by ${name} after ${minutes()}.`,
+      );
     if (!noticed && now() - since >= lockNotice) {
       notify(
         `Still waiting for the landing lock after ${minutes()}, held by ${name}.`,
@@ -174,21 +183,22 @@ export function releaseLock(/** @type {Git} */ git, /** @type {Lock} */ lock) {
 /**
  * Runs `task` holding the lock, renewing it every 5 minutes and releasing it
  * when the task ends, the process exits or a signal stops it; `onStop` runs
- * first on a signal, to stop child processes.
+ * first on a signal, to stop child processes. A wait for the lock past
+ * `limit` throws LockBusy.
  * @template T
  * @param {Git} git
  * @param {{ branch: string, worktree: string }} who
  * @param {() => Promise<T>} task
- * @param {{ log?: (line: string) => void, notify?: (line: string) => void, onStop?: () => void }} [options]
+ * @param {{ log?: (line: string) => void, notify?: (line: string) => void, onStop?: () => void, limit?: number }} [options]
  * @returns {Promise<T>}
  */
 export async function withLock(
   git,
   who,
   task,
-  { log = () => {}, notify = log, onStop } = {},
+  { log = () => {}, notify = log, onStop, limit } = {},
 ) {
-  const lock = await acquireLock(git, who, { log, notify });
+  const lock = await acquireLock(git, who, { log, notify, limit });
   let lost = false;
   const renew = setInterval(() => {
     if (!lost && !renewLock(git, lock)) {
