@@ -140,10 +140,12 @@ def run(
     with running(change), writing as game:
         kept = set()
         for key, document in documents.items():
-            path = Path(document["path"])
+            # By its name in the game, as a link outside it moves aside as
+            # the link it is.
+            name = document["file"]
+            path = root / name
             if not path.is_file():
                 continue
-            name = path.resolve().relative_to(root).as_posix()
             if keep_context or defined(key).checkpoints == "keep":
                 kept.add(name)
             else:

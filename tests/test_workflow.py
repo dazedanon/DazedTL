@@ -2272,6 +2272,7 @@ class WorkflowTests(unittest.TestCase):
         # assistant notes and the project's options; a paid API run still
         # waiting at its provider must refuse it.
         from dazedtl.compatibility.checkpoint_commits import _git
+        from desktop.backend.guidance import read
         from util.len_git import setup_git
         from util.len_translation import LenProject
 
@@ -2325,7 +2326,13 @@ class WorkflowTests(unittest.TestCase):
         for path, text in portable.items():
             path.parent.mkdir(exist_ok=True)
             path.write_text(text, encoding="utf-8")
-        self.engine.documents = lambda _source: {"glossary": {"path": str(glossary)}}
+        # A skill linked to a file outside the game, which the reader reads
+        # as unreadable, stopped Start over midway with the glossary moved.
+        shared = self.root / "shared-lore.md"
+        shared.write_text("Shared lore", encoding="utf-8")
+        linked = self.game / ".dazedtl/skills/lore.md"
+        linked.symlink_to(shared)
+        self.engine.read_documents = lambda source, drafted=(): read(source, drafted)
         records = self.profile / "translation/projects" / self.identity
         write_json(records / "assistant.json", {"seen_at": "2026-10-08T00:00:00"})
 
@@ -2400,6 +2407,8 @@ class WorkflowTests(unittest.TestCase):
             (self.game / "AGENTS.md").read_text(encoding="utf-8"),
             "Repack Data.wolf after injection.",
         )
+        self.assertTrue((archive / "context/.dazedtl/skills/lore.md").is_symlink())
+        self.assertEqual(shared.read_text(encoding="utf-8"), "Shared lore")
 
     def test_assistant_notes_follow_the_games_git_but_never_reach_players(self):
         # The notes must reach another computer through the game's Git even
