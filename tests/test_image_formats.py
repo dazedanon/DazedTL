@@ -430,6 +430,31 @@ class BmpAndJpegTests(unittest.TestCase):
             np.testing.assert_array_equal(np.asarray(image), expected)
         self.assertEqual(from_png(to_png(written), written), written)
 
+    def test_a_recolored_paletted_bmp_is_written_within_its_size(self):
+        # Every new color was measured against the whole palette at once: a
+        # redrawn 1280x720 title screen needed about 5 GB.
+        original = Image.new("P", (128, 128))
+        original.putpalette([level for level in range(256) for _ in range(3)])
+        stream = BytesIO()
+        original.save(stream, format="BMP")
+        edited = np.zeros((128, 128, 4), np.uint8)
+        edited[:, :, 0] = np.arange(128)[:, None] * 2
+        edited[:, :, 1] = np.arange(128)[None, :] * 2
+        edited[:, :, 2] = edited[:, :, 0] // 2 + edited[:, :, 1] // 2
+        edited[:, :, 3] = 255
+        candidate = png(edited)
+        tracemalloc.start()
+        try:
+            written = from_png(candidate, stream.getvalue())
+            _current, peak = tracemalloc.get_traced_memory()
+        finally:
+            tracemalloc.stop()
+        with Image.open(BytesIO(written)) as image:
+            # Each pixel takes the gray nearest its color.
+            nearest = np.rint(edited[:, :, :3].mean(axis=2)).astype(np.uint8)
+            np.testing.assert_array_equal(np.asarray(image), nearest)
+        self.assertLess(peak, 16_000_000)
+
     def test_a_24_bit_bmp_and_a_jpeg_are_written_in_their_format(self):
         original = picture(8, 8, 1, alpha=False)
         edited = picture(8, 8, 2, alpha=False)

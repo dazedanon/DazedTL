@@ -214,12 +214,18 @@ def _paletted_bmp(image, original: bytes, bits: int) -> bytes:
     changed = (edited != palette[indexes]).any(axis=2)
     if changed.any():
         colors, inverse = np.unique(edited[changed], axis=0, return_inverse=True)
-        distance = (
-            (colors[:, None].astype(np.int32) - palette[None, ::-1]) ** 2
-        ).sum(axis=2)
-        nearest = len(palette) - 1 - distance.argmin(axis=1)
+        # Squared distance less each color's own square, |p|² - 2c·p, exact
+        # in float32 for 8-bit values; a share of the colors at a time, so a
+        # redrawn image's many new colors fit in memory.
+        backwards = palette[::-1].astype(np.float32)
+        squares = (backwards**2).sum(axis=1)
+        nearest = np.empty(len(colors), np.intp)
+        for start in range(0, len(colors), 4096):
+            share = colors[start : start + 4096].astype(np.float32)
+            distance = squares - 2 * share @ backwards.T
+            nearest[start : start + 4096] = distance.argmin(axis=1)
         indexes = indexes.copy()
-        indexes[changed] = nearest[inverse.ravel()]
+        indexes[changed] = (len(palette) - 1 - nearest)[inverse.ravel()]
     result = Image.fromarray(indexes, "P")
     # All 256 colors, as Pillow reads an 8-bit BMP of black and white alone
     # as one bit per pixel.
