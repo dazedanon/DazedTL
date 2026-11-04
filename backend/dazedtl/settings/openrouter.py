@@ -7,7 +7,6 @@ Observations only read cached metadata.
 
 import json
 import math
-import time
 from datetime import UTC, datetime
 from decimal import Decimal, DecimalException
 from typing import NamedTuple, cast
@@ -195,7 +194,7 @@ def describe(connection, model):
 
 def live_prices(model, host=""):
     """Resolve public prices for an explicit lookup; no key or inference call."""
-    from .providers import OWN_APIS, openrouter_host
+    from .providers import OWN_APIS, TooLarge, bounded_request, openrouter_host
 
     host = openrouter_host(host)
     model = text(model, "OpenRouter model ID", required=True)
@@ -204,23 +203,16 @@ def live_prices(model, host=""):
         if host
         else "/model/" + quote(model, safe="/")
     )
+    unloaded = "OpenRouter's automatic prices could not be loaded. Try again, or enter custom Live rates."
     try:
-        started, content = time.monotonic(), bytearray()
-        with (
-            httpx.Client(timeout=3, follow_redirects=False) as client,
-            client.stream(
-                "GET",
-                OWN_APIS["openrouter"] + path,
-                headers={"Accept": "application/json", "Accept-Encoding": "identity"},
-            ) as response,
-        ):
-            response.raise_for_status()
-            for part in response.iter_bytes(65536):
-                content.extend(part)
-                if len(content) > 2_000_000 or time.monotonic() - started > 6:
-                    raise ValueError(
-                        "OpenRouter's price response exceeded its read limit."
-                    )
+        status, content = bounded_request(
+            "GET",
+            OWN_APIS["openrouter"] + path,
+            headers={"Accept": "application/json", "Accept-Encoding": "identity"},
+            limit=2_000_000,
+        )
+        if not 200 <= status < 300:
+            raise ValueError(unloaded)
         payload = json.loads(content)
         data = payload.get("data") if isinstance(payload, dict) else None
         if not isinstance(data, dict) or data.get("id") != model:
@@ -274,14 +266,20 @@ def live_prices(model, host=""):
             "updatedAt": datetime.now(UTC).isoformat(),
             "stale": False,
         }
-    except httpx.HTTPError:
+    except TooLarge:
         raise ValueError(
-            "OpenRouter's automatic prices could not be loaded. Try again, or enter custom Live rates."
+            "OpenRouter's price list is too large to read. Enter custom Live rates."
         ) from None
+    except httpx.ReadTimeout, httpx.WriteTimeout:
+        raise ValueError(
+            "OpenRouter's prices took too long to arrive. Try again, or enter custom Live rates."
+        ) from None
+    except httpx.HTTPError:
+        raise ValueError(unloaded) from None
 
 
 def _endpoint_rows(model, secret):
-    from .providers import PROVIDERS
+    from .providers import PROVIDERS, bounded_request
 
     # The preset's address, which test scenarios point at their stand-in.
     url = (
@@ -290,27 +288,16 @@ def _endpoint_rows(model, secret):
         + quote(model + ":batch", safe="/:")
         + "/endpoints"
     )
-    with (
-        httpx.Client(timeout=3, follow_redirects=False) as client,
-        client.stream(
-            "GET",
-            url,
-            headers={
-                "Authorization": "Bearer " + secret,
-                "Accept-Encoding": "identity",
-            },
-        ) as response,
-    ):
-        if response.status_code == 404:
-            return []
-        response.raise_for_status()
-        started, content = time.monotonic(), bytearray()
-        for part in response.iter_bytes(65536):
-            content.extend(part)
-            if len(content) > 2_000_000 or time.monotonic() - started > 5:
-                raise ValueError(
-                    "OpenRouter endpoint metadata exceeded its read limit."
-                )
+    status, content = bounded_request(
+        "GET",
+        url,
+        headers={"Authorization": "Bearer " + secret, "Accept-Encoding": "identity"},
+        limit=2_000_000,
+    )
+    if status == 404:
+        return []
+    if not 200 <= status < 300:
+        raise ValueError("OpenRouter's Batch endpoints could not be loaded.")
     payload = json.loads(content)
     data = payload.get("data") if isinstance(payload, dict) else None
     if (
@@ -324,7 +311,7 @@ def _endpoint_rows(model, secret):
 
 def check_endpoints(connection, known):
     """Verify Batch separately; an endpoint outage cannot revoke a valid key."""
-    from .providers import openrouter_host
+    from .providers import TooLarge, openrouter_host
 
     model, host = connection.get("model", ""), connection.get("openrouter_host", "")
     if not model or model + ":batch" not in known:
@@ -338,7 +325,7 @@ def check_endpoints(connection, known):
     }
     try:
         rows = _endpoint_rows(model, connection["secret"])
-    except httpx.HTTPError, ValueError, UnicodeError:
+    except httpx.HTTPError, TooLarge, ValueError, UnicodeError:
         return unavailable
     selected_endpoints, eligible, unsupported = [], set(), set()
     for row in rows:

@@ -1,6 +1,7 @@
 """Per-model limits stay with their connection and the approved run."""
 
 import json
+import socket
 import threading
 import time
 import unittest
@@ -38,6 +39,39 @@ def frozen_batch(settings):
     """The OpenRouter Batch policy frozen settings hold, and whether they
     froze it as not read yet (settings/openrouter UNREAD)."""
     return settings["openrouterBatch"], settings.get(openrouter.UNREAD, False)
+
+
+def stand_in(parts):
+    """A server on 127.0.0.1 that answers each request with *parts*, pairs
+    of seconds to wait and bytes to send; close it to stop it."""
+    server = socket.create_server(("127.0.0.1", 0))
+
+    def run():
+        while True:
+            try:
+                connection, _ = server.accept()
+            except OSError:
+                return
+            with connection:
+                connection.recv(65536)
+                try:
+                    for wait, data in parts:
+                        time.sleep(wait)
+                        connection.sendall(data)
+                except OSError:
+                    pass
+
+    threading.Thread(target=run, daemon=True).start()
+    return server
+
+
+def model_list(port, host="127.0.0.1"):
+    return {
+        "protocol": "openai",
+        "endpoint": f"http://{host}:{port}/v1",
+        "secret": "fixture-key",
+        "keyless": False,
+    }
 
 
 class SettingsTests(unittest.TestCase):
@@ -472,6 +506,72 @@ class SettingsTests(unittest.TestCase):
             ).encode()
             with self.assertRaises(ValueError):
                 providers.openrouter_hosts(model)
+
+    def test_a_check_verifies_past_addresses_that_never_answer_and_a_slow_reply(
+        self,
+    ):
+        # A user's IPv6 was configured but not routed, so each of a host's
+        # addresses cost a whole connect timeout, and connecting ate the
+        # reply's time.
+        body = json.dumps({"data": [{"id": "fixture-model"}]}).encode()
+        headers = b"HTTP/1.1 200 OK\r\nContent-Length: %d\r\n\r\n" % len(body)
+        server = stand_in([(0.05, headers), (0.05, body[:9]), (0.05, body[9:])])
+        self.addCleanup(server.close)
+        silent = ("192.0.2.1", "192.0.2.2", "192.0.2.3")
+        lookup = socket.getaddrinfo
+
+        def getaddrinfo(host, port, *args, **kwargs):
+            if host != "models.test":
+                return lookup(host, port, *args, **kwargs)
+            return [
+                (socket.AF_INET, socket.SOCK_STREAM, 6, "", (address, port))
+                for address in (*silent, "127.0.0.1")
+            ]
+
+        class Socket(socket.socket):
+            def connect(self, address):
+                if address[0] in silent:
+                    time.sleep(self.gettimeout())
+                    raise TimeoutError("timed out")
+                super().connect(address)
+
+        with (
+            patch.multiple(
+                providers, SETUP_SECONDS=1, REPLY_SECONDS=0.5, ATTEMPT_DELAY=0.05
+            ),
+            patch.object(socket, "getaddrinfo", getaddrinfo),
+            patch.object(socket, "socket", Socket),
+        ):
+            checked = providers.check(
+                model_list(server.getsockname()[1], "models.test")
+            )
+        self.assertEqual(checked["check"]["status"], "reachable")
+        self.assertEqual(checked["models"], ["fixture-model"])
+
+    def test_a_check_ends_a_trickling_reply_and_tells_it_from_an_oversized_list(
+        self,
+    ):
+        trickle = stand_in(
+            [(0, b"HTTP/1.1 200 OK\r\nContent-Length: 1000\r\n\r\n")]
+            + [(0.05, b" ")] * 60
+        )
+        self.addCleanup(trickle.close)
+        large = stand_in(
+            [
+                (0, b"HTTP/1.1 200 OK\r\nContent-Length: 2000001\r\n\r\n"),
+                (0, b" " * 2_000_001),
+            ]
+        )
+        self.addCleanup(large.close)
+        with patch.object(providers, "REPLY_SECONDS", 0.2):
+            started = time.monotonic()
+            slow = providers.check(model_list(trickle.getsockname()[1]))["check"]
+            self.assertLess(time.monotonic() - started, 1)
+            oversized = providers.check(model_list(large.getsockname()[1]))["check"]
+        self.assertEqual(slow["status"], "unavailable")
+        self.assertIn("took too long", slow["message"])
+        self.assertEqual(oversized["status"], "unsupported")
+        self.assertIn("too large", oversized["message"])
 
     def test_openrouter_checks_authenticated_catalog_without_truncating_it_to_250_models(
         self,
