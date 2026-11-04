@@ -2012,7 +2012,11 @@ class TranslationTests(unittest.TestCase):
         self.assertNotIn("requests", record)
         # A journal saved before an update sent an earlier wording, and still
         # continues; a wording the app never sent does not.
-        for content, continues in ((CLARIFICATIONS[1], True), ("Hi", False), (["Hi"], False)):
+        for content, continues in (
+            (CLARIFICATIONS[1], True),
+            ("Hi", False),
+            (["Hi"], False),
+        ):
             with self.subTest(content=content):
                 saved = deepcopy(record)
                 for batch in saved["batches"]:
