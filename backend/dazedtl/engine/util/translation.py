@@ -5276,12 +5276,17 @@ def buildOpenAIRequest(system, user, history, penalty, formatType, model,
 
     provider = (api_provider or os.getenv("API_PROVIDER", "openai")).lower()
     from dazedtl.settings.providers import completion_field as uses_completion_field
-    from dazedtl.settings.providers import opencode_route, own_api, response_format
+    from dazedtl.settings.providers import (
+        deepseek_model,
+        opencode_route,
+        own_api,
+        response_format,
+    )
 
     endpoint = os.getenv("api", "") if api_url is None else str(api_url or "")
     model_l = str(model or "").lower()
     gpt6_family = re.search(r"(?:^|/)gpt-6-(astra|sol|luna)(?:-|$)", model_l)
-    is_deepseek = "deepseek" in model_l
+    is_deepseek = deepseek_model(model)
     is_mistral = provider == "mistral" or isMistralAPI()
     system_blocks = _provider_system_blocks(system, vocab_text)
     supports_explicit_cache = (

@@ -276,10 +276,14 @@ def opencode_route(endpoint):
     return next((name for name in OPENCODE if own_api(name, endpoint)), None)
 
 
-def opencode_deepseek(model):
-    """Whether *model* is one of DeepSeek's models by the ID OpenCode's routes
-    give it, such as "deepseek-v4.1-flash"."""
-    return str(model or "").strip().lower().startswith("deepseek-")
+def deepseek_model(model):
+    """Whether *model* is one of DeepSeek's models by its ID on any host, such
+    as "deepseek-v4.1-flash" on DeepSeek's API and OpenCode's routes or
+    "deepseek/deepseek-v4-pro" on OpenRouter. The one rule for DeepSeek's
+    JSON mode (response_format), its output ceiling off its own API (engine
+    translation buildOpenAIRequest), its billing on Go (deepseek_route) and
+    its thinking switch (effort thinking_switch)."""
+    return "deepseek" in str(model or "").lower()
 
 
 def deepseek_route(model, endpoint):
@@ -292,7 +296,7 @@ def deepseek_route(model, endpoint):
     on either of OpenCode's routes reads from the route's model list instead
     (settings/opencode cache_read_multiple)."""
     return own_api("deepseek", endpoint) or (
-        own_api("opencode-go", endpoint) and opencode_deepseek(model)
+        own_api("opencode-go", endpoint) and deepseek_model(model)
     )
 
 
@@ -387,7 +391,7 @@ def response_format(protocol, endpoint, model, schema, name, *, batch=False):
     a schema still gets JSON mode from the senders' fallbacks (engine
     translateText and callMistral, batch_providers.execute_live_request)."""
     json_mode = (
-        "deepseek" in str(model or "").lower()
+        deepseek_model(model)
         or own_api("deepseek", endpoint)
         or (batch and protocol == "gemini")
     )

@@ -482,13 +482,13 @@ def thinking_switch(provider, model):
     """Whether "none" turns *model*'s thinking off on *provider* with the
     `thinking` field (``apply``): on Kimi's and DeepSeek's own APIs, and for
     a DeepSeek model on OpenCode's routes, which pass the field on to it
-    (settings/providers opencode_deepseek). There DeepSeek V4.1 Flash thinks
+    (settings/providers deepseek_model). There DeepSeek V4.1 Flash thinks
     by default, most of its output, which `reasoning_effort` "low" left
     unchanged and `thinking` disabled removed (real requests, 2026-11-03)."""
-    from .providers import OPENCODE, opencode_deepseek
+    from .providers import OPENCODE, deepseek_model
 
     return provider in ("deepseek", "kimi") or (
-        provider in OPENCODE and opencode_deepseek(model)
+        provider in OPENCODE and deepseek_model(model)
     )
 
 
