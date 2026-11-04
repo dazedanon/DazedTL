@@ -224,7 +224,7 @@ def _plugin(js: Path, entry: dict[str, Any], loaded: bool, core: _Core) -> _Plug
     return plugin
 
 
-def _script(command: dict[str, Any]) -> list[str]:
+def scripts(command: dict[str, Any]) -> list[str]:
     """The script an event command runs: Script, a Conditional Branch or
     Control Variables script, a movement route's Script, or a plugin
     command's arguments."""
@@ -247,10 +247,12 @@ def _script(command: dict[str, Any]) -> list[str]:
     return []
 
 
-def _commands(document: Any):
+def event_commands(document: Any):
+    """Every event command a data file holds, a movement route's included,
+    outside its `_original`."""
     if isinstance(document, list):
         for child in document:
-            yield from _commands(child)
+            yield from event_commands(child)
     elif isinstance(document, dict):
         if blocks.code(document) is not None and isinstance(
             document.get("parameters"), list
@@ -258,7 +260,7 @@ def _commands(document: Any):
             yield document
         for key, child in document.items():
             if key != "_original":
-                yield from _commands(child)
+                yield from event_commands(child)
 
 
 class Reach:
@@ -291,7 +293,7 @@ class Reach:
         """Record the plugin commands and script one event file holds."""
         if not _EVENT_FILE_RE.fullmatch(name):
             return
-        for command in _commands(document):
+        for command in event_commands(document):
             parameters = command["parameters"]
             if command["code"] == 357 and len(parameters) > 1 and all(
                 isinstance(value, str) for value in parameters[:2]
@@ -303,7 +305,7 @@ class Reach:
                 words = parameters[0].split()
                 if words:
                     self._words.setdefault(words[0].casefold(), [0, name])[0] += 1
-            for value in _script(command):
+            for value in scripts(command):
                 if isinstance(value, str):
                     for token in _IDENTIFIER_RE.findall(value):
                         self._scripts.setdefault(token, name)

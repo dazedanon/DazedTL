@@ -280,11 +280,11 @@ the registration, not the folder.
 
 ### `System.json` `variables` / `switches` - whitelist by ID where one is DRAWN
 
-The default stays off: plugins and events resolve these by NAME. But a plugin
-that displays a variable often draws the variable's NAME as the label beside
-it - `LL_VariableWindow` does. Whitelist the specific ids, exactly like the
-`122` values, and verify nothing looks a name up:
-`grep -n "variables\.indexOf\|switches\.indexOf"` over `js/`.
+The default stays off: plugins and events resolve these by NAME.
+But a plugin that displays a variable often draws the variable's NAME as the label beside it - `LL_VariableWindow` does.
+`util.rpgmaker_variable_names.game_drawn(game_root)` gives the ids DazedTL translates in both methods: those a plugin whose code reads `$dataSystem.variables` names in a `@type variable` setting or command argument, unless the name appears in plugin code, settings or an event script.
+The census lists those names as text players read (field `variables/*[drawn]`).
+Whitelist other ids only on evidence, exactly like the `122` values, and verify nothing looks a name up: `grep -n "variables\.indexOf\|switches\.indexOf"` over `js/`.
 
 **Also audit script assignments.** Tropical Chase has 501 code `122`
 commands, but its three script operands are numerical expressions. Its display
@@ -1180,7 +1180,8 @@ for a *different* file's field - is common and invisible. Grep enabled plugins f
 
 Phase 0 covers `name`, `description` and `note` on the ten database files. `System.json` needs per-field rules:
 
-- **`switches` and `variables` stay untranslated by default.** Plugins and events resolve them by NAME as string keys. Translating them breaks quests in a way that looks like random game logic failure rather than a translation bug.
+- **`switches` and `variables` stay untranslated by default.** Plugins and events resolve them by NAME as string keys. Translating them breaks quests in a way that looks like random game logic failure rather than a translation bug. The exception is a variable name a plugin draws (see the whitelist section above).
+- **`currencyUnit` is translated like the other menu terms**, keeping its source in `_original`: the engine draws it after every amount of money and in `\G`.
 - **`terms.messages` is handled separately from the rest of `terms`** because its values carry `%1`/`%2` runtime substitutions. Remove `.`, `"` and literal `\n` from every translated battle message - a stray quote corrupts the JSON escape level and a literal `\n` splits a battle message mid-render. Normalize the common model rewrite of `escapeFailure` from `but couldn't escape!` back to the canonical `But escape failed!`.
 - The other lists (`armorTypes`, `skillTypes`, `equipTypes`, `elements`, `weaponTypes`, the `terms` categories) get `.replace('"','').strip()`, and **collect only the entries that need translation while preserving their original index**. Slot 0 is usually null or empty, and shifting it renames every type by one.
 - Strip a trailing `.` from `gameTitle`.

@@ -308,22 +308,35 @@ class GuidedInputs:
             (self.data / name).relative_to(self.source).as_posix()
         )
 
+    def drawn_variables(self, names):
+        """The ids of the variable names the game's plugins draw
+        (util/rpgmaker_variable_names), which System.json's lines count, when
+        *names* hold it."""
+        from util.rpgmaker_variable_names import data_drawn
+
+        return data_drawn(self.data) if "System.json" in names else frozenset()
+
     def line_counts(self, phases, markers, counting=None):
         """Each file's line counts (file_lines.count) in its newest copy, by
         file to its phase ("database" or "dialogue"); choice help counts under
-        *markers*. A file read once stays counted until its bytes change, and
-        a file that cannot be read has none, all read in the game's language
-        pair. Given a *counting* list, files too many to read at once go to
-        readers (translation/derived) and their names to that list, without
-        counts until a later look."""
+        *markers*, and System.json the variable names the game's plugins draw
+        (drawn_variables). A file read once stays counted until its bytes
+        change, and a file that cannot be read has none, all read in the
+        game's language pair. Given a *counting* list, files too many to
+        read at once go to readers (translation/derived) and their names to
+        that list, without counts until a later look."""
         from dazedtl.languages import active_source, active_target, reading_game
 
         with reading_game(self.source):
             return self._line_counts(
-                phases, markers, (active_source(), active_target()), counting
+                phases,
+                markers,
+                (active_source(), active_target()),
+                counting,
+                self.drawn_variables(phases),
             )
 
-    def _line_counts(self, phases, markers, pair, counting):
+    def _line_counts(self, phases, markers, pair, counting, variables):
         from util.source_text import holds_source
 
         from . import derived
@@ -350,6 +363,7 @@ class GuidedInputs:
                 sorted(markers) if phase == "dialogue" else None,
                 identities[name].get("original"),
                 list(pair),
+                sorted(variables) if name == "System.json" else None,
             )
             used.add(key)
             if store.has(section, key):
@@ -373,6 +387,7 @@ class GuidedInputs:
                     "digest": fingerprint,
                     "phase": phase,
                     "markers": sorted(markers),
+                    "variables": sorted(variables),
                     "original": identities[name].get("original"),
                     "source": str(self.source),
                     "pair": list(pair),
@@ -407,7 +422,13 @@ class GuidedInputs:
                     return None
 
             found[name] = read_counts(
-                name, raw, phase, markers, identities[name].get("original"), original
+                name,
+                raw,
+                phase,
+                markers,
+                identities[name].get("original"),
+                original,
+                variables,
             )
             # Counts read without an original Git failed to give, or from
             # bytes that changed since their digest, hold for this look only.

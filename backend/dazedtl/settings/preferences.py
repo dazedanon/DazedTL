@@ -137,6 +137,13 @@ GALGE_CHOICES = "galge-choices-once-v1"
 # question of the last Galge message translated on the page, as it did when
 # approved.
 GALGE_ARGUMENTS = "galge-arguments-v1"
+# RPG Maker MV/MZ's System.json currency unit, drawn after every amount of
+# money, and the variable names the game's plugins draw, such as
+# LL_VariableWindow's label (engine util/rpgmaker_variable_names), are
+# translated with the other menu terms; the run freezes those variables' ids
+# in its policy (compatibility/manual freeze_variables), as its worker holds
+# no plugin or event file. A run frozen without it leaves both as they were.
+SYSTEM_TEXT = "system-text-v1"
 # Each battle-message-users policy a saved run may hold, by the parser level it
 # enables: v2 also treats a party of one actor as that actor.
 BATTLE_MESSAGE_USERS_LEVELS = {
@@ -159,6 +166,7 @@ FROZEN_POLICIES = {
     "shortOutputs": SHORT_OUTPUTS,
     "galgeChoices": GALGE_CHOICES,
     "galgeArguments": GALGE_ARGUMENTS,
+    "systemText": SYSTEM_TEXT,
 }
 # A reply's lines have the small kana a model leaves in a line holding no
 # other Japanese written as Latin letters (engine util/target_text

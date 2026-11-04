@@ -6522,6 +6522,14 @@ def searchSS(state, pbar):
     return totalTokens
 
 
+# Whether the currency unit and the variable names the game's plugins draw,
+# DRAWN_VARIABLES' ids (util/rpgmaker_variable_names), are translated; a run
+# frozen without its policy (dazedtl settings/preferences SYSTEM_TEXT) leaves
+# them as they were.
+SYSTEM_TEXT = False
+DRAWN_VARIABLES: frozenset[int] = frozenset()
+
+
 def searchSystem(data, pbar):
     totalTokens = [0, 0]
     context = ctx("database.ui_term")
@@ -6542,6 +6550,20 @@ def searchSystem(data, pbar):
         _apply_system_scalar_original(data, "gameTitle", title_src)
     if pbar is not None:
         pbar.refresh()
+
+    # Currency unit, drawn after every amount of money
+    if SYSTEM_TEXT and _text_needs_translation(
+        data.get("currencyUnit"), _system_scalar_source(data, "currencyUnit")
+    ):
+        unit_src = _system_scalar_text(data, "currencyUnit")
+        response = translateAI([unit_src], context, False)
+        totalTokens[0] += response[1][0]
+        totalTokens[1] += response[1][1]
+        if response[0]:
+            data["currencyUnit"] = response[0][0].replace('"', "").strip()
+            _apply_system_scalar_original(data, "currencyUnit", unit_src)
+        if pbar is not None:
+            pbar.refresh()
 
     # Terms - batch translate all term items
     for term in data["terms"]:
@@ -6716,12 +6738,18 @@ def searchSystem(data, pbar):
         if pbar is not None:
             pbar.refresh()
 
-    # Variables (Optional usually) — batch translate to reduce calls
-    if TLSYSTEMVARIABLES and "variables" in data and isinstance(data["variables"], list):
+    # Variables: every name with TLSYSTEMVARIABLES (it can break stuff), else
+    # those the game's plugins draw - batch translate to reduce calls
+    drawn = (
+        None if TLSYSTEMVARIABLES else DRAWN_VARIABLES if SYSTEM_TEXT else frozenset()
+    )
+    if (drawn is None or drawn) and "variables" in data and isinstance(data["variables"], list):
         var_indices = []
         var_values = []
         var_sources = []
         for idx, val in enumerate(data["variables"]):
+            if drawn is not None and idx not in drawn:
+                continue
             src = _system_list_text(data, "variables", idx)
             if isinstance(val, str) and src.strip():
                 if not _text_needs_translation(
@@ -6734,7 +6762,7 @@ def searchSystem(data, pbar):
         if var_values:
             response = translateAI(
                 var_values,
-                ctx("database.actor_title"),
+                ctx("database.actor_title") if drawn is None else context,
                 True,
             )
             totalTokens[0] += response[1][0]

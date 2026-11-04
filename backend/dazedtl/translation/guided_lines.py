@@ -97,6 +97,7 @@ class GuidedLines:
             if self.native["phase1_comments"]
             else frozenset()
         )
+        self.variables = self.inputs.drawn_variables(self.files)
         self._found = None
 
     def _units(self):
@@ -125,7 +126,7 @@ class GuidedLines:
 
                 notes = file_lines.note_pointers(document, read_original)
                 for line in file_lines.read(
-                    name, document, phase, self.markers, read_original
+                    name, document, phase, self.markers, read_original, self.variables
                 ):
                     # A block names its texts by the command it starts at.
                     head = (

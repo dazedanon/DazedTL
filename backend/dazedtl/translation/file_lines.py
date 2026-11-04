@@ -36,8 +36,6 @@ _MAP = re.compile(r"Map\d+\.json")
 # Database fields the database pass translates, beyond those players read in
 # menus: map names, which some plugins show.
 _MAP_INFOS = "MapInfos.json"
-# System values the engine leaves as they are.
-_KEPT_SYSTEM = frozenset({"currencyUnit"})
 
 
 # A 101's name window may wrap its name in colour codes and 【】, and hold
@@ -122,29 +120,38 @@ def _entry_original(document: Any, path: tuple) -> tuple[str, ...]:
 
 
 def _visible(
-    name: str, document: Any, markers: frozenset[str] = frozenset()
+    name: str,
+    document: Any,
+    markers: frozenset[str] = frozenset(),
+    variables: frozenset[int] = frozenset(),
 ) -> Iterator[tuple[tuple[Any, ...], Any, str, bool, str | None]]:
     """Text QA's reader (a QA engine source, read unchanged so its tasks'
     fingerprint holds): each text's path, value, kind, `_original` flag and
     the source it keeps there."""
     from util.rpgmaker_qa_preflight import visible_texts
 
-    yield from visible_texts(name, document, markers)
+    yield from visible_texts(name, document, markers, variables)
 
 
 def lines(
-    name: str, document: Any, phase: str, markers: frozenset[str] = frozenset()
+    name: str,
+    document: Any,
+    phase: str,
+    markers: frozenset[str] = frozenset(),
+    variables: frozenset[int] = frozenset(),
 ) -> list[Line]:
     """Each line of a phase's scope ("database" or "dialogue") in one data
     file, in file order, whether or not it is in scope. Event text reads its
     blocks as util/rpgmaker_blocks defines them; choice help, and other
     comments a plugin shows, count under *markers*, the comment markers
-    Comment text translates, none while it is off."""
+    Comment text translates, none while it is off. System.json's terms
+    include the names of the *variables* the game's plugins draw
+    (util/rpgmaker_variable_names)."""
     from util import rpgmaker_blocks as blocks
     from util.rpgmaker_scope import changes
 
     if phase == "database":
-        return _database(name, document)
+        return _database(name, document, variables)
     found: list[Line] = []
     if not (_MAP.fullmatch(name) or name in {"CommonEvents.json", "Troops.json"}):
         return found
@@ -321,13 +328,13 @@ def _fields(name: str, document: Any) -> Any:
     if name == "System.json" and isinstance(document, dict):
         return {
             key: document[key]
-            for key in (*SYSTEM_FIELDS, "_original")
+            for key in (*SYSTEM_FIELDS, "variables", "_original")
             if key in document
         }
     return document
 
 
-def _database(name: str, document: Any) -> list[Line]:
+def _database(name: str, document: Any, variables: frozenset[int]) -> list[Line]:
     found = []
     if name == _MAP_INFOS:
         entries = (
@@ -350,11 +357,9 @@ def _database(name: str, document: Any) -> list[Line]:
                 )
         return found
     for path, value, kind, _translated, source in _visible(
-        name, _fields(name, document)
+        name, _fields(name, document), variables=variables
     ):
         if not isinstance(value, str) or kind not in ("database field", "system term"):
-            continue
-        if kind == "system term" and path[0] in _KEPT_SYSTEM:
             continue
         found.append(
             Line(kind, (path,), (value,), (source,) if source is not None else ())
@@ -372,13 +377,14 @@ def _read(
     phase: str,
     markers: frozenset[str],
     original: Callable[[], Any],
+    variables: frozenset[int] = frozenset(),
 ) -> list[Line]:
     """lines() of a file, where a map name or note label keeps no source
     and the original game file decides it, read against `original()`'s
     map: read only then, once."""
     from util.source_text import source_left
 
-    found = lines(name, document, phase, markers)
+    found = lines(name, document, phase, markers, variables)
     if not any(
         line.kind in _UNKEPT
         and not line.sources
@@ -400,10 +406,11 @@ def read(
     phase: str,
     markers: frozenset[str],
     original: Callable[[], Any],
+    variables: frozenset[int] = frozenset(),
 ) -> list[Line]:
     """lines() of a file as counts read it: a map name or note label keeping
     no source of its own takes the original game file's (`_read`)."""
-    return _read(name, document, phase, markers, original)
+    return _read(name, document, phase, markers, original, variables)
 
 
 def state(line: Line, notes: frozenset[str]) -> str | None:
@@ -472,7 +479,7 @@ def _is_blob(raw: bytes, blob: str | None) -> bool:
 # again. What counts as a refusal note is refusals.RULES_VERSION, and what
 # reads as Japanese left engine util/source_text RULES_VERSION, which their
 # section names too (`counts_section`).
-COUNT_VERSION = 2
+COUNT_VERSION = 3
 
 
 def counts_section() -> str:
@@ -489,6 +496,7 @@ def read_counts(
     markers: frozenset[str],
     original_blob: str | None = None,
     original: Callable[[], Any] = lambda: None,
+    variables: frozenset[int] = frozenset(),
 ) -> dict[str, Any] | None:
     """count() of a file's bytes, None when they hold no game data it reads;
     `original_blob` is the original game file's Git blob, when known, and
@@ -504,6 +512,7 @@ def read_counts(
             markers,
             (lambda: None) if _is_blob(raw, original_blob) else original,
             look_for_notes=may_hold_notes(raw, original_blob),
+            variables=variables,
         )
     except ValueError:
         return None
@@ -521,6 +530,7 @@ def count(
     original: Callable[[], Any] = lambda: None,
     *,
     look_for_notes: bool = True,
+    variables: frozenset[int] = frozenset(),
 ) -> dict[str, Any]:
     """A file's line counts: lines in scope, those translated, those holding
     a refusal note and the choice help left; `otherNotes` counts refusal notes
@@ -528,11 +538,12 @@ def count(
     text (a database file counts them as lines left), and `mapName`
     is a translated map display name whose source decides its scope.
     `look_for_notes` false skips looking for notes in a file that holds
-    none (may_hold_notes())."""
+    none (may_hold_notes()). System.json counts the names of the *variables*
+    the game's plugins draw (util/rpgmaker_variable_names)."""
     notes = note_pointers(document, original) if look_for_notes else frozenset()
     counted: set[str] = set()
     result: dict[str, Any] = {"lines": 0, "translated": 0}
-    for line in _read(name, document, phase, markers, original):
+    for line in _read(name, document, phase, markers, original, variables):
         if notes:
             counted.update(map(_pointer, line.paths))
         found = state(line, notes)
@@ -565,11 +576,12 @@ def left(
     phase: str,
     markers: frozenset[str],
     original: Callable[[], Any] = lambda: None,
+    variables: frozenset[int] = frozenset(),
 ) -> list[dict[str, str]]:
     """The lines still left in a file, with their location, text and why."""
     notes = note_pointers(document, original)
     rows = []
-    for line in _read(name, document, phase, markers, original):
+    for line in _read(name, document, phase, markers, original, variables):
         found = state(line, notes)
         if found not in {"untranslated", "note"}:
             continue

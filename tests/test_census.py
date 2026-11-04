@@ -454,6 +454,73 @@ class CensusTests(unittest.TestCase):
         _report, uncovered = census.coverage(scan(game), sources[:3], [], [])
         self.assertEqual(uncovered, [])
 
+    def test_variable_names_a_plugin_draws_count_as_their_text(self):
+        # A variable window drew 現在の出撃ドローン beside its value, set aside
+        # with every variable name as an identifier.
+        def plugin(name, code, *header):
+            return "\n".join(("/*:", *(f" * {line}" for line in header), " */", code))
+
+        draws = "this.drawText($dataSystem.variables[id], 0, 0, 200);"
+        plugins = [
+            {"name": "Window", "status": True, "parameters": {"hudVariable": "3"}},
+            {"name": "Store", "status": True, "parameters": {"target": "4"}},
+        ]
+        names = ["", "ドローン", "作業用", "残り弾数", "保存先", "検索用"]
+        game = {
+            "www/js/plugins.js": f"var $plugins =\n{json.dumps(plugins)};\n".encode(),
+            "www/js/plugins/Window.js": plugin(
+                "Window",
+                draws,
+                "@param hudVariable",
+                "@type variable",
+                "@command show",
+                "@arg variableId",
+                "@type variable",
+                "@arg label",
+                "@type string",
+            ).encode(),
+            # Its variable setting stores a value; it draws no name.
+            "www/js/plugins/Store.js": plugin(
+                "Store",
+                "$gameVariables.setValue(id, 1);",
+                "@param target",
+                "@type variable",
+            ).encode(),
+            "www/data/System.json": {"currencyUnit": "円", "variables": names},
+            "www/data/CommonEvents.json": [
+                None,
+                {
+                    "list": [
+                        command(357, "Window", "show", "", {"variableId": "1"}),
+                        command(357, "Window", "show", "", {"variableId": "5"}),
+                        command(357, "Store", "show", "", {"variableId": "2"}),
+                        # A script looks variable 5 up by its name.
+                        command(355, "$dataSystem.variables.indexOf('検索用');"),
+                    ]
+                },
+            ],
+        }
+        drawn = census.DRAWN_SEGMENT
+        rows = {
+            (entry["field"], "".join(entry["runs"]))
+            for entry in scan(game)["entries"]
+            if entry["kind"] == "rpgmaker:system"
+        }
+        self.assertEqual(
+            rows,
+            {
+                ("currencyUnit", "円"),
+                (f"variables/{drawn}", "ドローン"),
+                (f"variables/{drawn}", "残り弾数"),
+                ("variables/*", "作業用"),
+                ("variables/*", "保存先"),
+                ("variables/*", "検索用"),
+            },
+        )
+        for field in ("currencyUnit", f"variables/{drawn}"):
+            self.assertTrue(census.protected("rpgmaker:system", field), field)
+        self.assertFalse(census.protected("rpgmaker:system", "variables/*"))
+
     def test_plugins_count_as_the_game_loads_them(self):
         # The assistant translated plugins the game never runs: a disabled
         # entry, a plugin's later entry, DazedTL's own update check, and the
