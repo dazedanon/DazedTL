@@ -13,6 +13,7 @@ import {
   formatBranch,
   mergeDev,
   readReview,
+  reviewedHead,
   timer,
   waitForApp,
 } from "../scripts/land.mjs";
@@ -236,6 +237,7 @@ test("a landing's review record comes from an independent reviewer and accounts 
     record({
       level: "high",
       reviewer: "independent",
+      head: "abc1234",
       findings: [
         { summary: "Off by one", outcome: "fixed", reason: "" },
         { summary: "Slow loop", outcome: "dismissed", reason: "Runs once" },
@@ -244,6 +246,7 @@ test("a landing's review record comes from an independent reviewer and accounts 
     {
       level: "high",
       reviewer: "independent",
+      head: "abc1234",
       findings: [
         { summary: "Off by one", outcome: "fixed" },
         { summary: "Slow loop", outcome: "dismissed", reason: "Runs once" },
@@ -251,29 +254,71 @@ test("a landing's review record comes from an independent reviewer and accounts 
     },
   );
   // The author's own review, or none, no longer lands a branch.
+  const reviewed = { reviewer: "independent", head: "abc1234" };
   for (const unreviewed of [
-    { level: "high", findings: [] },
-    { level: "high", reviewer: "author", findings: [] },
+    { level: "high", head: "abc1234", findings: [] },
+    { level: "high", reviewer: "author", head: "abc1234", findings: [] },
     { skipped: "Docs only" },
     null,
   ])
     assert.throws(() => record(unreviewed), /"reviewer": "independent"/);
   assert.throws(
-    () => record({ level: "medium", reviewer: "independent", findings: [] }),
+    () => record({ ...reviewed, level: "medium", findings: [] }),
     /level of high/,
+  );
+  assert.throws(
+    () => record({ level: "high", reviewer: "independent", findings: [] }),
+    /head commit/,
   );
   assert.throws(
     () =>
       record({
+        ...reviewed,
         level: "high",
-        reviewer: "independent",
         findings: [{ summary: "Slow loop", outcome: "dismissed" }],
       }),
     /Finding 1 .* without a reason/,
   );
-  assert.throws(
-    () => record({ level: "high", reviewer: "independent" }),
-    /findings list/,
-  );
+  assert.throws(() => record({ ...reviewed, level: "high" }), /findings list/);
   assert.throws(() => readReview("level: high"), /not JSON/);
+});
+
+test("a landing's review covers every commit of the branch but merges of dev and the formatter's", async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dazedtl-land-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const git = gitIn(dir);
+  git(["init", "-q", "-b", "dev"]);
+  git(["config", "user.name", "Test"]);
+  git(["config", "user.email", "test@example.com"]);
+  const commit = (file: string, text: string, message: string) => {
+    fs.writeFileSync(path.join(dir, file), text);
+    git(["add", "-A"]);
+    git(["commit", "-qm", message]);
+    return git(["rev-parse", "HEAD"]).stdout.trim();
+  };
+  commit("base.txt", "base\n", "base");
+  git(["checkout", "-qb", "work"]);
+  const reviewed = commit("code.mjs", "let a=1\n", "feat: work");
+  // A landing merges dev in and commits what the formatter changed.
+  git(["checkout", "-q", "dev"]);
+  commit("other.txt", "other\n", "fix: other");
+  git(["checkout", "-q", "work"]);
+  git(["merge", "-q", "--no-edit", "dev"]);
+  const format = async () => {
+    fs.writeFileSync(path.join(dir, "code.mjs"), "let a = 1;\n");
+    return { status: 0, output: "" };
+  };
+  assert.equal(await formatBranch(git, dir, format, () => {}), null);
+  assert.equal(reviewedHead(git, reviewed.slice(0, 8)), reviewed);
+  // A fix made after the review, such as for a failed landing, is not reviewed.
+  commit("code.mjs", "let a = 2;\n", "fix: later");
+  assert.throws(
+    () => reviewedHead(git, reviewed),
+    /after the review record's head[^]* fix: later$/,
+  );
+  git(["checkout", "-q", "dev"]);
+  const elsewhere = commit("dev.txt", "dev\n", "fix: on dev");
+  git(["checkout", "-q", "work"]);
+  for (const head of [elsewhere, "no-such-commit"])
+    assert.throws(() => reviewedHead(git, head), /not a commit on this branch/);
 });
