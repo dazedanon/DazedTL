@@ -2019,7 +2019,8 @@ class ImageService:
     def _task_text(self, project_id, request, request_path, own=False):
         root = self.record(project_id)[1]
         # Assistant-led's own assistant read the opening in its starting prompt.
-        contract = ("" if own else task_opening(root)) + self._contract(
+        opening = task_opening(root, read_only=request["kind"] == "discovery")
+        contract = ("" if own else opening) + self._contract(
             request, request_path, own, language_pair.pair(self.settings, root)
         )
         if request["kind"] == "editing":

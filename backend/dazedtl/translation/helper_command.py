@@ -46,7 +46,8 @@ def windows_note():
     script over game text fails with UnicodeEncodeError unless UTF-8 mode is
     on. The example takes system.shell_command's form, which has PowerShell
     decode UTF-8 too, and system.shell_note says how to run that form outside
-    PowerShell. Every copied task starts with this note (task_opening).
+    PowerShell. Every copied task starts with this note, most through
+    task_opening.
     """
     if os.name != "nt":
         return ""
@@ -67,16 +68,23 @@ def windows_note():
     return system.shell_note() + note + "\n\n"
 
 
-def notes_note(root):
-    """What every task says about the game's assistant notes, which the next
-    session, on another computer or with another assistant, reads first."""
+def notes_note(root, *, read_only=False):
+    """What every task working on the game says about its assistant notes,
+    which the next session, on another computer or with another assistant,
+    reads first; a `read_only` task, which changes no game file, only reads
+    them."""
     path = json.dumps(str(Path(root) / GAME_NOTES_FILENAME), ensure_ascii=False)
-    return (
+    opening = (
         f"Assistant notes: {path} holds what anyone working on this game must know,"
         " and the game's Git takes it to other computers and assistants."
         " Read it first when it exists and follow it."
-        " It is yours to keep as much as the user's: edit it yourself, without asking,"
-        " and keep what the user wrote unless it is wrong."
+    )
+    if read_only:
+        return opening + " This task changes no game file, so leave it as it is.\n\n"
+    return opening + (
+        " Keeping it is part of every task, this one too, and it is yours to keep as"
+        " much as the user's: edit it yourself, without asking, in UTF-8, and keep"
+        " what the user wrote unless it is wrong."
         " Before you finish, add to it, or create it, only lasting facts that apply"
         " whenever someone works on this game: quirks of the game itself, tools you"
         " wrote for it and how to run them, unpacking and repacking steps that differ"
@@ -91,6 +99,8 @@ def notes_note(root):
     )
 
 
-def task_opening(root):
-    """What every task DazedTL hands an assistant opens with."""
-    return windows_note() + notes_note(root)
+def task_opening(root, *, read_only=False):
+    """What every task DazedTL hands an assistant to work on the game opens
+    with; the translator of declined requests, which only translates them,
+    opens with windows_note alone."""
+    return windows_note() + notes_note(root, read_only=read_only)
