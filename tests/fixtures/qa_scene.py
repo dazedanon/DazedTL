@@ -13,6 +13,7 @@ root, temporary = map(Path, sys.argv[1:])
 sys.path.insert(0, str(root / "backend/dazedtl/engine"))
 
 from util import rpgmaker_qa as qa
+from util.qa import schema as qa_schema
 
 game = temporary / "game"
 data = game / "data"
@@ -361,6 +362,23 @@ assert (
     == [original["parameters"][0] for original in (DOOR, INSIDE, ROOM)]
 )
 assert text(4, INSIDE) == "She steps inside."
+# A correction the regression rejects rolls the whole apply back, and the
+# message names its finding once for its six lines, since the regression's
+# report is written to the app's disposable copy.
+tampered = qa.correction_map(task, [scene["id"]])
+sources = {record["identity"]: record["source"] for record in inventory["records"]}
+for operation in tampered["operations"]:
+    operation["replacement"] = sources[operation["identity"]]
+del tampered["content_sha256"]
+tampered["content_sha256"] = qa_schema._sha256(qa_schema._canonical_bytes(tampered))
+try:
+    apply(tampered)
+except ValueError as error:
+    assert "source-language-residue" in str(error), error
+    assert str(error).count(scene["id"]) == 1, error
+else:
+    raise AssertionError("A scene correction left in Japanese was applied.")
+assert narration(2) == [original["parameters"][0] for original in (DOOR, INSIDE, ROOM)]
 
 # Items of a scene larger than a deep bundle share the bundle that prints
 # it, instead of one bundle each printing the scene again.

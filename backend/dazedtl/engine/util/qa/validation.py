@@ -241,14 +241,9 @@ def _simulate_apply(
     problems = []
     for finding in findings:
         if finding.get("kind") == "show-text":
-            found = nameplate_problems(
-                records.get(finding["nameplate_identity"]), finding["parameters"][4]
-            )
-            if found:
-                problems.append(
-                    f"{finding['id']} at {finding['nameplate_identity']}: "
-                    + "; ".join(found)
-                )
+            # Its nameplate is checked when its review is accepted
+            # (_validate_show_text_fix); refusing here would leave a task with
+            # an earlier accepted fix no findings at all.
             continue
         for change in _changes(finding):
             for identity in change["identities"]:
@@ -941,7 +936,8 @@ def _validate_deep_result(
             if review.get("scene_correction") is not None:
                 _validate_scene_correction(review, item, bundle, scene_check)
             elif kind == "show-text":
-                assert header_check is not None
+                if header_check is None:
+                    raise ValueError("A Show Text fix is checked against its header")
                 _validate_show_text_fix(review, item, header_check)
                 continue
             else:

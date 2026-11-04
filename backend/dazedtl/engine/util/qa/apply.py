@@ -433,11 +433,13 @@ def _regression_check_loaded(
     warnings = []
     if set(before_records) != set(after_records):
         errors.append("source identity coverage changed after corrections")
-    # The errors as the user reads them, naming a correction by its finding.
-    reasons = list(errors)
     for identity in sorted(set(before_records) & set(after_records)):
         if before_records[identity]["source_sha256"] != after_records[identity]["source_sha256"]:
             errors.append(f"preserved source changed: {identity}")
+    # The errors as the user reads them: a failed correction once by its
+    # finding, however many lines it changes, then these as they are.
+    general = list(errors)
+    failed: dict[str, str] = {}
     if corrections is not None:
         for operation in corrections.get("operations") or []:
             header = operation.get("kind") == "show-text"
@@ -448,7 +450,7 @@ def _regression_check_loaded(
             expected = operation["replacement"][4] if header else operation["replacement"]
             if record is None or record["live"] != expected:
                 errors.append(f"approved correction is missing: {operation['identity']}")
-                reasons.append(f"{operation['finding_id']}'s correction is missing")
+                failed.setdefault(operation["finding_id"], "'s correction is missing")
                 continue
             # The text QA reviewed, flagged by the current rules as the
             # correction is, whichever rules made its inventory.
@@ -484,13 +486,13 @@ def _regression_check_loaded(
                     "approved correction introduced mechanical flags: "
                     f"{operation['identity']} " + details
                 )
-                reasons.append(f"{operation['finding_id']} introduces {details}")
+                failed.setdefault(operation["finding_id"], f" introduces {details}")
     return {
         "schema": REGRESSION_SCHEMA,
         "created_at": _utc_now(),
         "valid": not errors,
         "errors": errors,
-        "reasons": reasons,
+        "reasons": [finding + reason for finding, reason in failed.items()] + general,
         "warnings": warnings,
         "before_manifest_sha256": before["content_sha256"],
         "after_manifest_sha256": after["content_sha256"],
