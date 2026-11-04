@@ -13,12 +13,10 @@ import { groupOf, spawnGroup, stopGroup } from "./group.mjs";
 const sockets = "/tmp/.X11-unix";
 const displays = () =>
   new Set(
-    fs.existsSync(sockets)
-      ? fs
-          .readdirSync(sockets)
-          .filter((name) => /^X\d+$/.test(name))
-          .map((name) => name.slice(1))
-      : [],
+    fs
+      .readdirSync(sockets)
+      .filter((name) => /^X\d+$/.test(name))
+      .map((name) => name.slice(1)),
   );
 
 /** Process groups of every X server run by `program`, by display number. */
@@ -104,14 +102,22 @@ export async function startDisplay({
     throw new Error(
       `A private display cannot start here: ${sandboxed}. Run scenarios outside the sandbox.`,
     );
-  // A private /tmp, such as a systemd unit's PrivateTmp, starts without the X
-  // socket folder that the system makes in a shared one, and KWin makes no X
-  // socket without it.
+  // A private /tmp, such as a systemd unit's PrivateTmp, is this user's own
+  // and starts without the X socket folder the system makes in a shared one,
+  // and KWin makes no X socket without it.
+  if (fs.statSync("/tmp").uid === process.getuid?.())
+    try {
+      fs.mkdirSync(sockets);
+      fs.chmodSync(sockets, 0o1777);
+    } catch (error) {
+      if (error.code !== "EEXIST") throw error;
+    }
   try {
-    fs.mkdirSync(sockets);
-    fs.chmodSync(sockets, 0o1777);
-  } catch (error) {
-    if (error.code !== "EEXIST") throw error;
+    fs.accessSync(sockets, fs.constants.W_OK);
+  } catch {
+    throw new Error(
+      `A private display cannot start here: KWin can't make its X socket in ${sockets}.`,
+    );
   }
   const output = fs.openSync(log, "a");
   const child = spawnGroup(
