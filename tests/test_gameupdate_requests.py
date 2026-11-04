@@ -13,6 +13,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 import unittest
 import zipfile
 from pathlib import Path
@@ -120,6 +121,19 @@ def advertisement(refs):
         for index, (sha, ref) in enumerate(refs)
     ]
     return pkt("# service=git-upload-pack\n") + b"0000" + b"".join(lines) + b"0000"
+
+
+def long_paths_enabled() -> bool:
+    """Whether Windows lets programs that ask for them use long paths."""
+    import winreg
+
+    try:
+        with winreg.OpenKey(
+            winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Control\FileSystem"
+        ) as key:
+            return winreg.QueryValueEx(key, "LongPathsEnabled")[0] == 1
+    except OSError:
+        return False
 
 
 def snapshot(folder: Path) -> dict[str, bytes | None]:
@@ -394,27 +408,32 @@ class GameUpdateRequestTests(unittest.TestCase):
         "patch.sh runs where bash, git, jq and unzip do; Windows players run patch.ps1",
     )
     def test_patch_sh_leaves_the_game_as_it_was_when_a_copy_fails(self):
-        # A disk that fills up on the second file the patch writes into the
-        # game, after part of it, or a terminal closed then: the first file
-        # used to stay, half patching the game.
+        # The second file the patch writes into the game fails after part of
+        # it: the first file used to stay, half patching the game.
         self.stand_in_curl()
         config, _head = self.patch_repository(files={"img/pictures/Title.png": "new"})
+        env = {**git_env(self.root, **config), "API": "403"}
+        mv = shutil.which("mv")
         for name, fail in (
             (
-                "full",
+                "full disk",
                 """echo "cp: error writing '$target': No space left on device" >&2\n""",
             ),
-            ("stopped", "kill -HUP $PPID; sleep 0.2\n"),
+            ("closed terminal", "sleep 0.5\n"),
+            # Again while the game is put back.
+            ("ctrl+c twice", "kill -INT $PPID; sleep 0.2\n"),
+            # The next run puts it back, before it asks for the patch.
+            ("power cut", "kill -KILL $PPID\n"),
         ):
             with self.subTest(name):
-                game = self.game(name=name)
+                game = self.game(name=name.replace(" ", "-"))
                 (game / "www/data").mkdir(parents=True)
                 (game / "www/data/Map001.json").write_text("{}", encoding="utf-8")
                 (game / "gameupdate/previous_patch_sha.txt").write_text(
                     "a" * 40 + "\n", encoding="utf-8"
                 )
                 before = snapshot(game)
-                writes = self.root / f"{name}-writes"
+                writes = self.root / f"{game.name}-writes"
                 self.command(
                     "cp",
                     "for target; do :; done\n"
@@ -429,13 +448,61 @@ class GameUpdateRequestTests(unittest.TestCase):
                     "esac\n"
                     f'exec "{shutil.which("cp")}" "$@"\n',
                 )
-                result = self.patch_sh(
-                    game, {**git_env(self.root, **config), "API": "403"}
+                self.command(
+                    "mv",
+                    f'case "$*" in *"/gameupdate/undo/"*" {game}/"*) '
+                    + (
+                        "kill -INT $PPID; sleep 0.2;; "
+                        if name == "ctrl+c twice"
+                        else ";; "
+                    )
+                    + f'esac\nexec "{mv}" "$@"\n',
                 )
-                output = result.stdout + result.stderr
-                self.assertNotEqual(result.returncode, 0)
-                self.assertIn("left as it was", result.stdout, output)
+                if name == "closed terminal":
+                    output = self.patch_sh_in_a_terminal_closed_at(game, env, writes)
+                else:
+                    result = self.patch_sh(game, env)
+                    output = result.stdout + result.stderr
+                    self.assertNotEqual(result.returncode, 0)
+                if name == "power cut":
+                    self.assertNotEqual(snapshot(game), before, output)
+                    (self.bin / "cp").unlink()
+                    result = self.patch_sh(
+                        game, {**env, "REFS": "offline", "API": "offline"}
+                    )
+                    output = result.stdout + result.stderr
+                if name != "closed terminal":
+                    self.assertIn("left as it was", output)
                 self.assertEqual(snapshot(game), before, output)
+
+    def patch_sh_in_a_terminal_closed_at(self, game, env, written):
+        """Runs patch.sh in a terminal that closes once *written* says patch.sh
+        failed to write its second game file; returns what it showed."""
+        import pty
+        import select
+
+        pid, terminal = pty.fork()
+        if pid == 0:
+            os.chdir(game)
+            os.execve(
+                shutil.which("bash"),
+                ["bash", "gameupdate/patch.sh"],
+                {
+                    **env,
+                    "PATH": f"{self.bin}{os.pathsep}{os.environ['PATH']}",
+                    "GAMEUPDATE_DL_ATTEMPTS": "1",
+                },
+            )
+        output = b""
+        deadline = time.monotonic() + 60
+        while time.monotonic() < deadline and not (
+            written.exists() and written.read_text(encoding="utf-8").strip() == "2"
+        ):
+            if select.select([terminal], [], [], 0.05)[0]:
+                output += os.read(terminal, 65536)
+        os.close(terminal)
+        os.waitpid(pid, 0)
+        return output.decode(errors="replace")
 
     @unittest.skipUnless(
         POSIX_TOOLS,
@@ -713,26 +780,39 @@ class PatchPs1Tests(unittest.TestCase):
         self.assertFalse((game / "a.txt").exists())
         self.assertFalse((game / "gameupdate/previous_patch_sha.txt").exists())
 
-    @unittest.skipUnless(WINDOWS_POWERSHELL, "Windows PowerShell runs GameUpdate.bat")
-    def test_patch_ps1_refuses_a_folder_too_deep_for_windows_powershell(self):
-        # Windows PowerShell makes no folder of 248 characters or more, while
-        # its files may have 259: a deep folder of short file names passed
-        # the check, then stopped the copy partway.
+    def test_patch_ps1_refuses_a_folder_too_deep_where_windows_limits_paths(self):
+        # Windows makes no folder of 248 characters or more there, while its
+        # files may have 259: a deep folder of short file names passed the
+        # check, then stopped the copy partway.
         game = self.game(name="game-folder")
         depth = 248 - len(str(game)) - 1
         folder = ("abcdefghi/" * depth)[:depth].rstrip("/").ljust(depth, "z")
         output = self.update(
             game,
+            "function Get-PatchPathLimit { @{ File = 259; Folder = 247 } }; "
             # An unpack folder shorter than the game's, as a usual %TEMP% is.
             f"function New-GameUpdateTempPath {{ param($Kind) Join-Path '{self.root}' $Kind }}; "
             + self.serve({"a.txt": "{}", f"{folder}/a.js": "{}"}),
             {},
-            WINDOWS_POWERSHELL,
         )
         self.assertIn("Move the game to a shorter folder", output)
         self.assertIn("Windows allows 247 for a folder", output)
         self.assertFalse((game / "a.txt").exists())
         self.assertFalse((game / "gameupdate/previous_patch_sha.txt").exists())
+
+    @unittest.skipUnless(
+        WINDOWS_POWERSHELL and long_paths_enabled(),
+        "Windows allows long paths only with LongPathsEnabled",
+    )
+    def test_patch_ps1_applies_long_paths_where_windows_allows_them(self):
+        # Windows PowerShell can use them too, on a Windows that allows them.
+        deep = "/".join(letter * 100 for letter in "abc") + "/Map.json"
+        for shell in sorted({POWERSHELL, WINDOWS_POWERSHELL}):
+            with self.subTest(shell):
+                game = self.game(name=Path(shell).stem)
+                output = self.update(game, self.serve({deep: "{}"}), {}, shell)
+                self.assertIn("RESULT 0", output)
+                self.assertTrue((game / deep).is_file(), output)
 
     def test_patch_ps1_leaves_the_game_as_it_was_when_a_copy_fails(self):
         # A file the running game holds, copied after part of the patch:
@@ -766,6 +846,31 @@ class PatchPs1Tests(unittest.TestCase):
         self.assertNotIn("RESULT", output)
         self.assertEqual(snapshot(game), before, output)
         self.assertEqual(list(temporary.glob("gu_*")), [], output)
+
+    def test_patch_ps1_puts_back_a_game_a_stopped_run_left_half_patched(self):
+        # What a run leaves when its window is closed while it copies; the
+        # journal's last line, cut short, names a change never made.
+        game = self.game()
+        (game / "www/data").mkdir(parents=True)
+        (game / "www/data/Map001.json").write_text("{}", encoding="utf-8")
+        (game / "zz.txt").write_text("the game's own", encoding="utf-8")
+        before = snapshot(game)
+        (game / "a.txt").write_text("new", encoding="utf-8")
+        (game / "img").mkdir()
+        (game / "img/Title.png").write_text("new", encoding="utf-8")
+        undo = game / "gameupdate/undo"
+        undo.mkdir()
+        (game / "www/data/Map001.json").replace(undo / "0")
+        (game / "www/data/Map001.json").write_text("{", encoding="utf-8")
+        (undo / "journal.txt").write_text(
+            "added a.txt\nadded img\nadded img/Title.png\n"
+            "moved 0 www/data/Map001.json\nadded zz.txt",
+            encoding="utf-8",
+            newline="",
+        )
+        output = self.script(game, "", os.environ, status=404)
+        self.assertIn("left as it was", output)
+        self.assertEqual(snapshot(game), before, output)
 
     def test_patch_ps1_names_the_git_command_that_failed(self):
         output = self.powershell(
