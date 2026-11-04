@@ -9,6 +9,8 @@ from copy import deepcopy
 from datetime import UTC, datetime, timedelta
 from pathlib import Path, PurePosixPath
 
+from util.guidance_documents import HANDOFF
+
 from dazedtl import foreign_work, freshness
 from dazedtl.foreign_work import ForeignWorkError
 from dazedtl.languages import active_source, game_source, pair_note
@@ -2057,9 +2059,13 @@ class PluginService:
         with self.lock:
             value = self.load(project_id)
             if action == "plugin_task":
-                result = self.copy_task(
-                    project_id, value, recheck=options.get("recheck", True)
-                )
+                recheck = options.get("recheck", True)
+                # Copying the task hands it to an assistant, which reads every
+                # guidance document from its file; the final check's
+                # assistant, already at work, only finishes what is left.
+                if recheck:
+                    self.translation.clean_drafts(project_id, HANDOFF)
+                result = self.copy_task(project_id, value, recheck=recheck)
             elif action == "apply":
                 return self.apply(project_id, value)
             elif action == "preview_restore":
