@@ -894,10 +894,14 @@ class Settings:
             self._write(state, bump=False)
         return endpoints
 
-    def pricing_lookup(self, *, connection_id=None, model=None, explicit=False):
-        """Choose an optional public read while the caller holds the app lock."""
+    def pricing_lookup(
+        self, *, connection_id=None, model=None, explicit=False, any_connection=False
+    ):
+        """Choose an optional public read while the caller holds the app lock.
+        With *any_connection*, *connection_id* names a saved connection that
+        needn't be the active one, as a model comparison adds models."""
         state = self._read()
-        active = self._connection(state)
+        active = self._connection(state, connection_id if any_connection else None)
         if (
             not active
             or active["provider"] != "openrouter"
@@ -916,7 +920,7 @@ class Settings:
         options = active["model_options"].get(model, preferences.DEFAULT_OPTIONS)
         if not explicit and options["pricing"] == "custom":
             return None
-        known = self.model_defaults(active["id"], model)
+        known = self.connection_defaults(active, model)
         if (
             known["inputRate"] is not None
             and known["outputRate"] is not None
@@ -941,7 +945,7 @@ class Settings:
 
     def pricing_selection(self, lookup):
         state = self._read()
-        active = self._connection(state)
+        active = self._connection(state, lookup["connection"]["id"])
         if not active or any(
             active.get(key, "") != value for key, value in lookup["connection"].items()
         ):

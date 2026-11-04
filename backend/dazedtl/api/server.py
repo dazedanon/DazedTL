@@ -832,7 +832,7 @@ class Application:
 
     def prepare_model_pricing(self, name, params):
         """Only explicit price/estimate actions may perform public price reads."""
-        explicit = name == "settings_model_defaults"
+        explicit = name in {"settings_model_defaults", "compare_model"}
         prepares = (
             name == "guided_preview"
             and params.get("action") == "start"
@@ -860,6 +860,7 @@ class Application:
                 connection_id=params.get("connection_id") if explicit else None,
                 model=params.get("model") if explicit else None,
                 explicit=explicit,
+                any_connection=name == "compare_model",
             )
         if lookup is None:
             return
@@ -870,7 +871,7 @@ class Application:
         except ValueError:
             with self.backend.lock:
                 active = self.settings.pricing_selection(lookup)
-                cached = self.settings.model_defaults(active["id"], lookup["model"])
+                cached = self.settings.connection_defaults(active, lookup["model"])
                 if cached["inputRate"] is not None and cached["outputRate"] is not None:
                     return  # Retain the labeled stale quote when its route still matches.
             raise
