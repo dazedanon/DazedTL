@@ -3,7 +3,9 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT_DIR="$(pwd)"
+# The game whose gameupdate folder this is, wherever the run starts, so a
+# patch and its undo journal always meet the same folder.
+ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 CONFIG_FILE="$SCRIPT_DIR/patch-config.txt"
 STATE_FILE="$SCRIPT_DIR/previous_patch_sha.txt"
 API_HEADERS=( -H "User-Agent: GameUpdate/1.0" )
@@ -75,7 +77,7 @@ undo_patch() {
 # to undo_patch's journal: the game file it replaces is moved aside, and the
 # file and each folder it adds are listed.
 copy_patch_file() {
-    local source="$1" relative="$2" folder i
+    local source="$1" relative="$2" folder i replaced="" mode
     local folders=()
     folder=.
     [[ "$relative" == */* ]] && folder="${relative%/*}"
@@ -98,11 +100,17 @@ copy_patch_file() {
     if [ -e "$ROOT_DIR/$relative" ] || [ -L "$ROOT_DIR/$relative" ]; then
         printf 'moved %s %s\n' "$UNDO_MOVED" "$relative" >> "$UNDO_JOURNAL" || return 1
         mv -f "$ROOT_DIR/$relative" "$UNDO_DIR/$UNDO_MOVED" || return 1
+        replaced="$UNDO_DIR/$UNDO_MOVED"
         UNDO_MOVED=$((UNDO_MOVED + 1))
     else
         printf 'added %s\n' "$relative" >> "$UNDO_JOURNAL" || return 1
     fi
-    cp -f "$source" "$ROOT_DIR/$relative"
+    cp -f "$source" "$ROOT_DIR/$relative" || return 1
+    # The new file takes the patch's mode; the game's own, such as an
+    # executable launcher's, stays.
+    if [ -n "$replaced" ] && mode="$(stat -L -c %a "$replaced" 2> /dev/null)"; then
+        chmod "$mode" "$ROOT_DIR/$relative" || return 1
+    fi
 }
 
 # Temporary folders and the downloaded ZIP go however the run ends, closed
@@ -112,7 +120,7 @@ copy_patch_file() {
 TEMP_PATHS=()
 remove_temp_paths() {
     local path
-    trap '' INT TERM HUP
+    trap '' INT TERM HUP PIPE
     set +e
     if [ "$APPLYING" -eq 1 ]; then
         undo_patch
@@ -183,7 +191,9 @@ else
         holder="$(cat "$PID_LOCK" 2> /dev/null || true)"
         # A live process whose command can't be read counts as a GameUpdate.
         holder_args=""
-        if [ -n "$holder" ] && kill -0 "$holder" 2> /dev/null; then
+        # This run's own number, as in a fresh process namespace, is a
+        # killed run's.
+        if [ -n "$holder" ] && [ "$holder" != "$$" ] && kill -0 "$holder" 2> /dev/null; then
             holder_args="$(tr '\0' ' ' 2> /dev/null < "/proc/$holder/cmdline" \
                 || ps -p "$holder" -o args= 2> /dev/null || true)"
             if [ -z "$holder_args" ] || [[ "$holder_args" == *patch* ]]; then
@@ -742,7 +752,12 @@ download_extract() {
     fi
 
     echo "Applying patch..."
-    # Copies a removal left behind must not stand in for this patch's.
+    # The startup undo finished any earlier journal. Copies a removal left
+    # behind must not stand in for this patch's.
+    if [ -f "$UNDO_JOURNAL" ]; then
+        echo "ERROR: An earlier update is not put back yet. Close the game, then run GameUpdate again to finish putting it back."
+        return 1
+    fi
     if ! { rm -rf "$UNDO_DIR" && mkdir "$UNDO_DIR" && : > "$UNDO_JOURNAL"; }; then
         echo "ERROR: GameUpdate can't empty $UNDO_DIR. Close the game, then run GameUpdate again."
         return 1

@@ -690,36 +690,18 @@ function Save-GitPatchZip {
 function Get-PatchPathLimit {
     <#
     The longest full paths a patch's files and folders may have: Windows'
-    259 characters for a file and 247 for a folder, unless Windows allows
-    long paths (LongPathsEnabled) and this PowerShell can make them. Whether
-    it can depends on the PowerShell and Windows' version, so it makes a deep
-    folder and file in the temporary folder once and sees.
+    259 characters for a file and 247 for a folder, unless long paths are on
+    (LongPathsEnabled) and the shell is PowerShell 7, which can use them.
+    Windows PowerShell is the fallback for players without PowerShell 7, and
+    a game may not open long paths either, so it keeps the limits.
     #>
-    if ($null -eq $script:PatchPathLimit) {
-        $script:PatchPathLimit = @{ File = 259; Folder = 247 }
-        # Without LongPathsEnabled no game program can open a long path,
-        # even when PowerShell 7 could make it; with it, only those that
-        # declare they can.
+    if ($PSVersionTable.PSEdition -eq 'Core') {
         $long = Get-ItemProperty -LiteralPath 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem' -Name LongPathsEnabled -ErrorAction SilentlyContinue
-        if (-not $long -or $long.LongPathsEnabled -ne 1) {
-            return $script:PatchPathLimit
-        }
-        $probe = New-GameUpdateTempPath -Kind 'long'
-        try {
-            $deep = $probe
-            foreach ($part in 'a', 'b', 'c') {
-                $deep = Join-Path $deep ($part * 100)
-            }
-            [void][IO.Directory]::CreateDirectory($deep)
-            [IO.File]::WriteAllText((Join-Path $deep 'probe.txt'), '')
-            $script:PatchPathLimit = @{ File = [int]::MaxValue; Folder = [int]::MaxValue }
-        }
-        catch { }
-        finally {
-            try { [IO.Directory]::Delete($probe, $true) } catch { }
+        if ($long -and $long.LongPathsEnabled -eq 1) {
+            return @{ File = [int]::MaxValue; Folder = [int]::MaxValue }
         }
     }
-    return $script:PatchPathLimit
+    return @{ File = 259; Folder = 247 }
 }
 
 function Expand-PatchZip {
@@ -1369,7 +1351,11 @@ function Copy-PatchFiles {
     $stageFolder = [IO.Path]::GetFullPath($Stage).TrimEnd('\', '/')
     $undo = Get-PatchUndoFolder -BundleRoot $BundleRoot
     $journalPath = Join-Path $undo 'journal.txt'
-    # Copies a removal left behind must not stand in for this patch's.
+    # The startup undo finished any earlier journal. Copies a removal left
+    # behind must not stand in for this patch's.
+    if ([IO.File]::Exists($journalPath)) {
+        throw 'PATCH_ERR:UNDO:An earlier update is not put back yet. Close the game, then run GameUpdate again to finish putting it back.'
+    }
     if ([IO.Directory]::Exists($undo)) {
         Remove-SettledItem -LiteralPath $undo
     }
@@ -1587,7 +1573,7 @@ function Invoke-PatchDownloadExtract {
             Remove-DownloadedRepoZip -LiteralPath $zipPath
         }
         if ([IO.Directory]::Exists($stage)) {
-            # .NET, unlike cmd.exe, reaches the long paths Get-PatchPathLimit allows.
+            # .NET, unlike cmd.exe, reaches the long paths PowerShell 7 may make.
             try { [IO.Directory]::Delete($stage, $true) } catch { Remove-FileOrDirectoryViaCmd -LiteralPath $stage }
         }
     }

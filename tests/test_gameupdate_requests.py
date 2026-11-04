@@ -133,6 +133,19 @@ def shell_env(shell: str, env) -> dict[str, str]:
     return {key: value for key, value in env.items() if key.upper() != "PSMODULEPATH"}
 
 
+def fresh_namespaces() -> bool:
+    """Whether this user can start processes in a fresh process namespace."""
+    return (
+        shutil.which("unshare") is not None
+        and subprocess.run(
+            ["unshare", "-rpf", "--mount-proc", "true"],
+            capture_output=True,
+            check=False,
+        ).returncode
+        == 0
+    )
+
+
 def long_paths_enabled() -> bool:
     """Whether Windows lets programs that ask for them use long paths."""
     import winreg
@@ -576,6 +589,83 @@ class GameUpdateRequestTests(unittest.TestCase):
         POSIX_TOOLS,
         "patch.sh runs where bash, git, jq and unzip do; Windows players run patch.ps1",
     )
+    def test_patch_sh_keeps_the_mode_of_a_game_file_it_replaces(self):
+        # A launcher the player made executable stopped starting after an
+        # update whose patch keeps it as a plain file.
+        self.stand_in_curl()
+        config, _head = self.patch_repository(files={"Game.sh": "new"})
+        game = self.game()
+        (game / "Game.sh").write_text("old", encoding="utf-8")
+        (game / "Game.sh").chmod(0o755)
+        result = self.patch_sh(game, {**git_env(self.root, **config), "API": "403"})
+        output = result.stdout + result.stderr
+        self.assertEqual((game / "Game.sh").read_text(encoding="utf-8"), "new", output)
+        self.assertEqual((game / "Game.sh").stat().st_mode & 0o777, 0o755)
+
+    @unittest.skipUnless(
+        POSIX_TOOLS,
+        "patch.sh runs where bash, git, jq and unzip do; Windows players run patch.ps1",
+    )
+    def test_patch_sh_puts_back_its_own_game_whatever_folder_it_runs_from(self):
+        # Run from gameupdate/, a stopped run's undo moved the game's files
+        # there instead.
+        self.stand_in_curl()
+        game = self.game()
+        (game / "Game.ini").write_text("original", encoding="utf-8")
+        before = snapshot(game)
+        undo = game / "gameupdate/undo"
+        undo.mkdir()
+        (game / "Game.ini").replace(undo / "0")
+        (game / "Game.ini").write_text("patched", encoding="utf-8")
+        (undo / "journal.txt").write_text("moved 0 Game.ini\n", encoding="utf-8")
+        result = subprocess.run(
+            ["bash", "patch.sh"],
+            cwd=game / "gameupdate",
+            env={
+                **os.environ,
+                "PATH": f"{self.bin}{os.pathsep}{os.environ['PATH']}",
+                "API": "offline",
+                "REFS": "offline",
+                "GAMEUPDATE_DL_ATTEMPTS": "1",
+            },
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            encoding="utf-8",
+            check=False,
+            timeout=120,
+        )
+        self.assertIn("left as it was", result.stdout, result.stdout + result.stderr)
+        self.assertEqual(snapshot(game), before)
+
+    @unittest.skipUnless(
+        POSIX_TOOLS and fresh_namespaces(),
+        "a fresh process namespace needs unshare and user namespaces",
+    )
+    def test_patch_sh_takes_over_a_lock_holding_its_own_process_number(self):
+        # In a fresh process namespace each run is process 1, so a killed
+        # run's gameupdate.pid named the new run itself.
+        self.stand_in_curl()
+        game = self.game()
+        (game / "gameupdate/previous_patch_sha.txt").write_text(SHA, encoding="utf-8")
+        (game / "gameupdate/gameupdate.pid").write_text("1\n", encoding="utf-8")
+        result = subprocess.run(
+            ["unshare", "-rpf", "--mount-proc", "bash", "gameupdate/patch.sh"],
+            cwd=game,
+            env={**os.environ, "PATH": self.path_without({"flock"})},
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            encoding="utf-8",
+            check=False,
+            timeout=120,
+        )
+        self.assertIn(
+            "Already up to date", result.stdout, result.stdout + result.stderr
+        )
+
+    @unittest.skipUnless(
+        POSIX_TOOLS,
+        "patch.sh runs where bash, git, jq and unzip do; Windows players run patch.ps1",
+    )
     def test_patch_sh_refuses_a_folder_where_the_game_has_a_file(self):
         # Its undo used to remove the game's file as a folder the patch added.
         self.stand_in_curl()
@@ -913,8 +1003,8 @@ class PatchPs1Tests(unittest.TestCase):
         WINDOWS_POWERSHELL and long_paths_enabled(),
         "Windows allows long paths only with LongPathsEnabled",
     )
-    def test_patch_ps1_applies_long_paths_where_windows_allows_them(self):
-        # Windows PowerShell can use them too, on a Windows that allows them.
+    def test_patch_ps1_applies_long_paths_only_with_powershell_7(self):
+        # Windows PowerShell, GameUpdate.bat's fallback, keeps Windows' limits.
         deep = "/".join(letter * 100 for letter in "abc") + "/Map.json"
         for shell in SHELLS:
             with self.subTest(shell):
@@ -927,8 +1017,11 @@ class PatchPs1Tests(unittest.TestCase):
                     {"TEMP": str(temporary), "TMP": str(temporary)},
                     shell,
                 )
-                self.assertIn("RESULT 0", output)
-                self.assertTrue((game / deep).is_file(), output)
+                if Path(shell).stem.lower() == "pwsh":
+                    self.assertIn("RESULT 0", output)
+                    self.assertTrue((game / deep).is_file(), output)
+                else:
+                    self.assertIn("Move the game to a shorter folder", output)
                 self.assertEqual(list(temporary.glob("gu_*")), [], output)
 
     def test_patch_ps1_leaves_the_game_as_it_was_when_a_copy_fails(self):
