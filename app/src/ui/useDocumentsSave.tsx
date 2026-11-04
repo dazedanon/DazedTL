@@ -1,6 +1,5 @@
 import { useState } from "react";
 import type { Documents, DocumentsSaved } from "../api/contracts";
-import { changedOnDisk } from "../state/documentState";
 import type { useAction } from "../state/useAction";
 import type { useDocumentDraft } from "../state/useDocumentDraft";
 import { DocumentsChangedDialog } from "./DocumentsChangedDialog";
@@ -62,10 +61,7 @@ export function useDocumentsSave({
       (name) => documents[name]?.state !== "unreadable",
     );
     const changed = chosen.filter(
-      (name) =>
-        !!draft.drafts[name] &&
-        !!documents[name] &&
-        changedOnDisk(documents[name], draft.drafts[name]),
+      (name) => !!draft.drafts[name] && !!documents[name]?.changed,
     );
     if (changed.length) setAsking({ names: chosen, changed, skipped });
     else void finish(chosen, [], skipped);

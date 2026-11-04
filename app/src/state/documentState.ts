@@ -10,26 +10,15 @@ import type {
  * translation requests carry. */
 export type HeldWork = Document["holdsUp"][number];
 
-/**
- * Whether a document's file changed on disk since its draft began, as an
- * assistant changes it: the draft began from another revision, or from no
- * file, and the file doesn't already hold the draft's text.
- */
-export function changedOnDisk(document: Document, draft: DocumentDraft) {
-  const began =
-    draft.revision === ""
-      ? document.state === "missing"
-      : draft.revision === document.revision;
-  return !began && draft.text !== document.text;
-}
-
 /** Where a document stands in its editor, the same in every method. */
 export function documentStatus(
   document: Document | undefined,
   draft: DocumentDraft | undefined,
 ) {
   if (document?.state === "unreadable") return "unreadable";
-  if (draft && document && changedOnDisk(document, draft)) return "changed";
+  // The backend decides, as its save refuses, whether the file changed on
+  // disk since the draft began.
+  if (draft && document?.changed) return "changed";
   if (draft) return "draft";
   return document?.state === "saved" ? "saved" : "missing";
 }

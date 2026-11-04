@@ -153,6 +153,7 @@ class GuidanceDocumentTests(unittest.TestCase):
                     else:
                         path.write_text(after, encoding="utf-8")
                     draft = {name: {"revision": began, "text": "My draft"}}
+                    self.assertTrue(read(self.root, draft)[name]["changed"])
                     with self.assertRaisesRegex(ValueError, "changed on disk"):
                         documents_save(self.root, draft)
                     self.assertEqual(
@@ -164,9 +165,14 @@ class GuidanceDocumentTests(unittest.TestCase):
                         self.root, {name: {"revision": current, "text": "My draft"}}
                     )
                     self.assertEqual(read(self.root)[name]["text"], "My draft")
-                    # A file that already holds the draft's text is no conflict.
-                    documents_save(
-                        self.root, {name: {"revision": began, "text": "My draft"}}
+                    # A file that already holds the draft's text is no conflict,
+                    # as a glossary reads it, without its trailing newlines:
+                    # the editor said a file holding the draft had changed.
+                    self.assertFalse(read(self.root, draft)[name]["changed"])
+                    documents_save(self.root, draft)
+                    trailing = {name: {"revision": began, "text": "My draft\n"}}
+                    self.assertEqual(
+                        read(self.root, trailing)[name]["changed"], name != GLOSSARY
                     )
 
     def test_each_definition_reaches_every_reader(self):

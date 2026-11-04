@@ -26,6 +26,7 @@ export type Document = {
   holdsUp: ("handoff" | "work")[];
   state: "saved" | "missing" | "unreadable";
   reason?: string;
+  changed: boolean;
 };
 
 export type Documents = Record<string, Document>;

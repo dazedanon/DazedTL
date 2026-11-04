@@ -20,35 +20,25 @@ const document = (
   requests: key !== "notes",
   holdsUp: key === "notes" ? ["handoff"] : ["handoff", "work"],
   state: "missing",
+  changed: false,
   ...values,
 });
 
 test("each method's editor reads a document's state the same way, a file changed under a draft included", () => {
   // Assistant-led showed only Draft where Guided showed Saved, None yet and
-  // Unsaved edits, and neither said a file changed on disk under a draft.
-  const saved = { state: "saved" as const, text: "Mine", revision: "a" };
-  const cases: [string, Partial<Document>, string | undefined, string][] = [
-    ["missing", {}, undefined, "missing"],
-    ["saved", saved, undefined, "saved"],
-    ["unreadable", { state: "unreadable", revision: "" }, "a", "unreadable"],
-    ["a draft", saved, "a", "draft"],
-    [
-      "changed on disk",
-      { ...saved, text: "Theirs", revision: "b" },
-      "a",
-      "changed",
-    ],
-    ["deleted on disk", {}, "a", "changed"],
-    ["created on disk", { ...saved, text: "Theirs" }, "", "changed"],
-    ["a draft of a missing file", {}, "", "draft"],
-    ["a file holding the draft", { ...saved, revision: "b" }, "a", "draft"],
+  // Unsaved edits, and neither said a file changed on disk under a draft;
+  // the backend decides that, as its save refuses.
+  const draft = { text: "Mine", revision: "a" };
+  const cases: [string, Partial<Document>, boolean, string][] = [
+    ["missing", {}, false, "missing"],
+    ["saved", { state: "saved" }, false, "saved"],
+    ["a draft", { state: "saved" }, true, "draft"],
+    ["changed on disk", { state: "saved", changed: true }, true, "changed"],
+    ["unreadable", { state: "unreadable", changed: true }, true, "unreadable"],
   ];
-  for (const [label, values, began, expected] of cases)
+  for (const [label, values, drafted, expected] of cases)
     assert.equal(
-      documentStatus(
-        document("notes", values),
-        began === undefined ? undefined : { text: "Mine", revision: began },
-      ),
+      documentStatus(document("notes", values), drafted ? draft : undefined),
       expected,
       label,
     );

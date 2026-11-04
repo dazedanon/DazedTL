@@ -66,6 +66,7 @@ DOCUMENT_FIELDS = (
     "holdsUp",
     "state",
     "reason",
+    "changed",
 )
 
 

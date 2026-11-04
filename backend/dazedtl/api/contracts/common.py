@@ -32,6 +32,8 @@ class Document(TypedDict):
     holdsUp: list[Literal["handoff", "work"]]
     state: Literal["saved", "missing", "unreadable"]
     reason: NotRequired[str]
+    # Whether the file changed on disk since the document's draft began.
+    changed: bool
 
 
 type Documents = dict[str, Document]

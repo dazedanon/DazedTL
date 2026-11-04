@@ -31,27 +31,50 @@ def definitions(root, drafted=()):
     return [*FIXED, *sorted(filter(None, (definition(CUSTOM_PREFIX + stem) for stem in stems)), key=lambda found: found.key)]
 
 
-def read(root, drafted=()):
+def read(root, drafts=()):
     """Every guidance document of the game, keyed by name in the editors'
     order, each with its definition's title, kind, whether requests carry it
     and the work its draft holds up, and its file's `state`: "saved" with
     its text and revision, "missing" as empty, or "unreadable" with the
-    `reason` saying why and how to fix it."""
+    `reason` saying why and how to fix it. `drafts`, the drafts' names or
+    the drafts, lists a custom skill whose file is gone, and a draft says
+    whether its document's file `changed` on disk since it began."""
     root = Path(root)
-    return {found.key: _document(root, found) for found in definitions(root, drafted)}
+    result = {}
+    for found in definitions(root, drafts):
+        document = result[found.key] = _document(root, found)
+        draft = drafts.get(found.key) if isinstance(drafts, dict) else None
+        if isinstance(draft, dict) and isinstance(draft.get("text"), str):
+            document["changed"] = _changed(root, found.key, document, draft.get("revision"), draft.get("text"))
+    return result
 
 
 def documents(root):
-    """The documents translation requests carry, as `read` reads them; one
-    whose file can't be read refuses the work that needs it, saying why."""
+    """The documents translation requests carry, read as `read` reads them;
+    one whose file can't be read refuses the work that needs it, saying
+    why."""
+    root = Path(root)
     result = {}
-    for key, document in read(root).items():
-        if not document["requests"]:
-            continue
-        if document["state"] == "unreadable":
-            raise ValueError(document["reason"])
-        result[key] = document
+    for found in definitions(root):
+        if found.requests:
+            document = result[found.key] = _document(root, found)
+            if document["state"] == "unreadable":
+                raise ValueError(document["reason"])
     return result
+
+
+def _changed(root, name, document, revision, text):
+    """Whether `document`'s file changed on disk since a draft holding
+    `text` began from its `revision`, as an assistant changes it: the file
+    moved past that revision and doesn't hold the text, and no save that
+    wrote the file and then made no checkpoint replaced that revision, as
+    the draft then still has it. A file that can't be read is its own
+    state."""
+    if document["state"] == "unreadable":
+        return False
+    if document["state"] == "missing" and revision == "":
+        revision = digest(b"")
+    return document["revision"] != revision and not holds(name, document, text) and not _replaced(root, name, document, revision)
 
 
 def _files(root, found):
@@ -76,6 +99,7 @@ def _document(root, found):
         "kind": found.kind,
         "requests": found.requests,
         "holdsUp": sorted(found.holds_up),
+        "changed": False,
     }
     try:
         if len(files) > 1:
@@ -180,13 +204,10 @@ def documents_save(root, changes):
     """Saves a set of guidance documents, {name: {revision, text}}, checking
     every one before writing any, so a refused set changes no file, and
     returns the names it wrote. A change's revision is the file's when its
-    draft began: a file changed on disk since is replaced only by a draft
-    the user chose to keep, which takes the file's current revision. It is
-    no conflict when the file already holds the text, or when the revision
-    is the one a save that wrote the file and then made no checkpoint
-    replaced, as its draft then still has it. A file that can't be read is
-    never saved over, and a document created only with text whose file is
-    missing is not created empty."""
+    draft began: a file changed on disk since (`_changed`) is replaced only
+    by a draft the user chose to keep, which takes the file's current
+    revision. A file that can't be read is never saved over, and a document
+    created only with text whose file is missing is not created empty."""
     root = Path(root)
     if not isinstance(changes, dict):
         raise ValueError("Choose a guidance document below 1 MB.")
@@ -198,10 +219,7 @@ def documents_save(root, changes):
         held = current[name]
         if held["state"] == "unreadable":
             raise ValueError(held["reason"])
-        revision = change.get("revision")
-        if held["state"] == "missing" and revision == "":
-            revision = digest(b"")
-        if held["revision"] != revision and not holds(name, held, text) and not _replaced(root, name, held, revision):
+        if _changed(root, name, held, change.get("revision"), text):
             raise ValueError(
                 f"{Path(held['path']).relative_to(root).as_posix()} changed on disk after your {held['title']} draft began."
                 " Save again to choose whether to keep the file or your draft."
