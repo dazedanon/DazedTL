@@ -63,11 +63,14 @@ function summary(
     case "unconfigured":
     case "ready":
       // Every write to the game is its own checkpoint, so the config is
-      // saved with the translation as soon as it is written.
+      // saved with the translation as soon as it is written; a game DazedTL
+      // doesn't release may have no Git to save it in.
       return {
         mark: "done",
         title: "Ready to publish",
-        detail: `${CONFIG} is saved with the translation.`,
+        detail: releases
+          ? `${CONFIG} is saved with the translation.`
+          : `${CONFIG} is in the game.`,
       };
   }
 }
@@ -87,7 +90,7 @@ export function GameUpdatePanel({
   status: GameUpdateStatus;
   disabled: boolean;
   openSettings: () => void;
-  /** Whether DazedTL releases the game, whose releases wait for its repository. */
+  /** Whether DazedTL releases the game, and saves its config with them. */
   releases?: boolean;
 }) {
   const application = useApplication();

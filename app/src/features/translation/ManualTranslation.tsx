@@ -441,7 +441,8 @@ function Workspace({
                 <CheckGroup id="manual-scope" label="Translate" stacked>
                   <BaseGlossaryField options={options} edit={edit} />
                 </CheckGroup>
-                {/* With no assistant to install it, saving does (Translation.save). */}
+                {/* The game's own GameUpdate, which no assistant installs:
+                    ticking it changes the game at once, outside the draft. */}
                 <CheckGroup
                   id="manual-tools"
                   label="Install in the game"
@@ -449,10 +450,17 @@ function Workspace({
                 >
                   <GameUpdateField
                     state={state}
-                    options={options}
-                    edit={edit}
+                    checked={state.gameUpdate.installed}
+                    onChange={(install) =>
+                      void action.run(
+                        () =>
+                          api.translation.manualGameUpdate(project.id, install),
+                        "",
+                        "gameupdate",
+                      )
+                    }
                     settings={settings}
-                    effect="Saving these options copies it into the game, or takes it out."
+                    effect="Ticking it copies it into the game, and unticking takes it out."
                   />
                 </CheckGroup>
               </fieldset>

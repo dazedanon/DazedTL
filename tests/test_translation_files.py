@@ -10,6 +10,7 @@ from dazedtl.storage import write_json
 from dazedtl.translation import progress_report, translation_file, unit_results
 from dazedtl.translation.exchange import Exchange
 from dazedtl.translation.files import read_json
+from dazedtl.translation.game_update import ABSENT
 from dazedtl.translation.manual import Manual
 from dazedtl.translation.manual import loaded as loaded_file
 from dazedtl.translation.project import WORK
@@ -68,7 +69,7 @@ class TranslationFileTests(unittest.TestCase):
         self.engine.git_status = lambda *_args: {}
         self.projects.choose_method(self.identity, "manual")
         # Options Assistant-led saved as Assistant only, which Manual lacks.
-        selected = self.service.state(self.identity)
+        selected = self.project.read()
         self.service.save(
             self.identity,
             selected["revision"],
@@ -211,33 +212,27 @@ class TranslationFileTests(unittest.TestCase):
         views = {job["id"]: job for job in self.service.state(self.identity)["jobs"]}
         self.assertFalse(views[run]["own"])
 
-    def test_saving_a_manual_projects_options_copies_gameupdate_as_they_choose(self):
-        # Assistant-led's assistant installs GameUpdate, so saving its
-        # options leaves the game alone.
+    def test_a_manual_projects_gameupdate_box_copies_it_into_the_game(self):
         self.engine.git_status = lambda *_args: {}
-        launcher = self.game / "GameUpdate.bat"
-
-        def save(change):
-            shown = self.service.state(self.identity)
-            self.service.save(
-                self.identity, shown["revision"], {**shown["options"], **change}
-            )
-            return self.service.state(self.identity)["options"]["install_gameupdate"]
-
-        self.assertTrue(save({"install_gameupdate": True}))
-        self.assertFalse(launcher.exists())
-        # Manual has no assistant: its choice is whether the game holds
-        # GameUpdate, not the option Assistant-led saved, so saving another
-        # option leaves the game alone.
+        manual = Manual(self.service)
+        # Assistant-led's assistant installs GameUpdate itself.
+        with self.assertRaisesRegex(ValueError, "isn't translated Manually"):
+            manual.gameupdate(self.identity, True)
         self.projects.choose_method(self.identity, "manual")
-        self.assertFalse(save({"mode": "live"}))
-        self.assertFalse(launcher.exists())
-        # Saving GameUpdate copies it into the game, whatever its engine, and
-        # saving it unticked takes it out; the player README stays.
-        self.assertTrue(save({"install_gameupdate": True}))
+        # Manual has none, so ticking the box copies GameUpdate into the game
+        # at once, whatever its engine, and unticking takes it out; the
+        # player README stays.
+        # The engine's status says whether the game holds GameUpdate.
+        self.engine.game_update = lambda source, *_args: {
+            **ABSENT,
+            "installed": (Path(source) / "gameupdate/patch.sh").is_file(),
+        }
+        shown = manual.gameupdate(self.identity, True)
+        check_response("manual_gameupdate", shown)
+        self.assertTrue(shown["installed"])
         self.assertTrue((self.game / "gameupdate/patch.sh").is_file())
-        self.assertFalse(save({"install_gameupdate": False}))
-        self.assertFalse(launcher.exists())
+        self.assertFalse(manual.gameupdate(self.identity, False)["installed"])
+        self.assertFalse((self.game / "GameUpdate.bat").exists())
         self.assertFalse((self.game / "gameupdate").exists())
         self.assertTrue((self.game / "README.md").is_file())
 

@@ -789,12 +789,6 @@ class TranslationEngine:
                 raise ValueError("GameUpdate copy failed. " + "; ".join(errors))
         return {"engine": engine, "files": copied}
 
-    def gameupdate_installed(self, source):
-        """Whether the game at `source` holds GameUpdate."""
-        from util.project_preparation import gameupdate_installed
-
-        return gameupdate_installed(source)
-
     def setup_mismatch(self, source, options):
         """The tool a patch would carry against the project's options, as
         (the assistant's next step, the user's reason), or None. GameUpdate

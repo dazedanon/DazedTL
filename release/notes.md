@@ -2,5 +2,4 @@
 
 ### Added
 
-- **Options:** Assistant-led offers GameUpdate for KiriKiri games, so players can download your newest translation by running GameUpdate.
 - **Manual:** Options can copy GameUpdate into the game, so players can download your newest translation by running it.

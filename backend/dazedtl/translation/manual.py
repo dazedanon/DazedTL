@@ -8,9 +8,9 @@ Loading a file makes its lines the project's units, which estimates
 organize into requests; translations the file already holds are imported
 first, so only the lines without one are sent. The user's extractor
 decides what is in scope, so no census is needed, and DazedTL writes the
-game only to add or take out GameUpdate as Options choose
-(Translation.save), so no Git baseline is either (project MANUAL). The
-project's translation file comes back out with Export (exchange).
+game only to add or take out GameUpdate on the user's word (gameupdate), so
+no Git baseline is either (project MANUAL). The project's translation file
+comes back out with Export (exchange).
 """
 
 import json
@@ -157,6 +157,19 @@ class Manual:
             ),
             "glossary": len(value["glossary"]) if json else 0,
         }
+
+    def gameupdate(self, project_id, install):
+        """Copies GameUpdate into the game, or takes it out, at once: no
+        assistant installs it in a Manual game, so the box on Options shows
+        and sets the game's own. The game's config follows, so the GameUpdate
+        panel below the box shows it at once."""
+        project = self._project(project_id)
+        if type(install) is not bool:
+            raise ValueError("Choose whether the game has GameUpdate.")
+        self.translation.idle(project_id)
+        self.translation.engine.set_gameupdate(project.root, install)
+        self.translation.game_update.sync(project_id)
+        return self.translation.game_update.state(project_id)
 
     def estimate(self, project_id):
         """Starts the estimate of the loaded lines without a translation, as

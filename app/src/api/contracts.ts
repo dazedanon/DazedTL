@@ -1754,6 +1754,7 @@ export type GameUpdateStatus = {
     | "ready"
     | "unavailable";
   message: string;
+  installed: boolean;
   repo: string;
   suggested: string;
   values: GameUpdateValues | null;
@@ -3568,6 +3569,11 @@ export type GameUpdateDefaultsRequest = {
   branch: string;
 };
 
+export type ManualGameUpdateRequest = {
+  project_id: string;
+  install: boolean;
+};
+
 export type ProjectGameUpdateRequest = {
   project_id: string;
   action: "save" | "keep" | "replace" | "defaults";
@@ -3794,6 +3800,10 @@ export type RpcContract = {
     response: TranslationFileExport;
   };
   manual_estimate: { request: ProjectRequest; response: TranslationJob };
+  manual_gameupdate: {
+    request: ManualGameUpdateRequest;
+    response: GameUpdateStatus;
+  };
   project_checkpoints: {
     request: ProjectRequest;
     response: CheckpointTimeline;

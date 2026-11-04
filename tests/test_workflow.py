@@ -124,7 +124,6 @@ class Engine:
     # every game write to.
     glossary_add = TranslationEngine.glossary_add
     set_gameupdate = TranslationEngine.set_gameupdate
-    gameupdate_installed = TranslationEngine.gameupdate_installed
 
     def glossary_terms(self, _source):
         return getattr(self, "glossary", [])

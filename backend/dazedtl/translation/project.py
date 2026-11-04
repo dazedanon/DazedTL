@@ -9,7 +9,7 @@ from .files import digest, project_path, read_json
 WORK = ".dazedtl/len-method"
 # The method of a Manual project's runs, which its plans name: the user's own
 # tools extract and write the game's text, so DazedTL writes the game only to
-# add or take out GameUpdate as its options choose, needs no Git baseline and
+# add or take out GameUpdate on the user's word, needs no Git baseline and
 # keeps no assistant's progress report for them.
 MANUAL = "manual"
 # A Manual project's loaded file as the units its estimates organize.
@@ -115,13 +115,10 @@ class ProjectWorkspace:
             "initialized": False,
         }
 
-    def current(self, revision, mode="batch"):
-        """Refuses a save based on options saved since, at `revision`."""
-        if revision != self.read(mode)["revision"]:
-            raise ValueError("Project options changed elsewhere. Reload before saving.")
-
     def save(self, revision, selected, mode="batch"):
-        self.current(revision, mode)
+        before = self.read(mode)
+        if revision != before["revision"]:
+            raise ValueError("Project options changed elsewhere. Reload before saving.")
         value = options(selected)
         write_json(self.path, {"version": 1, "options": value})
         return self.read()

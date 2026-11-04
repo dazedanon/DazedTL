@@ -267,7 +267,7 @@ Upload only what you may store: a private repository isn't permission to share s
 ## Publishing with GameUpdate
 
 GameUpdate updates players to your latest translation from a public Git repository on GitGud, GitHub or a Forgejo server such as Codeberg.
-Set up, or saving **Options** in Manual, adds `GameUpdate.bat`, its scripts and a `README.md` for players to the game.
+Set up, or **Options** in Manual, adds `GameUpdate.bat`, its scripts and a `README.md` for players to the game.
 
 1. In **Settings > GameUpdate**, choose the site and enter the owner of your repositories, such as `dazed-translations`.
    Leave the owner empty if you don't use GameUpdate.

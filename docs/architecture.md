@@ -139,7 +139,7 @@ The engine probe ([engine_runtime](../tests/fixtures/engine_runtime.py)) checks 
   Assistant-led's patch checks are each a `PackageRefusal`, whose message is the assistant's next step and whose reason is the user's (`unfinished` in [service](../backend/dazedtl/translation/service.py)).
   The assistant's `operation package` refuses with the first, while the user's patch needs only Git setup with its runtime manifest and GameUpdate's repository: its review lists the unmet checks and builds anyway, as Guided's patch waits for no QA, and the build refuses a check its review didn't list.
 - A VX Ace game ZIP's name must be ASCII: its Game.exe fails as "RGSS301.dll File corrupted" from a Japanese-named folder on English Windows.
-- Writing the GameUpdate config never marks saved work Outdated, and outside RPG Maker, GameUpdate installs only for engines whose patch layouts were checked (`GAMEUPDATE_ENGINES` in [translation](../backend/dazedtl/compatibility/translation.py)).
+- Writing the GameUpdate config never marks saved work Outdated, and outside RPG Maker, an assistant installs GameUpdate only for engines whose patch layouts were checked (`GAMEUPDATE_ENGINES` in [translation](../backend/dazedtl/compatibility/translation.py)); a Manual game takes it whatever its engine, since its own tools lay out its patch.
 - Assistant-led's preparation installs or takes out GameUpdate, Forge and TL Inspector as the project's options choose, and `setup_mismatch` in [translation](../backend/dazedtl/compatibility/translation.py) is the one rule that holds the assistant's patch, and warns in the user's, while the game's GameUpdate or Forge differs from them.
 
 ## Plugins and images

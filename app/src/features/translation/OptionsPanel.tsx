@@ -40,19 +40,19 @@ export function BaseGlossaryField({
 }
 
 /**
- * Whether players get GameUpdate. `effect` says how the choice reaches the
- * game where no assistant installs it, such as Manual's.
+ * Whether players get GameUpdate: Assistant-led's choice for its assistant,
+ * or a Manual game's own, where `effect` says what ticking it does.
  */
 export function GameUpdateField({
   state,
-  options,
-  edit,
+  checked,
+  onChange,
   settings,
   effect,
 }: {
   state: TranslationState;
-  options: TranslationOptions;
-  edit: (key: "install_gameupdate", value: boolean) => void;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
   settings: (section?: SettingsSection) => void;
   effect?: string;
 }) {
@@ -65,7 +65,7 @@ export function GameUpdateField({
       id="translation-gameupdate"
       label="GameUpdate"
       description={
-        options.install_gameupdate && state.gameUpdateNeedsOwner ? (
+        checked && state.gameUpdateNeedsOwner ? (
           <>
             {purpose} DazedTL sets it up once the owner of your patch
             repositories is set in Settings.{" "}
@@ -77,8 +77,8 @@ export function GameUpdateField({
           purpose
         )
       }
-      checked={options.install_gameupdate}
-      onChange={(checked) => edit("install_gameupdate", checked)}
+      checked={checked}
+      onChange={onChange}
     />
   );
 }
@@ -293,8 +293,8 @@ export function OptionsPanel({
           {state.gameUpdateOffered && (
             <GameUpdateField
               state={state}
-              options={options}
-              edit={edit}
+              checked={options.install_gameupdate}
+              onChange={(checked) => edit("install_gameupdate", checked)}
               settings={settings}
             />
           )}
