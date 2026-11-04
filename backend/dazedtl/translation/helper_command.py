@@ -5,7 +5,7 @@ import os
 import shutil
 from pathlib import Path
 
-from util.paths import GAME_NOTES_FILENAME
+from util.paths import GAME_NOTES_FILENAME, game_notes_files
 
 from dazedtl import system
 
@@ -73,7 +73,10 @@ def notes_note(root, *, read_only=False):
     which the next session, on another computer or with another assistant,
     reads first; a `read_only` task, which changes no game file, only reads
     them."""
-    path = json.dumps(str(Path(root) / GAME_NOTES_FILENAME), ensure_ascii=False)
+    found = game_notes_files(root)
+    path = json.dumps(
+        str(found[0] if found else Path(root) / GAME_NOTES_FILENAME), ensure_ascii=False
+    )
     opening = (
         f"Assistant notes: {path} holds what anyone working on this game must know,"
         " and the game's Git takes it to other computers and assistants."
@@ -95,7 +98,9 @@ def notes_note(root, *, read_only=False):
         " Keep the notes short and current, replacing what changed rather than adding"
         " to it, and leave out progress, this task's steps and what .dazedtl/glossary.txt"
         " and .dazedtl/skills/game.md and quirks.md hold; style rules for the translation"
-        " belong in quirks.md.\n\n"
+        " belong in quirks.md. Anyone who can see the game's repository reads them, so"
+        " write paths inside the game folder relative to it, and leave out your home"
+        " folder, user name and anything secret.\n\n"
     )
 
 

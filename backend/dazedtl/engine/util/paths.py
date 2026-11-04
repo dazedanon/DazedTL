@@ -443,7 +443,7 @@ def portable_game_files(game_root: str | Path) -> list[str]:
     candidates = [
         metadata / GLOSSARY_FILENAME,
         metadata / "settings.json",
-        root / GAME_NOTES_FILENAME,
+        *game_notes_files(root),
     ]
     if skills.is_dir() and not skills.is_symlink():
         candidates.extend(skills.iterdir())
@@ -464,14 +464,26 @@ def is_game_notes(relative: str) -> bool:
     return relative.casefold() == GAME_NOTES_FILENAME.casefold()
 
 
+def game_notes_files(game_root: str | Path) -> list[Path]:
+    """The game's assistant notes as its folder holds them: the entries at
+    its root is_game_notes matches, which a case-sensitive file system, as
+    on Linux, can hold more than one of."""
+    try:
+        return sorted(path for path in Path(game_root).iterdir() if is_game_notes(path.name))
+    except OSError:
+        return []
+
+
 def is_project_file(relative: str) -> bool:
     """Whether a game-relative path is the project's own, never the original
     game's: a file under DazedTL's folder, or the assistant notes, even ones
-    the game folder held before Set up. No record of the original game holds
-    them, a game update leaves them as they are, and Go back and Start over
-    leave the notes, whose edits by an assistant are a checkpoint of their
-    own (checkpoint_commits `_saving`)."""
-    return relative.partition("/")[0] == GAME_METADATA_RELATIVE.as_posix() or is_game_notes(relative)
+    the game folder held before Set up, and anything in a folder an
+    assistant gave their name. No record of the original game holds them, a
+    game update leaves them as they are, and Go back and Start over leave
+    the notes, whose edits by an assistant are a checkpoint of their own
+    (checkpoint_commits `_saving`)."""
+    first = relative.partition("/")[0]
+    return first == GAME_METADATA_RELATIVE.as_posix() or is_game_notes(first)
 
 
 def is_game_tool_file(relative: str) -> bool:

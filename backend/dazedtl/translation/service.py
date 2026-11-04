@@ -10,6 +10,8 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
+from util import guidance_documents
+
 from dazedtl.actions import history_label
 from dazedtl.compatibility import estimate_prices
 from dazedtl.compatibility.estimate_prices import usage_cost
@@ -409,19 +411,42 @@ class Translation:
         return self.engine.documents(record["source"])
 
     def save_document(self, project_id, name, revision, text):
+        """Saves one guidance document and drops its draft; returns the
+        documents and the names it wrote, none for a draft that leaves a
+        document created only with text without any."""
         self.idle(project_id)
         record, _project = self.project(project_id)
-        result = self.engine.document_save(record["source"], name, revision, text)
+        saved = self.engine.document_save(record["source"], name, revision, text)
         pending = self.drafts(project_id)["documents"]
         pending.pop(name, None)
         self.draft(project_id, "documents", pending)
-        return result
+        return {
+            "documents": self.engine.read_documents(record["source"], pending),
+            "saved": saved,
+        }
 
-    def clean_drafts(self, project_id):
+    def clean_drafts(self, project_id, work=guidance_documents.REQUEST_WORK):
+        """Refuses `work`, guidance_documents' HANDOFF or REQUEST_WORK, while
+        a draft it reads is unsaved: any options draft, or a guidance draft
+        whose document holds it up, named with the tab that saves it in the
+        project's method."""
         value = self.drafts(project_id)
-        if value["options"] or value["documents"]:
+        if value["options"]:
             raise ValueError(
                 "Save or discard project drafts before preparing or running work."
+            )
+        held = [
+            found
+            for found in map(guidance_documents.definition, value["documents"])
+            if found is None or work in found.holds_up
+        ]
+        if held:
+            titles = ", ".join(found.title for found in held if found) or "guidance"
+            method = self.projects.get(project_id).get("method")
+            raise ValueError(
+                f"Save or discard your {titles}"
+                f" {'draft' if len(held) == 1 else 'drafts'} in"
+                f" {'Guidance' if method == 'guided' else 'Context'} first."
             )
 
     def legacy_record(self, project_id):
@@ -501,13 +526,16 @@ class Translation:
                 )
         legacy = self.legacy_record(project_id)
         unavailable, unread = batch_reasons(self.settings)
+        drafts = self.drafts(project_id)
         game_update = self.game_update.state(project_id)
         return {
             "projectId": project_id,
             **selected,
-            "drafts": self.drafts(project_id),
+            "drafts": drafts,
             "engine": engine,
-            "documents": self.engine.editable_documents(record["source"]),
+            "documents": self.engine.read_documents(
+                record["source"], drafts["documents"]
+            ),
             "progress": progress,
             "assistantSeenAt": self.seen(project_id),
             "coverage": run_compiler.saved_coverage(
@@ -590,7 +618,8 @@ class Translation:
         )
         if not frozen:
             self.idle(project_id)
-        self.clean_drafts(project_id)
+        # The assistant reads every document from its file, the notes too.
+        self.clean_drafts(project_id, guidance_documents.HANDOFF)
         _record, project = self.project(project_id)
         # Set up starts: the game keeps the language pair Settings name.
         language_pair.record(self.settings, project.root)
@@ -1957,7 +1986,7 @@ If you won't translate a request, skip it and go on; it stays declined. Use the 
         if record.get("method") != "len":
             raise ValueError("Start over is for Assistant-led projects.")
         if type(keep_context) is not bool:
-            raise ValueError("Choose whether to keep the glossary and notes.")
+            raise ValueError("Choose whether to keep the glossary and guidance.")
         for job in self.jobs.store.list(project_id):
             if job["kind"] == "translation" and job["status"] in {
                 "running",

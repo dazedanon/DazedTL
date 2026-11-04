@@ -155,7 +155,7 @@ class Engine:
     def documents(self, _source):
         return {}
 
-    def editable_documents(self, source):
+    def read_documents(self, source, _drafted=()):
         return self.documents(source)
 
     def prepare(self, source, _options, *, language="English", refresh=True):
@@ -2412,7 +2412,7 @@ class WorkflowTests(unittest.TestCase):
         from dazedtl.compatibility import checkpoint_history
         from dazedtl.compatibility.checkpoint_commits import _git
         from dazedtl.compatibility.translation import TranslationEngine
-        from desktop.backend.guidance import documents, editable, notes
+        from desktop.backend.guidance import documents, read
         from util.len_git import setup_git
         from util.len_patch_scope import scope_ignore
         from util.len_translation import LenProject
@@ -2432,19 +2432,22 @@ class WorkflowTests(unittest.TestCase):
         )
         agents = self.game / "AGENTS.md"
         agents.write_bytes(b"\x80 not text")
-        self.assertNotIn("notes", editable(self.game))
+        self.assertEqual(read(self.game)["notes"]["state"], "unreadable")
         engine = TranslationEngine(self.profile)
         glossary = documents(self.game)["glossary"]
         engine.document_save(self.game, "glossary", glossary["revision"], "Lili (リリ)")
         agents.write_bytes("Repack Data.wolf.".encode("utf-16"))
-        self.assertEqual(notes(self.game)["text"], "Repack Data.wolf.")
+        self.assertEqual(read(self.game)["notes"]["text"], "Repack Data.wolf.")
         saved = engine.document_save(
             self.game,
             "notes",
-            notes(self.game)["revision"],
+            read(self.game)["notes"]["revision"],
             "Repack Data.wolf after injection.",
         )
-        self.assertEqual(saved["notes"]["text"], "Repack Data.wolf after injection.")
+        self.assertEqual(saved, ["notes"])
+        self.assertEqual(
+            read(self.game)["notes"]["text"], "Repack Data.wolf after injection."
+        )
         self.assertNotIn("notes", documents(self.game))
         self.assertEqual(
             _git(self.game, "show", "HEAD:AGENTS.md").stdout,
@@ -2520,13 +2523,16 @@ class WorkflowTests(unittest.TestCase):
         # stands in for the lock.
         from dazedtl.compatibility.checkpoint_commits import _git, for_action, running
         from dazedtl.compatibility.game_write import write_game
-        from desktop.backend.guidance import notes
+        from desktop.backend.guidance import read
         from util.len_git import setup_git
         from util.len_translation import LenProject
 
         setup_git(LenProject(self.game), version="1.0", current_is_untranslated=True)
         TranslationEngine(self.profile).document_save(
-            self.game, "notes", notes(self.game)["revision"], "Repack Data.wolf."
+            self.game,
+            "notes",
+            read(self.game)["notes"]["revision"],
+            "Repack Data.wolf.",
         )
         agents = self.game / "AGENTS.md"
         agents.write_text("Repack Data.wolf after injection.", encoding="utf-8")
@@ -2819,7 +2825,7 @@ class WorkflowTests(unittest.TestCase):
         game, which must leave the saved notes as they are."""
         from dataclasses import asdict
 
-        from desktop.backend.guidance import notes
+        from desktop.backend.guidance import read
         from util import version_update
 
         agents = self.game / "AGENTS.md"
@@ -2827,7 +2833,7 @@ class WorkflowTests(unittest.TestCase):
         engine.document_save(
             self.game,
             "notes",
-            notes(self.game)["revision"],
+            read(self.game)["notes"]["revision"],
             "Repack Data.wolf after injection.",
         )
         official = self.root / "release"

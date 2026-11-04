@@ -16,7 +16,7 @@ from .project import atomic_json, digest
 from .settings import SettingsStore
 from .workflow_actions import LABELS, READ_ONLY, action_guard, describe_game, regular, validate_plan
 
-from .guidance import documents, documents_save, editable, valid_document_name
+from .guidance import documents, documents_save, read, valid_document_name
 
 
 # A saved record names its game's files relative to the game folder and not
@@ -354,10 +354,11 @@ class Workflows:
         self.folder(project_id)
         return documents(self.projects[project_id]["source"])
 
-    def editable(self, project_id):
-        """The guidance and the assistant notes, which the Guidance task edits."""
+    def read_documents(self, project_id, drafted=()):
+        """Every guidance document, as both methods' editors show them, with
+        the custom skills `drafted` names whose files are gone."""
         self.folder(project_id)
-        return editable(self.projects[project_id]["source"])
+        return read(self.projects[project_id]["source"], drafted)
 
     def document_save(self, project_id, name, revision, text):
         return self.documents_save(project_id, {name: {"revision": revision, "text": text}})

@@ -5,7 +5,6 @@ import {
   ACTIONS,
   type ActionView,
   type AssistantTaskKind,
-  type Documents,
   type GuidedAction,
   type GuidedForm,
   type GuidedOptions,
@@ -19,6 +18,8 @@ import {
   type TranslationState,
 } from "../../../api/contracts";
 import { useApplication } from "../../../app/ApplicationProvider";
+import { useLanguages } from "../../../app/LanguagesProvider";
+import { heldDrafts } from "../../../state/documentState";
 import { flushDrafts } from "../../../state/leaveGuards";
 import { useAction } from "../../../state/useAction";
 import { useDraft } from "../../../state/useDraft";
@@ -29,6 +30,7 @@ import { ActionControl } from "../../../ui/ActionControl";
 import { ActionList, ActionRow } from "../../../ui/ActionList";
 import { Button } from "../../../ui/Button";
 import { NumberInput } from "../../../ui/NumberInput";
+import { useDocumentsSave } from "../../../ui/useDocumentsSave";
 import { projectActivity } from "../ActivityHistory";
 import type { RequestInspectionTarget } from "../ProcessPanel";
 import { investigationResults } from "../contextView";
@@ -40,7 +42,6 @@ import {
   selection,
   sourceErrors,
 } from "../eventTextSelection";
-import { guidanceAvailability, guidanceNames } from "../guidanceReview";
 import { historyOutcome } from "../historyView";
 import {
   activeRun,
@@ -100,6 +101,8 @@ export function useGuidedWorkspace({
   const speakerAction = useAction({ observer: application });
   const draft = useGuidedWorkflow(state, action.report);
   const context = useContextDraft(project.id, state.drafts, action.report);
+  // The game's source language, which the guidance placeholders follow.
+  const { source } = useLanguages();
   const form = useDraft("guided-form:" + project.id, {
     initial: { saved: state.form },
     report: action.report,
@@ -293,7 +296,7 @@ export function useGuidedWorkspace({
   const currentEstimate = (target: Phase) =>
     !changed.length &&
     !draft.dirty &&
-    !Object.keys(context.drafts).length &&
+    !heldDrafts(state.documents, context.drafts, "work").length &&
     state.estimates[target]?.current
       ? state.estimates[target]?.job
       : null;
@@ -416,7 +419,9 @@ export function useGuidedWorkspace({
     mode,
     files: phaseFiles.map((file) => file.name),
     state,
-    dirty: draft.dirty || !!Object.keys(context.drafts).length,
+    dirty:
+      draft.dirty ||
+      !!heldDrafts(state.documents, context.drafts, "work").length,
     busy: operationBusy,
     running,
     save,
@@ -1157,28 +1162,20 @@ export function useGuidedWorkspace({
       "",
       "folder:" + key,
     );
-  const savedNames = guidanceNames(state.documents, context.drafts);
-  const saveDocuments = (names: string[]) => {
-    // A missing core guidance file is created from the text shown for it.
-    const { missing } = guidanceAvailability(discovery.documents);
-    return action.run(
-      async () => {
-        // One save, so one checkpoint.
-        const created: Documents = {};
-        for (const name of missing)
-          created[name] = {
-            text: state.documents[name]?.text || "",
-            revision: state.documents[name]?.revision || "",
-          };
-        await context.save(names, created);
-      },
-      // Saving creates missing files and writes drafts; otherwise it is a no-op.
-      missing.length || names.some((name) => context.drafts[name])
-        ? "Guidance saved."
-        : "Guidance is already saved.",
-      "context:save",
-    );
-  };
+  // Save guidance sends every draft and creates the core documents the game
+  // has no file for, so it runs without a draft too.
+  const guidanceSave = useDocumentsSave({
+    documents: state.documents,
+    draft: context,
+    action,
+    label: "Guidance",
+    whole: true,
+    actionKey: "context:save",
+  });
+  const saveDocuments = () => guidanceSave.save(Object.keys(context.drafts));
+  // The drafts that hold up work reading what translation requests carry;
+  // an Assistant notes draft holds up only handing a task to an assistant.
+  const workDrafts = heldDrafts(state.documents, context.drafts, "work");
   // Back to the saved Line widths; edits to the other options stay, as
   // discarding one guidance document leaves the others.
   const discardWidths = async () => {
@@ -1678,8 +1675,10 @@ export function useGuidedWorkspace({
     chooseFiles,
     closePanel,
     chooseFolder,
-    savedNames,
     saveDocuments,
+    guidanceDialog: guidanceSave.dialog,
+    workDrafts,
+    source,
     widths,
     discardWidths,
     saveOptions,

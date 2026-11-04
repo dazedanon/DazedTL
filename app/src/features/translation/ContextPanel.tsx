@@ -3,9 +3,11 @@ import { api } from "../../api/client";
 import type { TranslationState } from "../../api/contracts";
 import { useApplication } from "../../app/ApplicationProvider";
 import { useLanguages } from "../../app/LanguagesProvider";
-import { AssistantNotesNote } from "../guided/AssistantNotesNote";
-import { guidanceFormats } from "../guided/guidanceFormats";
-import { assistantNotes } from "../guided/guidanceReview";
+import {
+  guidanceFileFormats,
+  guidanceFormats,
+} from "../guided/guidanceFormats";
+import { documentNames } from "../../state/documentState";
 import { useAction } from "../../state/useAction";
 import { useDocumentDraft } from "../../state/useDocumentDraft";
 import {
@@ -21,6 +23,7 @@ import { DocumentEditor } from "../../ui/DocumentEditor";
 import { Feedback } from "../../ui/Feedback";
 import { PageBody } from "../../ui/PageLayout";
 import { HelpPopover } from "../../ui/HelpPopover";
+import { useDocumentsSave } from "../../ui/useDocumentsSave";
 import { checkoutRefusal } from "./checkout";
 
 export function ContextPanel({
@@ -48,16 +51,23 @@ export function ContextPanel({
       },
     },
   );
+  const saver = useDocumentsSave({
+    documents: state.documents,
+    draft,
+    action,
+    label: "Context",
+  });
   const [selected, setSelected] = useState("glossary");
-  const names = [
-    ...new Set([...Object.keys(state.documents), ...Object.keys(draft.drafts)]),
-  ];
+  const names = documentNames(state.documents, draft.drafts);
   const name = names.includes(selected) ? selected : names[0] || selected;
   const dirty = !!draft.drafts[name];
   const disabled = state.active || action.busy || draft.committing;
-  const refused = checkoutRefusal(state);
-  const save = () =>
-    void action.run(() => draft.save([name]), "Context saved.");
+  const document = state.documents[name];
+  const refused =
+    document?.state === "unreadable"
+      ? `DazedTL can't read ${document.file}.`
+      : checkoutRefusal(state);
+  const save = () => saver.save([name]);
   const body = useRef<HTMLDivElement>(null);
   useShortcut(saveKey, dirty && !disabled && !refused ? save : null, body, {
     inFields: true,
@@ -65,19 +75,13 @@ export function ContextPanel({
   return (
     <>
       <PageBody ref={body} className="lens-context-body">
-        {name === assistantNotes ? (
-          <p className="muted lens-context-note">
-            <AssistantNotesNote />
-          </p>
-        ) : (
-          <p className="muted lens-context-note">
-            Names, voices and game context for every translation mode.{" "}
-            <HelpPopover label="Context">
-              These files and custom skills stay in the game&apos;s portable
-              workspace. Each run keeps the exact context it used.
-            </HelpPopover>
-          </p>
-        )}
+        <p className="muted lens-context-note">
+          Names, voices and game context for every translation mode.{" "}
+          <HelpPopover label="Context">
+            These files and custom skills stay in the game&apos;s portable
+            workspace. Each run keeps the exact context it used.
+          </HelpPopover>
+        </p>
         <DocumentEditor
           documents={state.documents}
           drafts={draft.drafts}
@@ -85,12 +89,8 @@ export function ContextPanel({
           disabled={disabled}
           selectedName={name}
           select={setSelected}
-          focused
-          fill
-          showActions={false}
           placeholders={guidanceFormats(languages.source)}
-          save={(next) => void action.run(() => draft.save([next]))}
-          discard={(next) => void action.run(() => draft.discard(next))}
+          formats={guidanceFileFormats}
         />
       </PageBody>
       <ActionBar
@@ -124,6 +124,7 @@ export function ContextPanel({
         />
         {copy(dirty ? "default" : "primary")}
       </ActionBar>
+      {saver.dialog}
     </>
   );
 }

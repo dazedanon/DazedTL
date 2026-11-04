@@ -213,14 +213,18 @@ class TranslationEngine:
 
         return documents(source)
 
-    def editable_documents(self, source):
-        """The guidance and the assistant notes, which the Context tab edits."""
-        from desktop.backend.guidance import editable
+    def read_documents(self, source, drafted=()):
+        """Every guidance document, as the Context tab shows them, with the
+        custom skills `drafted` names whose files are gone."""
+        from desktop.backend.guidance import read
 
-        return editable(source)
+        return read(source, drafted)
 
     def document_save(self, source, name, revision, text):
-        from desktop.backend.guidance import NOTES, NOTES_SAVE, document_save, written
+        """Saves one guidance document as its own checkpoint; returns the
+        names it wrote."""
+        from desktop.backend.guidance import documents_save, written
+        from util.guidance_documents import save_summary
 
         from .game_write import write_game
 
@@ -229,10 +233,10 @@ class TranslationEngine:
             source,
             pack=False,
             paths=written(source, [name]),
-            summary=NOTES_SAVE if name == NOTES else "Save guidance",
+            summary=save_summary([name]),
             stage="Context",
         ):
-            return document_save(source, name, revision, text)
+            return documents_save(source, {name: {"revision": revision, "text": text}})
 
     def glossary_add(self, source, sections, summary):
         """Adds *sections*' rows to the game glossary as append_vocab_rows

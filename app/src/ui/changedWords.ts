@@ -1,7 +1,7 @@
 /** A stretch of one side of a changed line, marked when the other lacks it. */
 export type WordRun = { text: string; changed: boolean };
 
-type Edit = { kind: "same" | "removed" | "added"; text: string };
+export type Edit = { kind: "same" | "removed" | "added"; text: string };
 
 /* Words, numbers, runs of spaces and single other characters. A word ends
    where a capital or a digit starts another, so "BanditLv2" compares as
@@ -10,7 +10,7 @@ const tokenPattern =
   /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]|(?:\p{Lu}+(?!\p{Ll})|\p{Lu}?[\p{Ll}\p{Lo}\p{Lm}\p{M}]+)(?:['’][\p{Ll}\p{Lo}\p{Lm}\p{M}]+)*|\p{N}+|\s+|./gsu;
 
 /** Token pairs the comparison may weigh; a longer rewrite is one change. */
-const comparisonLimit = 250_000;
+export const comparisonLimit = 250_000;
 
 /**
  * The words that differ between two versions of a line, so a correction can
@@ -68,7 +68,9 @@ function compare(left: string[], right: string[]): Edit[] {
   ];
 }
 
-function commonSubsequence(left: string[], right: string[]): Edit[] {
+/** The edits that turn one list into the other through their longest
+ * common subsequence, one per item. */
+export function commonSubsequence(left: string[], right: string[]): Edit[] {
   const width = right.length + 1;
   // Each cell holds the longest common run of the two lists from there on.
   const table = new Uint32Array((left.length + 1) * width);

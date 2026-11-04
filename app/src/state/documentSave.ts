@@ -1,27 +1,22 @@
-import type { Documents } from "../api/contracts";
+import type { DocumentDrafts, DocumentsSaved } from "../api/contracts";
 import type { DraftSession } from "./DraftSession";
 
 /**
- * Saves the drafts of `names` in one save, with `created`, the text of
- * documents that have no file yet, which never become drafts: a refused save
- * leaves nothing unsaved the user didn't edit.
+ * Saves the drafts of `names` in one save and returns the backend's reply:
+ * the documents, and the names it wrote. Drafts edited while it saved stay,
+ * at the revision the save left their file at.
  */
 export async function saveDocuments(
-  session: DraftSession<Documents>,
-  save: (documents: Documents) => Promise<Documents>,
+  session: DraftSession<DocumentDrafts>,
+  save: (documents: DocumentDrafts) => Promise<DocumentsSaved>,
   names: string[],
-  created: Documents = {},
 ) {
-  let documents: Documents = {};
+  let result: DocumentsSaved = { documents: {}, saved: [] };
   await session.commit(
     async (current) => {
-      const chosen: Documents = {};
-      for (const name of names) {
-        const document = current[name] ?? created[name];
-        if (document) chosen[name] = document;
-      }
-      if (!Object.keys(chosen).length) return { saved: {}, draft: current };
-      documents = await save(chosen);
+      const chosen: DocumentDrafts = {};
+      for (const name of names) if (current[name]) chosen[name] = current[name];
+      result = await save(chosen);
       const pending = { ...current };
       for (const name of names) delete pending[name];
       return { saved: {}, draft: pending };
@@ -31,14 +26,14 @@ export async function saveDocuments(
       for (const name of names) {
         if (JSON.stringify(before[name]) === JSON.stringify(current[name]))
           delete pending[name];
-        else if (pending[name] && documents[name])
+        else if (pending[name] && result.documents[name])
           pending[name] = {
             ...pending[name],
-            revision: documents[name].revision,
+            revision: result.documents[name].revision,
           };
       }
       return pending;
     },
   );
-  return documents;
+  return result;
 }

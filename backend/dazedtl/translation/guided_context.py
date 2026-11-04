@@ -7,6 +7,8 @@ from copy import deepcopy
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from util.guidance_documents import HANDOFF
+
 from dazedtl.actions import label
 from dazedtl.freshness import Basis, compare
 from dazedtl.settings import language_pair
@@ -20,6 +22,11 @@ from .speaker_setup import SCAN_VERSION
 
 if TYPE_CHECKING:
     from .guided import Guided
+
+# The tasks whose assistant only reports findings, which DazedTL checks and
+# applies itself, so they change no game file: event text sources, line
+# widths and Text QA.
+FINDINGS_ONLY = frozenset({"advanced", "wrap", "qa"})
 
 
 # The RPG Maker instructions are written for MV/MZ; VX Ace keeps its data,
@@ -60,10 +67,12 @@ class GuidedContext:
         """One copied Guided task, opening as every assistant task does."""
         task = self._task(project_id, name)
         _project, native = self.guided.record(project_id)
-        return {**task, "text": task_opening(native["source"]) + task["text"]}
+        opening = task_opening(native["source"], read_only=name in FINDINGS_ONLY)
+        return {**task, "text": opening + task["text"]}
 
     def _task(self, project_id, name):
-        self.guided.clean(project_id)
+        # The assistant reads every document from its file, the notes too.
+        self.guided.clean(project_id, HANDOFF)
         project, native = self.guided.record(project_id)
         if name not in {
             "setup",
@@ -156,9 +165,9 @@ class GuidedContext:
                 "expects": [
                     guided / "speaker-findings.json",
                     *(
-                        documents[key]["path"]
-                        for key in context_setup.CORE
-                        if key in documents
+                        document["path"]
+                        for document in documents.values()
+                        if document["kind"] == "core"
                     ),
                 ],
                 # The assistant keeps investigating after these; the task
@@ -338,7 +347,7 @@ class GuidedContext:
                 self.guided.path(project_id, "context-review"),
                 native,
                 project_id,
-                self.guided.backend.workflows.editable(native["id"]),
+                self.guided.backend.workflows.read_documents(native["id"]),
                 self.speaker_findings(project_id, native),
                 self.speakers(project_id),
                 self.guided.observed_digest,

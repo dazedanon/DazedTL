@@ -7,6 +7,7 @@ from tempfile import TemporaryDirectory
 from dazedtl.storage import write_json
 from dazedtl.translation import context_setup as C
 from dazedtl.translation.files import digest, read_json
+from desktop.backend.guidance import read
 from util.game_settings import default_wrap_widths
 
 
@@ -20,11 +21,13 @@ class ContextSetupTests(unittest.TestCase):
             self.root / "profile/review.json",
         )
         self.native = {"source": str(self.root), "widths": default_wrap_widths()}
-        self.docs = {}
-        for name in C.CORE:
-            path = self.root / f".dazedtl/{name}.txt"
-            path.parent.mkdir(exist_ok=True)
-            self.docs[name] = {"text": "", "revision": digest(b""), "path": str(path)}
+        (self.root / ".dazedtl/skills").mkdir(parents=True)
+        # The core documents, which Guidance needs.
+        self.docs = {
+            name: document
+            for name, document in read(self.root).items()
+            if document["kind"] == "core"
+        }
         self.findings = {"status": "stale", "reportId": None}
         self.scan = {"current": False, "job": None}
 
@@ -34,7 +37,7 @@ class ContextSetupTests(unittest.TestCase):
             self.review_path,
             self.native,
             "game",
-            self.docs,
+            read(self.root),
             self.findings,
             self.scan,
             lambda path: digest(path.read_bytes()),

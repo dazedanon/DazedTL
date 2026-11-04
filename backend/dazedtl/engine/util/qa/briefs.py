@@ -190,12 +190,14 @@ def _decision_line(decision: dict[str, Any]) -> str:
 
 
 def _game_guidance(root: Path) -> list[str]:
-    """The task context's game notes, translation quirks, custom guidance and
+    """The task context's game context, style and quirks, custom guidance and
     the decisions recorded so far; bundles carry the glossary entries they use."""
     context = _read_json(root / "context.json")
+    from util.guidance_documents import GAME_CONTEXT, QUIRKS
+
     documents = [
-        ("Game notes", context.get("game")),
-        ("Translation quirks", context.get("quirks")),
+        (GAME_CONTEXT.title, context.get("game")),
+        (QUIRKS.title, context.get("quirks")),
         *(
             (f"Game guidance: {Path(str(overlay.get('path') or '')).stem}", overlay)
             for overlay in context.get("overlays") or []

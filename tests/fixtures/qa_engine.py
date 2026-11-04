@@ -252,7 +252,7 @@ assert task.stat().st_mode == task.parent.stat().st_mode, oct(task.stat().st_mod
 worker = qa.brief(task, "worker")
 assert "{{" not in worker and str(task / "context.json") not in worker, worker
 assert all(f"## {title}" in worker for title in qa._BRIEF_SECTIONS["worker"]), worker
-assert f"## Translation quirks\n\n{QUIRK}" in worker, worker
+assert f"## Style & quirks\n\n{QUIRK}" in worker, worker
 # On Windows a worker's first command, the brief, is PowerShell, so the prompt
 # the coordinator hands it carries the shell note its brief starts with.
 # Its here-document ends only on an unindented end marker.

@@ -12,7 +12,6 @@ from .files import digest, project_path, read_json
 from .playtest import layout_check
 
 REPORT = ".dazedtl/guided/context-findings.json"
-CORE = ("glossary", "quirks", "game")
 WIDTHS = ("width", "faceWidth", "listWidth", "noteWidth")
 # The rows a message window shows, measured with the widths; a report or
 # request from before it existed leaves the saved rows as they are.
@@ -20,31 +19,6 @@ ROWS = "messageRows"
 # The speaker request a line width task records when no Names & glossary task
 # was copied; such a request waits for widths, never for guidance files.
 LAYOUT_REQUEST = "layout"
-
-
-def retained_documents(source, documents, drafts):
-    """Keep missing custom files, and assistant notes AGENTS.md can't be read
-    into, addressable while their recovery drafts exist, so a draft can be
-    discarded; saving unreadable notes stays refused."""
-    from desktop.backend.guidance import NOTES
-    from util.paths import GAME_NOTES_FILENAME
-
-    for name in drafts:
-        if name in documents or not (name.startswith("custom:") or name == NOTES):
-            continue
-        # Nothing writes through the notes' path, since saving them reads
-        # them again and refuses, so a link there leaves the project open.
-        path = (
-            Path(source) / GAME_NOTES_FILENAME
-            if name == NOTES
-            else project_path(
-                source,
-                ".dazedtl/skills/" + name.removeprefix("custom:") + ".md",
-                exists=False,
-            )
-        )
-        documents[name] = {"text": "", "revision": digest(b""), "path": str(path)}
-    return documents
 
 
 def selected_document(path, position, documents):
@@ -103,24 +77,27 @@ def inspect(
 ):
     request_value = optional_record(request_path)
     reviews = optional_record(review_path)
-    document_states = {}
-    for name, document in documents.items():
-        path = project_path(
-            native["source"],
-            Path(document["path"]).relative_to(native["source"]).as_posix(),
-            exists=False,
-        )
-        # Keep the legacy response fields for older clients without retaining
-        # document review, empty-choice or conflict state.
-        document_states[name] = {
-            "exists": path.is_file(),
+    # A document counts once its file holds text DazedTL can read. Keep the
+    # legacy response fields for older clients without retaining document
+    # review, empty-choice or conflict state.
+    document_states = {
+        name: {
+            "exists": document["state"] == "saved",
+            "title": document["title"],
+            "kind": document["kind"],
             "reviewed": False,
             "needsReview": False,
             "intentionalEmpty": False,
         }
+        for name, document in documents.items()
+    }
     from util.game_settings import default_wrap_widths
 
-    complete = all(document_states.get(name, {}).get("exists") for name in CORE)
+    complete = all(
+        document["state"] == "saved"
+        for document in documents.values()
+        if document["kind"] == "core"
+    )
     receipt = native.get("guided_layout", {})
     applied = bool(
         receipt.get("applied")

@@ -55,11 +55,32 @@ def application(value):
     }
 
 
+DOCUMENT_FIELDS = (
+    "text",
+    "revision",
+    "path",
+    "file",
+    "title",
+    "kind",
+    "requests",
+    "holdsUp",
+    "state",
+    "reason",
+)
+
+
 def documents(value):
+    return {name: pick(document, DOCUMENT_FIELDS) for name, document in value.items()}
+
+
+def drafts(value):
     return {
-        name: pick(document, ("text", "revision", "path"))
-        for name, document in value.items()
+        name: pick(document, ("text", "revision")) for name, document in value.items()
     }
+
+
+def documents_saved(value):
+    return {"documents": documents(value["documents"]), "saved": value["saved"]}
 
 
 def job(value):
@@ -157,7 +178,7 @@ def guided(value, project_id):
         "sourceStatus": value["source_status"],
         "readiness": value["readiness"],
         "documents": documents(value["documents"]),
-        "drafts": documents(value.get("draft", {}).get("documents", {})),
+        "drafts": drafts(value.get("draft", {}).get("documents", {})),
         "tools": value["tools"],
         "artifacts": value["artifacts"],
         "references": [

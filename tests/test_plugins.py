@@ -115,7 +115,7 @@ class PluginTests(unittest.TestCase):
         self.translation = SimpleNamespace(
             workspace=self.profile,
             idle=lambda _: None,
-            clean_drafts=lambda _: None,
+            clean_drafts=lambda *_: None,
             writable=lambda _: None,
             settings=SimpleNamespace(
                 language=lambda: "English", source_language=lambda: "Japanese"
@@ -1228,7 +1228,7 @@ class PluginTests(unittest.TestCase):
             translation = SimpleNamespace(
                 workspace=profile,
                 idle=lambda _: None,
-                clean_drafts=lambda _: None,
+                clean_drafts=lambda *_: None,
                 writable=lambda _: None,
                 settings=SimpleNamespace(
                     language=lambda: "English", source_language=lambda: "Japanese"
@@ -1463,7 +1463,7 @@ class AceScriptTests(unittest.TestCase):
             SimpleNamespace(
                 workspace=profile,
                 idle=lambda _: None,
-                clean_drafts=lambda _: None,
+                clean_drafts=lambda *_: None,
                 writable=lambda _: None,
                 settings=SimpleNamespace(
                     language=lambda: "English", source_language=lambda: "Japanese"

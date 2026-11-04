@@ -4,7 +4,7 @@ from typing import Literal, NotRequired, TypedDict
 
 import typing_extensions
 
-from dazedtl.api.contracts.common import Documents
+from dazedtl.api.contracts.common import DocumentDrafts, Documents
 from dazedtl.api.contracts.guided import PackageSummary, ReleaseArtifact, ReleaseNames
 from dazedtl.api.contracts.runs import LegacyRun
 from dazedtl.api.contracts.settings import Forge
@@ -220,7 +220,7 @@ class OptionsDraft(TypedDict):
 
 class TranslationDrafts(TypedDict):
     options: OptionsDraft | None
-    documents: Documents
+    documents: DocumentDrafts
 
 
 class GitStatus(TypedDict):

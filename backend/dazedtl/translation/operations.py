@@ -723,7 +723,7 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
             job["project_id"],
             source,
             state,
-            engine.documents(source),
+            engine.read_documents(source),
             arguments["keep_context"],
             configured=bool(engine.git_status(source, options).get("configured")),
             stopped=stopped,

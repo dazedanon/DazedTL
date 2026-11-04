@@ -135,7 +135,7 @@ function StartOverDialog({
           )}
           <CheckField
             id="start-over-keep-context"
-            label="Keep glossary and notes"
+            label="Keep glossary and guidance"
             checked={keepContext}
             disabled={busy}
             onChange={setKeepContext}
