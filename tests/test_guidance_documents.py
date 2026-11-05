@@ -4,6 +4,7 @@ can't skip one: the assistant notes were one more document name, and each
 review found the next reader without its branch."""
 
 import os
+import shutil
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -117,29 +118,6 @@ class GuidanceDocumentTests(unittest.TestCase):
                             self.assertNotIn(name, documents(self.root))
                     if content == "locked":
                         path.chmod(0o644)
-        # A linked skills folder leaves the other documents readable: the
-        # whole read failed, so no editor opened.
-        for leftover in (self.root / "AGENTS.md", self.root / "agents.md"):
-            leftover.unlink(missing_ok=True)
-        elsewhere = self.root / "elsewhere"
-        elsewhere.mkdir()
-        (elsewhere / "quirks.md").write_text("Shared", encoding="utf-8")
-        skills = self.root / ".dazedtl/skills"
-        skills.rename(self.root / "skills-before")
-        skills.symlink_to(elsewhere)
-        found = read(self.root)
-        self.assertEqual(
-            {name: document["state"] for name, document in found.items()},
-            {
-                "glossary": "saved",
-                "quirks": "unreadable",
-                "game": "missing",
-                "notes": "missing",
-            },
-        )
-        self.assertIn("link", found["quirks"]["reason"])
-        skills.unlink()
-        (self.root / "skills-before").rename(skills)
         # A folder in the notes' name is the project's too, so its files
         # never join a patch: Release's review listed AGENTS.md/x.
         self.assertTrue(is_game_tool_file("agents.md/x.txt"))
@@ -283,6 +261,51 @@ class GuidanceDocumentTests(unittest.TestCase):
                 progress=lambda *_: None,
             )
         self.assertEqual(read(self.root)["quirks"]["state"], "missing")
+
+    def test_a_linked_skills_folder_is_read_as_unreadable_and_left_where_it_is(self):
+        # A linked skills folder failed the whole read, so no editor opened;
+        # read past it, its custom skills went unlisted, so requests left
+        # them out unsaid, and Start over moved its files out of the folder
+        # outside the game.
+        from dazedtl.translation.start_over import run
+
+        outside = self.root.parent / (self.root.name + "-outside")
+        outside.mkdir()
+        self.addCleanup(shutil.rmtree, outside)
+        (outside / "quirks.md").write_text("Someone else's", encoding="utf-8")
+        (outside / "battle.md").write_text("Someone else's", encoding="utf-8")
+        skills = self.root / ".dazedtl/skills"
+        skills.rmdir()
+        skills.symlink_to(outside)
+        found = read(self.root)
+        self.assertEqual(
+            {name: document["state"] for name, document in found.items()},
+            {
+                "glossary": "missing",
+                "quirks": "unreadable",
+                "game": "missing",
+                "notes": "missing",
+                "custom:battle": "unreadable",
+            },
+        )
+        self.assertIn("link", found["custom:battle"]["reason"])
+        with self.assertRaisesRegex(ValueError, "link"):
+            documents(self.root)
+        with TemporaryDirectory() as workspace:
+            run(
+                workspace,
+                "game",
+                self.root,
+                {},
+                found,
+                False,
+                configured=False,
+                stopped=lambda: False,
+                progress=lambda *_: None,
+            )
+        self.assertEqual(
+            sorted(path.name for path in outside.iterdir()), ["battle.md", "quirks.md"]
+        )
 
     def test_go_back_takes_out_no_checkpoint_of_a_document_it_keeps(self):
         # Go back keeps the notes, yet listed a "Save Assistant notes" after

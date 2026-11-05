@@ -24,17 +24,12 @@ def definitions(root, drafted=()):
     """The game's documents in the editors' order: the fixed ones, then each
     custom skill its skills folders hold or `drafted` names, as a draft of a
     skill whose file was deleted does."""
-    from util.project_preparation import _game_path
-
     root = Path(root)
     stems = {key.removeprefix(CUSTOM_PREFIX) for key in drafted if key.startswith(CUSTOM_PREFIX)}
     for parent in (root / ".dazedtl/skills", root / "skills"):
-        try:
-            _game_path(root, parent)
-        except ValueError:
-            # A linked folder lists no skills, and the documents in it read
-            # as unreadable, so the others stay readable.
-            continue
+        # Only names: a skill in a linked folder is listed and reads as
+        # unreadable through the link, so requests never leave it out
+        # unsaid, and the other documents stay readable.
         stems.update(path.stem for path in parent.glob("*.md"))
     return [*FIXED, *sorted(filter(None, (definition(CUSTOM_PREFIX + stem) for stem in stems)), key=lambda found: found.key)]
 
@@ -130,6 +125,14 @@ def _document(root, found):
     return {**document, "text": text, "revision": digest(text.encode()), "state": "saved"}
 
 
+def through_link(root, path):
+    """Whether `path` in the game is reached through a linked folder, as a
+    file in a linked skills folder is, which DazedTL neither reads nor
+    moves, since the folder holding it is outside the game."""
+    root = Path(root)
+    return any(parent.is_symlink() for parent in path.parents if parent.is_relative_to(root) and parent != root)
+
+
 def _read(root, path):
     """A document's file as text: a regular file below 1 MB, in UTF-8 or in
     UTF-16 with its byte order mark, as Windows PowerShell 5's Out-File and
@@ -139,7 +142,7 @@ def _read(root, path):
     try:
         regular(root, path)
     except ValueError:
-        if path.is_symlink() or any(parent.is_symlink() for parent in path.parents if parent.is_relative_to(root)):
+        if path.is_symlink() or through_link(root, path):
             raise Unreadable("it is a link, and DazedTL reads only the file itself", "Put the file in its place") from None
         if path.is_dir():
             raise Unreadable("it is a folder, not a file", "Move it out of the way") from None
