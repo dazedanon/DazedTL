@@ -1005,7 +1005,11 @@ def _kept_with_conditions(root, relative, output, receipt):
     raw = project_path(root, relative.as_posix()).read_bytes()
     if digest(raw) in {output, receipt.get("written", {}).get(name)}:
         return None
-    document = decode_json(raw)
+    try:
+        document = decode_json(raw)
+    except ValueError:
+        # A copy an edit broke is put back whole.
+        return None
     if not restore_conditions(document):
         return None
     return engine_json(document, newline=raw.endswith(b"\n"))

@@ -5108,6 +5108,10 @@ class GuidedTests(unittest.TestCase):
             self.assertEqual(
                 read_json(self.source / "Map001.json"), choice("Potion", "if(s[1])Yes")
             )
+            # One an edit broke is put back whole.
+            (self.source / "Map001.json").write_text('{"events": [', "utf-8")
+            apply = plan("export_selected", {"files": ["Map001.json"]})
+            self.assertTrue(prepare_publication(apply)["publication"][0]["later_edits"])
             # New widths fit the applied text again in their own area only.
             # Weapons.json counts as applied where its bytes equal a run's
             # output, but no Apply wrote it.
