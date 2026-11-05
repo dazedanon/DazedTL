@@ -990,6 +990,8 @@ test("the Live check is due on a branch that changes a screen or flow, which the
   };
   write("backend/dazedtl/actions.py");
   write("tests/app.test.ts");
+  // A backend API change writes the generated contracts again.
+  write("app/src/api/contracts.ts");
   write("docs/architecture.md");
   write("app/tsconfig.json");
   // Every lens but the Live check is due on any branch.

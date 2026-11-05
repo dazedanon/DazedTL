@@ -13,6 +13,7 @@
 import fs from "node:fs";
 import { spawnSync } from "node:child_process";
 import { setTimeout as sleep } from "node:timers/promises";
+import { generated } from "./contracts.mjs";
 
 export const lockRef = "refs/dazedtl/land-lock";
 const lockAge = 20 * 60_000;
@@ -78,11 +79,16 @@ export const screenPaths = [
 
 /**
  * The paths of `changed`, relative to the repository's top, that
- * screenPaths marks; none for a branch that changes no screen or flow.
+ * screenPaths marks; none for a branch that changes no screen or flow. The
+ * generated API contracts are left out: a backend change writes them again.
  * @param {string[]} changed
  */
 export const screenChanging = (changed) =>
-  changed.filter((file) => screenPaths.some((pattern) => pattern.test(file)));
+  changed.filter(
+    (file) =>
+      !generated.includes(file) &&
+      screenPaths.some((pattern) => pattern.test(file)),
+  );
 
 /**
  * Whether a review of a branch that changes `changed` runs `lens`: the Live
