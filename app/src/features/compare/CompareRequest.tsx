@@ -9,28 +9,16 @@ import { Message } from "../../ui/Feedback";
 import { Modal } from "../../ui/Modal";
 import { TabPanel, Tabs } from "../../ui/Tabs";
 import { RequestFailure } from "../guided/RequestFailure";
+import { RequestPager } from "../guided/RequestPager";
 import { RequestSource } from "../guided/RequestSource";
 import { RequestTechnical } from "../guided/RequestTechnical";
+import { responseText } from "../guided/requestView";
 
 const tabs = [
   { id: "source", label: "Source" },
   { id: "response", label: "Response" },
   { id: "technical", label: "Technical" },
 ] as const;
-
-/** The reply's text as sent back, its JSON laid out where it holds some. */
-function responseText(response: unknown) {
-  const body =
-    response && typeof response === "object" && "text" in response
-      ? response.text
-      : response;
-  if (typeof body !== "string") return JSON.stringify(body, null, 2);
-  try {
-    return JSON.stringify(JSON.parse(body), null, 2);
-  } catch {
-    return body;
-  }
-}
 
 /**
  * Show request: the requests a compared model's translation sent, as a
@@ -85,29 +73,7 @@ export function CompareRequest({
             value={tab}
             onChange={setTab}
           />
-          <div className="request-navigation">
-            <span>
-              Request {(index + 1).toLocaleString()} of {total.toLocaleString()}
-            </span>
-            {total > 1 && (
-              <div className="actions">
-                <Button
-                  variant="quiet"
-                  disabled={index === 0}
-                  onClick={() => setIndex((value) => value - 1)}
-                >
-                  Previous
-                </Button>
-                <Button
-                  variant="quiet"
-                  disabled={index >= total - 1}
-                  onClick={() => setIndex((value) => value + 1)}
-                >
-                  Next
-                </Button>
-              </div>
-            )}
-          </div>
+          <RequestPager index={index} total={total} change={setIndex} />
         </div>
         <div
           className="request-reader"

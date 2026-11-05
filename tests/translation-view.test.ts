@@ -10,6 +10,7 @@ import {
   requestBatchOutcome,
   payloadForBatch,
   requestOutcome,
+  responseText,
 } from "../app/src/features/guided/requestView.ts";
 import {
   completeForSelection,
@@ -116,6 +117,15 @@ test("request attempts keep each response and usage, and receipts alone never re
   assert.deepEqual(outcome("finished"), [0]);
   assert.deepEqual(outcome("failed"), [5, 6]);
   assert.deepEqual(outcome("pending"), [1, 2, 3, 4]);
+});
+
+test("a reply shows the refusal a model sent in place of its text, and its JSON laid out", () => {
+  // Every request viewer, Compare's Show request too, reads replies this way.
+  assert.equal(
+    responseText({ text: "", refusal: "I can't help with that." }),
+    "I can't help with that.",
+  );
+  assert.equal(responseText({ text: '{"1":"Hi"}' }), '{\n  "1": "Hi"\n}');
 });
 
 test("request groups read current provider receipts and keep each clarification's replies separate", () => {

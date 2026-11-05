@@ -122,3 +122,26 @@ export function payloadForBatch(
         responseAttempts: [],
       };
 }
+
+/** A value as text, its JSON laid out. */
+export const formatted = (value: unknown) =>
+  typeof value === "string" ? value : JSON.stringify(value, null, 2);
+
+/** A reply as the provider sent it, its JSON laid out: its text, or the
+ * refusal a model sent in its place. */
+export function responseText(response: unknown) {
+  const body =
+    response && typeof response === "object" && "text" in response
+      ? response.text ||
+        ("refusal" in response && typeof response.refusal === "string"
+          ? response.refusal
+          : null) ||
+        response
+      : response;
+  if (typeof body !== "string") return formatted(body);
+  try {
+    return formatted(JSON.parse(body));
+  } catch {
+    return body;
+  }
+}

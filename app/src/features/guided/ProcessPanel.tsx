@@ -26,6 +26,8 @@ import {
   requestBatchOutcome,
   requestRows,
   payloadForBatch,
+  formatted,
+  responseText,
   type RequestBatch,
 } from "./requestView";
 import { RunLog, RunTechnical } from "./RunTechnical";
@@ -36,24 +38,6 @@ import { useOnChange } from "../../state/useOnChange";
 import { useRead } from "../../state/useRead";
 import { useLanguages } from "../../app/LanguagesProvider";
 
-const formatted = (value: unknown) =>
-  typeof value === "string" ? value : JSON.stringify(value, null, 2);
-function responseText(response: unknown) {
-  const body =
-    response && typeof response === "object" && "text" in response
-      ? response.text ||
-        ("refusal" in response && typeof response.refusal === "string"
-          ? response.refusal
-          : null) ||
-        response
-      : response;
-  if (typeof body !== "string") return formatted(body);
-  try {
-    return formatted(JSON.parse(body));
-  } catch {
-    return body;
-  }
-}
 const tabs = [
   { id: "source", label: "Source" },
   { id: "response", label: "Response" },
