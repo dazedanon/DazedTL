@@ -231,6 +231,34 @@ export function namesHidden(
   return blind && !revealed && !finished;
 }
 
+/** A translation's picks and Blind, from the moment it starts: those saved
+ * here ahead of the next read, keyed by translation, or those read. */
+export type CompareMarks = {
+  marks: Record<string, number>;
+  blind: boolean;
+  revealed: boolean;
+};
+export function recordedMarks(
+  comparison: Comparison | undefined,
+  saved: Readonly<Record<string, CompareMarks>>,
+): CompareMarks | null {
+  if (!comparison?.translationId) return null;
+  return (
+    saved[comparison.translationId] ?? {
+      marks: comparison.marks,
+      blind: comparison.blind,
+      revealed: comparison.revealed,
+    }
+  );
+}
+
+/** A model's error as its column shows it: while names are hidden, without
+ * its words, which may name the model in any spelling. */
+export const columnError = (model: CompareModel, hidden: boolean) =>
+  model.error && hidden
+    ? "This model didn’t finish. Why shows once the names are revealed."
+    : model.error;
+
 /** The Tune settings runs of one file's lines, oldest first, translated. */
 export function tuneRuns(
   comparisons: readonly Comparison[],

@@ -336,30 +336,48 @@ class ViewTests(unittest.TestCase):
             shown["rows"], [{**line, "translations": [None], "problems": [[]]}]
         )
 
-    def test_a_failed_models_error_keeps_its_name_hidden(self):
-        # Blind showed a failed model's error, which began with its name.
+    def test_a_failed_models_error_reads_as_written_and_only_a_finished_model_is_usable(
+        self,
+    ):
+        # Hiding names by replacing them in errors garbled other models' names,
+        # and a model that failed or was stopped was offered for use.
         options = {
             "kind": "versus",
             "file": "Map001",
             "lines": 0,
             "candidates": [
-                {"index": 0, "connection": "C", "connection_id": "c1", "model": "m/a"},
-                {"index": 1, "connection": "C", "connection_id": "c1", "model": "m/b"},
+                {
+                    "index": index,
+                    "connection": "C",
+                    "connection_id": "c1",
+                    "model": name,
+                }
+                for index, name in enumerate(("gpt-4o", "gpt-4o-mini", "c"))
             ],
         }
         estimate = {"id": "e", "created": "1", "status": "complete", "result": {}}
+        error = "Model gpt-4o-mini-2024 not found"
         translated = {
             "id": "t",
-            "status": "complete",
+            "status": "stopped",
             "result": {
                 "lines": [],
-                "models": [{"index": 1, "error": "m/b: model m/b is not available"}],
+                "models": [
+                    {"index": 0, "cost": 0.01},
+                    {"index": 1, "cost": 0.002, "error": error},
+                    {"index": 2, "cost": 0.001, "error": "Stopped before it finished."},
+                ],
             },
         }
         shown = view(estimate, options, translated, {})
+        self.assertEqual(shown["candidates"][1]["error"], error)
         self.assertEqual(
-            shown["candidates"][1]["error"],
-            "this model: model this model is not available",
+            [model.get("finished", False) for model in shown["candidates"]],
+            [True, False, False],
+        )
+        running = {**translated, "status": "running"}
+        self.assertNotIn(
+            "finished", view(estimate, options, running, {})["candidates"][0]
         )
 
 

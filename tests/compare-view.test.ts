@@ -7,6 +7,7 @@ import type {
 } from "../app/src/api/contracts.ts";
 import {
   blindOrder,
+  columnError,
   compareInputs,
   current,
   estimateTotal,
@@ -15,6 +16,7 @@ import {
   keptRequests,
   namesHidden,
   picks,
+  recordedMarks,
   Rereads,
   runningComparison,
   runStatus,
@@ -380,4 +382,32 @@ test("a blind comparison hides its names while its lines come in, until revealed
     namesHidden(comparison({ blind: true }), undefined, false),
     false,
   );
+});
+
+test("Reveal now and unticking Blind act on a translation that is still running", () => {
+  // Picks waited for the translation to end, so Reveal now did nothing and
+  // unticking Blind showed names in the footer while the columns hid them.
+  const running = comparison({
+    stage: "translation",
+    translationId: "run",
+    status: "running",
+    blind: true,
+  });
+  const read = recordedMarks(running, {});
+  assert.deepEqual(read, { marks: {}, blind: true, revealed: false });
+  for (const change of [{ revealed: true }, { blind: false }]) {
+    const saved = { run: { ...read!, ...change } };
+    assert.equal(
+      namesHidden(running, recordedMarks(running, saved) ?? undefined, false),
+      false,
+    );
+  }
+  assert.equal(recordedMarks(comparison({}), {}), null);
+});
+
+test("a hidden model's error leaves out its words, which may name it", () => {
+  const failed = model(0, { error: "Error from provider for GPT-4o mini" });
+  assert.doesNotMatch(columnError(failed, true) ?? "", /GPT/);
+  assert.equal(columnError(failed, false), failed.error);
+  assert.equal(columnError(model(0), true), undefined);
 });

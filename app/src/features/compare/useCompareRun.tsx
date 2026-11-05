@@ -1,5 +1,5 @@
 import { api } from "../../api/client";
-import type { Job } from "../../api/contracts";
+import type { Comparison, Job } from "../../api/contracts";
 import { useAction } from "../../state/useAction";
 import { ActionControl } from "../../ui/ActionControl";
 import type { CompareContext } from "./Compare";
@@ -25,13 +25,14 @@ export function useCompareRun(
   choices: CompareChoices,
   {
     blocked = "",
-    namesHidden = false,
+    namesHidden = () => false,
     started,
   }: {
     /** Why the choices can't be estimated yet. */
     blocked?: string;
-    /** Whether the models' names are hidden, which its status keeps. */
-    namesHidden?: boolean;
+    /** Whether a comparison's model names are hidden, which its status
+     * keeps. */
+    namesHidden?: (comparison: Comparison) => boolean;
     /** Runs once a translation starts, such as to keep its names hidden. */
     started?: (job: Job) => Promise<unknown>;
   } = {},
@@ -80,7 +81,7 @@ export function useCompareRun(
   const pending = (key: string) => action.busy && action.key === key;
   const failure = (key: string) => (action.key === key ? action.error : "");
   const operation = (label: string) =>
-    latest && runStatus(latest, label, namesHidden);
+    latest && runStatus(latest, label, namesHidden(latest));
   /** Whether the control gives way to a primary of the tab's own, which
    * only Estimate again does. */
   const yields = step.step === "estimate" && step.again && !step.reason;

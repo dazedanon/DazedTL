@@ -14,20 +14,17 @@ import type { CompareContext } from "./Compare";
 import { CompareGrid, type CompareColumn } from "./CompareGrid";
 import {
   blindOrder,
+  columnError,
   modelDetail,
   namesHidden,
   picks,
+  recordedMarks,
   working,
+  type CompareMarks as Marks,
 } from "./compareView";
 import { LinesMenu, useSceneChoice } from "./LinesMenu";
 import { ModelChips, sent, type ChosenModel } from "./ModelChoice";
 import { useCompareRun } from "./useCompareRun";
-
-type Marks = {
-  marks: Record<string, number>;
-  blind: boolean;
-  revealed: boolean;
-};
 
 /**
  * Model vs model: two to four models translate the same lines side by side,
@@ -77,7 +74,12 @@ export function Versus({ context }: { context: CompareContext }) {
         : chosen.length < 2
           ? "Add another model to compare."
           : "",
-      namesHidden: blind,
+      namesHidden: (comparison) =>
+        namesHidden(
+          comparison,
+          recordedMarks(comparison, saved) ?? undefined,
+          false,
+        ),
       started: async (job) => {
         const next = { marks: {}, blind, revealed: false };
         newest.current[job.id] = next;
@@ -89,26 +91,17 @@ export function Versus({ context }: { context: CompareContext }) {
   );
   const { shown } = run;
   const translationId = shown?.translationId ?? null;
+  // Whether its names show, from the moment it starts.
+  const recorded = recordedMarks(shown, saved);
   // Picks start once every model's lines are in.
   const translated = !!translationId && !!shown && !working(shown.status);
-  const mark: Marks | null =
-    translated && translationId
-      ? (saved[translationId] ?? {
-          marks: shown.marks,
-          blind: shown.blind,
-          revealed: shown.revealed,
-        })
-      : null;
+  const mark = translated ? recorded : null;
   const score = shown && mark ? picks(shown, mark.marks) : null;
   const finished = !!score && score.total > 0 && score.picked === score.total;
   // Names stay hidden while the lines come in too.
-  const hidden = namesHidden(
-    shown,
-    translationId ? saved[translationId] : undefined,
-    finished,
-  );
+  const hidden = namesHidden(shown, recorded ?? undefined, finished);
   const order =
-    shown && (mark?.blind ?? hidden)
+    shown && (recorded?.blind ?? hidden)
       ? blindOrder(shown.id, shown.candidates.length)
       : (shown?.candidates ?? chosen).map((_, index) => index);
   const winner =
@@ -137,7 +130,7 @@ export function Versus({ context }: { context: CompareContext }) {
           ]
             .filter(Boolean)
             .join(" · "),
-      error: model.error,
+      error: columnError(model, hidden),
     };
   });
   const pick = (row: CompareRow, model: number | null) => {
@@ -178,14 +171,14 @@ export function Versus({ context }: { context: CompareContext }) {
           <CheckField
             id="compare-blind"
             label="Blind: hide names until every line is picked"
-            checked={mark ? mark.blind : blind}
+            checked={recorded ? recorded.blind : blind}
             onChange={(checked) => {
               setBlind(checked);
-              if (mark && translationId)
+              if (recorded && translationId)
                 save(translationId, {
-                  ...mark,
+                  ...(newest.current[translationId] ?? recorded),
                   blind: checked,
-                  revealed: checked ? false : mark.revealed,
+                  revealed: checked ? false : recorded.revealed,
                 });
             }}
           />
@@ -217,8 +210,11 @@ export function Versus({ context }: { context: CompareContext }) {
           <Button
             onClick={() =>
               translationId &&
-              mark &&
-              save(translationId, { ...mark, revealed: true })
+              recorded &&
+              save(translationId, {
+                ...(newest.current[translationId] ?? recorded),
+                revealed: true,
+              })
             }
           >
             Reveal now
