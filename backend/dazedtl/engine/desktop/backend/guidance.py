@@ -8,7 +8,8 @@ from .project import digest
 from .workflow_actions import regular
 
 LIMIT = 1_000_000
-# The saves `_replaced` finds in each document's history.
+# The revision each document had before a save `_replaced` finds in its
+# history, or None.
 _recoveries = RepositoryStatusCache(stable=True)
 
 
@@ -207,8 +208,11 @@ def _replaced(root, name, held, revision):
         relative = Path(held["path"]).resolve().relative_to(Path(root).resolve()).as_posix()
     except ValueError:
         return False
-    found = _recoveries.get((str(root), relative), root, lambda: recovered_text(root, relative), (held["revision"],))
-    return found is not None and digest(stored(name, found[0] or "").encode()) == revision
+    def before():
+        found = recovered_text(root, relative)
+        return None if found is None else digest(stored(name, found[0] or "").encode())
+
+    return _recoveries.get((str(root), relative), root, before, (held["revision"],)) == revision
 
 
 def _target(root, found, document):
