@@ -17,6 +17,7 @@ from util.paths import (
     GAME_QUIRKS_RELATIVE,
     GAME_SKILL_RELATIVE,
     GAME_SKILLS_RELATIVE,
+    LEGACY_GAME_SKILL_RELATIVE,
     GLOSSARY_FILENAME,
     LEGACY_GAME_SKILLS_RELATIVE,
     LEGACY_QUIRKS_FILENAME,
@@ -103,11 +104,16 @@ QUIRKS = _guidance(
     "Style & quirks",
     (LEGACY_QUIRKS_FILENAME,),
 )
+# Its legacy name sits in the root skills folder, or in .dazedtl's once a
+# save moved that folder there without renaming it.
 GAME_CONTEXT = _guidance(
     "game",
     GAME_SKILL_RELATIVE.as_posix(),
     "Game context",
-    ((LEGACY_GAME_SKILLS_RELATIVE / "translation.md").as_posix(),),
+    (
+        (LEGACY_GAME_SKILLS_RELATIVE / "translation.md").as_posix(),
+        LEGACY_GAME_SKILL_RELATIVE.as_posix(),
+    ),
 )
 # Every assistant task edits them, with its own tools and in any encoding,
 # so a draft of them holds up only handing a task to an assistant, which

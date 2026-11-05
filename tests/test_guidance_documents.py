@@ -238,6 +238,24 @@ class GuidanceDocumentTests(unittest.TestCase):
         )
         self.assertEqual(inspected["status"], "ready")
 
+    def test_the_game_context_a_skills_move_left_under_its_old_name_is_read(self):
+        # Moving the root skills folder into .dazedtl keeps translation.md's
+        # name; the reader missed it there, so requests carried no game
+        # context and Save guidance created game.md over it, empty.
+        (self.root / ".dazedtl/skills").rmdir()
+        (self.root / "skills").mkdir()
+        (self.root / "skills/translation.md").write_text("Lore", encoding="utf-8")
+        (self.root / "skills/battle.md").write_text("Battle", encoding="utf-8")
+        battle = read(self.root)["custom:battle"]
+        documents_save(
+            self.root,
+            {"custom:battle": {"revision": battle["revision"], "text": "Duel"}},
+        )
+        self.assertTrue((self.root / ".dazedtl/skills/translation.md").is_file())
+        game = read(self.root)["game"]
+        self.assertEqual((game["state"], game["text"]), ("saved", "Lore"))
+        self.assertEqual(documents(self.root)["game"]["text"], "Lore")
+
     def test_start_over_lets_go_of_every_file_holding_a_document(self):
         # A portable file beside its legacy one reads as unreadable, and
         # Start over moved aside only the first, so the guidance the user
