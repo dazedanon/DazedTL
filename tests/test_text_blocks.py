@@ -388,6 +388,21 @@ class TextBlockTests(unittest.TestCase):
             fit_document({"list": listed}, "Map001.json", wide, resized=True).changes
         )
 
+    def test_rows_that_show_nothing_stay_when_the_width_grows(self):
+        # Two rows of pauses alone are zero cells wide: laying them out again
+        # tried a window of none and divided by its width.
+        for rows in (["\\.\\.\\.", "\\.\\.\\."], ["\\C[2]", "\\{"]):
+            listed = [
+                command(101, ["", 0, 0, 2, ""]),
+                *(command(401, [row]) for row in rows),
+                command(0, []),
+            ]
+            report = fit_document(
+                {"list": listed}, "Map001.json", Layout(60, 60, 74, 45, 4), resized=True
+            )
+            self.assertFalse(report.changes)
+            self.assertEqual([row["parameters"][0] for row in listed[1:3]], rows)
+
     def test_message_paged_narrower_is_laid_out_again_once_the_width_grows(self):
         # At 45 the message takes two windows, the first filled with blank
         # rows; at 60 again it reads as if fitted at 60 directly.
