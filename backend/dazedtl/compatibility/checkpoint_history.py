@@ -48,6 +48,7 @@ import re
 import shutil
 from dataclasses import dataclass, field
 from datetime import datetime
+from itertools import filterfalse
 from pathlib import Path, PurePosixPath
 from typing import Any, Literal
 
@@ -88,16 +89,6 @@ _RULES = frozenset({".gitignore", ".gitattributes"})
 SAVED = "saved"
 # History's blockers, read again only once the repository's metadata moves.
 _blocker_cache = RepositoryStatusCache(stable=True)
-
-
-def _project_file(path):
-    """Whether a file of the patch is the project's own, its glossary,
-    settings, skills or assistant notes, never the original game's: going
-    back or undoing takes it back to the checkpoint like any file, while the
-    original game, which Start over puts back, has none of them."""
-    from util.paths import GAME_NOTES_FILENAME
-
-    return path.startswith(".dazedtl/") or path == GAME_NOTES_FILENAME
 
 
 def _trailer(message, key):
@@ -336,10 +327,21 @@ def edited_outside(root):
     return sorted(_pending(root) - _waiting(root))
 
 
+def _left_by_go_back(entry):
+    """Whether a checkpoint changed only documents Go back leaves, such as a
+    save of the assistant notes, and the rule files it leaves too, which a
+    notes save may update, so going back past it takes nothing out."""
+    from util.guidance_documents import kept_by_checkpoints
+
+    documents = entry.changes.keys() - _RULES
+    return bool(documents) and all(map(kept_by_checkpoints, documents))
+
+
 def _taken_out(entries):
     """Each checkpoint a go back took out of the game, to that go back's
-    commit: those after its target, unless an undo has put the go back
-    itself out. `entries` are newest first."""
+    commit: those after its target but those it left (`_left_by_go_back`),
+    unless an undo has put the go back itself out. `entries` are newest
+    first."""
     result = {}
     for index, entry in enumerate(entries):
         target = entry.action == BACK and _trailer(entry.message, TARGET_TRAILER)
@@ -353,7 +355,7 @@ def _taken_out(entries):
         for other in entries[index + 1 :]:
             if other.commit == target:
                 break
-            if other.listed:
+            if other.listed and not _left_by_go_back(other):
                 result.setdefault(other.commit, entry.commit)
     return result
 
@@ -588,7 +590,9 @@ class _Game:
         if path in self.decoded:
             return self.decoded[path]
         # One the target lacked didn't exist then.
-        if _project_file(path):
+        from util.paths import is_project_file
+
+        if is_project_file(path):
             return None
         return None if self.complete else "keep"
 
@@ -710,14 +714,17 @@ def go_back(
 ):
     """Puts the game's files back as they were at `commit`, as one
     checkpoint, and names the checkpoints it took out (`undone`, newest
-    first). The assistant notes describe the game, not a state of its
-    translation, so they stay as they are, as Start over leaves them; an undo
-    still takes out a checkpoint's own change to them. `original` is the
-    saved original game of a game set up before
+    first). The documents translation checkpoints leave, such as the
+    assistant notes, which describe the game, not a state of its
+    translation, stay as they are, as Start over leaves them; an undo still
+    takes out a checkpoint's own change to them, which are their own
+    checkpoint once an assistant made them (checkpoint_commits `_saving`).
+    The checkpoints it left (`_left_by_go_back`) are not among `undone`.
+    `original` is the saved original game of a game set up before
     Git kept its original files, and `folder` the game's Guided workspace,
     whose packing receipt a VX Ace game's pack keeps current, as every
     write's does."""
-    from util.paths import GAME_NOTES_FILENAME
+    from util.guidance_documents import kept_by_checkpoints
 
     from .game_write import write_game
 
@@ -730,10 +737,10 @@ def go_back(
         entries = _since(root, game, entries)
         index = _restorable(entries, commit)
         state = _Game(root, entries[index], original, entries[:index])
-        changed = _diff(root, commit, "HEAD") - {GAME_NOTES_FILENAME}
+        changed = set(filterfalse(kept_by_checkpoints, _diff(root, commit, "HEAD")))
         plan = _plan(state, changed, state.tree(commit))
         written = _apply(game, root, plan, stopped, state)
-    undone = [entry.commit for entry in entries[:index]]
+    undone = [entry.commit for entry in entries[:index] if not _left_by_go_back(entry)]
     return {"files": written, "commit": _head(root, game), "undone": undone}
 
 
@@ -791,6 +798,8 @@ def to_original(game, keep=lambda _path: False, stopped=lambda: False, original=
     the project's own files, which stay as they are; for Start over, whose
     own checkpoint it becomes. It names every checkpoint it took out
     (`undone`, newest first), as `go_back` does."""
+    from util.paths import is_project_file
+
     root = game.root
     entries = _log(root)
     span = _current_span(entries)
@@ -803,7 +812,7 @@ def to_original(game, keep=lambda _path: False, stopped=lambda: False, original=
         for path in set(state.original) | set(head)
         if state.original.get(path) != head.get(path)
         and not keep(path)
-        and not _project_file(path)
+        and not is_project_file(path)
     }
     plan = {
         path: wanted

@@ -249,7 +249,7 @@ test("copied tasks wait for a newer result, and dismissed ones read Not started"
         documents: Object.fromEntries(
           ["glossary", "quirks", "game"].map((name) => [
             name,
-            { exists: true },
+            { exists: true, kind: "core" },
           ]),
         ),
       },

@@ -45,9 +45,13 @@ from util.vocab import (
 )
 from util.speakers import (
     NAMES_FILE,
+    COLOURED_NAME_RE,
     SPEAKER_BRACKET_INNER,
-    inline_speaker,
+    display_name as _speaker_display_name,
+    message_speakers,
+    plausible_speaker as _is_plausible_speaker,
     speaker_translated,
+    standalone_speaker,
     strip_speaker_prefix,
     to_prefixed,
 )
@@ -1173,7 +1177,8 @@ def _param_text(cmd, index: int) -> str:
     return ""
 
 
-_GROUP_CODES = (401, 405, -1)
+# The commands a message's or scrolling text's text joins over.
+_GROUP_CODES = rpgmaker_blocks.TEXT_CODES
 
 
 def _rows(codeList, rows, codes=None) -> list:
@@ -1242,13 +1247,17 @@ def _message_entry(text: str, speaker: str) -> str | None:
     return rpgmaker_blocks.message_entry(text, speaker, unwrap=FIXTEXTWRAP)
 
 
-def _group_raw_text(codeList, group_start: int, source_parts: list[str]) -> str:
-    """Batch source for merged 401/405; anchor _original wins on re-run."""
-    if group_start < len(codeList):
-        orig = _scalar_original(codeList[group_start])
-        if orig is not None:
-            return orig
-    return "\n".join(source_parts)
+def _group_raw_text(codeList, rows) -> str:
+    """Batch source for the 401/405 *rows* sent as one: the anchor's
+    _original on re-run, else their sources as the run keeps them, without
+    the later rows that show nothing (util/rpgmaker_blocks `text_source`)."""
+    orig = _scalar_original(codeList[rows[0]])
+    if orig is not None:
+        return orig
+    return rpgmaker_blocks.text_source(
+        [_param_text(codeList[at], 0) for at in rows],
+        [_param_current(codeList[at], 0) for at in rows],
+    )
 
 
 def _group_current(codeList, start: int, end: int) -> str:
@@ -1266,24 +1275,11 @@ def _group_current(codeList, start: int, end: int) -> str:
 def _text_group_end(codeList, start: int, allowed_codes: tuple[int, ...]) -> int:
     """Return the last command joined into a contiguous visible-text group.
 
-    This groups a request, not a block's rows (util/rpgmaker_blocks): a row
-    led by a control code starts a new request, so walking blocks instead
-    would change requests and the identities of saved Batch results."""
-    end = start
-    while end + 1 < len(codeList):
-        current = codeList[end]
-        following = codeList[end + 1]
-        if following.get("code") not in allowed_codes:
-            break
-        if not current.get("parameters") or not following.get("parameters"):
-            break
-        if re.match(
-            r"^(\s*[\\]+[aAbBdDeEfFgGhHjJlLmMoOpPqQrRsStTuUwWxXyYzZ]+\[[\w\d\[\]\\]+\])",
-            str(following["parameters"][0]),
-        ):
-            break
-        end += 1
-    return end
+    This groups a request, not a block's rows: a row led by a control code
+    starts a new request (util/rpgmaker_blocks `text_end`), so walking blocks
+    instead would change requests and the identities of saved Batch
+    results."""
+    return rpgmaker_blocks.text_end(codeList, start, allowed_codes)
 
 
 def _code408_block(codeList, index: int):
@@ -1494,8 +1490,9 @@ def _choice_job(cmd):
             continue
 
         # Preserve plugin condition clauses outside the model.
-        conditionPrefix, jaString = _split_choice_condition_prefix(jaString)
-        jaString, conditionSuffix = _split_choice_condition_suffix(jaString)
+        conditionPrefix, jaString, conditionSuffix = rpgmaker_blocks.split_choice(
+            jaString
+        )
 
         job["conditions"].append((conditionPrefix, conditionSuffix))
         job["choices"].append(jaString)
@@ -1549,75 +1546,6 @@ def _apply_choices(cmd, job, translated):
         # Set the translation back to the original position
         cmd["parameters"][0][originalIndex] = translatedText
         _apply_choice_original(cmd, originalIndex, job["sources"][idx])
-
-
-def _choice_condition_end(text: str, start: int) -> int | None:
-    """Return the end of a balanced lowercase ``if(...)``/``en(...)`` clause."""
-    if not isinstance(text, str) or not text.startswith(("if(", "en("), start):
-        return None
-
-    depth = 0
-    for index in range(start + 2, len(text)):
-        char = text[index]
-        if char == "(":
-            depth += 1
-        elif char == ")":
-            depth -= 1
-            if depth == 0:
-                return index + 1
-            if depth < 0:
-                break
-    return None
-
-
-def _split_choice_condition_prefix(text: str) -> tuple[str, str]:
-    """Split a leading lowercase ``if(...)``/``en(...)`` plugin condition safely.
-
-    Conditions can contain nested calls such as ``if($gameSwitches.value(1))``.
-    Return the input untouched when the prefix is absent or unbalanced.
-    """
-    if not isinstance(text, str):
-        return "", text
-
-    end = _choice_condition_end(text, 0)
-    if end is not None:
-        return text[:end], text[end:]
-    return "", text
-
-
-def _split_choice_condition_suffix(text: str) -> tuple[str, str]:
-    """Split trailing plugin condition clauses while preserving their exact bytes.
-
-    A suffix can contain one or more ``if(...)``/``en(...)`` clauses, attached
-    directly to the label or separated by whitespace, including nested calls.
-    Unbalanced or mixed trailing text is left untouched so visible choice text
-    cannot be removed accidentally.
-    """
-    if not isinstance(text, str):
-        return text, ""
-
-    for match in re.finditer(r"(?:if|en)\(", text):
-        condition_start = match.start()
-        suffix_start = condition_start
-        while suffix_start > 0 and text[suffix_start - 1].isspace():
-            suffix_start -= 1
-        cursor = condition_start
-
-        while True:
-            end = _choice_condition_end(text, cursor)
-            if end is None:
-                break
-            cursor = end
-
-            while cursor < len(text) and text[cursor].isspace():
-                cursor += 1
-
-            if cursor == len(text):
-                return text[:suffix_start], text[suffix_start:]
-            if not text.startswith(("if(", "en("), cursor):
-                break
-
-    return text, ""
 
 
 def _122_inner_source(cmd) -> str | None:
@@ -2084,16 +2012,11 @@ def _normalize_system_message_translation(key: str, translated: str) -> str:
     return text
 
 
-_COLOR_SPEAKER_RE = re.compile(
-    r"^[\\]+[cC]\[\d+\]【?(.+?)】?[\\]+[cC]\[\d+\](?:[\\]+[A-Za-z]+(?:\[[^\]]*\])?)*[\\]*$"
-)
-
-
 def _replace_speaker_in_param(param_str: str, source_name: str, translated_name: str) -> str:
     """Replace a speaker name inside a 401/101 parameter while keeping colour/bracket wrappers."""
     if not param_str or not translated_name:
         return param_str
-    m = _COLOR_SPEAKER_RE.match(param_str)
+    m = COLOURED_NAME_RE.match(param_str)
     if m:
         return param_str.replace(m.group(1), translated_name, 1)
     bracket_disp = re.findall(r"【(.+?)】", param_str)
@@ -3682,43 +3605,72 @@ SAME_LINE_SPEAKERS = False
 # older runs keep reading that line as a nameplate and never send it.
 CODE_NAMEPLATES = False
 
+# A text whose first row keeps a translation's source ends with that
+# translation's rows (util/rpgmaker_blocks `owned`), before a row an earlier
+# run left untranslated after it, which is sent as a text of its own; from
+# level 2 also after a message's rows its source has lines for. Frozen per run
+# (settings/preferences LEFT_ROWS_LEVELS): older runs send that first row's
+# source alone and write its translation over those rows too.
+LEFT_ROWS = 0
+
 
 def _standalone_speaker(name):
-    # Re-exported [Name] lines are implicit nameplates, unlike explicit 101
-    # fields. Apply discovery's prose rejection before routing them to the
-    # short-name prompt. Keep resolved runtime names and short Latin labels.
-    display = _speaker_display_name(name)
-    if re.fullmatch(r"\\[nNvV]\[\d+\]", display):
-        return True
-    if _has_japanese_text(display):
-        return _is_plausible_speaker(display)
-    return bool(
-        len(display) <= 40
-        and len(display.split()) <= 4
-        and re.fullmatch(r"[^\W\d_][\w '\u2019\-]*", display)
+    """util/speakers `standalone_speaker`, reading source text as the run
+    does."""
+    return standalone_speaker(name, _has_japanese_text)
+
+
+def _message_speakers(line, following):
+    """The speakers a message's or scrolling text's row names, read as the
+    run's settings and frozen policy read them (util/speakers
+    `message_speakers`)."""
+    return message_speakers(
+        line,
+        following,
+        first_line=FIRSTLINESPEAKERS is True,
+        inline=INLINE401SPEAKERS,
+        code_nameplates=CODE_NAMEPLATES,
+        standalone=_standalone_speaker if SPEAKER_CONTEXT else None,
     )
 
 
+def _own_source(commands):
+    """The rows of *commands* that start a text of their own as the run
+    joins them, by index: each retained scalar original owns an
+    independently translated unit. In particular, rejecting a former [prose]
+    nameplate must not merge it into the already-translated line after it
+    and discard either original."""
+    return lambda at: _scalar_original(commands[at]) is not None
+
+
 def _message_end(commands, start, allowed):
-    end = _text_group_end(commands, start, allowed)
     nameplate = re.fullmatch(
         rf"\[({SPEAKER_BRACKET_INNER})\]\s*", _param_text(commands[start], 0)
     )
     if nameplate and _standalone_speaker(nameplate[1]):
         # An English [Name] line still needs the following Japanese dialogue
         # in the eligibility preview; the native name handler advances to it.
-        return end
-    # Each retained scalar original owns an independently translated unit.
-    # In particular, rejecting a former [prose] nameplate must not merge it
-    # into the already-translated line after it and discard either original.
-    return next(
-        (
-            index - 1
-            for index in range(start + 1, end + 1)
-            if _scalar_original(commands[index]) is not None
-        ),
-        end,
-    )
+        return _text_group_end(commands, start, allowed)
+    return rpgmaker_blocks.text_end(commands, start, allowed, _own_source(commands))
+
+
+def _preview_texts(commands, start, end):
+    """The (first, last, source) of each text the skip check reads in the
+    rows from *start* to *end*: one, or from LEFT_ROWS level 2 the rows of
+    the translation whose source *start* keeps (util/rpgmaker_blocks `owned`)
+    and then the game's own after them, each read against its own source,
+    so a row of the game's own whose Japanese that source holds, such as a
+    lone kana, is sent as the run reads it, by its own text."""
+    ends = [end]
+    if LEFT_ROWS >= 2:
+        own = rpgmaker_blocks.text_end(commands, start, _GROUP_CODES, left=True)
+        if own < end:
+            ends = [own, end]
+    found, first = [], start
+    for last in ends:
+        found.append((first, last, _group_text(commands, first, last)))
+        first = last + 1
+    return found
 
 
 # Runs whose frozen policy collects menu choices once translate them on the
@@ -4047,8 +3999,6 @@ def _searchCodes(page, pbar, jobList, filename):
 
             # Declare Varss
             currentGroup = []
-            sourceGroup = []
-            currentSourceGroup = []
             nametag = ""
             speakerPrefix = ""
 
@@ -4064,7 +4014,7 @@ def _searchCodes(page, pbar, jobList, filename):
                 reduceWidthFlag = False
 
             ## Event Code: 401 Show Text
-            if "code" in codeList[i] and codeList[i]["code"] in [401, 405, -1] and (
+            if "code" in codeList[i] and codeList[i]["code"] in _GROUP_CODES and (
                 (
                     codeList[i]["code"] in [401, -1]
                     and (CODE401 or SPEAKER_PARSE_MODE)
@@ -4085,24 +4035,26 @@ def _searchCodes(page, pbar, jobList, filename):
                 # Grab String
                 if len(codeList[i]["parameters"]) > 0:
                     previewEnd = (_message_end if SPEAKER_CONTEXT else _text_group_end)(
-                        codeList, i, (401, 405, -1)
+                        codeList, i, _GROUP_CODES
                     )
                     # Speaker parse must inspect source/_original even when live
                     # parameters are already English, or the unresolved count
                     # drifts as translation progress lands in files/.
-                    preview_text = _group_text(codeList, i, previewEnd)
-                    if not (
+                    previewTexts = _preview_texts(codeList, i, previewEnd)
+                    if not any(
                         _text_needs_translation(preview_text)
                         if SPEAKER_PARSE_MODE
                         else _text_needs_translation(
-                            _group_current(codeList, i, previewEnd),
-                            _group_recorded(codeList, i, previewEnd, preview_text),
+                            _group_current(codeList, first, last),
+                            _group_recorded(codeList, first, last, preview_text),
                         )
+                        for first, last, preview_text in previewTexts
                     ):
                         if not setData:
-                            _write_unsent_rows(
-                                codeList, i, previewEnd, preview_text
-                            )
+                            for first, last, preview_text in previewTexts:
+                                _write_unsent_rows(
+                                    codeList, first, last, preview_text
+                                )
                         i = previewEnd + 1
                         continue
                     jaString = codeList[i]["parameters"][0]
@@ -4128,105 +4080,20 @@ def _searchCodes(page, pbar, jobList, filename):
                 #     if VNameValue == 5:
                 #         jaString = re.sub(retardRegex, '富士見', jaString)
 
-                # Speaker Check
-                speakerList = []
-
-                # m and z Codes
-                match = re.search(r"(.*?)[\\]+m\[\d+?\][\\]+z\[\d+?\]", speakerWork)
-                if match and (match.group(1).strip() or not CODE_NAMEPLATES):
-                    speakerList.append(match.group(1))
-                    if "\\c" in speakerList[0]:
-                        speakerList = re.findall(
-                            r"^[\\]+[cC]\[\d+\]【?(.+?)】?[\\]+[cC]\[\d+\](?:[\\]+[A-Za-z]+(?:\[[^\]]*\])?)*[\\]*$",
-                            speakerList[0],
-                        )
-
-                # Brackets (support multiple names like 【A】【B】)
-                if len(speakerList) == 0:
-                    # Check for bracket at start with dialogue following (【name】dialogue...)
-                    inlineBracketMatch = re.match(r"^\s*【([^】]+)】(.+)", speakerWork, re.DOTALL)
-                    
-                    if inlineBracketMatch:
-                        # Inline bracket with dialogue on same line
-                        speakerList = [inlineBracketMatch.group(1).strip()]
-                    else:
-                        # Only consider bracketed names when the line starts with '【' and
-                        # ends with either '】' or trailing variable/control codes like \n[2], \FF[\w[3]], etc.
-                        startsWithBracket = re.match(r"^\s*【", speakerWork) is not None
-                        endsWithBracket = re.search(
-                            r"(】\s*|(?:[\\]+[A-Za-z]+(?:\[(?:[^\[\]]|\[[^\]]*\])*\])+\s*)$)",
-                            speakerWork,
-                        ) is not None
-
-                        if startsWithBracket and endsWithBracket:
-                            candidates = re.findall(r"【(.*?)】", speakerWork)
-                            if candidates:
-                                candidates = [c.strip() for c in candidates]
-                                if candidates:
-                                    speakerList = candidates
-
-                # Colors
-                if len(speakerList) == 0:
-                    speakerList = re.findall(
-                        r"^[\\]+[cC]\[\d+\]【?(.+?)】?[\\]+[cC]\[\d+\](?:[\\]+[A-Za-z]+(?:\[[^\]]*\])?)*[\\]*$",
-                        speakerWork,
-                    )
-
-                # Colons
-                if len(speakerList) == 0:
-                    speakerList = re.findall(
-                        r"(.+)：$",
-                        speakerWork,
-                    )
-
-                # [Speaker] standalone line format (written back by inline re-export)
-                if len(speakerList) == 0:
-                    inlineFmtMatch = re.match(rf"^\[({SPEAKER_BRACKET_INNER})\]\s*$", speakerWork, re.IGNORECASE)
-                    if inlineFmtMatch and (
-                        not SPEAKER_CONTEXT or _standalone_speaker(inlineFmtMatch.group(1))
-                    ):
-                        speakerList = [inlineFmtMatch.group(1).strip()]
-
-                # Inline speakers in any form (util/speakers.inline_speaker)
-                inlineSpeakerMatch = None
-                if len(speakerList) == 0 and INLINE401SPEAKERS:
-                    inlineSpeakerMatch = inline_speaker(speakerWork)
-                    if inlineSpeakerMatch:
-                        speakerList = [inlineSpeakerMatch.name]
-
-                # First Line Speakers
-                if len(speakerList) == 0 and FIRSTLINESPEAKERS is True:
-                    # Test Speaker
-                    if (
-                        len(speakerWork) < 40
-                        and i + 1 < len(codeList)
-                        and "code" in codeList[i + 1]
-                        and codeList[i + 1]["code"] in [401, 405, -1]
-                        and len(codeList[i + 1]["parameters"]) > 0
-                        and len(codeList[i + 1]["parameters"][0]) > 0
-                    ):
-                        nextString = codeList[i + 1]["parameters"][0].strip()
-
-                        # Remove any RPGMaker Code at start
-                        ffMatchNS = re.search(
-                            r"^((?:[\\]+[^cCnNiIkKvVSs{}]+?\[[\d\w\W]+?\]?\])+)",
-                            nextString,
-                        )
-                        formatMatch = re.search(r"(^[\\]+[\W]+?)", nextString)
-                        if ffMatchNS != None:
-                            nextString = nextString.replace(ffMatchNS.group(1), "")
-                        if formatMatch != None:
-                            nextString = nextString.replace(formatMatch.group(1), "")
-
-                        if nextString and nextString[0] in [
-                            "「",
-                            '"',
-                            "(",
-                            "（",
-                            "*",
-                            "[",
-                        ]:
-                            speakerList = re.findall(r".+", speakerWork)
+                # Speaker Check and the rows sent as one
+                # (util/rpgmaker_blocks.next_text)
+                sentText = rpgmaker_blocks.next_text(
+                    codeList,
+                    i,
+                    speakerWork,
+                    _message_speakers,
+                    _own_source(codeList) if SPEAKER_CONTEXT else None,
+                    left=LEFT_ROWS >= 1,
+                    by_lines=LEFT_ROWS >= 2,
+                )
+                speakerMatch = sentText.speakers
+                speakerList = list(speakerMatch.names) if speakerMatch else []
+                inlineSpeakerMatch = speakerMatch.inline if speakerMatch else None
 
                 # Replace Speaker
                 if len(speakerList) != 0:
@@ -4249,7 +4116,7 @@ def _searchCodes(page, pbar, jobList, filename):
                             code_locked.append(False)
                     speakerList = resolved_speakers
                     # Check if speaker+dialogue are on same line
-                    sameLineMatch = re.match(r"^\s*【([^】]+)】(?:\s*[：:])?(.+)", speakerWork, re.DOTALL)
+                    sameLineMatch = speakerMatch.same_line
                     if inlineSpeakerMatch and len(speakerList) == 1:
                         # Strip speaker prefix, keep everything after as dialogue
                         response = getSpeaker(speakerList[0])
@@ -4273,7 +4140,7 @@ def _searchCodes(page, pbar, jobList, filename):
                         if not setData:
                             nametag = f"[{speaker}]\n" + nametag
                         # Don't skip to next line - continue with current line
-                    elif codeList[i + 1]["code"] in [401, 405, -1]:
+                    elif speakerMatch.own_line:
                         # Original behavior: speaker on its own line, dialogue on next line
                         # Single
                         if len(speakerList) == 1:
@@ -4314,41 +4181,26 @@ def _searchCodes(page, pbar, jobList, filename):
                         nametag = ""
 
                         # Iterate to next string
-                        i += 1
-                        j = i
-                        while codeList[i]["code"] in [-1]:
-                            i += 1
-                            j = i
+                        i = j = sentText.rows[0]
                         jaString = codeList[i]["parameters"][0]
                         groupStart = i
 
                 # Using this to keep track of 401's in a row (display text for Pass 2 formatting).
                 currentGroup.append(jaString)
-                anchor_has_orig = _scalar_original(codeList[groupStart]) is not None
-                sourceGroup.append(_param_text(codeList[i], 0))
-                currentSourceGroup.append(_param_current(codeList[i], 0))
 
                 # Join Up 401's into single string
-                if len(codeList) > i + 1:
-                    while codeList[i + 1]["code"] in [401, 405, -1] and len(codeList[i]["parameters"]) > 0 and len(codeList[i + 1]["parameters"]) > 0 and not re.match(r"^(\s*[\\]+[aAbBdDeEfFgGhHjJlLmMoOpPqQrRsStTuUwWxXyYzZ]+\[[\w\d\[\]\\]+\])", codeList[i+1]["parameters"][0]) and (not SPEAKER_CONTEXT or _scalar_original(codeList[i + 1]) is None):
-                        i += 1
-                        j = i
-
-                        jaString = codeList[i]["parameters"][0]
-                        if jaString.strip():
-                            currentGroup.append(jaString)
-                            currentSourceGroup.append(_param_current(codeList[i], 0))
-                            if not anchor_has_orig:
-                                sourceGroup.append(_param_text(codeList[i], 0))
-
-                        # Make sure not the end of the list.
-                        if len(codeList) <= i + 1:
-                            break
+                for i in sentText.rows[1:]:
+                    j = i
+                    jaString = codeList[i]["parameters"][0]
+                    if jaString.strip():
+                        currentGroup.append(jaString)
 
                 # Format String
                 if len(currentGroup) > 0:
-                    rawSource = _group_raw_text(codeList, groupStart, sourceGroup)
-                    currentSource = "\n".join(currentSourceGroup)
+                    rawSource = _group_raw_text(codeList, sentText.rows)
+                    currentSource = rpgmaker_blocks.text_source(
+                        [_param_current(codeList[at], 0) for at in sentText.rows]
+                    )
                     # Skip status is based on the live text, read against its
                     # preserved Japanese source.
                     if not rawSource.strip() or not _text_needs_translation(
@@ -4459,8 +4311,6 @@ def _searchCodes(page, pbar, jobList, filename):
                         match = []
                         nametag = ""
                         currentGroup = []
-                        sourceGroup = []
-                        currentSourceGroup = []
                         syncIndex = i + 1
 
                         if historyEntry is not None:
@@ -4489,7 +4339,7 @@ def _searchCodes(page, pbar, jobList, filename):
                             endtag = ""
                             list401.pop(0)
                         elif len(list401) > 0:
-                            rawSource = _group_raw_text(codeList, groupStart, sourceGroup)
+                            rawSource = _group_raw_text(codeList, sentText.rows)
                             translatedText = list401[0]
 
                             # Remove the speaker label it was sent with
@@ -4586,7 +4436,6 @@ def _searchCodes(page, pbar, jobList, filename):
                             speaker = ""
                             match = []
                             currentGroup = []
-                            sourceGroup = []
                             list401.pop(0)
 
             ## Event Code: 122 [Set Variables]
@@ -6522,6 +6371,14 @@ def searchSS(state, pbar):
     return totalTokens
 
 
+# Whether the currency unit and the variable names the game's plugins draw,
+# DRAWN_VARIABLES' ids (util/rpgmaker_variable_names), are translated; a run
+# frozen without its policy (dazedtl settings/preferences SYSTEM_TEXT) leaves
+# them as they were.
+SYSTEM_TEXT = False
+DRAWN_VARIABLES: frozenset[int] = frozenset()
+
+
 def searchSystem(data, pbar):
     totalTokens = [0, 0]
     context = ctx("database.ui_term")
@@ -6542,6 +6399,22 @@ def searchSystem(data, pbar):
         _apply_system_scalar_original(data, "gameTitle", title_src)
     if pbar is not None:
         pbar.refresh()
+
+    # Currency unit, drawn after every amount of money
+    if SYSTEM_TEXT and _text_needs_translation(
+        data.get("currencyUnit"), _system_scalar_source(data, "currencyUnit")
+    ):
+        unit_src = _system_scalar_text(data, "currencyUnit")
+        response = translateAI([unit_src], context, False)
+        totalTokens[0] += response[1][0]
+        totalTokens[1] += response[1][1]
+        unit = response[0][0].replace('"', "").strip() if response[0] else ""
+        # An empty reply would erase the unit; it stays to be sent again.
+        if unit:
+            data["currencyUnit"] = unit
+            _apply_system_scalar_original(data, "currencyUnit", unit_src)
+        if pbar is not None:
+            pbar.refresh()
 
     # Terms - batch translate all term items
     for term in data["terms"]:
@@ -6716,12 +6589,18 @@ def searchSystem(data, pbar):
         if pbar is not None:
             pbar.refresh()
 
-    # Variables (Optional usually) — batch translate to reduce calls
-    if TLSYSTEMVARIABLES and "variables" in data and isinstance(data["variables"], list):
+    # Variables: every name with TLSYSTEMVARIABLES (it can break stuff), else
+    # those the game's plugins draw - batch translate to reduce calls
+    drawn = (
+        None if TLSYSTEMVARIABLES else DRAWN_VARIABLES if SYSTEM_TEXT else frozenset()
+    )
+    if (drawn is None or drawn) and "variables" in data and isinstance(data["variables"], list):
         var_indices = []
         var_values = []
         var_sources = []
         for idx, val in enumerate(data["variables"]):
+            if drawn is not None and idx not in drawn:
+                continue
             src = _system_list_text(data, "variables", idx)
             if isinstance(val, str) and src.strip():
                 if not _text_needs_translation(
@@ -6734,7 +6613,7 @@ def searchSystem(data, pbar):
         if var_values:
             response = translateAI(
                 var_values,
-                ctx("database.actor_title"),
+                ctx("database.actor_title") if drawn is None else context,
                 True,
             )
             totalTokens[0] += response[1][0]
@@ -6820,73 +6699,6 @@ def searchSystem(data, pbar):
                 pbar.refresh()
 
     return totalTokens
-
-# Regex that matches markup codes like \c[1], \n[2], \F[tt07], \FF[\w[3]], etc.
-_MARKUP_STRIP_RE = re.compile(r"[\\]+[A-Za-z]+\[(?:[^\[\]]|\[[^\]]*\])*\]")
-# Actor / game-variable nameplate codes that ARE the speaker identity.
-_SPEAKER_VAR_CODE_RE = re.compile(r"[\\]+[nNvV]\[\d+\]")
-
-
-def _speaker_display_name(name: str) -> str:
-    """Return the visible speaker nameplate with RPG Maker control codes removed.
-
-    FIRSTLINESPEAKERS (and some colour/plugin wrappers) leave trailing or
-    leading codes on the 401 name line, e.g. ``Tsubaki\\F[tt07]`` or
-    ``メア\\F[tme01]\\FF[tl05]\\AA[F]\\FH[ON]``.  Glossary lookup and the
-    ``[Speaker]:`` transport prefix need only the name; the written-back 401
-    parameter keeps the codes via ``_replace_speaker_in_param``.
-
-    Code-only nameplates such as ``\\v[007]\\AA[N]`` keep the variable/actor
-    code (``\\v[007]``) and drop presentation plugins (``\\AA``, ``\\FH``, …).
-    """
-    raw = str(name or "")
-    if not raw:
-        return raw
-    clean = _MARKUP_STRIP_RE.sub("", raw).strip()
-    if clean:
-        return clean
-    vars_only = "".join(_SPEAKER_VAR_CODE_RE.findall(raw))
-    return vars_only if vars_only else raw.strip()
-
-
-def _is_plausible_speaker(name: str) -> bool:
-    """Return True only if *name* looks like a character name rather than dialogue or junk.
-
-    Called during SPEAKER_PARSE_MODE to filter false positives before they
-    enter SPEAKER_COLLECTED.  Heuristics (applied after stripping markup):
-      • 1–20 characters long
-      • Contains at least one Japanese letter (util/source_text)
-      • No sentence-ending / mid-sentence punctuation (。！？…、)
-      • No dialogue-opening quotes (「"（)
-      • No newlines, underscores, slashes, or dots
-      • No brace/plugin markup or decorative symbols
-      • No clause-like particle/verb fragments scraped from prose
-    """
-    # Use the stripped form so trailing plugin codes (\F[tt07], etc.) do not
-    # poison length / character checks. Pure control-code nameplates stay empty.
-    clean = _MARKUP_STRIP_RE.sub("", str(name or "")).strip()
-    if not clean:
-        return False
-    if len(clean) > 20:
-        return False
-    # Must have at least one Japanese letter
-    if not holds_source(clean):
-        return False
-    # Reject sentence-like strings
-    if re.search(r"[。！？…、]", clean):
-        return False
-    # Reject dialogue openers / structural characters
-    if re.search(r"[「」""\n\r_/\\.]", clean):
-        return False
-    # Reject plugin placeholders and decorative junk ({{name}}, hearts, etc.)
-    if re.search(r"[{}<>=★☆※♥♡\\]", clean):
-        return False
-    # Reject clause fragments that FIRSTLINESPEAKERS sometimes mis-detects.
-    # Do not ban bare は/が/へ/を - those appear inside real names (はるか, かがやき).
-    if re.search(r"しながら|すると|になった|した時|する時", clean):
-        return False
-    return True
-
 
 def _normalize_speaker_nameplate(translated: str) -> str:
     """Normalize a model TL into a short dialogue nameplate."""

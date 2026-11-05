@@ -6,6 +6,8 @@ One home for everything speaker-related so ``util/`` does not sprawl:
   to add the tag to a request's line and strip it off translated text.
 * **Inline speakers** - a dialogue line that starts with its speaker's name,
   which the RPG Maker MV/MZ parser reads with INLINE401SPEAKERS.
+* **MV/MZ message speakers** - the speaker a message's first row names, on a
+  row of its own or in front of the speech.
 * **WOLF first-line reshaping** - WolfDawn bakes some speaker names into line 1
   of the source; these helpers split those lines for the WOLF tools.
 """
@@ -18,6 +20,7 @@ from collections.abc import Callable
 from typing import NamedTuple
 
 from util.languages import shares_kanji
+from util.source_text import holds_source
 from util.paths import DATA_DIR
 
 # ============================================================================
@@ -164,6 +167,198 @@ def inline_speaker(text: str, form: str = ANY) -> InlineSpeaker | None:
         return None
     name = next(group for group in match.groups() if group is not None)
     return InlineSpeaker(name.strip(), text[: match.end()], text[match.end():])
+
+
+# ============================================================================
+# MV/MZ message speakers
+# ----------------------------------------------------------------------------
+# The MV/MZ parser reads a speaker from the first row of each text it sends
+# of a message (util/rpgmaker_blocks `next_text`): a nameplate on a row of its
+# own, with the speech on the rows after it, or a name in front of the speech
+# on the same row.
+# ============================================================================
+
+# Codes such as \c[1], \n[2], \F[tt07] or \FF[\w[3]].
+MARKUP_RE = re.compile(r"[\\]+[A-Za-z]+\[(?:[^\[\]]|\[[^\]]*\])*\]")
+# Actor and variable codes that are the speaker, such as \n[1] or \v[7].
+_VARIABLE_NAME_RE = re.compile(r"[\\]+[nNvV]\[\d+\]")
+
+
+def display_name(name: str) -> str:
+    """Return the visible speaker nameplate with RPG Maker control codes removed.
+
+    FIRSTLINESPEAKERS (and some colour/plugin wrappers) leave trailing or
+    leading codes on the 401 name line, e.g. ``Tsubaki\\F[tt07]`` or
+    ``メア\\F[tme01]\\FF[tl05]\\AA[F]\\FH[ON]``.  Glossary lookup and the
+    ``[Speaker]:`` transport prefix need only the name; the written-back 401
+    parameter keeps the codes via ``_replace_speaker_in_param``.
+
+    Code-only nameplates such as ``\\v[007]\\AA[N]`` keep the variable/actor
+    code (``\\v[007]``) and drop presentation plugins (``\\AA``, ``\\FH``, …).
+    """
+    raw = str(name or "")
+    if not raw:
+        return raw
+    clean = MARKUP_RE.sub("", raw).strip()
+    if clean:
+        return clean
+    vars_only = "".join(_VARIABLE_NAME_RE.findall(raw))
+    return vars_only if vars_only else raw.strip()
+
+
+def plausible_speaker(name: str) -> bool:
+    """Return True only if *name* looks like a character name rather than dialogue or junk.
+
+    Called during SPEAKER_PARSE_MODE to filter false positives before they
+    enter SPEAKER_COLLECTED.  Heuristics (applied after stripping markup):
+      • 1–20 characters long
+      • Contains at least one Japanese letter (util/source_text)
+      • No sentence-ending / mid-sentence punctuation (。！？…、)
+      • No dialogue-opening quotes (「"（)
+      • No newlines, underscores, slashes, or dots
+      • No brace/plugin markup or decorative symbols
+      • No clause-like particle/verb fragments scraped from prose
+    """
+    # Use the stripped form so trailing plugin codes (\F[tt07], etc.) do not
+    # poison length / character checks. Pure control-code nameplates stay empty.
+    clean = MARKUP_RE.sub("", str(name or "")).strip()
+    if not clean:
+        return False
+    if len(clean) > 20:
+        return False
+    # Must have at least one Japanese letter
+    if not holds_source(clean):
+        return False
+    # Reject sentence-like strings
+    if re.search(r"[。！？…、]", clean):
+        return False
+    # Reject dialogue openers / structural characters
+    if re.search(r"[「」""\n\r_/\\.]", clean):
+        return False
+    # Reject plugin placeholders and decorative junk ({{name}}, hearts, etc.)
+    if re.search(r"[{}<>=★☆※♥♡\\]", clean):
+        return False
+    # Reject clause fragments that FIRSTLINESPEAKERS sometimes mis-detects.
+    # Do not ban bare は/が/へ/を - those appear inside real names (はるか, かがやき).
+    if re.search(r"しながら|すると|になった|した時|する時", clean):
+        return False
+    return True
+
+
+def standalone_speaker(name: str, holds: Callable[[str], bool] = holds_source) -> bool:
+    """Whether a [Name] row names a speaker, *holds* saying whether text
+    holds source text.
+
+    Re-exported [Name] lines are implicit nameplates, unlike explicit 101
+    fields. Apply discovery's prose rejection before routing them to the
+    short-name prompt. Keep resolved runtime names and short Latin labels."""
+    display = display_name(name)
+    if re.fullmatch(r"\\[nNvV]\[\d+\]", display):
+        return True
+    if holds(display):
+        return plausible_speaker(display)
+    return bool(
+        len(display) <= 40
+        and len(display.split()) <= 4
+        and re.fullmatch(r"[^\W\d_][\w '\u2019\-]*", display)
+    )
+
+
+_CODE_NAMEPLATE = re.compile(r"(.*?)[\\]+m\[\d+?\][\\]+z\[\d+?\]")
+# A name between colour codes, such as \C[2]【アリス】\C[0].
+COLOURED_NAME_RE = re.compile(
+    r"^[\\]+[cC]\[\d+\]【?(.+?)】?[\\]+[cC]\[\d+\](?:[\\]+[A-Za-z]+(?:\[[^\]]*\])?)*[\\]*$"
+)
+_BRACKETED_SPEECH = re.compile(r"^\s*【([^】]+)】(.+)", re.DOTALL)
+# A row that ends with 】 or with codes such as \n[2] or \FF[\w[3]].
+_BRACKETS_END = re.compile(r"(】\s*|(?:[\\]+[A-Za-z]+(?:\[(?:[^\[\]]|\[[^\]]*\])*\])+\s*)$)")
+_COLON_NAME = re.compile(r"(.+)：$")
+_BRACKETED_ROW = re.compile(rf"^\[({SPEAKER_BRACKET_INNER})\]\s*$", re.IGNORECASE)
+_SAME_LINE = re.compile(r"^\s*【([^】]+)】(?:\s*[：:])?(.+)", re.DOTALL)
+# Codes the speech after a first-line name may open with.
+_SPEECH_CODES = re.compile(r"^((?:[\\]+[^cCnNiIkKvVSs{}]+?\[[\d\w\W]+?\]?\])+)")
+_SPEECH_FORMAT = re.compile(r"(^[\\]+[\W]+?)")
+_SPEECH_OPENERS = ("「", '"', "(", "（", "*", "[")
+
+
+class MessageSpeakers(NamedTuple):
+    """The speakers a message's first row names, as the row writes them."""
+
+    names: tuple[str, ...]
+    # The name in front of the speech, in an inline form (INLINE401SPEAKERS).
+    inline: InlineSpeaker | None
+    # 【Name】 with the speech after it on the same row.
+    same_line: re.Match | None
+    # The row holds only the names; the speech starts on the next row.
+    own_line: bool
+
+
+def message_speakers(
+    line: str,
+    following: str | None,
+    *,
+    first_line: bool,
+    inline: bool,
+    code_nameplates: bool,
+    standalone: Callable[[str], bool] | None,
+) -> MessageSpeakers | None:
+    """The speakers *line*, the first row of a message or of scrolling text,
+    names as the MV/MZ parser reads them, or None. *following* is the next
+    command's text when that command is another of the text's rows (401 or
+    405, or one translation emptied, with no text), else None. *first_line*
+    reads a short row before speech as its speaker (FIRSTLINESPEAKERS) and
+    *inline* a name in front of the speech (INLINE401SPEAKERS).
+    *code_nameplates* reads a Name\\m[N]\\z[N] row as a nameplate only when
+    a name comes before the codes, and *standalone*, when given, decides
+    which [Name] rows name a speaker; the run's policy sets both."""
+    names: list[str] = []
+    found_inline = None
+    match = _CODE_NAMEPLATE.search(line)
+    if match and (match.group(1).strip() or not code_nameplates):
+        names.append(match.group(1))
+        if "\\c" in names[0]:
+            names = COLOURED_NAME_RE.findall(names[0])
+    # Brackets, one name or more, such as 【A】【B】
+    if not names:
+        bracketed = _BRACKETED_SPEECH.match(line)
+        if bracketed:
+            names = [bracketed.group(1).strip()]
+        elif re.match(r"^\s*【", line) and _BRACKETS_END.search(line):
+            names = [name.strip() for name in re.findall(r"【(.*?)】", line)]
+    if not names:
+        names = COLOURED_NAME_RE.findall(line)
+    if not names:
+        names = _COLON_NAME.findall(line)
+    if not names:
+        row = _BRACKETED_ROW.match(line)
+        if row and (standalone is None or standalone(row.group(1))):
+            names = [row.group(1).strip()]
+    if not names and inline:
+        found_inline = inline_speaker(line)
+        if found_inline:
+            names = [found_inline.name]
+    if not names and first_line and len(line) < 40 and following:
+        speech = following.strip()
+        codes = _SPEECH_CODES.search(speech)
+        format_code = _SPEECH_FORMAT.search(speech)
+        if codes is not None:
+            speech = speech.replace(codes.group(1), "")
+        if format_code is not None:
+            speech = speech.replace(format_code.group(1), "")
+        if speech and speech[0] in _SPEECH_OPENERS:
+            names = re.findall(r".+", line)
+    if not names:
+        return None
+    same_line = _SAME_LINE.match(line)
+    alone = len(names) == 1
+    return MessageSpeakers(
+        tuple(names),
+        found_inline,
+        same_line,
+        following is not None
+        and not (found_inline and alone)
+        and not (same_line and alone),
+    )
 
 
 # ============================================================================

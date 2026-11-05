@@ -306,8 +306,8 @@ class GuidedTests(unittest.TestCase):
             folder=lambda _: self.folder,
             state=lambda _: {"project": self.native, "manual_job": self.pending},
             documents=lambda _: {},
-            # The Guidance task's view, which adds the assistant notes.
-            editable=lambda owner: workflows.documents(owner),
+            # Every document, as the Guidance task shows them.
+            read_documents=lambda owner, _drafted=(): workflows.documents(owner),
             update=update,
             apply_investigation_settings=apply_settings,
             save=Mock(),
@@ -461,7 +461,7 @@ class GuidedTests(unittest.TestCase):
                 original_bytes=lambda *_args: b"",
                 original_blobs=lambda _source, blobs: ((blob, b"") for blob in blobs),
             ),
-            clean_drafts=lambda _: None,
+            clean_drafts=lambda *_: None,
             ready=Mock(),
             operation=Mock(return_value={"id": "operation"}),
             game_update=SimpleNamespace(
@@ -1852,6 +1852,20 @@ class GuidedTests(unittest.TestCase):
             self.folder / "translated/Items.json", [{"name": "Manual game edit"}]
         )
         self.assertEqual(self.guided.applied_outputs(native)[1], ["Items.json"])
+        # A game file holding a choice an earlier import wrote without its
+        # source's condition waits for the Apply that puts it back, though
+        # DazedTL applied it, so a Line widths fit still covers it.
+        choice = {"code": 102, "parameters": [["Yes"]], "_original": ["if(s[1])はい"]}
+        write_json(self.folder / "translated/Items.json", [choice])
+        write_json(self.source / "Items.json", [choice])
+        self.assertEqual(self.guided.applied_outputs(native)[1], ["Items.json"])
+        self.assertEqual(
+            self.guided.lacking_conditions(native, ["Items.json"]), {"Items.json"}
+        )
+        write_json(
+            self.source / "Items.json", [{**choice, "parameters": [["if(s[1])Yes"]]}]
+        )
+        self.assertEqual(self.guided.lacking_conditions(native, ["Items.json"]), set())
         self.native["engine"] = native["engine"] = "ACE"
         self.backend.guided_ace_blocked = lambda _source: "Reads Game.rgss3a."
         self.assertEqual(self.guided.run_view(identity)["appliedOutputs"], [])
@@ -2258,6 +2272,27 @@ class GuidedTests(unittest.TestCase):
             self.guided.release_ready(self.identity, self.native, state),
             self.translation.ready.return_value,
         )
+
+        # One holding a choice an earlier import stripped of its condition
+        # waits for the Apply that puts it back; one whose output holds it
+        # was edited so in the game, and stays applied.
+        def applied(value, edit):
+            choice = {
+                "code": 102,
+                "parameters": [[value]],
+                "_original": ["if(s[1])はい"],
+            }
+            output = self.folder / "translated/Items.json"
+            write_json(output, [choice])
+            outputs = {"Items.json": digest(output.read_bytes())}
+            write_json(self.folder / "applied-outputs.json", {"files": outputs})
+            write_json(self.source / "Items.json", [{**choice, **edit}])
+            return self.guided.readiness(self.identity, self.native, state)
+
+        self.assertEqual(applied("Yes", {})["unapplied"], ["Items.json"])
+        self.assertEqual(
+            applied("if(s[1])Yes", {"parameters": [["Yes"]]})["unapplied"], []
+        )
         write_json(
             self.folder / "translated/Items.json", [{"name": "Newer saved output"}]
         )
@@ -2511,29 +2546,16 @@ class GuidedTests(unittest.TestCase):
                 )
             self.assertEqual(read_json(self.source / "Items.json"), partial)
 
-    def test_guidance_save_replaces_external_edits_and_retains_other_drafts(self):
-        path = self.source / "glossary.txt"
-        path.write_text("Changed outside the editor", encoding="utf-8")
-        pending = {
-            "documents": {
-                "glossary": {"text": "My draft", "revision": "older"},
-                "game": {"text": "Keep this draft", "revision": "other"},
-            }
-        }
-        documents = lambda _: {
-            "glossary": {
-                "text": path.read_text(encoding="utf-8"),
-                "revision": digest(path.read_bytes()),
-                "path": str(path),
-            },
-            "quirks": {
-                "text": quirks.read_text(encoding="utf-8") if quirks.exists() else "",
-                "revision": "",
-                "path": str(quirks),
-            },
-        }
-        quirks = self.source / "quirks.md"
-        self.backend.workflows.documents = documents
+    def test_guidance_save_creates_core_files_names_its_edits_and_keeps_drafts(self):
+        from desktop.backend.guidance import documents_save, read
+
+        pending = {"documents": {"game": {"text": "Keep this draft", "revision": ""}}}
+        self.backend.workflows.read_documents = lambda _, drafted=(): read(
+            self.source, drafted
+        )
+        self.backend.workflows.documents_save = lambda _, changes: documents_save(
+            self.source, changes
+        )
         self.backend.workflows.state = lambda _: {"draft": pending}
         self.backend.workflows.draft = Mock()
         summaries = []
@@ -2542,124 +2564,42 @@ class GuidedTests(unittest.TestCase):
             summaries.append(options["summary"])
             return game_write(source, native, **options)
 
-        def save(owner, changes):
-            self.assertEqual(owner, "native")
-            self.assertEqual(changes["glossary"]["revision"], digest(path.read_bytes()))
-            path.write_text(changes["glossary"]["text"], encoding="utf-8")
-            if "quirks" in changes:
-                quirks.write_text(changes["quirks"]["text"], encoding="utf-8")
-            return documents(owner)
+        self.backend.game_write = write
+        glossary = self.source / ".dazedtl/glossary.txt"
 
-        # Save guidance sends every tab.
         def draft(text):
             return {
-                "glossary": {"text": text, "revision": "older"},
-                "quirks": {"text": "", "revision": ""},
+                "glossary": {
+                    "text": text,
+                    "revision": read(self.source)["glossary"]["revision"],
+                }
             }
 
-        self.backend.game_write = write
-        self.backend.workflows.documents_save = save
-        self.guided.save_documents(self.identity, draft("My draft"))
-        self.assertEqual(path.read_text(encoding="utf-8"), "My draft")
-        # A core tab the game has no file for is created, empty, so Guidance
-        # is complete, but its checkpoint names only what was edited: it read
-        # "Save Glossary, Style & quirks".
-        self.assertEqual(quirks.read_text(encoding="utf-8"), "")
+        saved = self.guided.save_documents(self.identity, draft("My draft"))
+        self.assertEqual(read(self.source)["glossary"]["text"], "My draft")
+        # The core documents the game has no file for are created, empty, so
+        # Guidance is complete, but the checkpoint names only what was
+        # edited: it read "Save Glossary, Style & quirks".
+        self.assertEqual(read(self.source)["quirks"]["state"], "saved")
         self.assertEqual(summaries, ["Save Glossary"])
+        self.assertEqual(set(saved["saved"]), {"glossary", "quirks", "game"})
         self.assertEqual(set(pending["documents"]), {"game"})
-        # A document whose file already holds its text, as documents reads it
-        # back, without a glossary's trailing newlines, writes nothing, so a
-        # Save of untouched tabs makes no checkpoint.
-        self.backend.workflows.documents_save = Mock()
-        self.guided.save_documents(self.identity, draft("My draft\n"))
-        self.backend.workflows.documents_save.assert_not_called()
-        self.backend.workflows.documents_save = save
+        # A document whose file already holds its text, as the reader reads
+        # it back, without a glossary's trailing newlines, writes nothing,
+        # so a Save of untouched tabs makes no checkpoint.
+        self.assertEqual(
+            self.guided.save_documents(self.identity, draft("My draft\n"))["saved"], []
+        )
+        self.assertEqual(len(summaries), 1)
         self.guided.save_documents(self.identity, draft(""))
-        self.assertTrue(path.is_file())
-        self.assertEqual(path.read_text(encoding="utf-8"), "")
-        pending["documents"]["glossary"] = {
-            "text": "Keep after failure",
-            "revision": "older",
-        }
+        self.assertTrue(glossary.is_file())
+        self.assertEqual(read(self.source)["glossary"]["text"], "")
+        pending["documents"]["glossary"] = draft("Keep after failure")["glossary"]
         self.backend.workflows.documents_save = Mock(side_effect=OSError("No space"))
         with self.assertRaises(OSError):
             self.guided.save_documents(self.identity, draft("Keep after failure"))
         self.assertEqual(pending["documents"]["glossary"]["text"], "Keep after failure")
-        self.assertEqual(path.read_text(encoding="utf-8"), "")
-
-    def test_guidance_edits_the_assistant_notes_beside_the_guidance(self):
-        # Guided's Guidance must show, select and save the game's assistant
-        # notes as Assistant-led's Context does: it read only the guidance,
-        # so Guided had no Assistant notes tab.
-        from desktop.backend.guidance import documents, documents_save, editable
-
-        self.backend.workflows.documents = lambda _: documents(self.source)
-        self.backend.workflows.editable = lambda _: editable(self.source)
-        self.backend.workflows.documents_save = lambda _, changes: documents_save(
-            self.source, changes
-        )
-        self.backend.workflows.draft = Mock()
-        summaries = []
-
-        def write(source, native=None, **options):
-            summaries.append(options["summary"])
-            return game_write(source, native, **options)
-
-        self.backend.game_write = write
-        # Notes typed and cleared again write no empty AGENTS.md.
-        self.guided.save_documents(
-            self.identity, {"notes": {"text": "", "revision": ""}}
-        )
-        self.assertFalse((self.source / "AGENTS.md").exists())
-        self.assertEqual(summaries, [])
-        self.guided.position(self.identity, "context", "guidance", "notes")
-        self.assertEqual(
-            read_json(self.guided.path(self.identity, "context-document")),
-            {"name": "notes"},
-        )
-        self.assertFalse(
-            self.guided.context_status(self.identity)["documents"]["notes"]["exists"]
-        )
-        notes = "Repack Data.wolf after injection."
-        self.guided.save_documents(
-            self.identity, {"notes": {"text": notes, "revision": ""}}
-        )
-        self.assertEqual((self.source / "AGENTS.md").read_text(encoding="utf-8"), notes)
-        self.assertEqual(summaries, ["Save Assistant notes"])
-        self.assertTrue(
-            self.guided.context_status(self.identity)["documents"]["notes"]["exists"]
-        )
-        # Notes an assistant wrote that can't be read keep a draft of them
-        # selectable, so it can be discarded: Guidance once refused to select
-        # it. A Save guidance that sends it stays refused whole, leaving every
-        # file as it is, and the rest saves once that draft is discarded.
-        unreadable = "メモ".encode("shift_jis")
-        (self.source / "AGENTS.md").write_bytes(unreadable)
-        drafts = {
-            "notes": {"text": "My notes", "revision": ""},
-            "quirks": {"text": "Keep honorifics.", "revision": ""},
-        }
-        self.backend.workflows.state = lambda _: {"draft": {"documents": drafts}}
-        self.guided.position(self.identity, "context", "guidance", "notes")
-        with self.assertRaisesRegex(ValueError, "discard the Assistant notes draft"):
-            self.guided.save_documents(self.identity, dict(drafts))
-        self.assertEqual((self.source / "AGENTS.md").read_bytes(), unreadable)
-        self.assertEqual(documents(self.source)["quirks"]["text"], "")
-        self.guided.save_documents(self.identity, {"quirks": drafts["quirks"]})
-        self.assertEqual(documents(self.source)["quirks"]["text"], "Keep honorifics.")
-        # Notes linked to another file are unreadable too, and their draft
-        # must not refuse the project's every state: it once failed on the
-        # link.
-        (self.source / "AGENTS.md").unlink()
-        (self.source / "CLAUDE.md").write_text("Shared notes", encoding="utf-8")
-        (self.source / "AGENTS.md").symlink_to("CLAUDE.md")
-        self.guided.position(self.identity, "context", "guidance", "notes")
-        # Nor may notes another program holds open, as Windows locks them.
-        with patch(
-            "desktop.backend.guidance.notes", side_effect=PermissionError("held")
-        ):
-            self.guided.position(self.identity, "context", "guidance", "glossary")
-            self.guided.context_status(self.identity)
+        self.assertEqual(read(self.source)["glossary"]["text"], "")
 
     def test_measured_layout_applies_once_and_preserves_active_work_and_width_edits(
         self,
@@ -2917,20 +2857,27 @@ class GuidedTests(unittest.TestCase):
         write_json(position, {"step": "context", "task": "glossary"})
         self.guided.position(self.identity, "context", "guidance")
         self.assertEqual(read_json(selected), {"name": "glossary"})
+        # A draft of a custom skill whose file is gone stays selectable, as a
+        # document whose file is missing, so it can be saved or discarded.
+        from desktop.backend.guidance import read
+
+        self.backend.workflows.read_documents = lambda _, drafted=(): read(
+            self.source, drafted
+        )
         self.backend.workflows.state = lambda _: {
             "draft": {
                 "documents": {
-                    "custom:notes": {"text": "Retained draft", "revision": "previous"}
+                    "custom:lore": {"text": "Retained draft", "revision": "previous"}
                 }
             }
         }
-        self.guided.position(self.identity, "context", "guidance", "custom:notes")
-        self.assertEqual(read_json(selected), {"name": "custom:notes"})
-        recovered = context_setup.retained_documents(
-            self.source, {}, {"custom:notes": {}}
+        self.guided.position(self.identity, "context", "guidance", "custom:lore")
+        self.assertEqual(read_json(selected), {"name": "custom:lore"})
+        recovered = read(self.source, ["custom:lore"])["custom:lore"]
+        self.assertEqual(
+            (recovered["state"], recovered["text"], recovered["revision"]),
+            ("missing", "", digest(b"")),
         )
-        self.assertEqual(recovered["custom:notes"]["revision"], digest(b""))
-        self.assertEqual(recovered["custom:notes"]["text"], "")
         other = self.projects.open(
             {"source": str(self.root / "other-game"), "engine": "MVMZ"}
         )
@@ -5126,6 +5073,76 @@ class GuidedTests(unittest.TestCase):
             again = plan("export_selected", {"files": ["Items.json"]})
             rows = prepare_publication(again)["publication"]
             self.assertFalse(rows[0]["later_edits"])
+
+            # A game copy an Apply put in before choices kept their conditions,
+            # edited since, such as by Text QA or by hand, takes only those
+            # its output lacks.
+            def choice(text, *values):
+                return {
+                    "events": [
+                        None,
+                        {
+                            "pages": [
+                                {
+                                    "list": [
+                                        {
+                                            "code": 102,
+                                            "parameters": [list(values)],
+                                            "_original": [
+                                                "if(s[1])はい",
+                                                "if(s[2])いいえ",
+                                            ],
+                                        },
+                                        {
+                                            "code": 401,
+                                            "parameters": [text],
+                                            "_original": "薬",
+                                        },
+                                    ]
+                                }
+                            ]
+                        },
+                    ],
+                }
+
+            write_json(
+                self.folder / "translated/Map001.json",
+                choice("Potoin", "Yes", "if(s[2])No"),
+            )
+            receipt = read_json(self.folder / "applied-outputs.json")
+            receipt["files"]["Map001.json"] = digest(
+                (self.folder / "translated/Map001.json").read_bytes()
+            )
+            write_json(self.folder / "applied-outputs.json", receipt)
+            write_json(self.source / "Map001.json", choice("Potion", "Yes", "No"))
+            apply = plan("export_selected", {"files": ["Map001.json"]})
+            self.assertFalse(
+                prepare_publication(apply)["publication"][0]["later_edits"]
+            )
+            run_publication(apply, lambda _: None)
+            self.assertEqual(
+                read_json(self.source / "Map001.json"),
+                choice("Potion", "if(s[1])Yes", "No"),
+            )
+            # One whose output holds the conditions was edited so in the
+            # game, which Apply replaces as ever.
+            write_json(
+                self.folder / "translated/Map001.json",
+                choice("Potion", "if(s[1])Yes", "if(s[2])No"),
+            )
+            receipt["files"]["Map001.json"] = digest(
+                (self.folder / "translated/Map001.json").read_bytes()
+            )
+            write_json(self.folder / "applied-outputs.json", receipt)
+            write_json(
+                self.source / "Map001.json", choice("Potion", "Yes", "if(s[2])No")
+            )
+            apply = plan("export_selected", {"files": ["Map001.json"]})
+            self.assertTrue(prepare_publication(apply)["publication"][0]["later_edits"])
+            # One an edit broke is put back whole.
+            (self.source / "Map001.json").write_text('{"events": [', "utf-8")
+            apply = plan("export_selected", {"files": ["Map001.json"]})
+            self.assertTrue(prepare_publication(apply)["publication"][0]["later_edits"])
             # New widths fit the applied text again in their own area only.
             # Weapons.json counts as applied where its bytes equal a run's
             # output, but no Apply wrote it.

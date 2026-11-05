@@ -54,6 +54,24 @@ SAME_LINE_SPEAKERS = "event-same-line-speakers-v1"
 # \m[2]\z[1454]あら…, read as an empty nameplate, so its first line was never
 # sent and stayed in Japanese however often the run was retried.
 CODE_NAMEPLATES = "event-code-nameplates-v1"
+# A message's or scrolling text's text whose first row keeps a translation's
+# source ends with that translation's rows (engine util/rpgmaker_blocks
+# `owned`): before the next translation, after the rows a translation file
+# import recorded, and before any row holding Japanese that source doesn't,
+# the game's own, left untranslated after it, such as the speech after a name
+# an earlier run translated alone with First-line names on, or whose request
+# was refused. Those rows are sent and written as texts of their own. A run
+# frozen without it sends the first row's source alone for them and writes
+# its translation over them all, emptying them, as it did when approved.
+LEFT_ROWS = "event-left-rows-v2"
+# Each left-rows policy a saved run may hold, by the engine level it enables:
+# v2 also ends a message's translation after the rows its source has lines
+# for, so a row after a name translated alone that holds no Japanese, such as
+# …… or speech in English, is the game's own, and a run with Skip already
+# translated text off, which sends that name's source again, no longer writes
+# its translation over that row, emptying it; v1 reads every row up to the
+# next translation as that translation's.
+LEFT_ROWS_LEVELS = {"event-left-rows-v1": 1, LEFT_ROWS: 2}
 # Small RPG Maker event pages of one file share a request, each page labelled,
 # because each request otherwise repeats the full system prompt: a 970-map
 # game's Maps & events estimate fell from 4,089 to 2,173 requests and from
@@ -137,6 +155,13 @@ GALGE_CHOICES = "galge-choices-once-v1"
 # question of the last Galge message translated on the page, as it did when
 # approved.
 GALGE_ARGUMENTS = "galge-arguments-v1"
+# RPG Maker MV/MZ's System.json currency unit, drawn after every amount of
+# money, and the variable names the game's plugins draw, such as
+# LL_VariableWindow's label (engine util/rpgmaker_variable_names), are
+# translated with the other menu terms; the run freezes those variables' ids
+# in its policy (compatibility/manual freeze_variables), as its worker holds
+# no plugin or event file. A run frozen without it leaves both as they were.
+SYSTEM_TEXT = "system-text-v1"
 # Each battle-message-users policy a saved run may hold, by the parser level it
 # enables: v2 also treats a party of one actor as that actor.
 BATTLE_MESSAGE_USERS_LEVELS = {
@@ -150,6 +175,7 @@ FROZEN_POLICIES = {
     "speakerContext": SPEAKER_CONTEXT,
     "sameLineSpeakers": SAME_LINE_SPEAKERS,
     "codeNameplates": CODE_NAMEPLATES,
+    "leftRows": LEFT_ROWS,
     "pagePacking": PAGE_PACKING,
     "reuseStretches": REUSE_STRETCHES,
     "stretchNeighbours": STRETCH_NEIGHBOURS,
@@ -159,6 +185,7 @@ FROZEN_POLICIES = {
     "shortOutputs": SHORT_OUTPUTS,
     "galgeChoices": GALGE_CHOICES,
     "galgeArguments": GALGE_ARGUMENTS,
+    "systemText": SYSTEM_TEXT,
 }
 # A reply's lines have the small kana a model leaves in a line holding no
 # other Japanese written as Latin letters (engine util/target_text

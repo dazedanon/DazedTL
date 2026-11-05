@@ -15,7 +15,7 @@ import type {
   GuidedStep,
   GuidedForm,
   GuidedAction,
-  Documents,
+  DocumentDrafts,
   SettingsPayload,
   ConnectionInput,
   EffortLevel,
@@ -465,9 +465,9 @@ export const api = {
     request("guided_stop", { project_id, ...(run_id ? { run_id } : {}) }),
   resume: (project_id: string, run_id?: string) =>
     request("guided_resume", { project_id, ...(run_id ? { run_id } : {}) }),
-  draft: (project_id: string, documents: Documents) =>
+  draft: (project_id: string, documents: DocumentDrafts) =>
     request("guided_draft", { project_id, documents }),
-  saveDocuments: (project_id: string, documents: Documents) =>
+  saveDocuments: (project_id: string, documents: DocumentDrafts) =>
     request("guided_save_documents", { project_id, documents }),
   settings: () => request("settings_get", {}),
   modelDefaults: (connection_id: string, model: string) =>

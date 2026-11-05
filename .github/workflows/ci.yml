@@ -6,8 +6,9 @@
 # docs/development.md.
 #
 # It runs for what lands on dev and main, for release tags, pull requests and
-# once a week. Feature branches are tested before landing by scripts/land.mjs;
-# run CI on one by hand with: gh workflow run CI --ref <branch>
+# once a week, and for a platform-sensitive branch that scripts/land.mjs
+# dispatches before landing it; run CI on another branch by hand with:
+# gh workflow run CI --ref <branch>
 name: CI
 
 on:
@@ -147,7 +148,7 @@ jobs:
         # scenario's options follow its name.
         scenarios:
           - playtested released images-archived assistant-checked
-          - fresh opened set-up translated qa-done paged moved-relabeled repriced shared
+          - fresh opened set-up translated qa-done paged moved-relabeled repriced shared images-kirikiri
           - assistant-led assistant-written assistant-released assistant-updated batch-waiting upgraded
           - released-ace released-mv moved images images-revised assistant-reorganized manual
           - update-stopped plugins-applied batch-queued qa-done --game ace

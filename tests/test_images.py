@@ -15,13 +15,14 @@ from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import numpy as np
 from dazedtl import system
 from dazedtl.api import views
 from dazedtl.api.contracts.validation import check_response
 from dazedtl.compatibility import original_files
 from dazedtl.compatibility.images import ImageCompatibility
 from dazedtl.foreign_work import ForeignWorkError
-from dazedtl.images import ImageService, recipes, validation
+from dazedtl.images import ImageService, families, recipes, validation
 from dazedtl.images import service as service_module
 from dazedtl.images.inventory import png_metadata
 from dazedtl.projects.store import Projects
@@ -90,10 +91,10 @@ class FixtureImages:
     def source_bytes(self, root, row, key):
         return (root / row["runtime"]).read_bytes()
 
-    def original_bytes(self, root, row, key):
-        return ImageCompatibility.original_bytes(self, root, row, key)
+    def original_bytes(self, root, row, key, runtime=None):
+        return ImageCompatibility.original_bytes(self, root, row, key, runtime)
 
-    def prepare(self, root, profile, rows, key):
+    def prepare(self, root, profile, rows, key, copies=None):
         completed, skipped = 0, 0
         for row in rows:
             target = root / row["editable"]
@@ -146,7 +147,7 @@ class ImageTests(unittest.TestCase):
         self.translation = SimpleNamespace(
             workspace=self.profile,
             idle=lambda _: None,
-            clean_drafts=lambda _: None,
+            clean_drafts=lambda *_: None,
             writable=lambda _: None,
         )
         self.backend = SimpleNamespace(
@@ -231,7 +232,7 @@ class ImageTests(unittest.TestCase):
         self.service.action(self.identity, "prepare")
         request, _ = self.request("edit_task")
         candidate = candidate or png(color)
-        write_bytes(self.game / (".dazedtl/images/" + identity), candidate)
+        write_bytes(self.game / request["assets"][0]["editable"], candidate)
         self.recipe(request["assets"][0], candidate)
         self.report(
             request,
@@ -1303,7 +1304,7 @@ class ImageTests(unittest.TestCase):
             translation = SimpleNamespace(
                 workspace=profile,
                 idle=lambda _: None,
-                clean_drafts=lambda _: None,
+                clean_drafts=lambda *_: None,
                 writable=lambda _: None,
             )
             service = ImageService(
@@ -1372,7 +1373,7 @@ class ImageFolderTests(unittest.TestCase):
             translation = SimpleNamespace(
                 workspace=root / "profile",
                 idle=lambda _: None,
-                clean_drafts=lambda _: None,
+                clean_drafts=lambda *_: None,
                 writable=lambda _: None,
             )
             service = ImageService(
@@ -1443,6 +1444,15 @@ class ImageFolderTests(unittest.TestCase):
             )
             self.assertEqual(service.state(identity)["counts"]["missing"], 0)
 
+    def test_a_game_without_a_chosen_folder_reads_its_data_folder(self):
+        # A KiriKiri game without archives keeps its images in data, and a
+        # WOLF game in Data.
+        for folder in ("data/image", "Data/Picture"):
+            with self.subTest(folder=folder), TemporaryDirectory() as root:
+                write_bytes(Path(root) / folder / "title.bmp", b"BM")
+                profile = ImageCompatibility(None).profile(Path(root), "KiriKiri")
+                self.assertEqual(profile["imageRoot"], folder.split("/")[0])
+
 
 class AppliedImagePatchTests(unittest.TestCase):
     """The Image Manager's own engine adapter on an MZ game whose Git is set
@@ -1484,7 +1494,7 @@ class AppliedImagePatchTests(unittest.TestCase):
         translation = SimpleNamespace(
             workspace=root / "profile",
             idle=lambda _: None,
-            clean_drafts=lambda _: None,
+            clean_drafts=lambda *_: None,
             writable=lambda _: None,
         )
         self.service = ImageService(
@@ -1571,7 +1581,7 @@ class DecodedImagePatchTests(unittest.TestCase):
         translation = SimpleNamespace(
             workspace=root / "profile",
             idle=lambda _: None,
-            clean_drafts=lambda _: None,
+            clean_drafts=lambda *_: None,
             writable=lambda _: None,
         )
         self.service = ImageService(
@@ -1636,6 +1646,160 @@ class DecodedImagePatchTests(unittest.TestCase):
         delivery = {**built, "stamp": stamp(built["path"])}
         delivery.update(basis(self.game, delivery.pop("paths")))
         self.assertTrue(current(delivery, self.game))
+
+    def test_kirikiri_bmp_and_tlg_images_are_applied_in_their_own_format(self):
+        # KiriKiri games keep title screens and eye-catches as BMP or TLG
+        # files, which Images skipped, listing PNG files alone.
+        from tests.test_image_formats import bgra, picture, pixels_of, tlg6
+
+        title, menu = "decoded/Picture/タイトル画面.BMP", "decoded/Picture/menu.tlg"
+        stream = BytesIO()
+        Image.new("RGB", (8, 8), (9, 9, 9)).save(stream, format="BMP")
+        write_bytes(self.game / title, stream.getvalue())
+        write_bytes(self.game / menu, tlg6(bgra(picture(8, 8, 1)), 4))
+        # A PNG keeps the ID it had, its extension in lowercase, so its
+        # saved work stays with it.
+        write_bytes(self.game / "decoded/Picture/Logo.PNG", png())
+        self.scan()
+        self.assertEqual(
+            sorted(row["id"] for row in self.service.list(self.identity)["items"]),
+            sorted(
+                [
+                    title,
+                    menu,
+                    "decoded/Picture/title.png",
+                    "decoded/Picture/Logo.png",
+                ]
+            ),
+        )
+        # Saved as an assistant's editor may, unlike the copy DazedTL makes.
+        stream = BytesIO()
+        Image.new("RGB", (8, 8), (200, 10, 10)).save(
+            stream, format="PNG", compress_level=0
+        )
+        candidates = {title: stream.getvalue(), menu: png((2, 3, 4, 100))}
+        for name, candidate in candidates.items():
+            self.reviewed_candidate(name, candidate=candidate)
+            step = self.service.assistant(self.identity, "apply")
+            self.assertEqual(step["applied"], [name])
+        for name, kind in ((title, b"BM"), (menu, b"TLG5")):
+            raw = (self.game / name).read_bytes()
+            self.assertTrue(raw.startswith(kind))
+            np.testing.assert_array_equal(
+                pixels_of(raw),
+                np.asarray(Image.open(BytesIO(candidates[name])).convert("RGBA")),
+            )
+        # The game's file holds the candidate's pixels in another format, not
+        # its bytes; it still reads applied, not changed since discovery.
+        rows = {row["id"]: row for row in self.service.list(self.identity)["items"]}
+        for name in candidates:
+            self.assertEqual(rows[name]["state"], "applied")
+            self.assertFalse(rows[name].get("staleReason"))
+
+    def test_an_image_is_read_again_when_what_reads_it_changes(self):
+        # A BMP's PNG copy is made by Pillow, whose newer releases may encode
+        # it differently: the saved hash then never matched, and Prepare
+        # stopped with "A source image changed during preparation".
+        from util import image_formats, image_manager
+
+        title = "decoded/Picture/title.bmp"
+        stream = BytesIO()
+        Image.new("RGB", (8, 8), (9, 9, 9)).save(stream, format="BMP")
+        write_bytes(self.game / title, stream.getvalue())
+        self.scan()
+        encode = image_formats.to_png
+
+        def newer(raw):
+            with Image.open(BytesIO(encode(raw))) as image:
+                stream = BytesIO()
+                image.save(stream, format="PNG", compress_level=1)
+                return stream.getvalue()
+
+        with (
+            patch.object(image_formats, "to_png", newer),
+            patch.object(image_manager, "to_png", newer),
+            patch.object(image_formats, "decoder", lambda: "newer"),
+        ):
+            self.scan()
+            self.choose([title])
+            self.service.action(self.identity, "prepare")
+            (row,) = self.service.list(self.identity, asset_id=title)["items"]
+            self.assertTrue(row["editable"])
+        # Its kept original, a PNG from that reader, then differed from the
+        # copy read again, so its family said it was translated in the game.
+        self.scan()
+        self.assertEqual(
+            families.translated(self.service._index(self.identity).get(title)), ""
+        )
+
+    def test_an_older_backup_original_is_read_again_with_its_image(self):
+        # Only the image was read again, so its backup original kept the old
+        # reader's hash and the image read as translated in the game.
+        from util import image_formats
+
+        title = "decoded/Picture/title.bmp"
+        stream = BytesIO()
+        Image.new("RGB", (8, 8), (9, 9, 9)).save(stream, format="BMP")
+        for path in (title, families.BACKUPS + title):
+            write_bytes(self.game / path, stream.getvalue())
+        self.scan()
+        encode = image_formats.to_png
+
+        def newer(raw):
+            with Image.open(BytesIO(encode(raw))) as image:
+                stream = BytesIO()
+                image.save(stream, format="PNG", compress_level=1)
+                return stream.getvalue()
+
+        with (
+            patch.object(image_formats, "to_png", newer),
+            patch.object(image_formats, "decoder", lambda: "newer"),
+        ):
+            self.scan()
+            row = self.service._index(self.identity).get(title)
+        self.assertEqual(row["original"]["path"], families.BACKUPS + title)
+        self.assertEqual(families.translated(row), "")
+
+    def test_prepare_reads_an_image_in_another_format_once(self):
+        # It was read for the source check, the frozen original and the
+        # editable copy: about three seconds for each large TLG. Then every
+        # chosen image's copy was held in memory until the last was read.
+        from util import image_formats, image_manager
+
+        title = "decoded/Picture/title.bmp"
+        stream = BytesIO()
+        Image.new("RGB", (8, 8), (9, 9, 9)).save(stream, format="BMP")
+        write_bytes(self.game / title, stream.getvalue())
+        self.scan()
+        self.choose([title, "decoded/Picture/title.png"])
+        reads, held, encode = [], [], image_formats.to_png
+        workspace = image_manager.copy_plain_assets_to_workspace
+
+        def counted(raw):
+            # A PNG comes back as it is.
+            if image_formats.image_format(raw) != "png":
+                reads.append(raw)
+            return encode(raw)
+
+        def copied(*args, copies=None, **options):
+            held.extend((copies or {}).items())
+            return workspace(*args, copies=copies, **options)
+
+        with (
+            patch.object(image_formats, "to_png", counted),
+            patch.object(image_manager, "to_png", counted),
+            patch.object(image_manager, "copy_plain_assets_to_workspace", copied),
+        ):
+            self.service.action(self.identity, "prepare")
+        row = self.service._index(self.identity).get(title)
+        self.assertEqual(len(reads), 1)
+        self.assertEqual(
+            [(key, type(value)) for key, (_, value) in held], [(title, type(self.game))]
+        )
+        self.assertEqual(
+            (self.game / row["editable"]).read_bytes(),
+            encode(stream.getvalue()),
+        )
 
     def test_undoing_an_apply_into_a_decoded_folder_puts_its_original_back(self):
         # Undoing the apply deleted the decoded image, which only the apply

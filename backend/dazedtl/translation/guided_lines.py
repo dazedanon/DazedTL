@@ -4,19 +4,27 @@ working copy, named by its file and its place in the game's original file.
 Guided writes a translated message over fewer commands than the original
 holds, so naming a line by its original place keeps its ID whether or not
 the copy is translated, and two people's copies of one game version share
-their IDs.
+their IDs while their speaker settings match.
 
 An ID is `<file>#<JSON pointer>` into the original file: a value's own, and
 for an event text block its first command's, such as a message's window,
 with `/parameters/4` after it for the message's name box and `~<n>` for its
-later parts. A command the original doesn't hold at a place, such as one a
-game update added, keeps its pointer into the copy.
+later parts. A message's or scrolling text's parts are the texts the engine
+sends of the game's own rows, read by the project's speaker settings
+(rpgmaker_blocks `sent_texts`): a row opening with a code such as \\SE[1]
+starts one, and a nameplate on a row of its own is one and names the speaker
+of the speech after it. A choice is its label, as the engine sends it,
+without the plugin condition clauses around it (rpgmaker_blocks
+`split_choice`), which an import puts back. A command the original doesn't
+hold at a place, such as one a game update added, keeps its pointer into the
+copy.
 
 Importing writes into each file's working copy, as a run's output does
 (guided_inputs), and records each changed value's source as Guided does,
-so Translate's Apply puts the translations in the game as one checkpoint,
-fitted to the Line widths. Choice help and note labels are left out of an
-import: their rows and sources follow rules of their own.
+each text's on its first row, so Translate's Apply puts the translations in
+the game as one checkpoint, fitted to the Line widths. Choice help and note
+labels are left out of an import: their rows and sources follow rules of
+their own.
 """
 
 import copy
@@ -34,6 +42,13 @@ from .results import game_line
 _KINDS = {"message": "dialogue", "scroll": "narration"}
 # Lines whose rows or sources an import leaves alone.
 _KEPT = {"help": "Choice help", "label": "Note labels"}
+# Why a choice's translation is not imported when a choice plugin reads
+# other conditions in it than in its source.
+_CONDITIONS = (
+    "A choice plugin such as MPP_ChoiceEX reads if(...) or en(...) in a "
+    "choice as its condition, as in Open(door): keep those the source holds "
+    "as they are and add none. The import keeps the game's own around it."
+)
 
 
 def _pointer(path):
@@ -97,6 +112,10 @@ class GuidedLines:
             if self.native["phase1_comments"]
             else frozenset()
         )
+        self.variables = self.inputs.drawn_variables(self.files)
+        from util.rpgmaker_blocks import Reading
+
+        self.reading = Reading.of(self.native["engine_options"])
         self._found = None
 
     def _units(self):
@@ -104,6 +123,7 @@ class GuidedLines:
         or None, file and the paths it covers, by ID, in file order."""
         if self._found is not None:
             return self._found
+        from util import rpgmaker_blocks as blocks
         from util.source_text import holds_source, source_left
 
         found = {}
@@ -125,7 +145,13 @@ class GuidedLines:
 
                 notes = file_lines.note_pointers(document, read_original)
                 for line in file_lines.read(
-                    name, document, phase, self.markers, read_original
+                    name,
+                    document,
+                    phase,
+                    self.markers,
+                    read_original,
+                    self.variables,
+                    self.reading,
                 ):
                     # A block names its texts by the command it starts at.
                     head = (
@@ -134,13 +160,28 @@ class GuidedLines:
                         else None
                     )
                     named = head is not None
+                    block = (name, line.start) if line.kind in _KINDS else None
                     speaker = None
                     part = 0
-                    for (text, source), paths in zip(
-                        line.sent(), line.places(), strict=True
+                    for index, ((text, source), paths) in enumerate(
+                        zip(line.sent(), line.places(), strict=True)
                     ):
-                        shown = source if source and source.strip() else text
-                        name_box = named and paths[0][-2:] == ("parameters", 4)
+                        shown = file_lines.shown(text, source)
+                        choice = None
+                        if line.kind == blocks.CHOICE:
+                            choice = blocks.split_choice(shown)
+                            shown, text = choice.label, _label(text, choice)
+                            source = shown if source and source.strip() else None
+                        name_box = named and file_lines.name_box(paths)
+                        nameplate = bool(line.names and line.names[index])
+                        said = None
+                        if nameplate:
+                            speaker = line.names[index]
+                        elif not name_box and (not line.read or line.read[index]):
+                            # A name box's or nameplate's speaker says the
+                            # next text the engine reads alone, as it sends
+                            # them; rows it skips leave it to the one after.
+                            said, speaker = speaker, None
                         if not holds_source(shown):
                             continue
                         if head is not None and name_box:
@@ -160,10 +201,12 @@ class GuidedLines:
                         )
                         kind = (
                             "ui"
-                            if name_box
-                            else _KINDS.get(line.kind, "ui")
-                            if line.kind != "message" or speaker
+                            if name_box or nameplate
+                            else "dialogue"
+                            if said
                             else "unknown"
+                            if line.kind == "message"
+                            else _KINDS.get(line.kind, "ui")
                         )
                         listed = places.of(line.start[:-1]) if line.start else None
                         found[f"{name}#{identity}"] = {
@@ -171,7 +214,7 @@ class GuidedLines:
                             "scene": name + ("#" + _pointer(listed) if listed else ""),
                             "group": name,
                             "kind": kind,
-                            "speaker": speaker
+                            "speaker": said
                             if kind in {"dialogue", "unknown"}
                             else None,
                             "source": shown,
@@ -180,6 +223,15 @@ class GuidedLines:
                             "paths": paths,
                             "line": line.kind,
                             "name_box": name_box,
+                            # A choice's condition clauses, which the line
+                            # leaves out and an import puts back.
+                            "choice": choice,
+                            # A message's or scrolling text's text keeps its
+                            # source on its first row, as a run writes it.
+                            "start": (paths[0], shown)
+                            if block is not None and not name_box
+                            else None,
+                            "block": block,
                         }
         self._found = found
         return found
@@ -202,6 +254,8 @@ class GuidedLines:
         ]
 
     def problems(self, translations):
+        from util.rpgmaker_blocks import conditions
+
         from .unit_results import import_problems
 
         units = self._units()
@@ -210,6 +264,18 @@ class GuidedLines:
             for identity in translations
             if units[identity]["line"] in _KEPT
         }
+        # A choice's label may hold a condition mixed with its text, which
+        # the engine sends and its translation keeps.
+        problems.update(
+            {
+                identity: _CONDITIONS
+                for identity, text in translations.items()
+                if identity not in problems
+                and units[identity]["choice"] is not None
+                and sorted(conditions(text))
+                != sorted(conditions(units[identity]["source"]))
+            }
+        )
         checked = {
             identity: text
             for identity, text in translations.items()
@@ -241,16 +307,32 @@ class GuidedLines:
         by_file = defaultdict(list)
         for identity, text in translations.items():
             unit = units[identity]
-            by_file[unit["file"]].append(
-                (
-                    unit,
-                    game_line(unit["source"], text, self.pair["target"], self.quotes),
-                )
-            )
+            written = game_line(unit["source"], text, self.pair["target"], self.quotes)
+            if unit["choice"] is not None:
+                # With the condition clauses the engine keeps around it.
+                written = unit["choice"].written(written)
+            by_file[unit["file"]].append((unit, written))
         written = {}
         with reading_game(self.native["source"]):
             for name, rows in by_file.items():
                 before = decode_json(system.read_bytes(self.inputs.newest(name)))
+                # The texts a writer kept one source over with the ones
+                # written keep their own, as the export reads them
+                # (rpgmaker_blocks `keep_sources`), and each text written
+                # keeps its source on its first row, as a run writes the texts
+                # it sends, so each keeps its line and Apply fits it on its own.
+                for _name, start in {unit["block"] for unit, _text in rows} - {None}:
+                    listed = _parent(before, start)
+                    block = blocks.block_at(listed, start[-1])
+                    if block is not None:
+                        blocks.keep_sources(listed, block, self.reading)
+                for unit, _text in rows:
+                    if unit["start"] is not None:
+                        path, source = unit["start"]
+                        command = _parent(before, path[:-1])
+                        command["_original"] = source
+                        # The rows it lays the text over, the game's own after.
+                        command[blocks.ROWS] = len(unit["paths"])
                 staged = copy.deepcopy(before)
                 for unit, text in rows:
                     paths = unit["paths"]
@@ -277,6 +359,20 @@ class GuidedLines:
         for name, raw in written.items():
             system.write_bytes(self.inputs.path("translated", name), raw)
         self._found = None
+
+
+def _label(text, choice):
+    """A choice's *text* without the condition clauses its source *choice*
+    holds, as a run and an import write them around its label; text that
+    lacks them, such as a hand edit's, is shown whole."""
+    end = len(text) - len(choice.suffix)
+    if (
+        end >= len(choice.prefix)
+        and text.startswith(choice.prefix)
+        and text.endswith(choice.suffix)
+    ):
+        return text[len(choice.prefix) : end]
+    return text
 
 
 def _parent(document, path):

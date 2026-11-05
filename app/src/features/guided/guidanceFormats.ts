@@ -1,3 +1,5 @@
+import type { GUIDANCE_DOCUMENTS } from "../../api/contracts";
+
 // The assistant notes hold no game text, so one layout serves every language.
 const notes =
   "# Game quirks\n- \n\n# Tools written for this game\n- \n\n# Unpacking and repacking\n1. \n\n# Changes a new version needs again\n- ";
@@ -5,7 +7,9 @@ const notes =
 /** The layout the engine reads from each guidance file, shown while it is
  * empty, for a game whose text is in *source*: each entry names the source
  * term, then its translation. */
-export function guidanceFormats(source: string): Record<string, string> {
+export function guidanceFormats(
+  source: string,
+): Record<(typeof GUIDANCE_DOCUMENTS)[number], string> {
   return source === "Japanese"
     ? {
         glossary:
@@ -24,3 +28,11 @@ export function guidanceFormats(source: string): Record<string, string> {
         notes,
       };
 }
+
+/** Help on the layout of a document's file, beside its path. */
+export const guidanceFileFormats: Partial<
+  Record<(typeof GUIDANCE_DOCUMENTS)[number], string>
+> = {
+  glossary:
+    "Keep category headers and source (translation) entries; character notes stay on the same line.",
+};

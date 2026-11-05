@@ -646,11 +646,16 @@ def inspect_row(root, adapter, row, old, key):
             families.VERSION,
         )
 
+    # An image in another format than PNG is read into PNG bytes again, with
+    # its original, when what reads it changed, since its saved hashes are of
+    # those bytes.
+    decoder = adapter.decoder() if hasattr(adapter, "decoder") else ""
+    redecode = row.get("sourceDecoder", "") not in {"", decoder}
     pending = None
     if original and original[0] != row.get("runtime"):
         try:
             stamp = signature(project_path(root, original[0]))
-            if stale(original[0], stamp):
+            if stale(original[0], stamp) or redecode:
                 pending = (*original, stamp)
         except OSError, ValueError:
             original = None
@@ -664,14 +669,18 @@ def inspect_row(root, adapter, row, old, key):
         if (
             original
             and original[0] == row["runtime"]
-            and stale(original[0], current_signature)
+            and (stale(original[0], current_signature) or redecode)
         ):
             pending = (*original, current_signature)
         if row.get("encrypted") and key is None:
             raise ValueError(
                 "The encryption key is unavailable. Restore System.json before preparing this asset."
             )
-        if current_signature != row.get("sourceSignature") or row.get("encrypted"):
+        if (
+            current_signature != row.get("sourceSignature")
+            or row.get("encrypted")
+            or redecode
+        ):
             source_hash = sha_file(runtime)
             raw = adapter.source_bytes(root, row, key)
             png_hash = hashlib.sha256(raw).hexdigest()
@@ -689,6 +698,11 @@ def inspect_row(root, adapter, row, old, key):
                 sourceHash=source_hash,
                 sourcePngHash=png_hash,
                 sourceSignature=current_signature,
+                # A PNG's copy is its own bytes, and an encrypted image is
+                # read again each time.
+                sourceDecoder=decoder
+                if png_hash != source_hash and not row.get("encrypted")
+                else "",
             )
     except (OSError, ValueError, KeyError) as exc:
         row["sourceIssue"] = str(exc)
@@ -733,9 +747,13 @@ def inspect_row(root, adapter, row, old, key):
     if runtime_changed:
         applied = row.get("applied") or {}
         finding = row.get("finding") or {}
-        if row.get("sourcePngHash") != applied.get("candidateHash") and finding.get(
-            "sourceHash"
-        ) != row.get("sourceHash"):
+        # An image applied in another format than PNG holds its candidate's
+        # pixels, not its bytes, so the file it was applied as tells too.
+        if (
+            row.get("sourcePngHash") != applied.get("candidateHash")
+            and row.get("sourceHash") != applied.get("runtimeHash")
+            and finding.get("sourceHash") != row.get("sourceHash")
+        ):
             row.pop("finding", None)
             row["classification"] = "not_examined"
             row["staleReason"] = (

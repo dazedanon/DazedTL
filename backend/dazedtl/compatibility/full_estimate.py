@@ -20,7 +20,7 @@ from dazedtl.storage import write_bytes, write_json
 from dazedtl.translation.files import digest, project_path
 
 from .estimate_pricing import count, start, stop
-from .manual import stage_originals
+from .manual import freeze_variables, stage_originals
 
 LABELS = {
     "database": "Database files",
@@ -203,6 +203,7 @@ def stage_run(
         if policy["model"] != native["settings"]["model"]:
             raise ValueError("The selected model changed. Estimate again.")
         native["dazedtl_request_policy"] = policy
+        freeze_variables(native)
     stage_originals(directory, native, policy)
     write_json(directory / "plan.json", native)
     # The staged copy is this operation's own, so every task shares its files.

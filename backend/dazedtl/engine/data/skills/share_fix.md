@@ -5,7 +5,8 @@ Write a short report a DazedTL developer can act on, so DazedTL can handle games
 <sources>
 - Start from what we did in this chat.
 - The game folder is a Git repository, and DazedTL saves each change as a checkpoint commit: `git log`, `git show`, `git status` and `git diff` show what changed, including edits not committed yet.
-- DazedTL keeps its work for the game in `.dazedtl/`: `settings.json`, `glossary.txt`, notes in `skills/`, and Guided's saved findings in `guided/`.
+- `AGENTS.md` at the game folder's root, when it exists, holds the assistant notes: what anyone working on this game must know. Read it first.
+- DazedTL keeps its work for the game in `.dazedtl/`: `settings.json`, `glossary.txt`, the game context and style in `skills/`, and Guided's saved findings in `guided/`.
 - Only read: change nothing while you write the report.
 </sources>
 

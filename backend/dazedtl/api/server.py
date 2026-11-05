@@ -1080,7 +1080,7 @@ def routes(app):
         "guided_draft": (app.guided.draft, lambda value, _params: value),
         "guided_save_documents": (
             app.guided.save_documents,
-            lambda value, _params: views.documents(value),
+            lambda value, _params: views.documents_saved(value),
         ),
     }
     for name in (

@@ -28,10 +28,18 @@ storage = temporary / "storage"
 
 
 def line(original, text):
-    """A message's commands: the first holds its Japanese, and each a row."""
+    """A message's commands: the first holds its Japanese, and each a row;
+    one over several commands records them, as an import lays it out."""
     first, *rows = text.split("\n")
+    recorded = {"_rows": 1 + len(rows)} if rows else {}
     return [
-        {"code": 401, "indent": 0, "parameters": [first], "_original": original},
+        {
+            "code": 401,
+            "indent": 0,
+            "parameters": [first],
+            "_original": original,
+            **recorded,
+        },
         *({"code": 401, "indent": 0, "parameters": [row]} for row in rows),
     ]
 

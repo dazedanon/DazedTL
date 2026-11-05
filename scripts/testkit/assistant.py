@@ -18,6 +18,10 @@ whose file name starts with text_), archived-images (decode a WOLF game's
 Data/Picture.wolf into a folder, translate its text_ images through the
 Images steps on that folder, pack it again and checkpoint it, checking that
 the patch's download holds the image only inside the archive),
+kirikiri-images (unpack a KiriKiri game's data.xp3 with Len's XP3 tool into a
+folder, translate its text_ images, a BMP and a TLG, through the Images steps
+on that folder and pack the applied ones into a patch.xp3, checking each
+stays in its own format),
 edit-images (answer the image editing task whose request is FILE, of a
 Guided project too, editing each image's working copy and reviewing it, or
 reporting an error for each ID given with --error),
@@ -41,6 +45,7 @@ HELPER is a JSON list: the project helper's command without its subcommand.
 
 import argparse
 import hashlib
+import io
 import json
 import re
 import subprocess
@@ -67,6 +72,12 @@ MANIFEST = f"{WORK}/manifest.json"
 # The folder a WOLF game's Data/Picture.wolf is decoded into, which the game
 # doesn't read.
 DECODED = "decoded/Picture"
+# The folder a KiriKiri game's data.xp3 is unpacked into, and Len's XP3 tools.
+XP3_DECODED = "decoded/data"
+XP3_TOOLS = (
+    Path(__file__).resolve().parents[2]
+    / "backend/dazedtl/engine/data/skills/game-translation/tools/Game Archives/KiriKiri XP3"
+)
 # Where an assistant keeps its image recipes and the scripts they run.
 RESOURCES = ".dazedtl/image_translation_resources"
 RENDERER = f"{RESOURCES}/scripts/render.py"
@@ -89,6 +100,8 @@ class Assistant:
         self.wolf = any(game.glob("Data/*.wolf"))
         # A TyranoScript game's text is its scenario scripts.
         self.tyrano = (game / "tyrano").is_dir()
+        # A KiriKiri game keeps its files in xp3 archives beside its exe.
+        self.kirikiri = any(game.glob("*.xp3"))
         self.data = "ace_json" if self.ace else "data"
         # The game's language pair, which the game's own settings may name.
         settings = game / ".dazedtl/settings.json"
@@ -123,6 +136,23 @@ class Assistant:
             raise SystemExit(f"{action}: {json.dumps(run, ensure_ascii=False)[:2000]}")
         return run
 
+    def len_tool(self, script, *args):
+        """Runs one of Len's Python tools with the command the starting
+        prompt gives an assistant (python_command), whose UTF-8 mode a tool
+        printing a Japanese game path needs on Windows."""
+        from util.system import python_command
+
+        result = subprocess.run(
+            python_command(XP3_TOOLS / script, *args),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+        )
+        if result.returncode:
+            raise SystemExit(f"{script} failed: {result.stderr.strip()}")
+
     def report(self, phase):
         path = self.work / "report.json"
         path.write_text(json.dumps({"phase": phase}), encoding="utf-8")
@@ -146,6 +176,8 @@ class Assistant:
         evidence.write_text(
             "WOLF RPG Editor: Game.exe and Data/*.wolf archives.\n"
             if self.wolf
+            else "KiriKiri: Game.exe and data.xp3.\n"
+            if self.kirikiri
             else "TyranoScript: tyrano and data/scenario/*.ks.\n"
             if self.tyrano
             else "RPG Maker VX Ace: Data/*.rvdata2 and Game.ini.\n"
@@ -156,6 +188,8 @@ class Assistant:
         engine = (
             "WOLF RPG Editor"
             if self.wolf
+            else "KiriKiri"
+            if self.kirikiri
             else "TyranoScript"
             if self.tyrano
             else "RPG Maker VX Ace"
@@ -171,13 +205,18 @@ class Assistant:
         if events.is_file() and "\\\\N[1]" in events.read_text(encoding="utf-8-sig"):
             # It names the actor the text shows by her code with her ID.
             self.glossary("ミカ (Mika) - Female, actor ID 1")
-        if self.wolf or self.tyrano:
+        if self.wolf or self.tyrano or self.kirikiri:
             # The archives the translation packs again, or the scenarios it
-            # writes, are its patch.
+            # writes, are its patch; a KiriKiri game's is the patch.xp3 it
+            # packs.
             files = sorted(
                 path.relative_to(self.game).as_posix()
                 for path in self.game.glob(
-                    "Data/*.wolf" if self.wolf else "data/scenario/*.ks"
+                    "Data/*.wolf"
+                    if self.wolf
+                    else "patch.xp3"
+                    if self.kirikiri
+                    else "data/scenario/*.ks"
                 )
             )
             (self.game / MANIFEST).write_text(
@@ -345,6 +384,69 @@ class Assistant:
         print(
             "Download:", ", ".join(name for name in files if not name.startswith("."))
         )
+        self.report("patch")
+
+    def kirikiri_images(self):
+        """Translates the lettered images of a KiriKiri game's data.xp3 as the
+        starting prompt says for images in archives: unpacked with Len's XP3
+        tool into a folder the game doesn't read, run through the Images
+        steps on that folder, and the applied images packed into a
+        patch.xp3, which KiriKiri reads before data.xp3, and checkpointed.
+        Prints what the steps and the patch hold."""
+        from util.image_formats import png_name, to_png
+
+        self.report("images")
+        decoded = self.game / XP3_DECODED
+        self.len_tool("unpack_xp3.py", self.game / "data.xp3", decoded)
+        self.helper("images", "--scan", "--root", XP3_DECODED)
+        self.investigate()
+        step = self.helper("images", "--translate")
+        edit_images(self.game, Path(step["task"]).with_suffix(".json"))
+        applied = self.helper("images", "--apply")
+        if applied["next"] != "done" or applied["problems"]:
+            raise SystemExit("images --apply: " + json.dumps(applied)[:2000])
+        print("Applied:", ", ".join(applied["applied"]))
+        # Each image is applied in its own format, holding the edit.
+        for name in applied["applied"]:
+            raw = (self.game / name).read_bytes()
+            edited = self.game / ".dazedtl/images" / png_name(name)
+            with (
+                Image.open(edited) as copy,
+                Image.open(io.BytesIO(to_png(raw))) as game,
+            ):
+                same = copy.convert("RGBA").tobytes() == game.convert("RGBA").tobytes()
+            if raw.startswith(b"\x89PNG") or not same:
+                raise SystemExit(f"{name} was not applied in its own format")
+        names = [
+            Path(name).relative_to(XP3_DECODED).as_posix()
+            for name in applied["applied"]
+        ]
+        self.len_tool(
+            "pack_xp3.py", self.game / "patch.xp3", "--root", decoded, "--flat", *names
+        )
+        (self.game / MANIFEST).write_text(
+            json.dumps({"files": ["patch.xp3"]}), encoding="utf-8"
+        )
+        self.checkpoint("images: pack patch.xp3")
+        # The patch holds patch.xp3, the applied images in it by bare name.
+        with tempfile.TemporaryDirectory() as folder:
+            packed = Path(folder) / "patch.xp3"
+            packed.write_bytes(
+                subprocess.run(
+                    ["git", "-C", str(self.game), "show", "HEAD:patch.xp3"],
+                    capture_output=True,
+                    check=True,
+                ).stdout
+            )
+            out = Path(folder) / "out"
+            self.len_tool("unpack_xp3.py", packed, out)
+            held = sorted(path.name for path in out.iterdir())
+            for name in names:
+                if (out / Path(name).name).read_bytes() != (
+                    decoded / name
+                ).read_bytes():
+                    raise SystemExit(f"The patch's patch.xp3 differs at {name}")
+        print("patch.xp3:", ", ".join(held))
         self.report("patch")
 
     def glossary(self, entry):
@@ -1027,6 +1129,7 @@ def main() -> None:
             "write",
             "images",
             "archived-images",
+            "kirikiri-images",
             "edit-images",
             "checkpoint",
             "play",

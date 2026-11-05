@@ -1,7 +1,10 @@
 // Lands a finished branch on dev from its worktree, one landing at a time:
 // formats it, merges dev in, runs the tests and build, fast-forwards the main
-// checkout's dev and pushes it to every mirror. CI then runs on dev, and the
-// session that cuts the next release answers for a run still red. Runs on
+// checkout's dev and pushes it to every mirror. A branch that changes a path
+// land-lock.mjs's platformPaths marks first passes CI on GitHub on Windows and
+// Linux, without holding the lock; every other branch lands without waiting
+// for CI, which then runs on dev, and the session that cuts the next release
+// answers for a run still red. Runs on
 // Linux and macOS. A wait on the user's DazedTL or a slow landing lock is
 // told to the user on the desktop too, since agents run this in the
 // background. Each landing carries a record of the code review a reviewer
@@ -23,17 +26,27 @@
 // or a check failed and 2 on a merge conflict. --finish never waits without
 // a limit: it exits 3 when dev moved after the hand-off's checks, 4 at once
 // while the user's DazedTL runs from the main checkout, and 5 when the main
-// checkout cannot take it now, such as while another session holds the lock.
+// checkout cannot take it now, such as while another session holds the lock
+// or the hand-off's CI runs on GitHub.
 import fs from "node:fs";
 import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import { setTimeout as sleep } from "node:timers/promises";
 import { parseArgs } from "node:util";
 import {
+  ciRuns,
   failedJobs,
   failedRun,
+  firstFailure,
   ghToken,
   githubReader,
+  githubWriter,
+  plainJob,
+  rerunFailed,
+  startAgain,
+  unstarted,
+  waitForCI,
+  withOneRerun,
   workflow,
 } from "./ci-wait.mjs";
 import { NOTES } from "./changelog.mjs";
@@ -48,7 +61,11 @@ import {
 import {
   devMoved,
   gitIn,
+  knownLenses,
   LockBusy,
+  maxReviews,
+  platformSensitive,
+  reviewLenses,
   reviewLog,
   withLock,
 } from "./land-lock.mjs";
@@ -62,8 +79,6 @@ const pushTimeout = 5 * 60_000;
 const icon = path.join(import.meta.dirname, "..", "resources", "icon.png");
 /** The code-review levels a landing's review may run at: high and up. */
 const reviewLevels = ["high", "xhigh", "max", "ultra"];
-/** The most independent reviews one landing runs; the dazedtl-land skill says when another runs. */
-const maxReviews = 3;
 /**
  * What a finding is: a bug its reviewer showed with a failing test or a
  * command's output, a risk it could not show, or quality such as wording,
@@ -99,7 +114,7 @@ const lockLimit = 10 * 60_000;
  * Throws with what is wrong, so no branch lands on its author's review alone.
  * @param {string} text
  * @param {{ kinds?: boolean }} [options]
- * @returns {{ level: string, reviewer: "independent", reviews: number, head: string, findings: { summary: string, kind?: string, outcome: "fixed" | "dismissed", reason?: string, review: number }[] }}
+ * @returns {{ level: string, reviewer: "independent", reviews: number, head: string, lenses?: string[], findings: { summary: string, kind?: string, outcome: "fixed" | "dismissed", reason?: string, review: number }[] }}
  */
 export function readReview(text, { kinds = false } = {}) {
   let record;
@@ -134,6 +149,14 @@ export function readReview(text, { kinds = false } = {}) {
   if (!Array.isArray(record.findings))
     throw new Error(
       "The review record needs a findings list, empty when the review found nothing.",
+    );
+  const lenses = record.lenses === undefined ? [] : record.lenses;
+  if (
+    !Array.isArray(lenses) ||
+    lenses.some((lens) => !reviewLenses.includes(lens))
+  )
+    throw new Error(
+      `The review record's "lenses" lists the lenses every review ran, of ${reviewLenses.join(", ")}.`,
     );
   const findings = record.findings.map(
     (/** @type {any} */ item, /** @type {number} */ index) => {
@@ -171,8 +194,28 @@ export function readReview(text, { kinds = false } = {}) {
     reviewer: "independent",
     reviews,
     head: record.head,
+    ...(lenses.length ? { lenses: knownLenses(lenses) } : {}),
     findings,
   };
+}
+
+/**
+ * Whether a commit of a branch adds nothing that a review or CI run of the
+ * commit before it did not check: a merge of `dev`, whose commits were
+ * checked as they landed, or the formatter's commit.
+ * @param {ReturnType<typeof gitIn>} git
+ * @param {string} parents the commit's parents, space-separated
+ * @param {string} subject
+ * @param {string} dev
+ */
+function addsNothing(git, parents, subject, dev) {
+  const merged = parents.split(" ").slice(1);
+  return merged.length
+    ? merged.every(
+        (parent) =>
+          git(["merge-base", "--is-ancestor", parent, dev]).status === 0,
+      )
+    : subject === formatSubject;
 }
 
 /**
@@ -197,18 +240,13 @@ export function reviewedHead(git, head) {
     throw new Error(
       `The review record's head ${head} is not a commit on this branch.`,
     );
-  const onDev = (/** @type {string} */ parent) =>
-    git(["merge-base", "--is-ancestor", parent, "dev"]).status === 0;
   const after = lines(
     git(["log", "--first-parent", "--format=%P\t%h %s", `${commit}..HEAD`])
       .stdout,
   ).flatMap((line) => {
     const [parents, title] = line.split("\t", 2);
-    const merged = parents.split(" ").slice(1);
-    const reviewed = merged.length
-      ? merged.every(onDev)
-      : title.slice(title.indexOf(" ") + 1) === formatSubject;
-    return reviewed ? [] : [title];
+    const subject = title.slice(title.indexOf(" ") + 1);
+    return addsNothing(git, parents, subject, "dev") ? [] : [title];
   });
   if (after.length)
     throw new Error(
@@ -397,6 +435,7 @@ const outcome = (
  *   run: (cwd: string, command: string, args: string[], timeout?: number) => Promise<{ status: number, output: string }>,
  *   processes: () => string,
  *   read: ((route: string) => Promise<any>) | null,
+ *   write: ((route: string, request?: { method?: string, body?: unknown }) => Promise<any>) | null,
  *   wait: (ms: number) => Promise<unknown>,
  *   log: (line: string) => void,
  *   notify: (title: string, body: string) => void,
@@ -405,11 +444,32 @@ const outcome = (
  * }} Deps
  */
 
+/**
+ * The GitHub mirror the main checkout's release/mirrors.json names, where CI
+ * runs: its repository's owner/name for the API, and where to push to it as
+ * mirrorTargets says. Null when it names none.
+ * @param {ReturnType<typeof gitIn>} atMain
+ * @param {string} main
+ */
+function githubSite(atMain, main) {
+  const site = mirrors(main).find(
+    (/** @type {{ type: string }} */ mirror) => mirror.type === "github",
+  );
+  if (!site) return null;
+  const pushUrls = lines(
+    atMain(["remote", "get-url", "--push", "--all", "all"]).stdout,
+  );
+  return {
+    repo: new URL(site.url).pathname.replace(/^\/|\.git$/g, ""),
+    target: pushTargets([site], pushUrls)[0],
+  };
+}
+
 /** Warns, without stopping the landing, when dev's newest CI run failed. */
 async function warnRedDev(/** @type {Deps} */ { read, log }, main) {
-  const site = mirrors(main).find((mirror) => mirror.type === "github");
+  const site = githubSite(gitIn(main), main);
   if (!site || !read) return;
-  const repo = new URL(site.url).pathname.replace(/^\/|\.git$/g, "");
+  const { repo } = site;
   try {
     const found = await read(
       `repos/${repo}/actions/workflows/${path.basename(workflow)}/runs?branch=dev&status=completed&per_page=10`,
@@ -426,6 +486,399 @@ async function warnRedDev(/** @type {Deps} */ { read, log }, main) {
   } catch (error) {
     log(`Could not read dev's CI: ${reason(error)}`);
   }
+}
+
+/**
+ * The branch land.mjs pushes to GitHub for a landing's CI run, deleted once
+ * the run's outcome is known.
+ */
+const ciBranch = (/** @type {string} */ branch) => `land/${branch}`;
+/** How often, and how long, a landing looks for the CI run it started. */
+const ciStartPoll = 5000;
+const ciStartLimit = 3 * 60_000;
+const dispatchTries = 3;
+
+/**
+ * The paths a branch changes since it left `base`, a renamed file under both
+ * of its names.
+ * @param {ReturnType<typeof gitIn>} git
+ * @param {string} base
+ * @param {string} tip
+ */
+export function changedPaths(git, base, tip) {
+  return git(["diff", "--name-only", "--no-renames", "-z", `${base}...${tip}`])
+    .stdout.split("\0")
+    .filter(Boolean);
+}
+
+/**
+ * The commits of a branch whose passed CI run stands for `tip`, newest
+ * first: `tip`, then each first parent while the commit after it adds
+ * nothing (addsNothing), down to the branch's newest commit of its own. So a
+ * branch that merges dev again after its CI passed needs no second run.
+ * @param {ReturnType<typeof gitIn>} git
+ * @param {string} tip
+ * @param {string} dev
+ */
+export function ciCommits(git, tip, dev) {
+  /** @type {string[]} */
+  const commits = [];
+  const log = git([
+    "log",
+    "--first-parent",
+    "--max-count=50",
+    "--format=%H\t%P\t%s",
+    tip,
+  ]).stdout;
+  for (const line of lines(log)) {
+    const [hash, parents = "", subject = ""] = line.split("\t");
+    if (git(["merge-base", "--is-ancestor", hash, dev]).status === 0) break;
+    commits.push(hash);
+    if (
+      !addsNothing(git, parents, subject, dev) ||
+      resolved(git, hash, parents)
+    )
+      break;
+  }
+  return commits;
+}
+
+/**
+ * Whether a merge holds more than Git merges by itself, such as a resolved
+ * conflict, which no CI run of its parents checked.
+ * @param {ReturnType<typeof gitIn>} git
+ * @param {string} hash
+ * @param {string} parents
+ */
+function resolved(git, hash, parents) {
+  const merged = parents.split(" ");
+  if (merged.length < 2) return false;
+  // Git writes a tree even for a conflicting merge, markers and all.
+  const tree = lines(git(["merge-tree", "--write-tree", ...merged]).stdout)[0];
+  if (!tree) return true;
+  const differs = git(["diff", "--name-only", "-z", tree, hash]);
+  return (
+    differs.status !== 0 ||
+    differs.stdout
+      .split("\0")
+      .some((file) => file && !mergedByLanding.includes(file))
+  );
+}
+
+/**
+ * The files mergeDev merges in its own way, which a plain merge of Git's
+ * would leave conflicting: the release notes, merged by kind, and the
+ * generated API contracts, written again.
+ */
+export const mergedByLanding = [NOTES, ...generated];
+
+/**
+ * What CI on GitHub says of a branch's commits (ciCommits): "passed" when a
+ * run of any of them passed; else, from the newest run of the first,
+ * "running" or "failed"; else "running" while a run of a later one is; and
+ * "none" when there is no run to follow, such as a cancelled one.
+ * @param {(route: string) => Promise<any>} read
+ * @param {string} repo
+ * @param {string[]} commits
+ * @returns {Promise<{ state: "passed" | "running" | "failed", run: any } | { state: "none", run: null }>}
+ */
+async function ciStatus(read, repo, commits) {
+  let newest = null;
+  /** @type {any[]} */
+  let headRuns = [];
+  let running = null;
+  for (const [index, sha] of commits.entries()) {
+    const runs = ciRuns(
+      await read(`repos/${repo}/actions/runs?head_sha=${sha}&per_page=50`),
+    );
+    const passed = runs.find(
+      (run) => run.status === "completed" && run.conclusion === "success",
+    );
+    if (passed) return { state: "passed", run: passed };
+    if (index === 0) {
+      headRuns = runs;
+      newest = runs[0] ?? null;
+    }
+    running ??= runs.find((run) => run.status !== "completed") ?? null;
+  }
+  if (newest && newest.status !== "completed")
+    return { state: "running", run: newest };
+  if (newest && failedRun(newest) && !startAgain(headRuns))
+    return { state: "failed", run: newest };
+  // A run of an earlier commit, such as from before a merge of dev, stands
+  // if it passes, and a new one on the same branch would cancel it.
+  if (running) return { state: "running", run: running };
+  return { state: "none", run: null };
+}
+
+/**
+ * @typedef {{ cwd: string, options: string[], site: NonNullable<ReturnType<typeof githubSite>>, branch: string }} CIBranch
+ */
+
+/**
+ * Pushes `sha` to GitHub as the landing's CI branch and starts CI on it.
+ * Resolves the new run, looked for only when `find` says so, or the lines
+ * saying why it did not start.
+ * @param {Deps} deps
+ * @param {CIBranch} where
+ * @param {string} sha
+ * @param {boolean} find
+ * @returns {Promise<{ run: any } | { reason: string[] }>}
+ */
+async function startCI(deps, { cwd, options, site, branch }, sha, find) {
+  const read = /** @type {NonNullable<Deps["read"]>} */ (deps.read);
+  const write = /** @type {NonNullable<Deps["write"]>} */ (deps.write);
+  const now = deps.now ?? Date.now;
+  const pushed = await deps.run(
+    cwd,
+    "git",
+    [
+      ...options,
+      "push",
+      "--force",
+      site.target.url,
+      `${sha}:refs/heads/${ciBranch(branch)}`,
+    ],
+    pushTimeout,
+  );
+  if (pushed.status !== 0)
+    return {
+      reason: [
+        tail(pushed.output, 5),
+        `Pushing ${sha.slice(0, 7)} to ${site.target.name} for CI failed.`,
+      ],
+    };
+  const route = `repos/${site.repo}/actions/runs?head_sha=${sha}&per_page=50`;
+  const known = new Set(
+    find ? ciRuns(await read(route)).map((run) => run.id) : [],
+  );
+  // GitHub can answer 422 for a ref pushed a moment ago, so a refused
+  // dispatch is sent again a few times.
+  for (let attempt = 1; ; attempt++)
+    try {
+      await write(
+        `repos/${site.repo}/actions/workflows/${path.basename(workflow)}/dispatches`,
+        { body: { ref: ciBranch(branch) } },
+      );
+      break;
+    } catch (error) {
+      if (attempt >= dispatchTries || !/ 422 /.test(reason(error))) throw error;
+      await deps.wait(ciStartPoll);
+    }
+  if (!find) return { run: null };
+  const since = now();
+  for (;;) {
+    const run = ciRuns(await read(route)).find((item) => !known.has(item.id));
+    if (run) return { run };
+    if (now() - since >= ciStartLimit)
+      return {
+        reason: [
+          `CI did not start on GitHub for ${sha.slice(0, 7)} within ${ciStartLimit / 60_000} minutes.`,
+        ],
+      };
+    await deps.wait(ciStartPoll);
+  }
+}
+
+/** Deletes the landing's CI branch from GitHub, if it is there. */
+async function dropCIBranch(
+  /** @type {Deps} */ deps,
+  /** @type {CIBranch} */ { cwd, options, site, branch },
+) {
+  const dropped = await deps.run(
+    cwd,
+    "git",
+    [
+      ...options,
+      "push",
+      site.target.url,
+      "--delete",
+      `refs/heads/${ciBranch(branch)}`,
+    ],
+    pushTimeout,
+  );
+  if (dropped.status !== 0 && !/remote ref does not exist/.test(dropped.output))
+    deps.log(
+      `Could not delete ${ciBranch(branch)} from ${site.target.name}; delete it there later:\n${tail(dropped.output, 5)}`,
+    );
+}
+
+/**
+ * Has the branch at `tip`, which changes the `sensitive` paths that
+ * platformSensitive marks, pass CI on GitHub on Windows and Linux before it
+ * lands. A run that passed for it, or for the commit it merged dev onto,
+ * stands; else it pushes `tip` to GitHub and starts one, and a first failure
+ * gets one rerun of its failed jobs. With `follow` it waits for the outcome;
+ * without, since --finish never waits long, it resolves mainBusy while CI
+ * runs so the caller finishes again later. The pushed branch is deleted once
+ * the outcome is known, and by a waiting landing however it ends. Resolves
+ * null once CI passed, else the outcome that stops the landing, naming a
+ * failed check in plain words.
+ * @param {Deps} deps
+ * @param {CIWhere} where
+ * @returns {Promise<Outcome | null>}
+ */
+export async function branchCI(deps, where) {
+  const { git, cwd, main, branch, options = [], follow } = where;
+  const site = githubSite(git, main);
+  if (!follow) {
+    const result = await ciOutcome(deps, where, site);
+    if (site && result?.code !== mainBusy)
+      await dropCIBranch(deps, { cwd, options, site, branch });
+    return result;
+  }
+  try {
+    return await ciOutcome(deps, where, site);
+  } finally {
+    if (site) await dropCIBranch(deps, { cwd, options, site, branch });
+  }
+}
+
+/**
+ * @typedef {{ git: ReturnType<typeof gitIn>, cwd: string, main: string, branch: string, tip: string, sensitive: string[], options?: string[], follow: boolean, again: string }} CIWhere
+ */
+
+/**
+ * branchCI's outcome, leaving the pushed branch to it.
+ * @param {Deps} deps
+ * @param {CIWhere} where
+ * @param {ReturnType<typeof githubSite>} site
+ * @returns {Promise<Outcome | null>}
+ */
+async function ciOutcome(
+  deps,
+  { git, cwd, branch, tip, sensitive, options = [], follow, again },
+  site,
+) {
+  const { read, write, log } = deps;
+  const short = tip.slice(0, 7);
+  // Trouble reaching GitHub clears by itself; --finish tries again later.
+  const unreached = follow ? 1 : mainBusy;
+  const retry = follow
+    ? "Nothing landed; land again."
+    : "Nothing changed; finish again later.";
+  const paths =
+    sensitive.length === 1
+      ? sensitive[0]
+      : `${sensitive[0]} and ${sensitive.length - 1} more`;
+  log(
+    `${branch} changes ${paths}, so it lands once CI passes on Windows and Linux (platformPaths in scripts/land-lock.mjs).`,
+  );
+  if (!site)
+    return outcome(
+      1,
+      "release/mirrors.json names no GitHub mirror to run CI on; nothing landed.",
+    );
+  // The user's to fix, not the branch's: --finish tries again later.
+  if (!read || !write)
+    return outcome(
+      unreached,
+      "This needs CI on GitHub, and land.mjs has no GitHub token: sign in with gh auth login or set GH_TOKEN.",
+      retry,
+    );
+  /** @type {CIBranch} */
+  const where = { cwd, options, site, branch };
+  let result;
+  try {
+    let status = await ciStatus(
+      read,
+      site.repo,
+      ciCommits(git, tip, "refs/heads/dev"),
+    );
+    if (status.state === "none") {
+      const started = await startCI(deps, where, tip, follow);
+      if ("reason" in started)
+        return outcome(unreached, ...started.reason, retry);
+      // --finish comes back for the run it started.
+      if (!started.run)
+        return outcome(
+          mainBusy,
+          `CI started on Windows and Linux for ${short}; it lands once CI passes.`,
+          retry,
+        );
+      status = { state: "running", run: started.run };
+    }
+    const { run } = status;
+    if (status.state === "passed") result = { ok: true, run };
+    else if (follow)
+      result = await withOneRerun({
+        wait: (rerun) =>
+          waitForCI({
+            sha: tip,
+            branch: ciBranch(branch),
+            repository: site.repo,
+            read,
+            wait: deps.wait,
+            now: deps.now,
+            rerun: rerun ?? { id: run.id, attempt: run.run_attempt ?? 1 },
+            log,
+          }),
+        write,
+        repository: site.repo,
+        log,
+      });
+    else if (status.state === "running" || firstFailure(run)) {
+      if (status.state === "failed")
+        await rerunFailed({ run, write, repository: site.repo, log });
+      return outcome(
+        mainBusy,
+        `CI runs on Windows and Linux for ${short} before it lands: ${run.html_url}`,
+        retry,
+      );
+    } else
+      result = {
+        ok: false,
+        run,
+        failed: await failedJobs(read, site.repo, run),
+      };
+  } catch (error) {
+    return outcome(
+      unreached,
+      `Could not run CI on GitHub for ${short}: ${reason(error)}`,
+      retry,
+    );
+  }
+  const { run } = result;
+  if (result.ok) {
+    log(`CI passed for ${run.head_sha.slice(0, 7)}: ${run.html_url}`);
+    return null;
+  }
+  if (run?.status !== "completed")
+    return outcome(
+      unreached,
+      `${result.reason ?? "CI did not finish."} ${run?.html_url ?? ""}`.trim(),
+      retry,
+    );
+  const rerun = (run.run_attempt ?? 1) > 1 ? " after one rerun" : "";
+  const ended = unstarted(run)
+    ? "could not start"
+    : failedRun(run)
+      ? "failed"
+      : `ended as ${run.conclusion}`;
+  const checks = (result.failed ?? []).map(plainJob);
+  // A commit whose one run did not start gets a fresh one (startAgain).
+  if (
+    unstarted(run) &&
+    startAgain(
+      ciRuns(
+        await read(
+          `repos/${site.repo}/actions/runs?head_sha=${run.head_sha}&per_page=50`,
+        ).catch(() => null),
+      ),
+    )
+  )
+    return outcome(
+      unreached,
+      run.html_url,
+      `CI could not start for ${short}, which says nothing of the branch: ${again} for a fresh run.`,
+    );
+  // The plain line comes last, where a caller reading the tail sees it.
+  return outcome(
+    1,
+    run.html_url,
+    `Read the log with: gh run view ${run.id} --repo ${site.repo} --log-failed`,
+    `CI ${ended}${rerun} for ${short}, so nothing landed${checks.length ? `. Failed: ${checks.join("; ")}` : ""}. Fix it, then ${again}.`,
+  );
 }
 
 /** Refuses to run on Windows, saying so. */
@@ -560,9 +1013,41 @@ export async function land(cwd, deps, reviewFile) {
     return unformatted.code;
   }
   time.lap("format");
+  // CI runs before the lock, so other landings go on during its minutes;
+  // what dev gains meanwhile merges in under the lock, as for any landing.
+  const sensitive = platformSensitive(
+    changedPaths(git, "refs/heads/dev", "HEAD"),
+  );
+  /** @type {string | undefined} */
+  let tested;
+  if (sensitive.length) {
+    // CI tests the branch with today's dev, which may hold fixes it needs,
+    // and only once the local checks pass, which take a minute, not ten.
+    const stopped =
+      (await mergeDev(git, top, deps.run, log)) ??
+      (await runChecks(deps, top, branch, time)) ??
+      (await branchCI(deps, {
+        git,
+        cwd: top,
+        main,
+        branch,
+        tip: git(["rev-parse", "HEAD"]).stdout.trim(),
+        sensitive,
+        follow: true,
+        again: `land ${branch} again`,
+      }));
+    if (stopped) return reported(deps, stopped, time);
+    time.lap("CI");
+    tested = git(["rev-parse", "HEAD"]).stdout.trim();
+  }
+  const checked = git(["rev-parse", "HEAD"]).stdout.trim();
   return lockedRun(deps, git, { branch, worktree: top }, time, (tell) =>
-    underLock(deps, { top, main, branch }, time, tell, (range) =>
-      recordReview(deps, common, { branch, range, review }),
+    underLock(
+      deps,
+      { top, main, branch, checked, tested },
+      time,
+      tell,
+      (range) => recordReview(deps, common, { branch, range, review }),
     ),
   );
 }
@@ -864,18 +1349,29 @@ function landed(git, before, head, unpushed) {
 /**
  * The landing itself, while this session holds the lock.
  * @param {Deps} deps
- * @param {{ top: string, main: string, branch: string }} where
+ * @param {{ top: string, main: string, branch: string, checked: string, tested?: string }} where `checked` is the head the review and any branch CI covered, `tested` the one the local checks passed for before CI
  * @param {ReturnType<typeof timer>} time
  * @param {(line: string) => void} tell
  * @param {(range: string) => void} record records the review of a landed range
  * @returns {Promise<Outcome>}
  */
-async function underLock(deps, { top, main, branch }, time, tell, record) {
+async function underLock(
+  deps,
+  { top, main, branch, checked, tested },
+  time,
+  tell,
+  record,
+) {
   const { run, log } = deps;
   const git = gitIn(top);
   const atMain = gitIn(main);
   const out = (/** @type {string[]} */ ...args) => git(args).stdout.trim();
   time.lap("lock wait");
+  if (out("rev-parse", "HEAD") !== checked)
+    return outcome(
+      1,
+      `${branch} gained commits while this landing waited; have your last reviewer check them, record the new head and land again.`,
+    );
   const before = out("rev-parse", "dev");
 
   const merged = await mergeDev(git, top, run, log);
@@ -884,7 +1380,9 @@ async function underLock(deps, { top, main, branch }, time, tell, record) {
   time.lap("merge");
   if (head === before)
     return outcome(0, `dev already has every commit of ${branch}.`);
-  const failed = await runChecks(deps, top, branch, time);
+  // Checks that passed before CI hold while dev brought nothing new.
+  const failed =
+    head === tested ? null : await runChecks(deps, top, branch, time);
   if (failed) return failed;
 
   // The fast-forward rewrites the files the user's DazedTL runs from.
@@ -1194,6 +1692,24 @@ async function finishUnderLock(
         `The hand-off's head ${head.slice(0, 7)} does not build on its base ${base.slice(0, 7)}; nothing landed.`,
       );
     time.lap("verify");
+    // CI comes before the check that dev has not moved: dev moving while it
+    // runs needs no new run, since its pass stands once the worker merges dev.
+    const sensitive = platformSensitive(changedPaths(git, base, head));
+    if (sensitive.length) {
+      const stopped = await branchCI(deps, {
+        git,
+        cwd: main,
+        main,
+        branch,
+        tip: head,
+        sensitive,
+        options: sealed,
+        follow: false,
+        again: `hand ${branch} off again`,
+      });
+      if (stopped) return stopped;
+      time.lap("CI");
+    }
     const dev = out("rev-parse", "--verify", "refs/heads/dev");
     if (dev !== base)
       return outcome(
@@ -1260,6 +1776,7 @@ function realDeps() {
     processes: () =>
       spawnSync("ps", ["-eo", "args"], { encoding: "utf8" }).stdout ?? "",
     read: token ? githubReader({ token, log: console.log }) : null,
+    write: token ? githubWriter({ token }) : null,
     wait: sleep,
     log: (line) => console.log(line),
     notify: notifyDesktop,

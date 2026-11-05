@@ -755,9 +755,9 @@ const manualLed = [
   ],
 ];
 
-/** Each message's and choice's text in a game's map, whitespace collapsed,
- * in play order: what players read, however its rows are laid out. */
-function shownText(state, game) {
+/** Each message's rows and each choice in a game's map, in play order: what
+ * players read, row by row. */
+function shownRows(state, game) {
   const data = path.join(contentFolder(state.variants, game), "data");
   const map = JSON.parse(
     fs.readFileSync(path.join(data, "Map001.json"), "utf8"),
@@ -768,16 +768,45 @@ function shownText(state, game) {
       let message = null;
       for (const command of [...page.list, { code: 0 }]) {
         if (command.code === 401) {
-          message = [...(message ?? []), command.parameters[0]];
+          message = [...(message ?? []), ...command.parameters[0].split("\n")];
           continue;
         }
-        if (message) shown.push(message.join(" ").replace(/\s+/g, " ").trim());
+        if (message?.length) shown.push(message);
         message = command.code === 101 ? [] : null;
-        if (command.code === 102) shown.push(...command.parameters[0]);
+        if (command.code === 102)
+          shown.push(...command.parameters[0].map((choice) => [choice]));
       }
     }
-  return shown.filter(Boolean);
+  return shown;
 }
+
+/** Each message's and choice's text in a game's map, whitespace collapsed,
+ * in play order: what players read, however its rows are laid out. */
+const shownText = (state, game) =>
+  shownRows(state, game)
+    .map((rows) => rows.join(" ").replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+
+/** Turns on First-line names in Context's speaker detection, as a user does
+ * for a game whose messages name their speaker on a row of its own. */
+async function firstLineNames(page) {
+  await page.click("2Context");
+  await page.click("Names & glossary");
+  await page.click("Speaker detection");
+  await page.click("First-line names");
+  await page.click("Save & close");
+  await until(
+    "First-line names to be saved",
+    async () =>
+      (await page.call("workspace_snapshot")).guided.preferences.values
+        .engine_options.FIRSTLINESPEAKERS === true,
+  );
+}
+
+// The first-line-speaker game variant's message: its nameplate row and speech.
+const nameplate = "新米警察官";
+const nameplateSpeech =
+  "「すいません‼ちょっと目を離したすきに\n　入り込みまして…‼";
 
 const sharedFile = [
   [
@@ -798,6 +827,33 @@ const sharedFile = [
         )
       )
         throw new Error("The export holds no translated map line.");
+      if (!state.variants.includes("first-line-speaker")) return;
+      // The nameplate is a line of its own, and its speech the next part.
+      const name = lines.find((line) => line.source === nameplate);
+      const speech = lines.find((line) => line.id === `${name?.id}~1`);
+      const shape = (line) =>
+        line && { kind: line.kind, speaker: line.speaker, source: line.source };
+      const want = [
+        { kind: "ui", speaker: null, source: nameplate },
+        { kind: "dialogue", speaker: nameplate, source: nameplateSpeech },
+      ];
+      if (
+        !/^Map001\.json#\/[^~]+$/.test(name?.id) ||
+        JSON.stringify([shape(name), shape(speech)]) !== JSON.stringify(want)
+      )
+        throw new Error(
+          `The export's nameplate lines: ${JSON.stringify([name, speech])}`,
+        );
+      // A file edited by hand may hold the speech on one row, too long for
+      // a window's line, which Apply must wrap below the nameplate.
+      const file = JSON.parse(fs.readFileSync(state.shared, "utf8"));
+      const edited = file.lines.find((line) => line.id === speech.id);
+      if (!edited?.translation)
+        throw new Error(
+          `The export's speech line has no translation: ${JSON.stringify(edited)}`,
+        );
+      edited.translation = edited.translation.replace(/\s*\n\s*/g, " ");
+      fs.writeFileSync(state.shared, JSON.stringify(file));
     },
   ],
   [
@@ -808,6 +864,8 @@ const sharedFile = [
       await makeGame(state.variants, state.game);
       await openFolder(page, state, state.game, "Guided steps");
       await setUp(page);
+      if (state.variants.includes("first-line-speaker"))
+        await firstLineNames(page);
     },
   ],
   [
@@ -836,6 +894,15 @@ const sharedFile = [
       if (JSON.stringify(mine) !== JSON.stringify(theirs))
         throw new Error(
           `The copy shows ${JSON.stringify(mine)}, the translated game ${JSON.stringify(theirs)}.`,
+        );
+      // A nameplate keeps its row, however the speech after it wraps.
+      const first = (game) => shownRows(state, game).map((rows) => rows[0]);
+      if (
+        JSON.stringify(first(state.game)) !==
+        JSON.stringify(first(state.guidedGame))
+      )
+        throw new Error(
+          `The copy's messages start ${JSON.stringify(shownRows(state, state.game))}, the translated game's ${JSON.stringify(shownRows(state, state.guidedGame))}.`,
         );
     },
   ],
@@ -2506,6 +2573,36 @@ export const scenarios = {
       ],
     ],
   },
+  "images-kirikiri": {
+    description:
+      "An Assistant-led project on the KiriKiri game: the assistant unpacks data.xp3 with Len's XP3 tool into a folder, translates its lettered BMP title screen and TLG menu through the Images steps on that folder, each applied in its own format, then packs them into a patch.xp3 and checkpoints it; Images lists both under their own names, applied.",
+    game: "kirikiri",
+    steps: () => [
+      assistantLed[0],
+      assistantLed[1],
+      [
+        "The assistant translates the images in data.xp3 and packs them into patch.xp3",
+        async ({ page, state }) => {
+          console.log(
+            `\n  ${(await assistant(page, state, "kirikiri-images")).trim().replaceAll("\n", "\n  ")}`,
+          );
+        },
+      ],
+      [
+        "Images lists the BMP and the TLG under their own names, applied",
+        async ({ page }) => {
+          for (const id of [
+            "decoded/data/image/text_title.bmp",
+            "decoded/data/image/text_menu.tlg",
+          ]) {
+            const row = await imageRow(page, id);
+            if (row?.id !== id || row.state !== "applied" || row.staleReason)
+              throw new Error(`Images reads ${id} as ${JSON.stringify(row)}.`);
+          }
+        },
+      ],
+    ],
+  },
   "assistant-released": {
     description:
       "An Assistant-led project the assistant translated and wrote, but for one line its extractor missed, then played, that line translated through its extraction and injection once Text QA counted it never translated, reviewed with Text QA through the project helper, one correction applied, and played again before packaging; Progress holds QA at Final check until that playtest settles, the Playtest tab then reads Skipped for the game it could not play, its Patch phase shows the patch ZIP, and Release builds a clean game ZIP and saves the patch ZIP, with QA's correction and that line, where it suggests.",
@@ -2764,8 +2861,15 @@ export const scenarios = {
   },
   shared: {
     description:
-      "Translated and applied with Guided steps, exported from the Project page as a translation file, and imported into an untranslated copy of the game, where Translate applies it: the copy shows the same text.",
-    steps: () => [open, ...setup, ...translateAll, ...sharedFile],
+      "Translated and applied with Guided steps and First-line names on, exported from the Project page as a translation file whose first-row nameplate is a line apart from its speech, the speech then edited onto one long row, and imported into an untranslated copy of the game, where Translate applies it: the copy shows the same text, the nameplate on its own row.",
+    game: "first-line-speaker",
+    steps: () => [
+      open,
+      ...setup,
+      ["Turn on First-line names", ({ page }) => firstLineNames(page)],
+      ...translateAll,
+      ...sharedFile,
+    ],
   },
   manual: {
     description:

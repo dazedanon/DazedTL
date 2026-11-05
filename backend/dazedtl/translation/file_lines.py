@@ -36,8 +36,6 @@ _MAP = re.compile(r"Map\d+\.json")
 # Database fields the database pass translates, beyond those players read in
 # menus: map names, which some plugins show.
 _MAP_INFOS = "MapInfos.json"
-# System values the engine leaves as they are.
-_KEPT_SYSTEM = frozenset({"currencyUnit"})
 
 
 # A 101's name window may wrap its name in colour codes and 【】, and hold
@@ -71,6 +69,14 @@ class Line(NamedTuple):
     # The path of the command an event text block starts at, its window
     # command for a message; () for any other line.
     start: tuple = ()
+    # For each of *units*, the speaker a nameplate on a row of its own names,
+    # which the engine sends apart from the speech after it; "" for others.
+    # Read only as lines() reads the texts the engine sends.
+    names: tuple[str, ...] = ()
+    # For each of *units*, whether the engine reads it, False for rows it
+    # skips as holding nothing it sends (rpgmaker_blocks `Text`); read as
+    # names are.
+    read: tuple[bool, ...] = ()
 
     def sent(self) -> tuple[tuple[str, str | None], ...]:
         """The text the engine sends as one, each with its source."""
@@ -92,11 +98,19 @@ class Line(NamedTuple):
         """The Japanese a person compares the line with: each sent text's
         source, else the text itself, which is its own source while the engine
         keeps none (util/source_text)."""
-        shown = (
-            source if source and source.strip() else text
-            for text, source in self.sent()
-        )
-        return "\n".join(value for value in shown if value.strip())
+        shown_texts = (shown(text, source) for text, source in self.sent())
+        return "\n".join(value for value in shown_texts if value.strip())
+
+
+def shown(text: str, source: str | None) -> str:
+    """The Japanese a person compares a sent text with: its source, else
+    the text itself, which is its own source while the engine keeps none."""
+    return source if source and source.strip() else text
+
+
+def name_box(paths: tuple[tuple, ...]) -> bool:
+    """Whether a sent text's paths are a message's name box."""
+    return paths[0][-2:] == ("parameters", 4)
 
 
 def _resolve(document: Any, path: tuple) -> Any:
@@ -122,29 +136,44 @@ def _entry_original(document: Any, path: tuple) -> tuple[str, ...]:
 
 
 def _visible(
-    name: str, document: Any, markers: frozenset[str] = frozenset()
+    name: str,
+    document: Any,
+    markers: frozenset[str] = frozenset(),
+    variables: frozenset[int] = frozenset(),
 ) -> Iterator[tuple[tuple[Any, ...], Any, str, bool, str | None]]:
     """Text QA's reader (a QA engine source, read unchanged so its tasks'
     fingerprint holds): each text's path, value, kind, `_original` flag and
     the source it keeps there."""
     from util.rpgmaker_qa_preflight import visible_texts
 
-    yield from visible_texts(name, document, markers)
+    yield from visible_texts(name, document, markers, variables)
 
 
 def lines(
-    name: str, document: Any, phase: str, markers: frozenset[str] = frozenset()
+    name: str,
+    document: Any,
+    phase: str,
+    markers: frozenset[str] = frozenset(),
+    variables: frozenset[int] = frozenset(),
+    reading: Any = None,
 ) -> list[Line]:
     """Each line of a phase's scope ("database" or "dialogue") in one data
     file, in file order, whether or not it is in scope. Event text reads its
     blocks as util/rpgmaker_blocks defines them; choice help, and other
     comments a plugin shows, count under *markers*, the comment markers
-    Comment text translates, none while it is off."""
+    Comment text translates, none while it is off. System.json's terms
+    include the names of the *variables* the game's plugins draw
+    (util/rpgmaker_variable_names). With a *reading* (rpgmaker_blocks
+    `Reading`, the project's speaker settings), a message's and scrolling
+    text's units are the texts the engine sends of the game's own rows
+    (rpgmaker_blocks `sent_texts`), alike in every copy, each read as the
+    engine joins its rows (`text_source`); otherwise its parts, which counts
+    read."""
     from util import rpgmaker_blocks as blocks
     from util.rpgmaker_scope import changes
 
     if phase == "database":
-        return _database(name, document)
+        return _database(name, document, variables)
     found: list[Line] = []
     if not (_MAP.fullmatch(name) or name in {"CommonEvents.json", "Troops.json"}):
         return found
@@ -210,15 +239,35 @@ def lines(
             for row in block.rows:
                 paths.append((*listed, row, "parameters", 0))
                 texts.append(blocks.text(commands[row]))
-            for part in block.parts:
-                source = blocks.source(commands, part)
+            names = [""] * len(units)
+            read = [True] * len(units)
+            # A message's texts as the engine sends them, read by *reading*.
+            sending = reading if kind in (blocks.MESSAGE, blocks.SCROLL) else None
+            if sending is not None:
+                sent = [
+                    (each.rows, each.source, each.name, each.sent)
+                    for each in blocks.sent_texts(commands, block, sending)
+                ]
+            else:
+                sent = [
+                    (part.rows, blocks.source(commands, part), "", True)
+                    for part in block.parts
+                ]
+            for rows, source, speaker, reached in sent:
                 if source is not None:
                     sources.append(source)
-                rows = (blocks.text(commands[row]) for row in part.rows)
-                units.append(("\n".join(row for row in rows if row.strip()), source))
-                places.append(
-                    tuple((*listed, row, "parameters", 0) for row in part.rows)
+                values = [blocks.text(commands[row]) for row in rows]
+                units.append(
+                    (
+                        blocks.text_source(values)
+                        if sending is not None
+                        else "\n".join(value for value in values if value.strip()),
+                        source,
+                    )
                 )
+                places.append(tuple((*listed, row, "parameters", 0) for row in rows))
+                names.append(speaker)
+                read.append(reached)
             if paths:
                 listing.append(
                     Line(
@@ -229,6 +278,8 @@ def lines(
                         tuple(units),
                         tuple(places),
                         (*listed, block.start),
+                        tuple(names) if reading is not None else (),
+                        tuple(read) if reading is not None else (),
                     )
                 )
         # In file order: by the command each line starts at.
@@ -321,13 +372,13 @@ def _fields(name: str, document: Any) -> Any:
     if name == "System.json" and isinstance(document, dict):
         return {
             key: document[key]
-            for key in (*SYSTEM_FIELDS, "_original")
+            for key in (*SYSTEM_FIELDS, "variables", "_original")
             if key in document
         }
     return document
 
 
-def _database(name: str, document: Any) -> list[Line]:
+def _database(name: str, document: Any, variables: frozenset[int]) -> list[Line]:
     found = []
     if name == _MAP_INFOS:
         entries = (
@@ -350,11 +401,9 @@ def _database(name: str, document: Any) -> list[Line]:
                 )
         return found
     for path, value, kind, _translated, source in _visible(
-        name, _fields(name, document)
+        name, _fields(name, document), variables=variables
     ):
         if not isinstance(value, str) or kind not in ("database field", "system term"):
-            continue
-        if kind == "system term" and path[0] in _KEPT_SYSTEM:
             continue
         found.append(
             Line(kind, (path,), (value,), (source,) if source is not None else ())
@@ -372,13 +421,15 @@ def _read(
     phase: str,
     markers: frozenset[str],
     original: Callable[[], Any],
+    variables: frozenset[int] = frozenset(),
+    reading: Any = None,
 ) -> list[Line]:
     """lines() of a file, where a map name or note label keeps no source
     and the original game file decides it, read against `original()`'s
     map: read only then, once."""
     from util.source_text import source_left
 
-    found = lines(name, document, phase, markers)
+    found = lines(name, document, phase, markers, variables, reading)
     if not any(
         line.kind in _UNKEPT
         and not line.sources
@@ -400,10 +451,13 @@ def read(
     phase: str,
     markers: frozenset[str],
     original: Callable[[], Any],
+    variables: frozenset[int] = frozenset(),
+    reading: Any = None,
 ) -> list[Line]:
-    """lines() of a file as counts read it: a map name or note label keeping
-    no source of its own takes the original game file's (`_read`)."""
-    return _read(name, document, phase, markers, original)
+    """lines() of a file as counts read it, or with a *reading* as the
+    engine sends its texts: a map name or note label keeping no source of
+    its own takes the original game file's (`_read`)."""
+    return _read(name, document, phase, markers, original, variables, reading)
 
 
 def state(line: Line, notes: frozenset[str]) -> str | None:
@@ -471,8 +525,10 @@ def _is_blob(raw: bytes, blob: str | None) -> bool:
 # translated: the counts the profile keeps (translation/derived) are then read
 # again. What counts as a refusal note is refusals.RULES_VERSION, and what
 # reads as Japanese left engine util/source_text RULES_VERSION, which their
-# section names too (`counts_section`).
-COUNT_VERSION = 2
+# section names too (`counts_section`). System.json's counts are kept under
+# the drawn variables they read too (guided_inputs line_counts). Never reuse
+# a value a build kept counts under: 3 was a development build's.
+COUNT_VERSION = 5
 
 
 def counts_section() -> str:
@@ -489,6 +545,7 @@ def read_counts(
     markers: frozenset[str],
     original_blob: str | None = None,
     original: Callable[[], Any] = lambda: None,
+    variables: frozenset[int] = frozenset(),
 ) -> dict[str, Any] | None:
     """count() of a file's bytes, None when they hold no game data it reads;
     `original_blob` is the original game file's Git blob, when known, and
@@ -504,6 +561,7 @@ def read_counts(
             markers,
             (lambda: None) if _is_blob(raw, original_blob) else original,
             look_for_notes=may_hold_notes(raw, original_blob),
+            variables=variables,
         )
     except ValueError:
         return None
@@ -521,6 +579,7 @@ def count(
     original: Callable[[], Any] = lambda: None,
     *,
     look_for_notes: bool = True,
+    variables: frozenset[int] = frozenset(),
 ) -> dict[str, Any]:
     """A file's line counts: lines in scope, those translated, those holding
     a refusal note and the choice help left; `otherNotes` counts refusal notes
@@ -528,11 +587,12 @@ def count(
     text (a database file counts them as lines left), and `mapName`
     is a translated map display name whose source decides its scope.
     `look_for_notes` false skips looking for notes in a file that holds
-    none (may_hold_notes())."""
+    none (may_hold_notes()). System.json counts the names of the *variables*
+    the game's plugins draw (util/rpgmaker_variable_names)."""
     notes = note_pointers(document, original) if look_for_notes else frozenset()
     counted: set[str] = set()
     result: dict[str, Any] = {"lines": 0, "translated": 0}
-    for line in _read(name, document, phase, markers, original):
+    for line in _read(name, document, phase, markers, original, variables):
         if notes:
             counted.update(map(_pointer, line.paths))
         found = state(line, notes)
@@ -565,11 +625,12 @@ def left(
     phase: str,
     markers: frozenset[str],
     original: Callable[[], Any] = lambda: None,
+    variables: frozenset[int] = frozenset(),
 ) -> list[dict[str, str]]:
     """The lines still left in a file, with their location, text and why."""
     notes = note_pointers(document, original)
     rows = []
-    for line in _read(name, document, phase, markers, original):
+    for line in _read(name, document, phase, markers, original, variables):
         found = state(line, notes)
         if found not in {"untranslated", "note"}:
             continue

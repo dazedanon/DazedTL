@@ -109,13 +109,23 @@ def data_plugins(data_folder: str | Path) -> PluginList:
     return plugin_list(beside_data(Path(data_folder)))
 
 
+def game_data(game_root: str | Path) -> Path | None:
+    """A game's data folder with its plugin list beside it, which a deployed
+    MV game keeps in www, or None."""
+    root = Path(game_root)
+    for base in (root, root / "www"):
+        if (base / "data").is_dir() and (base / "js/plugins.js").is_file():
+            return base / "data"
+    return None
+
+
 def game_plugins(game_root: str | Path) -> PluginList:
     """A game's plugin list, or none it can read: beside its data folder,
     which a deployed MV game keeps in www."""
     root = Path(game_root)
-    for base in (root, root / "www"):
-        if (base / "data").is_dir() and (base / "js/plugins.js").is_file():
-            return data_plugins(base / "data")
+    data = game_data(root)
+    if data is not None:
+        return data_plugins(data)
     for base in (root, root / "www"):
         if (base / "js/plugins.js").is_file():
             return plugin_list(base / "js/plugins.js")

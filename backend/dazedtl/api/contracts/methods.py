@@ -8,7 +8,14 @@ reaches as the renderer's TypeScript contracts and the shared protocol manifest.
 from dataclasses import dataclass
 from typing import Annotated, Literal, NotRequired, TypedDict
 
-from dazedtl.api.contracts.common import Documents, ExportedFiles, Phase, Saved
+from dazedtl.api.contracts.common import (
+    DocumentDrafts,
+    Documents,
+    DocumentsSaved,
+    ExportedFiles,
+    Phase,
+    Saved,
+)
 from dazedtl.api.contracts.compare import (
     CompareChoice,
     CompareKind,
@@ -350,7 +357,7 @@ class SaveDocumentRequest(TypedDict):
 
 class SaveDocumentsRequest(TypedDict):
     project_id: str
-    documents: Documents
+    documents: DocumentDrafts
 
 
 class TranslationReleaseRequest(TypedDict):
@@ -760,7 +767,7 @@ class GuidedBatchCancelPreviewRequest(TypedDict):
 
 class GuidedDraftRequest(TypedDict):
     project_id: str
-    documents: Documents
+    documents: DocumentDrafts
 
 
 class PreferencesRequest(TypedDict):
@@ -847,7 +854,7 @@ METHODS: dict[str, Method] = {
     "guided_stop": Method(RunControlRequest, Job),
     "guided_resume": Method(RunControlRequest, Job),
     "guided_draft": Method(GuidedDraftRequest, Saved, during_close=True),
-    "guided_save_documents": Method(SaveDocumentsRequest, Documents),
+    "guided_save_documents": Method(SaveDocumentsRequest, DocumentsSaved),
     "guided_position": Method(GuidedPositionRequest, Saved),
     "guided_options_draft": Method(GuidedOptionsDraftRequest, Saved, during_close=True),
     "guided_save_options": Method(GuidedSaveOptionsRequest, GuidedPreferences),
@@ -911,7 +918,7 @@ METHODS: dict[str, Method] = {
     "translation_save": Method(TranslationSaveRequest, ProjectOptions),
     "translation_draft": Method(TranslationDraftRequest, Saved, during_close=True),
     "translation_documents": Method(ProjectRequest, Documents, refresh=False),
-    "translation_save_document": Method(SaveDocumentRequest, Documents),
+    "translation_save_document": Method(SaveDocumentRequest, DocumentsSaved),
     "translation_prepare": Method(ProjectRequest, PreparedHandoff),
     "translation_compile": Method(InputPathRequest, TranslationJob),
     "translation_organize": Method(TranslationOrganizeRequest, TranslationJob),

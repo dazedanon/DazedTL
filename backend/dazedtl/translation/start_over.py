@@ -11,8 +11,9 @@ outside the patch go back to the original recorded before setup
 ([originals](originals.py)), and what Git does not keep moves aside under a
 dated folder: the assistant's work, the playtest's fixes, and files the
 original lacks. Nothing is deleted. Save games, the project's options,
-settings, skills and assistant notes (AGENTS.md) and Image Manager work stay,
-and the glossary and notes stay unless the user lets them go.
+settings, the assistant notes (AGENTS.md) and Image Manager work stay, and
+the glossary and the other guidance documents stay unless the user lets them
+go.
 """
 
 import re
@@ -21,7 +22,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from util.paths import GAME_NOTES_FILENAME
+from desktop.backend.guidance import document_files, through_link
+from util.guidance_documents import defined
+from util.paths import is_project_file
 
 from dazedtl import system
 from dazedtl.foreign_work import ARCHIVE
@@ -137,18 +140,25 @@ def run(
     )
     with running(change), writing as game:
         kept = set()
-        for document in documents.values():
-            path = Path(document["path"])
-            if not path.is_file():
-                continue
-            name = path.resolve().relative_to(root).as_posix()
-            if keep_context:
-                kept.add(name)
-            else:
-                _move(path, archive / "context" / name)
+        for key in documents:
+            # Each file holding it, a legacy copy too, by its name in the
+            # game, so a link outside it moves aside as the link it is; one
+            # in a linked folder is outside the game and stays where it is.
+            for name in document_files(root, key):
+                path = root / name
+                if not path.is_file():
+                    continue
+                if (
+                    keep_context
+                    or defined(key).checkpoints == "keep"
+                    or through_link(root, path)
+                ):
+                    kept.add(name)
+                else:
+                    _move(path, archive / "context" / name)
 
         def keep(name):
-            return save_game(name) or name in kept or name == GAME_NOTES_FILENAME
+            return save_game(name) or name in kept or is_project_file(name)
 
         tracked, undone = set(), []
         if configured:

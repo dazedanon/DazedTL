@@ -272,7 +272,8 @@ test(
   async () => {
     // Each group's command exits at SIGTERM and leaves its child, as
     // dbus-run-session does with KWin; in two of them the child ignores
-    // SIGTERM, as a hung KWin would.
+    // SIGTERM, as a hung KWin would. A grace shorter than the usual one, yet
+    // longer than seeing the bound group end takes, keeps the test quick.
     const owner = spawn(
       process.execPath,
       [
@@ -280,7 +281,7 @@ test(
         "-e",
         `const { spawnGroup } = await import(${JSON.stringify(new URL("../scripts/testkit/group.mjs", import.meta.url).href)});
         const group = (child, outlive) =>
-          spawnGroup("sh", ["-c", child + " & wait"], { stdio: "ignore", outlive }).pid;
+          spawnGroup("sh", ["-c", child + " & wait"], { stdio: "ignore", outlive, grace: 1000 }).pid;
         const hung = "(trap '' TERM; exec sleep 30)";
         console.log(JSON.stringify([group("sleep 30", false), group(hung, false), group(hung, true), group("sleep 30", false)]));
         setInterval(() => {}, 1000);`,
@@ -288,6 +289,8 @@ test(
       { stdio: ["ignore", "pipe", "inherit"] },
     );
     let groups: number[] = [];
+    // How often, in milliseconds, the test looks for a group's change.
+    const poll = 50;
     // The live members of `group`, read apart from group.mjs's own rule; an
     // exited one waits as a zombie to be reaped.
     const members = (group: number) =>
@@ -320,6 +323,7 @@ test(
             members(group).some(({ name }) => name === "sleep"),
           ),
         5_000,
+        poll,
       );
       // A command that exits on its own, as dbus-run-session does after a
       // bus error, ends the rest of its group while its starter runs.
@@ -329,6 +333,7 @@ test(
         "the group whose command exited to end",
         () => !members(crashed).length,
         5_000,
+        poll,
       );
       const running = members(kept).map(({ pid }) => pid);
       owner.kill("SIGKILL");
@@ -337,9 +342,15 @@ test(
         "the bound group to end",
         () => !members(bound).length,
         10_000,
+        poll,
       );
       assert.ok(members(hung).length);
-      await until("the hung group to end", () => !members(hung).length, 10_000);
+      await until(
+        "the hung group to end",
+        () => !members(hung).length,
+        10_000,
+        poll,
+      );
       assert.deepEqual(
         members(kept).map(({ pid }) => pid),
         running,
@@ -365,7 +376,7 @@ test(
     // it does for `scenario.mjs app`.
     const work = fs.mkdtempSync(path.join(os.tmpdir(), "dazedtl-stop-"));
     const ready = path.join(work, "ready");
-    const slow = `trap 'sleep 1; exit 0' TERM; touch "$0"; sleep 30 & wait`;
+    const slow = `trap 'sleep 0.3; exit 0' TERM; touch "$0"; sleep 30 & wait`;
     const group = spawnGroup("sh", ["-c", slow, ready], {
       stdio: "ignore",
       outlive: true,
@@ -381,7 +392,12 @@ test(
           display: null,
         }),
       );
-      await until("the stand-in to start", () => fs.existsSync(ready), 5_000);
+      await until(
+        "the stand-in to start",
+        () => fs.existsSync(ready),
+        5_000,
+        50,
+      );
       await new Promise<void>((resolve, reject) =>
         execFile(
           process.execPath,

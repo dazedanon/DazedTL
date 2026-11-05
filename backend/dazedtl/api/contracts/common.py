@@ -3,13 +3,51 @@
 from typing import Literal, NotRequired, TypedDict
 
 
-class Document(TypedDict):
+class DocumentDraft(TypedDict):
+    """A guidance document's unsaved text, and the revision of its file when
+    the draft began."""
+
     text: str
     revision: str
-    path: NotRequired[str]
+
+
+type DocumentDrafts = dict[str, DocumentDraft]
+
+
+class Document(TypedDict):
+    """A guidance document as its file holds it, with what its definition
+    (util/guidance_documents) says the renderer needs: its title, its kind,
+    whether translation requests carry it and the work its draft holds up.
+    `state` is "saved", "missing", whose text is empty, or "unreadable",
+    whose `reason` says why and how to fix it."""
+
+    text: str
+    revision: str
+    path: str
+    # Its path in the game folder, as the editors show it.
+    file: str
+    title: str
+    kind: Literal["core", "optional", "custom"]
+    requests: bool
+    holdsUp: list[Literal["handoff", "work"]]
+    # What a document requests don't carry is for, shown in place of its
+    # file, and help on where it is kept; empty for the others.
+    description: str
+    help: str
+    state: Literal["saved", "missing", "unreadable"]
+    reason: NotRequired[str]
+    # Whether the file changed on disk since the document's draft began.
+    changed: bool
 
 
 type Documents = dict[str, Document]
+
+
+class DocumentsSaved(TypedDict):
+    """The documents after a save, and the names it wrote."""
+
+    documents: Documents
+    saved: list[str]
 
 
 type Phase = Literal["database", "dialogue", "variables", "advanced", "speakers"]

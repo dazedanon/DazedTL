@@ -31,6 +31,7 @@ from util.rpgmaker_markers import (
 )
 from util.rpgmaker_qa_reach import MAY_SHOW, Reach
 from util.rpgmaker_scope import kept
+from util.rpgmaker_variable_names import data_drawn
 from util.source_text import source_left, words_left
 
 _MAP_RE = re.compile(r"Map\d+\.json")
@@ -114,13 +115,18 @@ def _entry(rows: list, file: str, path: tuple, text: str, kind: str) -> None:
 
 
 def visible_texts(
-    name: str, document: Any, markers: frozenset[str] = SUPPORTED_CODE408_MARKERS
+    name: str,
+    document: Any,
+    markers: frozenset[str] = SUPPORTED_CODE408_MARKERS,
+    variables: frozenset[int] = frozenset(),
 ):
     """Each text players read in one data file: its pointer's parts, its
     value, its kind, whether the engine translated it, keeping its
     Japanese in `_original`, and that Japanese, or None where it keeps none.
     A map name keeps one in the map's `_original` only where its
-    translation keeps letters of it (util/rpgmaker_scope `kept`).
+    translation keeps letters of it (util/rpgmaker_scope `kept`). System.json's
+    terms include the names of the *variables* the game's plugins draw
+    (util/rpgmaker_variable_names).
 
     A message's or comment's rows count as translated where a translation
     owns them (see rpgmaker_blocks.owned), and their Japanese is the whole
@@ -210,6 +216,12 @@ def visible_texts(
             for path, value in _leaves(document.get(field), (field,)):
                 source = _system_source(original, path) if translated else None
                 yield path, value, "system term", translated, source
+        names = document.get("variables")
+        for index in sorted(variables):
+            if isinstance(names, list) and index < len(names):
+                path = ("variables", index)
+                source = _system_source(original, path)
+                yield path, names[index], "system term", source is not None, source
 
 
 def _system_source(original: Any, path: tuple) -> str | None:
@@ -229,14 +241,16 @@ def _untranslated(
     markers: frozenset[str],
     rows: list,
     original: Any = None,
+    variables: frozenset[int] = frozenset(),
 ) -> None:
     """The texts of one data file never translated: those that keep no
     source and read left against the game's *original* file where it gives
     one (util/original_values). A message's or comment's rows read without
-    it, since translation may change how many there are."""
+    it, since translation may change how many there are. System.json's
+    terms include the names of the *variables* the game's plugins draw."""
     mirror = Mirror(document, original) if original is not None else None
     for path, value, kind, translated, _source in visible_texts(
-        name, document, markers
+        name, document, markers, variables
     ):
         if translated or pointer(path) in covered:
             continue
@@ -340,6 +354,7 @@ def preflight(
     plugins = data_plugins(data)
     reach = Reach(data, plugins)
     markers = comment_markers(plugins)
+    variables = data_drawn(data)
     rows: dict[str, list[dict[str, Any]]] = {"untranslated": [], "custom_data": []}
     for path in sorted(data.glob("*.json"), key=lambda item: item.name):
         try:
@@ -354,6 +369,7 @@ def preflight(
                 markers,
                 rows["untranslated"],
                 originals.data(path.name) if originals else None,
+                variables,
             )
             reach.scan(path.name, document)
         else:

@@ -1,5 +1,5 @@
 import type { GuidedState } from "../../api/contracts.ts";
-import { guidanceAvailability, guidanceTitle } from "./guidanceReview.ts";
+import { guidanceAvailability } from "./guidanceReview.ts";
 
 export type InvestigationPart = "formats" | "names" | "guidance";
 export interface InvestigationResult {
@@ -89,7 +89,7 @@ export function investigationResults(
           : "idle",
       detail: guidance.complete
         ? "Glossary, style and game context are in the game folder."
-        : `${3 - guidance.missing.length} of 3 files saved${guidance.missing.length ? " · remaining: " + guidance.missing.map(guidanceTitle).join(", ") : ""}.`,
+        : `${guidance.total - guidance.missing.length} of ${guidance.total} files saved${guidance.missing.length ? " · remaining: " + guidance.missing.join(", ") : ""}.`,
     },
   ];
 }

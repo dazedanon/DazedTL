@@ -99,11 +99,27 @@ export const failedRun = (run) =>
   ["failure", "timed_out", "startup_failure"].includes(run?.conclusion);
 
 /**
+ * Whether GitHub could not start a run at all, as for a broken workflow
+ * file. Such a run is never rerun; its commit gets one fresh run instead
+ * (startAgain), and a second that does not start stands as red.
+ */
+export const unstarted = (run) => run?.conclusion === "startup_failure";
+
+/**
  * Whether a run failed on its first attempt. It gets one rerun of its failed
- * jobs, since most first failures are Windows flakes; a second is real.
+ * jobs, since most first failures are Windows flakes; a second is real. A
+ * run that did not start has no jobs to rerun.
  */
 export const firstFailure = (run) =>
-  failedRun(run) && (run.run_attempt ?? 1) === 1;
+  failedRun(run) && !unstarted(run) && (run.run_attempt ?? 1) === 1;
+
+/**
+ * Whether a commit whose runs, newest first, end with one that did not
+ * start gets a fresh run: only after the first such run.
+ * @param {any[]} runs
+ */
+export const startAgain = (runs) =>
+  unstarted(runs[0]) && runs.filter(unstarted).length === 1;
 
 /** The names of a finished run's jobs that did not pass. */
 export async function failedJobs(read, repository, run) {
@@ -113,6 +129,75 @@ export async function failedJobs(read, repository, run) {
   return (jobs?.jobs || [])
     .filter((job) => !["success", "skipped"].includes(job.conclusion))
     .map((job) => job.name);
+}
+
+/**
+ * A CI job's name in plain words: its runner image becomes the system it
+ * runs on, so "Live test (windows-2025)" reads "Live test on Windows".
+ * @param {string} name
+ */
+export const plainJob = (name) =>
+  name.replace(
+    /\s*\((windows|ubuntu|macos)-[^)]*\)$/i,
+    (_, system) =>
+      ` on ${{ windows: "Windows", ubuntu: "Linux", macos: "macOS" }[system.toLowerCase()]}`,
+  );
+
+/** A list of GitHub's runs as the CI workflow's alone, newest first. */
+export const ciRuns = (/** @type {any} */ found) =>
+  (found?.workflow_runs || [])
+    .filter((/** @type {any} */ item) => item.path === workflow)
+    .sort(
+      (/** @type {any} */ a, /** @type {any} */ b) =>
+        Date.parse(b.created_at) - Date.parse(a.created_at),
+    );
+
+/**
+ * Waits for a CI run with `wait`, and when its first attempt failed, reruns
+ * its failed jobs once (firstFailure) and waits for that attempt. `wait`
+ * takes the run and attempt to follow, null at first. Resolves the last
+ * attempt's result, as waitForCI gives it.
+ * @param {{ wait: (rerun: { id: number, attempt: number } | null) => Promise<any>, write: (route: string) => Promise<unknown>, repository: string, log?: (line: string) => void, start?: { id: number, attempt: number } | null }} options
+ */
+export async function withOneRerun({
+  wait,
+  write,
+  repository,
+  log = () => {},
+  start = null,
+}) {
+  const result = await wait(start);
+  if (!firstFailure(result.run)) return result;
+  return wait(
+    await rerunFailed({
+      run: result.run,
+      failed: result.failed,
+      write,
+      repository,
+      log,
+    }),
+  );
+}
+
+/**
+ * Reruns the failed jobs of a run that failed on its first attempt, as
+ * firstFailure allows once. Resolves the run and attempt to follow next.
+ * @param {{ run: any, failed?: string[], write: (route: string) => Promise<unknown>, repository: string, log?: (line: string) => void }} options
+ */
+export async function rerunFailed({
+  run,
+  failed = [],
+  write,
+  repository,
+  log = () => {},
+}) {
+  const { id, head_sha: sha, run_attempt: attempt = 1 } = run;
+  const jobs = failed.length ? ` (${failed.map(plainJob).join(", ")})` : "";
+  log(
+    `CI failed for ${sha.slice(0, 7)}${jobs}; rerunning the failed jobs once: ${run.html_url}`,
+  );
+  await write(`repos/${repository}/actions/runs/${id}/rerun-failed-jobs`);
+  return { id, attempt: attempt + 1 };
 }
 
 /**
@@ -151,13 +236,7 @@ export async function waitForCI({
           : `repos/${repository}/actions/runs?head_sha=${sha}&per_page=50`,
       );
       if (run) run = found || run;
-      else
-        run =
-          (found?.workflow_runs || [])
-            .filter((item) => item.path === workflow)
-            .sort(
-              (a, b) => Date.parse(b.created_at) - Date.parse(a.created_at),
-            )[0] || null;
+      else run = ciRuns(found)[0] || null;
     }
     if (done(run)) {
       if (run.conclusion === "cancelled") {
@@ -165,15 +244,9 @@ export async function waitForCI({
         const found = await read(
           `repos/${repository}/actions/runs?branch=${encodeURIComponent(where)}&per_page=20`,
         );
-        const newer = (found?.workflow_runs || [])
-          .filter(
-            (item) =>
-              item.path === workflow &&
-              Date.parse(item.created_at) > Date.parse(run.created_at),
-          )
-          .sort(
-            (a, b) => Date.parse(b.created_at) - Date.parse(a.created_at),
-          )[0];
+        const newer = ciRuns(found).find(
+          (item) => Date.parse(item.created_at) > Date.parse(run.created_at),
+        );
         if (newer) {
           log(
             `Run ${run.id} was superseded; following ${newer.id} (${newer.head_sha.slice(0, 7)}).`,

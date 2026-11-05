@@ -97,8 +97,6 @@ _COMPRESSED = frozenset(
 # Blobs at least this large are written by a Git process of their own rather
 # than read into memory with others.
 _LARGE = 32 * 1024 * 1024
-# The game's folders no record holds: Git's and DazedTL's own.
-_OWN = frozenset({".git", ".dazedtl"})
 
 
 @dataclass(frozen=True)
@@ -271,9 +269,15 @@ def _relative(name):
 
 def held(relative):
     """Whether a record holds the file at `relative` in the game folder:
-    every file but those in `.git` and `.dazedtl`."""
-    parts = PurePosixPath(str(relative).replace("\\", "/")).parts
-    return not parts or parts[0] not in _OWN
+    every file but Git's and the project's own (`is_project_file`). Records
+    made before the assistant notes were the project's may hold them; no
+    reader takes them from one (`_files`)."""
+    from util.paths import is_project_file
+
+    relative = PurePosixPath(str(relative).replace("\\", "/")).as_posix()
+    return relative == "." or not (
+        relative.partition("/")[0] == ".git" or is_project_file(relative)
+    )
 
 
 def has_files(folder):
@@ -479,7 +483,7 @@ def _files(root, commit):
             continue
         metadata, path = entry.split("\t", 1)
         mode, kind, blob, size = metadata.split()
-        if kind == "blob":
+        if kind == "blob" and held(path):
             result[path] = (mode, blob, int(size))
     return result
 

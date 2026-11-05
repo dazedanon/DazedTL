@@ -1,6 +1,6 @@
 // The supervisor `spawnGroup` (group.mjs) makes the first process of each
 // test process group on Linux:
-//   node supervise.mjs <starter PID, or "" for a group that outlives it> <command> [<arg>...]
+//   node supervise.mjs <starter PID, or "" for a group that outlives it> <grace in ms> <command> [<arg>...]
 // It runs the command, and whatever ends the group's life ends the whole
 // group the same way: the command exiting, as dbus-run-session does at
 // SIGTERM or after a bus error and leaves its KWin running, or SIGTERM to
@@ -10,9 +10,12 @@
 import { spawn } from "node:child_process";
 import os from "node:os";
 import { setTimeout as delay } from "node:timers/promises";
-import { grace, members } from "./group.mjs";
+import { members } from "./group.mjs";
 
-const [starter, command, ...args] = process.argv.slice(2);
+const [starter, wait, command, ...args] = process.argv.slice(2);
+const grace = Number(wait);
+// A grace that is no number would never SIGKILL a member ignoring SIGTERM.
+if (!(grace >= 0)) throw new Error(`No grace in milliseconds: ${wait}`);
 /** A shell's exit status for a process ended by `signal`. */
 const signalled = (signal) => 128 + os.constants.signals[signal];
 

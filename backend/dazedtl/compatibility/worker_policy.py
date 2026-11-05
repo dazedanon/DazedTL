@@ -16,6 +16,7 @@ from dazedtl.settings.preferences import (
     GALGE_ARGUMENTS,
     GALGE_CHOICES,
     GENERATION_PARAMETERS,
+    LEFT_ROWS_LEVELS,
     MAP_NAME_IDENTITIES,
     PAGE_PACKING,
     RESENDS,
@@ -27,6 +28,7 @@ from dazedtl.settings.preferences import (
     SOURCE_TEXT_LEVELS,
     SPEAKER_CONTEXT,
     STRETCH_NEIGHBOURS,
+    SYSTEM_TEXT,
     batch_input_tokens,
     output_tokens,
 )
@@ -78,6 +80,13 @@ def configure_cache_reads(translation, policy):
     translation.LIVE_CACHE_READ_MULTIPLE = (policy or {}).get("cacheReadMultiple")
 
 
+def _variable_ids(value):
+    """Whether a policy's drawn variable ids read as the run froze them."""
+    return isinstance(value, list) and all(
+        type(item) is int and item > 0 for item in value
+    )
+
+
 def configure_states(plan, root, policy):
     module = sys.modules.get("modules.rpgmakermvmz")
     if module is not None and plan.get("engine") in {"MVMZ", "RPG Maker MV/MZ"}:
@@ -90,6 +99,10 @@ def configure_states(plan, root, policy):
         cast(Any, module).CODE_NAMEPLATES = bool(
             policy and policy.get("codeNameplates") == CODE_NAMEPLATES
         )
+        left_rows = (policy or {}).get("leftRows")
+        cast(Any, module).LEFT_ROWS = (
+            LEFT_ROWS_LEVELS.get(left_rows, 0) if isinstance(left_rows, str) else 0
+        )
         cast(Any, module).PAGE_PACKING = bool(
             policy and policy.get("pagePacking") == PAGE_PACKING
         )
@@ -101,6 +114,11 @@ def configure_states(plan, root, policy):
         )
         cast(Any, module).GALGE_ARGUMENTS = bool(
             policy and policy.get("galgeArguments") == GALGE_ARGUMENTS
+        )
+        system_text = bool(policy and policy.get("systemText") == SYSTEM_TEXT)
+        cast(Any, module).SYSTEM_TEXT = system_text
+        cast(Any, module).DRAWN_VARIABLES = frozenset(
+            policy.get("drawnVariables", ()) if policy and system_text else ()
         )
         source_text = (policy or {}).get("sourceText")
         cast(Any, module).SOURCE_TEXT = (
@@ -237,9 +255,12 @@ def install(*, coordinator=False):
             or policy.get("choiceCollection") not in (None, CHOICE_COLLECTION)
             or policy.get("galgeChoices") not in (None, GALGE_CHOICES)
             or policy.get("galgeArguments") not in (None, GALGE_ARGUMENTS)
+            or policy.get("systemText") not in (None, SYSTEM_TEXT)
+            or not _variable_ids(policy.get("drawnVariables", []))
             or policy.get("speakerContext") not in (None, SPEAKER_CONTEXT)
             or policy.get("sameLineSpeakers") not in (None, SAME_LINE_SPEAKERS)
             or policy.get("codeNameplates") not in (None, CODE_NAMEPLATES)
+            or policy.get("leftRows") not in (None, *LEFT_ROWS_LEVELS)
             or policy.get("pagePacking") not in (None, PAGE_PACKING)
             or policy.get("reuseStretches") not in (None, REUSE_STRETCHES)
             or policy.get("stretchNeighbours") not in (None, STRETCH_NEIGHBOURS)

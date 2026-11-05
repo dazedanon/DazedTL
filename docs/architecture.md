@@ -44,7 +44,7 @@ The base glossary, the SFX reference and the honorific rules apply to a Japanese
 
 ### RPG Maker text blocks
 
-[rpgmaker_blocks](../backend/dazedtl/engine/util/rpgmaker_blocks.py) is the one definition of how MV/MZ event commands form the text one window shows; translation, the fitter, Text QA, Assistant-led's writer and the playtest all read blocks there.
+[rpgmaker_blocks](../backend/dazedtl/engine/util/rpgmaker_blocks.py) is the one definition of how MV/MZ event commands form a window's text and the texts the engine sends of it; every reader of event text reads them there.
 Writers lay text over a block's rows and never add or remove a command, so a saved game's place in an event stays valid.
 Which comments players read comes from the plugins the game loads ([rpgmaker_markers](../backend/dazedtl/engine/util/rpgmaker_markers.py)).
 
@@ -151,15 +151,16 @@ The [plugin service](../backend/dazedtl/plugins/service.py) owns investigation, 
 - Lookup values, code keys, expressions, structure and control tokens stay protected and are never asked about; original text comes from the game's recorded original files.
 - Labels Text QA finds squeezed come to Plugin files, since QA never writes plugin files, and each shortened label is confirmed on screen in the [game window](../backend/dazedtl/engine/util/rpgmaker_window/launcher.cjs).
 
-The [image service](../backend/dazedtl/images/service.py) owns the inventory, selection, discovery, editing contracts, reports and application receipts that Guided and Image Manager share.
+The [image service](../backend/dazedtl/images/service.py) owns the inventory, selection, discovery, editing contracts, reports and apply receipts that Guided and Image Manager share.
 
 - The selection moves through the four steps of [imageFlow](../app/src/features/images/imageFlow.ts), and the service alone decides whether the images are investigated.
-- Lettered sound effects are flavor, often hundreds per game, so an image with nothing else stays out of the list; detector misses alone never certify an image has no text.
+- [image_formats](../backend/dazedtl/engine/util/image_formats.py) alone converts BMP, JPEG and TLG to and from PNG.
+- Lettered sound effects are flavor, so an image with nothing else stays out of the list; detector misses alone never certify an image has no text.
 - Every image an assistant changes needs a [recipe](../backend/dazedtl/images/recipes.py), and reports pass the same [validation](../backend/dazedtl/images/validation.py) as the assistant's validator; only the user accepts an image the assistant can't prove, and the app never runs a recipe's command.
 - A [family](../backend/dazedtl/images/families.py) member is reviewed by the crop that differs from an examined sibling, so look-alike CG frames aren't paid for again.
-- Revision notes are the user's per-image intent, so they save with the selection through `images_update` until a report answers them; each answered note, apply and restore then joins the image's capped revision history on its inventory row.
+- Revision notes are the user's per-image intent, so they save with the selection through `images_update` until a report answers them; each answered note, apply and restore joins the image's capped revision history on its inventory row.
 - Apply freezes the batch in a one-use preview, and Restore originals reads each selected image from the game's [original files](#original-game-files) instead of undoing apply checkpoints, which would bring back an earlier translation after a reapply and images the user didn't select.
-- The [background solver](../backend/dazedtl/images/background.py) and the [image text editor](../backend/dazedtl/images/editor.py) use only offline resources, never a hosted fallback or model download.
+- The [background solver](../backend/dazedtl/images/background.py) and the [image text editor](../backend/dazedtl/images/editor.py) use only offline resources.
 
 Plugin and image progress belongs to the project that saved it: work from a copied game or another profile is reported by [foreign_work](../backend/dazedtl/foreign_work.py) and used only when the user chooses.
 
@@ -284,7 +285,7 @@ Resync archives a file's working copy, staged outputs and cache, and advances it
 - Its API run panel holds the assistant's estimate, and its button is the only approval: the project helper resumes only runs the user approved there, and a newer estimate replaces the one waiting ([newest_estimate](../backend/dazedtl/translation/jobs.py)).
 - New games start on API Batch, since the assistant's own plan pays for every turn.
 - In both methods, a Batch the connection can't run shows and runs as Live, with the reason beside the choice ([runnable_mode](../backend/dazedtl/settings/execution.py)), and the saved choice stays.
-- Start over is one checkpoint back to the original game's current version, so the attempt stays in Git history; what Git doesn't keep moves to `.dazedtl/archived`, settings and skills stay, the glossary and notes stay unless the user lets them go, the assistant notes always stay, and only the user can start it.
+- Start over is one checkpoint back to the original game's current version, so the attempt stays in Git history; what Git doesn't keep moves to `.dazedtl/archived`, settings stay, guidance stays unless the user lets it go, and only the user can start it.
 
 #### Manual and translation files
 
@@ -358,8 +359,10 @@ Drafts and actions:
 - A Text QA task is keyed on what it reviews and `QA_RULES_VERSION` in [qa/schema](../backend/dazedtl/engine/util/qa/schema.py), raised only when saved reviews become wrong or unreadable; the [previous-release QA check](development.md#previous-release-qa-check) fails when a change needs it.
   A prepared task stays current through QA's own Apply and Undo ([compatibility/text](../backend/dazedtl/compatibility/text.py)).
 - Workflow options live in the game's `.dazedtl/len-method/workflow.json`, its original files in its Git repository and its guidance in its own files ([paths](../backend/dazedtl/engine/util/paths.py)); the app profile holds connections, recoverable drafts, run plans and receipts.
-- The assistant notes, `AGENTS.md` at the game's root, are the project's like its glossary: Git keeps them and Start over leaves them, while no translation request, patch or download carries them.
-  Every task DazedTL hands an assistant to work on the game opens by saying to read them and keep them to lasting facts ([task_opening](../backend/dazedtl/translation/helper_command.py)); Go back leaves them too, while an undo takes out a checkpoint's own change to them.
+- [guidance_documents](../backend/dazedtl/engine/util/guidance_documents.py) defines each guidance document once; editors, saves, the drafts gate and checkpoints read it, never a name.
+  Its [reader](../backend/dazedtl/engine/desktop/backend/guidance.py) reads each as saved, missing or unreadable with why; Save replaces a file changed under a draft only if the user keeps the draft.
+- The assistant notes, `AGENTS.md` at the game's root in any case ([is_project_file](../backend/dazedtl/engine/util/paths.py)), are the project's: Git keeps them, but no request, patch, download or original record carries them, and every checkpoint but their own, Go back and Start over leave them.
+  Every assistant task opens by saying to read and keep them ([task_opening](../backend/dazedtl/translation/helper_command.py)).
 - Opening and selecting a project publish ownership only after it is saved, and removing a game from the recent list hides its record, so its runs keep their owner.
 - The project registry is the only record of where a project's game is ([location](../backend/dazedtl/projects/location.py)): the game folder names its project in a marker Git never commits, so a moved game keeps its project and a copy opens a new one.
   Other records find the game through the registry, and no saved key names the game folder: estimates, Text QA context and bindings name the game's files relative to it, so a move changes one record, outdates nothing and needs no new approval.

@@ -1,6 +1,7 @@
 """The one definition of RPG Maker text blocks (util/rpgmaker_blocks.py) that
 translation, fitting, Text QA, Assistant-led and the playtest read."""
 
+import copy
 import json
 import tempfile
 import unittest
@@ -10,7 +11,14 @@ from dazedtl.translation import comment_text, file_lines
 from util import original_values
 from util import rpgmaker_blocks as blocks
 from util.rpgmaker_markers import comment_markers, data_plugins, game_plugins
-from util.rpgmaker_rewrap import Layout, fit_document, wrap_help
+from util.rpgmaker_rewrap import (
+    Layout,
+    fit_document,
+    fit_value,
+    message_box,
+    wrap_help,
+    wrap_message,
+)
 
 
 def command(code, parameters, indent=0, **extra):
@@ -32,6 +40,46 @@ def choosing(help_rows, face="Actor1"):
 
 
 class TextBlockTests(unittest.TestCase):
+    def test_a_choice_keeps_its_condition_clauses_apart_from_its_label(self):
+        # The engine and the translation file both read a choice's label
+        # here; a split that took visible text, or left a clause, would send
+        # it to the model or drop it from the game.
+        for value, parts in [
+            ("はい", ("", "はい", "")),
+            ("if(s[1])はい", ("if(s[1])", "はい", "")),
+            (
+                "if($gameSwitches.value(1))Yes",
+                ("if($gameSwitches.value(1))", "Yes", ""),
+            ),
+            ("いいえ en(v[3]<=50)", ("", "いいえ", " en(v[3]<=50)")),
+            (
+                "if(s[1])見る if(v[2]>0) en(s[3])",
+                ("if(s[1])", "見る", " if(v[2]>0) en(s[3])"),
+            ),
+            # Unbalanced, or text after a clause, stays in the label.
+            ("if(v[31]>=4迷宮", ("", "if(v[31]>=4迷宮", "")),
+            ("はいen(v[3]<=50)(条件)", ("", "はいen(v[3]<=50)(条件)", "")),
+            ("IF(s[1])はい", ("", "IF(s[1])はい", "")),
+        ]:
+            with self.subTest(value):
+                found = blocks.split_choice(value)
+                self.assertEqual(tuple(found), parts)
+                self.assertEqual(found.written(found.label), value)
+        # A translation an earlier import wrote without a side's clauses gets
+        # that side's back; one keeping them, anywhere, stays.
+        source = blocks.split_choice("if(s[1])見る en(s[3])")
+        for value, restored in [
+            ("Look", "if(s[1])Look en(s[3])"),
+            ("if(s[1])Look", "if(s[1])Look en(s[3])"),
+            ("if(s[1])Look en(s[3])", "if(s[1])Look en(s[3])"),
+            ("Look en(s[3]) now", "if(s[1])Look en(s[3]) now"),
+        ]:
+            with self.subTest(value):
+                self.assertEqual(source.restored(value), restored)
+        # A list holding commands no block reads restores nothing of them.
+        malformed = [None, {"code": 102, "parameters": {"0": 1}}, {"code": 0}]
+        self.assertEqual(blocks.restore_conditions({"list": malformed}), [])
+
     def test_a_line_left_in_japanese_shows_its_japanese_as_its_source(self):
         # The engine keeps no `_original` for text a model gave back as it
         # was, so the live text is its own source, with a speaker's name.
@@ -387,6 +435,22 @@ class TextBlockTests(unittest.TestCase):
             fit_document({"list": listed}, "Map001.json", wide, resized=True).changes
         )
 
+    def test_rows_of_codes_alone_stay_as_they_are(self):
+        # Rows of pauses alone are zero cells wide: laying them out again for
+        # wider Line widths tried a window of none, and text that breaks
+        # between characters shared none of its width out between sentences.
+        text = "\\.\\.\\.\n\\.\\.\\."
+        for target in ("English", "zh", "ja"):
+            box = message_box(Layout(60, 60, 74, 45, 4, target))
+            self.assertEqual(
+                fit_value(text, box, source="あ。\nい。", resized=True), text
+            )
+            # Translation wraps every message, fitting or not.
+            self.assertEqual(
+                wrap_message(text, 60, source="……\n……", rows=4, target=target),
+                "\\.\\.\\. \\.\\.\\." if target == "English" else "\\.\\.\\.\\.\\.\\.",
+            )
+
     def test_message_paged_narrower_is_laid_out_again_once_the_width_grows(self):
         # At 45 the message takes two windows, the first filled with blank
         # rows; at 60 again it reads as if fitted at 60 directly.
@@ -474,6 +538,240 @@ class TextBlockTests(unittest.TestCase):
                 write_rpgmaker_json(files["source"], files["staged"], game, layout)
                 self.assertEqual(game.read_bytes(), written)
                 game.unlink()
+
+    def test_assistant_led_fits_a_nameplate_apart_from_its_speech(self):
+        # Assistant-led's writer keeps one source over a message's rows, and
+        # fitting it as one text wrapped the name row into the speech.
+        from util.len_originals import fit_written, write_rpgmaker_json
+
+        def page(rows):
+            return {
+                "list": [
+                    command(101, ["", 0, 0, 2, ""]),
+                    *(command(401, [row]) for row in rows),
+                    command(0, []),
+                ]
+            }
+
+        def written(source, staged, layout):
+            with tempfile.TemporaryDirectory() as folder:
+                files = {
+                    name: Path(folder, name + ".json") for name in ("source", "staged")
+                }
+                for name, document in (("source", source), ("staged", staged)):
+                    files[name].write_text(
+                        json.dumps(document, ensure_ascii=False), "utf-8"
+                    )
+                game = Path(folder, "Map001.json")
+                write_rpgmaker_json(files["source"], files["staged"], game, layout)
+                return json.loads(game.read_bytes())
+
+        source = page(
+            [
+                "\\c[2]新米\\c[0]",
+                "「すいません‼ちょっと目を離したすきに",
+                "　入り込みまして…‼",
+            ]
+        )
+        staged = page(
+            [
+                "\\c[2]Rookie\\c[0]",
+                '"I\'m sorry! They slipped in when I took my eyes off for a moment...!"',
+                "",
+            ]
+        )
+        listed = written(source, staged, Layout(55, 45, 60, 60, 4, "English"))["list"]
+        self.assertEqual(blocks.text(listed[1]), "\\c[2]Rookie\\c[0]")
+        self.assertEqual(
+            [blocks.text(listed[at]) for at in (2, 3)],
+            [
+                "\"I'm sorry! They slipped in when I",
+                'took my eyes off for a moment...!"',
+            ],
+        )
+        # A code a wrap moves to the start of a row opens no text there:
+        # refitted at other widths and back, the message lays out as before.
+        source = page(["こんにちは、今日は\\SE[1]元気？", "そうだね"])
+        staged = page(
+            [
+                "Hello there, the weather today is nice \\SE[1]how are you doing today?",
+                "Yes indeed.",
+            ]
+        )
+        narrow, wide = (
+            Layout(width, width, 60, 60, 4, "English") for width in (30, 38)
+        )
+        once = written(source, staged, narrow)
+        twice = copy.deepcopy(once)
+        fit_written(twice, "Map001.json", wide)
+        fit_written(twice, "Map001.json", narrow)
+        self.assertEqual(twice, once)
+
+    def test_an_earlier_imports_rows_split_into_texts_only_where_they_follow_them(self):
+        # An import before each text kept its own source laid a message's
+        # translation over its rows without the source's blank row, so each
+        # later row sat one higher; split by place, its first text listed the
+        # \SE[1] sentence and an import from it wrote that there.
+        listed = [
+            command(101, ["", 0, 0, 2, ""]),
+            command(
+                401,
+                ["Hello."],
+                _original="こんにちは。\n\n元気？\n\\SE[1]よろしく。\nまたね。",
+            ),
+            command(401, ["How are you?"]),
+            command(401, ["\\SE[1]Nice to meet you."]),
+            command(401, ["See you."]),
+            command(401, [""]),
+            command(0, []),
+        ]
+        (block,) = blocks.blocks(listed)
+        self.assertEqual(
+            [text.rows for text in blocks.sent_texts(listed, block, blocks.Reading())],
+            [(1, 2, 3, 4, 5)],
+        )
+
+    def test_an_imported_texts_rows_follow_what_writes_over_it_next(self):
+        # A translation file import records the rows a text covers (_rows);
+        # a run that joined it onto its first row kept that count, and
+        # Assistant-led's writer ran its source over the game's own rows
+        # after it, so either read those rows as the text's.
+        from util.len_originals import preserve_originals
+
+        def imported():
+            return [
+                command(101, ["", 0, 0, 2, ""]),
+                command(401, ["Hello."], _original="あ\nい\nう", _rows=3),
+                command(401, ["How"]),
+                command(401, ["are you?"]),
+                command(401, ["\\SE[1]よろしく。"]),
+                command(401, ["またね。"]),
+                command(0, []),
+            ]
+
+        listed = imported()
+        blocks.write_text(listed, (1, 2, 3), "Hello. How are you?")
+        (block,) = blocks.blocks(listed)
+        self.assertEqual(
+            [text.rows for text in blocks.sent_texts(listed, block, blocks.Reading())],
+            [(1,), (4, 5)],
+        )
+        before = {"list": imported()}
+        staged = {"list": imported()}
+        for at, row in ((4, "\\SE[1]Nice to meet you."), (5, "See you.")):
+            staged["list"][at]["parameters"] = [row]
+        written = preserve_originals(before, staged, filename="Map001.json")["list"]
+        self.assertEqual(
+            [
+                (command.get("_original"), command.get("_rows"))
+                for command in written[1:6]
+            ],
+            [
+                ("あ\nい\nう", 3),
+                (None, None),
+                (None, None),
+                ("\\SE[1]よろしく。\nまたね。", None),
+                (None, None),
+            ],
+        )
+
+    def test_a_translation_owns_no_row_of_the_games_own_after_it(self):
+        # A run translated a name alone and left its speech in Japanese, and
+        # the name's translation owned the speech's rows: Assistant-led's
+        # writer kept the speech it translated under the name's source, and
+        # Text QA would write a correction of the name over the speech.
+        from util.len_originals import preserve_originals
+
+        def page(*rows):
+            return {
+                "list": [
+                    command(101, ["", 0, 0, 2, ""]),
+                    command(401, ["Officer"], _original="新米警察官"),
+                    *(command(401, [row]) for row in rows),
+                    command(0, []),
+                ]
+            }
+
+        speech = ("「すいません‼", "入り込みまして…‼")
+        self.assertEqual(blocks.part_rows(page(*speech)["list"], 1), (1,))
+        # Nor a row past its source's lines holding no Japanese, such as ……
+        # or English, which a run with Skip already translated text off,
+        # sending the name again, wrote the name's translation over and
+        # emptied; runs frozen before read it as the name's.
+        for row in ("……", "Thanks!"):
+            listed = page(row)["list"]
+            self.assertEqual(
+                (blocks.part_rows(listed, 1), blocks.owned(listed, 1, by_lines=False)),
+                ((1,), (1, 2)),
+            )
+        # A translation laid over its rows, as a run lays scrolling text, may
+        # keep a word of its source, such as a name, on a later row, or fill
+        # a blank row its source leaves out.
+        scroll = [
+            command(105, [2, False]),
+            command(405, ["Long ago,"], _original="昔々、\n花子という娘が\nいました。"),
+            command(405, ["there was a girl named 花子"]),
+            command(405, ["who lived here."]),
+            command(0, []),
+        ]
+        self.assertEqual(blocks.part_rows(scroll, 1), (1, 2, 3))
+        del scroll[3]
+        scroll[1]["_original"] = "昔々、花子という娘がいました。"
+        self.assertEqual(blocks.part_rows(scroll, 1), (1, 2))
+        for rows, translated, kept in (
+            (speech, ('"Sorry!', 'They slipped in!"'), ["\n".join(speech), None]),
+            (("……",), ("...",), ["……"]),
+        ):
+            written = preserve_originals(
+                page(*rows), page(*translated), filename="Map001.json"
+            )["list"]
+            self.assertEqual(
+                [command.get("_original") for command in written[1 : len(rows) + 2]],
+                ["新米警察官", *kept],
+            )
+
+        # A run, the export and Assistant-led's writer read an import's text
+        # alike: its recorded rows, but none left in Japanese.
+        def imported(*rows):
+            return [
+                command(101, ["", 0, 0, 2, ""]),
+                command(401, ["Hello"], _original="こんにちは\n元気？", _rows=2),
+                *(command(401, [row]) for row in rows),
+                command(0, []),
+            ]
+
+        for rows, own in (
+            (["How are you?", "See you."], 2),
+            (["あのね", "See you."], 1),
+        ):
+            listed = imported(*rows)
+            (block,) = blocks.blocks(listed)
+            sent = blocks.sent_texts(listed, block, blocks.Reading())
+            self.assertEqual(
+                (sent[0].rows, blocks.text_end(listed, 1, left=True)),
+                (tuple(range(1, own + 1)), own),
+                rows,
+            )
+
+    def test_a_translation_sharing_its_sources_kanji_holds_no_japanese_left(self):
+        # Read without its pair, a Chinese translation's hanzi row opening
+        # with a code read as the game's own Japanese, left untranslated.
+        from util.languages import reading
+
+        listed = [
+            command(101, ["", 0, 0, 2, ""]),
+            command(401, ["你好。"], _original="こんにちは。\n\\SE[1]元気？\nまたね。"),
+            command(401, ["\\SE[1]你好吗？"]),
+            command(401, ["再见。"]),
+            command(0, []),
+        ]
+        with reading("Japanese", "Simplified Chinese"):
+            (block,) = blocks.blocks(listed)
+            texts = blocks.sent_texts(listed, block, blocks.Reading())
+        self.assertEqual(
+            [(text.rows, text.source) for text in texts],
+            [((1,), "こんにちは。"), ((2, 3), "\\SE[1]元気？\nまたね。")],
+        )
 
     def test_list_items_of_the_japanese_keep_a_row_each_beside_a_face(self):
         help_text = wrap_help(

@@ -34,6 +34,7 @@ from util.paths import (
     ensure_game_tool_gitignore,
     game_tool_gitattributes_text,
     is_portable_game_file,
+    is_project_file,
     staging_folder,
 )
 from util.playtest import fixes
@@ -1639,6 +1640,11 @@ def _is_legacy_baseline_migration(
 
 
 def _is_tool_owned_path(relative: str) -> bool:
+    # A game update leaves the project's files as they are, even the notes
+    # of a game whose `original` branch holds them from before Set up kept
+    # them out (is_project_file).
+    if is_project_file(relative):
+        return True
     pure = PurePosixPath(relative)
     lowered = tuple(part.casefold() for part in pure.parts)
     return bool(
@@ -1891,7 +1897,7 @@ def _write_tree_from_folder(
     preserve_native = _preserve_game_files(repo)
     discovered_files = _source_files(source, format_json=format_json and not preserve_native)
     if not include_tool_state:
-        discovered_files = [entry for entry in discovered_files if not entry.relative.startswith(".dazedtl/")]
+        discovered_files = [entry for entry in discovered_files if not is_project_file(entry.relative)]
     for filename in ((".gitignore", ".gitattributes") if preserve_native else (".gitignore",)):
         managed = repo.joinpath(game_prefix, filename)
         if managed.is_file():

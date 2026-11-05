@@ -1,15 +1,26 @@
 {
-  "description": "A map HUD plugin that draws the party's gold in its own window while a message is open, in a currency unit translation leaves in Japanese, and an opening message that opens one at once.",
+  "description": "Map HUD plugins: MapHud draws the party's gold and the game's currency unit in its own window while a message is open, and VariableWindow draws the name of the variable an opening plugin command shows, while the other variable's name is the editor's alone. An opening message opens both at once.",
   "plugins": [
     {
       "name": "MapHud",
       "status": true,
       "description": "マップHUD",
       "parameters": {}
+    },
+    {
+      "name": "VariableWindow",
+      "status": true,
+      "description": "変数ウィンドウ",
+      "parameters": {}
     }
   ],
   "system": {
-    "currencyUnit": "ゴールド"
+    "currencyUnit": "ゴールド",
+    "variables": [
+      "",
+      "現在のドローン",
+      "作業用"
+    ]
   },
   "events": [
     {
@@ -43,6 +54,18 @@
             "tileId": 0
           },
           "list": [
+            {
+              "code": 357,
+              "indent": 0,
+              "parameters": [
+                "VariableWindow",
+                "show",
+                "ウィンドウを表示",
+                {
+                  "variableId": "1"
+                }
+              ]
+            },
             {
               "code": 101,
               "indent": 0,

@@ -115,6 +115,12 @@ GAME_SKILL_RESERVED_NAMES = frozenset({"quirks.md", "game.md", "translation.md"}
 # It is the project's, like the glossary: Git keeps it, translation requests
 # never carry it and players never download it.
 GAME_NOTES_FILENAME = "AGENTS.md"
+# The notes' name in any case as a .gitattributes and pathspec pattern
+# (is_game_notes); Git on Windows lets them in under any case already.
+GAME_NOTES_PATTERN = "".join(
+    f"[{letter.lower()}{letter.upper()}]" if letter.isalpha() else letter
+    for letter in GAME_NOTES_FILENAME
+)
 
 GAME_TOOL_GITIGNORE_BEGIN = "# BEGIN DazedTL portable translation settings"
 GAME_TOOL_GITIGNORE_END = "# END DazedTL portable translation settings"
@@ -157,13 +163,16 @@ GAME_REPOSITORY_METADATA = (".gitignore", ".gitattributes", "README.md")
 # archive`, which builds a patch's ZIP and the forges' downloads GameUpdate
 # applies, leaves them out.
 GAME_TOOL_FOLDERS = (GAME_METADATA_RELATIVE.as_posix(), "ace_json")
-GAME_TOOL_EXPORT_IGNORED = (*GAME_TOOL_FOLDERS, GAME_NOTES_FILENAME)
+GAME_TOOL_EXPORT_IGNORED = (*GAME_TOOL_FOLDERS, GAME_NOTES_PATTERN)
 # The repository's description files stay out of archives too, so a patch's
 # ZIP carries only the game.
 GAME_TOOL_ARCHIVE_EXCLUDES = (*GAME_TOOL_EXPORT_IGNORED, *GAME_REPOSITORY_METADATA)
 GAME_TOOL_GITATTRIBUTES_RULES = tuple(
     f"/{path} export-ignore" for path in GAME_TOOL_EXPORT_IGNORED
 )
+# The rule that kept only the notes' exact name out, which the rule for any
+# case replaces where it stands.
+_LEGACY_NOTES_GITATTRIBUTES_RULE = f"/{GAME_NOTES_FILENAME} export-ignore"
 GAME_TOOL_GITATTRIBUTES_COMMENT = (
     "# DazedTL's glossary, settings, skills and assistant notes, and VX Ace's"
     " ace_json, stay out of players' downloads.\n"
@@ -422,8 +431,7 @@ def is_portable_game_file(relative: str) -> bool:
     return parts in {
         (".dazedtl", GLOSSARY_FILENAME),
         (".dazedtl", "settings.json"),
-        (GAME_NOTES_FILENAME,),
-    } or (len(parts) == 3 and parts[:2] == (".dazedtl", "skills") and parts[2].casefold().endswith(".md"))
+    } or is_game_notes(relative) or (len(parts) == 3 and parts[:2] == (".dazedtl", "skills") and parts[2].casefold().endswith(".md"))
 
 
 def portable_game_files(game_root: str | Path) -> list[str]:
@@ -435,7 +443,7 @@ def portable_game_files(game_root: str | Path) -> list[str]:
     candidates = [
         metadata / GLOSSARY_FILENAME,
         metadata / "settings.json",
-        root / GAME_NOTES_FILENAME,
+        *game_notes_files(root),
     ]
     if skills.is_dir() and not skills.is_symlink():
         candidates.extend(skills.iterdir())
@@ -448,11 +456,41 @@ def portable_game_files(game_root: str | Path) -> list[str]:
     )
 
 
+def is_game_notes(relative: str) -> bool:
+    """Whether a game-relative path is the assistant notes, in any case: a
+    case-insensitive checkout, as on Windows, where Git sets
+    `core.ignorecase`, takes `agents.md` for them, and the forges' archives,
+    which match case, would ship it to players under exact-case rules."""
+    return relative.casefold() == GAME_NOTES_FILENAME.casefold()
+
+
+def game_notes_files(game_root: str | Path) -> list[Path]:
+    """The game's assistant notes as its folder holds them: the entries at
+    its root is_game_notes matches, which a case-sensitive file system, as
+    on Linux, can hold more than one of."""
+    try:
+        return sorted(path for path in Path(game_root).iterdir() if is_game_notes(path.name))
+    except OSError:
+        return []
+
+
+def is_project_file(relative: str) -> bool:
+    """Whether a game-relative path is the project's own, never the original
+    game's: a file under DazedTL's folder, or the assistant notes, even ones
+    the game folder held before Set up, and anything in a folder an
+    assistant gave their name. No record of the original game holds them, a
+    game update leaves them as they are, and Go back and Start over leave
+    the notes, whose edits by an assistant are a checkpoint of their own
+    (checkpoint_commits `_saving`)."""
+    first = relative.partition("/")[0]
+    return first == GAME_METADATA_RELATIVE.as_posix() or is_game_notes(first)
+
+
 def is_game_tool_file(relative: str) -> bool:
     """Whether a game-relative path is one of DazedTL's own files that players
-    never download: the files under its folders, the assistant notes and the
+    never download: the project's files, a VX Ace game's ace_json and the
     repository's description files."""
-    if relative in GAME_REPOSITORY_METADATA or relative == GAME_NOTES_FILENAME:
+    if relative in GAME_REPOSITORY_METADATA or is_project_file(relative):
         return True
     folder, separator, _name = relative.partition("/")
     return bool(separator) and folder in GAME_TOOL_FOLDERS
@@ -460,7 +498,14 @@ def is_game_tool_file(relative: str) -> bool:
 
 def game_tool_gitattributes_text(existing: str) -> str:
     """Return a game's .gitattributes with the rules keeping DazedTL's own
-    files out of archives, adding each once."""
+    files out of archives, adding each once, the notes' rule for any case in
+    place of the exact-case one that came before it."""
+    existing = re.sub(
+        rf"^{re.escape(_LEGACY_NOTES_GITATTRIBUTES_RULE)}(?=\r?$)",
+        f"/{GAME_NOTES_PATTERN} export-ignore",
+        existing,
+        flags=re.MULTILINE,
+    )
     present = {line.strip() for line in existing.splitlines()}
     missing = [rule for rule in GAME_TOOL_GITATTRIBUTES_RULES if rule not in present]
     if not missing:

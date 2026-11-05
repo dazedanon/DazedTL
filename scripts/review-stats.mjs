@@ -3,8 +3,8 @@
 // landed review record in the shared Git directory's reviews log and every
 // commit on dev whose `Introduced-by:` trailer (fix-trailers.mjs) names the
 // commit that brought in the bug it fixes, and matches that commit to the
-// landing that holds it. Bugs take days to surface, so escapes are set
-// beside landings only once those are `exposureDays` old.
+// landing that holds it. Bugs take days of work to surface, so escapes are
+// set beside landings only once those are `exposureDays` active days old.
 // Usage: node scripts/review-stats.mjs
 import fs from "node:fs";
 import path from "node:path";
@@ -15,14 +15,15 @@ import {
   readCommits,
   tracedFix,
 } from "./fix-trailers.mjs";
-import { gitIn, reviewLog } from "./land-lock.mjs";
+import { gitIn, knownLenses, reviewLog } from "./land-lock.mjs";
 
 /**
  * @typedef {{ kind?: string, outcome: string, review: number }} Finding
- * @typedef {{ range: string, reviews: number, findings: Finding[], landed: number | null }} Logged
- * A landed range with how many independent reviews it ran, their findings
- * and when it landed, in milliseconds; one its author reviewed or skipped,
- * before independent reviews, ran none, and its findings count as review 0.
+ * @typedef {{ range: string, reviews: number, lenses: string[], findings: Finding[], landed: number | null }} Logged
+ * A landed range with how many independent reviews it ran, the lenses they
+ * all ran (land-lock.mjs `reviewLenses`), their findings and when it landed, in
+ * milliseconds; one its author reviewed or skipped, before independent
+ * reviews, ran none, and its findings count as review 0.
  * @typedef {Logged & { commits: string[], lines: number }} Landing
  * A logged landing with the full hashes of its range's commits and its
  * `codeLines`.
@@ -31,8 +32,25 @@ import { gitIn, reviewLog } from "./land-lock.mjs";
  * names, its `unknown` or `none` marks and who found the bug.
  */
 
-/** How many days old a landing is before the bugs that got past it count. */
+/**
+ * How many active days old a landing is before the bugs that got past it
+ * count: days after its own on which a landing reached dev. Bugs surface
+ * while work goes on, so quiet weeks such as a vacation add no exposure.
+ */
 export const exposureDays = 14;
+
+/**
+ * A time's day number. Days split at local midnight, since landings and this
+ * report run on the user's machine and their evening sessions cross midnight
+ * UTC: a UTC split would cut one evening's work into two days.
+ * @param {number} time In milliseconds.
+ */
+const dayOf = (time) => {
+  const date = new Date(time);
+  return (
+    Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) / 86_400_000
+  );
+};
 
 /** The upper ends of the landing size buckets, in code lines. */
 const sizes = [100, 300, 1000];
@@ -47,6 +65,9 @@ export function loggedLandings(text) {
   /** @type {Logged[]} */
   const landings = [];
   const unread = [];
+  // Every landing time, from lines read as landings or not, since each
+  // logged landing reached dev and makes its day an active one.
+  const times = [];
   for (const [index, line] of text.split("\n").entries()) {
     if (!line.trim()) continue;
     const where = `Reviews log line ${index + 1}`;
@@ -57,6 +78,9 @@ export function loggedLandings(text) {
       unread.push(`${where} is not JSON.`);
       continue;
     }
+    const landed =
+      typeof row?.landed === "string" ? Date.parse(row.landed) : NaN;
+    if (Number.isFinite(landed)) times.push(landed);
     const independent = row?.reviewer === "independent";
     // An early landing could skip its review, recording why instead.
     const findings = Array.isArray(row?.findings)
@@ -75,10 +99,11 @@ export function loggedLandings(text) {
       unread.push(`${where} has no range or a finding without an outcome.`);
       continue;
     }
-    const landed = Date.parse(row.landed);
     landings.push({
       range: row.range,
       reviews: independent ? (row.reviews ?? 1) : 0,
+      lenses:
+        independent && Array.isArray(row.lenses) ? knownLenses(row.lenses) : [],
       findings: findings.map((/** @type {any} */ item) => ({
         ...(item.kind === undefined ? {} : { kind: item.kind }),
         outcome: item.outcome,
@@ -87,7 +112,7 @@ export function loggedLandings(text) {
       landed: Number.isFinite(landed) ? landed : null,
     });
   }
-  return { landings, unread };
+  return { landings, unread, times };
 }
 
 /**
@@ -139,14 +164,18 @@ export function highEnd(low, { named, unknown }) {
  * it in never got past it.
  * @param {Landing[]} landings
  * @param {Fix[]} fixes
- * @param {{ now: number, fixCommits: Set<string> }} options `fixCommits`
- *   holds every commit whose subject is a fix's.
+ * @param {{ landed: number[], fixCommits: Set<string> }} options
+ *   `landed` holds every logged landing's time, listed or not, to count
+ *   active days; `fixCommits` holds every commit whose subject is a fix's.
  */
-export function summarize(landings, fixes, { now, fixCommits }) {
+export function summarize(landings, fixes, { landed, fixCommits }) {
+  const days = [...new Set(landed.map(dayOf))];
   /** @type {Map<number, { landings: number, escapes: number }>} */
   const byReviews = new Map();
   /** @type {Map<number, { landings: number, escapes: number }>} */
   const bySize = new Map();
+  /** @type {Map<string, { landings: number, escapes: number }>} */
+  const byLenses = new Map();
   /** @type {Map<number, Record<string, { fixed: number, dismissed: number }>>} */
   const rounds = new Map();
   /** @type {Map<string, Landing>} */
@@ -167,18 +196,26 @@ export function summarize(landings, fixes, { now, fixCommits }) {
       group[field] += 1;
       map.set(key, group);
     }
+    // A landing with no independent review ran no lens either, so it stays
+    // out of the lens rows rather than skew those without one.
+    if (!landing.reviews) return;
+    const lenses = landing.lenses.join(" + ");
+    const group = byLenses.get(lenses) ?? { landings: 0, escapes: 0 };
+    group[field] += 1;
+    byLenses.set(lenses, group);
   };
   let recent = 0;
   let undated = 0;
   for (const landing of landings) {
     for (const commit of landing.commits) owner.set(commit, landing);
+    const from = landing.landed === null ? null : dayOf(landing.landed);
     if (
-      landing.landed !== null &&
-      now - landing.landed >= exposureDays * 86_400_000
+      from !== null &&
+      days.filter((day) => day > from).length >= exposureDays
     ) {
       exposed.add(landing);
       tally(landing, "landings");
-    } else if (landing.landed === null) undated += 1;
+    } else if (from === null) undated += 1;
     else recent += 1;
     for (const finding of landing.findings) {
       const round = rounds.get(finding.review) ?? {};
@@ -264,6 +301,7 @@ export function summarize(landings, fixes, { now, fixCommits }) {
           : `${sizes[bucket - 1]} or more`,
       group,
     ]),
+    byLenses: sorted(byLenses),
     recent,
     undated,
     rounds: sorted(rounds),
@@ -323,7 +361,7 @@ function main() {
     path.resolve(git(["rev-parse", "--git-common-dir"]).stdout.trim()),
     reviewLog,
   );
-  const { landings, unread } = loggedLandings(
+  const { landings, unread, times } = loggedLandings(
     fs.existsSync(log) ? fs.readFileSync(log, "utf8") : "",
   );
   problems.push(...unread);
@@ -400,7 +438,7 @@ function main() {
     (commit) => fixCommits.has(commit.commit) && !tracedCommits.has(commit),
   ).length;
   const summary = summarize(withCommits, fixes, {
-    now: Date.now(),
+    landed: times,
     fixCommits,
   });
   const short = (/** @type {string} */ hash) => hash.slice(0, 8);
@@ -418,7 +456,7 @@ function main() {
     /** @type {[any, { landings: number, escapes: number }][]} */ rows,
     /** @type {(key: any) => string} */ name,
   ) => {
-    console.log(`Landings ${exposureDays} days old or more, ${title}:`);
+    console.log(`Landings ${exposureDays} active days old or more, ${title}:`);
     if (!rows.length) console.log("  none yet");
     for (const [key, group] of rows)
       console.log(
@@ -435,8 +473,13 @@ function main() {
     summary.bySize,
     (bucket) => bucket,
   );
+  buckets(
+    "with independent reviews, by the lenses every review ran",
+    summary.byLenses,
+    (lenses) => lenses || "no lens",
+  );
   console.log(
-    `${count(summary.recent, "landing")} under ${exposureDays} days old ${summary.recent === 1 ? "is" : "are"} left out of these until then.`,
+    `${count(summary.recent, "landing")} under ${exposureDays} active days old ${summary.recent === 1 ? "is" : "are"} left out of these until then; an active day is one on which a landing reached dev.`,
   );
   if (summary.undated)
     console.log(
@@ -451,7 +494,7 @@ function main() {
     );
   if (summary.foundBy.length)
     console.log(
-      `Bugs that got past landings ${exposureDays} days old or more, by who found them: ${summary.foundBy
+      `Bugs that got past landings ${exposureDays} active days old or more, by who found them: ${summary.foundBy
         .map(([found, n]) => `${found || "not recorded"} ${n}`)
         .join(", ")}`,
     );

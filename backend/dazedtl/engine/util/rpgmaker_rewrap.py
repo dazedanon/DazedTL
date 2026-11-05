@@ -1044,8 +1044,9 @@ def _original(node: dict, key: str | None = None) -> str | None:
     return original.get(key) if isinstance(original, dict) and isinstance(original.get(key), str) else None
 
 
-def _slots(document, file_name: str, layout: Layout) -> Iterator[_Slot]:
-    """Every display value DazedTL fits in *document*."""
+def _slots(document, file_name: str, layout: Layout, reading=None) -> Iterator[_Slot]:
+    """Every display value DazedTL fits in *document*, a message's text by
+    *reading* (see :func:`_texts`)."""
     fields = LIST_FIELDS_BY_FILE.get(file_name, ())
     if fields and isinstance(document, list):
         for index, entry in enumerate(document):
@@ -1066,7 +1067,7 @@ def _slots(document, file_name: str, layout: Layout) -> Iterator[_Slot]:
     for owner, pointer in _note_owners(document):
         yield _Slot(f"{pointer}/note", note_box(layout), None, owner, "note")
     for commands, pointer in _command_lists(document):
-        yield from _command_slots(commands, pointer, layout)
+        yield from _command_slots(commands, pointer, layout, reading)
 
 
 def _note_owners(node, pointer: str = ""):
@@ -1097,30 +1098,18 @@ def _command_lists(node, pointer: str = ""):
             yield from _command_lists(value, f"{pointer}/{index}")
 
 
-def _command_slots(commands: list, pointer: str, layout: Layout) -> Iterator[_Slot]:
-    slots: list[tuple[int, _Slot]] = []
-    for block in blocks.blocks(commands):
-        if block.kind in (blocks.MESSAGE, blocks.SCROLL):
-            # A message is fitted as a whole, even when its rows are stored
-            # one command each, as Assistant-led writes them.
-            if block.kind == blocks.SCROLL:
-                box = scrolling_box(layout)
-            else:
-                box = message_box(layout, face=block.face)
-            parts = block.parts
-        elif block.kind == blocks.HELP:
-            # Translated choice help, fitted over its own rows as a message
-            # is; other comments, which plugins may read as settings, stay.
-            box = choice_help_box(layout, face=block.face)
-            parts = tuple(part for part in block.parts if part.translated and part.rows)
-        else:
-            continue
-        # The window shows a choice's help whole: the game's own rows, such
-        # as a page number, and every part around them.
-        together = block.rows if block.kind == blocks.HELP else None
-        for part in parts:
+def _texts(commands: list, block, reading) -> Iterator[tuple[tuple[tuple[int, ...], ...], str | None]]:
+    """A block's text in the pieces fitted on their own, each as its runs of
+    rows and the Japanese it was translated from. A message or scrolling
+    text is each text the engine sends, as *reading* reads them
+    (util/rpgmaker_blocks `sent_texts`), or without one each part; a
+    choice's help each translated part."""
+    if block.kind == blocks.HELP:
+        for part in block.parts:
+            if not (part.translated and part.rows):
+                continue
             runs = [part.rows]
-            if block.kind == blocks.HELP and part.on_head:
+            if part.on_head:
                 # Assistant-led writes the comment's rows one by one: the
                 # game's own keep their row, and the text around them is
                 # fitted on its own. Translation records the rows it owns.
@@ -1130,7 +1119,35 @@ def _command_slots(commands: list, pointer: str, layout: Layout) -> Iterator[_Sl
                     for own, rows in groupby(part.rows, lambda at: at in kept)
                     if not own
                 ]
-            original = blocks.source(commands, part)
+            yield tuple(runs), blocks.source(commands, part)
+    elif reading is not None:
+        for text in blocks.sent_texts(commands, block, reading):
+            yield (text.rows,), text.source
+    else:
+        for part in block.parts:
+            yield (part.rows,), blocks.source(commands, part)
+
+
+def _command_slots(commands: list, pointer: str, layout: Layout, reading=None) -> Iterator[_Slot]:
+    slots: list[tuple[int, _Slot]] = []
+    for block in blocks.blocks(commands):
+        if block.kind in (blocks.MESSAGE, blocks.SCROLL):
+            # A message's text is fitted as a whole, even when its rows are
+            # stored one command each, as Assistant-led writes them.
+            if block.kind == blocks.SCROLL:
+                box = scrolling_box(layout)
+            else:
+                box = message_box(layout, face=block.face)
+        elif block.kind == blocks.HELP:
+            # Translated choice help, fitted over its own rows as a message
+            # is; other comments, which plugins may read as settings, stay.
+            box = choice_help_box(layout, face=block.face)
+        else:
+            continue
+        # The window shows a choice's help whole: the game's own rows, such
+        # as a page number, and every part around them.
+        together = block.rows if block.kind == blocks.HELP else None
+        for runs, original in _texts(commands, block, reading):
             source = original if len(runs) == 1 else None
             for rows in runs:
                 first = rows[0]
@@ -1189,10 +1206,10 @@ def _command_slots(commands: list, pointer: str, layout: Layout) -> Iterator[_Sl
         yield slot
 
 
-def _fitted_slots(document, file_name: str, layout: Layout, areas):
+def _fitted_slots(document, file_name: str, layout: Layout, areas, reading=None):
     """The translated values in *document* DazedTL fits, limited to boxes
     measured by the Line widths entries in *areas* when given."""
-    for slot in _slots(document, file_name, layout):
+    for slot in _slots(document, file_name, layout, reading):
         value = slot.read()
         if not isinstance(value, str):
             continue
@@ -1220,6 +1237,7 @@ def fit_document(
     *,
     areas: set[str] | None = None,
     resized: bool = False,
+    reading=None,
 ) -> FitReport:
     """Fit *document* in place: each translated value that does not fit its
     box is wrapped again, as translation wraps it. *areas* limits fitting to
@@ -1227,9 +1245,13 @@ def fit_document(
     widths moved, and *resized* says the text was fitted to other widths, so
     a message the fitter laid out narrower is laid out again (see
     :func:`fit_value`). Japanese left untranslated is never rewrapped. A
-    message keeps its commands (see :func:`fit_run`)."""
+    message keeps its commands (see :func:`fit_run`). With a *reading*
+    (util/rpgmaker_blocks `Reading`, a Guided project's speaker settings),
+    each text the engine sends of a message is fitted on its own, as a run
+    wraps it, though a writer kept one source over several, such as a
+    nameplate and its speech; without one, each part."""
     report = FitReport()
-    fitted = list(_fitted_slots(document, file_name, layout, areas))
+    fitted = list(_fitted_slots(document, file_name, layout, areas, reading))
     # Text a window shows together is checked once, at its first value.
     checks: dict[tuple[int, ...], _Slot] = {}
     for slot, _value in fitted:

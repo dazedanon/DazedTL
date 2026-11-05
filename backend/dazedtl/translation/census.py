@@ -37,7 +37,8 @@ from dazedtl.languages import (
 # 3: only the plugins the game loads, without DazedTL's own Set up files, and
 #    the comment markers a plugin's settings list set aside.
 # 4: lines of Japanese punctuation without letters, listed apart (unsent).
-VERSION = 4
+# 5: the variable names a game's plugins draw, as players read them.
+VERSION = 5
 
 _RUN = re.compile(source_pattern("census_run", JAPANESE))
 _WORD = re.compile(source_pattern("census_word", JAPANESE))
@@ -295,10 +296,16 @@ def _rpgmaker_data(name):
     )
 
 
-def read_json(name, text, markers=frozenset()):
+# The field segment of a variable name the game's plugins draw
+# (util/rpgmaker_variable_names); the other names are identifiers.
+DRAWN_SEGMENT = "*[drawn]"
+
+
+def read_json(name, text, markers=frozenset(), variables=frozenset()):
     """A JSON file's rows; in MV/MZ data, the comment lines players read
-    under the game's comment *markers* (rpgmaker_markers.comment_markers)
-    have a field of their own."""
+    under the game's comment *markers* (rpgmaker_markers.comment_markers),
+    and in System.json the names of the *variables* its plugins draw, have a
+    field of their own."""
     document = _json(text)
     if document is None:
         return None
@@ -310,7 +317,13 @@ def read_json(name, text, markers=frozenset()):
     # number, which JSON never escapes as it may escape a marker.
     elif markers and "408" in text:
         shown = shown_comments(document, markers)
-    return [(kind, *row) for row in walk(document, shown=shown)]
+    drawn = {f"variables/{index}" for index in variables}
+    return [
+        (kind, location, f"variables/{DRAWN_SEGMENT}", value)
+        if location in drawn
+        else (kind, location, field, value)
+        for location, field, value in walk(document, shown=shown)
+    ]
 
 
 # The field segment of a plugin setting that lists the comment markers whose
@@ -739,11 +752,20 @@ def read_wolf(document):
     return rows
 
 
-def read(name, data, beside_game=True, markers=frozenset(), mz=False, own=frozenset()):
+def read(
+    name,
+    data,
+    beside_game=True,
+    markers=frozenset(),
+    mz=False,
+    own=frozenset(),
+    variables=frozenset(),
+):
     """The rows of one readable game file, or None when it cannot be read;
     beside_game is False for a decoded dump, whose top files aren't readmes.
-    markers are the comment markers of the game's plugins (plugin_markers);
-    mz and own are read_plugins'."""
+    markers are the comment markers of the game's plugins (plugin_markers),
+    and variables the ids of the variable names they draw; mz and own are
+    read_plugins'."""
     from util.rpgmaker_markers import PLUGIN_LIST
 
     suffix = PurePosixPath(name).suffix.casefold()
@@ -754,7 +776,7 @@ def read(name, data, beside_game=True, markers=frozenset(), mz=False, own=frozen
     if lowered.endswith("/" + PLUGIN_LIST):
         return read_plugins(text, mz, own)
     if suffix == ".json":
-        return read_json(name, text, markers)
+        return read_json(name, text, markers, variables)
     if suffix == ".js":
         return read_code("js:plugin" if "/plugins/" in lowered else "js", text)
     if suffix == ".tjs":
@@ -1015,6 +1037,9 @@ PROTECTED = [
             ("map", "display_name"),
             ("system", "gameTitle"),
             ("system", "game_title"),
+            ("system", "currencyUnit"),
+            ("system", "currency_unit"),
+            ("system", f"variables/{DRAWN_SEGMENT}"),
             ("system", "terms/**"),
             ("system", "words/**"),
         ]
@@ -1468,7 +1493,8 @@ def scan(
 
     def game(key):
         """What the plugin list *key* tells of its game: (comment markers,
-        whether it is MZ, the plugins it lists, the plugins it loads)."""
+        whether it is MZ, the plugins it lists, the plugins it loads, the
+        list itself)."""
         if key not in games:
             data = plugin_lists.get(key)
             text = decode_text(data() if callable(data) else data) if data else None
@@ -1484,6 +1510,7 @@ def scan(
                     if isinstance(entry.get("name"), str)
                 },
                 {entry["name"].casefold() for entry in loaded},
+                entries,
             )
         return games[key]
 
@@ -1503,8 +1530,49 @@ def scan(
         if at < 0 or not lowered.endswith(".js") or key not in plugin_lists:
             return False
         plugin = lowered[at + len("/js/plugins/") : -len(".js")]
-        _markers, _mz, listed, loaded = game(key)
+        _markers, _mz, listed, loaded, _entries = game(key)
         return plugin in listed and plugin not in loaded
+
+    def variables_for(name, data):
+        """The ids of the variable names an MV/MZ System.json's game draws
+        (util/rpgmaker_variable_names), from the plugins and data files
+        beside it."""
+        from util.rpgmaker_variable_names import drawn, plugin, read_facts
+
+        if not _rpgmaker_data(name) or PurePosixPath(name).name != "System.json":
+            return frozenset()
+        folder = PurePosixPath(name).parent
+        plugins = beside_data(folder)
+        entries = game(plugins.as_posix().casefold())[4]
+        if not entries:
+            return frozenset()
+        files = {each.casefold(): each for each in names}
+
+        def text(each):
+            return decode_text(load(each)) if each else None
+
+        system = _json(decode_text(data) or "")
+        return drawn(
+            entries,
+            lambda name: plugin(
+                text(
+                    files.get(
+                        (plugins.parent / "plugins" / f"{name}.js")
+                        .as_posix()
+                        .casefold()
+                    )
+                )
+            ),
+            lambda: (
+                fact
+                for each in names
+                if (path := PurePosixPath(each)).parent == folder
+                and path.suffix.casefold() == ".json"
+                and path.name != "System.json"
+                and (fact := read_facts(path.name, text(each))) is not None
+            ),
+            system,
+        )
 
     def plugin_file(name):
         lowered = "/" + name.casefold()
@@ -1522,10 +1590,16 @@ def scan(
             except ValueError:
                 rows = None
         elif ("/" + name.casefold()).endswith("/" + PLUGIN_LIST):
-            _markers, mz, _listed, _loaded = game(name.casefold())
+            _markers, mz, _listed, _loaded, _entries = game(name.casefold())
             rows = read(name, data, source == "tool", mz=mz, own=own_plugins)
         else:
-            rows = read(name, data, source == "tool", markers_for(name))
+            rows = read(
+                name,
+                data,
+                source == "tool",
+                markers_for(name),
+                variables=variables_for(name, data),
+            )
         if rows is None:
             unreadable.append(name)
         else:

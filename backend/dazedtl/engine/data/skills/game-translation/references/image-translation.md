@@ -46,6 +46,19 @@ and `glossary-and-prompts.md` owns the terms the labels must match. Where UI ima
 have already been redrawn with chosen English terms, the glossary is load-bearing
 for the text pipeline too and the game bible must say so.
 
+## KiriKiri images
+
+KiriKiri keeps its images in `.xp3` archives, such as `data.xp3` or `bgimage.xp3` and `fgimage.xp3`, as PNG, BMP, JPEG or its own TLG, and finds a file by its name in every archive and folder it searches.
+
+- Unpack the archives into one folder in the game with `tools/Game Archives/KiriKiri XP3/unpack_xp3.py` and run the Images steps on that folder (`images --scan --root <folder>`).
+- Images edits a BMP, JPEG or TLG image as a PNG copy, and applying it writes it back in its own format under its own name, a TLG with its tags kept: KiriKiri picks an image's decoder by its extension, so never rename an image to `.png`.
+- An image without alpha may take its transparency from a mask beside it, named `<name>_m` with any image extension.
+  Lettering outside the mask's opaque area never shows, so read the mask before placing text, and translate a mask that holds the lettering's shape with its image.
+- Pack only the applied images into a patch archive, flat, since KAG's `Initialize.tjs` adds `patch.xp3>` to the storages it searches by bare name: `pack_xp3.py patch.xp3 --root <folder> --flat <files...>`.
+  Check `Initialize.tjs` or `startup.tjs` for the patch names the game loads (`patch.xp3`, `patch2.xp3` and so on), take the next free one when the game ships a patch, and add the archive to the runtime manifest.
+- `unpack_xp3.py` names each file it can't read, and its docstring gives its exit codes.
+  A checksum mismatch, or an index it can't read, means a game-specific cipher, which the bundled tools can't decode, and such a game may apply its cipher to a patch archive too: report its images as manual work unless the user unpacks the archive with an outside tool and the game is shown to read an unencrypted patch.
+
 ## Reusable manual pipeline: Musi Dream
 
 Stable project: `tools/Active Projects/Musi Dream (TyranoScript)/`.

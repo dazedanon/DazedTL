@@ -392,4 +392,5 @@ def _read(task, git_blobs):
             frozenset(task["markers"] or ()),
             blob,
             original if blob else lambda: None,
+            frozenset(task.get("variables") or ()),
         )

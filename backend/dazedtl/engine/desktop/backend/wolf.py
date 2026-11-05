@@ -138,7 +138,8 @@ def run(plan, log):
             from util.wolfdawn import inject_precheck as pre
             from util.skills import load_clipboard_skill
             issues = pre.issues_for_ui(result["report"])
-            prompt = load_clipboard_skill("wolf_precheck_repair.md")
+            from dazedtl.translation.helper_command import task_opening
+            prompt = task_opening(root) + load_clipboard_skill("wolf_precheck_repair.md")
             for token, text in {"{{TRANSLATED_DIR}}": str(folder / "translated"), "{{GAME_ROOT}}": str(root), "{{ISSUES}}": pre.format_ai_repair_issues(issues)}.items():
                 prompt = prompt.replace(token, text)
             result["prompt"] = prompt if issues else ""

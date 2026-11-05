@@ -4,6 +4,7 @@ from typing import Annotated, Literal, NotRequired, TypedDict
 
 from dazedtl import actions
 from dazedtl.api.contracts.common import (
+    DocumentDrafts,
     Documents,
     EngineValue,
     Evidence,
@@ -136,7 +137,12 @@ class SpeakerSetup(TypedDict):
 
 
 class ContextDocumentStatus(TypedDict):
+    """Whether a guidance document's file holds text DazedTL can read, with
+    its definition's title and kind, which say what Guidance needs."""
+
     exists: bool
+    title: str
+    kind: Literal["core", "optional", "custom"]
     reviewed: bool
     needsReview: bool
     intentionalEmpty: bool
@@ -1000,7 +1006,7 @@ class GuidedState(TypedDict):
     sourceStatus: SourceStatus
     readiness: Readiness
     documents: Documents
-    drafts: Documents
+    drafts: DocumentDrafts
     tools: PlaytestTools | None
     artifacts: list[ReleaseArtifact]
     acePacking: AcePacking

@@ -24,6 +24,7 @@ from util.original_values import Originals
 from util import rpgmaker_blocks as blocks
 from util.rpgmaker_markers import PluginList, comment_markers, lists_mz
 from util.rpgmaker_plugin_registry import PluginRegistryError, loaded_entries
+from util.rpgmaker_variable_names import data_drawn
 from util.rpgmaker_qa_checks import BATTLE_MESSAGES, battler_name_note, runtime
 from util.rpgmaker_qa_preflight import (
     STANDARD_FILES,
@@ -52,7 +53,6 @@ _PLACEHOLDER_RE = re.compile(r"[◯〇]|○○")
 _SHOWN_CODE_RE = re.compile(r"\\([VNPI])\[(\d+)\]|\\(G)(?![A-Za-z\[])", re.IGNORECASE)
 _PLACEHOLDER_NUMBER_RE = re.compile(r"%\d")
 _MAP_RE = re.compile(r"Map\d+\.json")
-_EVENT_FILE_RE = re.compile(r"(?:Map\d+|CommonEvents|Troops)\.json")
 # Event commands whose text the page check reads; the 101 nameplate is its
 # fifth parameter.
 _PAGE_TEXT = {101: 4, 401: 0, 405: 0, 320: 1, 324: 1, 325: 1}
@@ -179,13 +179,14 @@ class _Checks:
         glyphs; text never translated comes from preflight. The problem kind
         keeps its saved name, japanese, for every source."""
         markers = comment_markers(entries)
+        variables = data_drawn(self.data)
         source = languages.active_source()
         placeholders = reading()["placeholders"]
         for name, document in self.documents.items():
             if name not in STANDARD_FILES and not _MAP_RE.fullmatch(name):
                 continue
             for parts, value, kind, translated, original in visible_texts(
-                name, document, markers
+                name, document, markers, variables
             ):
                 if not isinstance(value, str) or not translated:
                     continue
@@ -278,7 +279,7 @@ class _Checks:
                     _original(system, "terms", "messages", key),
                 )
         for name, document in self.documents.items():
-            if _EVENT_FILE_RE.fullmatch(name):
+            if blocks.EVENT_FILE.fullmatch(name):
                 for path, commands in blocks.command_lists(document):
                     self._page(name, path, commands)
 

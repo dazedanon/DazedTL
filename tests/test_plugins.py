@@ -115,7 +115,7 @@ class PluginTests(unittest.TestCase):
         self.translation = SimpleNamespace(
             workspace=self.profile,
             idle=lambda _: None,
-            clean_drafts=lambda _: None,
+            clean_drafts=lambda *_: None,
             writable=lambda _: None,
             settings=SimpleNamespace(
                 language=lambda: "English", source_language=lambda: "Japanese"
@@ -340,7 +340,14 @@ class PluginTests(unittest.TestCase):
             "var $plugins = " + json.dumps(entries, ensure_ascii=False) + ";\r\n",
         )
         self.write("www/js/plugins/----.js", "")
+        # Copying the task hands it to an assistant, so a draft it reads holds
+        # it up; the final check's assistant, already at work, is not held.
+        held = []
+        self.translation.clean_drafts = lambda *work: held.append(work)
+        self.service.action(self.identity, "plugin_task", {"recheck": False})
+        self.assertEqual(held, [])
         self.service.action(self.identity, "plugin_task")
+        self.assertEqual(held, [(self.identity, "handoff")])
         files = self.service.load(self.identity)["files"]
         self.assertTrue(files["www/js/plugins/PluginB.js"]["enabled"])
         self.assertEqual(
@@ -1228,7 +1235,7 @@ class PluginTests(unittest.TestCase):
             translation = SimpleNamespace(
                 workspace=profile,
                 idle=lambda _: None,
-                clean_drafts=lambda _: None,
+                clean_drafts=lambda *_: None,
                 writable=lambda _: None,
                 settings=SimpleNamespace(
                     language=lambda: "English", source_language=lambda: "Japanese"
@@ -1463,7 +1470,7 @@ class AceScriptTests(unittest.TestCase):
             SimpleNamespace(
                 workspace=profile,
                 idle=lambda _: None,
-                clean_drafts=lambda _: None,
+                clean_drafts=lambda *_: None,
                 writable=lambda _: None,
                 settings=SimpleNamespace(
                     language=lambda: "English", source_language=lambda: "Japanese"

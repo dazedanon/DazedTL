@@ -10,7 +10,7 @@ import { until } from "./cdp.mjs";
 
 /**
  * How long, in milliseconds, a group's members get to end at SIGTERM before
- * SIGKILL ends them.
+ * SIGKILL ends them, unless `spawnGroup` is given another.
  */
 export const grace = 3_000;
 
@@ -55,12 +55,17 @@ export function members(group) {
  * supervisor ends every member, SIGKILLing those still running after the
  * grace, and the kernel sends it SIGTERM when this process dies (`setpriv
  * --pdeathsig`), so call this from the main thread, whose end the kernel
- * signals. Elsewhere the command runs on its own.
+ * signals. Elsewhere the command runs on its own. A test of the group's own
+ * ending passes a shorter `grace` so it need not wait the usual one.
  * @param {string} command
  * @param {string[]} args
- * @param {{ stdio?: import("node:child_process").StdioOptions, outlive?: boolean }} [options]
+ * @param {{ stdio?: import("node:child_process").StdioOptions, outlive?: boolean, grace?: number }} [options]
  */
-export function spawnGroup(command, args, { stdio, outlive = false } = {}) {
+export function spawnGroup(
+  command,
+  args,
+  { stdio, outlive = false, grace: wait = grace } = {},
+) {
   if (process.platform !== "linux")
     return spawn(command, args, { detached: true, stdio });
   if (!outlive && spawnSync("which", ["setpriv"]).status !== 0)
@@ -71,6 +76,7 @@ export function spawnGroup(command, args, { stdio, outlive = false } = {}) {
     process.execPath,
     fileURLToPath(new URL("supervise.mjs", import.meta.url)),
     outlive ? "" : String(process.pid),
+    String(wait),
     command,
     ...args,
   ];
@@ -110,7 +116,7 @@ export async function stopGroup(group) {
   const signal = (name) => signalGroup(group, name);
   if (!signal("SIGTERM")) return;
   const ended = (timeout) =>
-    until("the process group to end", () => !signal(0), timeout);
+    until("the process group to end", () => !signal(0), timeout, 50);
   try {
     // Its supervisor ends it, members that outlast the grace included.
     await ended(grace + 2_000);

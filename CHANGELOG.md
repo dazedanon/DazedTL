@@ -3,6 +3,47 @@
 Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 [release.mjs](scripts/release.mjs) writes each entry from [release/notes.md](release/notes.md).
 
+## [2.68.0] - 2026-11-05
+
+### Added
+
+- **Images:** BMP, JPEG and KiriKiri TLG images are listed and translated too, not only PNG files, in every game but RPG Maker MV and MZ, and **Apply to game** writes each back in its own format; without a chosen image folder, Images also looks in the game's data folder. In Assistant-led, the assistant can unpack a KiriKiri game's unencrypted archives and pack the translated images into a patch.xp3.
+
+### Fixed
+
+- **Project page:** a translation file lists each message as **Translate** sends it, alike from a translated and an untranslated copy of the game: with **First-line names** on, or a name a message shows on a row of its own, such as 【Name】 or Name：, the name is a line of its own and gives its speech that speaker, and a row opening with a code such as `\SE[1]` starts a line of its own; importing it no longer runs a name into its speech or a code into the row before when **Translate** applies it, text imported before included, no longer empties rows a translation left in Japanese, and keeps a line's Japanese as **Translate** does, without the blank rows inside it; an import skips those messages in a file exported before, or from a project whose **First-line names** setting differs.
+- **Assistant-led:** writing the game no longer runs a name on a row of its own, such as one above its speech, into the speech after it.
+- **Apply:** applying to the game, and Assistant-led writing it, no longer stops with an error on a message of rows that show nothing, such as two rows of pause codes alone.
+- **Project page:** importing a translation file no longer drops a choice's plugin condition, such as `if(s[1])`: the file lists a choice without it, as **Translate** sends it, and an import puts it back; an import skips those choices in a file exported before, and a file holding choices imported before this version without their conditions reads unapplied until **Apply** puts them back.
+- **Translate:** translating a message again no longer erases its rows an earlier run left in Japanese after a translated row, such as the speech under a name translated with **First-line names** on, once the setting is off, or speech whose request was refused: they are sent and translated on their own, a translation file lists them as lines of their own, Text QA counts them as left in Japanese and no correction of the row before writes over them, and Assistant-led writing them keeps their Japanese; with **Skip already translated text** off, it no longer erases a row after a name translated alone that holds no Japanese either, such as `……` or speech in English, which is translated on its own, and with it on, a row of a lone kana the name holds, such as あ after あかり, is no longer left in Japanese; runs estimated before this version send what they were approved with.
+
+## [2.67.0] - 2026-11-04
+
+### Changed
+
+- **Context:** when your assistant changes a guidance file while you have a draft of it, **Save** shows your draft beside the file and asks which to keep, in **Guidance** and in Assistant-led's **Context**, which now show the same tabs, names and saved state; a draft of the **Assistant notes** holds up only copying a task to your assistant, no longer estimates, runs or approval.
+
+### Fixed
+
+- **Database:** the currency unit after an amount of money, such as 円, and the variable names a plugin draws, such as LL_VariableWindow's label, are now translated in Guided and Assistant-led alike, while other variable names stay as they are, since plugins and scripts may look a variable up by its name; an already translated game shows them as lines left in System.json until its next Database run.
+- **Context:** a guidance file DazedTL can't read, such as an `AGENTS.md` that Windows PowerShell saved in another encoding, now says why on its tab instead of the tab disappearing, and the other files still save; **Go back** no longer lists a **Save Assistant notes** checkpoint as taken out.
+
+## [2.66.0] - 2026-11-04
+
+### Added
+
+- **Context:** Guided's **Guidance** now has the **Assistant notes** tab too, so you can read and edit what your assistant keeps about the game in `AGENTS.md`.
+
+### Changed
+
+- **Text QA:** corrections and proposals show the text they change in red and green, with the changed words marked, as soon as they appear instead of only once applied.
+
+### Fixed
+
+- **GameUpdate:** an update that fails partway, such as on a file the running game holds, a full disk or a folder too deep for Windows ("Could not find a part of the path"), now puts the game back as it was instead of leaving it half patched; a game gets this with its next copy of GameUpdate, such as from **Recreate GameUpdate files**.
+- **Text QA:** reviews no longer propose a speaker fix that names the character in Japanese, which stopped **Apply corrections** with "QA regression failed; all game-file changes were rolled back"; a failed apply now names the correction that stopped it.
+- **Context:** the **Assistant notes** (`AGENTS.md`) are no longer deleted by a game update when the game had them before Set up, are no longer saved with the files of new Assistant-led checkpoints, so undoing an older one no longer waits on a later one or brings back older notes, and an older Guided draft no longer replaces them: Save says how to keep either; one another program holds no longer fails every change to the game, and on Windows an `agents.md` in another case no longer reaches players' downloads.
+
 ## [2.65.0] - 2026-11-04
 
 ### Added
@@ -1685,6 +1726,9 @@ Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachan
 - The first release of DazedTL as a desktop app, installed from a ZIP with a START launcher and updated from inside the app.
 - **Guided steps** for RPG Maker MV, MZ and VX Ace games, and **Assistant-led** for any game.
 
+[2.68.0]: https://github.com/dazedanon/DazedTL/compare/v2.67.0...v2.68.0
+[2.67.0]: https://github.com/dazedanon/DazedTL/compare/v2.66.0...v2.67.0
+[2.66.0]: https://github.com/dazedanon/DazedTL/compare/v2.65.0...v2.66.0
 [2.65.0]: https://github.com/dazedanon/DazedTL/compare/v2.64.0...v2.65.0
 [2.64.0]: https://github.com/dazedanon/DazedTL/compare/v2.63.0...v2.64.0
 [2.63.0]: https://github.com/dazedanon/DazedTL/compare/v2.62.0...v2.63.0
