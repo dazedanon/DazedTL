@@ -849,6 +849,65 @@ class GuidedLineTests(unittest.TestCase):
             [name, speech, None],
         )
 
+    def test_a_choices_condition_clauses_stay_out_of_its_line_and_survive_an_import(
+        self,
+    ):
+        # The export listed a choice with its plugin condition clauses, and
+        # an import wrote a translation without them, so the game showed the
+        # choice whatever its condition.
+        from dazedtl.translation.guided_lines import GuidedLines
+
+        def choosing(choices, **original):
+            return _map(
+                [
+                    _command(102, choices, 1, 0, 2, 0, **original),
+                    _command(402, 0, choices[0]),
+                    _command(0, indent=1),
+                    _command(402, 1, choices[1]),
+                    _command(0, indent=1),
+                    _command(404),
+                    _command(0),
+                ]
+            )
+
+        japanese = ["if(s[1])はい", "いいえ en(v[3]<=50)"]
+        original = choosing(japanese)
+        # As a run writes them.
+        ran = choosing(["if(s[1])Yes", "No en(v[3]<=50)"], _original=japanese)
+        head = "Map001.json#/events/1/pages/0/list/0/parameters/0"
+        lines = GuidedLines(self.game("ran", ran, original), "ran", PAIR, True)
+        exported = [(row["source"], row["translation"]) for row in lines.lines()]
+        self.assertEqual(exported, [("はい", "Yes"), ("いいえ", "No")])
+        theirs = GuidedLines(
+            self.game("theirs", original, original), "theirs", PAIR, True
+        )
+        # A translation holding a clause of its own would add a condition.
+        self.assertEqual(
+            list(theirs.problems({f"{head}/0": "if(s[2])Yes", f"{head}/1": "No"})),
+            [f"{head}/0"],
+        )
+        theirs.save({f"{head}/0": "Yes", f"{head}/1": "No"}, "file.json")
+        working = read_json(self.root / "theirs-work/translated/Map001.json")
+        choice = working["events"][1]["pages"][0]["list"][0]
+        self.assertEqual(
+            (choice["parameters"][0], choice["_original"]),
+            (ran["events"][1]["pages"][0]["list"][0]["parameters"][0], japanese),
+        )
+        self.assertEqual(
+            [(row["source"], row["translation"]) for row in theirs.lines()], exported
+        )
+        # A file exported before lists the clauses in its source: its lines
+        # read as changed, so an import skips them.
+        _write, summary = translation_file.matched(
+            [
+                {"id": f"{head}/{index}", "source": source, "translation": "Maybe"}
+                for index, source in enumerate(japanese)
+            ],
+            {row["id"]: row for row in theirs.lines()},
+            theirs.problems,
+        )
+        self.assertEqual(summary["changed"], 2)
+
     def test_a_nameplate_names_the_speaker_of_the_text_after_it_alone(self):
         # A nameplate's speaker went on to every later text of its message,
         # so narration after the speech listed as that speaker's dialogue.
