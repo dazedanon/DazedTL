@@ -174,15 +174,26 @@ export const platformSensitive = (changed) =>
 
 /**
  * The paths a branch at `tip` changes since it left `base`, relative to the
- * repository's top, a renamed file under both of its names.
+ * repository's top, a renamed file under both of its names. Throws when Git
+ * can't tell, as for refs with no common commit, so no rule reads that as a
+ * branch that changes nothing.
  * @param {Git} git
  * @param {string} base
  * @param {string} tip
  */
 export function changedPaths(git, base, tip) {
-  return git(["diff", "--name-only", "--no-renames", "-z", `${base}...${tip}`])
-    .stdout.split("\0")
-    .filter(Boolean);
+  const diff = git([
+    "diff",
+    "--name-only",
+    "--no-renames",
+    "-z",
+    `${base}...${tip}`,
+  ]);
+  if (diff.status !== 0)
+    throw new Error(
+      `Git can't list what ${tip} changes since ${base}: ${diff.stderr.trim()}`,
+    );
+  return diff.stdout.split("\0").filter(Boolean);
 }
 
 /** Runs Git in `cwd`. @returns {Git} */
@@ -392,8 +403,8 @@ export async function withLock(
 /**
  * What `node scripts/land-lock.mjs screens <base> <tip>` prints for the
  * branch at `tip`, run from its repository, and its exit code: 0 with the
- * paths screenPaths marks or a line saying it marks none, 2 with the usage
- * or a ref Git can't find.
+ * paths screenPaths marks or a line saying it marks none, 2 with the usage,
+ * a ref Git can't find or refs it can't compare.
  * @param {Git} git
  * @param {string[]} args
  */
@@ -413,7 +424,15 @@ export function screensCommand(git, args) {
       ]).status !== 0
     )
       return { code: 2, lines: [`Git can't find the commit ${ref}.`, usage] };
-  const marked = screenChanging(changedPaths(git, refs[0], refs[1]));
+  let marked;
+  try {
+    marked = screenChanging(changedPaths(git, refs[0], refs[1]));
+  } catch (error) {
+    return {
+      code: 2,
+      lines: [error instanceof Error ? error.message : String(error)],
+    };
+  }
   return {
     code: 0,
     lines: marked.length

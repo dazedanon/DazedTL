@@ -1016,6 +1016,14 @@ test("the Live check is due on a branch that changes a screen or flow, which the
   // A ref Git can't find never reads as a branch with no screen.
   assert.equal(screensCommand(git, ["screens", "dev", "nope"]).code, 2);
   assert.equal(screensCommand(git, ["screens", "dev"]).code, 2);
+  // Nor do refs Git can't compare, such as an orphan branch's.
+  git(["switch", "-q", "--orphan", "orphan"]);
+  write("app/src/ui/Orphan.tsx");
+  assert.deepEqual(screensCommand(git, ["screens", "dev", "orphan"]).code, 2);
+  assert.throws(
+    () => changedPaths(git, "dev", "orphan"),
+    /Git can't list what orphan changes since dev/,
+  );
 });
 
 /**
