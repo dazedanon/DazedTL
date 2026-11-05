@@ -74,14 +74,24 @@ def notes_note(root, *, read_only=False):
     reads first; a `read_only` task, which changes no game file, only reads
     them."""
     found = game_notes_files(root)
-    path = json.dumps(
-        str(found[0] if found else Path(root) / GAME_NOTES_FILENAME), ensure_ascii=False
-    )
+    path, *others = [
+        json.dumps(str(file), ensure_ascii=False)
+        for file in found or [Path(root) / GAME_NOTES_FILENAME]
+    ]
     opening = (
         f"Assistant notes: {path} holds what anyone working on this game must know,"
         " and the game's Git takes it to other computers and assistants."
         " Read it first when it exists and follow it."
     )
+    # A case-sensitive game folder can hold them in more than one case, which
+    # DazedTL's editors refuse to show until one is left.
+    if others:
+        opening += (
+            f" The game folder holds them in {', '.join(others)} too: read both"
+            if read_only
+            else f" The game folder holds them in {', '.join(others)} too: merge them"
+            f" into {path} and delete the others"
+        ) + "."
     if read_only:
         return opening + " This task changes no game file, so leave it as it is.\n\n"
     return opening + (

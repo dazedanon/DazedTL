@@ -68,8 +68,12 @@ class Definition:
     help: str = ""
 
     def matches(self, relative):
-        """Whether a game-relative path is this document's file."""
-        return is_game_notes(relative) if self.any_case else relative == self.path
+        """Whether a game-relative path is this document's file, or, for one
+        named in any case, in a folder of its name, as ownership takes it
+        (paths.is_project_file)."""
+        if self.any_case:
+            return is_game_notes(relative.partition("/")[0])
+        return relative == self.path
 
     @property
     def skill(self):

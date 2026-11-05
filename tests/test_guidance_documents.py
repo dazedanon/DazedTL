@@ -14,6 +14,7 @@ from dazedtl.compatibility.checkpoint_commits import ACTION_TRAILER, TARGET_TRAI
 from dazedtl.compatibility.checkpoint_history import BACK, Entry, _taken_out
 from dazedtl.translation import context_setup
 from dazedtl.translation.files import digest
+from dazedtl.translation.helper_command import notes_note
 from dazedtl.translation.service import Translation
 from desktop.backend.guidance import documents, documents_save, read, written
 from util.guidance_documents import (
@@ -104,6 +105,10 @@ class GuidanceDocumentTests(unittest.TestCase):
                             if other != name
                         )
                     )
+                    if content == "twice" and name == NOTES:
+                        # Every task said to keep the first while the
+                        # editors refused both.
+                        self.assertIn("merge them", notes_note(self.root))
                     if state == "unreadable":
                         # Nothing saves over it, and the work that reads a
                         # requests' document is refused with the same reason.
@@ -121,6 +126,7 @@ class GuidanceDocumentTests(unittest.TestCase):
         # A folder in the notes' name is the project's too, so its files
         # never join a patch: Release's review listed AGENTS.md/x.
         self.assertTrue(is_game_tool_file("agents.md/x.txt"))
+        self.assertTrue(kept_by_checkpoints("agents.md/x.txt"))
         # The notes in another case are the notes, as ownership takes them.
         for leftover in (self.root / "AGENTS.md", self.root / "agents.md"):
             leftover.unlink(missing_ok=True)
