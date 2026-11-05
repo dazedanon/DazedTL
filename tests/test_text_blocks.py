@@ -635,7 +635,9 @@ class TextBlockTests(unittest.TestCase):
         # A translation file import records the rows a text covers (_rows);
         # a run that joined it onto its first row kept that count, and
         # Assistant-led's writer ran its source over the game's own rows
-        # after it, so either read those rows as the text's.
+        # after it, so either read those rows as the text's. A run records
+        # the rows it writes the text over, and Assistant-led's writer those
+        # it lays rows never translated over.
         from util.len_originals import preserve_originals
 
         def imported():
@@ -650,12 +652,21 @@ class TextBlockTests(unittest.TestCase):
             ]
 
         listed = imported()
-        blocks.write_text(listed, (1, 2, 3), "Hello. How are you?")
+        blocks.write_text(listed, (1, 2, 3), "Hello. How are you?", record=True)
+        self.assertEqual(listed[1][blocks.ROWS], 1)
         (block,) = blocks.blocks(listed)
         self.assertEqual(
             [text.rows for text in blocks.sent_texts(listed, block, blocks.Reading())],
             [(1,), (4, 5)],
         )
+        # Laid over its rows, as a run writes scrolling text, a text records
+        # them, recorded before or not.
+        listed = imported()
+        del listed[1][blocks.ROWS]
+        blocks.write_text(
+            listed, (1, 2), "Hello.\nHow are you?", joined=False, record=True
+        )
+        self.assertEqual(listed[1][blocks.ROWS], 2)
         before = {"list": imported()}
         staged = {"list": imported()}
         for at, row in ((4, "\\SE[1]Nice to meet you."), (5, "See you.")):
@@ -670,7 +681,7 @@ class TextBlockTests(unittest.TestCase):
                 ("あ\nい\nう", 3),
                 (None, None),
                 (None, None),
-                ("\\SE[1]よろしく。\nまたね。", None),
+                ("\\SE[1]よろしく。\nまたね。", 2),
                 (None, None),
             ],
         )
@@ -718,6 +729,25 @@ class TextBlockTests(unittest.TestCase):
         del scroll[3]
         scroll[1]["_original"] = "昔々、花子という娘がいました。"
         self.assertEqual(blocks.part_rows(scroll, 1), (1, 2))
+        # Nor can they tell a scrolling text's name a run translated alone,
+        # before runs recorded their rows, from the speech after it. Writing
+        # the name again over the rows read so records none, which would keep
+        # the speech the name's for good.
+        named = [
+            command(105, [2, False]),
+            command(405, ["Officer"], _original="新米警察官"),
+            command(405, ["「……」"]),
+            command(0, []),
+        ]
+        staged = copy.deepcopy(named)
+        staged[1]["parameters"] = ["Rookie officer"]
+        written = preserve_originals(
+            {"list": named}, {"list": staged}, filename="Map001.json"
+        )
+        self.assertEqual(
+            (blocks.part_rows(named, 1), written["list"][1].get(blocks.ROWS)),
+            ((1, 2), None),
+        )
         for rows, translated, kept in (
             (speech, ('"Sorry!', 'They slipped in!"'), ["\n".join(speech), None]),
             (("……",), ("...",), ["……"]),

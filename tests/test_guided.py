@@ -66,7 +66,9 @@ class FilePreviewTests(unittest.TestCase):
             {"code": 0, "parameters": []},
         ]
         output = deepcopy(source)
-        blocks.write_text(output, (1, 2), "Thanks for coming.\nA wand sleeps.")
+        blocks.write_text(
+            output, (1, 2), "Thanks for coming.\nA wand sleeps.", record=False
+        )
         output[1]["_original"] = "よく来てくれた。\n森に杖が眠っている。"
         output[0]["parameters"][4] = "Chief"
         output[4]["parameters"][0] = "Got it!"

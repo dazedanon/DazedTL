@@ -36,6 +36,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { setTimeout as sleep } from "node:timers/promises";
 import { parseArgs } from "node:util";
 import {
+  ciBranch,
   ciRuns,
   failedJobs,
   failedRun,
@@ -319,17 +320,20 @@ function e2eProblem(run) {
 }
 
 /**
- * Why a branch that changes `sensitive` paths may not land on `review`, or
- * null: a platform-sensitive branch's record names the E2E its author ran or
- * says why none fits. A hand-off records its runs without this check until
- * the intake carries them through: today it reruns --hand-off without them
- * and rewrites handoff.json without them when it accepts a hand-off.
+ * Why a branch that changes `sensitive` paths may not land with the E2E runs
+ * in `ran`, or null: a platform-sensitive branch names the E2E its author ran
+ * or says why none fits, in its review record or, for a worker, its hand-off.
+ * The intake keeps a hand-off's runs and reruns them itself.
  * @param {string[]} sensitive
- * @param {{ e2e?: string[], whyNoE2e?: string }} review
+ * @param {{ e2e?: string[], whyNoE2e?: string }} ran
+ * @param {boolean} [handOff] whether a hand-off names them
  */
-function missingE2e(sensitive, { e2e, whyNoE2e }) {
+function missingE2e(sensitive, { e2e, whyNoE2e }, handOff = false) {
   if (!sensitive.length || e2e?.length || whyNoE2e) return null;
-  return `This branch changes platform-sensitive paths (${sensitive.join(", ")}), so its review record names the scenarios or live test its author ran as "e2e", or why none fits as "whyNoE2e".`;
+  const how = handOff
+    ? `its hand-off names each scenario or live test its worker ran with --e2e "<run>", or why none fits with --why-no-e2e "<why>"`
+    : `its review record names the scenarios or live test its author ran as "e2e", or why none fits as "whyNoE2e"`;
+  return `This branch changes platform-sensitive paths (${sensitive.join(", ")}), so ${how}.`;
 }
 
 /**
@@ -621,11 +625,6 @@ async function warnRedDev(/** @type {Deps} */ { read, log }, main) {
   }
 }
 
-/**
- * The branch land.mjs pushes to GitHub for a landing's CI run, deleted once
- * the run's outcome is known.
- */
-const ciBranch = (/** @type {string} */ branch) => `land/${branch}`;
 /** How often, and how long, a landing looks for the CI run it started. */
 const ciStartPoll = 5000;
 const ciStartLimit = 3 * 60_000;
@@ -1603,6 +1602,13 @@ export async function handOff(cwd, deps, dir, given = {}) {
 async function handOffBranch(deps, { top, git, branch, dir, ran }, time) {
   const { run, log } = deps;
   const out = (/** @type {string[]} */ ...args) => git(args).stdout.trim();
+  // As for a landing, the runs answer for the branch before formatting.
+  const untested = missingE2e(
+    platformSensitive(changedPaths(git, originDev, "HEAD")),
+    ran,
+    true,
+  );
+  if (untested) return outcome(1, untested, "Nothing was handed off.");
   const unformatted = await formatBranch(git, top, run, log);
   if (unformatted) return unformatted;
   time.lap("format");
@@ -1852,6 +1858,9 @@ async function finishUnderLock(
     // CI comes before the check that dev has not moved: dev moving while it
     // runs needs no new run, since its pass stands once the worker merges dev.
     const sensitive = platformSensitive(changedPaths(git, base, head));
+    // The hand-off names its E2E as a landing's record does, before CI runs.
+    const untested = missingE2e(sensitive, review, true);
+    if (untested) return outcome(1, untested, "Nothing landed.");
     if (sensitive.length) {
       const stopped = await branchCI(deps, {
         git,
