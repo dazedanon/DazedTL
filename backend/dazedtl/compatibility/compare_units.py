@@ -227,7 +227,11 @@ def translate(
                 "messages": params.get("messages"),
                 "system": params.get("system"),
                 "exact": params,
-                "response": response.get("text"),
+                # Its text, or the refusal a model sent in its place.
+                "response": {
+                    key: response[key] for key in ("text", "refusal") if key in response
+                }
+                or None,
                 "usage": {
                     key: float(value)
                     for key, value in response.items()

@@ -238,6 +238,11 @@ class StopTests(unittest.TestCase):
     def test_a_model_that_fails_sending_keeps_what_it_spent(self):
         # An Assistant-led model that failed after sending showed no cost.
         identities = [f"r{index}" for index in range(25)]
+        temporary = TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        replies = Path(temporary.name)
+        # A refused reply showed an empty Response tab.
+        write_json(replies / "r0", {"text": "", "refusal": "Declined."})
         record = {
             "usage": {"input_tokens": 10},
             "request_usage": {},
@@ -255,7 +260,7 @@ class StopTests(unittest.TestCase):
                 raise RuntimeError("connection lost")
 
             def response_path(self, identity):
-                return Path("/missing") / identity
+                return replies / identity
 
         requests = [
             {"id": identity, "sources": [], "params": {}} for identity in identities
@@ -290,6 +295,10 @@ class StopTests(unittest.TestCase):
         # It keeps the first requests for Show request, as a Guided model's
         # result does, and says how many it holds.
         self.assertEqual(len(value["requests"]), compare_run.KEPT_REQUESTS)
+        self.assertEqual(
+            [request["response"] for request in value["requests"][:2]],
+            [{"text": "", "refusal": "Declined."}, None],
+        )
         options = {
             "kind": "single",
             "file": "",
