@@ -1,8 +1,8 @@
-import { Fragment, useMemo, type ReactNode } from "react";
+import { useMemo, type ReactNode } from "react";
 import { Check, TriangleAlert } from "lucide-react";
 import type { CompareRow, Comparison } from "../../api/contracts";
 import { useLanguages } from "../../app/LanguagesProvider";
-import { wordEdits } from "../../ui/changedWords";
+import { changedWords } from "../../ui/changedWords";
 
 /** A model's column, in the order the grid shows them. */
 export type CompareColumn = {
@@ -30,25 +30,17 @@ function Changed({
   difference: Difference;
 }) {
   const { other, side } = difference;
-  const edits = useMemo(
-    () => (side === "after" ? wordEdits(other, text) : wordEdits(text, other)),
+  const runs = useMemo(
+    () =>
+      side === "after"
+        ? changedWords(other, text).after
+        : changedWords(text, other).before,
     [other, text, side],
   );
-  const mine = side === "after" ? "added" : "removed";
-  return edits.map((edit, index) => {
-    if (edit.kind === "same") return edit.text;
-    if (edit.kind !== mine) return null;
-    // Spaces at a change's edges stay outside its mark.
-    const [, lead, part, trail] = /^(\s*)(.*?)(\s*)$/su.exec(edit.text)!;
-    const Mark = side === "after" ? "ins" : "del";
-    return (
-      <Fragment key={index}>
-        {lead}
-        <Mark>{part}</Mark>
-        {trail}
-      </Fragment>
-    );
-  });
+  const Mark = side === "after" ? "ins" : "del";
+  return runs.map((run, index) =>
+    run.changed ? <Mark key={index}>{run.text}</Mark> : run.text,
+  );
 }
 
 /**

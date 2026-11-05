@@ -43,23 +43,6 @@ export function changedWords(before: string, after: string) {
   return { before: side(edits, "removed"), after: side(edits, "added") };
 }
 
-export type WordEdit = Edit;
-
-/**
- * The same edits in reading order, for one text that shows both versions:
- * what they share, what was removed and what was added in its place. A line
- * that changed mostly is its old version removed and its new one added.
- */
-export function wordEdits(before: string, after: string): WordEdit[] {
-  const edits = lineEdits(before, after);
-  return mostlyChanged(edits)
-    ? [
-        { kind: "removed" as const, text: before },
-        { kind: "added" as const, text: after },
-      ].filter((edit) => edit.text)
-    : edits.filter((edit) => edit.text);
-}
-
 function tokens(text: string) {
   return text.match(tokenPattern) || [];
 }
