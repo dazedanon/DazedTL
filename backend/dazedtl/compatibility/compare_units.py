@@ -14,7 +14,7 @@ import shutil
 from pathlib import Path
 
 from dazedtl import system
-from dazedtl.translation.files import digest, project_path, read_json
+from dazedtl.translation.files import project_path, read_json
 
 # The game's guidance a request reads (util/len_translation shared_context
 # and reference_context), copied to a comparison's own game folder.
@@ -49,22 +49,6 @@ def units(root, relative, group, lines):
         keep = set(scenes[: scenes.index(last) + 1])
         found = [unit for unit in found if unit["scene"] in keep]
     return found
-
-
-def remaining(workspace, project_id, root, found, cfg):
-    """The units of *found* without a current translation, which an API
-    run of the game would quote (translation/run_compiler organize)."""
-    from dazedtl.settings.language_pair import run_source
-    from dazedtl.translation import unit_results
-    from dazedtl.translation.jobs import RunStore
-    from dazedtl.translation.results import Results
-
-    listing = Results(root).listing()
-    saved = unit_results.entries(RunStore(workspace), project_id, root, listing)
-    answered = unit_results.current(
-        root, found, run_source(cfg), cfg["language"], saved, listing
-    )
-    return [unit for unit in found if unit["id"] not in answered]
 
 
 def sources(found):
@@ -283,8 +267,3 @@ def translate(
         "requestCount": len(requests),
         **({"error": failed[0]} if failed and not lines else {}),
     }
-
-
-def fingerprint(found):
-    """What the comparison's lines are, for its approval."""
-    return digest([[unit["id"], unit["source"]] for unit in found])

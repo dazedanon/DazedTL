@@ -1,5 +1,5 @@
 {
-  "version": "c030dd53efcd56e3",
+  "version": "40f7ce5655298817",
   "methods": {
     "workspace_snapshot": {
       "refresh": false,
@@ -218,10 +218,6 @@
       "duringClose": false
     },
     "compare_use": {
-      "refresh": true,
-      "duringClose": false
-    },
-    "compare_whole_game": {
       "refresh": true,
       "duringClose": false
     },

@@ -1036,10 +1036,6 @@ def routes(app):
         "compare_request": (app.guided.compare.request, lambda value, _params: value),
         "compare_model": (app.guided.compare.model, lambda value, _params: value),
         "compare_use": (app.guided.compare.use, lambda value, _params: value),
-        "compare_whole_game": (
-            app.guided.compare.whole_game,
-            lambda value, _params: views.job(value),
-        ),
         "guided_batch_cancel_preview": (
             app.guided.batch_cancel_preview,
             lambda value, _params: value,

@@ -504,14 +504,6 @@ ROWS = (
         stopped=COMPARE_STOPPED,
     ),
     ActionSpec(
-        "compare_whole_game",
-        "Estimate the translation cost with a compared model",
-        "background",
-        stage="Translate",
-        handler="dazedtl.compatibility.compare:run",
-        stopped=ESTIMATE_STOPPED,
-    ),
-    ActionSpec(
         "speaker_scan",
         "Scan speaker names",
         "background",

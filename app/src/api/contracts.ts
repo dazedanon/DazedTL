@@ -3018,20 +3018,6 @@ export type CompareScene = {
   lines: number;
 };
 
-/** A model's estimate for the whole game, started on request. */
-export type CompareWholeGame = {
-  connectionId: string;
-  model: string;
-  effort?: EffortLevel | null;
-  jobId: string;
-  status: string;
-  message: string;
-  /** Live, in USD. */
-  cost?: number;
-  /** Batch, where its route runs one. */
-  batchCost?: number | null;
-};
-
 export type CompareState = {
   available: boolean;
   /** Why the game can't be compared yet. */
@@ -3041,8 +3027,6 @@ export type CompareState = {
   glossary: string;
   /** Newest first. */
   comparisons: Comparison[];
-  /** Newest first. */
-  wholeGame: CompareWholeGame[];
 };
 
 /** What a model on a connection may be sent. */
@@ -3887,7 +3871,6 @@ export type RpcContract = {
   compare_request: { request: CompareRequestRequest; response: RunPayload };
   compare_model: { request: CompareModelRequest; response: CompareModelInfo };
   compare_use: { request: CompareUseRequest; response: Saved };
-  compare_whole_game: { request: CompareUseRequest; response: Job };
   guided_batch_cancel_preview: {
     request: GuidedBatchCancelPreviewRequest;
     response: BatchCancellation;
@@ -4392,12 +4375,6 @@ export const ACTIONS = {
   },
   compare_translate: {
     label: "Compare models",
-    family: "background",
-    restorable: false,
-    reports_outcome: false,
-  },
-  compare_whole_game: {
-    label: "Estimate the translation cost with a compared model",
     family: "background",
     restorable: false,
     reports_outcome: false,

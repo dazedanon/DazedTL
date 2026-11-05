@@ -35,9 +35,7 @@ from .full_estimate import (
 )
 
 ESTIMATE, TRANSLATE = "compare_estimate", "compare_translate"
-# Context's Cost estimate for a compared model (full_estimate.run).
-WHOLE_GAME = "compare_whole_game"
-ACTIONS = (ESTIMATE, TRANSLATE, WHOLE_GAME)
+ACTIONS = (ESTIMATE, TRANSLATE)
 # The requests a model's result keeps for Show request.
 KEPT_REQUESTS = 20
 # What a comparison's test-only guidance is saved as in a run's snapshot,
@@ -420,16 +418,12 @@ def result(directory, name, phase, markers, seconds, original, found, pair):
 
 def run(plan, log):
     """A comparison operation: estimates each model's run, or, approved,
-    translates it; or estimates the whole game for one model."""
+    translates it."""
     from desktop.backend.manual import worker_environment
     from desktop.backend.workflow_actions import validate_plan
 
     if plan["options"].get("method") in UNITS:
         return run_units(plan, log)
-    if plan["action"] == WHOLE_GAME:
-        from .full_estimate import run as whole
-
-        return whole(plan, log)
     validate_plan(plan)
     folder = Path(plan["folder"])
     options = plan["options"]
@@ -566,19 +560,10 @@ def run_units(plan, log):
             root,
             options["inputPath"],
             options.get("file"),
-            0 if action == WHOLE_GAME else options["lines"],
+            options["lines"],
         )
-        if action == WHOLE_GAME:
-            # What the game has left to translate, as its estimate prices.
-            found = compare_units.remaining(
-                workspace,
-                options["projectId"],
-                root,
-                found,
-                candidates[0]["configuration"],
-            )
         if not found:
-            raise ValueError("These lines are already translated or hold no text.")
+            raise ValueError("These lines hold no text.")
         shown = compare_units.sources(found)
         built = {}
         for candidate in candidates:
@@ -646,22 +631,6 @@ def run_units(plan, log):
 
         with ThreadPoolExecutor(max_workers=len(candidates) or 1) as pool:
             values = list(pool.map(one, candidates))
-    if action == WHOLE_GAME:
-        priced = values[0].get("estimate") if values else None
-        if not priced:
-            raise ValueError(
-                values[0].get("error") or "The game could not be estimated."
-            )
-        return {
-            "tasks": [
-                {
-                    "phase": "units",
-                    "files": len(found),
-                    "liveCost": float(priced.get("live_cost") or 0),
-                    "batchCost": priced.get("batch_cost"),
-                }
-            ]
-        }
     return {"file": options.get("file"), "lines": shown, "models": values}
 
 

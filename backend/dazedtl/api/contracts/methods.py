@@ -886,8 +886,6 @@ METHODS: dict[str, Method] = {
     # Makes a compared model the game's: Settings' model, and for Tune
     # settings its effort, glossary and instruction.
     "compare_use": Method(CompareUseRequest, Saved),
-    # Context's Cost estimate, for a compared model.
-    "compare_whole_game": Method(CompareUseRequest, Job),
     "guided_batch_cancel_preview": Method(
         GuidedBatchCancelPreviewRequest, BatchCancellation, refresh=False
     ),

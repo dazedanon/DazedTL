@@ -85,26 +85,12 @@ class CompareScene(TypedDict):
     lines: Annotated[int, "Lines whose source holds the game's language."]
 
 
-class CompareWholeGame(TypedDict):
-    """A model's estimate for the whole game, started on request."""
-
-    connectionId: str
-    model: str
-    effort: NotRequired[EffortLevel | None]
-    jobId: str
-    status: str
-    message: str
-    cost: NotRequired[Annotated[float, "Live, in USD."]]
-    batchCost: NotRequired[Annotated[float | None, "Batch, where its route runs one."]]
-
-
 class CompareState(TypedDict):
     available: bool
     reason: Annotated[str, "Why the game can't be compared yet."]
     scenes: list[CompareScene]
     glossary: Annotated[str, "The game's glossary, which a Tune test starts from."]
     comparisons: Annotated[list[Comparison], "Newest first."]
-    wholeGame: Annotated[list[CompareWholeGame], "Newest first."]
 
 
 class CompareModelInfo(TypedDict):

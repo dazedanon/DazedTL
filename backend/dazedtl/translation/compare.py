@@ -8,9 +8,8 @@ Guided's engine run of the file, or Assistant-led's and Manual's requests of
 their units. The Translate button carries that price, and its click approves
 it once: the translate operation starts only from a finished estimate whose
 inputs are unchanged and that no translate used before. Results are the
-operations' own records, as the whole-game estimate's are; the best line a
-person picks in each row, and whether model names stay hidden, are kept
-beside them here.
+operations' own records; the best line a person picks in each row, and
+whether model names stay hidden, are kept beside them here.
 """
 
 import json
@@ -20,7 +19,7 @@ from typing import NamedTuple
 
 from dazedtl import system
 from dazedtl.actions import label
-from dazedtl.compatibility.compare import ESTIMATE, TRANSLATE, UNITS, WHOLE_GAME
+from dazedtl.compatibility.compare import ESTIMATE, TRANSLATE, UNITS
 from dazedtl.compatibility.compare_units import GUIDANCE
 from dazedtl.projects.store import working_method
 from dazedtl.settings import providers
@@ -507,7 +506,6 @@ class Compare:
                 "scenes": [],
                 "glossary": "",
                 "comparisons": [],
-                "wholeGame": [],
             }
         record = self._read(project_id)
         jobs = self.guided.backend.operations.jobs
@@ -533,7 +531,6 @@ class Compare:
             "scenes": self.scenes(game),
             "glossary": _glossary(game.root),
             "comparisons": rows,
-            "wholeGame": self.wholes(game),
         }
 
     def model(self, connection_id, model):
@@ -617,89 +614,6 @@ class Compare:
                 )
         return {"saved": True}
 
-    def whole_game(self, project_id, comparison_id, model):
-        """Starts the game's cost estimate for a compared model: Context's
-        Cost estimate of every Translate task for a Guided game, every unit
-        left to translate for an Assistant-led or Manual one."""
-        guided = self.guided
-        guided.idle(isolated_workers=True)
-        game = self.game(project_id)
-        row = self._candidate(game, comparison_id, model)
-        choice = {
-            "connection_id": row["connection_id"],
-            "model": row["model"],
-            **({"effort": row["effort"]} if "effort" in row else {}),
-        }
-        self._prepare(game)
-        if game.native is None:
-            plan = self._plan(game, "single", None, 0, [choice])
-            if "error" in plan["options"]["candidates"][0]:
-                raise ValueError(plan["options"]["candidates"][0]["error"])
-            plan["options"]["choice"] = choice
-            return self._start(plan, WHOLE_GAME)
-        from .full_estimate import PHASES
-
-        native = game.native
-        event_text = guided.event_text.status(project_id, native)
-        if event_text["enabled"] and event_text["errors"]:
-            raise ValueError(
-                "Fix the event text source choices first: "
-                + " ".join(event_text["errors"])
-            )
-        engine = self._row(game, guided.settings._read(), choice)
-        if "error" in engine:
-            raise ValueError(engine["error"])
-        full = guided.full_estimate
-        tasks = [
-            {
-                "phase": phase,
-                "files": []
-                if phase == "advanced" and not event_text["enabled"]
-                else full.files(native, phase),
-            }
-            for phase in PHASES
-        ]
-        names = [name for task in tasks for name in task["files"]]
-        inputs = guided.inputs(native)
-        sources = inputs.sources(names, inputs.record()["inputs"])
-        folder = guided.backend.workflows.folder(native["id"])
-        return self._start(
-            {
-                "project_id": native["id"],
-                "project": deepcopy(native),
-                "folder": str(folder),
-                "guard": guided.backend.guided_guard(native, folder),
-                "options": {
-                    # Read by its own page only, never as the game's estimate.
-                    "fingerprint": "",
-                    "shape": "",
-                    "configuration": {},
-                    "model": row["model"],
-                    "batchSupported": False,
-                    "policy": engine["policy"],
-                    "engine": {
-                        "values": engine["values"],
-                        "key_name": engine["key_name"],
-                    },
-                    "choice": choice,
-                    "claudeCount": guided.backend.manual.allow_providers,
-                    "files": {name: sources[name]["relative"] for name in names},
-                    "tasks": [
-                        {
-                            **task,
-                            "noSources": task["phase"] == "advanced"
-                            and not task["files"],
-                            "workflow": guided.backend.workflows.phase_workflow(
-                                native["id"], task["phase"]
-                            ),
-                        }
-                        for task in tasks
-                    ],
-                },
-            },
-            WHOLE_GAME,
-        )
-
     def _options(self, game, identity, action):
         """The options a comparison operation of the game froze."""
         job = self.guided.backend.operations.jobs.get(identity)
@@ -725,44 +639,6 @@ class Compare:
         if row is None:
             raise ValueError("This comparison is no longer available.")
         return row
-
-    def wholes(self, game):
-        """The whole-game estimates started for compared models, newest
-        first."""
-        rows = []
-        for job in self._jobs(game, WHOLE_GAME)[:HISTORY]:
-            options = _options(self.guided.backend.operations.root, job["id"])
-            if options is None:
-                continue
-            choice = options["choice"]
-            result = job.get("result") if job["status"] == "complete" else None
-            tasks = [task for task in (result or {}).get("tasks", []) if task["files"]]
-            batch = [task.get("batchCost") for task in tasks]
-            rows.append(
-                {
-                    "connectionId": choice["connection_id"],
-                    "model": choice["model"],
-                    **({"effort": choice["effort"]} if "effort" in choice else {}),
-                    "jobId": job["id"],
-                    "status": job["status"],
-                    "message": job.get("message", ""),
-                    **(
-                        {
-                            "cost": round(
-                                sum(float(task.get("liveCost") or 0) for task in tasks),
-                                6,
-                            ),
-                            # Batch only where every task's route runs one.
-                            "batchCost": round(sum(batch), 6)
-                            if batch and all(cost for cost in batch)
-                            else None,
-                        }
-                        if result
-                        else {}
-                    ),
-                }
-            )
-        return rows
 
     def request(self, project_id, comparison_id, model, index):
         """One request a model's translation sent, as Show request shows it."""
