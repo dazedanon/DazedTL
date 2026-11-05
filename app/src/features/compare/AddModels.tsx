@@ -8,6 +8,11 @@ import { ActionBar } from "../../ui/ActionBar";
 import { Button } from "../../ui/Button";
 import { DialogBody, DialogHeader } from "../../ui/Dialog";
 import { Modal } from "../../ui/Modal";
+import {
+  noModelList,
+  searchModels,
+  typedChoice,
+} from "../settings/modelSearch";
 import type { ChosenModel } from "./ModelChoice";
 
 /** Connections a comparison can send to: set up in Settings, with a key
@@ -77,11 +82,7 @@ export function AddModels({
     mode === "one" ? [...chosen] : [],
   );
   const models = connection?.models ?? [];
-  const typed = query.trim();
-  const search = typed.toLocaleLowerCase();
-  const matches = models.filter((item) =>
-    item.toLocaleLowerCase().includes(search),
-  );
+  const { typed, matches, custom } = searchModels(models, query);
   // A typed ID the list lacks comes first, and those already chosen stay.
   const extra = selected
     .filter(
@@ -91,11 +92,7 @@ export function AddModels({
         item.model !== typed,
     )
     .map((item) => item.model);
-  const rows = [
-    ...(typed && !models.includes(typed) ? [typed] : []),
-    ...extra,
-    ...matches,
-  ];
+  const rows = [...(custom ? [custom] : []), ...extra, ...matches];
   const added = (model: string) =>
     mode === "many" &&
     chosen.some(
@@ -182,8 +179,7 @@ export function AddModels({
           <DialogBody className="compare-models-list">
             {!models.length && !typed && (
               <p className="muted">
-                No model list for {connection.name} yet. Check the connection in
-                Settings to load one, or enter a model ID.
+                {noModelList(connection.name, " in Settings")}
               </p>
             )}
             {models.length > 0 && !rows.length && (
@@ -209,9 +205,7 @@ export function AddModels({
                     onChange={(event) => toggle(model, event.target.checked)}
                   />
                   <label htmlFor={id}>
-                    {model === typed && !models.includes(typed)
-                      ? `Use “${typed}”`
-                      : model}
+                    {model === custom ? typedChoice(custom) : model}
                   </label>
                   {done && <small className="muted">Added</small>}
                   {on && !done && (

@@ -5,6 +5,7 @@ import type {
   CompareScene,
   Comparison,
 } from "../../api/contracts.ts";
+import { formatDuration } from "../../ui/workTime.ts";
 
 /** What fits side by side on a laptop screen, as the backend allows. */
 export const versusModels = 4;
@@ -206,22 +207,13 @@ export function formatCost(value: number) {
   return `$${value.toFixed(3).replace(/0$/, "")}`;
 }
 
-/** How long a model took: tenths of a second while short. */
-export function formatSeconds(value: number) {
-  if (value < 10) return `${value.toFixed(1)} s`;
-  if (value < 60) return `${Math.round(value)} s`;
-  const minutes = Math.floor(value / 60);
-  const rest = Math.round(value % 60);
-  return rest ? `${minutes} min ${rest} s` : `${minutes} min`;
-}
-
 /** A model's price under its name: the estimate's before it translates,
  * then what it cost and how long it took. */
 export function modelDetail(model: CompareModel, translated: boolean) {
   if (translated && model.cost !== undefined)
     return [
       formatCost(model.cost),
-      model.seconds !== undefined && formatSeconds(model.seconds),
+      model.seconds !== undefined && formatDuration(model.seconds),
     ]
       .filter(Boolean)
       .join(" · ");

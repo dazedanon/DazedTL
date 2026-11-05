@@ -7,6 +7,7 @@ import { useApplication } from "../../app/ApplicationProvider";
 import { useAction } from "../../state/useAction";
 import { Feedback } from "../../ui/Feedback";
 import { Menu, MenuItem, MenuSearch, MenuSeparator } from "../../ui/Menu";
+import { noModelList, searchModels, typedChoice } from "./modelSearch";
 import { settingsSaved } from "./settingsChanges";
 
 /** Saves another model as the active connection's. */
@@ -66,10 +67,7 @@ export function ModelMenu({
     (item) => item.id === settings.activeConnectionId,
   );
   const models = active?.models ?? [];
-  const typed = query.trim();
-  const matches = models.filter((item) =>
-    item.toLocaleLowerCase().includes(typed.toLocaleLowerCase()),
-  );
+  const { typed, matches, custom } = searchModels(models, query);
   // Pending Settings edits stay theirs; the menu never overwrites them.
   const pending = !!settings?.draft;
   const choose = (next: string) =>
@@ -126,13 +124,14 @@ export function ModelMenu({
                 {item}
               </MenuItem>
             ))}
-            {!!typed && !models.includes(typed) && (
-              <MenuItem onSelect={() => choose(typed)}>Use “{typed}”</MenuItem>
+            {custom && (
+              <MenuItem onSelect={() => choose(custom)}>
+                {typedChoice(custom)}
+              </MenuItem>
             )}
             {!models.length && !typed && (
               <p className="menu-note">
-                No model list for {active?.name || "this connection"} yet. Check
-                the connection to load one, or enter a model ID.
+                {noModelList(active?.name || "this connection")}
               </p>
             )}
           </>
