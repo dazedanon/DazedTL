@@ -15,7 +15,8 @@ import { Section } from "../../../../ui/Section";
 import { ContextWorkspace } from "../../ContextWorkspace";
 import { CostEstimate } from "../../CostEstimate";
 import { ModelMenu } from "../../../settings/ModelMenu";
-import { GuidanceEditor } from "../../GuidanceEditor";
+import { DocumentEditor } from "../../../../ui/DocumentEditor";
+import { guidanceFileFormats, guidanceFormats } from "../../guidanceFormats";
 import { guidanceAvailability } from "../../guidanceReview";
 import { LayoutMeasurements } from "../../LayoutMeasurements";
 import { runEnd, stoppedJob } from "../../runEnd";
@@ -24,6 +25,7 @@ import { textLocation } from "../../textLocation";
 import { checkoutRefusal } from "../../../translation/checkout";
 import { sinceLabel } from "../../../assistant/assistantTasks";
 import type { GuidedWorkspace } from "../useGuidedWorkspace";
+import { draftsRefusal } from "../../../../state/documentState";
 import { shortcutKeys, shortcutLabel } from "../../../../state/useShortcut";
 import type { TaskView } from "./view";
 
@@ -182,22 +184,24 @@ export function guidanceView(w: GuidedWorkspace): TaskView {
     disabled,
     advance,
     feedback,
-    savedNames,
     saveDocuments,
+    guidanceDialog,
     translation,
+    source,
   } = w;
-  let content: ReactNode;
-  content = (
+  const content = (
     <>
-      <GuidanceEditor
+      <DocumentEditor
         documents={state.documents}
-        context={context}
-        setup={discovery}
-        names={savedNames}
+        drafts={context.drafts}
+        edit={context.edit}
+        disabled={disabled}
         selectedName={documentName}
         select={setDocumentName}
-        disabled={disabled}
+        placeholders={guidanceFormats(source)}
+        formats={guidanceFileFormats}
       />
+      {guidanceDialog}
     </>
   );
   const dirty = Object.keys(context.drafts).length > 0;
@@ -236,13 +240,12 @@ export function guidanceView(w: GuidedWorkspace): TaskView {
         disabled={disabled || !!refused}
         disabledReason={refused}
         {...feedback("context:save", "Saving guidance…")}
-        onClick={() => saveDocuments(savedNames)}
+        onClick={saveDocuments}
       />
     ),
     next: advance(undefined, undefined, dirty ? "quiet" : "primary"),
     heading: { title: "Translation guidance" },
-    save:
-      disabled || refused ? undefined : () => void saveDocuments(savedNames),
+    save: disabled || refused ? undefined : saveDocuments,
   };
 }
 
@@ -487,11 +490,10 @@ export function estimateView(w: GuidedWorkspace): TaskView {
   // or to retry Claude's count.
   const blocked = !state.provider.model
     ? "Choose a connection and model in Settings first."
-    : Object.keys(context.drafts).length
-      ? "Save or discard your Guidance edits first."
-      : current && !estimate.result?.tasks.some((task) => task.approximateInput)
+    : draftsRefusal(state.documents, context.drafts, "work", "Guidance") ||
+      (current && !estimate.result?.tasks.some((task) => task.approximateInput)
         ? "This estimate is up to date."
-        : "";
+        : "");
   const control = feedback("full-estimate", "Estimating…");
   // The newest attempt's end: a failure is an error, a stop a note.
   const end = runEnd(estimate, "");

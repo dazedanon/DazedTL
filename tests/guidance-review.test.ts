@@ -1,10 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { ContextSetup, GuidedState } from "../app/src/api/contracts.ts";
-import {
-  guidanceAvailability,
-  guidanceNames,
-} from "../app/src/features/guided/guidanceReview.ts";
+import { guidanceAvailability } from "../app/src/features/guided/guidanceReview.ts";
 import {
   investigationResults,
   speakerNotice,
@@ -24,7 +21,10 @@ test("investigation progress retains saved artifacts through settings changes an
       requestId: "copied",
       status: "stale",
       documents: Object.fromEntries(
-        ["glossary", "quirks", "game"].map((name) => [name, { exists: true }]),
+        ["glossary", "quirks", "game"].map((name) => [
+          name,
+          { exists: true, kind: "core" },
+        ]),
       ),
     },
   } as Pick<GuidedState, "speakerSetup" | "speakerScan" | "contextSetup">;
@@ -84,46 +84,45 @@ test("Maps & events warns about speakers until a saved scan found names, whateve
   assert.equal(speakerNotice(state), "");
 });
 
-test("guidance completion follows file presence independently of old review and investigation state", () => {
+test("guidance completion follows file presence of the core documents, by their definition", () => {
+  const document = (title: string, kind: "core" | "optional" | "custom") => ({
+    exists: true,
+    title,
+    kind,
+    reviewed: false,
+    needsReview: true,
+    intentionalEmpty: false,
+  });
   const setup = {
     status: "stale",
-    documents: Object.fromEntries(
-      ["glossary", "quirks", "game"].map((name) => [
-        name,
-        {
-          exists: true,
-          reviewed: false,
-          needsReview: true,
-          intentionalEmpty: false,
-        },
-      ]),
-    ),
-  } as ContextSetup;
+    documents: {
+      glossary: document("Glossary", "core"),
+      quirks: document("Style & quirks", "core"),
+      game: document("Game context", "core"),
+    },
+  } as unknown as ContextSetup;
   assert.deepEqual(guidanceAvailability(setup.documents), {
     complete: true,
     missing: [],
+    total: 3,
   });
   setup.documents.game.exists = false;
   assert.deepEqual(guidanceAvailability(setup.documents), {
     complete: false,
-    missing: ["game"],
+    missing: ["Game context"],
+    total: 3,
   });
   assert.equal(guidanceAvailability({}).complete, false);
   setup.documents.game.exists = true;
-  setup.documents["custom:notes"] = {
+  // A custom skill and the assistant notes are optional, so a game without
+  // them stays complete.
+  setup.documents["custom:lore"] = {
+    ...document("Skill: lore", "custom"),
     exists: false,
-    reviewed: false,
-    needsReview: false,
-    intentionalEmpty: false,
   };
-  assert.equal(guidanceAvailability(setup.documents).complete, true);
-  assert.ok(
-    guidanceNames(
-      {},
-      { "custom:notes": { text: "", revision: "old" } },
-    ).includes("custom:notes"),
-  );
-  // The assistant notes are optional, so a game without AGENTS.md stays
-  // complete and Save guidance never creates an empty one.
+  setup.documents.notes = {
+    ...document("Assistant notes", "optional"),
+    exists: false,
+  };
   assert.equal(guidanceAvailability(setup.documents).complete, true);
 });

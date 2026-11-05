@@ -45,6 +45,7 @@ import {
   latestApiRun,
 } from "./apiRun";
 import { ContextPanel } from "./ContextPanel";
+import { draftsRefusal } from "../../state/documentState";
 import {
   BaseGlossaryField,
   GameUpdateConfig,
@@ -190,7 +191,13 @@ function Workspace({
     !!run?.approved &&
     ["stopped", "interrupted", "canceled"].includes(run.status);
   const unsure = run?.status === "uncertain";
-  const contextDraft = Object.keys(state.drafts.documents).length > 0;
+  // An Assistant notes draft holds up only handing a task to an assistant.
+  const contextDraft = draftsRefusal(
+    state.documents,
+    state.drafts.documents,
+    "work",
+    "Context",
+  );
   // An estimate is the next step until one waits, runs or has finished.
   const estimateNext =
     !!loaded &&
@@ -207,9 +214,7 @@ function Workspace({
         ? "Resume the run first, so its lines aren't sent twice."
         : unsure
           ? "Check the run under History on the Project page first."
-          : contextDraft
-            ? "Save or discard your changes on Context first."
-            : "";
+          : contextDraft;
   const estimate = (
     <ActionControl
       label={run ? "Estimate again" : "Estimate cost"}

@@ -7,7 +7,10 @@ import {
   registerLeaveGuard,
   retainDraft,
 } from "../app/src/state/leaveGuards.ts";
-import type { Documents, GuidedPreferences } from "../app/src/api/contracts.ts";
+import type {
+  DocumentDrafts,
+  GuidedPreferences,
+} from "../app/src/api/contracts.ts";
 import {
   mergeInvestigationSettings,
   onlyInvestigationSettingsChanged,
@@ -121,31 +124,29 @@ test("edits during an explicit save survive with the new saved revision", async 
   await session.dispose();
 });
 
-test("guidance saves in one request and a refused one leaves no draft for files it would create", async () => {
+test("guidance saves in one request, even with no draft, and a refused one keeps the drafts", async () => {
   // Saving all guidance created its missing files from drafts, so when the
-  // game refused the write, tabs the user never edited read Draft.
-  const session = new DraftSession<Documents>(async () => {}, unexpected);
+  // game refused the write, tabs the user never edited read Draft; the
+  // backend creates them now, so Save guidance sends only drafts, and with
+  // none still asks, as that creates a game's missing core files.
+  const session = new DraftSession<DocumentDrafts>(async () => {}, unexpected);
   const edited = { glossary: { text: "薬 (Potion)", revision: "g" } };
   session.adopt({}, edited);
-  const created = { quirks: { text: "", revision: "" } };
   const refuse = () => Promise.reject(new Error("Finish the update first."));
   await assert.rejects(
-    saveDocuments(session, refuse, ["glossary", "quirks"], created),
+    saveDocuments(session, refuse, ["glossary", "quirks"]),
     /Finish the update/,
   );
   assert.deepEqual(session.getSnapshot().value, edited);
   // Each Save guidance click is one request, so one checkpoint.
-  const requests: Documents[] = [];
-  await saveDocuments(
-    session,
-    async (documents) => {
-      requests.push(documents);
-      return documents;
-    },
-    ["glossary", "quirks", "game"],
-    created,
-  );
-  assert.deepEqual(requests, [{ ...edited, ...created }]);
+  const requests: DocumentDrafts[] = [];
+  const save = async (documents: DocumentDrafts) => {
+    requests.push(documents);
+    return { documents: {}, saved: Object.keys(documents) };
+  };
+  await saveDocuments(session, save, ["glossary", "quirks", "game"]);
+  await saveDocuments(session, save, []);
+  assert.deepEqual(requests, [edited, {}]);
   assert.deepEqual(session.getSnapshot().value, {});
   await session.dispose();
 });

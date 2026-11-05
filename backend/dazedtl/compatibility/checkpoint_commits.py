@@ -729,14 +729,16 @@ def _save(root, change, named, claimed, log=lambda _line: None):
 def _saving(root, change, named, claimed, log=lambda _line: None):
     """`_save`'s commit, and the commit HEAD is at once it is done.
 
-    The assistant notes a DazedTL write didn't name, as an assistant edits
-    them with its own tools, are edits made outside DazedTL of their own
-    before it, so the translation's checkpoints never take them out on undo;
-    the edits made outside DazedTL stay one checkpoint. Notes
-    that can't be read, as a file another program holds on Windows, wait for
-    a checkpoint that can read them, which `log` says, so the write goes on."""
+    The documents translation checkpoints leave (guidance_documents
+    `kept_by_checkpoints`), such as the assistant notes, which a DazedTL
+    write didn't name, as an assistant edits them with its own tools, are
+    edits made outside DazedTL of their own before it, so the translation's
+    checkpoints never take them out on undo; the edits made outside DazedTL
+    stay one checkpoint. Such a file that can't be read, as one another
+    program holds on Windows, waits for a checkpoint that can read it, which
+    `log` says, so the write goes on."""
+    from util.guidance_documents import kept_by_checkpoints
     from util.len_patch_scope import dazedtl_files, grow_scope, keep_out_of_downloads
-    from util.paths import is_game_notes
 
     named = set(_relative(named))
     status = _status(root)
@@ -778,16 +780,16 @@ def _saving(root, change, named, claimed, log=lambda _line: None):
             # settings an old rule order kept out.
             status = _status(root)
     taken = status.paths & named if claimed is None else status.paths - claimed
-    notes = set(filter(is_game_notes, taken))
-    if unreadable := {path for path in notes if not _readable(Path(root) / path)}:
+    kept = set(filter(kept_by_checkpoints, taken))
+    if unreadable := {path for path in kept if not _readable(Path(root) / path)}:
         log(
             f"{', '.join(sorted(unreadable))} in the game folder can't be read,"
             " as when another program holds it, so its edits wait for a later"
             " checkpoint."
         )
     chosen = joined | rule | (taken - unreadable)
-    apart = notes - unreadable
-    if apart and change is not OUTSIDE and not any(map(is_game_notes, named)):
+    apart = kept - unreadable
+    if apart and change is not OUTSIDE and not any(map(kept_by_checkpoints, named)):
         notes_commit = _commit(root, apart, OUTSIDE, status)
         if notes_commit is not None:
             # The rest is built on HEAD's tree, never on an index that may

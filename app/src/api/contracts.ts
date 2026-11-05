@@ -1,13 +1,43 @@
 // Generated from backend/dazedtl/api/contracts by scripts/contracts.mjs.
 // Edit the Python contracts and run that script instead of this file.
 
+/** A guidance document's unsaved text, and the revision of its file when
+the draft began. */
+export type DocumentDraft = {
+  text: string;
+  revision: string;
+};
+
+export type DocumentDrafts = Record<string, DocumentDraft>;
+
+/** A guidance document as its file holds it, with what its definition
+(util/guidance_documents) says the renderer needs: its title, its kind,
+whether translation requests carry it and the work its draft holds up.
+`state` is "saved", "missing", whose text is empty, or "unreadable",
+whose `reason` says why and how to fix it. */
 export type Document = {
   text: string;
   revision: string;
-  path?: string;
+  path: string;
+  file: string;
+  title: string;
+  kind: "core" | "optional" | "custom";
+  requests: boolean;
+  holdsUp: ("handoff" | "work")[];
+  description: string;
+  help: string;
+  state: "saved" | "missing" | "unreadable";
+  reason?: string;
+  changed: boolean;
 };
 
 export type Documents = Record<string, Document>;
+
+/** The documents after a save, and the names it wrote. */
+export type DocumentsSaved = {
+  documents: Documents;
+  saved: string[];
+};
 
 export type Phase =
   "database" | "dialogue" | "variables" | "advanced" | "speakers";
@@ -481,8 +511,12 @@ export type SpeakerSetup = {
   rules: SpeakerRule[];
 };
 
+/** Whether a guidance document's file holds text DazedTL can read, with
+its definition's title and kind, which say what Guidance needs. */
 export type ContextDocumentStatus = {
   exists: boolean;
+  title: string;
+  kind: "core" | "optional" | "custom";
   reviewed: boolean;
   needsReview: boolean;
   intentionalEmpty: boolean;
@@ -1252,7 +1286,7 @@ export type GuidedState = {
   sourceStatus: SourceStatus;
   readiness: Readiness;
   documents: Documents;
-  drafts: Documents;
+  drafts: DocumentDrafts;
   tools: PlaytestTools | null;
   artifacts: ReleaseArtifact[];
   acePacking: AcePacking;
@@ -1621,7 +1655,7 @@ export type OptionsDraft = {
 
 export type TranslationDrafts = {
   options: OptionsDraft | null;
-  documents: Documents;
+  documents: DocumentDrafts;
 };
 
 export type GitStatus = {
@@ -3198,7 +3232,7 @@ export type SaveDocumentRequest = {
 
 export type SaveDocumentsRequest = {
   project_id: string;
-  documents: Documents;
+  documents: DocumentDrafts;
 };
 
 export type TranslationReleaseRequest = {
@@ -3553,7 +3587,7 @@ export type GuidedBatchCancelPreviewRequest = {
 
 export type GuidedDraftRequest = {
   project_id: string;
-  documents: Documents;
+  documents: DocumentDrafts;
 };
 
 export type PreferencesRequest = {
@@ -3636,7 +3670,10 @@ export type RpcContract = {
   guided_stop: { request: RunControlRequest; response: Job };
   guided_resume: { request: RunControlRequest; response: Job };
   guided_draft: { request: GuidedDraftRequest; response: Saved };
-  guided_save_documents: { request: SaveDocumentsRequest; response: Documents };
+  guided_save_documents: {
+    request: SaveDocumentsRequest;
+    response: DocumentsSaved;
+  };
   guided_position: { request: GuidedPositionRequest; response: Saved };
   guided_options_draft: { request: GuidedOptionsDraftRequest; response: Saved };
   guided_save_options: {
@@ -3733,7 +3770,7 @@ export type RpcContract = {
   translation_documents: { request: ProjectRequest; response: Documents };
   translation_save_document: {
     request: SaveDocumentRequest;
-    response: Documents;
+    response: DocumentsSaved;
   };
   translation_prepare: { request: ProjectRequest; response: PreparedHandoff };
   translation_compile: { request: InputPathRequest; response: TranslationJob };
@@ -4210,3 +4247,11 @@ export const REQUEST_HEADINGS = {
 
 /** The source languages, from backend/dazedtl/engine/util/languages.py. */
 export const SOURCE_LANGUAGES = ["Japanese", "English"] as const;
+
+/** The fixed guidance documents, from backend/dazedtl/engine/util/guidance_documents.py. */
+export const GUIDANCE_DOCUMENTS = [
+  "glossary",
+  "quirks",
+  "game",
+  "notes",
+] as const;

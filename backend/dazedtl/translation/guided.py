@@ -4,6 +4,8 @@ import re
 from copy import deepcopy
 from pathlib import Path
 
+from util.guidance_documents import defined, save_summary
+
 from dazedtl.freshness import Digests
 from dazedtl.settings.execution import batch_reasons, runnable_mode
 from dazedtl.storage import write_json
@@ -337,9 +339,8 @@ class Guided:
             not isinstance(task, str) or not re.fullmatch(r"[a-z][a-z0-9-]{0,59}", task)
         ):
             raise ValueError("Choose a guided task.")
-        documents = context_setup.retained_documents(
-            native["source"],
-            self.backend.workflows.editable(native["id"]),
+        documents = self.backend.workflows.read_documents(
+            native["id"],
             self.backend.workflows.state(native["id"])
             .get("draft", {})
             .get("documents", {}),
@@ -814,10 +815,8 @@ class Guided:
         saved_position = (
             retained_position(read_json(position)) if position.exists() else {}
         )
-        documents = context_setup.retained_documents(
-            native["source"],
-            self.backend.workflows.editable(native["id"]),
-            value.get("draft", {}).get("documents", {}),
+        documents = self.backend.workflows.read_documents(
+            native["id"], value.get("draft", {}).get("documents", {})
         )
         paid = [
             self.backend.manual.jobs[identity]
@@ -929,8 +928,10 @@ class Guided:
         self.projects._commit(data)
         return self.state(project_id)
 
-    def clean(self, project_id):
-        self.translation.clean_drafts(project_id)
+    def clean(self, project_id, work=None):
+        """Refuses `work` while a draft it reads is unsaved; by default the
+        work that reads what translation requests carry."""
+        self.translation.clean_drafts(project_id, *([work] if work else []))
         self.clean_options(project_id)
 
     def clean_options(self, project_id):
@@ -1098,86 +1099,69 @@ class Guided:
 
     def save_guidance(self, native, changes, summary=None):
         """Saves a set of the game's guidance documents, which Git tracks, as
-        one checkpoint named by what it saved, or by `summary`."""
+        one checkpoint named by what it saved, or by `summary`; returns the
+        names it wrote."""
         from desktop.backend.guidance import written
 
-        titles = ", ".join(map(guidance_title, changes))
         # Guidance is never the game's ace_json, so nothing packs.
         with self.backend.game_write(
             native["source"],
             native["id"],
             pack=False,
             paths=written(native["source"], changes),
-            summary=summary or f"Save {titles}",
+            summary=summary or save_summary(changes),
             stage="Context",
         ):
             return self.backend.workflows.documents_save(native["id"], changes)
 
     def save_documents(self, project_id, documents):
-        """Saves the guidance documents Save guidance sends, skipping those
-        whose file already holds their text. A core document the game has no
-        file for is created even when empty, which completes Guidance, but
-        the checkpoint is named by the documents whose text changed; the
-        assistant notes are created only once they hold text."""
+        """Saves the guidance documents Save guidance sends, each at the
+        revision its draft began from, skipping those whose file already
+        holds their text, and creates every document Save creates even empty
+        that has no file, which completes Guidance; the checkpoint is named
+        by the documents whose text changed. Returns the documents and the
+        names it wrote."""
         _, native = self.record(project_id)
         if not isinstance(documents, dict) or not all(
             isinstance(name, str)
             and isinstance(document, dict)
             and isinstance(document.get("text"), str)
+            and isinstance(document.get("revision"), str)
             for name, document in documents.items()
         ):
             raise ValueError("Choose a guidance document.")
-        from desktop.backend.guidance import NOTES, holds
+        from desktop.backend.guidance import holds
 
-        current = self.backend.workflows.editable(native["id"])
-        # Explicit Save replaces the current guidance, which only DazedTL
-        # writes: the editor's older revision is recovery metadata, not a
-        # conflict-review prerequisite. Notes an assistant wrote since the
-        # draft began are not replaced (documents_save refuses).
+        draft = self.backend.workflows.state(native["id"]).get("draft", {})
+        current = self.backend.workflows.read_documents(native["id"], documents)
         changes = {
-            name: {
-                "revision": (name == NOTES and document.get("revision"))
-                or current.get(name, {}).get("revision", ""),
-                "text": document["text"],
-            }
+            name: {"revision": document["revision"], "text": document["text"]}
             for name, document in documents.items()
-            if not (
-                name in current
-                and holds(name, current[name], document["text"])
-                and (
-                    Path(current[name]["path"]).is_file()
-                    or name not in context_setup.CORE
-                )
-            )
+            if name not in current or not holds(name, current[name], document["text"])
         }
+        for name, document in current.items():
+            if (
+                name not in changes
+                and document["state"] == "missing"
+                and defined(name).created == "always"
+            ):
+                changes[name] = {"revision": document["revision"], "text": ""}
         edited = [
             name
             for name in changes
             if not holds(name, current.get(name, {}), changes[name]["text"])
         ]
-        result = (
-            self.save_guidance(
-                native,
-                changes,
-                "Save " + ", ".join(map(guidance_title, edited or changes)),
-            )
+        saved = (
+            self.save_guidance(native, changes, save_summary(edited or changes))
             if changes
-            else current
+            else []
         )
-        draft = self.backend.workflows.state(native["id"]).get("draft", {})
         for name in documents:
             draft.get("documents", {}).pop(name, None)
         self.backend.workflows.draft(native["id"], draft)
-        return result
-
-
-def guidance_title(name):
-    """A guidance document's name as the Guidance task's tabs show it."""
-    from desktop.backend.guidance import NOTES, NOTES_TITLE
-
-    return {
-        "glossary": "Glossary",
-        "quirks": "Style & quirks",
-        "game": "Game context",
-        NOTES: NOTES_TITLE,
-    }.get(name) or "Skill: " + name.removeprefix("custom:")
+        return {
+            "documents": self.backend.workflows.read_documents(
+                native["id"], draft.get("documents", {})
+            ),
+            "saved": saved,
+        }

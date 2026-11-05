@@ -1,10 +1,10 @@
 import { api } from "../../api/client";
-import type { Documents } from "../../api/contracts";
+import type { DocumentDrafts } from "../../api/contracts";
 import { useDocumentDraft } from "../../state/useDocumentDraft";
 
 export function useContextDraft(
   projectId: string,
-  recovered: Documents,
+  recovered: DocumentDrafts,
   report: (error: unknown) => void,
 ) {
   return useDocumentDraft("context:" + projectId, recovered, report, {

@@ -12,6 +12,8 @@ from copy import deepcopy
 from datetime import UTC, datetime, timedelta
 from pathlib import Path, PurePosixPath
 
+from util.guidance_documents import HANDOFF, REQUEST_WORK
+
 from dazedtl import foreign_work, system
 from dazedtl.compatibility.images import ImageCompatibility
 from dazedtl.foreign_work import ForeignWorkError
@@ -1721,9 +1723,9 @@ class ImageService:
         ]
         return scope, self._ids(project_id, identities)
 
-    def _guidance(self, project_id):
+    def _guidance(self, project_id, work):
         if hasattr(self.translation, "clean_drafts"):
-            self.translation.clean_drafts(project_id)
+            self.translation.clean_drafts(project_id, work)
         _project, root = self.record(project_id)
         names = [
             ".dazedtl/glossary.txt",
@@ -1819,7 +1821,9 @@ class ImageService:
             "Revision comments",
             40_000,
         )
-        guidance = self._guidance(project_id)
+        # A copied task hands the game to an assistant, which reads every
+        # document from its file; Assistant-led's own read the notes already.
+        guidance = self._guidance(project_id, REQUEST_WORK if own else HANDOFF)
         # A revision hands each image's saved note to the assistant.
         noted = (
             {

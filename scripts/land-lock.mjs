@@ -34,6 +34,21 @@ export const devMoved = 3;
 /** Where landed reviews are recorded, one JSON line each, in the shared Git directory. */
 export const reviewLog = "dazedtl-reviews.jsonl";
 
+/**
+ * The checks a review may run besides code-review, each named in the
+ * dazedtl-land skill's Review lens section; a record lists those every one
+ * of its reviews ran, so review-stats can compare escapes with and without.
+ */
+export const reviewLenses = ["places-and-chains"];
+
+/**
+ * A record's lenses as the reviews log keeps and review-stats groups them:
+ * known names only, once each, in reviewLenses order.
+ * @param {unknown[]} lenses
+ */
+export const knownLenses = (lenses) =>
+  reviewLenses.filter((lens) => lenses.includes(lens));
+
 /** Runs Git in `cwd`. @returns {Git} */
 export function gitIn(/** @type {string} */ cwd) {
   return (args, input) => {

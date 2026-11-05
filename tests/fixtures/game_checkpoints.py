@@ -296,9 +296,10 @@ assert engine.documents(kept)["glossary"]["text"] == "水 (Water)"
 saved = engine.document_save(
     kept, "glossary", draft["revision"], "水 (Water)\n火 (Fire)\n"
 )
-assert saved["glossary"]["text"] == "水 (Water)\n火 (Fire)", saved
+assert saved == ["glossary"], saved
+assert engine.documents(kept)["glossary"]["text"] == "水 (Water)\n火 (Fire)"
 clean()
-assert history()[:2] == ["Context: Save guidance||Context"] * 2, history()
+assert history()[:2] == ["Context: Save Glossary||Context"] * 2, history()
 assert changed("HEAD~1") == changed() == [".dazedtl/glossary.txt"]
 recovered = trailers.format("DazedTL-Recovered")
 assert git(kept, "log", "-2", "--format=" + recovered).splitlines() == ["", "true"]
@@ -328,10 +329,10 @@ except ValueError as error:
 else:
     raise AssertionError("A stale draft overwrote another write's glossary change.")
 # A real conflict, other text in the file, is still refused, and so is a
-# revision of a document the game has no file for.
+# draft of a document whose file was deleted since it began.
 for name, revision, text in (
     ("glossary", draft["revision"], "薬 (Elixir)"),
-    ("custom:nothing", "stale", ""),
+    ("custom:nothing", "stale", "Lore"),
 ):
     try:
         engine.document_save(kept, name, revision, text)

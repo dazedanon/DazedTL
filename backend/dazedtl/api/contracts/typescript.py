@@ -168,6 +168,17 @@ def source_languages():
     )
 
 
+def guidance_documents():
+    """The names of the guidance documents every game has, in the editors'
+    order, as one constant."""
+    from util.guidance_documents import FIXED
+
+    return (
+        "/** The fixed guidance documents, from backend/dazedtl/engine/util/guidance_documents.py. */\n"
+        f"export const GUIDANCE_DOCUMENTS = {json.dumps([found.key for found in FIXED])} as const;"
+    )
+
+
 def render():
     renderer = Renderer()
     parts = [renderer.declaration(value) for value in declarations()]
@@ -179,6 +190,7 @@ def render():
                 renderer.actions(),
                 headings(),
                 source_languages(),
+                guidance_documents(),
             ]
         )
         + "\n"

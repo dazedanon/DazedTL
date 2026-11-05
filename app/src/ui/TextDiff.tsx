@@ -3,9 +3,14 @@
  * each hunk starts with its line number, and file headers are left out.
  */
 export function TextDiff({ diff, label }: { diff: string; label: string }) {
-  const lines = diff.split("\n").filter(
-    // The file headers name the two sides, which the review already says.
-    (line) => !line.startsWith("--- ") && !line.startsWith("+++ "),
+  // The file headers before the first hunk name the two sides, which the
+  // review already says; a removed line may read like one.
+  const all = diff.split("\n");
+  const lines = all.slice(
+    Math.max(
+      0,
+      all.findIndex((line) => line.startsWith("@@")),
+    ),
   );
   return (
     <div className="text-diff" role="group" aria-label={label}>

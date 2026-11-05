@@ -155,7 +155,7 @@ class Engine:
     def documents(self, _source):
         return {}
 
-    def editable_documents(self, source):
+    def read_documents(self, source, _drafted=()):
         return self.documents(source)
 
     def prepare(self, source, _options, *, language="English", refresh=True):
@@ -2272,6 +2272,7 @@ class WorkflowTests(unittest.TestCase):
         # assistant notes and the project's options; a paid API run still
         # waiting at its provider must refuse it.
         from dazedtl.compatibility.checkpoint_commits import _git
+        from desktop.backend.guidance import read
         from util.len_git import setup_git
         from util.len_translation import LenProject
 
@@ -2325,7 +2326,13 @@ class WorkflowTests(unittest.TestCase):
         for path, text in portable.items():
             path.parent.mkdir(exist_ok=True)
             path.write_text(text, encoding="utf-8")
-        self.engine.documents = lambda _source: {"glossary": {"path": str(glossary)}}
+        # A skill linked to a file outside the game, which the reader reads
+        # as unreadable, stopped Start over midway with the glossary moved.
+        shared = self.root / "shared-lore.md"
+        shared.write_text("Shared lore", encoding="utf-8")
+        linked = self.game / ".dazedtl/skills/lore.md"
+        linked.symlink_to(shared)
+        self.engine.read_documents = lambda source, drafted=(): read(source, drafted)
         records = self.profile / "translation/projects" / self.identity
         write_json(records / "assistant.json", {"seen_at": "2026-10-08T00:00:00"})
 
@@ -2400,6 +2407,8 @@ class WorkflowTests(unittest.TestCase):
             (self.game / "AGENTS.md").read_text(encoding="utf-8"),
             "Repack Data.wolf after injection.",
         )
+        self.assertTrue((archive / "context/.dazedtl/skills/lore.md").is_symlink())
+        self.assertEqual(shared.read_text(encoding="utf-8"), "Shared lore")
 
     def test_assistant_notes_follow_the_games_git_but_never_reach_players(self):
         # The notes must reach another computer through the game's Git even
@@ -2412,7 +2421,7 @@ class WorkflowTests(unittest.TestCase):
         from dazedtl.compatibility import checkpoint_history
         from dazedtl.compatibility.checkpoint_commits import _git
         from dazedtl.compatibility.translation import TranslationEngine
-        from desktop.backend.guidance import documents, editable, notes
+        from desktop.backend.guidance import documents, read
         from util.len_git import setup_git
         from util.len_patch_scope import scope_ignore
         from util.len_translation import LenProject
@@ -2432,19 +2441,22 @@ class WorkflowTests(unittest.TestCase):
         )
         agents = self.game / "AGENTS.md"
         agents.write_bytes(b"\x80 not text")
-        self.assertNotIn("notes", editable(self.game))
+        self.assertEqual(read(self.game)["notes"]["state"], "unreadable")
         engine = TranslationEngine(self.profile)
         glossary = documents(self.game)["glossary"]
         engine.document_save(self.game, "glossary", glossary["revision"], "Lili (リリ)")
         agents.write_bytes("Repack Data.wolf.".encode("utf-16"))
-        self.assertEqual(notes(self.game)["text"], "Repack Data.wolf.")
+        self.assertEqual(read(self.game)["notes"]["text"], "Repack Data.wolf.")
         saved = engine.document_save(
             self.game,
             "notes",
-            notes(self.game)["revision"],
+            read(self.game)["notes"]["revision"],
             "Repack Data.wolf after injection.",
         )
-        self.assertEqual(saved["notes"]["text"], "Repack Data.wolf after injection.")
+        self.assertEqual(saved, ["notes"])
+        self.assertEqual(
+            read(self.game)["notes"]["text"], "Repack Data.wolf after injection."
+        )
         self.assertNotIn("notes", documents(self.game))
         self.assertEqual(
             _git(self.game, "show", "HEAD:AGENTS.md").stdout,
@@ -2458,9 +2470,18 @@ class WorkflowTests(unittest.TestCase):
             ).stdout,
             "AGENTS.md: export-ignore: set\n",
         )
-        checkpoint_history.go_back(self.game, before)
+        saved_notes = _git(self.game, "rev-parse", "HEAD").stdout.strip()
+        back = checkpoint_history.go_back(self.game, before)
         self.assertEqual(
             agents.read_text(encoding="utf-8"), "Repack Data.wolf after injection."
+        )
+        # Going back left the notes, so it took out no save of them: History
+        # listed one as taken out, and the result named it undone.
+        self.assertNotIn(saved_notes, back["undone"])
+        self.assertTrue(back["undone"])
+        self.assertNotIn(
+            saved_notes,
+            checkpoint_history._taken_out(checkpoint_history._log(self.game)),
         )
 
     def test_assistant_notes_in_another_case_never_reach_players(self):
@@ -2523,13 +2544,16 @@ class WorkflowTests(unittest.TestCase):
         # stands in for the lock.
         from dazedtl.compatibility.checkpoint_commits import _git, for_action, running
         from dazedtl.compatibility.game_write import write_game
-        from desktop.backend.guidance import notes
+        from desktop.backend.guidance import read
         from util.len_git import setup_git
         from util.len_translation import LenProject
 
         setup_git(LenProject(self.game), version="1.0", current_is_untranslated=True)
         TranslationEngine(self.profile).document_save(
-            self.game, "notes", notes(self.game)["revision"], "Repack Data.wolf."
+            self.game,
+            "notes",
+            read(self.game)["notes"]["revision"],
+            "Repack Data.wolf.",
         )
         agents = self.game / "AGENTS.md"
         agents.write_text("Repack Data.wolf after injection.", encoding="utf-8")
@@ -2822,7 +2846,7 @@ class WorkflowTests(unittest.TestCase):
         game, which must leave the saved notes as they are."""
         from dataclasses import asdict
 
-        from desktop.backend.guidance import notes
+        from desktop.backend.guidance import read
         from util import version_update
 
         agents = self.game / "AGENTS.md"
@@ -2830,7 +2854,7 @@ class WorkflowTests(unittest.TestCase):
         engine.document_save(
             self.game,
             "notes",
-            notes(self.game)["revision"],
+            read(self.game)["notes"]["revision"],
             "Repack Data.wolf after injection.",
         )
         official = self.root / "release"

@@ -147,7 +147,7 @@ class ImageTests(unittest.TestCase):
         self.translation = SimpleNamespace(
             workspace=self.profile,
             idle=lambda _: None,
-            clean_drafts=lambda _: None,
+            clean_drafts=lambda *_: None,
             writable=lambda _: None,
         )
         self.backend = SimpleNamespace(
@@ -1304,7 +1304,7 @@ class ImageTests(unittest.TestCase):
             translation = SimpleNamespace(
                 workspace=profile,
                 idle=lambda _: None,
-                clean_drafts=lambda _: None,
+                clean_drafts=lambda *_: None,
                 writable=lambda _: None,
             )
             service = ImageService(
@@ -1373,7 +1373,7 @@ class ImageFolderTests(unittest.TestCase):
             translation = SimpleNamespace(
                 workspace=root / "profile",
                 idle=lambda _: None,
-                clean_drafts=lambda _: None,
+                clean_drafts=lambda *_: None,
                 writable=lambda _: None,
             )
             service = ImageService(
@@ -1494,7 +1494,7 @@ class AppliedImagePatchTests(unittest.TestCase):
         translation = SimpleNamespace(
             workspace=root / "profile",
             idle=lambda _: None,
-            clean_drafts=lambda _: None,
+            clean_drafts=lambda *_: None,
             writable=lambda _: None,
         )
         self.service = ImageService(
@@ -1581,7 +1581,7 @@ class DecodedImagePatchTests(unittest.TestCase):
         translation = SimpleNamespace(
             workspace=root / "profile",
             idle=lambda _: None,
-            clean_drafts=lambda _: None,
+            clean_drafts=lambda *_: None,
             writable=lambda _: None,
         )
         self.service = ImageService(

@@ -1,148 +1,182 @@
-import { useState, type ReactNode } from "react";
-import type { Documents } from "../api/contracts";
-import { Button } from "./Button";
+import type { DocumentDrafts, Documents } from "../api/contracts";
+import { documentNames, documentStatus } from "../state/documentState";
+import { HelpPopover } from "./HelpPopover";
+import { Notice } from "./Notice";
+import { StatusIcon } from "./StatusIcon";
 import { Tabs } from "./Tabs";
 
-const title = (name: string) =>
-  ({
-    glossary: "Glossary",
-    game: "Game context",
-    quirks: "Translation quirks",
-    notes: "Assistant notes",
-  })[name] || name.replace("custom:", "Skill: ");
-
+/**
+ * The guidance documents' editor, the same in every method: a tab for each
+ * document but the custom skills, which a select picks; beside each, its
+ * file, or its description, and where it stands; then its text, or why
+ * DazedTL can't read its file.
+ */
 export function DocumentEditor({
   documents,
   drafts,
   disabled,
   edit,
-  save,
-  discard,
-  names,
   selectedName,
   select,
-  focused = false,
-  fill = false,
-  showActions = true,
-  before,
-  tabNames,
-  tabLabel,
-  titles,
   placeholders,
+  formats,
 }: {
   documents: Documents;
-  drafts: Documents;
+  drafts: DocumentDrafts;
   disabled: boolean;
   edit: (name: string, text: string, revision: string) => void;
-  save: (name: string) => void;
-  discard: (name: string) => void;
-  names?: string[];
-  selectedName?: string;
-  select?: (name: string) => void;
-  focused?: boolean;
-  fill?: boolean;
-  showActions?: boolean;
-  before?: (name: string) => ReactNode;
-  tabNames?: string[];
-  tabLabel?: (name: string) => ReactNode;
-  titles?: Record<string, string>;
+  selectedName: string;
+  select: (name: string) => void;
   /** What each empty document shows, such as the layout its file takes. */
   placeholders?: Record<string, string>;
+  /** Help on the format of a document's file, beside its path. */
+  formats?: Record<string, string>;
 }) {
-  const labelFor = (name: string) => titles?.[name] || title(name);
-  const [current, setName] = useState("glossary");
-  const available = (
-    names || [...new Set([...Object.keys(documents), ...Object.keys(drafts)])]
-  ).filter((name) => documents[name] || drafts[name]);
-  const preferred = selectedName || current;
-  const name = available.includes(preferred)
-    ? preferred
-    : available[0] || preferred;
-  const document = drafts[name] || documents[name];
+  const names = documentNames(documents, drafts);
+  const name = names.includes(selectedName)
+    ? selectedName
+    : names[0] || selectedName;
+  const document = documents[name];
+  const draft = drafts[name];
+  const status = documentStatus(document, draft);
+  const warning = (key: string) =>
+    ["unreadable", "changed"].includes(
+      documentStatus(documents[key], drafts[key]),
+    );
+  const custom = names.filter((key) => documents[key]?.kind === "custom");
+  const tabs = names.filter(
+    (key) => documents[key]?.kind !== "custom" || key === name,
+  );
   return (
     <fieldset
       disabled={disabled}
-      className={`document-editor${focused ? " document-editor--focused" : ""}${fill ? " document-editor--fill" : ""}`}
+      className="document-editor document-editor--focused document-editor--fill"
     >
-      {focused ? (
-        available.length > 1 && (
-          <Tabs
-            id="guidance-documents"
-            label="Guidance documents"
-            value={name}
-            items={available
-              .filter((key) => !tabNames || tabNames.includes(key))
-              .map((key) => ({
-                id: key,
-                label: tabLabel
-                  ? tabLabel(key)
-                  : labelFor(key) + (drafts[key] ? " · Draft" : ""),
-              }))}
-            onChange={select || setName}
-            disabled={disabled}
-          />
-        )
-      ) : (
-        <label>
-          Document
-          <select
-            value={name}
-            onChange={(event) => (select || setName)(event.target.value)}
-          >
-            {available.map((key) => (
-              <option key={key} value={key}>
-                {labelFor(key)}
-                {drafts[key] ? " · Draft" : ""}
-              </option>
-            ))}
-          </select>
-        </label>
+      {tabs.length > 1 && (
+        <Tabs
+          id="guidance-documents"
+          label="Guidance documents"
+          value={name}
+          items={tabs.map((key) => ({
+            id: key,
+            label: (
+              <>
+                {documents[key]?.kind === "custom"
+                  ? "Custom"
+                  : documents[key]?.title || key}
+                {drafts[key] && <span className="badge">Draft</span>}
+              </>
+            ),
+            status: warning(key) ? (
+              <StatusIcon
+                status="warning"
+                label={
+                  documentStatus(documents[key], drafts[key]) === "changed"
+                    ? "Changed on disk"
+                    : "Can't read"
+                }
+              />
+            ) : undefined,
+          }))}
+          onChange={select}
+          disabled={disabled}
+        />
       )}
       {document && (
         <div
           className="document-editor-content"
-          role={focused && available.length > 1 ? "tabpanel" : undefined}
-          id={focused ? `guidance-documents-panel-${name}` : undefined}
+          role={tabs.length > 1 ? "tabpanel" : undefined}
+          id={`guidance-documents-panel-${name}`}
           aria-labelledby={
-            focused && available.length > 1
-              ? `guidance-documents-tab-${name}`
-              : undefined
+            tabs.length > 1 ? `guidance-documents-tab-${name}` : undefined
           }
         >
-          {before?.(name)}
-          <textarea
-            aria-label={
-              focused ? labelFor(name) + " text" : "Game context text"
-            }
-            rows={fill ? 4 : focused ? 9 : 16}
-            spellCheck={false}
-            placeholder={placeholders?.[name]}
-            value={document.text}
-            onChange={(event) =>
-              edit(name, event.target.value, document.revision)
-            }
-          />
-          {showActions && (
-            <div className="actions">
-              <Button
-                variant="primary"
-                disabled={!drafts[name]}
-                onClick={() => save(name)}
+          <div className="document-editor-state">
+            {document.description ? (
+              <span className="document-editor-note muted">
+                {document.description}{" "}
+                <HelpPopover label={document.title}>
+                  {document.help}
+                </HelpPopover>
+              </span>
+            ) : (
+              <span className="document-editor-file">
+                <span className="path">{document.file}</span>
+                {formats?.[name] && (
+                  <HelpPopover label={`${document.title} format`}>
+                    {formats[name]}
+                  </HelpPopover>
+                )}
+              </span>
+            )}
+            <span
+              className={
+                warning(name)
+                  ? "document-editor-status document-editor-status--warning"
+                  : "document-editor-status muted"
+              }
+            >
+              {warning(name) && <StatusIcon status="warning" />}
+              {status === "unreadable"
+                ? "Can't read"
+                : status === "changed"
+                  ? "Changed on disk since your draft"
+                  : status === "draft"
+                    ? "Unsaved edits"
+                    : status === "saved"
+                      ? "Saved"
+                      : document.kind === "core"
+                        ? "Not saved yet"
+                        : "None yet"}
+            </span>
+            {!!custom.length && (
+              <select
+                aria-label="Custom guidance"
+                value={document.kind === "custom" ? name : ""}
+                onChange={(event) => select(event.target.value)}
               >
-                Save context
-              </Button>
-              <Button disabled={!drafts[name]} onClick={() => discard(name)}>
-                Discard draft
-              </Button>
-            </div>
+                <option value="" disabled>
+                  Custom guidance…
+                </option>
+                {custom.map((key) => (
+                  <option key={key} value={key}>
+                    {documents[key].title}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+          {status === "unreadable" ? (
+            <>
+              <Notice tone="warning">
+                <span>
+                  {document.reason}
+                  {draft ? " Until then your draft stays here, read-only." : ""}
+                </span>
+              </Notice>
+              {draft && (
+                <textarea
+                  aria-label={`${document.title} draft`}
+                  rows={4}
+                  spellCheck={false}
+                  readOnly
+                  value={draft.text}
+                />
+              )}
+            </>
+          ) : (
+            <textarea
+              aria-label={`${document.title} text`}
+              rows={4}
+              spellCheck={false}
+              placeholder={placeholders?.[name]}
+              value={(draft || document).text}
+              onChange={(event) =>
+                edit(name, event.target.value, (draft || document).revision)
+              }
+            />
           )}
         </div>
-      )}
-      {showActions && !!Object.keys(drafts).length && (
-        <p className="footnote">
-          Drafts are saved for recovery. Save or discard them before starting
-          work.
-        </p>
       )}
     </fieldset>
   );
