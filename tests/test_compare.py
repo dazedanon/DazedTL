@@ -312,6 +312,30 @@ class StopTests(unittest.TestCase):
 
 
 class ViewTests(unittest.TestCase):
+    def test_a_running_translation_shows_the_lines_its_estimate_read(self):
+        # A translation has no result until it ends, so its page showed no
+        # lines while the models worked.
+        options = {
+            "kind": "single",
+            "file": "Map001",
+            "lines": 0,
+            "candidates": [
+                {"index": 0, "connection": "C", "connection_id": "c1", "model": "a"}
+            ],
+        }
+        line = {"id": "/1", "speaker": "", "source": "村長、ようこそ。"}
+        estimate = {
+            "id": "e",
+            "created": "1",
+            "status": "complete",
+            "result": {"lines": [line], "models": []},
+        }
+        running = {"id": "t", "status": "running", "result": None}
+        shown = view(estimate, options, running, {})
+        self.assertEqual(
+            shown["rows"], [{**line, "translations": [None], "problems": [[]]}]
+        )
+
     def test_a_failed_models_error_keeps_its_name_hidden(self):
         # Blind showed a failed model's error, which began with its name.
         options = {
