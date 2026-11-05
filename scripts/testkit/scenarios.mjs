@@ -398,12 +398,16 @@ const moved = [
     },
   ],
   [
-    "Rename that folder and find it from the Project page",
+    "Rename that folder while Compare models shows and find it from the Project page",
     async ({ page, state }) => {
       const before = await projectView(page, state.game);
       const game = path.join(path.dirname(state.game), "Renamed");
+      await page.click("Compare");
+      await page.waitText("Single model");
       moveGame(state, game);
+      // Compare models says the game is gone, as the other pages do.
       await page.waitText("Game folder unavailable");
+      await page.click("Project");
       await chooseFolder(
         { root: state.root, inspect: state.app.inspect },
         game,
@@ -2446,7 +2450,7 @@ export const scenarios = {
   },
   moved: {
     description:
-      "plugins-applied with a whole-game estimate and a Text QA task reviewing every line, then the game moved into a Game folder inside its own and opened there, then renamed and found from the Project page; each must keep the project, its estimates and its Text QA task unchanged.",
+      "plugins-applied with a whole-game estimate and a Text QA task reviewing every line, then the game moved into a Game folder inside its own and opened there, then renamed while Compare models shows and found from the Project page; each must keep the project, its estimates and its Text QA task unchanged.",
     game: "plugin-text",
     steps: () => [open, ...setup, ...translateAll, qa, plugins, ...moved],
   },

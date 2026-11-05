@@ -553,7 +553,7 @@ export default function App() {
                       openGuided={openGuided}
                     />
                   )}
-                  {project?.available &&
+                  {project &&
                     (compareOpened || state?.screen === "compare") && (
                       <div
                         hidden={state?.screen !== "compare"}

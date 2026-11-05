@@ -10,6 +10,8 @@ import type {
 import { useApplication } from "../../app/ApplicationProvider";
 import { useOnChange } from "../../state/useOnChange";
 import { useRead } from "../../state/useRead";
+import { unavailableReason } from "../../ui/displayText";
+import { Message } from "../../ui/Feedback";
 import { Notice } from "../../ui/Notice";
 import {
   PageBody,
@@ -76,9 +78,11 @@ export default function Compare({
     .join(",");
   const [reloads, setReloads] = useState(0);
   const key = `${project.id}:${reloads}:${ended}`;
-  // Hidden, the page waits to read until it shows again.
+  // Hidden, or while its game folder is missing, the page waits to read
+  // until it shows the game again.
+  const missing = project.available === false;
   const [readKey, setReadKey] = useState<string | null>(null);
-  if (visible && readKey !== key) setReadKey(key);
+  if (visible && !missing && readKey !== key) setReadKey(key);
   const read = useRead(readKey, () => api.compare.state(project.id));
   const [state, setState] = useState<CompareState>();
   useOnChange(read.value, (value) => {
@@ -130,7 +134,12 @@ export default function Compare({
         title="Compare models"
         description="Try models and settings on a few of this game's lines."
       />
-      {context && !state?.available ? (
+      {missing ? (
+        // As the other pages say it; Find game folder is on the Project page.
+        <PageMessages>
+          <Message message={unavailableReason(project)} />
+        </PageMessages>
+      ) : context && !state?.available ? (
         <PageBody>
           <Notice>{state?.reason}</Notice>
         </PageBody>
