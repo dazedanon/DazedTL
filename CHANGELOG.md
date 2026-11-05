@@ -3,6 +3,12 @@
 Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 [release.mjs](scripts/release.mjs) writes each entry from [release/notes.md](release/notes.md).
 
+## [2.68.2] - 2026-11-05
+
+### Fixed
+
+- **Images:** copying a translation task or opening **Edit text…** no longer keeps stopping with "Unrecognized preserved image files exist" after an image changed while its images were made ready, or after DazedTL closed partway; images an earlier version left stuck this way recover unless they changed since.
+
 ## [2.68.1] - 2026-11-05
 
 ### Fixed
@@ -1732,6 +1738,7 @@ Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachan
 - The first release of DazedTL as a desktop app, installed from a ZIP with a START launcher and updated from inside the app.
 - **Guided steps** for RPG Maker MV, MZ and VX Ace games, and **Assistant-led** for any game.
 
+[2.68.2]: https://github.com/dazedanon/DazedTL/compare/v2.68.1...v2.68.2
 [2.68.1]: https://github.com/dazedanon/DazedTL/compare/v2.68.0...v2.68.1
 [2.68.0]: https://github.com/dazedanon/DazedTL/compare/v2.67.0...v2.68.0
 [2.67.0]: https://github.com/dazedanon/DazedTL/compare/v2.66.0...v2.67.0
