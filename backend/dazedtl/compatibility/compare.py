@@ -41,9 +41,7 @@ KEPT_REQUESTS = 20
 # A model's error when the user stopped its translation.
 STOPPED = "Stopped before it finished."
 # Why other work waits while a comparison runs, as they share one queue.
-RUNNING = (
-    "A comparison is running on Compare models. Stop it there, or wait for it to end."
-)
+RUNNING = "A comparison is running. Stop it on Compare models, or wait for it to end."
 # What a comparison's test-only guidance is saved as in a run's snapshot,
 # beside the game's own guidance files, which every request carries.
 INSTRUCTION = "game/.dazedtl/skills/comparison.md"
