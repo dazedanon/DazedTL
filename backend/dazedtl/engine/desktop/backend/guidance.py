@@ -2,11 +2,14 @@
 reader and the one save of the documents util.guidance_documents defines."""
 from pathlib import Path
 from util import system
+from dazedtl.translation.git_status_cache import RepositoryStatusCache
 from util.guidance_documents import CUSTOM_PREFIX, FIXED, GLOSSARY, defined, definition
 from .project import digest
 from .workflow_actions import regular
 
 LIMIT = 1_000_000
+# The saves `_replaced` finds in each document's history.
+_recoveries = RepositoryStatusCache(stable=True)
 
 
 class Unreadable(Exception):
@@ -192,13 +195,14 @@ def _replaced(root, name, held, revision):
     """Whether a save whose write ended without its checkpoint, committed
     since under its own name, replaced this document at `revision` with what
     its file holds, so a draft based on that revision overwrites no one
-    else's change."""
+    else's change. Every read with a draft asks it, so the answer from Git
+    is reused until the repository or the file moves."""
     from dazedtl.compatibility.checkpoint_commits import recovered_text
     try:
         relative = Path(held["path"]).resolve().relative_to(Path(root).resolve()).as_posix()
     except ValueError:
         return False
-    found = recovered_text(root, relative)
+    found = _recoveries.get((str(root), relative), root, lambda: recovered_text(root, relative), (held["revision"],))
     return found is not None and digest(stored(name, found[0] or "").encode()) == revision
 
 
