@@ -538,34 +538,7 @@ def _operation_writes(document: Any, operation: dict) -> list[tuple[str, Any]]:
         raise ValueError(
             f"Expected value changed for {operation['identity']}; rebuild QA"
         )
-    return [
-        *zip(operation["live_pointers"], _operation_replacements(values, operation)),
-        *_recorded_rows(document, operation),
-    ]
-
-
-def _recorded_rows(document: Any, operation: dict) -> list[tuple[str, Any]]:
-    """The record a correction of a message's or scrolling text's
-    translation leaves on its first row, which keeps its source: the rows it
-    writes the text over, as every writer of its rows records them
-    (rpgmaker_blocks `record_rows`)."""
-    pointers = operation.get("live_pointers") or []
-    if operation.get("live_transform") != "identity" or not pointers:
-        return []
-    command_pointer, slash, place = pointers[0].rpartition("/parameters/0")
-    if place or not slash:
-        return []
-    try:
-        command = resolve_pointer(document, command_pointer)
-    except (KeyError, IndexError, TypeError, ValueError):
-        return []
-    if not isinstance(command, dict) or blocks.code(command) not in blocks.MESSAGE_ROWS:
-        return []
-    recorded = dict(command)
-    blocks.record_rows(recorded, len(pointers))
-    if blocks.ROWS not in recorded:
-        return []
-    return [(f"{command_pointer}/{blocks.ROWS}", recorded[blocks.ROWS])]
+    return list(zip(operation["live_pointers"], _operation_replacements(values, operation)))
 
 
 def _help_rows(document: Any, operation: dict) -> list[tuple[str, Any]] | None:

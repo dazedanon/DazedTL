@@ -164,9 +164,16 @@ def _walk(before, after, *, system=False):
                 if old != new:
                     original = "\n".join(old)
                     _remember(after[index], original if original.strip() else None)
-                    if code in blocks.ROW_CODES and code != 108:
-                        # Text rows record the rows written over, as every
-                        # writer does (rpgmaker_blocks `record_rows`).
+                    if "_original" in after[index] and (
+                        code == 408
+                        or (code in blocks.MESSAGE_ROWS and "_original" not in item)
+                    ):
+                        # Comment rows record the rows they own, as translation
+                        # does, and so do a message's or scrolling text's rows
+                        # never translated, which it lays one source over. A
+                        # translation written again keeps its record as it is,
+                        # since its rows may have been read by their shape
+                        # (rpgmaker_blocks ROWS).
                         blocks.record_rows(after[index], len(rows))
                 index = end
             else:

@@ -1543,8 +1543,8 @@ class TranslationTests(unittest.TestCase):
     def test_saved_refusal_notes_get_their_source_back(self):
         from dazedtl.translation.saved_refusals import find, restore
 
-        def command(code, parameters, original=None, **notes):
-            value = {"code": code, "indent": 0, "parameters": parameters, **notes}
+        def command(code, parameters, original=None):
+            value = {"code": code, "indent": 0, "parameters": parameters}
             return value if original is None else {**value, "_original": original}
 
         def game(name, commands):
@@ -1580,11 +1580,10 @@ class TranslationTests(unittest.TestCase):
                 "ちん嗅ぎ",
                 [
                     command(101, ["", 0, 0, 2, "小町"], "小町"),
-                    # Each records the rows it went back over.
-                    command(401, ["はい…\n続き"], "はい…\n続き", _rows=1),
-                    command(401, ["一行目"], "一行目\n二行目\n三行目", _rows=2),
+                    command(401, ["はい…\n続き"], "はい…\n続き"),
+                    command(401, ["一行目"], "一行目\n二行目\n三行目"),
                     command(401, ["二行目\n三行目"]),
-                    command(405, ["一行目"], "一行目\n二行目", _rows=3),
+                    command(405, ["一行目"], "一行目\n二行目"),
                     command(405, ["二行目"]),
                     command(405, [""]),
                     command(102, [["Go", "えっち"], -1, 0, 1, 0], ["行く", "えっち"]),

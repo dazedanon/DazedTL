@@ -635,8 +635,9 @@ class TextBlockTests(unittest.TestCase):
         # A translation file import records the rows a text covers (_rows);
         # a run that joined it onto its first row kept that count, and
         # Assistant-led's writer ran its source over the game's own rows
-        # after it, so either read those rows as the text's. Each records the
-        # rows it wrote over.
+        # after it, so either read those rows as the text's. A run records
+        # the rows it writes the text over, and Assistant-led's writer those
+        # it lays rows never translated over.
         from util.len_originals import preserve_originals
 
         def imported():
@@ -726,26 +727,24 @@ class TextBlockTests(unittest.TestCase):
         del scroll[3]
         scroll[1]["_original"] = "昔々、花子という娘がいました。"
         self.assertEqual(blocks.part_rows(scroll, 1), (1, 2))
-        # Nor can they tell a scrolling text's name a run translated alone
-        # from the speech after it, which a run with Skip already translated
-        # text off wrote the name over; the export reads the name apart, and
-        # fitting it records the one row it holds for every reader.
+        # Nor can they tell a scrolling text's name a run translated alone,
+        # before runs recorded their rows, from the speech after it. Writing
+        # the name again over the rows read so records none, which would keep
+        # the speech the name's for good.
         named = [
             command(105, [2, False]),
-            command(405, ["Rookie police officer"], _original="新米警察官"),
-            command(405, ['"……"']),
+            command(405, ["Officer"], _original="新米警察官"),
+            command(405, ["「……」"]),
             command(0, []),
         ]
-        self.assertEqual(blocks.part_rows(named, 1), (1, 2))
-        fit_document(
-            {"list": named},
-            "Map001.json",
-            Layout(12, 12, 60, 60, 4, "English"),
-            reading=blocks.Reading(first_line=True),
+        staged = copy.deepcopy(named)
+        staged[1]["parameters"] = ["Rookie officer"]
+        written = preserve_originals(
+            {"list": named}, {"list": staged}, filename="Map001.json"
         )
         self.assertEqual(
-            (named[1]["parameters"], blocks.part_rows(named, 1)),
-            (["Rookie\npolice\nofficer"], (1,)),
+            (blocks.part_rows(named, 1), written["list"][1].get(blocks.ROWS)),
+            ((1, 2), None),
         )
         for rows, translated, kept in (
             (speech, ('"Sorry!', 'They slipped in!"'), ["\n".join(speech), None]),
@@ -760,10 +759,7 @@ class TextBlockTests(unittest.TestCase):
             )
 
         # A run, the export and Assistant-led's writer read an import's text
-        # alike: the rows it records it was written over, whatever they hold,
-        # such as Japanese the file's translation kept. Runs frozen before
-        # event-left-rows-v3 read a recorded row left in Japanese as the
-        # game's own.
+        # alike: its recorded rows, but none left in Japanese.
         def imported(*rows):
             return [
                 command(101, ["", 0, 0, 2, ""]),
@@ -772,7 +768,7 @@ class TextBlockTests(unittest.TestCase):
                 command(0, []),
             ]
 
-        for rows, frozen in (
+        for rows, own in (
             (["How are you?", "See you."], 2),
             (["あのね", "See you."], 1),
         ):
@@ -780,12 +776,8 @@ class TextBlockTests(unittest.TestCase):
             (block,) = blocks.blocks(listed)
             sent = blocks.sent_texts(listed, block, blocks.Reading())
             self.assertEqual(
-                (
-                    sent[0].rows,
-                    blocks.text_end(listed, 1, left=True),
-                    blocks.text_end(listed, 1, left=True, by_record=False),
-                ),
-                ((1, 2), 2, frozen),
+                (sent[0].rows, blocks.text_end(listed, 1, left=True)),
+                (tuple(range(1, own + 1)), own),
                 rows,
             )
 

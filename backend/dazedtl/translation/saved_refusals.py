@@ -155,12 +155,13 @@ def restore(document, original=lambda: None):
         if note.code in MESSAGES:
             # Each line is (..., command list, position, "parameters", 0); the
             # source goes back over every row, so the event keeps them all,
-            # and records them (rpgmaker_blocks `write_text`).
+            # and their record stays as it is (rpgmaker_blocks ROWS).
             blocks.write_text(
                 resolve(document, first[:-3]),
                 tuple(path[-3] for path in note.paths),
                 note.source,
                 joined=False,
+                record=False,
             )
         elif note.transform != "identity":
             match = QUOTED.search(parent[key])

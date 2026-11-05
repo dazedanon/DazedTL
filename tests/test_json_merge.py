@@ -50,22 +50,6 @@ class JsonMergeTests(unittest.TestCase):
             merged(base, translated, official),
             [line("今日はいい天気じゃな。"), translated[0], line("頼んだぞ、ミカ。")],
         )
-        # A message laid over its rows records them, and the record carries
-        # while the release keeps each. With a row the release changed it
-        # named the release's Japanese as the translation's, which a run then
-        # wrote the old translation over; without it, that row reads apart.
-        base = [line("こんにちは、"), line("元気？")]
-        laid = [
-            {**line("Hello,", "こんにちは、\n元気？"), "_rows": 2},
-            line("how are you?"),
-        ]
-        self.assertEqual(
-            merged(base, laid, [line("前置き"), *base]), [line("前置き"), *laid]
-        )
-        self.assertEqual(
-            merged(base, laid, [base[0], line("元気だった？")]),
-            [line("Hello,", "こんにちは、\n元気？"), line("元気だった？")],
-        )
 
     def test_a_moved_help_line_keeps_its_translation_and_the_rows_it_owns(self):
         # A comment line records the rows its translation owns beside its

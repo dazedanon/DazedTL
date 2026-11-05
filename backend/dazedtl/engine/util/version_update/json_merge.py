@@ -10,9 +10,7 @@ comes from the release untranslated, to be translated again.
 Translations record their source beside the text they changed, under
 ``_original``. A record keeps those notes for the fields whose translation
 carries over; a field whose translation the release changes comes back whole
-from the release, so no note names text that is no longer there. Nor does a
-message's record of the rows its translation was written over (``_rows``):
-it carries only while the release keeps every row it names.
+from the release, so no note names text that is no longer there.
 
 Plugin settings and plugin command arguments hold JSON inside strings, such
 as a whole quest list in one value; those merge by the values inside too, so
@@ -25,7 +23,7 @@ import copy
 import json
 from difflib import SequenceMatcher
 
-from util.rpgmaker_blocks import MESSAGE_ROWS, NOTES, ROWS, code, recorded
+from util.rpgmaker_blocks import NOTES, ROWS
 
 ORIGINAL = "_original"
 _MISSING = object()
@@ -182,45 +180,16 @@ def _merge_list(old, translation, new):
         raise _Unsafe
     matcher = SequenceMatcher(None, [_key(item) for item in old], [_key(item) for item in new])
     merged = []
-    # Each merged entry's place in the translation where it holds the
-    # translation's text, else None.
-    carried: list[int | None] = []
     for operation, start, end, new_start, new_end in matcher.get_opcodes():
         if operation == "equal":
             merged.extend(copy.deepcopy(translation[index]) for index in range(start, end))
-            carried.extend(range(start, end))
         elif operation == "replace" and end - start == new_end - new_start:
             # Entries changed in place, such as a command whose text changed.
-            for index in range(start, end):
-                item = _merge(old[index], translation[index], new[new_start + index - start])
-                merged.append(item)
-                carried.append(index if _text(item) == _text(translation[index]) else None)
+            merged.extend(
+                _merge(old[start + offset], translation[start + offset], new[new_start + offset])
+                for offset in range(end - start)
+            )
         else:
             # Entries the release inserted, removed or regrouped are its own.
             merged.extend(copy.deepcopy(new[index]) for index in range(new_start, new_end))
-            carried.extend([None] * (new_end - new_start))
-    _keep_records(merged, carried)
     return merged
-
-
-def _text(item):
-    """An entry's text as the releases hold it: a command's parameters."""
-    return _plain(item.get("parameters") if isinstance(item, dict) else item)
-
-
-def _keep_records(merged, carried):
-    """Drop the record of the rows a message's or scrolling text's
-    translation was written over (ROWS) where the release changed, added or
-    removed one of them: it names rows that no longer hold the translation,
-    so they read as text without a record does (util/rpgmaker_blocks
-    `owned`), which leaves a row of the release's own Japanese apart."""
-    for at, item in enumerate(merged):
-        rows = recorded(item) if code(item) in MESSAGE_ROWS else None
-        first = carried[at]
-        if rows is None or first is None:
-            continue
-        if any(
-            at + offset >= len(merged) or carried[at + offset] != first + offset
-            for offset in range(1, rows)
-        ):
-            del item[ROWS]

@@ -3609,11 +3609,11 @@ CODE_NAMEPLATES = False
 # translation's rows (util/rpgmaker_blocks `owned`), before a row an earlier
 # run left untranslated after it, which is sent as a text of its own; from
 # level 2 also after a message's rows its source has lines for. From level 3
-# each text written records the rows it was written over (rpgmaker_blocks
-# `record_rows`), and a recorded translation's rows are the ones it records,
-# whatever they hold. Frozen per run (settings/preferences LEFT_ROWS_LEVELS):
-# older runs send that first row's source alone and write its translation
-# over those rows too, and record none.
+# each text it writes records the rows it laid it over (rpgmaker_blocks
+# `record_rows`), by which later readers read the translation's rows.
+# Frozen per run (settings/preferences LEFT_ROWS_LEVELS): older runs send
+# that first row's source alone and write its translation over those rows
+# too, and record none.
 LEFT_ROWS = 0
 
 
@@ -3666,9 +3666,7 @@ def _preview_texts(commands, start, end):
     lone kana, is sent as the run reads it, by its own text."""
     ends = [end]
     if LEFT_ROWS >= 2:
-        own = rpgmaker_blocks.text_end(
-            commands, start, _GROUP_CODES, left=True, by_record=LEFT_ROWS >= 3
-        )
+        own = rpgmaker_blocks.text_end(commands, start, _GROUP_CODES, left=True)
         if own < end:
             ends = [own, end]
     found, first = [], start
@@ -4103,7 +4101,6 @@ def _searchCodes(page, pbar, jobList, filename):
                     _own_source(codeList) if SPEAKER_CONTEXT else None,
                     left=LEFT_ROWS >= 1,
                     by_lines=LEFT_ROWS >= 2,
-                    by_record=LEFT_ROWS >= 3,
                 )
                 speakerMatch = sentText.speakers
                 speakerList = list(speakerMatch.names) if speakerMatch else []

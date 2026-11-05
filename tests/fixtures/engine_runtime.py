@@ -1119,16 +1119,12 @@ try:
                 "replacement": replacement,
                 "message": True,
             }
-            # It records the rows it writes over, as every writer does, where
-            # an earlier writer recorded none.
             document = {"list": deepcopy(fitted)}
-            assert document["list"][1].pop("_rows") == 4, document
             for pointer, value in qa._operation_writes(document, operation):
                 qa._set_pointer(document, pointer, value)
             assert [item["parameters"][0] for item in document["list"][1:5]] == spread(
                 replacement, 4
             ), document
-            assert document["list"][1]["_rows"] == 4, document
             undo = {**operation, "expected": replacement, "replacement": live}
             for pointer, value in qa._operation_writes(document, undo):
                 qa._set_pointer(document, pointer, value)
