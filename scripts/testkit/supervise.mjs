@@ -14,6 +14,8 @@ import { members } from "./group.mjs";
 
 const [starter, wait, command, ...args] = process.argv.slice(2);
 const grace = Number(wait);
+// A grace that is no number would never SIGKILL a member ignoring SIGTERM.
+if (!(grace >= 0)) throw new Error(`No grace in milliseconds: ${wait}`);
 /** A shell's exit status for a process ended by `signal`. */
 const signalled = (signal) => 128 + os.constants.signals[signal];
 
