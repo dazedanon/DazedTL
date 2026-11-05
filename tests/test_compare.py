@@ -7,6 +7,7 @@ import uuid
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
+from unittest.mock import Mock
 
 from dazedtl.compatibility.compare import END, cut, rows, sources
 from dazedtl.compatibility.compare_units import editable, glossary
@@ -227,3 +228,18 @@ class ApprovalTests(unittest.TestCase):
             ),
             1,
         )
+
+    def test_a_model_is_used_only_while_no_translation_runs(self):
+        # Use this model switched Settings' model under a running
+        # translation, which Settings' own saves refuse.
+        estimate = self.estimated()
+
+        def busy(**_):
+            raise ValueError("Finish or stop the current run first.")
+
+        self.compare.guided.idle = busy
+        self.compare.guided.settings.describe = Mock(
+            side_effect=AssertionError("Settings changed under a run.")
+        )
+        with self.assertRaisesRegex(ValueError, "Finish or stop"):
+            self.compare.use("p1", estimate, 0)

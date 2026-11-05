@@ -559,6 +559,8 @@ class Compare:
         connection and model, and, from Tune settings, the effort it was sent
         with, its glossary and its instruction, saved as the game's guidance."""
         guided = self.guided
+        # As Settings' own saves, never under a running translation.
+        guided.idle()
         game = self.game(project_id)
         row = self._candidate(game, comparison_id, model)
         settings = guided.settings

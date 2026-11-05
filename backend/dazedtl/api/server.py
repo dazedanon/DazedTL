@@ -1262,7 +1262,12 @@ def dispatcher(app, check=False):
                     "The app is closing. Reopen it to resume saved project work."
                 )
             value = present(handler(**params), params)
-        if name in {"settings_save", "connection_save", "connection_select"}:
+        if name in {
+            "settings_save",
+            "connection_save",
+            "connection_select",
+            "compare_use",
+        }:
             app.resolve_batch_support(persist=True)
         return value
 
