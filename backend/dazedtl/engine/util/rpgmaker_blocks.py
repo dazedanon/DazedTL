@@ -44,6 +44,7 @@ from util.speakers import (
     MessageSpeakers,
     display_name,
     message_speakers,
+    plausible_speaker,
     standalone_speaker,
     to_prefixed,
 )
@@ -639,11 +640,14 @@ class Reading:
     its speaker (*first_line*, FIRSTLINESPEAKERS), a name in front of the
     speech (*inline*, INLINE401SPEAKERS), and whether it skips text holding
     no source text (*skip_translated*, IGNORETLTEXT), with the run policy's
-    newest reading of nameplates (CODE_NAMEPLATES and SPEAKER_CONTEXT)."""
+    newest reading of nameplates (CODE_NAMEPLATES and SPEAKER_CONTEXT).
+    *named* reads a short row before speech as its speaker only when it
+    reads as a name (util/speakers `plausible_speaker`)."""
 
     first_line: bool = False
     inline: bool = False
     skip_translated: bool = True
+    named: bool = False
 
     @classmethod
     def of(cls, options: dict | None) -> Reading:
@@ -658,14 +662,26 @@ class Reading:
 
     def speakers(self, line: str, following: str | None) -> MessageSpeakers | None:
         """The speakers a row names (see :func:`next_text`)."""
-        return message_speakers(
-            line,
-            following,
-            first_line=self.first_line,
-            inline=self.inline,
-            code_nameplates=True,
-            standalone=standalone_speaker,
-        )
+
+        def read(first_line: bool) -> MessageSpeakers | None:
+            return message_speakers(
+                line,
+                following,
+                first_line=first_line,
+                inline=self.inline,
+                code_nameplates=True,
+                standalone=standalone_speaker,
+            )
+
+        if not self.named:
+            return read(self.first_line)
+        # A short row before speech is read last, when no other form is.
+        found = read(False)
+        if found is None and self.first_line:
+            found = read(True)
+            if found is not None and not plausible_speaker(found.names[0]):
+                return None
+        return found
 
     def sends(self, value: str) -> bool:
         """Whether the engine sends rows never translated that read *value*."""
@@ -673,9 +689,9 @@ class Reading:
 
 
 # The reading of text no engine settings read, such as Assistant-led's: a
-# speaker in any form the engine reads, a short row before speech included,
-# is a text of its own, as the game's rows lay it out.
-EVERY_SPEAKER = Reading(first_line=True, inline=True)
+# speaker in any form the engine reads, a short row before speech that reads
+# as a name included, is a text of its own, as the game's rows lay it out.
+EVERY_SPEAKER = Reading(first_line=True, inline=True, named=True)
 
 
 class Text(NamedTuple):
