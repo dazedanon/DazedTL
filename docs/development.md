@@ -172,7 +172,7 @@ A fix you found in a game but didn't code can go through the guide's [Share a fi
 One landing runs at a time, under a lock that a release also holds.
 
 - Every landing passes an independent review first: a fresh reviewer, given the author's done list, runs `code-review` at `high` or above and dazedtl-land's Review lens against `dev`, the author fixes or dismisses each finding with a reason, and that reviewer checks both; [repeatReviewDue](../scripts/land-lock.mjs) says when a fresh reviewer follows.
-  land.mjs refuses a review record [readReview](../scripts/land.mjs) can't read, such as one without `e2e`, the scenarios and live test its author ran, or whose last review was due another, a branch with commits after its head other than merges of `dev` and the formatter's, and, like `--hand-off`, a platform-sensitive branch whose record names no run nor why and a fix commit of its own without [AGENTS.md](../AGENTS.md)'s trailers.
+  land.mjs refuses a review record [readReview](../scripts/land.mjs) can't read, such as one without `e2e`, the scenarios and live test its author ran, or whose last review was due another, a branch with commits after its head other than merges of `dev` and the formatter's, and, like `--hand-off`, a platform-sensitive branch naming no run nor why and a fix commit of its own without [AGENTS.md](../AGENTS.md)'s trailers.
   Each landed record joins `dazedtl-reviews.jsonl` in the shared Git directory with its branch, range and [lenses](../scripts/land-lock.mjs); `node scripts/review-stats.mjs` counts what reviews caught and, by lens, bugs that got past landings [exposureDays](../scripts/review-stats.mjs) active days old.
 - A failed test run runs once more after the machine's load drops; a pass then is reported as `Flaky:`, and a second failure stops the landing.
 - Both sides' [release notes](#release-notes) are joined, and conflicts only in the generated API contracts are resolved by writing them again.
@@ -183,7 +183,8 @@ One landing runs at a time, under a lock that a release also holds.
   Other branches don't wait for CI, which runs on `dev` after the push; a run still red is fixed forward or reverted by the session cutting the next release.
 
 A Discord intake worker, which may never write the main checkout, lands in two steps.
-It runs `node scripts/land.mjs --hand-off <dir> --e2e <run>` with the directory its prompt gives and each scenario it ran, or `--why-no-e2e <why>`: the same format, merge and checks against `origin`'s `dev`, leaving the branch as `handoff.bundle` and `handoff.json` there, with no review, lock, app wait or push.The intake reviews that bundle by the land skill's Review step, with limits from [land-lock](../scripts/land-lock.mjs), then runs the main checkout's `node scripts/land.mjs --finish <dir> --review <file.json>`.
+It runs `node scripts/land.mjs --hand-off <dir> --e2e <run>` with the directory its prompt gives and each scenario it ran, or `--why-no-e2e <why>`: the same format, merge and checks against `origin`'s `dev`, leaving the branch as `handoff.bundle` and `handoff.json` there, with no review, lock, app wait or push.
+The intake reviews that bundle by the land skill's Review step, with limits from [land-lock](../scripts/land-lock.mjs), then runs the main checkout's `node scripts/land.mjs --finish <dir> --review <file.json>`.
 Under the lock, it checks the bundle with Git alone, runs nothing from it and lands as a landing does.
 It never waits without a limit; [land.mjs's header](../scripts/land.mjs) lists its exit codes for a retry.
 
