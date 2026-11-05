@@ -10,8 +10,16 @@ import { setTimeout as delay } from "node:timers/promises";
 export const message = (error) =>
   error instanceof Error ? error.message : String(error);
 
-/** Polls `check` until it returns a truthy value. */
-export async function until(description, check, timeout = 30_000) {
+/**
+ * Polls `check` every `interval` milliseconds until it returns a truthy
+ * value.
+ */
+export async function until(
+  description,
+  check,
+  timeout = 30_000,
+  interval = 250,
+) {
   const deadline = Date.now() + timeout;
   let last;
   for (;;) {
@@ -26,7 +34,7 @@ export async function until(description, check, timeout = 30_000) {
         `Timed out after ${timeout / 1000}s waiting for ${description}.` +
           (last ? ` Last error: ${message(last)}` : ""),
       );
-    await delay(250);
+    await delay(interval);
   }
 }
 
