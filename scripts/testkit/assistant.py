@@ -136,6 +136,23 @@ class Assistant:
             raise SystemExit(f"{action}: {json.dumps(run, ensure_ascii=False)[:2000]}")
         return run
 
+    def len_tool(self, script, *args):
+        """Runs one of Len's Python tools with the command the starting
+        prompt gives an assistant (python_command), whose UTF-8 mode a tool
+        printing a Japanese game path needs on Windows."""
+        from util.system import python_command
+
+        result = subprocess.run(
+            python_command(XP3_TOOLS / script, *args),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+        )
+        if result.returncode:
+            raise SystemExit(f"{script} failed: {result.stderr.strip()}")
+
     def report(self, phase):
         path = self.work / "report.json"
         path.write_text(json.dumps({"phase": phase}), encoding="utf-8")
@@ -380,16 +397,7 @@ class Assistant:
 
         self.report("images")
         decoded = self.game / XP3_DECODED
-        subprocess.run(
-            [
-                sys.executable,
-                str(XP3_TOOLS / "unpack_xp3.py"),
-                str(self.game / "data.xp3"),
-                str(decoded),
-            ],
-            check=True,
-            capture_output=True,
-        )
+        self.len_tool("unpack_xp3.py", self.game / "data.xp3", decoded)
         self.helper("images", "--scan", "--root", XP3_DECODED)
         self.investigate()
         step = self.helper("images", "--translate")
@@ -413,18 +421,8 @@ class Assistant:
             Path(name).relative_to(XP3_DECODED).as_posix()
             for name in applied["applied"]
         ]
-        subprocess.run(
-            [
-                sys.executable,
-                str(XP3_TOOLS / "pack_xp3.py"),
-                str(self.game / "patch.xp3"),
-                "--root",
-                str(decoded),
-                "--flat",
-                *names,
-            ],
-            check=True,
-            capture_output=True,
+        self.len_tool(
+            "pack_xp3.py", self.game / "patch.xp3", "--root", decoded, "--flat", *names
         )
         (self.game / MANIFEST).write_text(
             json.dumps({"files": ["patch.xp3"]}), encoding="utf-8"
@@ -441,16 +439,7 @@ class Assistant:
                 ).stdout
             )
             out = Path(folder) / "out"
-            subprocess.run(
-                [
-                    sys.executable,
-                    str(XP3_TOOLS / "unpack_xp3.py"),
-                    str(packed),
-                    str(out),
-                ],
-                check=True,
-                capture_output=True,
-            )
+            self.len_tool("unpack_xp3.py", packed, out)
             held = sorted(path.name for path in out.iterdir())
             for name in names:
                 if (out / Path(name).name).read_bytes() != (
