@@ -739,14 +739,40 @@ test("a sandboxed worker hands off a checked branch without writing the main che
   assert.equal(fs.existsSync(handoffFile), false);
 });
 
-test("the platform rule marks setup, platform code, assistants' tools, scenarios and CI, and no other change", () => {
+test("the platform rule marks every file a fix for Windows alone changed since 2026-09-15, and no other change", () => {
+  // Each with the fix that changed it.
   const changed = [
-    "START.bat",
-    "scripts/setup.mjs",
+    "START.sh", // 65720c07
+    "scripts/bootstrap.ps1", // 65720c07
+    "scripts/setup.mjs", // 65720c07
     "app/electron/main.cjs",
-    "backend/dazedtl/system.py",
-    "backend/dazedtl/translation/jobs.py",
-    "backend/dazedtl/engine/data/skills/game-translation/tools/Game Archives/KiriKiri XP3/pack_xp3.py",
+    "backend/dazedtl/system.py", // 3bb96dea
+    "backend/dazedtl/stdio.py", // e0c1be6d
+    "backend/dazedtl/translation/helper_command.py", // 3bb96dea
+    "backend/dazedtl/translation/jobs.py", // 0f0c513f
+    "backend/dazedtl/translation/ownership.py", // 0c98dc8a
+    "backend/dazedtl/translation/files.py", // 70e017c5
+    "backend/dazedtl/translation/release.py", // 0d9685fb
+    "backend/dazedtl/translation/context_setup.py", // bed881be
+    "backend/dazedtl/translation/start_over.py", // 3b11b377
+    "backend/dazedtl/images/service.py", // fa247ab1
+    "backend/dazedtl/compatibility/images.py", // bed881be
+    "backend/dazedtl/compatibility/checkpoints.py", // b24adcff
+    "backend/dazedtl/compatibility/checkpoint_commits.py", // b8b64a0d
+    "backend/dazedtl/compatibility/game_write.py", // b8b64a0d
+    "backend/dazedtl/compatibility/workflow_worker.py", // 849c37ab
+    "backend/dazedtl/compatibility/manual_worker.py", // e0c1be6d
+    "backend/dazedtl/engine/desktop/backend/manual.py", // cf3626b7
+    "backend/dazedtl/engine/util/paths.py", // cdeb9094
+    "backend/dazedtl/engine/util/subprocess_runner.py", // bbef7573
+    "backend/dazedtl/engine/util/translation_task.py", // e0c1be6d
+    "backend/dazedtl/engine/util/ace/rv2json.py", // 1da2d874
+    "backend/dazedtl/engine/util/ace/game_ini.py", // 0fe0ae22
+    "backend/dazedtl/engine/gameupdate/gameupdate/patch.ps1", // 1082c082
+    "backend/dazedtl/engine/data/skills/game-translation/tools/Game Archives/KiriKiri XP3/pack_xp3.py", // bd5b26ca
+    "scripts/project.py", // a895322f
+    "scripts/qa_upgrade.py",
+    "scripts/testkit/group.mjs", // aae8644d
     "scripts/testkit/scenarios.mjs",
     ".github/workflows/ci.yml",
   ];

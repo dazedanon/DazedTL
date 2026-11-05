@@ -68,18 +68,21 @@ export const platformPaths = [
   /^scripts\/((setup|start|update|runtimes|dependencies|files|paths|shortcuts|tar|zip)\.mjs|bootstrap\.ps1|runtimes\.lock|(node|python|mingit)-version)$/,
   /^(pyproject\.toml|app\/package(-lock)?\.json)$/,
   /^app\/electron\//,
-  // The platform layer, and file and process handling.
-  /^scripts\/platform_calls\.py$/,
-  /^backend\/dazedtl\/(system|storage)\.py$/,
-  /^backend\/dazedtl\/compatibility\/(checkpoint_\w+|game_write|original_files)\.py$/,
-  /^backend\/dazedtl\/engine\/util\/((paths|subprocess_runner|linux_desktop|release_package)\.py$|version_update\/)/,
-  /^backend\/dazedtl\/translation\/helper_command\.py$/,
-  // Each of these took a fix for Windows alone: workers and their process
-  // trees, project-relative paths, release ZIPs and VX Ace files.
-  /^backend\/dazedtl\/(stdio\.py|compatibility\/(\w+_worker|images)\.py|images\/service\.py)$/,
-  /^backend\/dazedtl\/translation\/(jobs|ownership|files|release|context_setup)\.py$/,
-  /^backend\/dazedtl\/engine\/util\/(translation_task\.py$|ace\/)/,
-  // Game updates, and the programs and tools the app and assistants run.
+  // The classes of files that past fixes for Windows alone touched, each
+  // with an example: the platform layer and its encodings (system.py);
+  // checkpoints and other Git writes in the game folder (checkpoints.py);
+  // worker processes, their trees and their environment (jobs.py, manual.py);
+  // paths kept project-relative (files.py); folders a task moves
+  // (start_over.py); release ZIPs; VX Ace's own tools.
+  /^backend\/dazedtl\/(system|storage|stdio)\.py$/,
+  /^backend\/dazedtl\/compatibility\/(checkpoint\w*|game_write|original_files|\w+_worker|images)\.py$/,
+  /^backend\/dazedtl\/engine\/desktop\/backend\/(\w+_worker|\w+_environment|manual)\.py$/,
+  /^backend\/dazedtl\/translation\/(jobs|ownership|helper_command|files|context_setup|start_over|release)\.py$/,
+  /^backend\/dazedtl\/images\/service\.py$/,
+  /^backend\/dazedtl\/engine\/util\/((paths|subprocess_runner|translation_task|linux_desktop|release_package)\.py$|version_update\/|ace\/)/,
+  // Game updates, and the programs and tools the app and assistants run:
+  // every Python script under scripts/, the engine's and the skills'.
+  /^scripts\/[^/]+\.py$/,
   /^backend\/dazedtl\/engine\/(gameupdate|scripts)\//,
   /^backend\/dazedtl\/engine\/data\/skills\/.*\.(py|ps1|bat|cmd|sh|js|mjs|cjs)$/i,
   /^backend\/dazedtl\/engine\/util\/(imagetools\/resources\.py|playtest\/run\.py|wolfdawn\/(__init__\.py|build_tools\.py|bin\/))/,
