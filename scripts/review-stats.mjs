@@ -19,10 +19,11 @@ import { gitIn, reviewLog } from "./land-lock.mjs";
 
 /**
  * @typedef {{ kind?: string, outcome: string, review: number }} Finding
- * @typedef {{ range: string, reviews: number, findings: Finding[], landed: number | null }} Logged
- * A landed range with how many independent reviews it ran, their findings
- * and when it landed, in milliseconds; one its author reviewed or skipped,
- * before independent reviews, ran none, and its findings count as review 0.
+ * @typedef {{ range: string, reviews: number, lenses: string[], findings: Finding[], landed: number | null }} Logged
+ * A landed range with how many independent reviews it ran, the lenses they
+ * all ran (land.mjs `reviewLenses`), their findings and when it landed, in
+ * milliseconds; one its author reviewed or skipped, before independent
+ * reviews, ran none, and its findings count as review 0.
  * @typedef {Logged & { commits: string[], lines: number }} Landing
  * A logged landing with the full hashes of its range's commits and its
  * `codeLines`.
@@ -101,6 +102,7 @@ export function loggedLandings(text) {
     landings.push({
       range: row.range,
       reviews: independent ? (row.reviews ?? 1) : 0,
+      lenses: Array.isArray(row.lenses) ? row.lenses : [],
       findings: findings.map((/** @type {any} */ item) => ({
         ...(item.kind === undefined ? {} : { kind: item.kind }),
         outcome: item.outcome,
@@ -171,6 +173,8 @@ export function summarize(landings, fixes, { landed, fixCommits }) {
   const byReviews = new Map();
   /** @type {Map<number, { landings: number, escapes: number }>} */
   const bySize = new Map();
+  /** @type {Map<string, { landings: number, escapes: number }>} */
+  const byLenses = new Map();
   /** @type {Map<number, Record<string, { fixed: number, dismissed: number }>>} */
   const rounds = new Map();
   /** @type {Map<string, Landing>} */
@@ -186,6 +190,7 @@ export function summarize(landings, fixes, { landed, fixCommits }) {
     for (const [map, key] of /** @type {const} */ ([
       [byReviews, landing.reviews],
       [bySize, size(landing)],
+      [byLenses, landing.lenses.join(" + ")],
     ])) {
       const group = map.get(key) ?? { landings: 0, escapes: 0 };
       group[field] += 1;
@@ -289,6 +294,7 @@ export function summarize(landings, fixes, { landed, fixCommits }) {
           : `${sizes[bucket - 1]} or more`,
       group,
     ]),
+    byLenses: sorted(byLenses),
     recent,
     undated,
     rounds: sorted(rounds),
@@ -459,6 +465,11 @@ function main() {
     "by code lines changed, leaving out tests, docs, JSON and generated contracts",
     summary.bySize,
     (bucket) => bucket,
+  );
+  buckets(
+    "by review lenses every review ran",
+    summary.byLenses,
+    (lenses) => lenses || "none",
   );
   console.log(
     `${count(summary.recent, "landing")} under ${exposureDays} active days old ${summary.recent === 1 ? "is" : "are"} left out of these until then; an active day is one on which a landing reached dev.`,

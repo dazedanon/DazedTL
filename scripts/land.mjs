@@ -70,8 +70,14 @@ const maxReviews = 3;
  * docs, naming or design. Older and intake records leave it out.
  */
 export const findingKinds = ["bug", "risk", "quality"];
+/**
+ * The checks a review may run besides code-review, each named in the
+ * dazedtl-land skill's Review lens section; a record lists those every one
+ * of its reviews ran, so review-stats can compare escapes with and without.
+ */
+export const reviewLenses = ["places-and-chains"];
 const reviewShape =
-  '{"level": "high", "reviewer": "independent", "reviews": 1, "head": "<hash of the last commit the last reviewer checked>", "findings": [{"summary": "...", "kind": "bug", "outcome": "fixed", "review": 1}, {"summary": "...", "kind": "quality", "outcome": "dismissed", "reason": "...", "review": 1}]}';
+  '{"level": "high", "reviewer": "independent", "reviews": 1, "head": "<hash of the last commit the last reviewer checked>", "lenses": ["places-and-chains"], "findings": [{"summary": "...", "kind": "bug", "outcome": "fixed", "review": 1}, {"summary": "...", "kind": "quality", "outcome": "dismissed", "reason": "...", "review": 1}]}';
 /** The subject of the commit holding what the formatter changed. */
 const formatSubject = "style: format";
 /** Where a hand-off's worker keeps origin's dev in its clone. */
@@ -135,6 +141,14 @@ export function readReview(text, { kinds = false } = {}) {
     throw new Error(
       "The review record needs a findings list, empty when the review found nothing.",
     );
+  const lenses = record.lenses ?? [];
+  if (
+    !Array.isArray(lenses) ||
+    lenses.some((lens) => !reviewLenses.includes(lens))
+  )
+    throw new Error(
+      `The review record's "lenses" lists the lenses every review ran, of ${reviewLenses.join(", ")}.`,
+    );
   const findings = record.findings.map(
     (/** @type {any} */ item, /** @type {number} */ index) => {
       const which = `Finding ${index + 1} of the review record`;
@@ -171,6 +185,10 @@ export function readReview(text, { kinds = false } = {}) {
     reviewer: "independent",
     reviews,
     head: record.head,
+    // In reviewLenses order, once each, so review-stats groups them alike.
+    ...(lenses.length
+      ? { lenses: reviewLenses.filter((lens) => lenses.includes(lens)) }
+      : {}),
     findings,
   };
 }
