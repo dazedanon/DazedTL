@@ -333,12 +333,30 @@ test("a landing's review record holds its evaluation, or the criteria its author
         ? /Finding 1 .* needs an outcome of fixed, or overruled/
         : /Finding 1 .* overruled without a reason/,
     );
-  // A landing runs at most three evaluations, and each finding names one.
-  for (const reviews of [0, 4, null])
+  // Each finding names the evaluation that reported it; more than three ran
+  // only when the user let a landing go on after its third FAIL, as the
+  // Discord intake's record of a landing saved mid-loop before evaluations
+  // also shows, with the kinds of the time.
+  for (const reviews of [0, 1.5, null])
     assert.throws(
       () => record({ ...evaluated, reviews, findings: [] }),
-      /needs "reviews", how many evaluations ran, from 1 to 3/,
+      /needs "reviews", how many evaluations ran, a whole number from 1/,
     );
+  assert.equal(
+    readReview(
+      JSON.stringify({
+        reviewer: "independent",
+        reviews: 4,
+        head: "abc1234",
+        findings: [
+          { summary: "A", kind: "risk", outcome: "fixed", review: 1 },
+          { summary: "B", severity: "minor", outcome: "fixed", review: 4 },
+        ],
+      }),
+      { intake: true },
+    ).reviews,
+    4,
+  );
   for (const review of [0, 1.5, "2", null, 3, undefined])
     assert.throws(
       () =>

@@ -108,8 +108,9 @@ const lockLimit = 10 * 60_000;
 
 /**
  * Reads a landing's review record. An evaluated branch's says
- * `"reviewer": "independent"`, how many evaluations ran (1 when not given,
- * at most maxReviews), the last commit evaluated, the E2E runs its author ran
+ * `"reviewer": "independent"`, how many evaluations ran (1 when not given;
+ * more than maxReviews when the user let it go on after the last FAIL), the
+ * last commit evaluated, the E2E runs its author ran
  * (readE2e) and each finding: the evaluation that reported it, which only a
  * one-evaluation record may leave out, its severity (findingSeverities) and
  * its outcome, fixed or, with the user's reason, overruled. A record whose
@@ -174,9 +175,9 @@ export function readReview(text, { intake = false } = {}) {
     };
   }
   const reviews = record.reviews === undefined ? 1 : record.reviews;
-  if (!counted(reviews, maxReviews))
+  if (!counted(reviews, Infinity))
     throw new Error(
-      `The review record needs "reviews", how many evaluations ran, from 1 to ${maxReviews}.`,
+      'The review record needs "reviews", how many evaluations ran, a whole number from 1.',
     );
   if (!Array.isArray(record.findings))
     throw new Error(
