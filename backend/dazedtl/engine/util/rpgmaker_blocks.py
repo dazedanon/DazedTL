@@ -48,7 +48,7 @@ from util.speakers import (
     standalone_speaker,
     to_prefixed,
 )
-from util.source_text import holds_source
+from util.source_text import holds_source, source_left
 
 # The number of rows a part's text owns, kept on its anchor beside
 # `_original`. Notes are not game data: whatever copies or compares commands
@@ -568,6 +568,13 @@ def opens_text(row: Any) -> bool:
     return _OPENING_CODE.match(str(row)) is not None
 
 
+def _opening(row: str) -> str:
+    """The code a row opens a text of its own with (:func:`opens_text`), or
+    "" for none."""
+    found = _OPENING_CODE.match(row)
+    return found.group(1).strip() if found else ""
+
+
 def joins(commands: list, at: int, codes: tuple[int, ...] = TEXT_CODES) -> bool:
     """Whether the command after *at* joins the text of the one at *at* in
     what the engine sends: a command of *codes*, both holding parameters, the
@@ -778,8 +785,8 @@ def _written_over(commands: list, part: Part, lines: list[str], reading: Reading
         if len(rows) != len(lines):
             if not (at < len(lines) and opens_text(lines[at])):
                 return at
-        elif _OPENING_CODE.match(values[at]).group(1).strip() not in whole or any(
-            holds_source(value) and value not in theirs for value in values[at:end]
+        elif _opening(values[at]) not in whole or any(
+            value not in theirs and source_left(value, whole) for value in values[at:end]
         ):
             return at
     return len(rows)
@@ -793,14 +800,9 @@ def _lined_up(commands: list, rows: tuple[int, ...], lines: list[str], read: lis
     does not, so the name its first row holds may come with the speech; nor
     does one an import laid out without the source's blank rows, which moved
     each later row up."""
-
-    def opening(value: str) -> str:
-        found = _OPENING_CODE.match(value)
-        return found.group(1).strip() if found else ""
-
     return len(rows) == len(lines) and all(
         any(text(commands[rows[at]]).strip() for at in each.rows)
-        and opening(text(commands[rows[each.rows[0]]])) == opening(lines[each.rows[0]])
+        and _opening(text(commands[rows[each.rows[0]]])) == _opening(lines[each.rows[0]])
         for each in read
         if any(lines[at].strip() for at in each.rows)
     )

@@ -612,6 +612,26 @@ class TextBlockTests(unittest.TestCase):
             ],
         )
 
+    def test_a_translation_sharing_its_sources_kanji_holds_no_japanese_left(self):
+        # Read without its pair, a Chinese translation's hanzi row opening
+        # with a code read as the game's own Japanese, left untranslated.
+        from util.languages import reading
+
+        listed = [
+            command(101, ["", 0, 0, 2, ""]),
+            command(401, ["你好。"], _original="こんにちは。\n\\SE[1]元気？\nまたね。"),
+            command(401, ["\\SE[1]你好吗？"]),
+            command(401, ["再见。"]),
+            command(0, []),
+        ]
+        (block,) = blocks.blocks(listed)
+        with reading("Japanese", "Simplified Chinese"):
+            texts = blocks.sent_texts(listed, block, blocks.Reading())
+        self.assertEqual(
+            [(text.rows, text.source) for text in texts],
+            [((1,), "こんにちは。"), ((2, 3), "\\SE[1]元気？\nまたね。")],
+        )
+
     def test_list_items_of_the_japanese_keep_a_row_each_beside_a_face(self):
         help_text = wrap_help(
             "Effects: ・Attack power rises greatly for the rest of the battle "
