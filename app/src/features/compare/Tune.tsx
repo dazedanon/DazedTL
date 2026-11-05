@@ -315,8 +315,11 @@ export function Tune({ context }: { context: CompareContext }) {
   const current = translated && shown === run.shown;
   const [editing, setEditing] = useState(false);
   const adopt = useAction({ observer: application });
-  const edit = (change: Partial<Settings>) =>
+  // A refusal named the settings the test had then.
+  const edit = (change: Partial<Settings>) => {
+    run.action.clear();
     setSettings((value) => value && { ...value, ...change });
+  };
   const count = glossaryEntries(glossary).length;
   const edits = changed.glossary ? glossaryChanges(gameGlossary, glossary) : 0;
   const disabled = run.action.busy;
