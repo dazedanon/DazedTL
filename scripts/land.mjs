@@ -76,6 +76,7 @@ import {
 } from "./land-lock.mjs";
 import { repository } from "./release.mjs";
 import { variants } from "./testkit/games.mjs";
+import { e2eOptions, scenarioOptions } from "./testkit/options.mjs";
 import { failureReport, tail, testsWithRetry } from "./testkit/retry.mjs";
 import { scenarios } from "./testkit/scenarios.mjs";
 import { mirrors } from "./update.mjs";
@@ -255,8 +256,18 @@ export function readE2e(record, which, { required = true } = {}) {
 }
 
 /**
+ * The options of scenario.mjs that change what a run tests: those taking a
+ * value, but for --work, which only says where it kept its files.
+ * @param {Readonly<Record<string, "value" | "flag">>} options
+ */
+const testedOptions = (options) =>
+  Object.keys(options).filter(
+    (option) => options[option] === "value" && option !== "--work",
+  );
+
+/**
  * What is wrong with an E2E run a record names, or null: scenario.mjs's
- * scenarios and game variants decide the names it may use.
+ * scenarios, options and game variants decide what it may say.
  * @param {unknown} run
  */
 function e2eProblem(run) {
@@ -265,14 +276,14 @@ function e2eProblem(run) {
   const live = name === "live";
   if (!live && !Object.hasOwn(scenarios, name))
     return `${name} is no scenario; node scripts/scenario.mjs list shows them, and live is the live test.`;
-  const options = live ? ["--upgrade-from"] : ["--game", "--from"];
+  const options = testedOptions(live ? e2eOptions : scenarioOptions);
   const seen = new Set();
   for (let index = 0; index < rest.length; index += 2) {
     const [option, value] = [rest[index], rest[index + 1]];
     if (!options.includes(option) || seen.has(option))
       return `"${run}" takes ${options.join(" and ")} once each, not ${option}.`;
     seen.add(option);
-    if (!value || !/^[\w./+-]+$/.test(value) || value.startsWith("-"))
+    if (!value || value.startsWith("-"))
       return `"${run}" gives ${option} no value.`;
     if (option === "--game") {
       const unknown = value.split("+").find((v) => !Object.hasOwn(variants, v));
@@ -284,15 +295,16 @@ function e2eProblem(run) {
 }
 
 /**
- * Why a change that changes `sensitive` paths may not land on `ran`, or null:
- * a platform-sensitive change names the E2E it ran or says why none fits.
+ * Why a branch that changes `sensitive` paths may not land on `review`, or
+ * null: a platform-sensitive branch's record names the E2E its author ran or
+ * says why none fits. A hand-off records its runs without this check until
+ * the intake, which reruns --hand-off and rewrites its record, carries them.
  * @param {string[]} sensitive
- * @param {{ e2e?: string[], whyNoE2e?: string }} ran
- * @param {string} fix how the author names it
+ * @param {{ e2e?: string[], whyNoE2e?: string }} review
  */
-function missingE2e(sensitive, { e2e, whyNoE2e }, fix) {
+function missingE2e(sensitive, { e2e, whyNoE2e }) {
   if (!sensitive.length || e2e?.length || whyNoE2e) return null;
-  return `It changes platform-sensitive paths (${sensitive.join(", ")}), so it names the scenarios or live test its author ran, or says why none fits: ${fix}.`;
+  return `This branch changes platform-sensitive paths (${sensitive.join(", ")}), so its review record names the scenarios or live test its author ran as "e2e", or why none fits as "whyNoE2e".`;
 }
 
 /**
@@ -1101,6 +1113,14 @@ export async function land(cwd, deps, reviewFile) {
     git(["rev-parse", "--git-common-dir"]).stdout.trim(),
   );
   const main = path.dirname(common);
+  const untested = missingE2e(
+    platformSensitive(changedPaths(git, "refs/heads/dev", "HEAD")),
+    review,
+  );
+  if (untested) {
+    log(untested);
+    return 1;
+  }
   await warnRedDev(deps, main);
   const time = timer(deps.now);
   const unformatted = await formatBranch(git, top, deps.run, log);
@@ -1114,15 +1134,6 @@ export async function land(cwd, deps, reviewFile) {
   const sensitive = platformSensitive(
     changedPaths(git, "refs/heads/dev", "HEAD"),
   );
-  const untested = missingE2e(
-    sensitive,
-    review,
-    'add them to the review record\'s "e2e", or why none fits as "whyNoE2e"',
-  );
-  if (untested) {
-    log(untested);
-    return 1;
-  }
   /** @type {string | undefined} */
   let tested;
   if (sensitive.length) {
@@ -1520,15 +1531,6 @@ export async function handOff(cwd, deps, dir, given = {}) {
     log("Hand off with --hand-off <dir>, the directory your prompt gives.");
     return 1;
   }
-  let ran;
-  try {
-    ran = readE2e(given, "A hand-off", { required: false });
-  } catch (error) {
-    log(
-      `${reason(error)} Give each with --e2e "<run>", or --why-no-e2e "<why>".`,
-    );
-    return 1;
-  }
   // A hand-off that fails never leaves an earlier one behind to finish.
   try {
     fs.mkdirSync(dir, { recursive: true });
@@ -1536,6 +1538,15 @@ export async function handOff(cwd, deps, dir, given = {}) {
       fs.rmSync(path.join(dir, name), { force: true });
   } catch (error) {
     log(`Could not prepare ${dir} for the hand-off: ${reason(error)}`);
+    return 1;
+  }
+  let ran;
+  try {
+    ran = readE2e(given, "A hand-off", { required: false });
+  } catch (error) {
+    log(
+      `${reason(error)} Give each with --e2e "<run>", or --why-no-e2e "<why>".`,
+    );
     return 1;
   }
   const found = featureBranch(cwd, log);
@@ -1591,12 +1602,6 @@ async function handOffBranch(deps, { top, git, branch, dir, ran }, time) {
       0,
       `Nothing to hand off: dev already has ${head.slice(0, 7)}`,
     );
-  const untested = missingE2e(
-    platformSensitive(changedPaths(git, base, head)),
-    ran,
-    'hand off again with --e2e "<run>" for each, or --why-no-e2e "<why>"',
-  );
-  if (untested) return outcome(1, `${untested} Nothing was handed off.`);
   const failed = await runChecks(deps, top, branch, time);
   if (failed) return failed;
 
@@ -1830,12 +1835,6 @@ async function finishUnderLock(
     // CI comes before the check that dev has not moved: dev moving while it
     // runs needs no new run, since its pass stands once the worker merges dev.
     const sensitive = platformSensitive(changedPaths(git, base, head));
-    const untested = missingE2e(
-      sensitive,
-      handoff,
-      'hand off again with --e2e "<run>" for each, or --why-no-e2e "<why>"',
-    );
-    if (untested) return outcome(1, `${untested} Nothing landed.`);
     if (sensitive.length) {
       const stopped = await branchCI(deps, {
         git,

@@ -18,7 +18,11 @@ import { groupRuns, spawnGroup, stopGroup } from "./testkit/group.mjs";
 import { gameName, makeGame, variants } from "./testkit/games.mjs";
 import { helperCommand, scenarios } from "./testkit/scenarios.mjs";
 import { checkout, previousRelease } from "./testkit/checkout.mjs";
-import { e2eOptions, readOptions } from "./testkit/options.mjs";
+import {
+  e2eOptions,
+  readOptions,
+  scenarioOptions,
+} from "./testkit/options.mjs";
 
 const usage = `Usage:
   node scripts/scenario.mjs <scenario> [--game <variants>] [--from <ref>] [--app] [--work <dir>]
@@ -28,12 +32,7 @@ const usage = `Usage:
   node scripts/scenario.mjs drive --work <dir> text|click|click-prefix|call|eval|shot ...
   node scripts/scenario.mjs live [--work <empty folder>] [--upgrade-from <tag> | previous]`;
 // The options building a scenario takes, and those each other command takes.
-const buildOptions = {
-  "--work": "value",
-  "--game": "value",
-  "--from": "value",
-  "--app": "flag",
-};
+const buildOptions = scenarioOptions;
 /** @type {Record<string, Record<string, "value" | "flag">>} */
 const commandOptions = {
   list: {},

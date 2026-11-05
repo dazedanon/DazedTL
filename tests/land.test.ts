@@ -503,7 +503,7 @@ test("a landing's review record comes from an independent reviewer and accounts 
     ).reviews,
     1,
   );
-  // The intake's own landing record, unnumbered, reads the same way.
+  // The intake's own findings, numbered by its review, count the same way.
   assert.equal(
     repeatReviewDue(
       [
@@ -787,18 +787,8 @@ test("a sandboxed worker hands off a checked branch without writing the main che
   const base = commit(main, "dev.txt", "dev\n");
   const before = refs();
   spawnSync("chmod", ["-R", "a-w", main]);
-  // The branch changes a platform-sensitive path, so the worker names the
-  // E2E it ran, or why none fits, as the land skill asks.
-  assert.equal(await handOff(clone, deps, dir), 1);
-  assert.match(
-    logged.join("\n"),
-    /platform-sensitive paths \(scripts\/setup\.mjs\)[^]*--e2e "<run>"[^]*Nothing was handed off\./,
-  );
-  assert.equal(fs.existsSync(handoffFile), false);
-  logged.length = 0;
-  assert.equal(await handOff(clone, deps, dir, { e2e: ["live --nope"] }), 1);
-  assert.match(logged.join("\n"), /not --nope/);
-  const ran = { e2e: ["translated --game playable", "live"] };
+  // The worker names the E2E it ran, and the reviews log keeps it.
+  const ran = { e2e: ["translated --game playable --from HEAD~1", "live"] };
   assert.equal(await handOff(clone, deps, dir, ran), 0, logged.join("\n"));
   writable();
   const head = rev(atClone, "HEAD");
@@ -828,16 +818,8 @@ test("a sandboxed worker hands off a checked branch without writing the main che
   logged.length = 0;
   assert.equal(await finish(), 1);
   assert.match(logged.join("\n"), /not the head/);
-  // One from a worker's older land.mjs, naming no E2E run, lands nothing
-  // platform-sensitive.
-  const { e2e: _, ...unnamed } = handoff;
-  fs.writeFileSync(handoffFile, JSON.stringify(unnamed));
-  review(head);
-  logged.length = 0;
-  assert.equal(await finish(), 1);
-  assert.match(logged.join("\n"), /platform-sensitive[^]*Nothing landed\./);
-  assert.equal(pushed(), "");
   fs.writeFileSync(handoffFile, JSON.stringify(handoff));
+  review(head);
   // The hand-off changes a platform-sensitive path, so it lands once CI on
   // GitHub passes: --finish starts it and is run again later.
   assert.equal(await finish(), 5);
@@ -882,12 +864,10 @@ test("a sandboxed worker hands off a checked branch without writing the main che
   // dev moving after the checks sends the worker back to merge it, but only
   // once the hand-off's CI has passed, which then stands after that merge.
   commit(clone, "scripts/setup.mjs", "more\n");
-  assert.equal(
-    await handOff(clone, deps, dir, { whyNoE2e: "Only a comment" }),
-    0,
-    logged.join("\n"),
-  );
-  assert.equal(record().whyNoE2e, "Only a comment");
+  // The intake reruns a hand-off's checks naming no runs, so a
+  // platform-sensitive one is not refused for that yet.
+  assert.equal(await handOff(clone, deps, dir), 0, logged.join("\n"));
+  assert.deepEqual(record().e2e, []);
   assert.equal(record().base, head);
   review(record().head);
   commit(main, "later.txt", "later\n");
@@ -895,6 +875,12 @@ test("a sandboxed worker hands off a checked branch without writing the main che
   logged.length = 0;
   assert.equal(await finish(), 3);
   assert.match(logged.join("\n"), /^dev moved since the hand-off's checks/m);
+  // A run with a name scenario.mjs doesn't know is refused, and leaves no
+  // earlier hand-off behind to finish.
+  logged.length = 0;
+  assert.equal(await handOff(clone, deps, dir, { e2e: ["live --nope"] }), 1);
+  assert.match(logged.join("\n"), /not --nope/);
+  assert.equal(fs.existsSync(handoffFile), false);
 
   // A fix without its trailers is refused before anything else runs.
   commit(clone, "fix.txt", "fix\n");
