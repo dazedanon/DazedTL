@@ -1,6 +1,7 @@
 """The one definition of RPG Maker text blocks (util/rpgmaker_blocks.py) that
 translation, fitting, Text QA, Assistant-led and the playtest read."""
 
+import copy
 import json
 import tempfile
 import unittest
@@ -478,7 +479,7 @@ class TextBlockTests(unittest.TestCase):
     def test_assistant_led_fits_a_nameplate_apart_from_its_speech(self):
         # Assistant-led's writer keeps one source over a message's rows, and
         # fitting it as one text wrapped the name row into the speech.
-        from util.len_originals import write_rpgmaker_json
+        from util.len_originals import fit_written, write_rpgmaker_json
 
         def page(rows):
             return {
@@ -488,6 +489,19 @@ class TextBlockTests(unittest.TestCase):
                     command(0, []),
                 ]
             }
+
+        def written(source, staged, layout):
+            with tempfile.TemporaryDirectory() as folder:
+                files = {
+                    name: Path(folder, name + ".json") for name in ("source", "staged")
+                }
+                for name, document in (("source", source), ("staged", staged)):
+                    files[name].write_text(
+                        json.dumps(document, ensure_ascii=False), "utf-8"
+                    )
+                game = Path(folder, "Map001.json")
+                write_rpgmaker_json(files["source"], files["staged"], game, layout)
+                return json.loads(game.read_bytes())
 
         source = page(
             [
@@ -503,22 +517,7 @@ class TextBlockTests(unittest.TestCase):
                 "",
             ]
         )
-        with tempfile.TemporaryDirectory() as folder:
-            files = {
-                name: Path(folder, name + ".json") for name in ("source", "staged")
-            }
-            for name, document in (("source", source), ("staged", staged)):
-                files[name].write_text(
-                    json.dumps(document, ensure_ascii=False), "utf-8"
-                )
-            game = Path(folder, "Map001.json")
-            write_rpgmaker_json(
-                files["source"],
-                files["staged"],
-                game,
-                Layout(55, 45, 60, 60, 4, "English"),
-            )
-            listed = json.loads(game.read_bytes())["list"]
+        listed = written(source, staged, Layout(55, 45, 60, 60, 4, "English"))["list"]
         self.assertEqual(blocks.text(listed[1]), "\\c[2]Rookie\\c[0]")
         self.assertEqual(
             [blocks.text(listed[at]) for at in (2, 3)],
@@ -527,6 +526,23 @@ class TextBlockTests(unittest.TestCase):
                 'took my eyes off for a moment...!"',
             ],
         )
+        # A code a wrap moves to the start of a row opens no text there:
+        # refitted at other widths and back, the message lays out as before.
+        source = page(["こんにちは、今日は\\SE[1]元気？", "そうだね"])
+        staged = page(
+            [
+                "Hello there, the weather today is nice \\SE[1]how are you doing today?",
+                "Yes indeed.",
+            ]
+        )
+        narrow, wide = (
+            Layout(width, width, 60, 60, 4, "English") for width in (30, 38)
+        )
+        once = written(source, staged, narrow)
+        twice = copy.deepcopy(once)
+        fit_written(twice, "Map001.json", wide)
+        fit_written(twice, "Map001.json", narrow)
+        self.assertEqual(twice, once)
 
     def test_list_items_of_the_japanese_keep_a_row_each_beside_a_face(self):
         help_text = wrap_help(

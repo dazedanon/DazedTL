@@ -742,9 +742,11 @@ def _written_over(commands: list, part: Part, lines: list[str], reading: Reading
     (ROWS). A run writes a message's text on its first row and lays scrolling
     text over its own rows, so the rows after them are the game's own, left
     untranslated: all of them after a nameplate, else from a row that opens
-    a text of its own (:func:`opens_text`), which a run's text never holds
-    past its first row. A writer laying text over the rows one by one, as
-    Assistant-led's does, opens one only where its source's row does."""
+    a text of its own (:func:`opens_text`). A writer laying text over the
+    rows one by one, as Assistant-led's does, keeps a source line for each
+    row, and fitting may move a code to the start of one; in that shape the
+    game's own start only at a row opening with a code its source doesn't
+    hold, or whose text holds Japanese its source doesn't."""
     rows = part.rows
     if len(rows) == 1 or recorded(commands[part.anchor]) is not None:
         return len(rows)
@@ -753,8 +755,16 @@ def _written_over(commands: list, part: Part, lines: list[str], reading: Reading
         found = reading.speakers(lines[0], values[1])
         if found is not None and found.own_line:
             return 1
-    for at in range(1, len(rows)):
-        if opens_text(values[at]) and not (at < len(lines) and opens_text(lines[at])):
+    whole = "\n".join(lines)
+    theirs = set(lines)
+    opening = [at for at in range(1, len(rows)) if opens_text(values[at])]
+    for at, end in zip(opening, [*opening[1:], len(rows)]):
+        if len(rows) != len(lines):
+            if not (at < len(lines) and opens_text(lines[at])):
+                return at
+        elif _OPENING_CODE.match(values[at]).group(1).strip() not in whole or any(
+            holds_source(value) and value not in theirs for value in values[at:end]
+        ):
             return at
     return len(rows)
 
