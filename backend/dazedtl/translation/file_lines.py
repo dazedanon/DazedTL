@@ -69,11 +69,10 @@ class Line(NamedTuple):
     # The path of the command an event text block starts at, its window
     # command for a message; () for any other line.
     start: tuple = ()
-    # The index in *units* of a nameplate on a row of its own, which the
-    # engine sends apart from the speech after it, and the speaker it names
-    # (`nameplated`).
-    nameplate: int | None = None
-    speaker: str = ""
+    # For each of *units*, the speaker a nameplate on a row of its own names,
+    # which the engine sends apart from the speech after it; "" for others.
+    # Read only as lines() reads the texts the engine sends.
+    names: tuple[str, ...] = ()
 
     def sent(self) -> tuple[tuple[str, str | None], ...]:
         """The text the engine sends as one, each with its source."""
@@ -108,63 +107,6 @@ def shown(text: str, source: str | None) -> str:
 def name_box(paths: tuple[tuple, ...]) -> bool:
     """Whether a sent text's paths are a message's name box."""
     return paths[0][-2:] == ("parameters", 4)
-
-
-def nameplated(line: Line, *, first_line: bool, inline: bool) -> Line:
-    """*line* with the nameplate on its first row, if it is a message or
-    scrolling text whose first row is one, sent apart from the speech after
-    it, as the engine sends them: *first_line* and *inline* are the
-    project's FIRSTLINESPEAKERS and INLINE401SPEAKERS, read with the run
-    policy's newest reading (util/speakers `message_speakers`). Translation
-    writes the name and the speech apart, but a block it never touched, or
-    whose speech it left untranslated, holds both in one text. One
-    translated over its rows as one text stays one: its first row may hold
-    more than the name."""
-    from util import rpgmaker_blocks as blocks
-    from util.speakers import display_name, message_speakers, standalone_speaker
-
-    if line.kind not in (blocks.MESSAGE, blocks.SCROLL):
-        return line
-    units, places = list(line.units), list(line.unit_paths)
-    at = next(
-        (index for index, paths in enumerate(places) if not name_box(paths)),
-        None,
-    )
-    if at is None:
-        return line
-    texts = dict(zip(line.paths, line.texts))
-    source = units[at][1]
-    rows = [texts[path] for path in places[at]]
-    if source is not None and "\n" in source:
-        return line
-    # The text's rows from its first on as the engine reads them: each
-    # translated text's source, else the rows themselves, such as a speech a
-    # run left untranslated after writing its name.
-    read = ([source] if source is not None else rows[:1]) + rows[1:]
-    for (_text, kept), paths in zip(units[at + 1 :], places[at + 1 :]):
-        read += (
-            kept.split("\n") if kept is not None else [texts[path] for path in paths]
-        )
-    found = message_speakers(
-        read[0],
-        read[1] if len(read) > 1 else None,
-        first_line=first_line,
-        inline=inline,
-        code_nameplates=True,
-        standalone=standalone_speaker,
-    )
-    if found is None or not found.own_line:
-        return line
-    if len(rows) > 1:
-        speech = "\n".join(row for row in rows[1:] if row.strip())
-        units[at : at + 1] = [(rows[0], source), (speech, None)]
-        places[at : at + 1] = [places[at][:1], places[at][1:]]
-    return line._replace(
-        units=tuple(units),
-        unit_paths=tuple(places),
-        nameplate=at,
-        speaker=display_name(found.names[0]),
-    )
 
 
 def _resolve(document: Any, path: tuple) -> Any:
@@ -209,6 +151,7 @@ def lines(
     phase: str,
     markers: frozenset[str] = frozenset(),
     variables: frozenset[int] = frozenset(),
+    reading: Any = None,
 ) -> list[Line]:
     """Each line of a phase's scope ("database" or "dialogue") in one data
     file, in file order, whether or not it is in scope. Event text reads its
@@ -216,7 +159,12 @@ def lines(
     comments a plugin shows, count under *markers*, the comment markers
     Comment text translates, none while it is off. System.json's terms
     include the names of the *variables* the game's plugins draw
-    (util/rpgmaker_variable_names)."""
+    (util/rpgmaker_variable_names). With a *reading* (rpgmaker_blocks
+    `Reading`, the project's speaker settings), a message's and scrolling
+    text's units are the texts the engine sends of the game's own rows
+    (rpgmaker_blocks `sent_texts`), alike in every copy, each read as the
+    engine joins its rows (`text_source`); otherwise its parts, which counts
+    read."""
     from util import rpgmaker_blocks as blocks
     from util.rpgmaker_scope import changes
 
@@ -287,15 +235,32 @@ def lines(
             for row in block.rows:
                 paths.append((*listed, row, "parameters", 0))
                 texts.append(blocks.text(commands[row]))
-            for part in block.parts:
-                source = blocks.source(commands, part)
+            names = [""] * len(units)
+            texts_sent = kind in (blocks.MESSAGE, blocks.SCROLL) and reading is not None
+            if texts_sent and reading is not None:
+                sent = [
+                    (each.rows, each.source, each.name)
+                    for each in blocks.sent_texts(commands, block, reading)
+                ]
+            else:
+                sent = [
+                    (part.rows, blocks.source(commands, part), "")
+                    for part in block.parts
+                ]
+            for rows, source, speaker in sent:
                 if source is not None:
                     sources.append(source)
-                rows = (blocks.text(commands[row]) for row in part.rows)
-                units.append(("\n".join(row for row in rows if row.strip()), source))
-                places.append(
-                    tuple((*listed, row, "parameters", 0) for row in part.rows)
+                values = [blocks.text(commands[row]) for row in rows]
+                units.append(
+                    (
+                        blocks.text_source(values)
+                        if texts_sent
+                        else "\n".join(value for value in values if value.strip()),
+                        source,
+                    )
                 )
+                places.append(tuple((*listed, row, "parameters", 0) for row in rows))
+                names.append(speaker)
             if paths:
                 listing.append(
                     Line(
@@ -306,6 +271,7 @@ def lines(
                         tuple(units),
                         tuple(places),
                         (*listed, block.start),
+                        tuple(names) if reading is not None else (),
                     )
                 )
         # In file order: by the command each line starts at.
@@ -448,13 +414,14 @@ def _read(
     markers: frozenset[str],
     original: Callable[[], Any],
     variables: frozenset[int] = frozenset(),
+    reading: Any = None,
 ) -> list[Line]:
     """lines() of a file, where a map name or note label keeps no source
     and the original game file decides it, read against `original()`'s
     map: read only then, once."""
     from util.source_text import source_left
 
-    found = lines(name, document, phase, markers, variables)
+    found = lines(name, document, phase, markers, variables, reading)
     if not any(
         line.kind in _UNKEPT
         and not line.sources
@@ -477,10 +444,12 @@ def read(
     markers: frozenset[str],
     original: Callable[[], Any],
     variables: frozenset[int] = frozenset(),
+    reading: Any = None,
 ) -> list[Line]:
-    """lines() of a file as counts read it: a map name or note label keeping
-    no source of its own takes the original game file's (`_read`)."""
-    return _read(name, document, phase, markers, original, variables)
+    """lines() of a file as counts read it, or with a *reading* as the
+    engine sends its texts: a map name or note label keeping no source of
+    its own takes the original game file's (`_read`)."""
+    return _read(name, document, phase, markers, original, variables, reading)
 
 
 def state(line: Line, notes: frozenset[str]) -> str | None:

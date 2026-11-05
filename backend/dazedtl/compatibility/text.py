@@ -933,15 +933,29 @@ def fitting_layout(plan):
     return Layout.of_game(project["source"], project.get("widths") or {})
 
 
-def fit_output(document, name, layout, areas=None, *, newline=False, resized=False):
+def fitting_reading(plan):
+    """How the engine reads the messages of a project's game, by its speaker
+    settings (util.rpgmaker_blocks.Reading): fitting lays out each text the
+    engine sends on its own."""
+    from util.rpgmaker_blocks import Reading
+
+    return Reading.of(plan["project"].get("engine_options"))
+
+
+def fit_output(
+    document, name, layout, areas=None, *, newline=False, resized=False, reading=None
+):
     """A translated file's bytes with every translated line that does not
     fit the Line widths wrapped again, and how many values that changed; no
     bytes when nothing needs it. *resized* says the text was fitted to other
-    widths (see util.rpgmaker_rewrap.fit_document)."""
+    widths, and *reading* reads a message's texts (see
+    util.rpgmaker_rewrap.fit_document)."""
     from util.rpgmaker_rewrap import fit_document
 
     changes = len(
-        fit_document(document, name, layout, areas=areas, resized=resized).changes
+        fit_document(
+            document, name, layout, areas=areas, resized=resized, reading=reading
+        ).changes
     )
     if not changes:
         return None, 0
@@ -968,13 +982,13 @@ def imported_document(before, staged, name, target):
     return result
 
 
-def unfitted(document, name, layout):
+def unfitted(document, name, layout, reading=None):
     """The translated values in *document* that do not fit the Line widths
     even wrapped again, such as help that needs more rows than its window
-    shows; fits *document* in place."""
+    shows; fits *document* in place, a message's texts read by *reading*."""
     from util.rpgmaker_rewrap import fit_document
 
-    return fit_document(document, name, layout).misfits
+    return fit_document(document, name, layout, reading=reading).misfits
 
 
 def prepare_publication(plan):
@@ -1032,7 +1046,13 @@ def prepare_publication(plan):
             fitted = None
             if layout:
                 localized = write_locale(document, name, layout.target)
-                fitted = fit_output(document, name, layout, resized=True)[0]
+                fitted = fit_output(
+                    document,
+                    name,
+                    layout,
+                    resized=True,
+                    reading=fitting_reading(plan),
+                )[0]
                 if fitted is None and localized:
                     fitted = engine_json(document)
             if fitted is not None:
@@ -1074,10 +1094,11 @@ def prepare_publication(plan):
                 set(options["areas"]),
                 newline=raw.endswith(b"\n"),
                 resized=True,
+                reading=fitting_reading(plan),
             )
             # What no wrap fits at these widths, in every area, as the game
             # will hold it once this fit is written.
-            misfits = unfitted(document, name, layout)
+            misfits = unfitted(document, name, layout, fitting_reading(plan))
             plan["misfits"] += misfits[: LISTED_MISFITS - len(plan["misfits"])]
             plan["misfit_count"] += len(misfits)
             if fitted is None:

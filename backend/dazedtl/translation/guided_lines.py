@@ -9,18 +9,19 @@ their IDs while their speaker settings match.
 An ID is `<file>#<JSON pointer>` into the original file: a value's own, and
 for an event text block its first command's, such as a message's window,
 with `/parameters/4` after it for the message's name box and `~<n>` for its
-later parts. A nameplate on a message's first row, where the project's
-speaker settings read one, is a part of its own and names the speech's
-speaker, as the engine sends them (file_lines `nameplated`). A command the
-original doesn't hold at a place, such as one a game update added, keeps its
-pointer into the copy.
+later parts. A message's or scrolling text's parts are the texts the engine
+sends of the game's own rows, read by the project's speaker settings
+(rpgmaker_blocks `sent_texts`): a row opening with a code such as \\SE[1]
+starts one, and a nameplate on a row of its own is one and names the
+speaker of the speech after it. A command the original doesn't hold at a place, such as one a
+game update added, keeps its pointer into the copy.
 
 Importing writes into each file's working copy, as a run's output does
 (guided_inputs), and records each changed value's source as Guided does,
-a nameplate's apart from its speech's, so Translate's Apply puts the
-translations in the game as one checkpoint, fitted to the Line widths.
-Choice help and note labels are left out of an import: their rows and
-sources follow rules of their own.
+each text's on its first row, so Translate's Apply puts the translations in
+the game as one checkpoint, fitted to the Line widths. Choice help and note
+labels are left out of an import: their rows and sources follow rules of
+their own.
 """
 
 import copy
@@ -102,11 +103,9 @@ class GuidedLines:
             else frozenset()
         )
         self.variables = self.inputs.drawn_variables(self.files)
-        options = self.native["engine_options"]
-        self.speakers = {
-            "first_line": bool(options.get("FIRSTLINESPEAKERS")),
-            "inline": bool(options.get("INLINE401SPEAKERS")),
-        }
+        from util.rpgmaker_blocks import Reading
+
+        self.reading = Reading.of(self.native["engine_options"])
         self._found = None
 
     def _units(self):
@@ -135,9 +134,14 @@ class GuidedLines:
 
                 notes = file_lines.note_pointers(document, read_original)
                 for line in file_lines.read(
-                    name, document, phase, self.markers, read_original, self.variables
+                    name,
+                    document,
+                    phase,
+                    self.markers,
+                    read_original,
+                    self.variables,
+                    self.reading,
                 ):
-                    line = file_lines.nameplated(line, **self.speakers)
                     # A block names its texts by the command it starts at.
                     head = (
                         places.of(line.start)
@@ -145,6 +149,7 @@ class GuidedLines:
                         else None
                     )
                     named = head is not None
+                    block = (name, line.start) if line.kind in _KINDS else None
                     speaker = None
                     part = 0
                     for index, ((text, source), paths) in enumerate(
@@ -152,9 +157,9 @@ class GuidedLines:
                     ):
                         shown = file_lines.shown(text, source)
                         name_box = named and file_lines.name_box(paths)
-                        nameplate = index == line.nameplate
+                        nameplate = bool(line.names and line.names[index])
                         if nameplate:
-                            speaker = line.speaker
+                            speaker = line.names[index]
                         if not holds_source(shown):
                             continue
                         if head is not None and name_box:
@@ -196,9 +201,13 @@ class GuidedLines:
                             "paths": paths,
                             "line": line.kind,
                             "name_box": name_box,
+                            # A message's or scrolling text's text keeps its
+                            # source on its first row, as a run writes it.
                             "start": (paths[0], shown)
-                            if line.nameplate is not None and index >= line.nameplate
+                            if block is not None and not name_box
                             else None,
+                            "block": block,
+                            "kept": source is not None,
                         }
         self._found = found
         return found
@@ -270,13 +279,24 @@ class GuidedLines:
         with reading_game(self.native["source"]):
             for name, rows in by_file.items():
                 before = decode_json(system.read_bytes(self.inputs.newest(name)))
-                # Each text written of a message split at its nameplate keeps
-                # its source on its first row, as Guided writes the name and
-                # the speech apart, so Apply fits each on its own.
-                for unit, _text in rows:
+                # Each text written of a message or scrolling text keeps its
+                # source on its first row, as a run writes the texts it
+                # sends, and so does every text a writer kept one source over
+                # with it, which an export reads apart (rpgmaker_blocks
+                # `sent_texts`): Apply fits each on its own.
+                touched = {unit["block"] for unit, _text in rows}
+                marks = [unit for unit, _text in rows] + [
+                    unit
+                    for unit in units.values()
+                    if unit["kept"] and unit["block"] in touched - {None}
+                ]
+                for unit in marks:
                     if unit["start"] is not None:
                         path, source = unit["start"]
-                        _parent(before, path[:-1])["_original"] = source
+                        command = _parent(before, path[:-1])
+                        command["_original"] = source
+                        # The rows it lays the text over, the game's own after.
+                        command[blocks.ROWS] = len(unit["paths"])
                 staged = copy.deepcopy(before)
                 for unit, text in rows:
                     paths = unit["paths"]

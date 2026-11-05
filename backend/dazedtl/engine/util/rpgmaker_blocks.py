@@ -23,6 +23,11 @@ how many rows a choice help or comment part owns beside ``_original``, under
 :func:`owned`). Assistant-led keeps a comment's Japanese, marker included, on
 the comment (108) itself.
 
+The engine sends a message's or scrolling text's rows in texts (see
+:func:`texts`), and translation writes each text over its rows, keeping its
+source on its first: every copy of a game names its lines by the texts of the
+game's own rows (:func:`sent_texts`).
+
 Commands the engine empties when it writes a message's translation over its
 rows (code -1, no parameters) are left out until it writes the list back.
 """
@@ -32,20 +37,28 @@ from __future__ import annotations
 import re
 from collections import Counter
 from dataclasses import dataclass
-from typing import Any, Callable, Iterable, Iterator, NamedTuple
+from typing import Any, Callable, Iterable, Iterator, NamedTuple, Sequence
 
 from util import target_text
-from util.speakers import MessageSpeakers, to_prefixed
+from util.speakers import (
+    MessageSpeakers,
+    display_name,
+    message_speakers,
+    standalone_speaker,
+    to_prefixed,
+)
 from util.source_text import holds_source
 
 # The number of rows a part's text owns, kept on its anchor beside
 # `_original`. Notes are not game data: whatever copies or compares commands
 # treats both as the translation's. A comment needs the count because
 # translation laid it one Japanese line at a time and a game may follow those
-# lines with its own, such as "(1/3)" or a blank spacer. A message needs none:
-# translation joins its rows into one command, and Assistant-led's rows run up
-# to the next translation (see `run`). Game updates and Assistant-led's writer
-# carry the count with the translation.
+# lines with its own, such as "(1/3)" or a blank spacer. A run's message needs
+# none: it joins its rows into one command, and Assistant-led's rows run up to
+# the next translation (see `run`); a translation file import, which lays a
+# message's text over its rows one by one, records them, since the game's own
+# rows may follow. Game updates and Assistant-led's writer carry the count
+# with the translation.
 ROWS = "_rows"
 # The data files whose events hold command lists: maps, common events and
 # troops.
@@ -618,6 +631,191 @@ def next_text(
         while commands[first]["code"] == -1:
             first += 1
     return NextText(found, name, tuple(range(first, text_end(commands, first, stop=stop) + 1)))
+
+
+@dataclass(frozen=True)
+class Reading:
+    """How the engine reads a game's messages: a short row before speech as
+    its speaker (*first_line*, FIRSTLINESPEAKERS), a name in front of the
+    speech (*inline*, INLINE401SPEAKERS), and whether it skips text holding
+    no source text (*skip_translated*, IGNORETLTEXT), with the run policy's
+    newest reading of nameplates (CODE_NAMEPLATES and SPEAKER_CONTEXT)."""
+
+    first_line: bool = False
+    inline: bool = False
+    skip_translated: bool = True
+
+    @classmethod
+    def of(cls, options: dict | None) -> Reading:
+        """The reading of a project's MV/MZ engine *options*, each left out
+        at the engine's default."""
+        options = options or {}
+        return cls(
+            bool(options.get("FIRSTLINESPEAKERS", False)),
+            bool(options.get("INLINE401SPEAKERS", False)),
+            bool(options.get("IGNORETLTEXT", True)),
+        )
+
+    def speakers(self, line: str, following: str | None) -> MessageSpeakers | None:
+        """The speakers a row names (see :func:`next_text`)."""
+        return message_speakers(
+            line,
+            following,
+            first_line=self.first_line,
+            inline=self.inline,
+            code_nameplates=True,
+            standalone=standalone_speaker,
+        )
+
+    def sends(self, value: str) -> bool:
+        """Whether the engine sends rows never translated that read *value*."""
+        return bool(value.strip()) and (not self.skip_translated or holds_source(value))
+
+
+class Text(NamedTuple):
+    """A text the engine sends of some rows (:func:`texts`): their indexes,
+    and for a nameplate on a row of its own, sent apart from the speech after
+    it, the speaker it names; "" for any other text."""
+
+    rows: tuple[int, ...]
+    name: str = ""
+
+
+def texts(rows: Sequence[str], reading: Reading, starts: Iterable[int] = ()) -> tuple[Text, ...]:
+    """The texts the engine sends of a message's or scrolling text's *rows*,
+    as the game wrote them, read by *reading*: from each row, the rows that
+    join it (:func:`text_end`) are skipped while they hold nothing it sends
+    (Reading.sends), and otherwise sent from there (:func:`next_text`). A row
+    in *starts* starts a text whatever the rows before it hold, as the first
+    row of a translation does."""
+    commands = [{"code": 401, "parameters": [row]} for row in rows]
+    apart = frozenset(starts).__contains__
+    found: list[Text] = []
+    at = 0
+    while at < len(rows):
+        end = text_end(commands, at)
+        if not reading.sends("\n".join(rows[at : end + 1])):
+            skipped = [at]
+            for later in range(at + 1, end + 1):
+                if apart(later):
+                    found.append(Text(tuple(skipped)))
+                    skipped = []
+                skipped.append(later)
+            found.append(Text(tuple(skipped)))
+            at = end + 1
+            continue
+        sent = next_text(commands, at, rows[at], reading.speakers, apart)
+        if sent.name is not None:
+            found.append(Text((sent.name,), display_name(sent.speakers.names[0])))
+        found.append(Text(sent.rows))
+        at = sent.rows[-1] + 1
+    return tuple(found)
+
+
+def text_source(rows: Sequence[str]) -> str:
+    """The Japanese the engine keeps for a text it sends of rows never
+    translated: the first row, then each later row holding text, a line each
+    (rpgmakermvmz `_group_raw_text`)."""
+    return "\n".join([*rows[:1], *(row for row in rows[1:] if row.strip())])
+
+
+class SentText(NamedTuple):
+    """A text the engine sends of a message or scrolling text, in a copy of
+    the game (:func:`sent_texts`): the rows holding it, the Japanese
+    translation keeps for it, None for rows never translated, and the speaker
+    a nameplate names (see :class:`Text`)."""
+
+    rows: tuple[int, ...]
+    source: str | None
+    name: str = ""
+
+
+def _written_over(commands: list, part: Part, lines: list[str], reading: Reading) -> int:
+    """How many of a translated *part*'s rows its text was written over, the
+    Japanese of its source's *lines*. A translation file import records them
+    (ROWS). A run writes a message's text on its first row and lays scrolling
+    text over its own rows, so the rows after them are the game's own, left
+    untranslated: all of them after a nameplate, else from a row that opens
+    a text of its own (:func:`opens_text`), which a run's text never holds
+    past its first row. A writer laying text over the rows one by one, as
+    Assistant-led's does, opens one only where its source's row does."""
+    rows = part.rows
+    if len(rows) == 1 or recorded(commands[part.anchor]) is not None:
+        return len(rows)
+    values = [text(commands[at]) for at in rows]
+    if len(lines) == 1:
+        found = reading.speakers(lines[0], values[1])
+        if found is not None and found.own_line:
+            return 1
+    for at in range(1, len(rows)):
+        if opens_text(values[at]) and not (at < len(lines) and opens_text(lines[at])):
+            return at
+    return len(rows)
+
+
+def _lined_up(commands: list, rows: tuple[int, ...], lines: list[str], read: list[Text]) -> bool:
+    """Whether text laid over *rows* one by one follows the *read* texts of
+    its source's *lines*, a row each: each text whose source holds text holds
+    text on its rows. A text written whole on the first row, with the others
+    left empty, does not, so the name its first row holds may come with the
+    speech."""
+    return len(rows) == len(lines) and all(
+        any(text(commands[rows[at]]).strip() for at in each.rows)
+        for each in read
+        if any(lines[at].strip() for at in each.rows)
+    )
+
+
+def sent_texts(commands: list, block: Block, reading: Reading) -> tuple[SentText, ...]:
+    """The texts the engine sends of a message or scrolling text *block*,
+    read by *reading*, as the game's own rows hold them (:func:`texts`),
+    wherever *commands* holds them: never translated, written by a run, a
+    text a part each (see :func:`_written_over`), or by a writer that kept
+    one source over several texts and laid the text over their rows one by
+    one, such as Assistant-led's or a translation file import before each
+    text kept its own, which splits where its source's texts part while the
+    rows line up (:func:`_lined_up`)."""
+    # Each part's rows, and the Japanese of the rows its text was written
+    # over, None for rows never translated, which are their own.
+    segments: list[tuple[tuple[int, ...], list[str] | None]] = []
+    for part in block.parts:
+        kept = source(commands, part) if part.translated else None
+        if kept is None:
+            segments.append((part.rows, None))
+            continue
+        lines = kept.split("\n")
+        own = _written_over(commands, part, lines, reading)
+        segments.append((part.rows[:own], lines))
+        if own < len(part.rows):
+            segments.append((part.rows[own:], None))
+    # The game's own rows, each segment's in turn: a segment's texts start at
+    # its first.
+    original: list[str] = []
+    owners: list[tuple[int, int]] = []
+    starts: list[int] = []
+    for number, (rows, lines) in enumerate(segments):
+        starts.append(len(original))
+        theirs = [text(commands[at]) for at in rows] if lines is None else lines
+        original += theirs
+        owners += [(number, at) for at in range(len(theirs))]
+    read: list[list[Text]] = [[] for _segment in segments]
+    for each in texts(original, reading, starts):
+        number = owners[each.rows[0]][0]
+        read[number].append(Text(tuple(owners[at][1] for at in each.rows), each.name))
+    found: list[SentText] = []
+    for (rows, lines), mine in zip(segments, read):
+        if lines is None or (len(mine) > 1 and _lined_up(commands, rows, lines, mine)):
+            found += [
+                SentText(
+                    tuple(rows[at] for at in each.rows),
+                    None if lines is None else text_source([lines[at] for at in each.rows]),
+                    each.name,
+                )
+                for each in mine
+            ]
+        else:
+            found.append(SentText(rows, text_source(lines), mine[0].name if len(mine) == 1 else ""))
+    return tuple(found)
 
 
 def spread(value: str, count: int) -> list[str]:

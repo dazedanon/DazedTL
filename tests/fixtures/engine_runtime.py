@@ -1331,6 +1331,44 @@ try:
             )
             assert calls == [([f"[Hana]: {message[1]}"], "")], calls
             assert names and set(names) == {"ママ"}, names
+            # Translation files list a message's texts by the rule the run
+            # sends them by (rpgmaker_blocks `sent_texts`): each text a run
+            # writes, a nameplate's on any row that starts one included, is
+            # one there, with the source the run keeps for it.
+            from util import rpgmaker_blocks as blocks
+            from util.source_text import holds_source
+
+            rows = [
+                "新米警察官",
+                "「すいません‼",
+                "",
+                "入り込みまして…‼",
+                r"\SE[1]よろしく。",
+                r"\F[tt07]アリス",
+                "「やあ」",
+                r"\SE[2]……",
+            ]
+            original = [name(""), *(command(401, [row]) for row in rows)]
+            for first in (False, True):
+                with patch.object(parser, "FIRSTLINESPEAKERS", first):
+                    written = parse(original)
+                reading = blocks.Reading(first_line=first)
+                kept = [c["_original"] for c in written if "_original" in c]
+                for listed in (original, written):
+                    (block,) = blocks.blocks(listed)
+                    sent = [
+                        text.source
+                        or blocks.text_source(
+                            [blocks.text(listed[at]) for at in text.rows]
+                        )
+                        for text in blocks.sent_texts(listed, block, reading)
+                    ]
+                    sent = [source for source in sent if holds_source(source)]
+                    assert sent == kept and len(kept) == 3 + 2 * first, (
+                        first,
+                        sent,
+                        kept,
+                    )
             with patch.object(parser, "INLINE401SPEAKERS", True):
                 parse([name(""), command(401, ["花「こんにちは」"])])
                 assert calls == [(['[Hana]: "こんにちは"'], "")], calls

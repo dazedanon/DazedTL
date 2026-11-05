@@ -1,6 +1,7 @@
 """Translation files carry a project's lines out of DazedTL and back, and a
 Manual project translates the one its own extractor wrote."""
 
+import copy
 import json
 import unittest
 from pathlib import Path
@@ -15,6 +16,8 @@ from dazedtl.translation.manual import Manual
 from dazedtl.translation.manual import loaded as loaded_file
 from dazedtl.translation.project import WORK
 from dazedtl.translation.results import Results
+from util import rpgmaker_blocks as blocks
+from util.rpgmaker_blocks import Reading
 
 from tests import test_workflow
 
@@ -808,3 +811,183 @@ class GuidedLineTests(unittest.TestCase):
             1
         ]["pages"][0]["list"]
         self.assertEqual(commands[1], _command(401, name))
+
+        # An import before the name kept its own source wrote one over its
+        # rows, a row each: it lists as a run's copy does, Apply keeps the
+        # name on its row without importing again, and an import there gives
+        # each text its own source.
+        laid = _map(
+            [
+                _command(101, "", 0, 0, 2, ""),
+                _command(401, "Rookie Police Officer", _original=f"{name}\n{speech}"),
+                _command(401, english),
+                _command(401, ""),
+                _command(0),
+            ]
+        )
+        legacy = self.game("legacy", laid, original, on)
+        self.assertEqual(rows(legacy), expected)
+        applied = copy.deepcopy(laid)
+        fit_document(
+            applied,
+            "Map001.json",
+            Layout(55, 45, 60, 60, 4, "English"),
+            reading=Reading.of(on),
+        )
+        self.assertEqual(
+            applied["events"][1]["pages"][0]["list"][1]["parameters"],
+            ["Rookie Police Officer"],
+        )
+        GuidedLines(legacy, "legacy", PAIR, True).save(
+            {f"{head}~1": f"{english[:-1]}!"}, "file.json"
+        )
+        commands = read_json(self.root / "legacy-work/translated/Map001.json")[
+            "events"
+        ][1]["pages"][0]["list"]
+        self.assertEqual(
+            [command.get("_original") for command in commands[1:4]],
+            [name, speech, None],
+        )
+
+    def test_a_messages_texts_list_alike_in_every_copy_and_import_as_a_run_writes(self):
+        # The export read a message's parts by its sources: a row the engine
+        # sends apart, opening with a code, listed as one line in an
+        # untranslated copy and two in a translated one; a run that left its
+        # later rows in Japanese listed them with its first text, so an
+        # import blanked them; an import kept a blank row in a source no
+        # other copy has; and a nameplate after the first text stayed in the
+        # line before it.
+        from dazedtl.translation.guided_lines import GuidedLines
+        from util.rpgmaker_rewrap import Layout, fit_document
+
+        first, later, name, speech = (
+            "こんにちは。\n元気？",
+            "\\SE[1]よろしく。\nまたね。",
+            "\\F[tt07]アリス",
+            "「やあ」",
+        )
+        original = _map(
+            [
+                _command(101, "", 0, 0, 2, ""),
+                _command(401, "こんにちは。"),
+                _command(401, ""),
+                _command(401, "元気？"),
+                *(_command(401, row) for row in later.split("\n")),
+                _command(401, name),
+                _command(401, speech),
+                _command(0),
+            ]
+        )
+        english = (
+            "Hello.\nHow are you?",
+            "\\SE[1]Nice to meet you.\nSee you.",
+            "\\F[tt07]Alice",
+            '"Hi."',
+        )
+        run = _map(
+            [
+                _command(101, "", 0, 0, 2, ""),
+                *(
+                    _command(401, text, _original=source)
+                    for text, source in zip(english, (first, later, name, speech))
+                ),
+                _command(0),
+            ]
+        )
+        partly = _map(
+            [
+                _command(101, "", 0, 0, 2, ""),
+                _command(401, english[0], _original=first),
+                *(_command(401, row) for row in later.split("\n")),
+                _command(401, name),
+                _command(401, speech),
+                _command(0),
+            ]
+        )
+        on = {"FIRSTLINESPEAKERS": True}
+        head = "Map001.json#/events/1/pages/0/list/0"
+        ids = (head, f"{head}~1", f"{head}~2", f"{head}~3")
+        kinds = (
+            ("unknown", None),
+            ("unknown", None),
+            ("ui", None),
+            ("dialogue", "アリス"),
+        )
+
+        def rows(guided):
+            return {
+                row["id"]: (
+                    row["kind"],
+                    row["speaker"],
+                    row["source"],
+                    row["translation"],
+                )
+                for row in GuidedLines(guided, "game", PAIR, True).lines()
+            }
+
+        def listed(translations):
+            return {
+                identity: (*kind, source, translation)
+                for identity, kind, source, translation in zip(
+                    ids, kinds, (first, later, name, speech), translations
+                )
+            }
+
+        self.assertEqual(rows(self.game("run", run, original, on)), listed(english))
+        theirs = self.game("theirs", original, original, on)
+        self.assertEqual(rows(theirs), listed((None,) * 4))
+        half = self.game("half", partly, original, on)
+        self.assertEqual(rows(half), listed((english[0], None, None, None)))
+
+        # Writing the first text again leaves the run's Japanese rows; the
+        # later one keeps its own source.
+        GuidedLines(half, "half", PAIR, True).save(
+            {head: "Hi there.\nHow are you?", f"{head}~1": english[1]}, "file.json"
+        )
+        commands = read_json(self.root / "half-work/translated/Map001.json")["events"][
+            1
+        ]["pages"][0]["list"]
+        self.assertEqual(
+            [
+                (blocks.text(command), command.get("_original"))
+                for command in commands[1:6]
+            ],
+            [
+                ("Hi there.\nHow are you?", first),
+                ("\\SE[1]Nice to meet you.", later),
+                ("See you.", None),
+                (name, None),
+                (speech, None),
+            ],
+        )
+
+        # Imported, each text keeps its source on its first row, and the copy
+        # lists and fits as the run's.
+        GuidedLines(theirs, "theirs", PAIR, True).save(
+            dict(zip(ids, english)), "f.json"
+        )
+        working = read_json(self.root / "theirs-work/translated/Map001.json")
+        commands = working["events"][1]["pages"][0]["list"]
+        self.assertEqual(
+            [command.get("_original") for command in commands[1:8]],
+            [first, None, None, later, None, name, speech],
+        )
+        self.assertEqual(rows(theirs), listed(english))
+
+        def shown(document):
+            fit_document(
+                document,
+                "Map001.json",
+                Layout(30, 30, 60, 60, 4, "English"),
+                reading=Reading.of(on),
+            )
+            return [
+                row
+                for command in document["events"][1]["pages"][0]["list"]
+                if command["code"] == 401
+                for row in blocks.text(command).split("\n")
+                if row
+            ]
+
+        self.assertEqual(shown(working), shown(copy.deepcopy(run)))
+        self.assertEqual(shown(working)[2], "\\SE[1]Nice to meet you.")
