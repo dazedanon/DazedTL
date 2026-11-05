@@ -15,6 +15,7 @@ import {
   highEnd,
   loggedLandings,
   numstatFiles,
+  repeatReason,
   summarize,
 } from "../scripts/review-stats.mjs";
 
@@ -157,6 +158,8 @@ test("review stats put each escaped bug on the landing that let it in, once it i
     ],
     [2, { bug: { fixed: 0, dismissed: 1 } }],
   ]);
+  // b..c's second review followed only two fixes of its first.
+  assert.deepEqual(summary.repeats, [["not due", 1]]);
   assert.deepEqual(
     summary.escaped.map(({ fix, introduced, range }) => [
       fix,
@@ -183,6 +186,29 @@ test("review stats put each escaped bug on the landing that let it in, once it i
   assert.equal(highEnd(0, { named: 0, unknown: 2 }), Infinity);
   // e1's bug came from d1, a fix another landing held.
   assert.deepEqual(summary.chains, [["e1", "d1"]]);
+});
+
+test("review stats tell a repeat review that fixes a user can hit started from one that a report's bugs or unmarked fixes did", () => {
+  const fixed = (userFacing?: boolean, review = 1) => ({
+    outcome: "fixed",
+    review,
+    ...(userFacing === undefined ? {} : { userFacing }),
+  });
+  const reason = (...findings: object[]) => repeatReason(findings as never, 1);
+  assert.equal(reason(fixed(true), fixed(true), fixed(true)), "user-facing");
+  // Fixes with no mark, as in records from before it, count as before.
+  assert.equal(reason(fixed(true), fixed(true), fixed()), "unmarked");
+  assert.equal(reason(fixed(), fixed(), fixed()), "unmarked");
+  // Bugs only in a report such as this one start no review now.
+  assert.equal(
+    reason(fixed(true), fixed(true), fixed(false)),
+    "not user-facing",
+  );
+  assert.equal(
+    reason(fixed(true), fixed(true), { ...fixed(true), behavior: false }),
+    "not due",
+  );
+  assert.equal(reason(fixed(true), fixed(true), fixed(true, 2)), "not due");
 });
 
 test("review stats count a landing's age in days on which landings reached dev", () => {
@@ -405,8 +431,9 @@ test("review stats read real trailers by their first word, code lines from numst
           "unknown",
         ],
         findings: [
-          { kind: "bug", outcome: "fixed", review: 2 },
+          { kind: "bug", outcome: "fixed", userFacing: false, review: 2 },
           { outcome: "dismissed" },
+          { outcome: "fixed", behavior: false, userFacing: "yes", review: 2 },
         ],
       }),
       JSON.stringify({
@@ -431,8 +458,9 @@ test("review stats read real trailers by their first word, code lines from numst
       reviews: 2,
       lenses: ["places-and-chains", "live-check"],
       findings: [
-        { kind: "bug", outcome: "fixed", review: 2 },
+        { kind: "bug", outcome: "fixed", userFacing: false, review: 2 },
         { outcome: "dismissed", review: 1 },
+        { outcome: "fixed", behavior: false, review: 2 },
       ],
       landed: null,
     },

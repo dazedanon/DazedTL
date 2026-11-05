@@ -90,7 +90,7 @@ const icon = path.join(import.meta.dirname, "..", "resources", "icon.png");
 /** The code-review levels a landing's review may run at: high and up. */
 const reviewLevels = ["high", "xhigh", "max", "ultra"];
 const reviewShape =
-  '{"level": "high", "reviewer": "independent", "reviews": 1, "head": "<hash of the last commit the last reviewer checked>", "e2e": ["<scenario> [--game <variants>]", "live"], "findings": [{"summary": "...", "kind": "bug", "outcome": "fixed", "review": 1}, {"summary": "...", "kind": "quality", "outcome": "fixed", "behavior": false, "review": 1}, {"summary": "...", "kind": "risk", "outcome": "dismissed", "reason": "...", "review": 1}]}';
+  '{"level": "high", "reviewer": "independent", "reviews": 1, "head": "<hash of the last commit the last reviewer checked>", "e2e": ["<scenario> [--game <variants>]", "live"], "findings": [{"summary": "...", "kind": "bug", "outcome": "fixed", "userFacing": true, "review": 1}, {"summary": "...", "kind": "quality", "outcome": "fixed", "behavior": false, "review": 1}, {"summary": "...", "kind": "risk", "outcome": "dismissed", "reason": "...", "review": 1}]}';
 /** The subject of the commit holding what the formatter changed. */
 const formatSubject = "style: format";
 /** Where a hand-off's worker keeps origin's dev in its clone. */
@@ -113,9 +113,10 @@ const lockLimit = 10 * 60_000;
  * never saw the work ran, how many such reviews ran (1 when not given), the
  * last commit the last one checked, the E2E runs its author ran (readE2e) and
  * what became of each finding, with the review that reported it, which only
- * a one-review record may leave out, its kind (findingKinds) and, for a fix
- * to wording, comments or naming alone, `"behavior": false`. A record whose
- * last review was due another (repeatReviewDue) is refused.
+ * a one-review record may leave out, its kind (findingKinds), whether a
+ * user can hit it, in `userFacing`, which an older record may leave out, and,
+ * for a fix to wording, comments or naming alone, `"behavior": false`. A
+ * record whose last review was due another (repeatReviewDue) is refused.
  * The Discord intake's records, read with `intake`, may leave out the kinds
  * and behavior marks until the intake sends them, and carry no E2E runs,
  * since its worker names those in the hand-off; their live-check lens is
@@ -123,7 +124,7 @@ const lockLimit = 10 * 60_000;
  * Throws with what is wrong, so no branch lands on its author's review alone.
  * @param {string} text
  * @param {{ intake?: boolean }} [options]
- * @returns {{ level: string, reviewer: "independent", reviews: number, head: string, lenses?: string[], e2e?: string[], whyNoE2e?: string, findings: { summary: string, kind?: string, outcome: "fixed" | "dismissed", behavior?: false, reason?: string, review: number }[] }}
+ * @returns {{ level: string, reviewer: "independent", reviews: number, head: string, lenses?: string[], e2e?: string[], whyNoE2e?: string, findings: { summary: string, kind?: string, outcome: "fixed" | "dismissed", userFacing?: boolean, behavior?: false, reason?: string, review: number }[] }}
  */
 export function readReview(text, { intake = false } = {}) {
   let record;
@@ -189,6 +190,12 @@ export function readReview(text, { intake = false } = {}) {
       )
         throw new Error(`${which} needs a kind of ${findingKinds.join(", ")}.`);
       const kind = item.kind === undefined ? {} : { kind: item.kind };
+      if (item.userFacing !== undefined && typeof item.userFacing !== "boolean")
+        throw new Error(
+          `${which} says "userFacing" true or false: whether a user can hit it, as the dazedtl-land skill's Review step defines it.`,
+        );
+      const userFacing =
+        item.userFacing === undefined ? {} : { userFacing: item.userFacing };
       if (item.behavior !== undefined && typeof item.behavior !== "boolean")
         throw new Error(
           `${which} says "behavior" true or false: false for a fix to wording, comments or naming alone.`,
@@ -198,6 +205,7 @@ export function readReview(text, { intake = false } = {}) {
           summary: item.summary,
           ...kind,
           outcome: "fixed",
+          ...userFacing,
           ...(item.behavior === false ? { behavior: false } : {}),
           review,
         };
@@ -210,6 +218,7 @@ export function readReview(text, { intake = false } = {}) {
         summary: item.summary,
         ...kind,
         outcome: "dismissed",
+        ...userFacing,
         reason: item.reason,
         review,
       };
@@ -217,7 +226,7 @@ export function readReview(text, { intake = false } = {}) {
   );
   if (!intake && repeatReviewDue(findings, reviews))
     throw new Error(
-      `Review ${reviews} had ${repeatReviewFixes} or more findings fixed in behavior, so a fresh review of the branch as it now stands runs before it lands (dazedtl-land, Review). Mark a fix to wording, comments or naming alone with "behavior": false.`,
+      `Review ${reviews} had ${repeatReviewFixes} or more findings that a user can hit fixed in behavior, so a fresh review of the branch as it now stands runs before it lands (dazedtl-land, Review). Mark a fix to wording, comments or naming alone with "behavior": false, and a finding its reviewer said no user can hit with "userFacing": false.`,
     );
   return {
     level: record.level,

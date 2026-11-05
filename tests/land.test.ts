@@ -463,7 +463,8 @@ test("a landing's review record comes from an independent reviewer and accounts 
     { summary: "B", kind: "risk", outcome: "fixed", review },
     ...more,
   ];
-  const due = /Review 1 had 3 or more findings fixed in behavior/;
+  const due =
+    /Review 1 had 3 or more findings that a user can hit fixed in behavior/;
   assert.throws(
     () =>
       record({
@@ -520,6 +521,56 @@ test("a landing's review record comes from an independent reviewer and accounts 
     ),
     true,
   );
+  // Only fixes a user can hit count: three marked so send the branch to a
+  // fresh reviewer, while one no user can hit, such as a bug in a report
+  // like review-stats, does not count. The mark stays on the record, so
+  // review-stats can tell why a repeat review started.
+  const userFacing = fixes(1, thirdFix).map((finding) => ({
+    ...finding,
+    userFacing: true,
+  }));
+  assert.throws(
+    () => record({ ...reviewed, level: "high", findings: userFacing }),
+    /Review 1 had 3 or more findings that a user can hit fixed in behavior/,
+  );
+  const report = [
+    ...userFacing.slice(0, 2),
+    { ...thirdFix, userFacing: false },
+    {
+      summary: "D",
+      kind: "bug",
+      outcome: "dismissed",
+      reason: "No",
+      userFacing: true,
+    },
+  ];
+  assert.deepEqual(
+    record({ ...reviewed, level: "high", findings: report }).findings.map(
+      (finding) => finding.userFacing,
+    ),
+    [true, true, false, true],
+  );
+  assert.equal(
+    repeatReviewDue(
+      [
+        { review: 1, outcome: "fixed", userFacing: false },
+        { review: 1, outcome: "fixed", userFacing: false },
+        { review: 1, outcome: "fixed", userFacing: false },
+      ],
+      1,
+    ),
+    false,
+  );
+  for (const outcome of ["fixed", "dismissed"])
+    assert.throws(
+      () =>
+        record({
+          ...reviewed,
+          level: "high",
+          findings: [{ ...thirdFix, outcome, reason: "No", userFacing: "yes" }],
+        }),
+      /"userFacing" true or false/,
+    );
   assert.throws(
     () =>
       record({
