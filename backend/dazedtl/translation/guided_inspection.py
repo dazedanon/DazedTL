@@ -136,6 +136,10 @@ class RunInspection:
                     for name, expected in outputs.items()
                     if expected in applied.get(name, ()) or current[name] == expected
                 ]
+                lacking = self.guided.lacking_conditions(native, job["appliedOutputs"])
+                job["appliedOutputs"] = [
+                    name for name in job["appliedOutputs"] if name not in lacking
+                ]
                 if not self.guided.reads_data(native):
                     job["appliedOutputs"] = []
         except OSError, ValueError, KeyError:

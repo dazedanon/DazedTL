@@ -597,27 +597,34 @@ class Guided:
                 and game_hash == written[name][1]
                 and written[name][0] == output_hash
             )
-            if (
-                matches or output_hash in versions.get(name, ())
-            ) and not self.lacks_conditions(source, game_hash):
+            if matches or output_hash in versions.get(name, ()):
                 applied.append(name)
                 if not matches:
                     edited.append(name)
         return outputs, applied, edited
 
-    def lacks_conditions(self, path, digest):
-        """Whether the game file at *path*, whose hash is *digest*, holds a
-        choice without plugin conditions its source holds, which an earlier
-        translation file import left out (rpgmaker_blocks
-        `lacks_conditions`): Apply puts them back, so the file isn't applied
-        until it does."""
+    def lacking_conditions(self, native, names):
+        """The files of *names* whose game copy holds a choice without plugin
+        conditions its source holds, which an earlier translation file import
+        left out (rpgmaker_blocks `lacks_conditions`): Apply puts them back,
+        so they read as waiting for it, though DazedTL applied them."""
         from util.rpgmaker_blocks import lacks_conditions
 
-        found = self.unconditioned.get(path, digest)
-        if found is None:
-            found = lacks_conditions(Path(path).read_bytes())
-            self.unconditioned.put(path, digest, found)
-        return found
+        lacking = set()
+        for name in names:
+            try:
+                path = self.observed_path(native["data"], name)
+                digest = self.observed_digest(path)
+                found = self.unconditioned.get(path, digest)
+                if found is None:
+                    found = lacks_conditions(Path(path).read_bytes())
+                    self.unconditioned.put(path, digest, found)
+            except OSError, ValueError:
+                # A file the game no longer holds lacks nothing Apply restores.
+                continue
+            if found:
+                lacking.add(name)
+        return lacking
 
     def output_runs(self, native, names):
         """The run, and its task (phase), that saved each file's newest
@@ -653,6 +660,9 @@ class Guided:
 
     def readiness(self, project_id, native, value, source_status=None):
         outputs, applied, edited = self.applied_outputs(native)
+        lacking = self.lacking_conditions(native, applied)
+        applied = [name for name in applied if name not in lacking]
+        edited = [name for name in edited if name not in lacking]
         state = lifecycle(self.translation.workspace, project_id)
         latest = self.text_fit.latest(native)
         return {
