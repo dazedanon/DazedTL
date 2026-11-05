@@ -538,7 +538,7 @@ class Application:
             # Guided record or its project (translation/compare Game.owner).
             owners = {project["id"], project.get("backend_id")}
             compare = [
-                views.job(job)
+                views.compare_operation(job)
                 for job in sorted(
                     self.backend.operations.jobs.values(),
                     key=lambda job: job["created"],

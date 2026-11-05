@@ -11,6 +11,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from dazedtl.actions import stopped_note
+from dazedtl.api import views
 from dazedtl.compatibility import compare as compare_run
 from dazedtl.compatibility import compare_units
 from dazedtl.compatibility.compare import END, cut, glossary_text, rows, sources
@@ -236,10 +237,11 @@ class StopTests(unittest.TestCase):
 
     def test_a_model_that_fails_sending_keeps_what_it_spent(self):
         # An Assistant-led model that failed after sending showed no cost.
+        identities = [f"r{index}" for index in range(25)]
         record = {
             "usage": {"input_tokens": 10},
             "request_usage": {},
-            "states": {"r1": {"state": "accepted"}, "r2": {"state": "pending"}},
+            "states": {identity: {"state": "pending"} for identity in identities},
         }
         store = Mock(
             create=Mock(return_value={"id": "j1"}), record=Mock(return_value=record)
@@ -256,7 +258,7 @@ class StopTests(unittest.TestCase):
                 return Path("/missing") / identity
 
         requests = [
-            {"id": identity, "sources": [], "params": {}} for identity in ("r1", "r2")
+            {"id": identity, "sources": [], "params": {}} for identity in identities
         ]
         options = {
             "selected": {},
@@ -285,6 +287,28 @@ class StopTests(unittest.TestCase):
                 lambda: False,
             )
         self.assertEqual((value["error"], value["cost"]), ("RuntimeError", 0.3))
+        # It keeps the first requests for Show request, as a Guided model's
+        # result does, and says how many it holds.
+        self.assertEqual(len(value["requests"]), compare_run.KEPT_REQUESTS)
+        options = {
+            "kind": "single",
+            "file": "",
+            "lines": 0,
+            "candidates": [
+                {"index": 0, "connection": "C", "connection_id": "c1", "model": "a"}
+            ],
+        }
+        shown = view(
+            {"id": "e", "created": "1", "status": "complete", "result": {}},
+            options,
+            {
+                "id": "t",
+                "status": "complete",
+                "result": {"models": [{"index": 0, **value}]},
+            },
+            {},
+        )["candidates"][0]
+        self.assertEqual((shown["requests"], shown["keptRequests"]), (25, 20))
 
 
 class ViewTests(unittest.TestCase):
@@ -313,6 +337,35 @@ class ViewTests(unittest.TestCase):
             shown["candidates"][1]["error"],
             "this model: model this model is not available",
         )
+
+
+class SnapshotTests(unittest.TestCase):
+    def test_snapshots_carry_comparisons_without_their_results(self):
+        # Every snapshot sent the lines and requests of up to 40 comparisons,
+        # and a Guided game's History sent them again.
+        job = {
+            "id": "t",
+            "action": compare_run.TRANSLATE,
+            "label": "Compare models",
+            "status": "running",
+            "message": "a · translating",
+            "stopping": True,
+            "log": ["a · translating"],
+            "result": {"models": [{"index": 0, "requests": [{"exact": "x" * 9}]}]},
+        }
+        self.assertEqual(
+            views.compare_operation(job),
+            {
+                "id": "t",
+                "action": compare_run.TRANSLATE,
+                "label": "Compare models",
+                "status": "running",
+                "message": "a · translating",
+                "stopping": True,
+            },
+        )
+        self.assertNotIn("result", views.operation(job))
+        self.assertIn("result", views.operation({**job, "action": "apply"}))
 
 
 class Operations:

@@ -40,9 +40,14 @@ class CompareModel(TypedDict):
     instruction: NotRequired[str]
     estimate: NotRequired[ComparePrice]
     error: NotRequired[Annotated[str, "Why the model has no estimate or lines."]]
-    cost: NotRequired[Annotated[float, "What its translation cost, in USD."]]
+    cost: NotRequired[
+        Annotated[float, "What its translation cost, in USD, even when it failed."]
+    ]
     seconds: NotRequired[float]
-    requests: NotRequired[int]
+    requests: NotRequired[Annotated[int, "The requests its translation sent."]]
+    keptRequests: NotRequired[
+        Annotated[int, "The first requests Show request can open, at most 20."]
+    ]
 
 
 class CompareTranslation(TypedDict):
@@ -77,6 +82,17 @@ class Comparison(TypedDict):
     marks: Annotated[dict[str, int], "The model picked as best, by row ID."]
     blind: bool
     revealed: bool
+
+
+class CompareOperation(TypedDict):
+    """A comparison operation as the Compare page follows it."""
+
+    id: str
+    action: Literal["compare_estimate", "compare_translate"]
+    label: str
+    status: str
+    message: str
+    stopping: Annotated[bool, "A stop was asked for and the models are ending."]
 
 
 class CompareScene(TypedDict):

@@ -2965,10 +2965,13 @@ export type CompareModel = {
   estimate?: ComparePrice;
   /** Why the model has no estimate or lines. */
   error?: string;
-  /** What its translation cost, in USD. */
+  /** What its translation cost, in USD, even when it failed. */
   cost?: number;
   seconds?: number;
+  /** The requests its translation sent. */
   requests?: number;
+  /** The first requests Show request can open, at most 20. */
+  keptRequests?: number;
 };
 
 export type CompareTranslation = {
@@ -3008,6 +3011,17 @@ export type Comparison = {
   marks: Record<string, number>;
   blind: boolean;
   revealed: boolean;
+};
+
+/** A comparison operation as the Compare page follows it. */
+export type CompareOperation = {
+  id: string;
+  action: "compare_estimate" | "compare_translate";
+  label: string;
+  status: string;
+  message: string;
+  /** A stop was asked for and the models are ending. */
+  stopping: boolean;
 };
 
 export type CompareScene = {
@@ -3137,7 +3151,7 @@ export type WorkspaceSnapshot = {
   plugins?: PluginState | null;
   pluginsError?: string;
   pluginsForeign?: PluginForeignWork;
-  compareOperations?: Job[];
+  compareOperations?: CompareOperation[];
 };
 
 export type ProjectRequest = {

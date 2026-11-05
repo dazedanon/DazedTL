@@ -184,7 +184,7 @@ def translate(
         if stopped():
             raise InterruptedError("Stopped.")
 
-    from .compare import STOPPED, _message
+    from .compare import KEPT_REQUESTS, STOPPED, _message
 
     runner = Runner(store, job["id"], provider, current)
     failure = None
@@ -207,7 +207,8 @@ def translate(
         usage, cfg, route_of(engine, cfg), (record.get("request_usage") or {}).values()
     )
     shown = []
-    for index, request in enumerate(requests):
+    # The first ones, as a Guided model's result keeps them.
+    for index, request in enumerate(requests[:KEPT_REQUESTS]):
         path = runner.response_path(request["id"])
         response = read_json(path) if path.is_file() else {}
         params = request["params"]

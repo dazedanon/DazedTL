@@ -784,6 +784,13 @@ def view(estimate, options, translated, marks):
                 **(
                     {"requests": done["requestCount"]} if "requestCount" in done else {}
                 ),
+                # Show request pages only these: a result keeps the first
+                # KEPT_REQUESTS (compatibility/compare).
+                **(
+                    {"keptRequests": len(done["requests"])}
+                    if isinstance(done.get("requests"), list)
+                    else {}
+                ),
             }
         )
     lines = []
