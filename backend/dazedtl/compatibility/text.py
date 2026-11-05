@@ -991,6 +991,26 @@ def unfitted(document, name, layout, reading=None):
     return fit_document(document, name, layout, reading=reading).misfits
 
 
+def _kept_with_conditions(root, relative, output, receipt):
+    """The game's copy of a file whose saved *output* an Apply already put in
+    and which was edited since, such as by Text QA, with the choice
+    conditions an earlier translation file import left out put back
+    (rpgmaker_blocks `restore_conditions`), so Apply keeps those edits; None
+    for a copy that lacks none, which Apply overwrites as ever."""
+    from util.rpgmaker_blocks import restore_conditions
+
+    name = relative.name
+    if receipt.get("files", {}).get(name) != output:
+        return None
+    raw = project_path(root, relative.as_posix()).read_bytes()
+    if digest(raw) in {output, receipt.get("written", {}).get(name)}:
+        return None
+    document = decode_json(raw)
+    if not restore_conditions(document):
+        return None
+    return engine_json(document, newline=raw.endswith(b"\n"))
+
+
 def prepare_publication(plan):
     from desktop.backend.workflow_actions import validate_plan
 
@@ -1022,6 +1042,8 @@ def prepare_publication(plan):
         }
     prefix = data.relative_to(root)
     candidates, outputs, restored, sources, written = {}, {}, None, {}, {}
+    # Files whose game copy, edits and all, Apply keeps.
+    kept_edits = set()
     if action == "export_selected":
         from util.rpgmaker_blocks import restore_conditions
         from util.rpgmaker_locale import write_locale
@@ -1030,6 +1052,11 @@ def prepare_publication(plan):
         output_folder = Path(saved["folder"]) if saved else folder
         layout = fitting_layout(plan)
         reading = fitting_reading(plan)
+        receipt = (
+            read_json(folder / "applied-outputs.json")
+            if (folder / "applied-outputs.json").exists()
+            else {}
+        )
         for name in options["files"]:
             path = live_path(output_folder, "translated/" + name)
             output = path.read_bytes()
@@ -1046,6 +1073,16 @@ def prepare_publication(plan):
             # may be narrower than the game's now, and left System.json the
             # game's locale, which Assistant-led's writer sets as this does.
             fitted = None
+            kept = (
+                None
+                if saved or not layout
+                else _kept_with_conditions(root, prefix / name, outputs[name], receipt)
+            )
+            if kept is not None:
+                # Only the conditions go in, keeping the game's later edits.
+                candidates[(prefix / name).as_posix()] = kept
+                kept_edits.add(name)
+                continue
             if layout:
                 localized = write_locale(document, name, layout.target)
                 # A translation file import once wrote choices without their
@@ -1248,6 +1285,7 @@ def prepare_publication(plan):
             # the Line widths.
             "later_edits": action == "export_selected"
             and name in previous
+            and name not in kept_edits
             and row["before"]
             not in {previous[name], receipt.get("written", {}).get(name)},
         }

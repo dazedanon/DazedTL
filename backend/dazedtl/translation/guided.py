@@ -662,7 +662,6 @@ class Guided:
         outputs, applied, edited = self.applied_outputs(native)
         lacking = self.lacking_conditions(native, applied)
         applied = [name for name in applied if name not in lacking]
-        edited = [name for name in edited if name not in lacking]
         state = lifecycle(self.translation.workspace, project_id)
         latest = self.text_fit.latest(native)
         return {

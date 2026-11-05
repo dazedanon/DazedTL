@@ -5065,6 +5065,49 @@ class GuidedTests(unittest.TestCase):
             again = plan("export_selected", {"files": ["Items.json"]})
             rows = prepare_publication(again)["publication"]
             self.assertFalse(rows[0]["later_edits"])
+
+            # A game copy an Apply put in before choices kept their conditions,
+            # edited since, such as by Text QA, takes the conditions only.
+            def choice(text, value):
+                return {
+                    "events": [
+                        None,
+                        {
+                            "pages": [
+                                {
+                                    "list": [
+                                        {
+                                            "code": 102,
+                                            "parameters": [[value]],
+                                            "_original": ["if(s[1])はい"],
+                                        },
+                                        {
+                                            "code": 401,
+                                            "parameters": [text],
+                                            "_original": "薬",
+                                        },
+                                    ]
+                                }
+                            ]
+                        },
+                    ],
+                }
+
+            write_json(self.folder / "translated/Map001.json", choice("Potoin", "Yes"))
+            receipt = read_json(self.folder / "applied-outputs.json")
+            receipt["files"]["Map001.json"] = digest(
+                (self.folder / "translated/Map001.json").read_bytes()
+            )
+            write_json(self.folder / "applied-outputs.json", receipt)
+            write_json(self.source / "Map001.json", choice("Potion", "Yes"))
+            apply = plan("export_selected", {"files": ["Map001.json"]})
+            self.assertFalse(
+                prepare_publication(apply)["publication"][0]["later_edits"]
+            )
+            run_publication(apply, lambda _: None)
+            self.assertEqual(
+                read_json(self.source / "Map001.json"), choice("Potion", "if(s[1])Yes")
+            )
             # New widths fit the applied text again in their own area only.
             # Weapons.json counts as applied where its bytes equal a run's
             # output, but no Apply wrote it.
