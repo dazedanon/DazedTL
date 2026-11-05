@@ -894,30 +894,49 @@ class ApprovalTests(unittest.TestCase):
 
 
 class WaitTests(unittest.TestCase):
-    def test_work_that_waits_for_a_comparison_says_so(self):
+    def test_work_that_waits_for_a_comparison_names_its_game(self):
         # Saves, compile and accept on other pages asked to finish a phased
-        # run while a comparison held their queue.
+        # run while a comparison held their queue, and another game's said
+        # to stop it on a Compare page that showed nothing.
         from dazedtl.translation.guided import Guided
         from dazedtl.translation.service import Translation
 
-        jobs = {"o": {"status": "running", "action": "compare_translate"}}
+        jobs = {
+            "o": {
+                "status": "running",
+                "action": "compare_translate",
+                "project_id": "native-a",
+            }
+        }
         operations = SimpleNamespace(jobs=jobs, running=lambda: True)
+        projects = SimpleNamespace(
+            data={
+                "projects": [
+                    {"id": "a", "name": "Fuuma", "backend_id": "native-a"},
+                    {"id": "b", "name": "Other", "backend_id": ""},
+                ]
+            }
+        )
         service = SimpleNamespace(
             jobs=SimpleNamespace(running=lambda *_: False),
+            projects=projects,
             settings=SimpleNamespace(
                 adapter=SimpleNamespace(running=lambda: True, operations=operations)
             ),
         )
         guided = SimpleNamespace(
             backend=SimpleNamespace(operations=operations, running=lambda: True),
+            projects=projects,
             translation=SimpleNamespace(jobs=SimpleNamespace(running=lambda: False)),
         )
         for wait in (
-            lambda: Translation.idle(service, "p1"),
+            lambda: Translation.idle(service, "b"),
             lambda: Guided.idle(guided),
         ):
-            with self.assertRaisesRegex(ValueError, "Compare models"):
+            with self.assertRaisesRegex(
+                ValueError, "comparison of Fuuma is running. Stop it on Compare"
+            ):
                 wait()
         jobs["o"]["action"] = "tool_run"
         with self.assertRaisesRegex(ValueError, "phased run"):
-            Translation.idle(service, "p1")
+            Translation.idle(service, "b")

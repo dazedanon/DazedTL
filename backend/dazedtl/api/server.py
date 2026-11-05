@@ -17,6 +17,7 @@ from dazedtl import system
 from dazedtl.api.contracts.methods import METHODS
 from dazedtl.api.local import LocalAPI
 from dazedtl.compatibility import game_write, original_files, original_record
+from dazedtl.compatibility.compare import running as compare_running
 from dazedtl.compatibility.dazedmtl import ExistingBackend
 from dazedtl.compatibility.runtime import ENGINE_ROOT
 from dazedtl.compatibility.translation import TranslationEngine
@@ -741,7 +742,8 @@ class Application:
         self.guided.idle()
         if self.backend.running() or self.translation.jobs.running():
             raise ValueError(
-                "Wait for the current operation to finish before changing the languages."
+                compare_running(self.backend.operations, self.projects)
+                or "Wait for the current operation to finish before changing the languages."
             )
         self.languages.change(project_id, source, target)
         return self.state()

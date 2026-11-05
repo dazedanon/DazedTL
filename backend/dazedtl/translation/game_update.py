@@ -111,8 +111,14 @@ class GameUpdate:
         if action == "save" and not isinstance(repo, str):
             raise ValueError("Enter the game's GameUpdate repository.")
         if self.busy(project_id):
+            from dazedtl.compatibility.compare import running
+
             raise ValueError(
-                "Wait for the current operation to finish before changing GameUpdate."
+                running(
+                    self.translation.settings.adapter.operations,
+                    self.translation.projects,
+                )
+                or "Wait for the current operation to finish before changing GameUpdate."
             )
         return view(
             self.translation.engine.game_update(

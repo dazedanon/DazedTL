@@ -193,7 +193,7 @@ class Guided:
             from dazedtl.compatibility.compare import running
 
             raise ValueError(
-                running(self.backend.operations)
+                running(self.backend.operations, self.projects)
                 or "Finish or stop the current run before starting another action."
             )
 

@@ -40,8 +40,6 @@ ACTIONS = (ESTIMATE, TRANSLATE)
 KEPT_REQUESTS = 20
 # A model's error when the user stopped its translation.
 STOPPED = "Stopped before it finished."
-# Why other work waits while a comparison runs, as they share one queue.
-RUNNING = "A comparison is running. Stop it on Compare models, or wait for it to end."
 # What a comparison's test-only guidance is saved as in a run's snapshot,
 # beside the game's own guidance files, which every request carries.
 INSTRUCTION = "game/.dazedtl/skills/comparison.md"
@@ -50,15 +48,35 @@ GLOSSARY = "game/.dazedtl/glossary.txt"
 END = {"code": 0, "indent": 0, "parameters": []}
 
 
-def running(operations):
-    """Why the game's other work waits, when it waits for a comparison."""
-    return (
-        RUNNING
-        if any(
-            job["status"] == "running" and job["action"] in ACTIONS
+def running(operations, projects):
+    """Why other work waits, when it waits for a comparison. The app runs
+    one operation at a time, so it names the comparison's game, which may
+    not be the open one."""
+    job = next(
+        (
+            job
             for job in operations.jobs.values()
+            if job["status"] == "running" and job["action"] in ACTIONS
+        ),
+        None,
+    )
+    if job is None:
+        return ""
+    name = next(
+        (
+            project["name"]
+            for project in projects.data["projects"]
+            if job["project_id"] in {project["id"], project.get("backend_id")}
+        ),
+        "",
+    )
+    if not name:
+        return (
+            "A comparison is running. Stop it on Compare models, or wait for it to end."
         )
-        else ""
+    return (
+        f"A comparison of {name} is running. Stop it on Compare models for "
+        "that game, or wait for it to end."
     )
 
 

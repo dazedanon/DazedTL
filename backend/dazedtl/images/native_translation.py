@@ -40,8 +40,11 @@ class ImageNativeTranslation:
         if hasattr(self.core, "_idle"):
             self.core._idle(project_id)
         if self.backend.running() or self.core.translation.jobs.running():
+            from dazedtl.compatibility.compare import running
+
             raise ValueError(
-                "Finish or stop the active run before starting image translation."
+                running(self.backend.operations, self.core.projects)
+                or "Finish or stop the active run before starting image translation."
             )
 
     def _inputs(self, project_id):

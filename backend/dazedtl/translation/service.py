@@ -322,7 +322,7 @@ class Translation:
             from dazedtl.compatibility.compare import running
 
             raise ValueError(
-                running(self.settings.adapter.operations)
+                running(self.settings.adapter.operations, self.projects)
                 or "Finish or pause the existing phased run before changing project inputs."
             )
 

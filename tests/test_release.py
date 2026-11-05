@@ -455,9 +455,12 @@ class ReleaseTests(unittest.TestCase):
             SimpleNamespace(
                 project=lambda _: (None, SimpleNamespace(root=Path("game"))),
                 jobs=SimpleNamespace(running=lambda *_: busy["value"]),
+                projects=SimpleNamespace(data={"projects": []}),
                 settings=SimpleNamespace(
                     game_update=dict,
-                    adapter=SimpleNamespace(running=lambda: False),
+                    adapter=SimpleNamespace(
+                        running=lambda: False, operations=SimpleNamespace(jobs={})
+                    ),
                 ),
                 engine=engine,
             )
