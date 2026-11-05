@@ -134,6 +134,17 @@ def _key(line):
     return line.kind, line.shown_source()
 
 
+def _named(line):
+    """A line's name box, as the first text it sends, or None, and its
+    other texts."""
+    from dazedtl.translation.file_lines import name_box
+
+    texts = list(line.sent())
+    if line.units and name_box(line.places()[0]):
+        return texts[0], texts[1:]
+    return None, texts
+
+
 def rows(name, document, phase, found, markers=frozenset()):
     """Each line of a translated *document* by the ``pointer`` of the line
     of the original it translates (*found*, in file order): the speaker its
@@ -156,10 +167,9 @@ def rows(name, document, phase, found, markers=frozenset()):
         waiting = places.get(_key(line)) or unkept.get(line.kind)
         if not waiting:
             continue
-        texts = [text for text, _source in line.sent()]
-        speaker = ""
-        if line.units and len(line.paths) > 1 and line.paths[0][-1] == 4:
-            speaker, texts = texts[0], texts[1:]
+        named, sent = _named(line)
+        speaker = named[0] if named else ""
+        texts = [text for text, _source in sent]
         place = waiting.pop(0)
         for listed in (places.get(_key(line)) or [], unkept.get(line.kind) or []):
             if place in listed:
@@ -175,11 +185,8 @@ def sources(found):
     """The lines a comparison shows, from the original file's ``cut``."""
     result = []
     for line in found:
-        texts = list(line.sent())
-        speaker = ""
-        if line.units and len(line.paths) > 1 and line.paths[0][-1] == 4:
-            name, texts = texts[0], texts[1:]
-            speaker = name[1] or name[0]
+        name, texts = _named(line)
+        speaker = (name[1] or name[0]) if name else ""
         result.append(
             {
                 "id": pointer(line),
@@ -261,15 +268,12 @@ def guidance(candidate):
             path = Path(directory) / relative
             path.parent.mkdir(parents=True, exist_ok=True)
             if relative == GLOSSARY:
-                from .compare_units import glossary
+                from util.vocab import write_game_vocab
 
-                text = glossary(
-                    system.read_bytes(path).decode("utf-8-sig")
-                    if path.is_file()
-                    else "",
-                    text,
-                )
-            system.write_text(path, text)
+                # As Context saves it, with the shipped base after it.
+                write_game_vocab(text, game_root=path.parents[1])
+            else:
+                system.write_text(path, text)
             native["context_hashes"][relative] = digest(path.read_bytes())
 
     return change
@@ -338,6 +342,15 @@ FLAGS = {
 }
 
 
+def glossary_text(game):
+    """The whole glossary a run of the *game* folder sends, for its checks'
+    glossary hints, read as Context reads it."""
+    from desktop.backend.guidance import whole
+    from util.paths import GAME_GLOSSARY_RELATIVE
+
+    return whole(game, Path(game) / GAME_GLOSSARY_RELATIVE)
+
+
 def problems(name, found, lines, glossary, pair):
     """Each translated line's check findings by its ID, in words."""
     from util import rpgmaker_qa_lint as lint
@@ -394,17 +407,10 @@ def result(directory, name, phase, markers, seconds, original, found, pair):
     paid = paid_receipts(directory)
     records = ledger_records(directory) or []
     lines = rows(name, document, phase, original, markers)
-    glossary = directory / GLOSSARY
     return {
         "lines": lines,
         "problems": problems(
-            name,
-            found,
-            lines,
-            system.read_bytes(glossary).decode("utf-8-sig")
-            if glossary.is_file()
-            else "",
-            pair,
+            name, found, lines, glossary_text((directory / GLOSSARY).parents[1]), pair
         ),
         "cost": round(sum(float(item.get("cost") or 0) for item in paid.values()), 6),
         "seconds": round(seconds, 1),
@@ -613,16 +619,13 @@ def run_units(plan, log):
             except (OSError, RuntimeError, ValueError) as error:
                 report(f"{label} · failed", index, "failed")
                 return {"index": index, "error": _message(error)}
-            glossary = game / ".dazedtl/glossary.txt"
             result.update(
                 seconds=round(time.monotonic() - started, 1),
                 problems=problems(
                     options.get("file") or "",
                     shown,
                     result["lines"],
-                    system.read_bytes(glossary).decode("utf-8-sig")
-                    if glossary.is_file()
-                    else "",
+                    glossary_text(game),
                     options["pair"],
                 ),
             )

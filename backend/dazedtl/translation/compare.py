@@ -675,16 +675,18 @@ def _order(name):
     return (1, int(found[1]), name) if found else (0, 0, name)
 
 
-def _glossary(source):
-    from util.paths import GAME_GLOSSARY_RELATIVE
+def _guidance(root):
+    """The game's guidance documents, as the Context editor reads them."""
+    from desktop.backend.guidance import read
 
-    from dazedtl.compatibility.compare_units import editable
+    return read(root)
 
-    path = project_path(source, GAME_GLOSSARY_RELATIVE.as_posix(), exists=False)
-    try:
-        return editable(system.read_bytes(path).decode("utf-8-sig"))
-    except OSError:
-        return ""
+
+def _glossary(root):
+    """The glossary a Tune test starts from: the Context editor's."""
+    from util.guidance_documents import GLOSSARY
+
+    return _guidance(root)[GLOSSARY.key]["text"]
 
 
 def _validate(value):

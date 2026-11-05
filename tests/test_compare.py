@@ -9,8 +9,8 @@ from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 from unittest.mock import Mock
 
-from dazedtl.compatibility.compare import END, cut, rows, sources
-from dazedtl.compatibility.compare_units import editable, glossary
+from dazedtl.compatibility.compare import END, cut, glossary_text, rows, sources
+from dazedtl.compatibility.compare_units import stage
 from dazedtl.storage import write_json
 from dazedtl.translation.compare import Compare
 from dazedtl.translation.project import MANUAL_UNITS
@@ -99,15 +99,28 @@ class LinesTests(unittest.TestCase):
 
 
 class GlossaryTests(unittest.TestCase):
-    def test_a_test_glossary_keeps_the_games_base_section_once(self):
+    def test_a_test_glossary_replaces_a_legacy_one_and_keeps_the_base_once(self):
         # Tune starts from the glossary the Context editor shows; sending the
-        # whole file back appended the shipped base a second time.
-        held = "村長 (Village Chief)\n\n" + GLOSSARY_BASE_SEPARATOR + "魔法 (Magic)\n"
-        shown = editable(held)
-        self.assertEqual(shown, "村長 (Village Chief)")
-        changed = glossary(held, shown + "\nミカ (Mika)")
-        self.assertEqual(changed.count(GLOSSARY_BASE_SEPARATOR), 1)
-        self.assertEqual(editable(changed), "村長 (Village Chief)\nミカ (Mika)")
+        # whole file back appended the shipped base a second time, and a
+        # legacy root glossary.txt moved back over the test's.
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            game = root / "game"
+            game.mkdir()
+            (game / "glossary.txt").write_text(
+                "村長 (Village Chief)\n\n" + GLOSSARY_BASE_SEPARATOR + "魔法 (Magic)\n",
+                encoding="utf-8",
+            )
+            staged = stage(
+                game, root / "staged", {"glossary": "村長 (Village Chief)\nミカ (Mika)"}
+            )
+            self.assertFalse((staged / "glossary.txt").exists())
+            text = (staged / ".dazedtl/glossary.txt").read_text(encoding="utf-8")
+            self.assertEqual(text.count(GLOSSARY_BASE_SEPARATOR), 1)
+            self.assertEqual(
+                text.split(GLOSSARY_BASE_SEPARATOR)[0].rstrip(),
+                "村長 (Village Chief)\nミカ (Mika)",
+            )
 
 
 class Operations:
@@ -243,3 +256,15 @@ class ApprovalTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(ValueError, "Finish or stop"):
             self.compare.use("p1", estimate, 0)
+
+    def test_tune_starts_from_a_legacy_or_utf16_glossary_as_context_shows_it(self):
+        # Tune read only .dazedtl/glossary.txt as UTF-8, so these games showed
+        # an empty glossary, which Use these settings then saved over theirs.
+        held = "村長 (Village Chief)\n\n" + GLOSSARY_BASE_SEPARATOR + "魔法 (Magic)\n"
+        (self.game / "glossary.txt").write_text(held, encoding="utf-8")
+        self.assertEqual(self.compare.state("p1")["glossary"], "村長 (Village Chief)")
+        (self.game / "glossary.txt").unlink()
+        (self.game / ".dazedtl/glossary.txt").write_bytes(held.encode("utf-16"))
+        self.assertEqual(self.compare.state("p1")["glossary"], "村長 (Village Chief)")
+        # A model's checks read its glossary hints from the same file.
+        self.assertEqual(glossary_text(self.game), held)
