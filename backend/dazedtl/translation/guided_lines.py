@@ -158,8 +158,13 @@ class GuidedLines:
                         shown = file_lines.shown(text, source)
                         name_box = named and file_lines.name_box(paths)
                         nameplate = bool(line.names and line.names[index])
+                        said = None
                         if nameplate:
                             speaker = line.names[index]
+                        elif not name_box:
+                            # A name box's or nameplate's speaker says the
+                            # text after it alone, as the engine sends it.
+                            said, speaker = speaker, None
                         if not holds_source(shown):
                             continue
                         if head is not None and name_box:
@@ -181,7 +186,7 @@ class GuidedLines:
                             "ui"
                             if name_box or nameplate
                             else "dialogue"
-                            if speaker
+                            if said
                             else "unknown"
                             if line.kind == "message"
                             else _KINDS.get(line.kind, "ui")
@@ -192,7 +197,7 @@ class GuidedLines:
                             "scene": name + ("#" + _pointer(listed) if listed else ""),
                             "group": name,
                             "kind": kind,
-                            "speaker": speaker
+                            "speaker": said
                             if kind in {"dialogue", "unknown"}
                             else None,
                             "source": shown,

@@ -849,6 +849,29 @@ class GuidedLineTests(unittest.TestCase):
             [name, speech, None],
         )
 
+    def test_a_nameplate_names_the_speaker_of_the_text_after_it_alone(self):
+        # A nameplate's speaker went on to every later text of its message,
+        # so narration after the speech listed as that speaker's dialogue.
+        from dazedtl.translation.guided_lines import GuidedLines
+
+        original = _map(
+            [
+                _command(101, "", 0, 0, 2, ""),
+                _command(401, "アリス"),
+                _command(401, "「やあ」"),
+                _command(401, "\\SE[1]ドアが開いた。"),
+                _command(0),
+            ]
+        )
+        guided = self.game("named", original, original, {"FIRSTLINESPEAKERS": True})
+        self.assertEqual(
+            [
+                (row["kind"], row["speaker"])
+                for row in GuidedLines(guided, "named", PAIR, True).lines()
+            ],
+            [("ui", None), ("dialogue", "アリス"), ("unknown", None)],
+        )
+
     def test_a_messages_texts_list_alike_in_every_copy_and_import_as_a_run_writes(self):
         # The export read a message's parts by its sources: a row the engine
         # sends apart, opening with a code, listed as one line in an
