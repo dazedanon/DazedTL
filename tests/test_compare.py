@@ -456,7 +456,7 @@ class ApprovalTests(unittest.TestCase):
                         "modelOptions": {},
                         "values": {"language": "English", "model": "old"},
                     },
-                    save=Mock(),
+                    use_model=Mock(),
                     _read=dict,
                     _connection=lambda _state, _id: connection,
                     _configured=lambda _connection: True,
@@ -600,8 +600,11 @@ class ApprovalTests(unittest.TestCase):
                 documents = read(self.game)
                 self.assertEqual(documents["glossary"]["text"], "ミカ (Mika)")
                 self.assertEqual(documents["game"]["text"], "Use British spelling.\n")
+                switch = self.compare.guided.settings.use_model
+                self.assertEqual(switch.call_args.args[1:3], ("c1", "a"))
                 self.assertEqual(
-                    self.compare.guided.settings.save.call_args.args[2]["model"], "a"
+                    [call.kwargs for call in switch.call_args_list[-2:]],
+                    [{"check": True}, {}],
                 )
 
     def test_use_these_settings_refuses_guidance_edited_since_the_test(self):
@@ -618,7 +621,7 @@ class ApprovalTests(unittest.TestCase):
                     self.game,
                     {"glossary": {"revision": glossary["revision"], "text": edited}},
                 )
-                self.compare.guided.settings.save.reset_mock()
+                self.compare.guided.settings.use_model.reset_mock()
                 with self.assertRaisesRegex(ValueError, "changed since this test"):
                     self.compare.use("p1", estimate, 0)
                 self.assertEqual(read(self.game)["glossary"]["text"], edited)

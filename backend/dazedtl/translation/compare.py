@@ -599,8 +599,7 @@ class Compare:
         """Makes a compared model the one the game translates with: Settings'
         connection and model, and, from Tune settings, the effort it was sent
         with, its glossary and its instruction, saved as the game's guidance.
-        Everything is checked before anything is written, and the guidance,
-        which a later edit refuses, is saved before Settings."""
+        Everything is checked before anything is written."""
         guided = self.guided
         # As Settings' own saves, never under a running translation.
         guided.idle()
@@ -610,35 +609,18 @@ class Compare:
             game, row, self._options(game, comparison_id, ESTIMATE)
         )
         settings = guided.settings
-        described = settings.describe()
-        if described.get("draft"):
-            raise ValueError(
-                "Save or discard your Settings changes before switching models."
-            )
-        if not settings._configured(
-            settings._connection(settings._read(), row["connection_id"])
-        ):
-            raise ValueError("That connection is no longer set up in Settings.")
+        switch = (
+            settings.describe()["revision"],
+            row["connection_id"],
+            row["model"],
+            {"thinkingEffort": row["effort"]} if "effort" in row else None,
+        )
+        settings.use_model(*switch, check=True)
         if changes and game.native is not None:
             guided.save_guidance(game.native, changes)
         elif changes:
             guided.translation.engine.documents_save(game.root, changes)
-        if described["activeConnectionId"] != row["connection_id"]:
-            described = settings.select(described["revision"], row["connection_id"])
-        model_options = deepcopy(described["modelOptions"])
-        if "effort" in row:
-            from dazedtl.settings.preferences import DEFAULT_OPTIONS
-
-            model_options[row["model"]] = {
-                **deepcopy(model_options.get(row["model"]) or DEFAULT_OPTIONS),
-                "thinkingEffort": row["effort"],
-            }
-        settings.save(
-            described["revision"],
-            row["connection_id"],
-            {**described["values"], "model": row["model"]},
-            model_options,
-        )
+        settings.use_model(*switch)
         return {"saved": True}
 
     @staticmethod

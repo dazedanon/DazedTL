@@ -993,6 +993,42 @@ class Settings:
             raise ValueError(
                 "The active connection changed. Review its preferences before saving."
             )
+        self._set_preferences(state, values, model_options)
+        self._clear_draft(state, connection_id)
+        self._write(state)
+        return self.describe()
+
+    def use_model(self, revision, connection_id, model, options=None, check=False):
+        """Makes a saved connection the active one and `model` its model,
+        with `options` changing that model's options, checked as save checks
+        them and written at once, so a refusal switches nothing; `check`
+        only checks."""
+        state = self._read()
+        self._revision(state, revision)
+        if self._pending(state):
+            raise ValueError(
+                "Save or discard your Settings changes before switching models."
+            )
+        if not self._configured(self._connection(state, connection_id)):
+            raise ValueError("That connection is no longer set up in Settings.")
+        state["active"] = connection_id
+        saved = self._preferences(state)
+        model_options = saved["modelOptions"]
+        if options:
+            model_options[model] = {
+                **(model_options.get(model) or deepcopy(preferences.DEFAULT_OPTIONS)),
+                **options,
+            }
+        self._set_preferences(state, {**saved["values"], "model": model}, model_options)
+        if check:
+            return None
+        self._clear_draft(state, connection_id)
+        self._write(state)
+        return self.describe()
+
+    def _set_preferences(self, state, values, model_options):
+        """Sets the active connection's preferences in `state`, refusing
+        what Settings can't save."""
         connection = self._connection(state)
         normalized, source = preferences.chosen(
             values, connection=connection is not None
@@ -1021,9 +1057,6 @@ class Settings:
         else:
             state["values"]["model"] = normalized["model"]
             state["model_options"] = configured
-        self._clear_draft(state, connection_id)
-        self._write(state)
-        return self.describe()
 
     def draft(self, revision, connection_id, values, model_options):
         state = self._read()

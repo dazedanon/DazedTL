@@ -416,6 +416,52 @@ class SettingsTests(unittest.TestCase):
                 settings.pricing_selection(active)
             self.assertEqual(settings.pricing_selection(compared)["id"], first)
 
+    def test_using_a_model_switches_connection_and_model_in_one_checked_write(self):
+        # Compare's Use these settings selected the connection, then a save
+        # refused the model, leaving it half switched.
+        adapter = SimpleNamespace(
+            settings_metadata=lambda: {
+                "values": {
+                    "language": "English",
+                    "model": "fixture-model",
+                    "api": "",
+                    "API_PROVIDER": "openai",
+                }
+            },
+            allow_providers=True,
+            manual=SimpleNamespace(request_policy=None, jobs={}),
+            install_settings=Mock(),
+        )
+        state = {
+            "version": 2,
+            "revision": 0,
+            "values": {"language": "English", "model": "fixture-model"},
+            "legacy": {"values": {}, "engines": {}, "draft": None},
+            "model_options": {},
+            "active": "",
+            "draft": None,
+            "connections": [],
+        }
+        with TemporaryDirectory() as temporary:
+            write_json(Path(temporary) / "settings/settings.json", state)
+            settings = Settings(temporary, adapter)
+            view = settings.save_connection(0, "openrouter", secret="router-key")
+            router = view["activeConnectionId"]
+            view = settings.save_connection(view["revision"], "openai", secret="key")
+            revision = view["revision"]
+            with self.assertRaisesRegex(ValueError, "base OpenRouter"):
+                settings.use_model(revision, router, "vendor/model:batch")
+            settings.use_model(revision, router, "vendor/model", check=True)
+            self.assertEqual(settings.describe(), view)
+            used = settings.use_model(
+                revision, router, "vendor/model", {"thinkingEffort": None}
+            )
+            self.assertEqual(
+                (used["activeConnectionId"], used["values"]["model"], used["revision"]),
+                (router, "vendor/model", revision + 1),
+            )
+            self.assertIsNone(used["modelOptions"]["vendor/model"]["thinkingEffort"])
+
     def test_removing_a_connection_forgets_its_key_and_respects_saved_runs(self):
         # Removal must not strand a run silently or leave the removed key in the engine's derived key cache.
         metadata = {
