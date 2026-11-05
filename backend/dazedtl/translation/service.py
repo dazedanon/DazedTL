@@ -653,7 +653,8 @@ class Translation:
             "images --apply puts the translated, reviewed images into the game, encrypted as the game expects, and its checkpoint takes the files it changed into the patch. "
             "If they went into a decoded folder the game doesn't read loose, pack it into its archive again with Len's tools and add the archive to the runtime manifest. "
             "Repeat until images --status reports done. The app records image progress from these steps, so leave image records out of your progress reports; images is a phase of its own. "
-            "Only if the game's images can't be decoded into PNG files, follow Len's image reference and report images in your progress records."
+            "Keep each decoded image in its own format and name, since images --apply writes it back that way. "
+            "Only if images --scan can't read the game's images even after you decode them, follow Len's image reference and report images in your progress records."
             if selected["include_images"]
             else ""
         )
