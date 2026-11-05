@@ -3,6 +3,12 @@
 Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 [release.mjs](scripts/release.mjs) writes each entry from [release/notes.md](release/notes.md).
 
+## [2.68.1] - 2026-11-05
+
+### Fixed
+
+- **Translate:** translating scrolling text again with **Skip already translated text** off no longer erases a row after a name translated alone, such as 「……」, which is translated on its own once this version has translated the name; runs estimated before this version send what they were approved with.
+
 ## [2.68.0] - 2026-11-05
 
 ### Added
@@ -1726,6 +1732,7 @@ Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachan
 - The first release of DazedTL as a desktop app, installed from a ZIP with a START launcher and updated from inside the app.
 - **Guided steps** for RPG Maker MV, MZ and VX Ace games, and **Assistant-led** for any game.
 
+[2.68.1]: https://github.com/dazedanon/DazedTL/compare/v2.68.0...v2.68.1
 [2.68.0]: https://github.com/dazedanon/DazedTL/compare/v2.67.0...v2.68.0
 [2.67.0]: https://github.com/dazedanon/DazedTL/compare/v2.66.0...v2.67.0
 [2.66.0]: https://github.com/dazedanon/DazedTL/compare/v2.65.0...v2.66.0

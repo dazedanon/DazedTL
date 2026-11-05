@@ -38,6 +38,8 @@ from .inventory import (
 )
 
 WORK = ".dazedtl/image_manager/guided"
+# The suffix of an original Prepare keeps until every chosen image passed.
+STAGED = ".preparing"
 CLASSIFICATIONS = {
     "recommended",
     "uncertain",
@@ -2617,83 +2619,7 @@ class ImageService:
             self._profile(project_id),
         )
         rows = [index.get(identity) for identity in identities]
-        errors, allowed, copies = [], [], {}
-        for row in rows:
-            if (
-                row.get("sourceIssue")
-                or row.get("collisionIssue")
-                or row.get("originalIssue")
-            ):
-                errors.append(
-                    row["id"]
-                    + ": "
-                    + (
-                        row.get("sourceIssue")
-                        or row.get("collisionIssue")
-                        or row.get("originalIssue")
-                    )
-                )
-                continue
-            if not row.get("frozen"):
-                raw = self.adapter.source_bytes(
-                    root, row, self.adapter.key(root, profile)
-                )
-                runtime_bytes = project_path(root, row["runtime"]).read_bytes()
-                if (
-                    digest(runtime_bytes) != row["sourceHash"]
-                    or digest(raw) != row["sourcePngHash"]
-                ):
-                    raise ValueError(
-                        "A source image changed during preparation. Existing images were retained; refresh before continuing."
-                    )
-                origin = "Runtime source before image preparation"
-                if hasattr(self.adapter, "original_bytes"):
-                    raw, runtime_original, origin = self.adapter.original_bytes(
-                        root,
-                        row,
-                        self.adapter.key(root, profile),
-                        runtime=(raw, runtime_bytes),
-                    )
-                else:
-                    runtime_original = runtime_bytes
-                original_metadata = png_metadata(raw)
-                # Named as its editable copy: a PNG, whatever the game's
-                # file format.
-                frozen = (
-                    WORK
-                    + "/originals/"
-                    + PurePosixPath(row["id"])
-                    .with_name(PurePosixPath(row["editable"]).name)
-                    .as_posix()
-                )
-                frozen_path = project_path(root, frozen, exists=False)
-                if frozen_path.exists():
-                    raise ValueError(
-                        "Unrecognized preserved image files exist. Inspect them before preparing new originals."
-                    )
-                write_bytes(frozen_path, raw)
-                if (
-                    digest(runtime_original) == row["sourceHash"]
-                    and row["sourcePngHash"] != row["sourceHash"]
-                ):
-                    # The editable copy is the frozen original, read from the
-                    # game's file in another format: read once, as a TLG takes
-                    # about a second, and kept on disk, not in memory.
-                    copies[row["id"]] = (row["sourceHash"], frozen_path)
-                # Restore puts back the game's bytes these hash to, which the
-                # game's record of its original files holds.
-                row.update(
-                    frozen=frozen,
-                    originalPngHash=digest(raw),
-                    originalRuntimeHash=row["sourceHash"],
-                    originalMetadata=original_metadata,
-                    originalOrigin=origin,
-                    runtimeBackupHash=digest(runtime_original),
-                )
-            allowed.append(row)
-        with index.connection() as db:
-            for row in allowed:
-                index.put(db, row, row.get("generation", ""))
+        errors, allowed, copies = self._freeze(root, index, profile, rows)
         if allowed and profile.get("decoded"):
             self._keep_decoded(project_id, root, profile, allowed)
         if allowed:
@@ -2721,6 +2647,106 @@ class ImageService:
         value["lastAction"] = {"action": "prepare", "saved": now(), **result}
         self._save(project_id, value)
         return {"state": self.state(project_id), "result": result}
+
+    def _freeze(self, root, index, profile, rows):
+        """Keeps the original of each of `rows` not yet prepared and records
+        it in the index, all or none, so none is left that no record names.
+        Each is staged until every image passed, then takes its name just
+        before the records naming it are saved: a stop before then, a kill
+        too, leaves only staged files, which never block, and a stop after
+        it removes what this call kept."""
+        errors, allowed, copies, staged, written = [], [], {}, [], []
+        try:
+            for row in rows:
+                issue = (
+                    row.get("sourceIssue")
+                    or row.get("collisionIssue")
+                    or row.get("originalIssue")
+                )
+                if issue:
+                    errors.append(row["id"] + ": " + issue)
+                    continue
+                if not row.get("frozen"):
+                    path = self._keep_original(root, profile, row, copies)
+                    if path:
+                        staged.append(path)
+                allowed.append(row)
+            for path in staged:
+                kept = path.with_name(path.name.removesuffix(STAGED))
+                system.replace(path, kept)
+                written.append(kept)
+            with index.connection() as db:
+                for row in allowed:
+                    index.put(db, row, row.get("generation", ""))
+        except BaseException:
+            for path in staged + written:
+                system.unlink(path, missing_ok=True, ignore_errors=True)
+            raise
+        return errors, allowed, copies
+
+    def _keep_original(self, root, profile, row, copies):
+        """Stages the original of an image before it is first prepared,
+        named in `row`, and returns the staged file, or None when one is
+        already kept with the same bytes: the image's own, left by a kill
+        between taking its name and saving its record, or by an older
+        version."""
+        raw = self.adapter.source_bytes(root, row, self.adapter.key(root, profile))
+        runtime_bytes = project_path(root, row["runtime"]).read_bytes()
+        if (
+            digest(runtime_bytes) != row["sourceHash"]
+            or digest(raw) != row["sourcePngHash"]
+        ):
+            raise ValueError(
+                "A source image changed during preparation. Existing images were retained; refresh before continuing."
+            )
+        origin = "Runtime source before image preparation"
+        if hasattr(self.adapter, "original_bytes"):
+            raw, runtime_original, origin = self.adapter.original_bytes(
+                root,
+                row,
+                self.adapter.key(root, profile),
+                runtime=(raw, runtime_bytes),
+            )
+        else:
+            runtime_original = runtime_bytes
+        original_metadata = png_metadata(raw)
+        # Named as its editable copy: a PNG, whatever the game's file format.
+        frozen = (
+            WORK
+            + "/originals/"
+            + PurePosixPath(row["id"])
+            .with_name(PurePosixPath(row["editable"]).name)
+            .as_posix()
+        )
+        frozen_path = project_path(root, frozen, exists=False)
+        staged = None
+        if not frozen_path.exists():
+            # One left by a stop is this call's to overwrite.
+            staged = frozen_path.with_name(frozen_path.name + STAGED)
+            write_bytes(staged, raw)
+        elif not frozen_path.is_file() or frozen_path.read_bytes() != raw:
+            raise ValueError(
+                "Unrecognized preserved image files exist. Inspect them before preparing new originals."
+            )
+        if (
+            digest(runtime_original) == row["sourceHash"]
+            and row["sourcePngHash"] != row["sourceHash"]
+        ):
+            # The editable copy is the frozen original, read from the game's
+            # file in another format: read once, as a TLG takes about a
+            # second, and kept on disk, not in memory.
+            copies[row["id"]] = (row["sourceHash"], frozen_path)
+        # Restore puts back the game's bytes these hash to, which the game's
+        # record of its original files holds.
+        row.update(
+            frozen=frozen,
+            originalPngHash=digest(raw),
+            originalRuntimeHash=row["sourceHash"],
+            originalMetadata=original_metadata,
+            originalOrigin=origin,
+            runtimeBackupHash=digest(runtime_original),
+        )
+        return staged
 
     def _keep_decoded(self, project_id, root, profile, rows):
         """Takes the originals of `rows`, images in a folder an assistant

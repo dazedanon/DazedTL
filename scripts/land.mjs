@@ -117,14 +117,14 @@ const lockLimit = 10 * 60_000;
  * user can hit it, in `userFacing`, which an older record may leave out, and,
  * for a fix to wording, comments or naming alone, `"behavior": false`. A
  * record whose last review was due another (repeatReviewDue) is refused.
- * The Discord intake's records, read with `intake`, may leave out the kinds
- * and behavior marks until the intake sends them, and carry no E2E runs,
- * since its worker names those in the hand-off; their live-check lens is
- * left out, since the intake lists it unasked.
+ * The Discord intake's records, read with `intake`, are held to the same
+ * kinds and repeat-review rule, but carry no E2E runs, since its worker names
+ * those in the hand-off; their live-check lens is left out, since the intake
+ * lists it unasked.
  * Throws with what is wrong, so no branch lands on its author's review alone.
  * @param {string} text
  * @param {{ intake?: boolean }} [options]
- * @returns {{ level: string, reviewer: "independent", reviews: number, head: string, lenses?: string[], e2e?: string[], whyNoE2e?: string, findings: { summary: string, kind?: string, outcome: "fixed" | "dismissed", userFacing?: boolean, behavior?: false, reason?: string, review: number }[] }}
+ * @returns {{ level: string, reviewer: "independent", reviews: number, head: string, lenses?: string[], e2e?: string[], whyNoE2e?: string, findings: { summary: string, kind: string, outcome: "fixed" | "dismissed", userFacing?: boolean, behavior?: false, reason?: string, review: number }[] }}
  */
 export function readReview(text, { intake = false } = {}) {
   let record;
@@ -184,12 +184,8 @@ export function readReview(text, { intake = false } = {}) {
         throw new Error(
           `${which} needs a review number from 1 to ${reviews}: the independent review that reported it, with "reviews" saying how many ran when more than one did.`,
         );
-      if (
-        (!intake || item.kind !== undefined) &&
-        !findingKinds.includes(item.kind)
-      )
+      if (!findingKinds.includes(item.kind))
         throw new Error(`${which} needs a kind of ${findingKinds.join(", ")}.`);
-      const kind = item.kind === undefined ? {} : { kind: item.kind };
       if (item.userFacing !== undefined && typeof item.userFacing !== "boolean")
         throw new Error(
           `${which} says "userFacing" true or false: whether a user can hit it, as the dazedtl-land skill's Review step defines it.`,
@@ -203,7 +199,7 @@ export function readReview(text, { intake = false } = {}) {
       if (item.outcome === "fixed") {
         return {
           summary: item.summary,
-          ...kind,
+          kind: item.kind,
           outcome: "fixed",
           ...userFacing,
           ...(item.behavior === false ? { behavior: false } : {}),
@@ -216,7 +212,7 @@ export function readReview(text, { intake = false } = {}) {
         throw new Error(`${which} is dismissed without a reason.`);
       return {
         summary: item.summary,
-        ...kind,
+        kind: item.kind,
         outcome: "dismissed",
         ...userFacing,
         reason: item.reason,
@@ -224,7 +220,7 @@ export function readReview(text, { intake = false } = {}) {
       };
     },
   );
-  if (!intake && repeatReviewDue(findings, reviews))
+  if (repeatReviewDue(findings, reviews))
     throw new Error(
       `Review ${reviews} had ${repeatReviewFixes} or more findings that a user can hit fixed in behavior, so a fresh review of the branch as it now stands runs before it lands (dazedtl-land, Review). Mark a fix to wording, comments or naming alone with "behavior": false, and a finding its reviewer said no user can hit with "userFacing": false.`,
     );
