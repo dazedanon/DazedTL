@@ -150,6 +150,10 @@ def _walk(before, after, *, system=False):
             code = blocks.code(item)
             if code in _RUNS:
                 end = (blocks.run(before, index, _RUNS[code]) or (index,))[-1] + 1
+                if code in blocks.MESSAGE_ROWS and blocks.recorded(item) is not None:
+                    # A translation file import recorded the rows its text
+                    # covers; the game's own after it keep sources of their own.
+                    end = min(end, index + blocks.recorded(item))
                 old = [row["parameters"][0] for row in before[index:end]]
                 new = [row["parameters"][0] for row in after[index:end]]
                 if old != new:

@@ -568,6 +568,50 @@ class TextBlockTests(unittest.TestCase):
             [(1, 2, 3, 4, 5)],
         )
 
+    def test_an_imported_texts_rows_follow_what_writes_over_it_next(self):
+        # A translation file import records the rows a text covers (_rows);
+        # a run that joined it onto its first row kept that count, and
+        # Assistant-led's writer ran its source over the game's own rows
+        # after it, so either read those rows as the text's.
+        from util.len_originals import preserve_originals
+
+        def imported():
+            return [
+                command(101, ["", 0, 0, 2, ""]),
+                command(401, ["Hello."], _original="あ\nい\nう", _rows=3),
+                command(401, ["How"]),
+                command(401, ["are you?"]),
+                command(401, ["\\SE[1]よろしく。"]),
+                command(401, ["またね。"]),
+                command(0, []),
+            ]
+
+        listed = imported()
+        blocks.write_text(listed, (1, 2, 3), "Hello. How are you?")
+        (block,) = blocks.blocks(listed)
+        self.assertEqual(
+            [text.rows for text in blocks.sent_texts(listed, block, blocks.Reading())],
+            [(1,), (4, 5)],
+        )
+        before = {"list": imported()}
+        staged = {"list": imported()}
+        for at, row in ((4, "\\SE[1]Nice to meet you."), (5, "See you.")):
+            staged["list"][at]["parameters"] = [row]
+        written = preserve_originals(before, staged, filename="Map001.json")["list"]
+        self.assertEqual(
+            [
+                (command.get("_original"), command.get("_rows"))
+                for command in written[1:6]
+            ],
+            [
+                ("あ\nい\nう", 3),
+                (None, None),
+                (None, None),
+                ("\\SE[1]よろしく。\nまたね。", None),
+                (None, None),
+            ],
+        )
+
     def test_list_items_of_the_japanese_keep_a_row_each_beside_a_face(self):
         help_text = wrap_help(
             "Effects: ・Attack power rises greatly for the rest of the battle "

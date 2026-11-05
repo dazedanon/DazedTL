@@ -975,15 +975,21 @@ def write_text(commands: list, rows: tuple[int, ...], value: str, *, joined: boo
     the list back. Otherwise the text is laid over the rows by :func:`spread`,
     adding and removing none, as a list written as it stands needs. Text the
     translation left untranslated (util.translation.reply_to_write) is not
-    written, so its rows stay as the game has them."""
+    written, so its rows stay as the game has them. The rows a translation
+    file import recorded the text over (ROWS) become the ones it now holds,
+    and a joined text, on its first row alone, records none, as a run's."""
+    first = commands[rows[0]]
     if joined:
-        commands[rows[0]]["parameters"] = [value]
+        first["parameters"] = [value]
+        first.pop(ROWS, None)
         for at in rows[1:]:
             commands[at]["code"] = -1
             commands[at]["parameters"] = []
         return
     for at, row in zip(rows, spread(value, len(rows))):
         commands[at]["parameters"] = [row]
+    if ROWS in first:
+        first[ROWS] = len(rows)
 
 
 def write_help(commands: list, rows: tuple[int, ...], lines: list[str]) -> int:
