@@ -4,6 +4,7 @@ import type {
   CompareModel,
   CompareScene,
   Comparison,
+  WorkspaceSnapshot,
 } from "../../api/contracts.ts";
 import { formatDuration } from "../../ui/workTime.ts";
 
@@ -219,3 +220,44 @@ export function modelDetail(model: CompareModel, translated: boolean) {
       .join(" · ");
   return model.estimate ? `about ${formatCost(model.estimate.cost)}` : "";
 }
+
+/**
+ * What a game's comparable lines come from, as the observed state shows it:
+ * its method, its Guided preparation, the Manual file loaded, the newest
+ * Assistant-led run, whose organize made the groups, and Start over. Each
+ * change reads the comparisons again.
+ */
+export function compareInputs(
+  snapshot: WorkspaceSnapshot | null | undefined,
+  projectId: string,
+) {
+  const project = snapshot?.application.project;
+  if (project?.id !== projectId) return "";
+  const guided =
+    snapshot?.guided?.projectId === projectId ? snapshot.guided : null;
+  const translation =
+    snapshot?.translation?.projectId === projectId
+      ? snapshot.translation
+      : null;
+  const newest = (translation?.jobs ?? [])
+    .filter((job) => job.kind === "translation")
+    .sort((a, b) => b.created.localeCompare(a.created))[0]?.id;
+  return JSON.stringify([
+    project.method,
+    project.source,
+    guided?.preparation.complete ?? null,
+    guided?.collectionError ?? null,
+    translation?.manual?.loaded?.sha256 ?? null,
+    translation?.manual?.loaded?.loaded ?? null,
+    translation?.lifecycle.started_over?.at ?? null,
+    newest ?? null,
+  ]);
+}
+
+/**
+ * The key a page's read follows: the newest while the page shows, and while
+ * hidden the last one it read, so a hidden page starts no reads and reads
+ * once when it shows again after a change.
+ */
+export const shownKey = (shown: boolean, key: string, last: string | null) =>
+  shown ? key : last;

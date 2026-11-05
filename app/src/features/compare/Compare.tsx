@@ -22,6 +22,7 @@ import {
 import { StackedTabPanels, Tabs } from "../../ui/Tabs";
 import { onSettingsSaved } from "../settings/settingsChanges";
 import { configured } from "./AddModels";
+import { compareInputs, shownKey } from "./compareView";
 import type { ChosenModel } from "./ModelChoice";
 import { Single } from "./Single";
 import { Tune } from "./Tune";
@@ -50,6 +51,14 @@ export type CompareContext = {
   reload: () => void;
 };
 
+/** `key` while the page shows; hidden, the last key it read under. */
+function useShownKey(shown: boolean, key: string) {
+  const [last, setLast] = useState<string | null>(null);
+  const next = shownKey(shown, key, last);
+  if (next !== last) setLast(next);
+  return next;
+}
+
 /**
  * Compare models: a few of this game's lines translated by several models,
  * by one, or by one with changed settings, to choose a model and its
@@ -77,12 +86,17 @@ export default function Compare({
     .sort()
     .join(",");
   const [reloads, setReloads] = useState(0);
-  const key = `${project.id}:${reloads}:${ended}`;
+  // A method change, a newly loaded Manual file or Start over changes the
+  // lines too.
+  const inputs = compareInputs(application.snapshot, project.id);
   // Hidden, or while its game folder is missing, the page waits to read
   // until it shows the game again.
   const missing = project.available === false;
-  const [readKey, setReadKey] = useState<string | null>(null);
-  if (visible && !missing && readKey !== key) setReadKey(key);
+  const shown = visible && !missing;
+  const readKey = useShownKey(
+    shown,
+    JSON.stringify([project.id, reloads, ended, inputs]),
+  );
   const read = useRead(readKey, () => api.compare.state(project.id));
   const [state, setState] = useState<CompareState>();
   useOnChange(read.value, (value) => {
@@ -91,7 +105,7 @@ export default function Compare({
   const [settingsReads, setSettingsReads] = useState(0);
   useEffect(() => onSettingsSaved(() => setSettingsReads((n) => n + 1)), []);
   const settings = useRead(
-    readKey === null ? null : `settings:${settingsReads}`,
+    useShownKey(shown, `settings:${settingsReads}`),
     () => api.settings(),
   );
   const active = settings.value?.connections.find(

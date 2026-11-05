@@ -1,12 +1,18 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { CompareModel, Comparison } from "../app/src/api/contracts.ts";
+import type {
+  CompareModel,
+  Comparison,
+  WorkspaceSnapshot,
+} from "../app/src/api/contracts.ts";
 import {
   blindOrder,
+  compareInputs,
   current,
   estimateTotal,
   glossaryChanges,
   picks,
+  shownKey,
 } from "../app/src/features/compare/compareView.ts";
 
 const model = (index: number, extra: Partial<CompareModel> = {}) =>
@@ -135,4 +141,75 @@ test("an edited glossary entry counts once, not as a removal and an addition", (
     1,
   );
   assert.equal(glossaryChanges(game, game + "祠 (Shrine)\n剣 (Sword)\n"), 2);
+});
+
+test("a method change, a loaded Manual file, a new Assistant-led run and Start over read the comparisons again", () => {
+  const job = (id: string, created: string, kind = "translation") => ({
+    id,
+    kind,
+    created,
+  });
+  const observed = ({
+    method = "len",
+    file = "",
+    jobs = [job("run-1", "2026-11-04T10:00:00Z")],
+    startedOver = "",
+    progress = 0,
+  } = {}) =>
+    ({
+      application: {
+        project: { id: "p", method, source: "/games/a" },
+      },
+      guided: null,
+      translation: {
+        projectId: "p",
+        jobs,
+        manual: file ? { loaded: { sha256: file, loaded: "now" } } : null,
+        lifecycle: {
+          version: 1,
+          ...(startedOver && { started_over: { at: startedOver } }),
+        },
+        progress: { done: progress },
+      },
+    }) as unknown as WorkspaceSnapshot;
+  const before = compareInputs(observed(), "p");
+  for (const changed of [
+    observed({ method: "manual" }),
+    observed({ file: "abc" }),
+    observed({
+      jobs: [
+        job("run-1", "2026-11-04T10:00:00Z"),
+        job("run-2", "2026-11-05T10:00:00Z"),
+      ],
+    }),
+    observed({ startedOver: "2026-11-05T10:00:00Z" }),
+  ])
+    assert.notEqual(compareInputs(changed, "p"), before);
+  // Progress and operations alone leave the lines as they were.
+  assert.equal(compareInputs(observed({ progress: 5 }), "p"), before);
+  assert.equal(
+    compareInputs(
+      observed({
+        jobs: [
+          job("run-1", "2026-11-04T10:00:00Z"),
+          job("op", "2026-11-05T10:00:00Z", "operation"),
+        ],
+      }),
+      "p",
+    ),
+    before,
+  );
+  assert.notEqual(
+    compareInputs(observed({ file: "abc" }), "p"),
+    compareInputs(observed({ file: "def" }), "p"),
+  );
+});
+
+test("a hidden page keeps its last read key and reads once when shown after a change", () => {
+  // Never shown, it reads nothing.
+  assert.equal(shownKey(false, "settings:0", null), null);
+  assert.equal(shownKey(true, "settings:0", null), "settings:0");
+  // Settings saved while hidden start no read until the page shows.
+  assert.equal(shownKey(false, "settings:2", "settings:0"), "settings:0");
+  assert.equal(shownKey(true, "settings:2", "settings:0"), "settings:2");
 });
