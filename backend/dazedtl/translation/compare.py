@@ -619,11 +619,17 @@ class Compare:
         wanted = {}
         if row.get("glossary") is not None:
             wanted[GLOSSARY.key] = lambda _text: row["glossary"]
-        if (row.get("instruction") or "").strip():
+        instruction = (row.get("instruction") or "").strip()
+        if instruction:
+            # Added once: a game context already holding it stays as it is.
             wanted[GAME_CONTEXT.key] = lambda text: (
-                (text.rstrip() + "\n\n" if text.strip() else "")
-                + row["instruction"].strip()
-                + "\n"
+                text
+                if instruction in text
+                else (
+                    (text.rstrip() + "\n\n" if text.strip() else "")
+                    + instruction
+                    + "\n"
+                )
             )
         if not wanted:
             return {}

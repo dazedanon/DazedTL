@@ -350,3 +350,10 @@ class ApprovalTests(unittest.TestCase):
                     self.compare.use("p1", estimate, 0)
                 self.assertEqual(read(self.game)["glossary"]["text"], edited)
                 self.compare.guided.settings.save.assert_not_called()
+
+    def test_use_these_settings_adds_its_instruction_once(self):
+        # A second click added the same instruction to the game's again.
+        estimate = self.tuned(instruction="Use British spelling.")
+        self.compare.use("p1", estimate, 0)
+        self.compare.use("p1", estimate, 0)
+        self.assertEqual(read(self.game)["game"]["text"], "Use British spelling.\n")
