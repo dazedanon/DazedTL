@@ -60,7 +60,7 @@ On Linux it needs a display: CI runs it under `xvfb-run`, and on a desktop `node
 
 ## CI
 
-[CI](../.github/workflows/ci.yml) runs the build checks, the behavior tests, the [previous-release QA check](#previous-release-qa-check), the live test, the upgrade test and every [test scenario](#test-scenarios) on Windows and Linux, for every push to `dev` and `main`, release tag and pull request, weekly and by hand.
+[CI](../.github/workflows/ci.yml) runs the build checks, the behavior tests, the [previous-release QA check](#previous-release-qa-check), the live test, the upgrade test and every [test scenario](#test-scenarios) on Windows and Linux, for every push to `dev` and `main`, release tag and pull request, weekly, by hand, and for a branch [platformPaths](../scripts/land-lock.mjs) marks before it [lands](#landing).
 
 - **Wait for a commit's CI** with `node scripts/ci-wait.mjs <sha> [--branch <b>]`, never `gh run watch` or a `gh run list` loop: parallel sessions share GitHub's hourly API limit.
 - **Run what CI runs locally** with `node scripts/release-check.mjs`, in about three minutes on Linux, outside a sandbox.
@@ -178,7 +178,7 @@ One landing runs at a time, under a lock that a release also holds.
   A branch that repeats a notes line `dev` already released stops on `release/notes.md`: keep only what's new.
 - Any other conflict stops it with exit code 2 and the merge in progress: resolve the listed files, commit and land again.
 - `Notice:` lines, also desktop notifications, say when your own DazedTL or another landing holds it up.
-- A branch changing a path [platformPaths](../scripts/land-lock.mjs) marks lands only once CI on GitHub passes.
+- A [platform-sensitive](#ci) branch lands only once its CI passes.
   Other branches don't wait for CI, which runs on `dev` after the push; a run still red is fixed forward or reverted by the session cutting the next release.
 
 A Discord intake worker, which may never write the main checkout, lands in two steps.

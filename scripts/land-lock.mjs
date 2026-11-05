@@ -74,6 +74,11 @@ export const platformPaths = [
   /^backend\/dazedtl\/compatibility\/(checkpoint_\w+|game_write|original_files)\.py$/,
   /^backend\/dazedtl\/engine\/util\/((paths|subprocess_runner|linux_desktop|release_package)\.py$|version_update\/)/,
   /^backend\/dazedtl\/translation\/helper_command\.py$/,
+  // Each of these took a fix for Windows alone: workers and their process
+  // trees, project-relative paths, release ZIPs and VX Ace files.
+  /^backend\/dazedtl\/(stdio\.py|compatibility\/(\w+_worker|images)\.py|images\/service\.py)$/,
+  /^backend\/dazedtl\/translation\/(jobs|ownership|files|release|context_setup)\.py$/,
+  /^backend\/dazedtl\/engine\/util\/(translation_task\.py$|ace\/)/,
   // Game updates, and the programs and tools the app and assistants run.
   /^backend\/dazedtl\/engine\/(gameupdate|scripts)\//,
   /^backend\/dazedtl\/engine\/data\/skills\/.*\.(py|ps1|bat|cmd|sh|js|mjs|cjs)$/i,
