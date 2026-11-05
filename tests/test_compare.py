@@ -247,7 +247,48 @@ class StopTests(unittest.TestCase):
             {"id": "t", "status": "stopped", "result": value},
             {},
         )
-        self.assertEqual(shown["candidates"][1]["cost"], 0.2)
+        self.assertEqual(shown["candidates"][1]["cost"], 0.0)
+        self.assertEqual(shown["candidates"][1]["keptRequests"], 1)
+
+    def test_a_stopped_assistant_led_comparison_prepares_no_more_models(self):
+        # A stop went on copying guidance and compiling requests for every
+        # model before the comparison ended.
+        stopped = threading.Event()
+
+        def staged(_root, game, _candidate):
+            stopped.set()
+            return game
+
+        def translate(*args):
+            raise InterruptedError("stop")
+
+        build = Mock(return_value=([], {}))
+        with TemporaryDirectory() as temporary:
+            plan = {
+                "action": compare_run.TRANSLATE,
+                "options": {
+                    **self.guided_plan(Path(temporary), ["a", "b", "c"])["options"],
+                    "method": "len",
+                    "source": temporary,
+                    "inputPath": "units.json",
+                },
+            }
+            with (
+                patch("dazedtl.compatibility.translation.TranslationEngine"),
+                patch("util.paths.runtime_data_profile"),
+                patch("dazedtl.languages.reading_game"),
+                patch.object(compare_units, "units", return_value=[{}]),
+                patch.object(compare_units, "sources", return_value=[]),
+                patch.object(compare_units, "stage", side_effect=staged),
+                patch.object(compare_units, "build", build),
+                patch.object(compare_units, "translate", side_effect=translate),
+            ):
+                value = compare_run.run(plan, Mock(stopped=stopped.is_set))
+        build.assert_called_once()
+        self.assertTrue(value["stopped"])
+        self.assertEqual(
+            [model["error"] for model in value["models"]], [compare_run.STOPPED] * 3
+        )
 
     def test_a_model_that_fails_sending_keeps_what_it_spent(self):
         # An Assistant-led model that failed after sending showed no cost.

@@ -611,6 +611,10 @@ def run_units(plan, log):
             index, label = candidate["index"], candidate["label"]
             if "error" in candidate:
                 continue
+            if report.keeps and log.stopped():
+                # Stopped before it was prepared: nothing more is copied.
+                built[index] = InterruptedError()
+                continue
             report(f"{label} · preparing", index, "preparing")
             game = compare_units.stage(root, scratch / f"model-{index}/game", candidate)
             try:
@@ -628,6 +632,8 @@ def run_units(plan, log):
             if "error" in candidate:
                 return {"index": index, "error": candidate["error"]}
             value = built[index]
+            if isinstance(value, InterruptedError):
+                return {"index": index, "error": STOPPED}
             if isinstance(value, ValueError):
                 report(f"{label} · can't be compared", index, "failed")
                 return {"index": index, "error": str(value)}
