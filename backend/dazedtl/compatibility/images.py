@@ -233,9 +233,9 @@ class ImageCompatibility:
                 )
 
     def prepare(self, root, profile, rows, key, progress=lambda _: None, copies=None):
-        """Makes the editable copies, taking each one `copies` holds by ID,
-        with the hash of the game's file it was read from, while that file
-        still has it."""
+        """Makes the editable copies, taking each from the file `copies`
+        names by ID, with the hash of the game's file it was made from, while
+        that file still has it."""
         from util.image_manager import make_profile_assets_editable
 
         self._manifest(root)

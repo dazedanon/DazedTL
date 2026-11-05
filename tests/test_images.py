@@ -1762,7 +1762,8 @@ class DecodedImagePatchTests(unittest.TestCase):
 
     def test_prepare_reads_an_image_in_another_format_once(self):
         # It was read for the source check, the frozen original and the
-        # editable copy: about three seconds for each large TLG.
+        # editable copy: about three seconds for each large TLG. Then every
+        # chosen image's copy was held in memory until the last was read.
         from util import image_formats, image_manager
 
         title = "decoded/Picture/title.bmp"
@@ -1770,8 +1771,9 @@ class DecodedImagePatchTests(unittest.TestCase):
         Image.new("RGB", (8, 8), (9, 9, 9)).save(stream, format="BMP")
         write_bytes(self.game / title, stream.getvalue())
         self.scan()
-        self.choose([title])
-        reads, encode = [], image_formats.to_png
+        self.choose([title, "decoded/Picture/title.png"])
+        reads, held, encode = [], [], image_formats.to_png
+        workspace = image_manager.copy_plain_assets_to_workspace
 
         def counted(raw):
             # A PNG comes back as it is.
@@ -1779,13 +1781,21 @@ class DecodedImagePatchTests(unittest.TestCase):
                 reads.append(raw)
             return encode(raw)
 
+        def copied(*args, copies=None, **options):
+            held.extend((copies or {}).items())
+            return workspace(*args, copies=copies, **options)
+
         with (
             patch.object(image_formats, "to_png", counted),
             patch.object(image_manager, "to_png", counted),
+            patch.object(image_manager, "copy_plain_assets_to_workspace", copied),
         ):
             self.service.action(self.identity, "prepare")
         row = self.service._index(self.identity).get(title)
         self.assertEqual(len(reads), 1)
+        self.assertEqual(
+            [(key, type(value)) for key, (_, value) in held], [(title, type(self.game))]
+        )
         self.assertEqual(
             (self.game / row["editable"]).read_bytes(),
             encode(stream.getvalue()),

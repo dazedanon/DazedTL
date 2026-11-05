@@ -365,11 +365,11 @@ def copy_plain_assets_to_workspace(
     assets: Iterable[ImageAsset],
     *,
     progress: Callable[[str], None] | None = None,
-    copies: Mapping[str, tuple[str, bytes]] | None = None,
+    copies: Mapping[str, tuple[str, Path]] | None = None,
 ) -> ImageActionResult:
-    """Makes each asset's editable PNG copy, taking the copy `copies` holds
-    by asset ID, read before from the runtime file with the hash it gives,
-    while that file still has that hash."""
+    """Makes each asset's editable PNG copy, taking it from the file `copies`
+    names by asset ID, made before from the runtime file with the hash it
+    gives, while that file still has that hash."""
     root = _resolved_root(game_root)
     workspace = ensure_editable_workspace(root)
     result = ImageActionResult()
@@ -388,7 +388,7 @@ def copy_plain_assets_to_workspace(
             raw = runtime.read_bytes()
             known = (copies or {}).get(asset.asset_id)
             copy = (
-                known[1]
+                known[1].read_bytes()
                 if known and known[0] == hashlib.sha256(raw).hexdigest()
                 else to_png(raw)
             )
@@ -634,7 +634,7 @@ def make_profile_assets_editable(
     key: bytes | None,
     *,
     progress: Callable[[str], None] | None = None,
-    copies: Mapping[str, tuple[str, bytes]] | None = None,
+    copies: Mapping[str, tuple[str, Path]] | None = None,
 ) -> ImageActionResult:
     assets = list(assets)
     if engine_id == PROFILE_RPGMAKER_MVMZ:

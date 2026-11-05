@@ -2646,8 +2646,6 @@ class ImageService:
                     raise ValueError(
                         "A source image changed during preparation. Existing images were retained; refresh before continuing."
                     )
-                # Read once: a TLG takes about a second to read.
-                copies[row["id"]] = (row["sourceHash"], raw)
                 origin = "Runtime source before image preparation"
                 if hasattr(self.adapter, "original_bytes"):
                     raw, runtime_original, origin = self.adapter.original_bytes(
@@ -2674,6 +2672,14 @@ class ImageService:
                         "Unrecognized preserved image files exist. Inspect them before preparing new originals."
                     )
                 write_bytes(frozen_path, raw)
+                if (
+                    digest(runtime_original) == row["sourceHash"]
+                    and row["sourcePngHash"] != row["sourceHash"]
+                ):
+                    # The editable copy is the frozen original, read from the
+                    # game's file in another format: read once, as a TLG takes
+                    # about a second, and kept on disk, not in memory.
+                    copies[row["id"]] = (row["sourceHash"], frozen_path)
                 # Restore puts back the game's bytes these hash to, which the
                 # game's record of its original files holds.
                 row.update(
