@@ -3,7 +3,9 @@
 // names its holder. Git's compare-and-swap ref updates take, take over and
 // release it, so two sessions can never both hold it. A holder renews it
 // while it works; a lock whose process has gone, or that nobody renewed for
-// 20 minutes, may be taken over.
+// 20 minutes, may be taken over. It also holds the review-record limits that
+// tools outside land.mjs read, such as the Discord intake: maxReviews and the
+// review lenses.
 import fs from "node:fs";
 import { spawnSync } from "node:child_process";
 import { setTimeout as sleep } from "node:timers/promises";
