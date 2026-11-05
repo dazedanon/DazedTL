@@ -652,7 +652,7 @@ class TextBlockTests(unittest.TestCase):
             ]
 
         listed = imported()
-        blocks.write_text(listed, (1, 2, 3), "Hello. How are you?")
+        blocks.write_text(listed, (1, 2, 3), "Hello. How are you?", record=True)
         self.assertEqual(listed[1][blocks.ROWS], 1)
         (block,) = blocks.blocks(listed)
         self.assertEqual(
@@ -663,7 +663,9 @@ class TextBlockTests(unittest.TestCase):
         # them, recorded before or not.
         listed = imported()
         del listed[1][blocks.ROWS]
-        blocks.write_text(listed, (1, 2), "Hello.\nHow are you?", joined=False)
+        blocks.write_text(
+            listed, (1, 2), "Hello.\nHow are you?", joined=False, record=True
+        )
         self.assertEqual(listed[1][blocks.ROWS], 2)
         before = {"list": imported()}
         staged = {"list": imported()}

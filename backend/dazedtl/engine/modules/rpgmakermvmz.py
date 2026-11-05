@@ -3676,11 +3676,17 @@ def _preview_texts(commands, start, end):
     return found
 
 
+def _records() -> bool:
+    """Whether the run records the rows of each text it writes: from
+    LEFT_ROWS level 3."""
+    return LEFT_ROWS >= 3
+
+
 def _record_rows(command, rows: int) -> None:
-    """From LEFT_ROWS level 3, record on *command*, the first row of a text
-    the run wrote, the *rows* it wrote it over (util/rpgmaker_blocks
-    `record_rows`)."""
-    if LEFT_ROWS >= 3:
+    """Record on *command*, the first row of a text the run wrote, the *rows*
+    it wrote it over (util/rpgmaker_blocks `record_rows`), where the run
+    records them (`_records`)."""
+    if _records():
         rpgmaker_blocks.record_rows(command, rows)
 
 
@@ -4439,7 +4445,7 @@ def _searchCodes(page, pbar, jobList, filename):
                                     ),
                                     "\n".join(lines),
                                     joined=False,
-                                    record=LEFT_ROWS >= 3,
+                                    record=_records(),
                                 )
 
                             # Handle 401
@@ -4448,7 +4454,7 @@ def _searchCodes(page, pbar, jobList, filename):
                                     codeList,
                                     tuple(range(groupStart, i + 1)),
                                     translatedText,
-                                    record=LEFT_ROWS >= 3,
+                                    record=_records(),
                                 )
                             syncIndex = i + 1
 

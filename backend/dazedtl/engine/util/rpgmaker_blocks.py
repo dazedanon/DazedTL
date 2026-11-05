@@ -1232,11 +1232,12 @@ def write_text(
     value: str,
     *,
     joined: bool = True,
-    record: bool = True,
+    record: bool,
 ) -> None:
     """Write a part's text, *value*, over the text *rows* that hold it, whose
-    first keeps its source, and record the rows it now holds
-    (:func:`record_rows`). Joined, as translation writes a message, the first
+    first keeps its source, and with *record*, as a writer that chose those
+    rows does, record the rows it now holds (:func:`record_rows`); each
+    caller says which it is. Joined, as translation writes a message, the first
     row holds the text and the others are emptied, which the engine leaves
     out when it writes the list back. Otherwise the text is laid over the
     rows by :func:`spread`, adding and removing none, as a list written as it
