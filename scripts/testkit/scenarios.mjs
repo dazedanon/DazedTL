@@ -848,6 +848,10 @@ const sharedFile = [
       // a window's line, which Apply must wrap below the nameplate.
       const file = JSON.parse(fs.readFileSync(state.shared, "utf8"));
       const edited = file.lines.find((line) => line.id === speech.id);
+      if (!edited?.translation)
+        throw new Error(
+          `The export's speech line has no translation: ${JSON.stringify(edited)}`,
+        );
       edited.translation = edited.translation.replace(/\s*\n\s*/g, " ");
       fs.writeFileSync(state.shared, JSON.stringify(file));
     },
