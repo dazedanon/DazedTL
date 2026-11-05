@@ -72,8 +72,9 @@ class GuidanceDocumentTests(unittest.TestCase):
             path = self.root / read(self.root)[name]["file"]
             for case, (content, state, reason) in states.items():
                 if content == "twice" and name == NOTES and one_case:
-                    # On NTFS, as on Windows, agents.md is AGENTS.md: the
-                    # folder holds one file, the second write's.
+                    # On a case-blind folder, as on Windows and macOS,
+                    # agents.md is AGENTS.md: it holds one file, the
+                    # second write's.
                     state, reason = "saved", ""
                 with self.subTest(document=name, file=case):
                     for leftover in (
