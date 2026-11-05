@@ -78,7 +78,7 @@ class TextBlockTests(unittest.TestCase):
                 self.assertEqual(source.restored(value), restored)
         # A list holding commands no block reads restores nothing of them.
         malformed = [None, {"code": 102, "parameters": {"0": 1}}, {"code": 0}]
-        self.assertEqual(blocks.restore_conditions({"list": malformed}), 0)
+        self.assertEqual(blocks.restore_conditions({"list": malformed}), [])
 
     def test_a_line_left_in_japanese_shows_its_japanese_as_its_source(self):
         # The engine keeps no `_original` for text a model gave back as it

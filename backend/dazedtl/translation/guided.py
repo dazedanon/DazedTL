@@ -604,18 +604,18 @@ class Guided:
         return outputs, applied, edited
 
     def lacking_conditions(self, native, names):
-        """The files of *names* whose game copy and newest saved output both
-        hold a choice without plugin conditions its source holds, which an
-        earlier translation file import left out (rpgmaker_blocks
-        `lacks_conditions`): Apply puts them back, so they read as waiting
-        for it, though DazedTL applied them. A game copy lacking conditions
-        its output holds was edited so, and stays as it is."""
+        """The files of *names* whose game copy holds a choice without plugin
+        conditions its source holds that its newest saved output lacks too,
+        which an earlier translation file import left out (rpgmaker_blocks
+        `lacking_conditions`): Apply puts them back, so they read as waiting
+        for it, though DazedTL applied them. A choice whose output holds
+        them was edited so in the game, and stays as it is."""
         folder = self.backend.workflows.folder(native["id"])
         return {
             name
             for name in names
-            if self._lacks_conditions(self.observed_path(native["data"], name))
-            and self._lacks_conditions(folder / "translated" / name)
+            if self._lacking(self.observed_path(native["data"], name))
+            & self._lacking(folder / "translated" / name)
         }
 
     def newest_output(self, native, name):
@@ -628,19 +628,20 @@ class Guided:
         except OSError, ValueError:
             return None
 
-    def _lacks_conditions(self, path):
-        """Whether the file at *path* lacks choice conditions, read once per
-        version of it; a file that is gone lacks nothing Apply restores."""
-        from util.rpgmaker_blocks import lacks_conditions
+    def _lacking(self, path):
+        """The places of the choices in the file at *path* that lack
+        conditions, read once per version of it; a file that is gone lacks
+        nothing Apply restores."""
+        from util.rpgmaker_blocks import lacking_conditions
 
         try:
             digest = self.observed_digest(path)
             found = self.unconditioned.get(path, digest)
             if found is None:
-                found = lacks_conditions(Path(path).read_bytes())
+                found = lacking_conditions(Path(path).read_bytes())
                 self.unconditioned.put(path, digest, found)
         except OSError, ValueError:
-            return False
+            return frozenset()
         return found
 
     def output_runs(self, native, names):

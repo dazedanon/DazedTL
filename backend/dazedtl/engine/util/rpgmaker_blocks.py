@@ -287,14 +287,17 @@ def split_choice(value: str) -> Choice:
     return Choice(prefix, label, "")
 
 
-def restore_conditions(document: Any) -> int:
+def restore_conditions(document: Any, places: Iterable[tuple] | None = None) -> list[tuple]:
     """Put back, in place, the condition clauses each choice of *document*
-    lacks of those its source (`_original`) holds (`Choice.restored`), and
-    say how many choices that changed; a choice left in its source, or whose
-    clauses are as the source has them, stays as it is."""
-    changed = 0
-    for _path, commands in command_lists(document):
-        for command in commands:
+    lacks of those its source (`_original`) holds (`Choice.restored`), only
+    at *places* when given, and return the places it changed, each a choice
+    by its command list's path, its command and its index; a choice left in
+    its source, or whose clauses are as the source has them, stays as it
+    is."""
+    only = None if places is None else set(places)
+    changed = []
+    for path, commands in command_lists(document):
+        for at, command in enumerate(commands):
             if code(command) != 102:
                 continue
             parameters, sources = command.get("parameters"), command.get("_original")
@@ -304,30 +307,34 @@ def restore_conditions(document: Any) -> int:
             if not isinstance(choices, list):
                 continue
             for index, (value, source) in enumerate(zip(choices, sources)):
+                place = (path, at, index)
+                if only is not None and place not in only:
+                    continue
                 if not isinstance(value, str) or not isinstance(source, str):
                     continue
                 restored = split_choice(source).restored(value)
                 if restored != value:
                     choices[index] = restored
-                    changed += 1
+                    changed.append(place)
     return changed
 
 
 # Bytes a data file holds a condition clause in, which reading it for one
-# needs (see lacks_conditions).
+# needs (see lacking_conditions).
 _RAW_CONDITION = re.compile(rb"(?:if|en)\(")
 
 
-def lacks_conditions(raw: bytes) -> bool:
-    """Whether a data file's *raw* bytes hold a choice that lacks condition
-    clauses its source holds, which `restore_conditions` puts back."""
+def lacking_conditions(raw: bytes) -> frozenset[tuple]:
+    """The places of the choices in a data file's *raw* bytes that lack
+    condition clauses their sources hold, which `restore_conditions` puts
+    back; none for a file that does not decode."""
     if not _RAW_CONDITION.search(raw):
-        return False
+        return frozenset()
     try:
         document = json.loads(raw.decode("utf-8-sig"))
     except ValueError:
-        return False
-    return restore_conditions(document) > 0
+        return frozenset()
+    return frozenset(restore_conditions(document))
 
 
 def _condition_end(value: str, start: int) -> int | None:

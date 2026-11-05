@@ -5075,8 +5075,9 @@ class GuidedTests(unittest.TestCase):
             self.assertFalse(rows[0]["later_edits"])
 
             # A game copy an Apply put in before choices kept their conditions,
-            # edited since, such as by Text QA, takes the conditions only.
-            def choice(text, value):
+            # edited since, such as by Text QA or by hand, takes only those
+            # its output lacks.
+            def choice(text, *values):
                 return {
                     "events": [
                         None,
@@ -5086,8 +5087,11 @@ class GuidedTests(unittest.TestCase):
                                     "list": [
                                         {
                                             "code": 102,
-                                            "parameters": [[value]],
-                                            "_original": ["if(s[1])はい"],
+                                            "parameters": [list(values)],
+                                            "_original": [
+                                                "if(s[1])はい",
+                                                "if(s[2])いいえ",
+                                            ],
                                         },
                                         {
                                             "code": 401,
@@ -5101,31 +5105,38 @@ class GuidedTests(unittest.TestCase):
                     ],
                 }
 
-            write_json(self.folder / "translated/Map001.json", choice("Potoin", "Yes"))
+            write_json(
+                self.folder / "translated/Map001.json",
+                choice("Potoin", "Yes", "if(s[2])No"),
+            )
             receipt = read_json(self.folder / "applied-outputs.json")
             receipt["files"]["Map001.json"] = digest(
                 (self.folder / "translated/Map001.json").read_bytes()
             )
             write_json(self.folder / "applied-outputs.json", receipt)
-            write_json(self.source / "Map001.json", choice("Potion", "Yes"))
+            write_json(self.source / "Map001.json", choice("Potion", "Yes", "No"))
             apply = plan("export_selected", {"files": ["Map001.json"]})
             self.assertFalse(
                 prepare_publication(apply)["publication"][0]["later_edits"]
             )
             run_publication(apply, lambda _: None)
             self.assertEqual(
-                read_json(self.source / "Map001.json"), choice("Potion", "if(s[1])Yes")
+                read_json(self.source / "Map001.json"),
+                choice("Potion", "if(s[1])Yes", "No"),
             )
             # One whose output holds the conditions was edited so in the
             # game, which Apply replaces as ever.
             write_json(
-                self.folder / "translated/Map001.json", choice("Potion", "if(s[1])Yes")
+                self.folder / "translated/Map001.json",
+                choice("Potion", "if(s[1])Yes", "if(s[2])No"),
             )
             receipt["files"]["Map001.json"] = digest(
                 (self.folder / "translated/Map001.json").read_bytes()
             )
             write_json(self.folder / "applied-outputs.json", receipt)
-            write_json(self.source / "Map001.json", choice("Potion", "Yes"))
+            write_json(
+                self.source / "Map001.json", choice("Potion", "Yes", "if(s[2])No")
+            )
             apply = plan("export_selected", {"files": ["Map001.json"]})
             self.assertTrue(prepare_publication(apply)["publication"][0]["later_edits"])
             # One an edit broke is put back whole.

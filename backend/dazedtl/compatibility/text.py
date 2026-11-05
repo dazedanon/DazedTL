@@ -1008,7 +1008,7 @@ def as_applied(receipt, name, value):
     }
 
 
-def _kept_with_conditions(root, relative, output, receipt):
+def _kept_with_conditions(root, relative, output, receipt, places):
     """The game's copy of a file whose saved *output*, which lacks choice
     conditions an earlier translation file import left out, an Apply already
     put in and which was edited since, such as by Text QA, with those
@@ -1028,7 +1028,7 @@ def _kept_with_conditions(root, relative, output, receipt):
     except ValueError:
         # A copy an edit broke is put back whole.
         return None
-    if not restore_conditions(document):
+    if not restore_conditions(document, places):
         return None
     return engine_json(document, newline=raw.endswith(b"\n"))
 
@@ -1097,7 +1097,9 @@ def prepare_publication(plan):
                 # run writes them again; Apply puts them back.
                 repaired = restore_conditions(document)
                 kept = (
-                    _kept_with_conditions(root, prefix / name, outputs[name], receipt)
+                    _kept_with_conditions(
+                        root, prefix / name, outputs[name], receipt, repaired
+                    )
                     if repaired and not saved
                     else None
                 )
