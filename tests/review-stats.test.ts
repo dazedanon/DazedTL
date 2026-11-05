@@ -338,6 +338,8 @@ test("review stats read real trailers by their first word, code lines from numst
       JSON.stringify({
         landed: "2026-11-02T18:04:12.670Z",
         range: "a..b",
+        // An author's review ran no lens, whatever its record says.
+        lenses: ["places-and-chains"],
         findings: [{ summary: "Typo", outcome: "fixed" }],
       }),
       '{"range":"abc',

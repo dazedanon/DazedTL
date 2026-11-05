@@ -102,7 +102,8 @@ export function loggedLandings(text) {
     landings.push({
       range: row.range,
       reviews: independent ? (row.reviews ?? 1) : 0,
-      lenses: Array.isArray(row.lenses) ? knownLenses(row.lenses) : [],
+      lenses:
+        independent && Array.isArray(row.lenses) ? knownLenses(row.lenses) : [],
       findings: findings.map((/** @type {any} */ item) => ({
         ...(item.kind === undefined ? {} : { kind: item.kind }),
         outcome: item.outcome,
@@ -475,7 +476,7 @@ function main() {
   buckets(
     "with independent reviews, by the lenses every review ran",
     summary.byLenses,
-    (lenses) => lenses || "none",
+    (lenses) => lenses || "no lens",
   );
   console.log(
     `${count(summary.recent, "landing")} under ${exposureDays} active days old ${summary.recent === 1 ? "is" : "are"} left out of these until then; an active day is one on which a landing reached dev.`,
