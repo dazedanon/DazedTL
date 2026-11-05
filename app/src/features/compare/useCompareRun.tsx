@@ -7,6 +7,7 @@ import { Button } from "../../ui/Button";
 import {
   current,
   formatCost,
+  runStatus,
   runStep,
   working,
   type CompareChoices,
@@ -24,10 +25,13 @@ export function useCompareRun(
   choices: CompareChoices,
   {
     blocked = "",
+    namesHidden = false,
     started,
   }: {
     /** Why the choices can't be estimated yet. */
     blocked?: string;
+    /** Whether the models' names are hidden, which its status keeps. */
+    namesHidden?: boolean;
     /** Runs once a translation starts, such as to keep its names hidden. */
     started?: (job: Job) => Promise<unknown>;
   } = {},
@@ -68,11 +72,7 @@ export function useCompareRun(
   const pending = (key: string) => action.busy && action.key === key;
   const failure = (key: string) => (action.key === key ? action.error : "");
   const operation = (label: string) =>
-    latest && {
-      label,
-      status: latest.status,
-      message: latest.message,
-    };
+    latest && runStatus(latest, label, namesHidden);
   /** Whether the control gives way to a primary of the tab's own, which
    * only Estimate again does. */
   const yields = step.step === "estimate" && step.again && !step.reason;

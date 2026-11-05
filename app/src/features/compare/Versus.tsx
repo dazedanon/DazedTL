@@ -71,6 +71,7 @@ export function Versus({ context }: { context: CompareContext }) {
         : chosen.length < 2
           ? "Add another model to compare."
           : "",
+      namesHidden: blind,
       started: async (job) => {
         const next = { marks: {}, blind, revealed: false };
         newest.current[job.id] = next;

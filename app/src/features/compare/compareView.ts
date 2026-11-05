@@ -281,17 +281,33 @@ export function formatCost(value: number) {
 export function runningComparison(operations: readonly CompareOperation[]) {
   const operation = operations.find((item) => working(item.status));
   if (!operation) return null;
-  const doing =
-    operation.action === "compare_translate"
-      ? "Translating a comparison"
-      : "Estimating a comparison";
   return {
     operation,
-    /** What it does and where it is, without a closing period. */
-    text: [doing, operation.message.trim().replace(/\.+$/, "")]
-      .filter(Boolean)
-      .join(" · "),
+    /** What it does, without its message, which names the model it is at,
+     * so a blind comparison's names stay hidden on every tab. */
+    text:
+      operation.action === "compare_translate"
+        ? "Translating a comparison"
+        : "Estimating a comparison",
     waits: "Other work on this game waits until it ends.",
+  };
+}
+
+/**
+ * A comparison's operation as its footer reports it: its state, with its
+ * message only while that can't name a hidden model and isn't a stop's
+ * explanation, which each model's column already gives.
+ */
+export function runStatus(
+  comparison: Comparison,
+  label: string,
+  namesHidden: boolean,
+) {
+  return {
+    label,
+    status: comparison.status,
+    message:
+      namesHidden || comparison.status === "stopped" ? "" : comparison.message,
   };
 }
 

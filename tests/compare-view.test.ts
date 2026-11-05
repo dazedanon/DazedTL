@@ -16,6 +16,7 @@ import {
   picks,
   Rereads,
   runningComparison,
+  runStatus,
   runStep,
   shownKey,
 } from "../app/src/features/compare/compareView.ts";
@@ -320,17 +321,33 @@ test("the comparison running for the game shows whatever the tab, until it ends"
     operation("running"),
   ]);
   assert.equal(running?.operation.status, "running");
-  assert.match(running!.text, /^Translating a comparison · stand-in/);
+  // Its message names the model it is at, which a blind comparison hides.
+  assert.equal(running!.text, "Translating a comparison");
   assert.match(running!.waits, /waits/);
-  // Its message ends the sentence the page adds to.
-  assert.equal(
-    runningComparison([
-      operation("running", {
-        stopping: true,
-        message: "Stopping at the next safe boundary.",
-      }),
-    ])!.text,
-    "Translating a comparison · Stopping at the next safe boundary",
-  );
   assert.equal(runningComparison([operation("stopped")]), null);
+});
+
+test("the footer's run status keeps hidden names hidden and a stop short", () => {
+  const item = (status: string) =>
+    comparison({
+      stage: "translation",
+      translationId: "run",
+      status,
+      message: "stand-in · 2 of 6 lines",
+    });
+  assert.equal(
+    runStatus(item("running"), "Translation", false).message,
+    "stand-in · 2 of 6 lines",
+  );
+  assert.equal(runStatus(item("running"), "Translation", true).message, "");
+  // Each model's column says what a stop kept.
+  assert.deepEqual(runStatus(item("stopped"), "Translation", false), {
+    label: "Translation",
+    status: "stopped",
+    message: "",
+  });
+  assert.equal(
+    runStatus(item("failed"), "Translation", false).message,
+    "stand-in · 2 of 6 lines",
+  );
 });
