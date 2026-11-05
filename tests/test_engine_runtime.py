@@ -29,6 +29,23 @@ class EngineRuntimeTests(unittest.TestCase):
         returncode, output = claude.result()
         self.assertEqual(returncode, 0, output)
 
+    def test_a_module_that_imports_the_engine_imports_first(self):
+        # The scenarios' Plugin files assistant puts only the backend on the
+        # path and imports the plugins package first, whose service imports
+        # the engine's util before any module that once put it on the path.
+        script = f"""
+import sys
+sys.path.insert(0, {str(Path(__file__).resolve().parents[1] / "backend")!r})
+import dazedtl.plugins
+"""
+        result = system.run(
+            [sys.executable, "-I", "-c", script],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     @unittest.skipIf(os.name == "nt", "Windows has no resource tracker")
     def test_a_workers_first_progress_bar_starts_no_other_python(self):
         # tqdm's default lock started multiprocessing's resource tracker, one
