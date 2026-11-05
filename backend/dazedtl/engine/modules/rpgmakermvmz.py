@@ -3608,9 +3608,12 @@ CODE_NAMEPLATES = False
 # A text whose first row keeps a translation's source ends with that
 # translation's rows (util/rpgmaker_blocks `owned`), before a row an earlier
 # run left untranslated after it, which is sent as a text of its own; from
-# level 2 also after a message's rows its source has lines for. Frozen per run
-# (settings/preferences LEFT_ROWS_LEVELS): older runs send that first row's
-# source alone and write its translation over those rows too.
+# level 2 also after a message's rows its source has lines for. From level 3
+# each text written records the rows it was written over (rpgmaker_blocks
+# `record_rows`), and a recorded translation's rows are the ones it records,
+# whatever they hold. Frozen per run (settings/preferences LEFT_ROWS_LEVELS):
+# older runs send that first row's source alone and write its translation
+# over those rows too, and record none.
 LEFT_ROWS = 0
 
 
@@ -3663,7 +3666,9 @@ def _preview_texts(commands, start, end):
     lone kana, is sent as the run reads it, by its own text."""
     ends = [end]
     if LEFT_ROWS >= 2:
-        own = rpgmaker_blocks.text_end(commands, start, _GROUP_CODES, left=True)
+        own = rpgmaker_blocks.text_end(
+            commands, start, _GROUP_CODES, left=True, by_record=LEFT_ROWS >= 3
+        )
         if own < end:
             ends = [own, end]
     found, first = [], start
@@ -3671,6 +3676,14 @@ def _preview_texts(commands, start, end):
         found.append((first, last, _group_text(commands, first, last)))
         first = last + 1
     return found
+
+
+def _record_rows(command, rows: int) -> None:
+    """From LEFT_ROWS level 3, record on *command*, the first row of a text
+    the run wrote, the *rows* it wrote it over (util/rpgmaker_blocks
+    `record_rows`)."""
+    if LEFT_ROWS >= 3:
+        rpgmaker_blocks.record_rows(command, rows)
 
 
 # Runs whose frozen policy collects menu choices once translate them on the
@@ -4090,6 +4103,7 @@ def _searchCodes(page, pbar, jobList, filename):
                     _own_source(codeList) if SPEAKER_CONTEXT else None,
                     left=LEFT_ROWS >= 1,
                     by_lines=LEFT_ROWS >= 2,
+                    by_record=LEFT_ROWS >= 3,
                 )
                 speakerMatch = sentText.speakers
                 speakerList = list(speakerMatch.names) if speakerMatch else []
@@ -4168,6 +4182,7 @@ def _searchCodes(page, pbar, jobList, filename):
                         if not setData and len(speakerList) > 1:
                             codeList[i]["parameters"][0] = nametag + jaStringUpdated
                             _apply_original(codeList[i], oldjaString)
+                            _record_rows(codeList[i], 1)
                         elif not setData and len(speakerList) == 1:
                             paramStr = codeList[i]["parameters"][0]
                             if code_locked[0]:
@@ -4178,6 +4193,7 @@ def _searchCodes(page, pbar, jobList, filename):
                                     paramStr, speakerList[0], speaker
                                 )
                             _apply_original(codeList[i], oldjaString)
+                            _record_rows(codeList[i], 1)
                         nametag = ""
 
                         # Iterate to next string
@@ -4300,6 +4316,8 @@ def _searchCodes(page, pbar, jobList, filename):
                         if nametag and match:
                             codeList[groupStart]["parameters"][0] = codeList[groupStart]["parameters"][0].replace(match.group(2), tledSpeaker)
                             _apply_original(codeList[groupStart], oldjaString)
+                            # Its name written, the text's rows hold it.
+                            _record_rows(codeList[groupStart], len(sentText.rows))
                         i += 1
                         continue
 
@@ -4406,10 +4424,13 @@ def _searchCodes(page, pbar, jobList, filename):
 
                             # Set Code
                             codeList[groupStart]["code"] = code
+                            _apply_original(codeList[groupStart], rawSource)
 
                             # A scroll shows a row a line: its lines go over
                             # its own rows, adding and removing none, so a saved
-                            # game's place in the event stays valid.
+                            # game's place in the event stays valid. From
+                            # LEFT_ROWS level 3 the text records the rows it
+                            # holds (util/rpgmaker_blocks `write_text`).
                             if code == 405:
                                 lines = [line for line in translatedText.split('\n') if line.strip() != ""]
                                 rpgmaker_blocks.write_text(
@@ -4421,16 +4442,18 @@ def _searchCodes(page, pbar, jobList, filename):
                                     ),
                                     "\n".join(lines),
                                     joined=False,
+                                    record=LEFT_ROWS >= 3,
                                 )
 
                             # Handle 401
                             else:
                                 rpgmaker_blocks.write_text(
-                                    codeList, tuple(range(groupStart, i + 1)), translatedText
+                                    codeList,
+                                    tuple(range(groupStart, i + 1)),
+                                    translatedText,
+                                    record=LEFT_ROWS >= 3,
                                 )
                             syncIndex = i + 1
-
-                            _apply_original(codeList[groupStart], rawSource)
 
                             # Reset
                             speaker = ""

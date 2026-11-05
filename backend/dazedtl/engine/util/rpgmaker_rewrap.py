@@ -974,7 +974,9 @@ class _Slot:
     out like, and *original* what it was translated from, which it is read
     against (see :func:`untranslated`): the whole help when the value is a
     part of it. Both are what the game keeps in `_original`, None for a
-    value never translated."""
+    value never translated. *held* is a message's translation the value is
+    part of: its anchor in *commands* and the rows its text holds, which a
+    write records (util/rpgmaker_blocks `record_rows`)."""
 
     pointer: str
     box: Box
@@ -988,6 +990,7 @@ class _Slot:
     # checked as one once all are written (see :func:`fit_document`).
     together: tuple[int, ...] | None = None
     original: str | None = None
+    held: tuple[int, int] | None = None
 
     @property
     def against(self) -> str | None:
@@ -1033,6 +1036,9 @@ class _Slot:
         elif self.run:
             for parameters, value in zip(self.run, texts):
                 parameters[0] = value
+            if self.held is not None and self.commands is not None:
+                anchor, rows = self.held
+                blocks.record_rows(self.commands[anchor], rows)
         else:
             self.owner[self.key] = texts[0]
 
@@ -1098,12 +1104,18 @@ def _command_lists(node, pointer: str = ""):
             yield from _command_lists(value, f"{pointer}/{index}")
 
 
-def _texts(commands: list, block, reading) -> Iterator[tuple[tuple[tuple[int, ...], ...], str | None]]:
+def _texts(
+    commands: list, block, reading
+) -> Iterator[tuple[tuple[tuple[int, ...], ...], str | None, tuple[int, int] | None]]:
     """A block's text in the pieces fitted on their own, each as its runs of
-    rows and the Japanese it was translated from. A message or scrolling
-    text is each text the engine sends, as *reading* reads them
-    (util/rpgmaker_blocks `sent_texts`), or without one each part; a
-    choice's help each translated part."""
+    rows, the Japanese it was translated from and, for a message's or
+    scrolling text's translation, its anchor and the rows its text holds,
+    which a fit records as every writer does (util/rpgmaker_blocks
+    `record_rows`). A message or scrolling text is each text the engine
+    sends, as *reading* reads them (util/rpgmaker_blocks `sent_texts`), its
+    translation's rows those its texts hold, or without one each part; a
+    choice's help each translated part, whose write records its rows
+    itself."""
     if block.kind == blocks.HELP:
         for part in block.parts:
             if not (part.translated and part.rows):
@@ -1119,13 +1131,21 @@ def _texts(commands: list, block, reading) -> Iterator[tuple[tuple[tuple[int, ..
                     for own, rows in groupby(part.rows, lambda at: at in kept)
                     if not own
                 ]
-            yield tuple(runs), blocks.source(commands, part)
+            yield tuple(runs), blocks.source(commands, part), None
     elif reading is not None:
-        for text in blocks.sent_texts(commands, block, reading):
-            yield (text.rows,), text.source
+        sent = blocks.sent_texts(commands, block, reading)
+        held = Counter(text.anchor for text in sent for _row in text.rows)
+        for text in sent:
+            anchor = text.anchor
+            yield (text.rows,), text.source, None if anchor is None else (anchor, held[anchor])
     else:
         for part in block.parts:
-            yield (part.rows,), blocks.source(commands, part)
+            anchor = part.anchor
+            yield (
+                (part.rows,),
+                blocks.source(commands, part),
+                None if anchor is None else (anchor, len(part.rows)),
+            )
 
 
 def _command_slots(commands: list, pointer: str, layout: Layout, reading=None) -> Iterator[_Slot]:
@@ -1147,7 +1167,7 @@ def _command_slots(commands: list, pointer: str, layout: Layout, reading=None) -
         # The window shows a choice's help whole: the game's own rows, such
         # as a page number, and every part around them.
         together = block.rows if block.kind == blocks.HELP else None
-        for runs, original in _texts(commands, block, reading):
+        for runs, original, held in _texts(commands, block, reading):
             source = original if len(runs) == 1 else None
             for rows in runs:
                 first = rows[0]
@@ -1159,7 +1179,7 @@ def _command_slots(commands: list, pointer: str, layout: Layout, reading=None) -
                 slots.append((first, _Slot(
                     f"{pointer}/{first}/parameters/0", shown, source, params, 0, run,
                     commands, rows if block.kind == blocks.HELP else (), together,
-                    original,
+                    original, held,
                 )))
     for index, command in enumerate(commands):
         if not isinstance(command, dict):

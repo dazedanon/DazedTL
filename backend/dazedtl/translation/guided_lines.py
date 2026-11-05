@@ -332,7 +332,7 @@ class GuidedLines:
                         command = _parent(before, path[:-1])
                         command["_original"] = source
                         # The rows it lays the text over, the game's own after.
-                        command[blocks.ROWS] = len(unit["paths"])
+                        blocks.record_rows(command, len(unit["paths"]))
                 staged = copy.deepcopy(before)
                 for unit, text in rows:
                     paths = unit["paths"]

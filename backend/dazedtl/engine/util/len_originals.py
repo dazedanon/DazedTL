@@ -88,7 +88,8 @@ def _inherit(before, after):
     if isinstance(before, dict):
         if "_original" in after and after["_original"] != before.get("_original"):
             raise ValueError("Staged _original differs from the trusted source. Keep source metadata unchanged.")
-        for key in blocks.NOTES & before.keys():
+        # In one order, so writing a file again gives the same bytes.
+        for key in sorted(blocks.NOTES & before.keys()):
             after[key] = copy.deepcopy(before[key])
         for key in before.keys() - blocks.NOTES:
             _inherit(before[key], after[key])
@@ -152,20 +153,21 @@ def _walk(before, after, *, system=False):
             if code in _RUNS:
                 if code in blocks.MESSAGE_ROWS:
                     # The rows one source covers: the game's own after a
-                    # translation, past the rows a translation file import
-                    # recorded it covers or left untranslated after it, keep
-                    # sources of their own.
-                    end = blocks.owned(before, index)[-1] + 1
+                    # translation, past the rows its writer recorded it covers
+                    # or left untranslated after it, keep sources of their own.
+                    rows = blocks.owned(before, index)
                 else:
-                    end = (blocks.run(before, index, _RUNS[code]) or (index,))[-1] + 1
+                    rows = (index, *blocks.run(before, index, _RUNS[code]))
+                end = rows[-1] + 1
                 old = [row["parameters"][0] for row in before[index:end]]
                 new = [row["parameters"][0] for row in after[index:end]]
                 if old != new:
                     original = "\n".join(old)
                     _remember(after[index], original if original.strip() else None)
-                    if code == 408 and "_original" in after[index]:
-                        # Comment rows record the rows they own, as translation does.
-                        after[index][blocks.ROWS] = end - index
+                    if code in blocks.ROW_CODES and code != 108:
+                        # Text rows record the rows written over, as every
+                        # writer does (rpgmaker_blocks `record_rows`).
+                        blocks.record_rows(after[index], len(rows))
                 index = end
             else:
                 _walk(item, after[index])

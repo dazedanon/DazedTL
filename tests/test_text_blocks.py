@@ -635,7 +635,8 @@ class TextBlockTests(unittest.TestCase):
         # A translation file import records the rows a text covers (_rows);
         # a run that joined it onto its first row kept that count, and
         # Assistant-led's writer ran its source over the game's own rows
-        # after it, so either read those rows as the text's.
+        # after it, so either read those rows as the text's. Each records the
+        # rows it wrote over.
         from util.len_originals import preserve_originals
 
         def imported():
@@ -651,11 +652,18 @@ class TextBlockTests(unittest.TestCase):
 
         listed = imported()
         blocks.write_text(listed, (1, 2, 3), "Hello. How are you?")
+        self.assertEqual(listed[1][blocks.ROWS], 1)
         (block,) = blocks.blocks(listed)
         self.assertEqual(
             [text.rows for text in blocks.sent_texts(listed, block, blocks.Reading())],
             [(1,), (4, 5)],
         )
+        # Laid over its rows, as a run writes scrolling text, a text records
+        # them, recorded before or not.
+        listed = imported()
+        del listed[1][blocks.ROWS]
+        blocks.write_text(listed, (1, 2), "Hello.\nHow are you?", joined=False)
+        self.assertEqual(listed[1][blocks.ROWS], 2)
         before = {"list": imported()}
         staged = {"list": imported()}
         for at, row in ((4, "\\SE[1]Nice to meet you."), (5, "See you.")):
@@ -670,7 +678,7 @@ class TextBlockTests(unittest.TestCase):
                 ("あ\nい\nう", 3),
                 (None, None),
                 (None, None),
-                ("\\SE[1]よろしく。\nまたね。", None),
+                ("\\SE[1]よろしく。\nまたね。", 2),
                 (None, None),
             ],
         )
@@ -718,6 +726,27 @@ class TextBlockTests(unittest.TestCase):
         del scroll[3]
         scroll[1]["_original"] = "昔々、花子という娘がいました。"
         self.assertEqual(blocks.part_rows(scroll, 1), (1, 2))
+        # Nor can they tell a scrolling text's name a run translated alone
+        # from the speech after it, which a run with Skip already translated
+        # text off wrote the name over; the export reads the name apart, and
+        # fitting it records the one row it holds for every reader.
+        named = [
+            command(105, [2, False]),
+            command(405, ["Rookie police officer"], _original="新米警察官"),
+            command(405, ['"……"']),
+            command(0, []),
+        ]
+        self.assertEqual(blocks.part_rows(named, 1), (1, 2))
+        fit_document(
+            {"list": named},
+            "Map001.json",
+            Layout(12, 12, 60, 60, 4, "English"),
+            reading=blocks.Reading(first_line=True),
+        )
+        self.assertEqual(
+            (named[1]["parameters"], blocks.part_rows(named, 1)),
+            (["Rookie\npolice\nofficer"], (1,)),
+        )
         for rows, translated, kept in (
             (speech, ('"Sorry!', 'They slipped in!"'), ["\n".join(speech), None]),
             (("……",), ("...",), ["……"]),
@@ -731,7 +760,10 @@ class TextBlockTests(unittest.TestCase):
             )
 
         # A run, the export and Assistant-led's writer read an import's text
-        # alike: its recorded rows, but none left in Japanese.
+        # alike: the rows it records it was written over, whatever they hold,
+        # such as Japanese the file's translation kept. Runs frozen before
+        # event-left-rows-v3 read a recorded row left in Japanese as the
+        # game's own.
         def imported(*rows):
             return [
                 command(101, ["", 0, 0, 2, ""]),
@@ -740,7 +772,7 @@ class TextBlockTests(unittest.TestCase):
                 command(0, []),
             ]
 
-        for rows, own in (
+        for rows, frozen in (
             (["How are you?", "See you."], 2),
             (["あのね", "See you."], 1),
         ):
@@ -748,8 +780,12 @@ class TextBlockTests(unittest.TestCase):
             (block,) = blocks.blocks(listed)
             sent = blocks.sent_texts(listed, block, blocks.Reading())
             self.assertEqual(
-                (sent[0].rows, blocks.text_end(listed, 1, left=True)),
-                (tuple(range(1, own + 1)), own),
+                (
+                    sent[0].rows,
+                    blocks.text_end(listed, 1, left=True),
+                    blocks.text_end(listed, 1, left=True, by_record=False),
+                ),
+                ((1, 2), 2, frozen),
                 rows,
             )
 

@@ -63,15 +63,20 @@ CODE_NAMEPLATES = "event-code-nameplates-v1"
 # was refused. Those rows are sent and written as texts of their own. A run
 # frozen without it sends the first row's source alone for them and writes
 # its translation over them all, emptying them, as it did when approved.
-LEFT_ROWS = "event-left-rows-v2"
+LEFT_ROWS = "event-left-rows-v3"
 # Each left-rows policy a saved run may hold, by the engine level it enables:
-# v2 also ends a message's translation after the rows its source has lines
-# for, so a row after a name translated alone that holds no Japanese, such as
-# …… or speech in English, is the game's own, and a run with Skip already
-# translated text off, which sends that name's source again, no longer writes
-# its translation over that row, emptying it; v1 reads every row up to the
-# next translation as that translation's.
-LEFT_ROWS_LEVELS = {"event-left-rows-v1": 1, LEFT_ROWS: 2}
+# v3 records on each text it writes the rows it wrote it over (engine
+# util/rpgmaker_blocks `record_rows`) and reads a recorded translation's rows
+# from that record, whatever they hold, so a run with Skip already translated
+# text off no longer empties a row of scrolling text after a name a run
+# translated alone, such as ……, which scrolling text's shape can't tell from
+# the name's; v2 also ends a message's translation after the rows its source
+# has lines for, so a row after a name translated alone that holds no
+# Japanese, such as …… or speech in English, is the game's own, and a run
+# with Skip already translated text off, which sends that name's source
+# again, no longer writes its translation over that row, emptying it; v1
+# reads every row up to the next translation as that translation's.
+LEFT_ROWS_LEVELS = {"event-left-rows-v1": 1, "event-left-rows-v2": 2, LEFT_ROWS: 3}
 # Small RPG Maker event pages of one file share a request, each page labelled,
 # because each request otherwise repeats the full system prompt: a 970-map
 # game's Maps & events estimate fell from 4,089 to 2,173 requests and from
