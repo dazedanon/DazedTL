@@ -357,3 +357,16 @@ class ApprovalTests(unittest.TestCase):
         self.compare.use("p1", estimate, 0)
         self.compare.use("p1", estimate, 0)
         self.assertEqual(read(self.game)["game"]["text"], "Use British spelling.\n")
+
+    def test_every_row_of_a_long_comparison_takes_a_pick(self):
+        # All lines, or a cut keeping whole command lists, gives more than
+        # 400 rows, past a fixed cap on picks that refused every save.
+        estimate = self.estimated()
+        lines = [{"id": f"/{row}", "speaker": "", "source": "村"} for row in range(450)]
+        self.operations.jobs[estimate]["result"]["lines"] = lines
+        translation = self.compare.translate("p1", estimate)["id"]
+        picks = {line["id"]: 0 for line in lines}
+        self.compare.marks("p1", translation, picks, True, False)
+        for wrong in ({"/450": 0}, {"/0": 1}):
+            with self.assertRaisesRegex(ValueError, "Pick one"):
+                self.compare.marks("p1", translation, wrong, True, False)

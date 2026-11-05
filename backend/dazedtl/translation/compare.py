@@ -443,14 +443,18 @@ class Compare:
     def marks(self, project_id, comparison_id, marks, blind, revealed):
         """Keeps the line a person picked as best in each row, and whether
         the models' names stay hidden until every row has a pick."""
-        self._options(self.game(project_id), comparison_id, TRANSLATE)
+        options = self._options(self.game(project_id), comparison_id, TRANSLATE)
+        jobs = self.guided.backend.operations.jobs
+        rows = {
+            line["id"]
+            for line in _lines(jobs.get(options["estimate"]) or {}, jobs[comparison_id])
+        }
+        models = {row["index"] for row in options["candidates"]}
+        # A row of this comparison each, picking one of its models.
         if (
             not isinstance(marks, dict)
-            or len(marks) > MAX_LINES * 2
             or any(
-                not isinstance(key, str)
-                or type(value) is not int
-                or not 0 <= value < MODELS
+                key not in rows or type(value) is not int or value not in models
                 for key, value in marks.items()
             )
             or type(blind) is not bool
@@ -780,10 +784,8 @@ def view(estimate, options, translated, marks):
                 ),
             }
         )
-    # A translation running has no result yet; its estimate read the lines.
-    source = (translated or {}).get("result") or estimate.get("result") or {}
     lines = []
-    for line in source.get("lines", []):
+    for line in _lines(estimate, translated):
         lines.append(
             {
                 **line,
@@ -815,6 +817,13 @@ def view(estimate, options, translated, marks):
         "blind": marks.get("blind", False),
         "revealed": marks.get("revealed", False),
     }
+
+
+def _lines(estimate, translated):
+    """The lines a comparison shows: its translation's, or, while it runs
+    and has no result yet, those its estimate read."""
+    source = (translated or {}).get("result") or estimate.get("result") or {}
+    return source.get("lines", [])
 
 
 def _price(estimate):
