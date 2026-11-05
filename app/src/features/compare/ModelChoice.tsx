@@ -45,19 +45,20 @@ export function ModelChips({
           </Button>
         </span>
       ))}
-      <Button
-        variant="link"
-        disabled={disabled || room <= 0}
-        title={
-          room <= 0
-            ? `Only ${versusModels} models fit side by side.`
-            : undefined
-        }
-        onClick={() => setAdding(true)}
-      >
-        <Plus size={14} aria-hidden="true" />
-        Add model
-      </Button>
+      {room > 0 ? (
+        <Button
+          variant="link"
+          disabled={disabled}
+          onClick={() => setAdding(true)}
+        >
+          <Plus size={14} aria-hidden="true" />
+          Add model
+        </Button>
+      ) : (
+        <span className="compare-setup-label">
+          {versusModels} models fit side by side
+        </span>
+      )}
       {adding && (
         <AddModels
           mode="many"

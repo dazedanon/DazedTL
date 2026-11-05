@@ -84,6 +84,70 @@ export function estimateTotal(comparison: Comparison) {
   };
 }
 
+/**
+ * What a tab's footer offers for its choices' newest comparison: Translate
+ * at the price an unused estimate found, the translation running, or an
+ * estimate, again once these choices were translated or when the newest
+ * estimate priced no model, with why. Whether an estimate was used comes
+ * from the saved comparisons, which hold its translation once it starts.
+ */
+export function runStep(
+  latest: Comparison | undefined,
+  shown: Comparison | undefined,
+):
+  | { step: "translate"; cost: number; left: string[] }
+  | { step: "translating"; cost: number }
+  | { step: "estimate"; again: boolean; reason: string } {
+  const total = latest && estimateTotal(latest);
+  if (latest?.stage === "translation" && working(latest.status))
+    return { step: "translating", cost: total!.cost };
+  if (latest?.stage === "estimate" && latest.status === "complete") {
+    if (total!.priced)
+      return {
+        step: "translate",
+        cost: total!.cost,
+        left: total!.left.map((model) => model.model),
+      };
+    return {
+      step: "estimate",
+      again: true,
+      reason: "No model could be estimated. See each model’s error.",
+    };
+  }
+  return {
+    step: "estimate",
+    again: latest?.stage === "translation" || !!shown?.translationId,
+    reason: "",
+  };
+}
+
+/**
+ * Waits for the comparisons to be read again: each wait ends once a read
+ * asked for at or after it has settled, so an action that changed them
+ * finishes only once the page shows the change.
+ */
+export class Rereads {
+  private asked = 0;
+  private waits: { after: number; resolve: () => void }[] = [];
+  /** Asks for another read: its number, which keys the read, and the wait
+   * for it. */
+  ask() {
+    const after = ++this.asked;
+    const done = new Promise<void>((resolve) =>
+      this.waits.push({ after, resolve }),
+    );
+    return { after, done };
+  }
+  /** The read asked as `number` settled, with the comparisons or an error. */
+  settled(number: number) {
+    this.waits = this.waits.filter((wait) => {
+      if (wait.after > number) return true;
+      wait.resolve();
+      return false;
+    });
+  }
+}
+
 /** A string's FNV-1a hash, the seed of a comparison's column order. */
 function hash(text: string) {
   let value = 0x811c9dc5;

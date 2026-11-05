@@ -12,6 +12,8 @@ import {
   estimateTotal,
   glossaryChanges,
   picks,
+  Rereads,
+  runStep,
   shownKey,
 } from "../app/src/features/compare/compareView.ts";
 
@@ -212,4 +214,55 @@ test("a hidden page keeps its last read key and reads once when shown after a ch
   // Settings saved while hidden start no read until the page shows.
   assert.equal(shownKey(false, "settings:2", "settings:0"), "settings:0");
   assert.equal(shownKey(true, "settings:2", "settings:0"), "settings:2");
+});
+
+test("the footer offers Translate for an unused priced estimate and Estimate again when none priced or once used", () => {
+  const priced = comparison({
+    candidates: [
+      model(0, { estimate: { cost: 0.01 } as CompareModel["estimate"] }),
+      model(1, { error: "No price" }),
+    ],
+  });
+  assert.deepEqual(runStep(priced, priced), {
+    step: "translate",
+    cost: 0.01,
+    left: ["model-1"],
+  });
+  // No model priced: estimating again is the way on, with why.
+  const none = comparison({
+    candidates: [model(0, { error: "No price" }), model(1, { error: "x" })],
+  });
+  const step = runStep(none, none);
+  assert.equal(step.step, "estimate");
+  assert.ok(step.step === "estimate" && step.again && step.reason);
+  // Used: the saved comparison holds its translation, running then done.
+  const used = comparison({
+    ...priced,
+    translationId: "run",
+    stage: "translation",
+    status: "running",
+  });
+  assert.equal(runStep(used, used).step, "translating");
+  const done = { ...used, status: "complete" };
+  assert.deepEqual(runStep(done, done), {
+    step: "estimate",
+    again: true,
+    reason: "",
+  });
+});
+
+test("an action on the comparisons waits for a read asked after it", async () => {
+  const rereads = new Rereads();
+  const ended: number[] = [];
+  const first = rereads.ask();
+  const second = rereads.ask();
+  void first.done.then(() => ended.push(first.after));
+  void second.done.then(() => ended.push(second.after));
+  // A read asked before the action does not end its wait.
+  rereads.settled(first.after);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(ended, [1]);
+  rereads.settled(second.after);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(ended, [1, 2]);
 });

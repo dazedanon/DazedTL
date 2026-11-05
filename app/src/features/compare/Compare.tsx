@@ -9,6 +9,7 @@ import type {
 } from "../../api/contracts";
 import { useApplication } from "../../app/ApplicationProvider";
 import { useOnChange } from "../../state/useOnChange";
+import type { Observer } from "../../state/useAction";
 import { useRead } from "../../state/useRead";
 import { unavailableReason } from "../../ui/displayText";
 import { Message } from "../../ui/Feedback";
@@ -22,7 +23,7 @@ import {
 import { StackedTabPanels, Tabs } from "../../ui/Tabs";
 import { onSettingsSaved } from "../settings/settingsChanges";
 import { configured } from "./AddModels";
-import { compareInputs, shownKey } from "./compareView";
+import { compareInputs, Rereads, shownKey } from "./compareView";
 import type { ChosenModel } from "./ModelChoice";
 import { Single } from "./Single";
 import { Tune } from "./Tune";
@@ -47,8 +48,11 @@ export type CompareContext = {
   base: ChosenModel | null;
   /** The thinking effort Settings sends that model. */
   baseEffort: EffortLevel | null;
-  /** Reads the comparisons again, after starting one. */
-  reload: () => void;
+  /** Reads the comparisons again, once shown, ending once they are read. */
+  reload: () => Promise<void>;
+  /** For an action that changes the comparisons: it finishes once the page
+   * has read them again. */
+  observer: Observer;
 };
 
 /** `key` while the page shows; hidden, the last key it read under. */
@@ -85,7 +89,13 @@ export default function Compare({
     .map((job) => `${job.id}:${job.status}`)
     .sort()
     .join(",");
+  const [rereads] = useState(() => new Rereads());
   const [reloads, setReloads] = useState(0);
+  const reload = () => {
+    const { after, done } = rereads.ask();
+    setReloads(after);
+    return done;
+  };
   // A method change, a newly loaded Manual file or Start over changes the
   // lines too.
   const inputs = compareInputs(application.snapshot, project.id);
@@ -98,6 +108,14 @@ export default function Compare({
     JSON.stringify([project.id, reloads, ended, inputs]),
   );
   const read = useRead(readKey, () => api.compare.state(project.id));
+  // The reload a settled read was asked as, which ends the waits for it.
+  const settled =
+    readKey === null || read.pending
+      ? null
+      : (JSON.parse(readKey) as [string, number])[1];
+  useEffect(() => {
+    if (settled !== null) rereads.settled(settled);
+  }, [settled, rereads]);
   const [state, setState] = useState<CompareState>();
   useOnChange(read.value, (value) => {
     if (value) setState(value);
@@ -134,7 +152,8 @@ export default function Compare({
         comparisons,
         base,
         baseEffort,
-        reload: () => setReloads((n) => n + 1),
+        reload,
+        observer: { mark: () => 0, settle: reload },
       }
     : null;
   const error = read.error === undefined ? "" : messageOf(read.error);

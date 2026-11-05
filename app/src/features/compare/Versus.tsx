@@ -71,7 +71,6 @@ export function Versus({ context }: { context: CompareContext }) {
         : chosen.length < 2
           ? "Add another model to compare."
           : "",
-      secondaryWhenDone: true,
       started: async (job) => {
         const next = { marks: {}, blind, revealed: false };
         newest.current[job.id] = next;
@@ -213,10 +212,10 @@ export function Versus({ context }: { context: CompareContext }) {
             Reveal now
           </Button>
         )}
-        {run.control}
+        {run.control(!!winner)}
         {winner && shown && (
           <ActionControl
-            variant="primary"
+            variant={run.yields ? "primary" : undefined}
             label={`Use ${winner.model}`}
             title="Make it the connection and model Settings translates with, for every game."
             pending={adopt.busy}

@@ -1,13 +1,13 @@
-import { useState } from "react";
 import { api } from "../../api/client";
 import type { Job } from "../../api/contracts";
 import { useAction } from "../../state/useAction";
 import { ActionControl } from "../../ui/ActionControl";
 import type { CompareContext } from "./Compare";
+import { Button } from "../../ui/Button";
 import {
   current,
-  estimateTotal,
   formatCost,
+  runStep,
   working,
   type CompareChoices,
 } from "./compareView";
@@ -15,42 +15,36 @@ import {
 /**
  * One tab's comparison of its choices now, and its footer's run control:
  * Estimate cost, then Translate at the price the estimate found, whose click
- * approves sending those requests once, then Estimate again.
+ * approves sending those requests once, then Estimate again. Each action
+ * stays busy until the page has read the comparisons it changed, so a
+ * second click acts on what the first one started.
  */
 export function useCompareRun(
   context: CompareContext,
   choices: CompareChoices,
   {
     blocked = "",
-    secondaryWhenDone = false,
     started,
   }: {
     /** Why the choices can't be estimated yet. */
     blocked?: string;
-    /** Whether Estimate again gives way to a primary of the tab's own once
-     * the lines are translated. */
-    secondaryWhenDone?: boolean;
     /** Runs once a translation starts, such as to keep its names hidden. */
     started?: (job: Job) => Promise<unknown>;
   } = {},
 ) {
-  const action = useAction();
+  const action = useAction({ observer: context.observer });
   const { latest, shown } = current(context.comparisons, choices);
-  // An estimate whose translation was refused, such as one the game changed
-  // since, is estimated again; the refusal stays beside the button.
-  const [refused, setRefused] = useState<ReadonlySet<string>>(new Set());
+  const step = runStep(latest, shown);
   const estimate = () =>
     action.run(
-      async () => {
-        await api.compare.estimate(
+      () =>
+        api.compare.estimate(
           context.projectId,
           choices.kind,
           choices.file,
           choices.lines,
           [...choices.candidates],
-        );
-        context.reload();
-      },
+        ),
       "",
       "estimate",
     );
@@ -61,91 +55,102 @@ export function useCompareRun(
         try {
           job = await api.compare.translate(context.projectId, id);
         } catch (error) {
-          setRefused((ids) => new Set(ids).add(id));
+          // A refusal of an estimate already used shows its translation
+          // once read; any other keeps Translate, its reason beside it.
+          await context.reload();
           throw error;
         }
-        context.reload();
         await started?.(job);
       },
       "",
       "translate",
     );
-  const pending = action.busy && ["estimate", "translate"].includes(action.key);
-  const error = ["estimate", "translate"].includes(action.key)
-    ? action.error
-    : "";
-  const priced =
-    latest?.stage === "estimate" &&
-    latest.status === "complete" &&
-    !refused.has(latest.id)
-      ? estimateTotal(latest)
-      : null;
-  const translating = latest?.stage === "translation";
+  const pending = (key: string) => action.busy && action.key === key;
+  const failure = (key: string) => (action.key === key ? action.error : "");
   const operation = (label: string) =>
     latest && {
       label,
       status: latest.status,
       message: latest.message,
     };
-  let control;
-  if (priced) {
-    const left = priced.left.map((model) => model.model);
-    control = (
+  /** Whether the control gives way to a primary of the tab's own, which
+   * only Estimate again does. */
+  const yields = step.step === "estimate" && step.again && !step.reason;
+  /**
+   * The footer's run control; `secondary` makes Estimate again a secondary
+   * button beside the tab's own primary, such as Use the most picked model.
+   */
+  const control = (secondary = false) => {
+    if (step.step === "translate")
+      return (
+        <>
+          {failure("translate") && (
+            // A refusal may need a new estimate, such as after the game
+            // changed; the reason beside Translate says which.
+            <Button disabled={action.busy} onClick={() => void estimate()}>
+              Estimate again
+            </Button>
+          )}
+          <ActionControl
+            variant="primary"
+            label={`Translate · about ${formatCost(step.cost)}`}
+            pending={pending("translate") || pending("estimate")}
+            pendingText={
+              pending("estimate")
+                ? "Starting the estimate…"
+                : "Starting the translation…"
+            }
+            error={failure("translate") || failure("estimate")}
+            disabled={!!blocked}
+            disabledReason={blocked}
+            note={
+              step.left.length
+                ? `Leaves out ${step.left.join(" and ")}, which couldn’t be estimated.`
+                : ""
+            }
+            onClick={() => latest && void translate(latest.id)}
+          />
+        </>
+      );
+    if (step.step === "translating")
+      return (
+        <ActionControl
+          variant="primary"
+          label={`Translate · about ${formatCost(step.cost)}`}
+          pendingText="Translating…"
+          job={operation("Translation")}
+        />
+      );
+    return (
       <ActionControl
-        variant="primary"
-        label={`Translate · about ${formatCost(priced.cost)}`}
-        pending={pending}
-        pendingText="Starting the translation…"
-        error={error}
-        disabled={!!blocked || !priced.priced}
-        disabledReason={
-          blocked || "No model could be estimated. See each model’s error."
-        }
-        note={
-          left.length
-            ? `Leaves out ${left.join(" and ")}, which couldn’t be estimated.`
-            : ""
-        }
-        onClick={() => void translate(latest.id)}
-      />
-    );
-  } else if (translating && working(latest.status)) {
-    const total = estimateTotal(latest);
-    control = (
-      <ActionControl
-        variant="primary"
-        label={`Translate · about ${formatCost(total.cost)}`}
-        pendingText="Translating…"
-        job={operation("Translation")}
-      />
-    );
-  } else {
-    const again = translating || !!shown?.translationId;
-    control = (
-      <ActionControl
-        variant={translating && secondaryWhenDone ? undefined : "primary"}
-        label={again ? "Estimate again" : "Estimate cost"}
-        pending={pending}
+        variant={secondary && yields ? undefined : "primary"}
+        label={step.again ? "Estimate again" : "Estimate cost"}
+        pending={pending("estimate")}
         pendingText="Starting the estimate…"
-        error={error}
+        error={failure("estimate")}
         disabled={!!blocked}
         disabledReason={blocked}
-        note={again ? "" : "Estimating is free and sends nothing."}
+        note={
+          step.reason ||
+          (step.again ? "" : "Estimating is free and sends nothing.")
+        }
         job={
-          latest && !refused.has(latest.id) && latest.status !== "complete"
-            ? operation(translating ? "Translation" : "Estimate")
+          latest && latest.status !== "complete"
+            ? operation(
+                latest.stage === "translation" ? "Translation" : "Estimate",
+              )
             : undefined
         }
         onClick={() => void estimate()}
       />
     );
-  }
+  };
   /** What the grid says while it has no lines: what runs, or `idle`. */
   const empty = (idle: string) =>
     latest && working(latest.status)
-      ? translating
+      ? latest.stage === "translation"
         ? "Translating these lines…"
         : "Reading these lines and pricing them…"
       : idle;
-  return { latest, shown, control, action, empty };
+  return { latest, shown, control, yields, action, empty };
 }

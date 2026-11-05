@@ -467,29 +467,29 @@ export function Tune({ context }: { context: CompareContext }) {
         </div>
       </PageBody>
       <ActionBar feedback={null}>
-        <ActionControl
-          label="Use these settings"
-          title="Make this model and its thinking effort what Settings translates with, for every game, and save the glossary and instruction as this game's."
-          disabled={!current}
-          disabledReason={
-            translated && !current ? "Translate with these settings first." : ""
-          }
-          pending={adopt.busy}
-          pendingText="Saving the settings…"
-          error={adopt.error}
-          notice={adopt.notice}
-          onClick={() =>
-            void adopt.run(async () => {
-              await api.compare.use(context.projectId, shown.id, 0);
-              settingsSaved();
-              context.reload();
-              // They are the game's settings now, which the next test
-              // starts from.
-              edit({ glossary: null, instruction: "" });
-            }, `Settings now translates with ${result?.model}.`)
-          }
-        />
-        {run.control}
+        {translated && (
+          <ActionControl
+            label="Use these settings"
+            title="Make this model and its thinking effort what Settings translates with, for every game, and save the glossary and instruction as this game's."
+            disabled={!current}
+            disabledReason="Translate with these settings first."
+            pending={adopt.busy}
+            pendingText="Saving the settings…"
+            error={adopt.error}
+            notice={adopt.notice}
+            onClick={() =>
+              void adopt.run(async () => {
+                await api.compare.use(context.projectId, shown.id, 0);
+                settingsSaved();
+                await context.reload();
+                // They are the game's settings now, which the next test
+                // starts from.
+                edit({ glossary: null, instruction: "" });
+              }, `Settings now translates with ${result?.model}.`)
+            }
+          />
+        )}
+        {run.control()}
       </ActionBar>
       {editing && (
         <GlossaryDialog

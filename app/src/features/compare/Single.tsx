@@ -79,34 +79,35 @@ export function Single({ context }: { context: CompareContext }) {
       </PageBody>
       <ActionBar
         feedback={
-          <Button
-            variant="quiet"
-            disabled={!translated || !result?.requests}
-            title={
-              translated ? undefined : "Translate the lines to see the request."
-            }
-            onClick={() => setInspecting(true)}
-          >
-            Show request
-          </Button>
+          translated &&
+          !!result?.requests && (
+            <Button variant="quiet" onClick={() => setInspecting(true)}>
+              Show request
+            </Button>
+          )
         }
       >
-        <ActionControl
-          label="Use this model"
-          title="Make it the connection and model Settings translates with, for every game."
-          disabled={!translated}
-          pending={adopt.busy}
-          pendingText="Switching model…"
-          error={adopt.error}
-          notice={adopt.notice}
-          onClick={() =>
-            void adopt.run(async () => {
-              await api.compare.use(context.projectId, shown.id, result.index);
-              settingsSaved();
-            }, `Settings now translates with ${result?.model}.`)
-          }
-        />
-        {run.control}
+        {translated && (
+          <ActionControl
+            label="Use this model"
+            title="Make it the connection and model Settings translates with, for every game."
+            pending={adopt.busy}
+            pendingText="Switching model…"
+            error={adopt.error}
+            notice={adopt.notice}
+            onClick={() =>
+              void adopt.run(async () => {
+                await api.compare.use(
+                  context.projectId,
+                  shown.id,
+                  result.index,
+                );
+                settingsSaved();
+              }, `Settings now translates with ${result?.model}.`)
+            }
+          />
+        )}
+        {run.control()}
       </ActionBar>
       {inspecting && shown?.translationId && result && (
         <CompareRequest
