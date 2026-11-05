@@ -299,7 +299,8 @@ class Compare:
             if edited is not None and edited != documents[GLOSSARY.key]["revision"]:
                 raise ValueError(
                     "The game's glossary changed in Context since you edited "
-                    "this test's glossary. Edit it again from the game's."
+                    "this test's glossary. Choose the game's or this test's "
+                    "beside Glossary."
                 )
             options["revisions"] = {
                 name: documents[name]["revision"]

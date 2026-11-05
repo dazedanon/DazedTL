@@ -290,6 +290,22 @@ export function glossaryEntries(text: string) {
 }
 
 /**
+ * Whether a Tune test's glossary was edited from a version of the game's
+ * that Context has saved over since, so the test chooses which it sends
+ * before it estimates: Use these settings would save over that save.
+ */
+export function glossaryOutdated(
+  edit: { glossary: string | null; glossaryRevision: string | null },
+  game: { glossary: string; glossaryRevision: string },
+) {
+  return (
+    edit.glossary !== null &&
+    edit.glossary !== game.glossary &&
+    edit.glossaryRevision !== game.glossaryRevision
+  );
+}
+
+/**
  * How many entries a test glossary changes from the game's: each entry
  * edited, added or removed counts once.
  */

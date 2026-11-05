@@ -12,6 +12,7 @@ import {
   current,
   estimateTotal,
   glossaryChanges,
+  glossaryOutdated,
   keptRequests,
   modelDetail,
   namesHidden,
@@ -411,4 +412,26 @@ test("a Tune test estimated but not translated yet is no numbered run", () => {
   const estimated = comparison({ id: "b" });
   assert.equal(runName([run], run), "Run 1");
   assert.equal(runName([run], estimated), "This test");
+});
+
+test("a test glossary edited before a Context save asks which to send, until chosen", () => {
+  // After a save in Context every estimate was refused, and only Reset,
+  // which dropped the whole test, got out.
+  const game = { glossary: "村長 (Mayor)", glossaryRevision: "r2" };
+  const edit = { glossary: "村長 (Chief)", glossaryRevision: "r1" };
+  assert.equal(glossaryOutdated(edit, game), true);
+  // Keep this test's takes the game's revision; Use the game's drops it.
+  assert.equal(
+    glossaryOutdated({ ...edit, glossaryRevision: "r2" }, game),
+    false,
+  );
+  assert.equal(
+    glossaryOutdated({ glossary: null, glossaryRevision: null }, game),
+    false,
+  );
+  // A save that made the game's glossary the test's leaves nothing to choose.
+  assert.equal(
+    glossaryOutdated(edit, { ...game, glossary: "村長 (Chief)" }),
+    false,
+  );
 });

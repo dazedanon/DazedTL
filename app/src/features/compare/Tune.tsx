@@ -18,6 +18,7 @@ import { Button } from "../../ui/Button";
 import { DialogBody, DialogHeader } from "../../ui/Dialog";
 import { Menu, MenuItem, MenuSeparator } from "../../ui/Menu";
 import { Modal } from "../../ui/Modal";
+import { Notice } from "../../ui/Notice";
 import { PageBody } from "../../ui/PageLayout";
 import { SegmentedControl } from "../../ui/SegmentedControl";
 import { useTabPanelShown } from "../../ui/Tabs";
@@ -27,6 +28,7 @@ import { CompareGrid, type Difference } from "./CompareGrid";
 import {
   glossaryChanges,
   glossaryEntries,
+  glossaryOutdated,
   modelDetail,
   runName,
   tuneRuns,
@@ -189,6 +191,7 @@ export function Tune({ context }: { context: CompareContext }) {
     glossary: glossary !== gameGlossary,
     instruction: !!instruction,
   };
+  const outdated = !!settings && glossaryOutdated(settings, context.state);
   const candidate: CompareChoice | null = settings && {
     connection_id: settings.model.connection_id,
     model: settings.model.model,
@@ -213,7 +216,9 @@ export function Tune({ context }: { context: CompareContext }) {
         ? "This game has no lines to compare yet."
         : !candidate
           ? "Choose a model first."
-          : "",
+          : outdated
+            ? "Choose which glossary this test sends first."
+            : "",
     },
   );
   const runs = tuneRuns(context.comparisons, scene.file, scene.lines);
@@ -420,6 +425,37 @@ export function Tune({ context }: { context: CompareContext }) {
                 {count.toLocaleString()} {count === 1 ? "entry" : "entries"}
                 {edits > 0 && ` · ${edits} changed for this test`}
               </Button>
+              {outdated && (
+                <Notice tone="warning">
+                  <span>
+                    The game’s glossary changed in Context since this test’s
+                    edit.
+                  </span>
+                  <span>
+                    <Button
+                      variant="link"
+                      disabled={disabled}
+                      onClick={() =>
+                        edit({ glossary: null, glossaryRevision: null })
+                      }
+                    >
+                      Use the game’s
+                    </Button>
+                    {" · "}
+                    <Button
+                      variant="link"
+                      disabled={disabled}
+                      onClick={() =>
+                        edit({
+                          glossaryRevision: context.state.glossaryRevision,
+                        })
+                      }
+                    >
+                      Keep this test’s
+                    </Button>
+                  </span>
+                </Notice>
+              )}
             </Setting>
             <Setting
               id="tune-instruction"
