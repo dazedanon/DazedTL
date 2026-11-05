@@ -18,22 +18,20 @@ import { groupRuns, spawnGroup, stopGroup } from "./testkit/group.mjs";
 import { gameName, makeGame, variants } from "./testkit/games.mjs";
 import { helperCommand, scenarios } from "./testkit/scenarios.mjs";
 import { checkout, previousRelease } from "./testkit/checkout.mjs";
-import { e2eOptions, readOptions } from "./testkit/options.mjs";
+import {
+  e2eOptions,
+  readOptions,
+  scenarioOptions,
+} from "./testkit/options.mjs";
 
 const usage = `Usage:
   node scripts/scenario.mjs <scenario> [--game <variants>] [--from <ref>] [--app] [--work <dir>]
   node scripts/scenario.mjs list
   node scripts/scenario.mjs app|stop|clean --work <dir>
   node scripts/scenario.mjs provider --work <dir> '<mode JSON>'
-  node scripts/scenario.mjs drive --work <dir> text|click|click-prefix|call|eval|shot ...
+  node scripts/scenario.mjs drive --work <dir> text|click|click-prefix|call|eval|shot|size ...
   node scripts/scenario.mjs live [--work <empty folder>] [--upgrade-from <tag> | previous]`;
-// The options building a scenario takes, and those each other command takes.
-const buildOptions = {
-  "--work": "value",
-  "--game": "value",
-  "--from": "value",
-  "--app": "flag",
-};
+// The options each command but building a scenario takes.
 /** @type {Record<string, Record<string, "value" | "flag">>} */
 const commandOptions = {
   list: {},
@@ -46,11 +44,11 @@ const commandOptions = {
 };
 const { option, flag, given, positional, refuse } = readOptions(
   usage,
-  Object.assign({}, buildOptions, ...Object.values(commandOptions)),
+  Object.assign({}, scenarioOptions, ...Object.values(commandOptions)),
   { positionals: true },
 );
 const command = positional[0];
-const allowed = commandOptions[command || "list"] ?? buildOptions;
+const allowed = commandOptions[command || "list"] ?? scenarioOptions;
 for (const name of given)
   if (!(name in allowed)) refuse(`${command || "list"} takes no ${name}.`);
 // An app left running keeps its display and stand-in until stop or clean;
@@ -192,6 +190,7 @@ async function describe(state, page) {
       `  node scripts/scenario.mjs drive --work ${state.work} click-prefix "<start of an accessible name>"`,
       `  node scripts/scenario.mjs drive --work ${state.work} call <method> '<params JSON>'`,
       `  node scripts/scenario.mjs drive --work ${state.work} shot <file.png>`,
+      `  node scripts/scenario.mjs drive --work ${state.work} size <width>x<height>`,
       "  or import { Page } from scripts/testkit/cdp.mjs and Page.connect(<CDP port>, { root }).",
     );
     if (project)
@@ -353,7 +352,18 @@ async function drive(state) {
     else if (action === "eval")
       console.log(JSON.stringify(await page.evaluate(rest[0]), null, 2));
     else if (action === "shot") await page.shot(path.resolve(rest[0]));
-    else throw new Error("Drive with text, click, call, eval or shot.");
+    else if (action === "size") {
+      const size = /^(\d+)x(\d+)$/.exec(rest[0] ?? "");
+      if (!size)
+        throw new Error(
+          "Give the window's size as <width>x<height>, such as 900x520, the smallest it takes.",
+        );
+      const inner = await page.resize(Number(size[1]), Number(size[2]), {
+        root: state.root,
+        inspect: state.app.inspect,
+      });
+      console.log(`The page is ${inner.width}x${inner.height}.`);
+    } else throw new Error("Drive with text, click, call, eval, shot or size.");
   } finally {
     page.close();
   }

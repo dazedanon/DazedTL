@@ -15,18 +15,26 @@ import {
   readCommits,
   tracedFix,
 } from "./fix-trailers.mjs";
-import { gitIn, knownLenses, reviewLog } from "./land-lock.mjs";
+import {
+  gitIn,
+  knownLenses,
+  lensDue,
+  repeatReviewDue,
+  repeatReviewFixes,
+  reviewLenses,
+  reviewLog,
+} from "./land-lock.mjs";
 
 /**
- * @typedef {{ kind?: string, outcome: string, review: number }} Finding
+ * @typedef {{ kind?: string, outcome: string, userFacing?: boolean, behavior?: false, review: number }} Finding
  * @typedef {{ range: string, reviews: number, lenses: string[], findings: Finding[], landed: number | null }} Logged
  * A landed range with how many independent reviews it ran, the lenses they
  * all ran (land-lock.mjs `reviewLenses`), their findings and when it landed, in
  * milliseconds; one its author reviewed or skipped, before independent
  * reviews, ran none, and its findings count as review 0.
- * @typedef {Logged & { commits: string[], lines: number }} Landing
- * A logged landing with the full hashes of its range's commits and its
- * `codeLines`.
+ * @typedef {Logged & { commits: string[], lines: number, changed: string[] }} Landing
+ * A logged landing with the full hashes of its range's commits, its
+ * `codeLines` and the paths it changed.
  * @typedef {{ fix: string, introduced: string[], marks: string[], found: string | null }} Fix
  * A commit with an Introduced-by trailer: the full hashes of the commits it
  * names, its `unknown` or `none` marks and who found the bug.
@@ -107,6 +115,10 @@ export function loggedLandings(text) {
       findings: findings.map((/** @type {any} */ item) => ({
         ...(item.kind === undefined ? {} : { kind: item.kind }),
         outcome: item.outcome,
+        ...(typeof item.userFacing === "boolean"
+          ? { userFacing: item.userFacing }
+          : {}),
+        ...(item.behavior === false ? { behavior: false } : {}),
         review: independent ? (item.review ?? 1) : 0,
       })),
       landed: Number.isFinite(landed) ? landed : null,
@@ -116,24 +128,35 @@ export function loggedLandings(text) {
 }
 
 /**
- * The lines a landing changed in code, from its `git diff --numstat
- * --no-renames -z` output, whose paths Git leaves unquoted: tests folders,
- * Markdown, JSON and the generated API contracts are left out, and binary
- * files count none.
+ * The files a landing changed, from its `git diff --numstat --no-renames -z`
+ * output, whose paths Git leaves unquoted, each with its lines added and
+ * deleted, none for a binary file.
+ * @param {string} text
+ */
+export function numstatFiles(text) {
+  return text.split("\0").flatMap((entry) => {
+    const [added, deleted, file] = entry.split("\t");
+    return file
+      ? [{ file, lines: (Number(added) || 0) + (Number(deleted) || 0) }]
+      : [];
+  });
+}
+
+/**
+ * The lines a landing changed in code, from its numstatFiles: tests folders,
+ * Markdown, JSON and the generated API contracts are left out.
  * @param {string} text
  */
 export function codeLines(text) {
   let total = 0;
-  for (const entry of text.split("\0")) {
-    const [added, deleted, file] = entry.split("\t");
+  for (const { file, lines } of numstatFiles(text)) {
     if (
-      !file ||
       /(^|\/)tests\//.test(file) ||
       /\.(md|json)$/i.test(file) ||
       generated.includes(file)
     )
       continue;
-    total += (Number(added) || 0) + (Number(deleted) || 0);
+    total += lines;
   }
   return total;
 }
@@ -152,10 +175,47 @@ export function highEnd(low, { named, unknown }) {
 }
 
 /**
+ * Why the review after review `review` of a landing started, by the fixes of
+ * `review` that repeatReviewDue counts: "user-facing" when those marked as
+ * ones a user can hit were enough, "unmarked" when it took fixes with no
+ * mark, such as those from before the mark, "not user-facing" when enough
+ * were fixed in behavior but too few a user can hit, as when only a report
+ * such as this one broke, and "not due" when too few were fixed in behavior.
+ * @param {Finding[]} findings
+ * @param {number} review
+ */
+export function repeatReason(findings, review) {
+  if (
+    repeatReviewDue(
+      findings.filter((finding) => finding.userFacing !== undefined),
+      review,
+    )
+  )
+    return "user-facing";
+  if (repeatReviewDue(findings, review)) return "unmarked";
+  // Every finding counted as one a user can hit, as before the mark.
+  const unmarked = findings.map((finding) => ({
+    ...finding,
+    userFacing: undefined,
+  }));
+  return repeatReviewDue(unmarked, review) ? "not user-facing" : "not due";
+}
+
+/** repeatReason's reasons, in the order the report lists them. */
+export const repeatReasons = [
+  "user-facing",
+  "unmarked",
+  "not user-facing",
+  "not due",
+];
+
+/**
  * Landings old enough to count and the bugs that got past them, by how many
- * reviews each ran and by its code lines; findings by the review that
- * reported them, their kind and outcome; who found the bugs that got past
- * those landings;
+ * reviews each ran, by its code lines and, for each review lens, by whether
+ * every review ran it where it was due; findings by the review that
+ * reported them, their kind and outcome; every landing's repeat reviews by
+ * why they started (repeatReason); who found the bugs that got past those
+ * landings;
  * how the fixes name where their bug came from; chains of fixes whose bug
  * came from another landing's fix; and the bugs whose commit no listed
  * landing holds. A bug counts once per landing it got past, however many of
@@ -174,10 +234,20 @@ export function summarize(landings, fixes, { landed, fixCommits }) {
   const byReviews = new Map();
   /** @type {Map<number, { landings: number, escapes: number }>} */
   const bySize = new Map();
-  /** @type {Map<string, { landings: number, escapes: number }>} */
-  const byLenses = new Map();
+  /** Each lens's landings where it was due, with it and without it. */
+  const byLens = new Map(
+    reviewLenses.map((lens) => [
+      lens,
+      {
+        with: { landings: 0, escapes: 0 },
+        without: { landings: 0, escapes: 0 },
+      },
+    ]),
+  );
   /** @type {Map<number, Record<string, { fixed: number, dismissed: number }>>} */
   const rounds = new Map();
+  /** @type {Map<string, number>} */
+  const repeats = new Map(repeatReasons.map((reason) => [reason, 0]));
   /** @type {Map<string, Landing>} */
   const owner = new Map();
   const exposed = new Set();
@@ -197,12 +267,13 @@ export function summarize(landings, fixes, { landed, fixCommits }) {
       map.set(key, group);
     }
     // A landing with no independent review ran no lens either, so it stays
-    // out of the lens rows rather than skew those without one.
+    // out of the lens rows rather than skew those without one, and so does
+    // one a lens was not due on, such as a Live check on a branch that
+    // changes no screen.
     if (!landing.reviews) return;
-    const lenses = landing.lenses.join(" + ");
-    const group = byLenses.get(lenses) ?? { landings: 0, escapes: 0 };
-    group[field] += 1;
-    byLenses.set(lenses, group);
+    for (const [lens, groups] of byLens)
+      if (lensDue(lens, landing.changed))
+        groups[landing.lenses.includes(lens) ? "with" : "without"][field] += 1;
   };
   let recent = 0;
   let undated = 0;
@@ -225,6 +296,10 @@ export function summarize(landings, fixes, { landed, fixCommits }) {
       });
       kind[/** @type {"fixed" | "dismissed"} */ (finding.outcome)] += 1;
       rounds.set(finding.review, round);
+    }
+    for (let review = 1; review < landing.reviews; review += 1) {
+      const reason = repeatReason(landing.findings, review);
+      repeats.set(reason, (repeats.get(reason) ?? 0) + 1);
     }
   }
   const escaped = [];
@@ -301,10 +376,11 @@ export function summarize(landings, fixes, { landed, fixCommits }) {
           : `${sizes[bucket - 1]} or more`,
       group,
     ]),
-    byLenses: sorted(byLenses),
+    byLens: [...byLens],
     recent,
     undated,
     rounds: sorted(rounds),
+    repeats: [...repeats].filter(([, count]) => count),
     foundBy: [...foundBy].sort(([, a], [, b]) => b - a),
     origins: {
       named,
@@ -385,6 +461,7 @@ function main() {
           ...landing,
           commits: listed.stdout.split("\n").filter(Boolean),
           lines: codeLines(diff.stdout),
+          changed: numstatFiles(diff.stdout).map(({ file }) => file),
         },
       ];
     problems.push(
@@ -474,9 +551,13 @@ function main() {
     (bucket) => bucket,
   );
   buckets(
-    "with independent reviews, by the lenses every review ran",
-    summary.byLenses,
-    (lenses) => lenses || "no lens",
+    "with independent reviews, with and without each lens every review ran, where it was due (live-check only on a branch that changes a screen or flow)",
+    summary.byLens.flatMap(([lens, groups]) =>
+      /** @type {const} */ (["with", "without"])
+        .filter((which) => groups[which].landings)
+        .map((which) => [`${which} ${lens}`, groups[which]]),
+    ),
+    (row) => row,
   );
   console.log(
     `${count(summary.recent, "landing")} under ${exposureDays} active days old ${summary.recent === 1 ? "is" : "are"} left out of these until then; an active day is one on which a landing reached dev.`,
@@ -508,6 +589,18 @@ function main() {
         .map(([kind, tally]) => `${kind} ${tally.fixed}/${tally.dismissed}`)
         .join(", ")}`,
     );
+  if (summary.rounds.some(([, kinds]) => kinds.unsorted))
+    console.log(
+      "  unsorted: findings with no kind, from landings through 2026-11-04, whose land.mjs did not yet ask for one, and from the Discord intake's, which leave it out until the intake sends it.",
+    );
+  if (summary.repeats.length) {
+    console.log(
+      `Repeat reviews by why they started: ${summary.repeats.map(([reason, n]) => `${reason} ${n}`).join(", ")}`,
+    );
+    console.log(
+      `  user-facing: ${repeatReviewFixes} or more fixes in behavior of findings a user can hit; unmarked: it took fixes with no userFacing mark, from landings through 2026-11-05 and the Discord intake's; not user-facing: enough fixes in behavior but too few a user can hit, which no longer starts one; not due: too few fixes in behavior.`,
+    );
+  }
   if (summary.chains.length)
     console.log(
       "Fix chains, each fix's bug from the fix after it; one behavior fixed twice goes to a rework (AGENTS.md):",

@@ -4,11 +4,16 @@
 // release it, so two sessions can never both hold it. A holder renews it
 // while it works; a lock whose process has gone, or that nobody renewed for
 // 20 minutes, may be taken over. It also holds the landing rules that tools
-// outside land.mjs read, such as the Discord intake: maxReviews, the review
-// lenses and which changes are platform-sensitive.
+// outside land.mjs can read, such as the Discord intake: maxReviews, when
+// another review is due, the review lenses and when each is due, the finding
+// kinds, and which changes are platform-sensitive or change a screen.
+// Run as a script, it lists the paths of a branch that change a screen or
+// user flow, for a reviewer deciding whether the Live check is due:
+//   node scripts/land-lock.mjs screens <base> <tip>
 import fs from "node:fs";
 import { spawnSync } from "node:child_process";
 import { setTimeout as sleep } from "node:timers/promises";
+import { generated } from "./contracts.mjs";
 
 export const lockRef = "refs/dazedtl/land-lock";
 const lockAge = 20 * 60_000;
@@ -41,10 +46,12 @@ export const maxReviews = 3;
 
 /**
  * The checks a review may run besides code-review, each named in the
- * dazedtl-land skill's Review lens section; a record lists those every one
- * of its reviews ran, so review-stats can compare escapes with and without.
+ * dazedtl-land skill's Review lens section: "places-and-chains" is its
+ * Places checked and Fix chain and states checks, and "live-check" its Live
+ * check. A record lists those every one of its reviews ran, so review-stats
+ * can compare escapes with and without each where it is due (lensDue).
  */
-export const reviewLenses = ["places-and-chains"];
+export const reviewLenses = ["places-and-chains", "live-check"];
 
 /**
  * A record's lenses as the reviews log keeps and review-stats groups them:
@@ -53,6 +60,82 @@ export const reviewLenses = ["places-and-chains"];
  */
 export const knownLenses = (lenses) =>
   reviewLenses.filter((lens) => lenses.includes(lens));
+
+/**
+ * The changed paths that make a branch change a screen or user flow, so its
+ * reviewers run the Review lens's Live check in the running app: what the
+ * window draws and how its actions, drafts and observed state flow (the
+ * renderer), the packages and build that make it, and the Electron shell's
+ * window, menus and dialogs. A backend change reaches users through these,
+ * but its logic is what the other lenses check, so it is left out. Add a
+ * path when a bug a live check would have caught got past a landing that
+ * changed none of these.
+ */
+export const screenPaths = [
+  /^app\/src\//,
+  /^app\/electron\//,
+  /^app\/(index\.html|package(-lock)?\.json|vite\.config\.ts)$/,
+];
+
+/**
+ * The paths of `changed`, relative to the repository's top, that
+ * screenPaths marks; none for a branch that changes no screen or flow. The
+ * generated API contracts are left out: a backend change writes them again.
+ * @param {string[]} changed
+ */
+export const screenChanging = (changed) =>
+  changed.filter(
+    (file) =>
+      !generated.includes(file) &&
+      screenPaths.some((pattern) => pattern.test(file)),
+  );
+
+/**
+ * Whether a review of a branch that changes `changed` runs `lens`: the Live
+ * check only on a branch that changes a screen or flow, every other lens on
+ * every branch.
+ * @param {string} lens
+ * @param {string[]} changed
+ */
+export const lensDue = (lens, changed) =>
+  lens !== "live-check" || screenChanging(changed).length > 0;
+
+/**
+ * What a review finding is: a bug its reviewer showed with a failing test or
+ * a command's output, a risk it could not show, or quality such as wording,
+ * docs, naming or design.
+ */
+export const findingKinds = ["bug", "risk", "quality"];
+
+/**
+ * How many of one review's findings that a user can hit, fixed in behavior,
+ * in code or in rules other sessions follow, send the branch to another
+ * fresh reviewer. A fix to wording, comments or naming alone, marked
+ * `"behavior": false`, does not count, nor does a finding no user can hit,
+ * marked `"userFacing": false`, such as one in a report like review-stats:
+ * the dazedtl-land skill's Review step says which a user can hit.
+ */
+export const repeatReviewFixes = 3;
+
+/**
+ * Whether the dazedtl-land skill's Review step runs another fresh review
+ * after review `review`: fewer than maxReviews ran and repeatReviewFixes of
+ * its findings that a user can hit were fixed in behavior, those it raised
+ * while checking the fixes included. A finding with no `userFacing` mark,
+ * from a record older than the mark or one that leaves it out, counts as
+ * one a user can hit, so leaving it out never skips a review.
+ * @param {{ review?: number, outcome: string, behavior?: boolean, userFacing?: boolean }[]} findings
+ * @param {number} review
+ */
+export const repeatReviewDue = (findings, review) =>
+  review < maxReviews &&
+  findings.filter(
+    (finding) =>
+      finding.review === review &&
+      finding.outcome === "fixed" &&
+      finding.behavior !== false &&
+      finding.userFacing !== false,
+  ).length >= repeatReviewFixes;
 
 /**
  * The changed paths that make a landing platform-sensitive, so land.mjs lands
@@ -100,6 +183,30 @@ export const platformPaths = [
  */
 export const platformSensitive = (changed) =>
   changed.filter((file) => platformPaths.some((pattern) => pattern.test(file)));
+
+/**
+ * The paths a branch at `tip` changes since it left `base`, relative to the
+ * repository's top, a renamed file under both of its names. Throws when Git
+ * can't tell, as for refs with no common commit, so no rule reads that as a
+ * branch that changes nothing.
+ * @param {Git} git
+ * @param {string} base
+ * @param {string} tip
+ */
+export function changedPaths(git, base, tip) {
+  const diff = git([
+    "diff",
+    "--name-only",
+    "--no-renames",
+    "-z",
+    `${base}...${tip}`,
+  ]);
+  if (diff.status !== 0)
+    throw new Error(
+      `Git can't list what ${tip} changes since ${base}: ${diff.stderr.trim()}`,
+    );
+  return diff.stdout.split("\0").filter(Boolean);
+}
 
 /** Runs Git in `cwd`. @returns {Git} */
 export function gitIn(/** @type {string} */ cwd) {
@@ -303,4 +410,59 @@ export async function withLock(
     process.off("SIGTERM", terminate);
     release();
   }
+}
+
+/**
+ * What `node scripts/land-lock.mjs screens <base> <tip>` prints for the
+ * branch at `tip`, run from its repository, and its exit code: 0 with the
+ * paths screenPaths marks or a line saying it marks none, 2 with the usage,
+ * a ref Git can't find or refs it can't compare.
+ * @param {Git} git
+ * @param {string[]} args
+ */
+export function screensCommand(git, args) {
+  const usage = "Usage: node scripts/land-lock.mjs screens <base> <tip>";
+  const [command, ...refs] = args;
+  if (command !== "screens" || refs.length !== 2)
+    return { code: 2, lines: [usage] };
+  for (const ref of refs)
+    if (
+      git([
+        "rev-parse",
+        "--verify",
+        "--quiet",
+        "--end-of-options",
+        `${ref}^{commit}`,
+      ]).status !== 0
+    )
+      return { code: 2, lines: [`Git can't find the commit ${ref}.`, usage] };
+  let marked;
+  try {
+    marked = screenChanging(changedPaths(git, refs[0], refs[1]));
+  } catch (error) {
+    return {
+      code: 2,
+      lines: [error instanceof Error ? error.message : String(error)],
+    };
+  }
+  return {
+    code: 0,
+    lines: marked.length
+      ? [
+          "This branch changes a screen or user flow, so its review runs the Live check:",
+          ...marked.map((file) => `  ${file}`),
+        ]
+      : [
+          "This branch changes none of the renderer, app build or window paths that screenPaths marks; the Live check is not due.",
+        ],
+  };
+}
+
+if (import.meta.main) {
+  const { code, lines } = screensCommand(
+    gitIn(process.cwd()),
+    process.argv.slice(2),
+  );
+  for (const line of lines) (code ? console.error : console.log)(line);
+  process.exitCode = code;
 }

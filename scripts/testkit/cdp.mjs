@@ -319,6 +319,79 @@ export class Page {
     }
   }
 
+  /**
+   * Restores the window from maximized and sizes it to `width` by `height`
+   * pixels, frame included, as a user dragging its edge would, through the
+   * app's main process at inspector port `inspect`; the app's minimum size
+   * (app/electron/window-size.cjs) stops a smaller one, and a larger one
+   * than the screen's work area is refused. Resolves with the
+   * page's size once it has taken the window's.
+   * @param {number} width
+   * @param {number} height
+   * @param {{ root: string, inspect: number }} options
+   */
+  async resize(width, height, { root, inspect }) {
+    const main = await Page.connect(inspect, { root, node: true });
+    const window = `process.mainModule.require("electron").BrowserWindow.getAllWindows()[0]`;
+    try {
+      // The window manager holds a window inside its screen's work area, so
+      // a larger size would never come.
+      const area = await main.evaluate(`(() => {
+        const { screen } = process.mainModule.require("electron");
+        const { width, height } = screen.getDisplayMatching(${window}.getBounds()).workArea;
+        return { width, height };
+      })()`);
+      if (width > area.width || height > area.height)
+        throw new Error(
+          `The screen's work area is ${area.width}x${area.height}, so the window can't be ${width}x${height}.`,
+        );
+      // A window manager restores a window a moment after it is asked, and
+      // a size set before that gives way to the restored one.
+      await main.evaluate(`${window}.unmaximize()`);
+      await until("the window to leave its maximized size", () =>
+        main.evaluate(`!${window}.isMaximized()`),
+      );
+      // A window manager may keep room for its own frame and stop short of
+      // the size asked; once the size holds still that long, it won't come.
+      const stall = 2000;
+      let held = { size: "", since: Date.now() };
+      const reached = await until(
+        "the window to take its new size",
+        async () => {
+          const bounds = await main.evaluate(`(() => {
+          const window = ${window};
+          const [minWidth, minHeight] = window.getMinimumSize();
+          const wanted = [Math.max(${width}, minWidth), Math.max(${height}, minHeight)];
+          const [width, height] = window.getSize();
+          if (width !== wanted[0] || height !== wanted[1]) {
+            window.setSize(...wanted);
+            return { held: width + "x" + height };
+          }
+          return window.getContentBounds();
+        })()`);
+          if (bounds.held) {
+            if (bounds.held !== held.size)
+              held = { size: bounds.held, since: Date.now() };
+            return Date.now() - held.since >= stall ? bounds : false;
+          }
+          const [innerWidth, innerHeight] = await this.evaluate(
+            "[innerWidth, innerHeight]",
+          );
+          return innerWidth === bounds.width && innerHeight === bounds.height
+            ? { width: innerWidth, height: innerHeight }
+            : false;
+        },
+      );
+      if (reached.held)
+        throw new Error(
+          `The window manager holds the window at ${reached.held}, short of ${width}x${height}; give a size it allows.`,
+        );
+      return reached;
+    } finally {
+      main.close();
+    }
+  }
+
   close() {
     this.socket.close();
   }

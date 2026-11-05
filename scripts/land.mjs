@@ -19,15 +19,17 @@
 // land.mjs, moves dev to it with Git alone.
 //
 //   node scripts/land.mjs --review <file.json>
-//   node scripts/land.mjs --hand-off <dir>
+//   node scripts/land.mjs --hand-off <dir> [--e2e <run>]... [--why-no-e2e <why>]
 //   node scripts/land.mjs --finish <dir> --review <file.json>
 //
 // Exits 0 when landed, handed off or with nothing to hand off, 1 when refused
 // or a check failed and 2 on a merge conflict. --finish never waits without
-// a limit: it exits 3 when dev moved after the hand-off's checks, 4 at once
-// while the user's DazedTL runs from the main checkout, and 5 when the main
-// checkout cannot take it now, such as while another session holds the lock
-// or the hand-off's CI runs on GitHub.
+// a limit: it exits 3 when dev moved after the hand-off's checks, so the
+// worker merges dev and hands off again, 4 at once while the user's DazedTL
+// runs from the main checkout, and 5 when the main checkout cannot take it
+// now, such as with uncommitted changes, while another session holds the lock
+// over 10 minutes, or while the hand-off's CI runs on GitHub or can't be
+// reached.
 import fs from "node:fs";
 import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
@@ -59,18 +61,25 @@ import {
   readCommits,
 } from "./fix-trailers.mjs";
 import {
+  changedPaths,
   devMoved,
+  findingKinds,
   gitIn,
   knownLenses,
   LockBusy,
   maxReviews,
   platformSensitive,
+  repeatReviewDue,
+  repeatReviewFixes,
   reviewLenses,
   reviewLog,
   withLock,
 } from "./land-lock.mjs";
 import { repository } from "./release.mjs";
+import { variants } from "./testkit/games.mjs";
+import { e2eOptions, scenarioOptions } from "./testkit/options.mjs";
 import { failureReport, tail, testsWithRetry } from "./testkit/retry.mjs";
+import { scenarios } from "./testkit/scenarios.mjs";
 import { mirrors } from "./update.mjs";
 
 const appPoll = 30_000;
@@ -79,14 +88,8 @@ const pushTimeout = 5 * 60_000;
 const icon = path.join(import.meta.dirname, "..", "resources", "icon.png");
 /** The code-review levels a landing's review may run at: high and up. */
 const reviewLevels = ["high", "xhigh", "max", "ultra"];
-/**
- * What a finding is: a bug its reviewer showed with a failing test or a
- * command's output, a risk it could not show, or quality such as wording,
- * docs, naming or design. Older and intake records leave it out.
- */
-export const findingKinds = ["bug", "risk", "quality"];
 const reviewShape =
-  '{"level": "high", "reviewer": "independent", "reviews": 1, "head": "<hash of the last commit the last reviewer checked>", "findings": [{"summary": "...", "kind": "bug", "outcome": "fixed", "review": 1}, {"summary": "...", "kind": "quality", "outcome": "dismissed", "reason": "...", "review": 1}]}';
+  '{"level": "high", "reviewer": "independent", "reviews": 1, "head": "<hash of the last commit the last reviewer checked>", "e2e": ["<scenario> [--game <variants>]", "live"], "findings": [{"summary": "...", "kind": "bug", "outcome": "fixed", "userFacing": true, "review": 1}, {"summary": "...", "kind": "quality", "outcome": "fixed", "behavior": false, "review": 1}, {"summary": "...", "kind": "risk", "outcome": "dismissed", "reason": "...", "review": 1}]}';
 /** The subject of the commit holding what the formatter changed. */
 const formatSubject = "style: format";
 /** Where a hand-off's worker keeps origin's dev in its clone. */
@@ -107,16 +110,22 @@ const lockLimit = 10 * 60_000;
 /**
  * Reads a landing's review record: the code-review level a reviewer that
  * never saw the work ran, how many such reviews ran (1 when not given), the
- * last commit the last one checked and what became of each finding, with
- * the review that reported it, which only a one-review record may leave out,
- * and its kind (findingKinds), which only the Discord intake's records may
- * leave out, so `kinds` asks for it everywhere else.
+ * last commit the last one checked, the E2E runs its author ran (readE2e) and
+ * what became of each finding, with the review that reported it, which only
+ * a one-review record may leave out, its kind (findingKinds), whether a
+ * user can hit it, in `userFacing`, which an older record may leave out, and,
+ * for a fix to wording, comments or naming alone, `"behavior": false`. A
+ * record whose last review was due another (repeatReviewDue) is refused.
+ * The Discord intake's records, read with `intake`, may leave out the kinds
+ * and behavior marks until the intake sends them, and carry no E2E runs,
+ * since its worker names those in the hand-off; their live-check lens is
+ * left out, since the intake lists it unasked.
  * Throws with what is wrong, so no branch lands on its author's review alone.
  * @param {string} text
- * @param {{ kinds?: boolean }} [options]
- * @returns {{ level: string, reviewer: "independent", reviews: number, head: string, lenses?: string[], findings: { summary: string, kind?: string, outcome: "fixed" | "dismissed", reason?: string, review: number }[] }}
+ * @param {{ intake?: boolean }} [options]
+ * @returns {{ level: string, reviewer: "independent", reviews: number, head: string, lenses?: string[], e2e?: string[], whyNoE2e?: string, findings: { summary: string, kind?: string, outcome: "fixed" | "dismissed", userFacing?: boolean, behavior?: false, reason?: string, review: number }[] }}
  */
-export function readReview(text, { kinds = false } = {}) {
+export function readReview(text, { intake = false } = {}) {
   let record;
   try {
     record = JSON.parse(text);
@@ -150,14 +159,20 @@ export function readReview(text, { kinds = false } = {}) {
     throw new Error(
       "The review record needs a findings list, empty when the review found nothing.",
     );
-  const lenses = record.lenses === undefined ? [] : record.lenses;
+  const given = record.lenses === undefined ? [] : record.lenses;
   if (
-    !Array.isArray(lenses) ||
-    lenses.some((lens) => !reviewLenses.includes(lens))
+    !Array.isArray(given) ||
+    given.some((lens) => !reviewLenses.includes(lens))
   )
     throw new Error(
       `The review record's "lenses" lists the lenses every review ran, of ${reviewLenses.join(", ")}.`,
     );
+  // The intake lists every lens once its reviewer wrote the "Places checked"
+  // line, and asks it for no live check, so until it records the Live
+  // check by its own "Live checked" line, its claim of one is left out.
+  const lenses = intake
+    ? given.filter((/** @type {string} */ lens) => lens !== "live-check")
+    : given;
   const findings = record.findings.map(
     (/** @type {any} */ item, /** @type {number} */ index) => {
       const which = `Finding ${index + 1} of the review record`;
@@ -169,13 +184,31 @@ export function readReview(text, { kinds = false } = {}) {
           `${which} needs a review number from 1 to ${reviews}: the independent review that reported it, with "reviews" saying how many ran when more than one did.`,
         );
       if (
-        (kinds || item.kind !== undefined) &&
+        (!intake || item.kind !== undefined) &&
         !findingKinds.includes(item.kind)
       )
         throw new Error(`${which} needs a kind of ${findingKinds.join(", ")}.`);
       const kind = item.kind === undefined ? {} : { kind: item.kind };
-      if (item.outcome === "fixed")
-        return { summary: item.summary, ...kind, outcome: "fixed", review };
+      if (item.userFacing !== undefined && typeof item.userFacing !== "boolean")
+        throw new Error(
+          `${which} says "userFacing" true or false: whether a user can hit it, as the dazedtl-land skill's Review step defines it.`,
+        );
+      const userFacing =
+        item.userFacing === undefined ? {} : { userFacing: item.userFacing };
+      if (item.behavior !== undefined && typeof item.behavior !== "boolean")
+        throw new Error(
+          `${which} says "behavior" true or false: false for a fix to wording, comments or naming alone.`,
+        );
+      if (item.outcome === "fixed") {
+        return {
+          summary: item.summary,
+          ...kind,
+          outcome: "fixed",
+          ...userFacing,
+          ...(item.behavior === false ? { behavior: false } : {}),
+          review,
+        };
+      }
       if (item.outcome !== "dismissed")
         throw new Error(`${which} needs an outcome of fixed or dismissed.`);
       if (!filled(item.reason))
@@ -184,19 +217,119 @@ export function readReview(text, { kinds = false } = {}) {
         summary: item.summary,
         ...kind,
         outcome: "dismissed",
+        ...userFacing,
         reason: item.reason,
         review,
       };
     },
   );
+  if (!intake && repeatReviewDue(findings, reviews))
+    throw new Error(
+      `Review ${reviews} had ${repeatReviewFixes} or more findings that a user can hit fixed in behavior, so a fresh review of the branch as it now stands runs before it lands (dazedtl-land, Review). Mark a fix to wording, comments or naming alone with "behavior": false, and a finding its reviewer said no user can hit with "userFacing": false.`,
+    );
   return {
     level: record.level,
     reviewer: "independent",
     reviews,
     head: record.head,
     ...(lenses.length ? { lenses: knownLenses(lenses) } : {}),
+    ...(intake ? {} : readE2e(record, "The review record")),
     findings,
   };
+}
+
+/**
+ * Reads the E2E runs a record names, in `e2e`: each the arguments
+ * scripts/scenario.mjs takes to run it, a scenario as `<scenario> [--game
+ * <variants>] [--from <ref>]` or the live test as `live [--upgrade-from
+ * <tag>]`, with `whyNoE2e` saying why it names none. Unless `required`, a
+ * record may leave both out, such as one from before runs were named, and
+ * reads as naming nothing, not as having run none. Without `names`, the
+ * names go unchecked, for a hand-off that the worker's own land.mjs checked
+ * against its branch's scenarios.
+ * Throws with what is wrong, naming the record as `which`.
+ * @param {any} record
+ * @param {string} which
+ * @param {{ required?: boolean, names?: boolean }} [options]
+ * @returns {{ e2e?: string[], whyNoE2e?: string }}
+ */
+export function readE2e(record, which, { required = true, names = true } = {}) {
+  const shape = `${which} names the scenarios and live test its author ran as "e2e", such as "translated --game choice-help" and "live", or says why it names none as "whyNoE2e"`;
+  if (record.e2e === undefined && record.whyNoE2e === undefined && !required)
+    return {};
+  const runs =
+    record.e2e === undefined && record.whyNoE2e !== undefined ? [] : record.e2e;
+  if (!Array.isArray(runs)) throw new Error(`${shape}.`);
+  const e2e = runs.map((/** @type {unknown} */ run) => {
+    const problem =
+      names || typeof run !== "string" || !run.trim() ? e2eProblem(run) : null;
+    if (problem) throw new Error(`${shape}: ${problem}`);
+    return String(run).trim().split(/\s+/).join(" ");
+  });
+  if (record.whyNoE2e === undefined) return { e2e };
+  if (typeof record.whyNoE2e !== "string" || !record.whyNoE2e.trim())
+    throw new Error(`${which}'s "whyNoE2e" is empty.`);
+  if (e2e.length)
+    throw new Error(
+      `${which} names E2E runs and says why it names none; keep one.`,
+    );
+  return { e2e, whyNoE2e: record.whyNoE2e.trim() };
+}
+
+/**
+ * The options of scenario.mjs that change what a run tests: those taking a
+ * value, but for --work, which only says where it kept its files.
+ * @param {Readonly<Record<string, "value" | "flag">>} options
+ */
+const testedOptions = (options) =>
+  Object.keys(options).filter(
+    (option) => options[option] === "value" && option !== "--work",
+  );
+
+/**
+ * What is wrong with an E2E run a record names, or null: scenario.mjs's
+ * scenarios, options and game variants decide what it may say.
+ * @param {unknown} run
+ */
+function e2eProblem(run) {
+  if (typeof run !== "string" || !run.trim()) return "a run is no text.";
+  const [name, ...rest] = run.trim().split(/\s+/);
+  const live = name === "live";
+  if (!live && !Object.hasOwn(scenarios, name))
+    return `${name} is no scenario; node scripts/scenario.mjs list shows them, and live is the live test.`;
+  const all = live ? e2eOptions : scenarioOptions;
+  const options = testedOptions(all);
+  const seen = new Set();
+  for (let index = 0; index < rest.length; index += 2) {
+    const [option, value] = [rest[index], rest[index + 1]];
+    if (Object.hasOwn(all, option) && !options.includes(option))
+      return `"${run}" names ${option}; leave it out, since it changes nothing the run tests.`;
+    if (!options.includes(option) || seen.has(option))
+      return `"${run}" takes ${options.join(" and ")} once each, not ${option}.`;
+    seen.add(option);
+    if (!value || value.startsWith("-"))
+      return `"${run}" gives ${option} no value.`;
+    if (option === "--game") {
+      const unknown = value.split("+").find((v) => !Object.hasOwn(variants, v));
+      if (unknown !== undefined)
+        return `${unknown || "an empty name"} is no game variant; node scripts/scenario.mjs list shows them.`;
+    }
+  }
+  return null;
+}
+
+/**
+ * Why a branch that changes `sensitive` paths may not land on `review`, or
+ * null: a platform-sensitive branch's record names the E2E its author ran or
+ * says why none fits. A hand-off records its runs without this check until
+ * the intake carries them through: today it reruns --hand-off without them
+ * and rewrites handoff.json without them when it accepts a hand-off.
+ * @param {string[]} sensitive
+ * @param {{ e2e?: string[], whyNoE2e?: string }} review
+ */
+function missingE2e(sensitive, { e2e, whyNoE2e }) {
+  if (!sensitive.length || e2e?.length || whyNoE2e) return null;
+  return `This branch changes platform-sensitive paths (${sensitive.join(", ")}), so its review record names the scenarios or live test its author ran as "e2e", or why none fits as "whyNoE2e".`;
 }
 
 /**
@@ -497,19 +630,6 @@ const ciBranch = (/** @type {string} */ branch) => `land/${branch}`;
 const ciStartPoll = 5000;
 const ciStartLimit = 3 * 60_000;
 const dispatchTries = 3;
-
-/**
- * The paths a branch changes since it left `base`, a renamed file under both
- * of its names.
- * @param {ReturnType<typeof gitIn>} git
- * @param {string} base
- * @param {string} tip
- */
-export function changedPaths(git, base, tip) {
-  return git(["diff", "--name-only", "--no-renames", "-z", `${base}...${tip}`])
-    .stdout.split("\0")
-    .filter(Boolean);
-}
 
 /**
  * The commits of a branch whose passed CI run stands for `tip`, newest
@@ -977,7 +1097,7 @@ export async function land(cwd, deps, reviewFile) {
   }
   let review;
   try {
-    review = readReview(fs.readFileSync(reviewFile, "utf8"), { kinds: true });
+    review = readReview(fs.readFileSync(reviewFile, "utf8"));
   } catch (error) {
     log(`${reason(error)} Expected: ${reviewShape}.`);
     return 1;
@@ -1005,6 +1125,16 @@ export async function land(cwd, deps, reviewFile) {
     git(["rev-parse", "--git-common-dir"]).stdout.trim(),
   );
   const main = path.dirname(common);
+  // The author's E2E answers for the change its reviewers checked, so it
+  // goes by the branch before formatting; CI, below, by what lands.
+  const untested = missingE2e(
+    platformSensitive(changedPaths(git, "refs/heads/dev", "HEAD")),
+    review,
+  );
+  if (untested) {
+    log(untested);
+    return 1;
+  }
   await warnRedDev(deps, main);
   const time = timer(deps.now);
   const unformatted = await formatBranch(git, top, deps.run, log);
@@ -1400,13 +1530,15 @@ async function underLock(
 /**
  * Hands off the branch checked out in a worker's clone at `cwd`: formats it,
  * merges origin's dev into it and runs the tests and build, then leaves its
- * commits since that dev in `dir` as a bundle and a record for --finish.
- * Writes nothing outside the clone and `dir`. Resolves the exit code.
+ * commits since that dev in `dir` as a bundle and a record for --finish,
+ * with the E2E runs the worker ran (readE2e). Writes nothing outside the
+ * clone and `dir`. Resolves the exit code.
  * @param {string} cwd
  * @param {Deps} deps
  * @param {string | undefined} dir
+ * @param {{ e2e?: string[], whyNoE2e?: string }} [given] the runs as --e2e and --why-no-e2e give them
  */
-export async function handOff(cwd, deps, dir) {
+export async function handOff(cwd, deps, dir, given = {}) {
   const { log } = deps;
   if (onWindows(log)) return 1;
   if (!dir) {
@@ -1420,6 +1552,15 @@ export async function handOff(cwd, deps, dir) {
       fs.rmSync(path.join(dir, name), { force: true });
   } catch (error) {
     log(`Could not prepare ${dir} for the hand-off: ${reason(error)}`);
+    return 1;
+  }
+  let ran;
+  try {
+    ran = readE2e(given, "A hand-off", { required: false });
+  } catch (error) {
+    log(
+      `${reason(error)} Give each with --e2e "<run>", or --why-no-e2e "<why>".`,
+    );
     return 1;
   }
   const found = featureBranch(cwd, log);
@@ -1447,7 +1588,7 @@ export async function handOff(cwd, deps, dir) {
   const time = timer(deps.now);
   return reported(
     deps,
-    await handOffBranch(deps, { top, git, branch, dir }, time),
+    await handOffBranch(deps, { top, git, branch, dir, ran }, time),
     time,
   );
 }
@@ -1455,11 +1596,11 @@ export async function handOff(cwd, deps, dir) {
 /**
  * A hand-off's checks and output, once origin's dev is fetched.
  * @param {Deps} deps
- * @param {{ top: string, git: ReturnType<typeof gitIn>, branch: string, dir: string }} where
+ * @param {{ top: string, git: ReturnType<typeof gitIn>, branch: string, dir: string, ran: ReturnType<typeof readE2e> }} where
  * @param {ReturnType<typeof timer>} time
  * @returns {Promise<Outcome>}
  */
-async function handOffBranch(deps, { top, git, branch, dir }, time) {
+async function handOffBranch(deps, { top, git, branch, dir, ran }, time) {
   const { run, log } = deps;
   const out = (/** @type {string[]} */ ...args) => git(args).stdout.trim();
   const unformatted = await formatBranch(git, top, run, log);
@@ -1496,7 +1637,7 @@ async function handOffBranch(deps, { top, git, branch, dir }, time) {
     // --finish never reads a record half written.
     fs.writeFileSync(
       `${record}.tmp`,
-      `${JSON.stringify({ format: 1, branch, head, base }, null, 2)}\n`,
+      `${JSON.stringify({ format: 1, branch, head, base, ...ran }, null, 2)}\n`,
     );
     fs.renameSync(`${record}.tmp`, record);
   } catch (error) {
@@ -1509,9 +1650,10 @@ async function handOffBranch(deps, { top, git, branch, dir }, time) {
 }
 
 /**
- * Reads a hand-off's record. Throws with what is wrong.
+ * Reads a hand-off's record, with the E2E runs its worker ran (readE2e),
+ * none in one from before they were named. Throws with what is wrong.
  * @param {string} text
- * @returns {{ branch: string, head: string, base: string }}
+ * @returns {{ branch: string, head: string, base: string, e2e?: string[], whyNoE2e?: string }}
  */
 export function readHandoff(text) {
   let record;
@@ -1534,7 +1676,15 @@ export function readHandoff(text) {
     throw new Error(
       "The hand-off's record needs the full hashes of its head and base.",
     );
-  return { branch: record.branch, head: record.head, base: record.base };
+  return {
+    branch: record.branch,
+    head: record.head,
+    base: record.base,
+    ...readE2e(record, "The hand-off's record", {
+      required: false,
+      names: false,
+    }),
+  };
 }
 
 /** Runs Git in `cwd` with no hook or file system monitor. */
@@ -1579,7 +1729,7 @@ export async function finishHandOff(cwd, deps, dir, reviewFile) {
       throw new Error(`${dir} holds no hand-off: ${reason(error)}.`);
     }
     handoff = readHandoff(text);
-    review = readReview(fs.readFileSync(reviewFile, "utf8"));
+    review = readReview(fs.readFileSync(reviewFile, "utf8"), { intake: true });
   } catch (error) {
     log(`${reason(error)} Nothing landed.`);
     return 1;
@@ -1591,7 +1741,14 @@ export async function finishHandOff(cwd, deps, dir, reviewFile) {
     );
     return 1;
   }
-  review = { ...review, head: handoff.head };
+  // The worker ran the E2E, so the hand-off names it.
+  const { e2e, whyNoE2e } = handoff;
+  review = {
+    ...review,
+    head: handoff.head,
+    ...(e2e ? { e2e } : {}),
+    ...(whyNoE2e ? { whyNoE2e } : {}),
+  };
   const here = sealedGit(cwd);
   const top = here(["rev-parse", "--show-toplevel"]).stdout.trim();
   if (!top) {
@@ -1787,10 +1944,10 @@ function realDeps() {
 if (import.meta.main) {
   const usage = [
     "Usage: node scripts/land.mjs --review <file.json>",
-    "       node scripts/land.mjs --hand-off <dir>",
+    '       node scripts/land.mjs --hand-off <dir> [--e2e "<run>"]... [--why-no-e2e "<why>"]',
     "       node scripts/land.mjs --finish <dir> --review <file.json>",
   ].join("\n");
-  /** @type {{ review?: string, "hand-off"?: string, finish?: string }} */
+  /** @type {{ review?: string, "hand-off"?: string, finish?: string, e2e?: string[], "why-no-e2e"?: string }} */
   let values = {};
   try {
     ({ values } = parseArgs({
@@ -1798,13 +1955,28 @@ if (import.meta.main) {
         review: { type: "string" },
         "hand-off": { type: "string" },
         finish: { type: "string" },
+        e2e: { type: "string", multiple: true },
+        "why-no-e2e": { type: "string" },
       },
     }));
   } catch {
     console.error(usage);
     process.exit(1);
   }
-  const { review, "hand-off": handOffDir, finish } = values;
+  const {
+    review,
+    "hand-off": handOffDir,
+    finish,
+    e2e,
+    "why-no-e2e": whyNoE2e,
+  } = values;
+  // Only a worker names its E2E runs on the command line.
+  if (handOffDir === undefined && (e2e || whyNoE2e !== undefined)) {
+    console.error(
+      `--e2e and --why-no-e2e go with --hand-off; a review record names its runs.\n${usage}`,
+    );
+    process.exit(1);
+  }
   if (finish !== undefined && handOffDir === undefined)
     process.exitCode = await finishHandOff(
       process.cwd(),
@@ -1820,7 +1992,10 @@ if (import.meta.main) {
       );
       process.exit(1);
     }
-    process.exitCode = await handOff(process.cwd(), realDeps(), handOffDir);
+    process.exitCode = await handOff(process.cwd(), realDeps(), handOffDir, {
+      e2e,
+      whyNoE2e,
+    });
   } else if (handOffDir === undefined && finish === undefined)
     process.exitCode = await land(process.cwd(), realDeps(), review);
   else {

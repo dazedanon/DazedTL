@@ -85,7 +85,7 @@ It drives the app as a user does, in a private display, and most scenarios build
 - `node scripts/scenario.mjs list` describes every scenario and game variant, and `--help` shows the options.
 - Run it outside a sandbox such as Claude Code's, since KWin needs a writable `/tmp` and `/dev/dri`.
 - `--game` lays [game variants](../tests/fixtures/game-variants) over the fixture game, joined with `+`, such as `--game choice-help+playable`; `--from <ref>` builds with another commit, such as the one before a fix.
-- `--app` leaves the app running for `drive --work <dir>`, which reads, clicks and screenshots it (scripts import the same driver from [cdp.mjs](../scripts/testkit/cdp.mjs)); `clean --work <dir>` stops it and removes the folder.
+- `--app` leaves the app running for `drive --work <dir>`, which reads, clicks, sizes and screenshots it (scripts import the same driver from [cdp.mjs](../scripts/testkit/cdp.mjs)); `clean --work <dir>` stops it and removes the folder.
 - The stand-in's replies aren't real translations: it answers most lines with `Tested <letters>`.
   `provider --work <dir> '<mode JSON>'` changes how it answers, such as `'{"hold":false}'` to release a held Batch; [its header](../scripts/testkit/provider.mjs) lists the modes, and it records each request in `provider/requests.jsonl`.
 - Scenarios never reach a real provider: the OpenAI, Anthropic, OpenRouter and both OpenCode presets follow `DAZEDTL_TEST_*_ENDPOINT` variables to the stand-in ([providers.py](../backend/dazedtl/settings/providers.py)), and phone notifications follow `DAZEDTL_TEST_NTFY_SERVER`.
@@ -171,9 +171,9 @@ A fix you found in a game but didn't code can go through the guide's [Share a fi
 `node scripts/land.mjs --review <file.json>` lands a finished branch on `dev` from its worktree: it formats the branch, merges `dev` into it, runs the tests and build checks, fast-forwards the main checkout's `dev` and pushes it to every mirror.
 One landing runs at a time, under a lock that a release also holds.
 
-- Every landing passes an independent review first: a reviewer that never saw the work runs `code-review` at `high` or above and dazedtl-land's Review lens on the branch against `dev`, the author fixes each finding or dismisses it with a reason, and that reviewer checks both; dazedtl-land says when a fresh reviewer follows.
-  land.mjs refuses a review record [readReview](../scripts/land.mjs) can't read, a branch with commits after its head other than merges of `dev` and the formatter's, and, like `--hand-off`, a fix commit of its own without [AGENTS.md](../AGENTS.md)'s trailers.
-  Each landed record joins `dazedtl-reviews.jsonl` in the shared Git directory with its branch and range; `node scripts/review-stats.mjs` counts what reviews caught and bugs that got past landings [exposureDays](../scripts/review-stats.mjs) active days old.
+- Every landing passes an independent review first: a fresh reviewer, given the author's done list, runs `code-review` at `high` or above and dazedtl-land's Review lens against `dev`, the author fixes or dismisses each finding with a reason, and that reviewer checks both; [repeatReviewDue](../scripts/land-lock.mjs) says when a fresh reviewer follows.
+  land.mjs refuses a review record [readReview](../scripts/land.mjs) can't read, such as one without `e2e`, the scenarios and live test its author ran, or whose last review was due another, a platform-sensitive branch whose record names no run nor why, a branch with commits after its head other than merges of `dev` and the formatter's, and, like `--hand-off`, a fix commit of its own without [AGENTS.md](../AGENTS.md)'s trailers.
+  Each landed record joins `dazedtl-reviews.jsonl` in the shared Git directory with its branch, range and [lenses](../scripts/land-lock.mjs); `node scripts/review-stats.mjs` counts what reviews caught and, by lens, bugs that got past landings [exposureDays](../scripts/review-stats.mjs) active days old.
 - A failed test run runs once more after the machine's load drops; a pass then is reported as `Flaky:`, and a second failure stops the landing.
 - Both sides' [release notes](#release-notes) are joined, and conflicts only in the generated API contracts are resolved by writing them again.
   A branch that repeats a notes line `dev` already released stops on `release/notes.md`: keep only what's new.
@@ -183,10 +183,10 @@ One landing runs at a time, under a lock that a release also holds.
   Other branches don't wait for CI, which runs on `dev` after the push; a run still red is fixed forward or reverted by the session cutting the next release.
 
 A Discord intake worker, which may never write the main checkout, lands in two steps.
-It runs `node scripts/land.mjs --hand-off <dir>` with the directory its prompt gives: the same format, merge and checks against `origin`'s `dev`, leaving the branch as `handoff.bundle` and `handoff.json` there, with no review, lock, app wait or push.
+It runs `node scripts/land.mjs --hand-off <dir> --e2e <run>` with the directory its prompt gives and each scenario it ran, or `--why-no-e2e <why>`: the same format, merge and checks against `origin`'s `dev`, leaving the branch as `handoff.bundle` and `handoff.json` there, with no review, lock, app wait or push.
 The intake reviews that bundle by the land skill's Review step, with limits from [land-lock](../scripts/land-lock.mjs), then runs the main checkout's `node scripts/land.mjs --finish <dir> --review <file.json>`.
 Under the lock, it checks the bundle with Git alone, runs nothing from it and lands as a landing does.
-It never waits without a limit: it exits 3 when `dev` moved after the checks, so the worker merges `dev` and hands off again, 4 at once while your DazedTL is open, and 5 when the main checkout can't take it now, such as uncommitted changes, the lock held over 10 minutes or CI pending or unreachable.
+It never waits without a limit; [land.mjs's header](../scripts/land.mjs) lists its exit codes for a retry.
 
 ### Releasing
 

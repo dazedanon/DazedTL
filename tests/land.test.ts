@@ -5,11 +5,15 @@ import path from "node:path";
 import test from "node:test";
 import {
   acquireLock,
+  changedPaths,
   gitIn,
+  lensDue,
   LockBusy,
   lockRef,
   platformSensitive,
   releaseLock,
+  repeatReviewDue,
+  screensCommand,
 } from "../scripts/land-lock.mjs";
 import { spawnSync } from "node:child_process";
 import {
@@ -260,6 +264,7 @@ test("a landing's review record comes from an independent reviewer and accounts 
       reviewer: "independent",
       reviews: 2,
       head: "abc1234",
+      e2e: ["translated  --game choice-help+playable", "live"],
       findings: [
         {
           summary: "Off by one",
@@ -269,7 +274,15 @@ test("a landing's review record comes from an independent reviewer and accounts 
           review: 1,
         },
         {
+          summary: "Typo",
+          kind: "quality",
+          outcome: "fixed",
+          behavior: false,
+          review: 2,
+        },
+        {
           summary: "Slow loop",
+          kind: "risk",
           outcome: "dismissed",
           reason: "Runs once",
           review: 2,
@@ -281,10 +294,19 @@ test("a landing's review record comes from an independent reviewer and accounts 
       reviewer: "independent",
       reviews: 2,
       head: "abc1234",
+      e2e: ["translated --game choice-help+playable", "live"],
       findings: [
         { summary: "Off by one", kind: "bug", outcome: "fixed", review: 1 },
         {
+          summary: "Typo",
+          kind: "quality",
+          outcome: "fixed",
+          behavior: false,
+          review: 2,
+        },
+        {
           summary: "Slow loop",
+          kind: "risk",
           outcome: "dismissed",
           reason: "Runs once",
           review: 2,
@@ -293,7 +315,7 @@ test("a landing's review record comes from an independent reviewer and accounts 
     },
   );
   // The author's own review, or none, no longer lands a branch.
-  const reviewed = { reviewer: "independent", head: "abc1234" };
+  const reviewed = { reviewer: "independent", head: "abc1234", e2e: [] };
   for (const unreviewed of [
     { level: "high", head: "abc1234", findings: [] },
     { level: "high", reviewer: "author", head: "abc1234", findings: [] },
@@ -316,7 +338,9 @@ test("a landing's review record comes from an independent reviewer and accounts 
       record({
         ...reviewed,
         level: "high",
-        findings: [{ summary: "Slow loop", outcome: "dismissed" }],
+        findings: [
+          { summary: "Slow loop", kind: "risk", outcome: "dismissed" },
+        ],
       }),
     /Finding 1 .* without a reason/,
   );
@@ -341,7 +365,13 @@ test("a landing's review record comes from an independent reviewer and accounts 
           level: "high",
           reviews: 2,
           findings: [
-            { summary: "Off by one", outcome, reason: "Kept", review },
+            {
+              summary: "Off by one",
+              kind: "bug",
+              outcome,
+              reason: "Kept",
+              review,
+            },
           ],
         }),
       /Finding 1 .* needs a review number from 1 to 2/,
@@ -355,50 +385,240 @@ test("a landing's review record comes from an independent reviewer and accounts 
       }),
     /Finding 1 .* needs a kind of bug, risk, quality/,
   );
-  // A --review landing gives every finding's kind; the intake's need not.
+  // A --review landing gives every finding's kind and names its E2E runs;
+  // the Discord intake's record need not until it sends the kinds, and its
+  // worker names the runs in the hand-off. It counts as one review.
+  const intakeRecord = {
+    reviewer: "independent",
+    head: "abc1234",
+    level: "high",
+    findings: [{ summary: "Off by one", outcome: "fixed" }],
+  };
   assert.throws(
-    () =>
-      readReview(
-        JSON.stringify({
-          ...reviewed,
-          level: "high",
-          findings: [{ summary: "Off by one", outcome: "fixed" }],
-        }),
-        { kinds: true },
-      ),
+    () => record({ ...intakeRecord, e2e: [] }),
     /Finding 1 .* needs a kind/,
   );
-  // A record from before reviews were counted, as the Discord intake writes.
+  assert.deepEqual(readReview(JSON.stringify(intakeRecord), { intake: true }), {
+    ...intakeRecord,
+    reviews: 1,
+    findings: [{ summary: "Off by one", outcome: "fixed", review: 1 }],
+  });
+  assert.throws(
+    () =>
+      record({
+        ...intakeRecord,
+        findings: [{ ...intakeRecord.findings[0], kind: "bug" }],
+      }),
+    /names the scenarios and live test its author ran as "e2e"/,
+  );
+  // E2E runs are scenario.mjs's own arguments, with names it knows, or a
+  // reason none ran.
   assert.deepEqual(
     record({
       ...reviewed,
       level: "high",
-      findings: [{ summary: "Off by one", outcome: "fixed" }],
-    }),
-    {
+      e2e: undefined,
+      whyNoE2e: " Docs ",
+      findings: [],
+    }).whyNoE2e,
+    "Docs",
+  );
+  for (const [e2e, problem] of [
+    [["no-such-scenario"], /no-such-scenario is no scenario/],
+    [["translated --game choice-help+nope"], /nope is no game variant/],
+    [["translated --game choice-help+"], /an empty name is no game variant/],
+    [["translated --app"], /names --app; leave it out/],
+    [["live --work logs"], /names --work; leave it out/],
+    [["translated --nope x"], /takes --game and --from once each, not --nope/],
+    [["translated --game mz --game mv"], /once each, not --game/],
+    [["live --upgrade-from"], /gives --upgrade-from no value/],
+    [["live --game mz"], /takes --upgrade-from once each/],
+    [[""], /a run is no text/],
+    ["live", /names the scenarios/],
+  ] as const)
+    assert.throws(
+      () => record({ ...reviewed, level: "high", e2e, findings: [] }),
+      problem,
+    );
+  assert.throws(
+    () =>
+      record({
+        ...reviewed,
+        level: "high",
+        e2e: ["live"],
+        whyNoE2e: "Docs",
+        findings: [],
+      }),
+    /keep one/,
+  );
+  assert.throws(
+    () => record({ ...reviewed, level: "high", whyNoE2e: " ", findings: [] }),
+    /"whyNoE2e" is empty/,
+  );
+  // Three findings of the last review fixed in behavior send the branch to a
+  // fresh reviewer, until the most reviews ran; a fix to wording alone, or
+  // one the reviewer dismissed, does not count.
+  const fixes = (review: number, ...more: object[]) => [
+    { summary: "A", kind: "bug", outcome: "fixed", review },
+    { summary: "B", kind: "risk", outcome: "fixed", review },
+    ...more,
+  ];
+  const due =
+    /Review 1 had 3 or more findings that a user can hit fixed in behavior/;
+  assert.throws(
+    () =>
+      record({
+        ...reviewed,
+        level: "high",
+        findings: fixes(1, { summary: "C", kind: "quality", outcome: "fixed" }),
+      }),
+    due,
+  );
+  for (const third of [
+    { summary: "C", kind: "quality", outcome: "fixed", behavior: false },
+    { summary: "C", kind: "bug", outcome: "dismissed", reason: "Not so" },
+  ])
+    assert.equal(
+      record({ ...reviewed, level: "high", findings: fixes(1, third) }).findings
+        .length,
+      3,
+    );
+  const thirdFix = { summary: "C", kind: "bug", outcome: "fixed", review: 1 };
+  assert.equal(
+    record({
       ...reviewed,
       level: "high",
-      reviews: 1,
-      findings: [{ summary: "Off by one", outcome: "fixed", review: 1 }],
+      reviews: 2,
+      findings: fixes(1, thirdFix),
+    }).reviews,
+    2,
+  );
+  assert.equal(
+    record({
+      ...reviewed,
+      level: "high",
+      reviews: 3,
+      findings: fixes(3, { ...thirdFix, review: 3 }),
+    }).reviews,
+    3,
+  );
+  assert.equal(
+    readReview(
+      JSON.stringify({ ...intakeRecord, findings: fixes(1, thirdFix) }),
+      { intake: true },
+    ).reviews,
+    1,
+  );
+  // The intake's own findings, numbered by its review, count the same way.
+  assert.equal(
+    repeatReviewDue(
+      [
+        { review: 2, outcome: "fixed" },
+        { review: 2, outcome: "fixed", behavior: true },
+        { review: 2, outcome: "fixed" },
+      ],
+      2,
+    ),
+    true,
+  );
+  // Only fixes a user can hit count: three marked so send the branch to a
+  // fresh reviewer, while one no user can hit, such as a bug in a report
+  // like review-stats, does not count. The mark stays on the record, so
+  // review-stats can tell why a repeat review started.
+  const userFacing = fixes(1, thirdFix).map((finding) => ({
+    ...finding,
+    userFacing: true,
+  }));
+  assert.throws(
+    () => record({ ...reviewed, level: "high", findings: userFacing }),
+    /Review 1 had 3 or more findings that a user can hit fixed in behavior/,
+  );
+  const report = [
+    ...userFacing.slice(0, 2),
+    { ...thirdFix, userFacing: false },
+    {
+      summary: "D",
+      kind: "bug",
+      outcome: "dismissed",
+      reason: "No",
+      userFacing: true,
     },
+  ];
+  assert.deepEqual(
+    record({ ...reviewed, level: "high", findings: report }).findings.map(
+      (finding) => finding.userFacing,
+    ),
+    [true, true, false, true],
+  );
+  assert.equal(
+    repeatReviewDue(
+      [
+        { review: 1, outcome: "fixed", userFacing: false },
+        { review: 1, outcome: "fixed", userFacing: false },
+        { review: 1, outcome: "fixed", userFacing: false },
+      ],
+      1,
+    ),
+    false,
+  );
+  for (const outcome of ["fixed", "dismissed"])
+    assert.throws(
+      () =>
+        record({
+          ...reviewed,
+          level: "high",
+          findings: [{ ...thirdFix, outcome, reason: "No", userFacing: "yes" }],
+        }),
+      /"userFacing" true or false/,
+    );
+  assert.throws(
+    () =>
+      record({
+        ...reviewed,
+        level: "high",
+        findings: [{ ...thirdFix, behavior: "no" }],
+      }),
+    /"behavior" true or false/,
+  );
+  assert.throws(
+    () =>
+      record({
+        ...reviewed,
+        level: "high",
+        findings: [
+          { ...thirdFix, outcome: "dismissed", reason: "No", behavior: "no" },
+        ],
+      }),
+    /"behavior" true or false/,
   );
   // The lenses every review ran, so review-stats can compare escapes by lens.
   assert.deepEqual(
     record({
       ...reviewed,
       level: "high",
-      lenses: ["places-and-chains", "places-and-chains"],
+      lenses: ["live-check", "places-and-chains", "places-and-chains"],
       findings: [],
     }),
     {
       ...reviewed,
       level: "high",
       reviews: 1,
-      lenses: ["places-and-chains"],
+      lenses: ["places-and-chains", "live-check"],
       findings: [],
     },
   );
-  for (const lenses of ["places-and-chains", ["places"], null])
+  // The intake lists every lens unasked, so its live check is left out.
+  assert.deepEqual(
+    readReview(
+      JSON.stringify({
+        ...intakeRecord,
+        lenses: ["places-and-chains", "live-check"],
+      }),
+      { intake: true },
+    ).lenses,
+    ["places-and-chains"],
+  );
+  for (const lenses of ["places-and-chains", ["places"], ["live"], null])
     assert.throws(
       () => record({ ...reviewed, level: "high", lenses, findings: [] }),
       /"lenses" lists the lenses every review ran/,
@@ -485,6 +705,7 @@ test("a landing refuses a fix of its own without the trailers saying where its b
       level: "high",
       reviewer: "independent",
       head: work,
+      e2e: [],
       findings: [],
     }),
   );
@@ -644,14 +865,16 @@ test("a sandboxed worker hands off a checked branch without writing the main che
   const base = commit(main, "dev.txt", "dev\n");
   const before = refs();
   spawnSync("chmod", ["-R", "a-w", main]);
-  assert.equal(await handOff(clone, deps, dir), 0, logged.join("\n"));
+  // The worker names the E2E it ran, and the reviews log keeps it.
+  const ran = { e2e: ["translated --game playable --from HEAD~1", "live"] };
+  assert.equal(await handOff(clone, deps, dir, ran), 0, logged.join("\n"));
   writable();
   const head = rev(atClone, "HEAD");
   assert.ok(
     logged.includes(`Handed off ${base.slice(0, 7)}..${head.slice(0, 7)}`),
   );
   const handoff = record();
-  assert.deepEqual(handoff, { format: 1, branch: "work", head, base });
+  assert.deepEqual(handoff, { format: 1, branch: "work", head, base, ...ran });
   assert.equal(refs(), before);
   assert.equal(
     fs.existsSync(path.join(main, ".git", "dazedtl-reviews.jsonl")),
@@ -673,7 +896,10 @@ test("a sandboxed worker hands off a checked branch without writing the main che
   logged.length = 0;
   assert.equal(await finish(), 1);
   assert.match(logged.join("\n"), /not the head/);
-  fs.writeFileSync(handoffFile, JSON.stringify(handoff));
+  // --finish keeps the names the worker's land.mjs checked against its own
+  // branch, which may add a scenario dev lacks.
+  const named = { ...handoff, e2e: [...ran.e2e, "added-by-the-branch"] };
+  fs.writeFileSync(handoffFile, JSON.stringify(named));
   review(head);
   // The hand-off changes a platform-sensitive path, so it lands once CI on
   // GitHub passes: --finish starts it and is run again later.
@@ -705,6 +931,7 @@ test("a sandboxed worker hands off a checked branch without writing the main che
     .split("\n");
   assert.equal(entries.length, 1);
   assert.equal(JSON.parse(entries[0]).range, `${base}..${head}`);
+  assert.deepEqual(JSON.parse(entries[0]).e2e, named.e2e);
   // Only dev moved: the fetched ref and the lock are gone.
   assert.equal(refs(), before.replace(base, head));
 
@@ -718,7 +945,11 @@ test("a sandboxed worker hands off a checked branch without writing the main che
   // dev moving after the checks sends the worker back to merge it, but only
   // once the hand-off's CI has passed, which then stands after that merge.
   commit(clone, "scripts/setup.mjs", "more\n");
+  // The intake reruns a hand-off's checks naming no runs, so a
+  // platform-sensitive one is not refused for that yet.
   assert.equal(await handOff(clone, deps, dir), 0, logged.join("\n"));
+  // Naming none is not the same as having run none.
+  assert.equal(record().e2e, undefined);
   assert.equal(record().base, head);
   review(record().head);
   commit(main, "later.txt", "later\n");
@@ -726,6 +957,12 @@ test("a sandboxed worker hands off a checked branch without writing the main che
   logged.length = 0;
   assert.equal(await finish(), 3);
   assert.match(logged.join("\n"), /^dev moved since the hand-off's checks/m);
+  // A run with a name scenario.mjs doesn't know is refused, and leaves no
+  // earlier hand-off behind to finish.
+  logged.length = 0;
+  assert.equal(await handOff(clone, deps, dir, { e2e: ["live --nope"] }), 1);
+  assert.match(logged.join("\n"), /not --nope/);
+  assert.equal(fs.existsSync(handoffFile), false);
 
   // A fix without its trailers is refused before anything else runs.
   commit(clone, "fix.txt", "fix\n");
@@ -785,6 +1022,64 @@ test("the platform rule marks every file a fix for Windows alone changed since 2
     "tests/test_images.py",
   ];
   assert.deepEqual(platformSensitive([...elsewhere, ...changed]), changed);
+});
+
+test("the Live check is due on a branch that changes a screen or flow, which the screens command lists", (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dazedtl-screens-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const git = gitIn(dir);
+  git(["init", "-q", "-b", "dev"]);
+  git(["config", "user.email", "test@example.com"]);
+  git(["config", "user.name", "Test"]);
+  git(["commit", "-q", "--allow-empty", "-m", "feat: base"]);
+  git(["switch", "-q", "-c", "work"]);
+  const write = (file: string) => {
+    fs.mkdirSync(path.dirname(path.join(dir, file)), { recursive: true });
+    fs.writeFileSync(path.join(dir, file), "x\n");
+    git(["add", file]);
+    git(["commit", "-q", "-m", `feat: ${file}`]);
+  };
+  write("backend/dazedtl/actions.py");
+  write("tests/app.test.ts");
+  // A backend API change writes the generated contracts again.
+  write("app/src/api/contracts.ts");
+  write("docs/architecture.md");
+  write("app/tsconfig.json");
+  // Every lens but the Live check is due on any branch.
+  assert.deepEqual(screensCommand(git, ["screens", "dev", "work"]), {
+    code: 0,
+    lines: [
+      "This branch changes none of the renderer, app build or window paths that screenPaths marks; the Live check is not due.",
+    ],
+  });
+  assert.equal(lensDue("live-check", changedPaths(git, "dev", "work")), false);
+  assert.equal(lensDue("places-and-chains", []), true);
+  write("app/src/ui/Row.tsx");
+  write("app/electron/main.cjs");
+  write("app/index.html");
+  write("app/package.json");
+  assert.deepEqual(screensCommand(git, ["screens", "dev", "work"]), {
+    code: 0,
+    lines: [
+      "This branch changes a screen or user flow, so its review runs the Live check:",
+      "  app/electron/main.cjs",
+      "  app/index.html",
+      "  app/package.json",
+      "  app/src/ui/Row.tsx",
+    ],
+  });
+  assert.equal(lensDue("live-check", changedPaths(git, "dev", "work")), true);
+  // A ref Git can't find never reads as a branch with no screen.
+  assert.equal(screensCommand(git, ["screens", "dev", "nope"]).code, 2);
+  assert.equal(screensCommand(git, ["screens", "dev"]).code, 2);
+  // Nor do refs Git can't compare, such as an orphan branch's.
+  git(["switch", "-q", "--orphan", "orphan"]);
+  write("app/src/ui/Orphan.tsx");
+  assert.deepEqual(screensCommand(git, ["screens", "dev", "orphan"]).code, 2);
+  assert.throws(
+    () => changedPaths(git, "dev", "orphan"),
+    /Git can't list what orphan changes since dev/,
+  );
 });
 
 /**
@@ -901,13 +1196,14 @@ test("a platform-sensitive branch lands once CI on GitHub passes, after one reru
     onStop: () => {},
   };
   const reviewFile = path.join(dir, "review.json");
-  const landReviewed = (head: string) => {
+  const landReviewed = (head: string, e2e = ["live"]) => {
     fs.writeFileSync(
       reviewFile,
       JSON.stringify({
         level: "high",
         reviewer: "independent",
         head,
+        e2e,
         findings: [],
       }),
     );
@@ -923,6 +1219,15 @@ test("a platform-sensitive branch lands once CI on GitHub passes, after one reru
   }
 
   const first = commit(work, "scripts/setup.mjs", "one\n");
+  // Its record names the E2E its author ran, or says why none fits, before
+  // anything runs.
+  assert.equal(await landReviewed(first, []), 1);
+  assert.match(
+    logged.join("\n"),
+    /platform-sensitive paths \(scripts\/setup\.mjs\)[^]*"whyNoE2e"/,
+  );
+  assert.deepEqual(github.writes, []);
+  ran.length = 0;
   assert.equal(await landReviewed(first), 0, logged.join("\n"));
   assert.equal(dev(), first);
   assert.deepEqual(github.writes, [

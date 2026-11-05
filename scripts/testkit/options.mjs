@@ -77,6 +77,14 @@ function refuse(/** @type {string} */ usage, /** @type {string} */ reason) {
   process.exit(2);
 }
 
+/** The options building a scenario takes. */
+export const scenarioOptions = Object.freeze({
+  "--work": "value",
+  "--game": "value",
+  "--from": "value",
+  "--app": "flag",
+});
+
 /** The live test's options, which `scenario.mjs live` passes on to it. */
 export const e2eOptions = Object.freeze({
   "--work": "value",

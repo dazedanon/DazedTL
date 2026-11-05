@@ -14,6 +14,8 @@ import {
   exposureDays,
   highEnd,
   loggedLandings,
+  numstatFiles,
+  repeatReason,
   summarize,
 } from "../scripts/review-stats.mjs";
 
@@ -44,11 +46,12 @@ test("review stats put each escaped bug on the landing that let it in, once it i
         landed: old - day,
         commits: ["b1"],
         lines: 40,
+        changed: [],
       },
       {
         range: "b..c",
         reviews: 2,
-        lenses: ["places-and-chains"],
+        lenses: ["places-and-chains", "live-check"],
         findings: [
           { kind: "bug", outcome: "fixed", review: 1 },
           { kind: "bug", outcome: "dismissed", review: 2 },
@@ -57,6 +60,29 @@ test("review stats put each escaped bug on the landing that let it in, once it i
         landed: old,
         commits: ["c1", "c2", "c3"],
         lines: 1200,
+        changed: ["app/src/ui/Row.tsx", "scripts/land.mjs"],
+      },
+      // The Live check is not due on a branch that changes no screen, so
+      // this one is in no live-check row.
+      {
+        range: "f..g",
+        reviews: 1,
+        lenses: ["places-and-chains"],
+        findings: [],
+        landed: old,
+        commits: ["g1"],
+        lines: 20,
+        changed: ["backend/dazedtl/actions.py"],
+      },
+      {
+        range: "g..h",
+        reviews: 1,
+        lenses: [],
+        findings: [],
+        landed: old,
+        commits: ["h1"],
+        lines: 20,
+        changed: ["app/electron/main.cjs"],
       },
       // Too recent to count the bugs that got past it yet.
       {
@@ -67,6 +93,7 @@ test("review stats put each escaped bug on the landing that let it in, once it i
         landed: now - day,
         commits: ["d1", "d2"],
         lines: 150,
+        changed: [],
       },
       {
         range: "d..e",
@@ -76,6 +103,7 @@ test("review stats put each escaped bug on the landing that let it in, once it i
         landed: null,
         commits: ["e1"],
         lines: 5,
+        changed: [],
       },
     ],
     [
@@ -94,15 +122,29 @@ test("review stats put each escaped bug on the landing that let it in, once it i
   );
   assert.deepEqual(summary.byReviews, [
     [0, { landings: 1, escapes: 0 }],
+    [1, { landings: 2, escapes: 0 }],
     [2, { landings: 1, escapes: 1 }],
   ]);
   assert.deepEqual(summary.bySize, [
-    ["under 100", { landings: 1, escapes: 0 }],
+    ["under 100", { landings: 3, escapes: 0 }],
     ["1000 or more", { landings: 1, escapes: 1 }],
   ]);
   // a..b ran no independent review, so it is in no lens row.
-  assert.deepEqual(summary.byLenses, [
-    ["places-and-chains", { landings: 1, escapes: 1 }],
+  assert.deepEqual(summary.byLens, [
+    [
+      "places-and-chains",
+      {
+        with: { landings: 2, escapes: 1 },
+        without: { landings: 1, escapes: 0 },
+      },
+    ],
+    [
+      "live-check",
+      {
+        with: { landings: 1, escapes: 1 },
+        without: { landings: 1, escapes: 0 },
+      },
+    ],
   ]);
   assert.equal(summary.recent, 1);
   assert.equal(summary.undated, 1);
@@ -116,6 +158,8 @@ test("review stats put each escaped bug on the landing that let it in, once it i
     ],
     [2, { bug: { fixed: 0, dismissed: 1 } }],
   ]);
+  // b..c's second review followed only two fixes of its first.
+  assert.deepEqual(summary.repeats, [["not due", 1]]);
   assert.deepEqual(
     summary.escaped.map(({ fix, introduced, range }) => [
       fix,
@@ -144,6 +188,29 @@ test("review stats put each escaped bug on the landing that let it in, once it i
   assert.deepEqual(summary.chains, [["e1", "d1"]]);
 });
 
+test("review stats tell a repeat review that fixes a user can hit started from one that a report's bugs or unmarked fixes did", () => {
+  const fixed = (userFacing?: boolean, review = 1) => ({
+    outcome: "fixed",
+    review,
+    ...(userFacing === undefined ? {} : { userFacing }),
+  });
+  const reason = (...findings: object[]) => repeatReason(findings as never, 1);
+  assert.equal(reason(fixed(true), fixed(true), fixed(true)), "user-facing");
+  // Fixes with no mark, as in records from before it, count as before.
+  assert.equal(reason(fixed(true), fixed(true), fixed()), "unmarked");
+  assert.equal(reason(fixed(), fixed(), fixed()), "unmarked");
+  // Bugs only in a report such as this one start no review now.
+  assert.equal(
+    reason(fixed(true), fixed(true), fixed(false)),
+    "not user-facing",
+  );
+  assert.equal(
+    reason(fixed(true), fixed(true), { ...fixed(true), behavior: false }),
+    "not due",
+  );
+  assert.equal(reason(fixed(true), fixed(true), fixed(true, 2)), "not due");
+});
+
 test("review stats count a landing's age in days on which landings reached dev", () => {
   // Local times, `days` after a landing at 09:00, at `hour`.
   const at = (days: number, hour = 12) =>
@@ -159,6 +226,7 @@ test("review stats count a landing's age in days on which landings reached dev",
           landed: at(0, 9),
           commits: ["b1"],
           lines: 10,
+          changed: [],
         },
       ],
       [],
@@ -190,6 +258,7 @@ test("review stats list a chain of fixes across landings, and only those", () =>
     landed: old,
     commits,
     lines: 10,
+    changed: [],
   });
   const fix = (fix: string, introduced: string[]) => ({
     fix,
@@ -326,11 +395,19 @@ test("review stats read real trailers by their first word, code lines from numst
   git(["add", "-A"]);
   git(["commit", "-qm", "feat: more"]);
   // code.mjs: seven lines removed, one added.
-  assert.equal(
-    codeLines(
-      git(["diff", "--numstat", "--no-renames", "-z", `${base}..HEAD`]).stdout,
+  const numstat = git([
+    "diff",
+    "--numstat",
+    "--no-renames",
+    "-z",
+    `${base}..HEAD`,
+  ]).stdout;
+  assert.equal(codeLines(numstat), 8);
+  // The paths the lens rows read, such as a screen's, come unquoted.
+  assert.ok(
+    numstatFiles(numstat).some(
+      ({ file }) => file === "backend/tool/tests/日本語_test.py",
     ),
-    8,
   );
 
   const { landings, unread, times } = loggedLandings(
@@ -347,10 +424,16 @@ test("review stats read real trailers by their first word, code lines from numst
         range: "b..c",
         reviewer: "independent",
         reviews: 2,
-        lenses: ["places-and-chains", "places-and-chains", "unknown"],
+        lenses: [
+          "live-check",
+          "places-and-chains",
+          "places-and-chains",
+          "unknown",
+        ],
         findings: [
-          { kind: "bug", outcome: "fixed", review: 2 },
+          { kind: "bug", outcome: "fixed", userFacing: false, review: 2 },
           { outcome: "dismissed" },
+          { outcome: "fixed", behavior: false, userFacing: "yes", review: 2 },
         ],
       }),
       JSON.stringify({
@@ -373,10 +456,11 @@ test("review stats read real trailers by their first word, code lines from numst
     {
       range: "b..c",
       reviews: 2,
-      lenses: ["places-and-chains"],
+      lenses: ["places-and-chains", "live-check"],
       findings: [
-        { kind: "bug", outcome: "fixed", review: 2 },
+        { kind: "bug", outcome: "fixed", userFacing: false, review: 2 },
         { outcome: "dismissed", review: 1 },
+        { outcome: "fixed", behavior: false, review: 2 },
       ],
       landed: null,
     },
