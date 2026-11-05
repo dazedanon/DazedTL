@@ -13,7 +13,7 @@ from dazedtl.compatibility import compare as compare_run
 from dazedtl.compatibility.compare import END, cut, glossary_text, rows, sources
 from dazedtl.compatibility.compare_units import stage
 from dazedtl.storage import write_json
-from dazedtl.translation.compare import Compare, Game
+from dazedtl.translation.compare import Compare, Game, view
 from dazedtl.translation.project import MANUAL_UNITS
 from desktop.backend.guidance import documents_save, read
 from util.paths import GLOSSARY_BASE_SEPARATOR
@@ -158,6 +158,34 @@ class RunTests(unittest.TestCase):
             ):
                 compare_run.run(plan, log)
             self.assertEqual(staged.call_args.args[1:3], (app / "workspace", "p1"))
+
+
+class ViewTests(unittest.TestCase):
+    def test_a_failed_models_error_keeps_its_name_hidden(self):
+        # Blind showed a failed model's error, which began with its name.
+        options = {
+            "kind": "versus",
+            "file": "Map001",
+            "lines": 0,
+            "candidates": [
+                {"index": 0, "connection": "C", "connection_id": "c1", "model": "m/a"},
+                {"index": 1, "connection": "C", "connection_id": "c1", "model": "m/b"},
+            ],
+        }
+        estimate = {"id": "e", "created": "1", "status": "complete", "result": {}}
+        translated = {
+            "id": "t",
+            "status": "complete",
+            "result": {
+                "lines": [],
+                "models": [{"index": 1, "error": "m/b: model m/b is not available"}],
+            },
+        }
+        shown = view(estimate, options, translated, {})
+        self.assertEqual(
+            shown["candidates"][1]["error"],
+            "this model: model this model is not available",
+        )
 
 
 class Operations:

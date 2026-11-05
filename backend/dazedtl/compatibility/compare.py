@@ -324,7 +324,8 @@ def translate(directory, env, label, log, index):
             end(process)
     if not finished or finished[0] is not True:
         message = failure or (finished[1] if finished and len(finished) > 1 else "")
-        raise ValueError(f"{label}: {message or 'the translation did not finish.'}")
+        # Its column names the model, which Blind hides.
+        raise ValueError(message or "The translation did not finish.")
 
 
 # What a line's check found, as the page names it (translation/result_checks

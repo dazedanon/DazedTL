@@ -759,6 +759,10 @@ def view(estimate, options, translated, marks):
         priced = models.get(row["index"], {})
         done = results.get(row["index"], {})
         error = done.get("error") or priced.get("error") or row.get("error")
+        if error:
+            # Its column names the model, which Blind hides until every row
+            # has a pick, so its error never does, whatever wrote it.
+            error = error.replace(row["model"], "this model")
         candidates.append(
             {
                 "index": row["index"],
