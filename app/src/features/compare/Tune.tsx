@@ -28,6 +28,7 @@ import {
   glossaryChanges,
   glossaryEntries,
   modelDetail,
+  runName,
   tuneRuns,
 } from "./compareView";
 import { LinesMenu, useSceneChoice } from "./LinesMenu";
@@ -232,7 +233,7 @@ export function Tune({ context }: { context: CompareContext }) {
       ? undefined
       : (runs.find((item) => item.id === chosen.left && item !== shown) ??
         (position > 0 ? runs[position - 1] : undefined));
-  const name = (item: Comparison) => `Run ${runs.indexOf(item) + 1}`;
+  const name = (item: Comparison) => runName(runs, item);
   const pickRun = (
     side: "left" | "right",
     value: Comparison | undefined,

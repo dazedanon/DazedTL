@@ -259,6 +259,11 @@ export const columnError = (model: CompareModel, hidden: boolean) =>
     ? "This model didn’t finish. Why shows once the names are revealed."
     : model.error;
 
+/** A Tune settings run's name by its place among `runs`; a test estimated
+ * but not translated yet is no run. */
+export const runName = (runs: readonly Comparison[], item: Comparison) =>
+  runs.includes(item) ? `Run ${runs.indexOf(item) + 1}` : "This test";
+
 /** The Tune settings runs of one file's lines, oldest first, translated. */
 export function tuneRuns(
   comparisons: readonly Comparison[],

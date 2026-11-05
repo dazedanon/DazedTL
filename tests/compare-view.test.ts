@@ -17,6 +17,7 @@ import {
   namesHidden,
   picks,
   recordedMarks,
+  runName,
   Rereads,
   runningComparison,
   runStatus,
@@ -402,4 +403,12 @@ test("a hidden model's error leaves out its words, which may name it", () => {
   assert.doesNotMatch(columnError(failed, true) ?? "", /GPT/);
   assert.equal(columnError(failed, false), failed.error);
   assert.equal(columnError(model(0), true), undefined);
+});
+
+test("a Tune test estimated but not translated yet is no numbered run", () => {
+  // Its column read "Run 0".
+  const run = comparison({ id: "a", stage: "translation" });
+  const estimated = comparison({ id: "b" });
+  assert.equal(runName([run], run), "Run 1");
+  assert.equal(runName([run], estimated), "This test");
 });
