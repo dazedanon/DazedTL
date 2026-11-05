@@ -475,6 +475,59 @@ class TextBlockTests(unittest.TestCase):
                 self.assertEqual(game.read_bytes(), written)
                 game.unlink()
 
+    def test_assistant_led_fits_a_nameplate_apart_from_its_speech(self):
+        # Assistant-led's writer keeps one source over a message's rows, and
+        # fitting it as one text wrapped the name row into the speech.
+        from util.len_originals import write_rpgmaker_json
+
+        def page(rows):
+            return {
+                "list": [
+                    command(101, ["", 0, 0, 2, ""]),
+                    *(command(401, [row]) for row in rows),
+                    command(0, []),
+                ]
+            }
+
+        source = page(
+            [
+                "\\c[2]新米\\c[0]",
+                "「すいません‼ちょっと目を離したすきに",
+                "　入り込みまして…‼",
+            ]
+        )
+        staged = page(
+            [
+                "\\c[2]Rookie\\c[0]",
+                '"I\'m sorry! They slipped in when I took my eyes off for a moment...!"',
+                "",
+            ]
+        )
+        with tempfile.TemporaryDirectory() as folder:
+            files = {
+                name: Path(folder, name + ".json") for name in ("source", "staged")
+            }
+            for name, document in (("source", source), ("staged", staged)):
+                files[name].write_text(
+                    json.dumps(document, ensure_ascii=False), "utf-8"
+                )
+            game = Path(folder, "Map001.json")
+            write_rpgmaker_json(
+                files["source"],
+                files["staged"],
+                game,
+                Layout(55, 45, 60, 60, 4, "English"),
+            )
+            listed = json.loads(game.read_bytes())["list"]
+        self.assertEqual(blocks.text(listed[1]), "\\c[2]Rookie\\c[0]")
+        self.assertEqual(
+            [blocks.text(listed[at]) for at in (2, 3)],
+            [
+                "\"I'm sorry! They slipped in when I",
+                'took my eyes off for a moment...!"',
+            ],
+        )
+
     def test_list_items_of_the_japanese_keep_a_row_each_beside_a_face(self):
         help_text = wrap_help(
             "Effects: ・Attack power rises greatly for the rest of the battle "

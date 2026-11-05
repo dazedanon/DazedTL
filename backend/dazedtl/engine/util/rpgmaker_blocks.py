@@ -672,6 +672,12 @@ class Reading:
         return bool(value.strip()) and (not self.skip_translated or holds_source(value))
 
 
+# The reading of text no engine settings read, such as Assistant-led's: a
+# speaker in any form the engine reads, a short row before speech included,
+# is a text of its own, as the game's rows lay it out.
+EVERY_SPEAKER = Reading(first_line=True, inline=True)
+
+
 class Text(NamedTuple):
     """A text the engine sends of some rows (:func:`texts`): their indexes,
     and for a nameplate on a row of its own, sent apart from the speech after

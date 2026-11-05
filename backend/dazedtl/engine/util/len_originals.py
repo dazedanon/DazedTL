@@ -241,10 +241,15 @@ def fit_written(document, filename: str, layout) -> dict:
     never added or removed, so later writes still line up with the source.
     Its text may have been fitted to other widths, such as a staged copy
     taken before the widths changed, so it is fitted as resized (see
-    util.rpgmaker_rewrap.fit_document)."""
+    util.rpgmaker_rewrap.fit_document). A message keeps one source over its
+    rows (preserve_originals), so each text the game's rows lay out apart,
+    such as a nameplate and its speech, is fitted on its own
+    (rpgmaker_blocks EVERY_SPEAKER)."""
     from util.rpgmaker_rewrap import fit_document
 
-    report = fit_document(document, filename, layout, resized=True)
+    report = fit_document(
+        document, filename, layout, resized=True, reading=blocks.EVERY_SPEAKER
+    )
     return {
         "fitted": len(report.changes),
         "misfits": report.misfits[:LISTED_MISFITS],
