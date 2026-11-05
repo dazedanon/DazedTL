@@ -108,19 +108,23 @@ export const lensDue = (lens, changed) =>
 export const findingKinds = ["bug", "risk", "quality"];
 
 /**
- * How many of one review's findings fixed in behavior, in code or in rules
- * other sessions follow, send the branch to another fresh reviewer. A fix to
- * wording, comments or naming alone, marked `"behavior": false`, does not
- * count.
+ * How many of one review's findings that a user can hit, fixed in behavior,
+ * in code or in rules other sessions follow, send the branch to another
+ * fresh reviewer. A fix to wording, comments or naming alone, marked
+ * `"behavior": false`, does not count, nor does a finding no user can hit,
+ * marked `"userFacing": false`, such as one in a report like review-stats:
+ * the dazedtl-land skill's Review step says which a user can hit.
  */
 export const repeatReviewFixes = 3;
 
 /**
  * Whether the dazedtl-land skill's Review step runs another fresh review
  * after review `review`: fewer than maxReviews ran and repeatReviewFixes of
- * its findings were fixed in behavior, those it raised while checking the
- * fixes included.
- * @param {{ review?: number, outcome: string, behavior?: boolean }[]} findings
+ * its findings that a user can hit were fixed in behavior, those it raised
+ * while checking the fixes included. A finding with no `userFacing` mark,
+ * from a record older than the mark or one that leaves it out, counts as
+ * one a user can hit, so leaving it out never skips a review.
+ * @param {{ review?: number, outcome: string, behavior?: boolean, userFacing?: boolean }[]} findings
  * @param {number} review
  */
 export const repeatReviewDue = (findings, review) =>
@@ -129,7 +133,8 @@ export const repeatReviewDue = (findings, review) =>
     (finding) =>
       finding.review === review &&
       finding.outcome === "fixed" &&
-      finding.behavior !== false,
+      finding.behavior !== false &&
+      finding.userFacing !== false,
   ).length >= repeatReviewFixes;
 
 /**
