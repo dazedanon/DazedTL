@@ -38,6 +38,8 @@ ESTIMATE, TRANSLATE = "compare_estimate", "compare_translate"
 ACTIONS = (ESTIMATE, TRANSLATE)
 # The requests a model's result keeps for Show request.
 KEPT_REQUESTS = 20
+# A model's error when the user stopped its translation.
+STOPPED = "Stopped before it finished."
 # What a comparison's test-only guidance is saved as in a run's snapshot,
 # beside the game's own guidance files, which every request carries.
 INSTRUCTION = "game/.dazedtl/skills/comparison.md"
@@ -202,15 +204,20 @@ def sources(found):
 
 
 class Activity:
-    """Where each model's run stands, reported with every status line."""
+    """Where each model's run stands, reported with every status line. A
+    translation that *keeps* what its models finished reports nothing once
+    stopped, so each model ends where its own run checks the stop."""
 
-    def __init__(self, log, candidates):
+    def __init__(self, log, candidates, keeps=False):
         self.log = log
         self.stopped = log.stopped
+        self.keeps = keeps
         self.lock = threading.Lock()
         self.states = {row["index"]: "waiting" for row in candidates}
 
     def __call__(self, message, index=None, state=None, **_progress):
+        if self.keeps and self.stopped():
+            return
         with self.lock:
             if index is not None and state:
                 self.states[index] = state
@@ -436,7 +443,7 @@ def run(plan, log):
     options = plan["options"]
     action = plan["action"]
     candidates = options["candidates"]
-    report = Activity(log, candidates)
+    report = Activity(log, candidates, keeps=action == TRANSLATE)
     name, phase = options["file"], options["phase"]
     markers = frozenset(options.get("markers") or ())
     with system.staging_folder(folder, "compare-") as root:
@@ -512,7 +519,10 @@ def run(plan, log):
                 report(f"{label} · translated", index, "done")
                 return {"index": index, **value}
             except InterruptedError:
-                raise
+                if action == ESTIMATE:
+                    raise
+                report(f"{label} · stopped", index, "failed")
+                return {"index": index, "error": STOPPED, **_spent(directory)}
             except (
                 OSError,
                 RuntimeError,
@@ -532,7 +542,7 @@ def run(plan, log):
 
         with ThreadPoolExecutor(max_workers=len(candidates) or 1) as pool:
             values = list(pool.map(one, candidates))
-    return {"file": name, "lines": shown, "models": values}
+    return _ended(action, log, {"file": name, "lines": shown, "models": values})
 
 
 # The methods whose lines are the units an extractor saved.
@@ -553,7 +563,7 @@ def run_units(plan, log):
     workspace = Path(options["workspace"])
     root = options["source"]
     candidates = options["candidates"]
-    report = Activity(log, candidates)
+    report = Activity(log, candidates, keeps=action == TRANSLATE)
     engine = TranslationEngine(workspace / "engine")
     parent = workspace / "translation/projects" / options["projectId"]
     parent.mkdir(parents=True, exist_ok=True)
@@ -617,7 +627,12 @@ def run_units(plan, log):
                     scratch / f"model-{index}/runs",
                     log.stopped,
                 )
+            except InterruptedError:
+                # Stopped before it sent anything.
+                return {"index": index, "error": STOPPED}
             except (OSError, RuntimeError, ValueError) as error:
+                # Failed before it sent anything; one that failed sending
+                # comes back with what it spent (compare_units.translate).
                 report(f"{label} · failed", index, "failed")
                 return {"index": index, "error": _message(error)}
             result.update(
@@ -630,12 +645,26 @@ def run_units(plan, log):
                     options["pair"],
                 ),
             )
-            report(f"{label} · translated", index, "done")
+            report(
+                f"{label} · {'failed' if result.get('error') else 'translated'}",
+                index,
+                "failed" if result.get("error") else "done",
+            )
             return {"index": index, **result}
 
         with ThreadPoolExecutor(max_workers=len(candidates) or 1) as pool:
             values = list(pool.map(one, candidates))
-    return {"file": options.get("file"), "lines": shown, "models": values}
+    return _ended(
+        action, log, {"file": options.get("file"), "lines": shown, "models": values}
+    )
+
+
+def _ended(action, log, value):
+    """A comparison's result. A translation the user stopped keeps it, each
+    model with what it finished and spent, and ends stopped, saying so."""
+    if action == TRANSLATE and log.stopped():
+        return {**value, "stopped": True, "message": stopped_note(TRANSLATE)}
+    return value
 
 
 def _message(error):

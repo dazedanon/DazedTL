@@ -184,8 +184,17 @@ def translate(
         if stopped():
             raise InterruptedError("Stopped.")
 
+    from .compare import STOPPED, _message
+
     runner = Runner(store, job["id"], provider, current)
-    runner.step(recover=False)
+    failure = None
+    try:
+        runner.step(recover=False)
+    except InterruptedError:
+        failure = STOPPED
+    except (OSError, RuntimeError, ValueError) as error:
+        failure = _message(error)
+    # What came back before a stop or a failure is kept, with its cost.
     results = Results(game)
     lines = {}
     for request in requests:
@@ -235,5 +244,5 @@ def translate(
         "cost": round(float(cost or 0), 6),
         "requests": shown,
         "requestCount": len(requests),
-        **({"error": failed[0]} if failed and not lines else {}),
+        **({"error": failure or failed[0]} if failure or failed and not lines else {}),
     }

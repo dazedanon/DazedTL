@@ -2,6 +2,7 @@
 lines a comparison sends and shows, and its paid approval."""
 
 import json
+import threading
 import unittest
 import uuid
 from pathlib import Path
@@ -9,13 +10,16 @@ from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
+from dazedtl.actions import stopped_note
 from dazedtl.compatibility import compare as compare_run
+from dazedtl.compatibility import compare_units
 from dazedtl.compatibility.compare import END, cut, glossary_text, rows, sources
 from dazedtl.compatibility.compare_units import stage
 from dazedtl.storage import write_json
 from dazedtl.translation.compare import Compare, Game, view
 from dazedtl.translation.project import MANUAL_UNITS
 from desktop.backend.guidance import documents_save, read
+from desktop.backend.workflow_worker import outcome
 from util.paths import GLOSSARY_BASE_SEPARATOR
 
 
@@ -158,6 +162,129 @@ class RunTests(unittest.TestCase):
             ):
                 compare_run.run(plan, log)
             self.assertEqual(staged.call_args.args[1:3], (app / "workspace", "p1"))
+
+
+class StopTests(unittest.TestCase):
+    def guided_plan(self, folder, models):
+        return {
+            "action": compare_run.TRANSLATE,
+            "folder": str(folder),
+            "project": {"source": str(folder / "game")},
+            "options": {
+                "method": "guided",
+                "workspace": str(folder),
+                "projectId": "p1",
+                "file": "Map001.json",
+                "phase": "dialogue",
+                "relative": "data/Map001.json",
+                "lines": 0,
+                "workflow": {},
+                "pair": {},
+                "candidates": [
+                    {"index": index, "label": model, "model": model, "policy": {}}
+                    for index, model in enumerate(models)
+                ],
+            },
+        }
+
+    def test_a_stopped_translation_keeps_what_each_model_finished_and_spent(self):
+        # A stop dropped every model's lines and the cost of what was sent,
+        # while translating again was refused.
+        stopped = threading.Event()
+
+        def translate(directory, _env, label, log, index):
+            if label == "b":
+                stopped.set()
+                raise InterruptedError("stop")
+
+        with TemporaryDirectory() as temporary:
+            folder = Path(temporary)
+            log = Mock(stopped=stopped.is_set)
+            finished = {"lines": {"/1": {"speaker": "", "text": "Hi"}}, "cost": 0.5}
+            with (
+                patch("desktop.backend.workflow_actions.validate_plan"),
+                patch("desktop.backend.manual.worker_environment"),
+                patch.object(compare_run, "stage", return_value=({}, [])),
+                patch.object(compare_run, "stage_run", return_value=(None, {})),
+                patch.object(compare_run, "engine_configuration"),
+                patch.object(compare_run, "translate", side_effect=translate),
+                patch.object(compare_run, "result", return_value=finished),
+                patch.object(compare_run, "_spent", return_value={"cost": 0.2}),
+            ):
+                value = compare_run.run(self.guided_plan(folder, ["a", "b"]), log)
+        self.assertTrue(value["stopped"])
+        self.assertEqual(value["message"], stopped_note(compare_run.TRANSLATE))
+        self.assertEqual(value["models"][0], {"index": 0, **finished})
+        self.assertEqual(
+            value["models"][1],
+            {"index": 1, "error": compare_run.STOPPED, "cost": 0.2},
+        )
+        self.assertEqual(outcome(value), "stopped")
+        # The page shows the stopped model's cost beside its error.
+        options = {"kind": "versus", "file": "", "lines": 0, "candidates": []}
+        options["candidates"] = [
+            {"index": index, "connection": "C", "connection_id": "c1", "model": model}
+            for index, model in enumerate(["a", "b"])
+        ]
+        shown = view(
+            {"id": "e", "created": "1", "status": "complete", "result": {}},
+            options,
+            {"id": "t", "status": "stopped", "result": value},
+            {},
+        )
+        self.assertEqual(shown["candidates"][1]["cost"], 0.2)
+
+    def test_a_model_that_fails_sending_keeps_what_it_spent(self):
+        # An Assistant-led model that failed after sending showed no cost.
+        record = {
+            "usage": {"input_tokens": 10},
+            "request_usage": {},
+            "states": {"r1": {"state": "accepted"}, "r2": {"state": "pending"}},
+        }
+        store = Mock(
+            create=Mock(return_value={"id": "j1"}), record=Mock(return_value=record)
+        )
+
+        class Runner:
+            def __init__(self, *_args):
+                pass
+
+            def step(self, recover):
+                raise RuntimeError("connection lost")
+
+            def response_path(self, identity):
+                return Path("/missing") / identity
+
+        requests = [
+            {"id": identity, "sources": [], "params": {}} for identity in ("r1", "r2")
+        ]
+        options = {
+            "selected": {},
+            "inputPath": "units.json",
+            "quotes": True,
+            "projectId": "p1",
+        }
+        with (
+            patch.object(compare_units, "run_store", return_value=store),
+            patch("dazedtl.translation.runner.Runner", Runner),
+            patch("dazedtl.translation.results.Results"),
+            patch("dazedtl.settings.execution.worker_secret"),
+            patch("dazedtl.translation.repricing.route_of"),
+            patch("dazedtl.compatibility.translation.TranslationProvider"),
+            patch("dazedtl.compatibility.estimate_prices.usage_cost", return_value=0.3),
+        ):
+            value = compare_units.translate(
+                None,
+                Path("/workspace"),
+                options,
+                {"configuration": {}},
+                requests,
+                {},
+                Path("/game"),
+                Path("/runs"),
+                lambda: False,
+            )
+        self.assertEqual((value["error"], value["cost"]), ("RuntimeError", 0.3))
 
 
 class ViewTests(unittest.TestCase):

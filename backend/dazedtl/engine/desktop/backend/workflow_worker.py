@@ -25,6 +25,13 @@ def reading_plan(plan):
     return reading_game(source) if isinstance(source, str) and source else nullcontext()
 
 
+def outcome(result):
+    """The status an action's result ends its operation with."""
+    if isinstance(result, dict) and result.get("ok") is False:
+        return "failed"
+    return "stopped" if isinstance(result, dict) and result.get("stopped") is True else "complete"
+
+
 def main():
     from util import system
 
@@ -55,7 +62,9 @@ def main():
             from desktop.backend.evaluations import run_action
         with reading_plan(plan):
             result = run_action(plan, log)
-        emit("finished", status="failed" if isinstance(result, dict) and result.get("ok") is False else "complete",
+        # A result may end failed, or stopped where the action keeps what it
+        # finished before a stop (compatibility/compare).
+        emit("finished", status=outcome(result),
              message=result.get("message") or "Completed: " + plan["label"] if isinstance(result, dict) else "Completed: " + plan["label"], result=json_value(result))
     except Exception as exc:
         from desktop.backend.worker_failures import reported

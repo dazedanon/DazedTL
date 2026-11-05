@@ -778,14 +778,11 @@ def view(estimate, options, translated, marks):
                     else {}
                 ),
                 **({"error": error} if error else {}),
+                # What it spent shows even when it failed or was stopped.
+                **({"cost": done["cost"]} if "cost" in done else {}),
+                **({"seconds": done["seconds"]} if "seconds" in done else {}),
                 **(
-                    {
-                        "cost": done.get("cost", 0),
-                        "seconds": done.get("seconds", 0),
-                        "requests": done.get("requestCount", 0),
-                    }
-                    if done and not done.get("error")
-                    else {}
+                    {"requests": done["requestCount"]} if "requestCount" in done else {}
                 ),
             }
         )
