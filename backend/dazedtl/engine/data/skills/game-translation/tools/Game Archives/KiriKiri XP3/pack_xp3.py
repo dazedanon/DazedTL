@@ -24,17 +24,21 @@ def chunk(tag, body):
     return tag + struct.pack("<Q", len(body)) + body
 
 
-def members(root, files, flat):
-    """(archive name, path) of each file, refusing names that collide."""
-    root = root.resolve()
+def members(root, files, flat, output):
+    """(archive name, path) of each file, refusing names that collide; the
+    output archive is never one of them, so packing again leaves its old
+    self out."""
+    root, output = root.resolve(), output.resolve()
     paths = [root / name for name in files] if files else sorted(
-        path for path in root.rglob("*") if path.is_file()
+        path for path in root.rglob("*") if path.is_file() and path.resolve() != output
     )
     found, seen = [], {}
     for path in paths:
         path = path.resolve()
         if not path.is_file():
             raise XP3Error(f"not a file: {path}")
+        if path == output:
+            raise XP3Error(f"the output archive can't pack itself: {path}")
         try:
             relative = PurePosixPath(path.relative_to(root).as_posix())
         except ValueError:
@@ -97,7 +101,7 @@ def main():
 
     if args.output.exists() and not args.overwrite:
         raise XP3Error(f"output exists: {args.output}")
-    entries = members(args.root, args.files, args.flat)
+    entries = members(args.root, args.files, args.flat, args.output)
     temporary = args.output.with_name(args.output.name + ".packing")
     try:
         with temporary.open("wb") as out:

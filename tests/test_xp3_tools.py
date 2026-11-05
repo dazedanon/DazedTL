@@ -71,6 +71,26 @@ class Xp3ToolTests(unittest.TestCase):
                 ["menu.tlg", "title.bmp"],
             )
             self.assertEqual((root / "out/title.bmp").read_bytes(), b"BM" + bytes(300))
+            # Packed twice into the folder it packs, it held its old self.
+            for _ in range(2):
+                self.assertEqual(
+                    run(
+                        "pack_xp3",
+                        root / "decoded/patch.xp3",
+                        "--root",
+                        root / "decoded",
+                        "--flat",
+                        "--overwrite",
+                    )[0],
+                    0,
+                )
+            self.assertEqual(
+                run("unpack_xp3", root / "decoded/patch.xp3", root / "again")[0], 0
+            )
+            self.assertEqual(
+                sorted(path.name for path in (root / "again").iterdir()),
+                ["menu.tlg", "title.bmp"],
+            )
 
     def test_unreadable_files_and_indexes_are_named_and_fail(self):
         # An archive whose index the tool can't read reported "records: 0"
