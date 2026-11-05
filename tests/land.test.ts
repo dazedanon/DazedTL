@@ -396,7 +396,7 @@ test("a landing's review record comes from an independent reviewer and accounts 
       findings: [],
     },
   );
-  for (const lenses of ["places-and-chains", ["places"]])
+  for (const lenses of ["places-and-chains", ["places"], null])
     assert.throws(
       () => record({ ...reviewed, level: "high", lenses, findings: [] }),
       /"lenses" lists the lenses every review ran/,

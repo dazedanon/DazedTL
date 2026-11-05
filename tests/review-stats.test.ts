@@ -345,7 +345,7 @@ test("review stats read real trailers by their first word, code lines from numst
         range: "b..c",
         reviewer: "independent",
         reviews: 2,
-        lenses: ["places-and-chains"],
+        lenses: ["places-and-chains", "places-and-chains", "unknown"],
         findings: [
           { kind: "bug", outcome: "fixed", review: 2 },
           { outcome: "dismissed" },

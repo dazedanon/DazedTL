@@ -15,13 +15,13 @@ import {
   readCommits,
   tracedFix,
 } from "./fix-trailers.mjs";
-import { gitIn, reviewLog } from "./land-lock.mjs";
+import { gitIn, knownLenses, reviewLog } from "./land-lock.mjs";
 
 /**
  * @typedef {{ kind?: string, outcome: string, review: number }} Finding
  * @typedef {{ range: string, reviews: number, lenses: string[], findings: Finding[], landed: number | null }} Logged
  * A landed range with how many independent reviews it ran, the lenses they
- * all ran (land.mjs `reviewLenses`), their findings and when it landed, in
+ * all ran (land-lock.mjs `reviewLenses`), their findings and when it landed, in
  * milliseconds; one its author reviewed or skipped, before independent
  * reviews, ran none, and its findings count as review 0.
  * @typedef {Logged & { commits: string[], lines: number }} Landing
@@ -102,7 +102,7 @@ export function loggedLandings(text) {
     landings.push({
       range: row.range,
       reviews: independent ? (row.reviews ?? 1) : 0,
-      lenses: Array.isArray(row.lenses) ? row.lenses : [],
+      lenses: Array.isArray(row.lenses) ? knownLenses(row.lenses) : [],
       findings: findings.map((/** @type {any} */ item) => ({
         ...(item.kind === undefined ? {} : { kind: item.kind }),
         outcome: item.outcome,
@@ -190,14 +190,18 @@ export function summarize(landings, fixes, { landed, fixCommits }) {
     for (const [map, key] of /** @type {const} */ ([
       [byReviews, landing.reviews],
       [bySize, size(landing)],
-      // A landing with no independent review ran no lens either, so it stays
-      // out of the lens rows rather than skew those without one.
-      ...(landing.reviews ? [[byLenses, landing.lenses.join(" + ")]] : []),
     ])) {
       const group = map.get(key) ?? { landings: 0, escapes: 0 };
       group[field] += 1;
       map.set(key, group);
     }
+    // A landing with no independent review ran no lens either, so it stays
+    // out of the lens rows rather than skew those without one.
+    if (!landing.reviews) return;
+    const lenses = landing.lenses.join(" + ");
+    const group = byLenses.get(lenses) ?? { landings: 0, escapes: 0 };
+    group[field] += 1;
+    byLenses.set(lenses, group);
   };
   let recent = 0;
   let undated = 0;

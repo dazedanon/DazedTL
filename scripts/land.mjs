@@ -48,7 +48,9 @@ import {
 import {
   devMoved,
   gitIn,
+  knownLenses,
   LockBusy,
+  reviewLenses,
   reviewLog,
   withLock,
 } from "./land-lock.mjs";
@@ -70,12 +72,6 @@ const maxReviews = 3;
  * docs, naming or design. Older and intake records leave it out.
  */
 export const findingKinds = ["bug", "risk", "quality"];
-/**
- * The checks a review may run besides code-review, each named in the
- * dazedtl-land skill's Review lens section; a record lists those every one
- * of its reviews ran, so review-stats can compare escapes with and without.
- */
-export const reviewLenses = ["places-and-chains"];
 const reviewShape =
   '{"level": "high", "reviewer": "independent", "reviews": 1, "head": "<hash of the last commit the last reviewer checked>", "findings": [{"summary": "...", "kind": "bug", "outcome": "fixed", "review": 1}, {"summary": "...", "kind": "quality", "outcome": "dismissed", "reason": "...", "review": 1}]}';
 /** The subject of the commit holding what the formatter changed. */
@@ -141,7 +137,7 @@ export function readReview(text, { kinds = false } = {}) {
     throw new Error(
       "The review record needs a findings list, empty when the review found nothing.",
     );
-  const lenses = record.lenses ?? [];
+  const lenses = record.lenses === undefined ? [] : record.lenses;
   if (
     !Array.isArray(lenses) ||
     lenses.some((lens) => !reviewLenses.includes(lens))
@@ -185,10 +181,7 @@ export function readReview(text, { kinds = false } = {}) {
     reviewer: "independent",
     reviews,
     head: record.head,
-    // In reviewLenses order, once each, so review-stats groups them alike.
-    ...(lenses.length
-      ? { lenses: reviewLenses.filter((lens) => lenses.includes(lens)) }
-      : {}),
+    ...(lenses.length ? { lenses: knownLenses(lenses) } : {}),
     findings,
   };
 }
