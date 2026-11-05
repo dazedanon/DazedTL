@@ -991,10 +991,14 @@ export async function land(cwd, deps, reviewFile) {
   const sensitive = platformSensitive(
     changedPaths(git, "refs/heads/dev", "HEAD"),
   );
+  /** @type {string | undefined} */
+  let tested;
   if (sensitive.length) {
-    // CI tests the branch with today's dev, which may hold fixes it needs.
+    // CI tests the branch with today's dev, which may hold fixes it needs,
+    // and only once the local checks pass, which take a minute, not ten.
     const stopped =
       (await mergeDev(git, top, deps.run, log)) ??
+      (await runChecks(deps, top, branch, time)) ??
       (await branchCI(deps, {
         git,
         cwd: top,
@@ -1007,11 +1011,16 @@ export async function land(cwd, deps, reviewFile) {
       }));
     if (stopped) return reported(deps, stopped, time);
     time.lap("CI");
+    tested = git(["rev-parse", "HEAD"]).stdout.trim();
   }
   const checked = git(["rev-parse", "HEAD"]).stdout.trim();
   return lockedRun(deps, git, { branch, worktree: top }, time, (tell) =>
-    underLock(deps, { top, main, branch, checked }, time, tell, (range) =>
-      recordReview(deps, common, { branch, range, review }),
+    underLock(
+      deps,
+      { top, main, branch, checked, tested },
+      time,
+      tell,
+      (range) => recordReview(deps, common, { branch, range, review }),
     ),
   );
 }
@@ -1313,7 +1322,7 @@ function landed(git, before, head, unpushed) {
 /**
  * The landing itself, while this session holds the lock.
  * @param {Deps} deps
- * @param {{ top: string, main: string, branch: string, checked: string }} where `checked` is the head the review and any branch CI covered
+ * @param {{ top: string, main: string, branch: string, checked: string, tested?: string }} where `checked` is the head the review and any branch CI covered, `tested` the one the local checks passed for before CI
  * @param {ReturnType<typeof timer>} time
  * @param {(line: string) => void} tell
  * @param {(range: string) => void} record records the review of a landed range
@@ -1321,7 +1330,7 @@ function landed(git, before, head, unpushed) {
  */
 async function underLock(
   deps,
-  { top, main, branch, checked },
+  { top, main, branch, checked, tested },
   time,
   tell,
   record,
@@ -1344,7 +1353,9 @@ async function underLock(
   time.lap("merge");
   if (head === before)
     return outcome(0, `dev already has every commit of ${branch}.`);
-  const failed = await runChecks(deps, top, branch, time);
+  // Checks that passed before CI hold while dev brought nothing new.
+  const failed =
+    head === tested ? null : await runChecks(deps, top, branch, time);
   if (failed) return failed;
 
   // The fast-forward rewrites the files the user's DazedTL runs from.

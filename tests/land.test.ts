@@ -880,13 +880,21 @@ test("a platform-sensitive branch lands once CI on GitHub passes, after one reru
     const ran = spawnSync("git", args, { cwd, encoding: "utf8" });
     return { status: ran.status ?? 1, output: ran.stdout + ran.stderr };
   };
+  // The scripts a landing ran and the CI runs it started, in order.
+  const ran: string[] = [];
   const deps = {
     // Git runs for real; the format, test and build scripts pass.
-    run: async (cwd: string, command: string, args: string[]) =>
-      command === "git" ? realGit(cwd, args) : { status: 0, output: "" },
+    run: async (cwd: string, command: string, args: string[]) => {
+      if (command === "git") return realGit(cwd, args);
+      ran.push(path.basename(args[0]));
+      return { status: 0, output: "" };
+    },
     processes: () => "",
     read: github.read,
-    write: github.write,
+    write: (route: string, request?: { body?: any }) => {
+      if (route.endsWith("/dispatches")) ran.push("CI");
+      return github.write(route, request);
+    },
     wait: async () => {},
     log: (line: string) => logged.push(line),
     notify: () => {},
@@ -923,6 +931,8 @@ test("a platform-sensitive branch lands once CI on GitHub passes, after one reru
   ]);
   assert.equal(github.runs[0].head_sha, first);
   assert.equal(pushed(), "");
+  // The local checks run before CI, and not again for the same head.
+  assert.deepEqual(ran, ["format.mjs", "test.mjs", "build.mjs", "CI"]);
 
   // A failure after the rerun stops the landing and names the check.
   const red = commit(work, "scripts/setup.mjs", "two\n");
