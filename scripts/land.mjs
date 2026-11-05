@@ -494,6 +494,7 @@ const ciBranch = (/** @type {string} */ branch) => `land/${branch}`;
 /** How often, and how long, a landing looks for the CI run it started. */
 const ciStartPoll = 5000;
 const ciStartLimit = 3 * 60_000;
+const dispatchTries = 3;
 
 /**
  * The paths a branch changes since it left `base`, a renamed file under both
@@ -562,7 +563,9 @@ async function ciStatus(read, repo, commits) {
   }
   if (newest && newest.status !== "completed")
     return { state: "running", run: newest };
-  if (newest && failedRun(newest)) return { state: "failed", run: newest };
+  // A run GitHub could not start says nothing of the branch: start another.
+  if (newest && failedRun(newest) && newest.conclusion !== "startup_failure")
+    return { state: "failed", run: newest };
   // A run of an earlier commit, such as from before a merge of dev, stands
   // if it passes, and a new one on the same branch would cancel it.
   if (running) return { state: "running", run: running };
@@ -610,10 +613,19 @@ async function startCI(deps, { cwd, options, site, branch }, sha, find) {
   const known = new Set(
     find ? ciRuns(await read(route)).map((run) => run.id) : [],
   );
-  await write(
-    `repos/${site.repo}/actions/workflows/${path.basename(workflow)}/dispatches`,
-    { body: { ref: ciBranch(branch) } },
-  );
+  // GitHub can answer 422 for a ref pushed a moment ago, so a refused
+  // dispatch is sent again a few times.
+  for (let attempt = 1; ; attempt++)
+    try {
+      await write(
+        `repos/${site.repo}/actions/workflows/${path.basename(workflow)}/dispatches`,
+        { body: { ref: ciBranch(branch) } },
+      );
+      break;
+    } catch (error) {
+      if (attempt >= dispatchTries || !/ 422 /.test(reason(error))) throw error;
+      await deps.wait(ciStartPoll);
+    }
   if (!find) return { run: null };
   const since = now();
   for (;;) {
@@ -629,16 +641,11 @@ async function startCI(deps, { cwd, options, site, branch }, sha, find) {
   }
 }
 
-/**
- * Deletes the landing's CI branch from GitHub once `run` has finished on it;
- * a run on another branch, such as dev's, leaves nothing to delete.
- */
+/** Deletes the landing's CI branch from GitHub, if it is there. */
 async function dropCIBranch(
   /** @type {Deps} */ deps,
   /** @type {CIBranch} */ { cwd, options, site, branch },
-  /** @type {any} */ run,
 ) {
-  if (run.head_branch !== ciBranch(branch)) return;
   const dropped = await deps.run(
     cwd,
     "git",
@@ -665,15 +672,44 @@ async function dropCIBranch(
  * gets one rerun of its failed jobs. With `follow` it waits for the outcome;
  * without, since --finish never waits long, it resolves mainBusy while CI
  * runs so the caller finishes again later. The pushed branch is deleted once
- * the outcome is known. Resolves null once CI passed, else the outcome that
- * stops the landing, naming a failed check in plain words.
+ * the outcome is known, and by a waiting landing however it ends. Resolves
+ * null once CI passed, else the outcome that stops the landing, naming a
+ * failed check in plain words.
  * @param {Deps} deps
- * @param {{ git: ReturnType<typeof gitIn>, cwd: string, main: string, branch: string, tip: string, sensitive: string[], options?: string[], follow: boolean, again: string }} where
+ * @param {CIWhere} where
  * @returns {Promise<Outcome | null>}
  */
-export async function branchCI(
+export async function branchCI(deps, where) {
+  const { git, cwd, main, branch, options = [], follow } = where;
+  const site = githubSite(git, main);
+  if (!follow) {
+    const result = await ciOutcome(deps, where, site);
+    if (site && result?.code !== mainBusy)
+      await dropCIBranch(deps, { cwd, options, site, branch });
+    return result;
+  }
+  try {
+    return await ciOutcome(deps, where, site);
+  } finally {
+    if (site) await dropCIBranch(deps, { cwd, options, site, branch });
+  }
+}
+
+/**
+ * @typedef {{ git: ReturnType<typeof gitIn>, cwd: string, main: string, branch: string, tip: string, sensitive: string[], options?: string[], follow: boolean, again: string }} CIWhere
+ */
+
+/**
+ * branchCI's outcome, leaving the pushed branch to it.
+ * @param {Deps} deps
+ * @param {CIWhere} where
+ * @param {ReturnType<typeof githubSite>} site
+ * @returns {Promise<Outcome | null>}
+ */
+async function ciOutcome(
   deps,
-  { git, cwd, main, branch, tip, sensitive, options = [], follow, again },
+  { git, cwd, branch, tip, sensitive, options = [], follow, again },
+  site,
 ) {
   const { read, write, log } = deps;
   const short = tip.slice(0, 7);
@@ -689,16 +725,17 @@ export async function branchCI(
   log(
     `${branch} changes ${paths}, so it lands once CI passes on Windows and Linux (platformPaths in scripts/land-lock.mjs).`,
   );
-  const site = githubSite(git, main);
   if (!site)
     return outcome(
       1,
       "release/mirrors.json names no GitHub mirror to run CI on; nothing landed.",
     );
+  // The user's to fix, not the branch's: --finish tries again later.
   if (!read || !write)
     return outcome(
-      1,
-      "CI on GitHub needs a token: sign in with gh auth login or set GH_TOKEN; nothing landed.",
+      unreached,
+      "This needs CI on GitHub, and land.mjs has no GitHub token: sign in with gh auth login or set GH_TOKEN.",
+      retry,
     );
   /** @type {CIBranch} */
   const where = { cwd, options, site, branch };
@@ -765,7 +802,6 @@ export async function branchCI(
   const { run } = result;
   if (result.ok) {
     log(`CI passed for ${run.head_sha.slice(0, 7)}: ${run.html_url}`);
-    await dropCIBranch(deps, where, run);
     return null;
   }
   if (run?.status !== "completed")
@@ -774,7 +810,6 @@ export async function branchCI(
       `${result.reason ?? "CI did not finish."} ${run?.html_url ?? ""}`.trim(),
       retry,
     );
-  await dropCIBranch(deps, where, run);
   const rerun = (run.run_attempt ?? 1) > 1 ? " after one rerun" : "";
   const ended = failedRun(run) ? "failed" : `ended as ${run.conclusion}`;
   const checks = (result.failed ?? []).map(plainJob);
@@ -1587,12 +1622,8 @@ async function finishUnderLock(
         `The hand-off's head ${head.slice(0, 7)} does not build on its base ${base.slice(0, 7)}; nothing landed.`,
       );
     time.lap("verify");
-    const dev = out("rev-parse", "--verify", "refs/heads/dev");
-    if (dev !== base)
-      return outcome(
-        devMoved,
-        `dev moved since the hand-off's checks (from ${base.slice(0, 7)} to ${dev.slice(0, 7)}); merge dev into ${branch} and hand off again.`,
-      );
+    // CI comes before the check that dev has not moved: dev moving while it
+    // runs needs no new run, since its pass stands once the worker merges dev.
     const sensitive = platformSensitive(changedPaths(git, base, head));
     if (sensitive.length) {
       const stopped = await branchCI(deps, {
@@ -1609,6 +1640,12 @@ async function finishUnderLock(
       if (stopped) return stopped;
       time.lap("CI");
     }
+    const dev = out("rev-parse", "--verify", "refs/heads/dev");
+    if (dev !== base)
+      return outcome(
+        devMoved,
+        `dev moved since the hand-off's checks (from ${base.slice(0, 7)} to ${dev.slice(0, 7)}); merge dev into ${branch} and hand off again.`,
+      );
     if (appRunning(main, deps.processes()))
       return outcome(appOpen, appOpenLine(main));
     const targets = mirrorTargets(git, main);

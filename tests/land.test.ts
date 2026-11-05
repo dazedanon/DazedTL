@@ -715,12 +715,14 @@ test("a sandboxed worker hands off a checked branch without writing the main che
   );
   assert.equal(fs.existsSync(handoffFile), false);
 
-  // dev moving after the checks sends the worker back to merge it.
-  commit(clone, "more.txt", "more\n");
+  // dev moving after the checks sends the worker back to merge it, but only
+  // once the hand-off's CI has passed, which then stands after that merge.
+  commit(clone, "scripts/setup.mjs", "more\n");
   assert.equal(await handOff(clone, deps, dir), 0, logged.join("\n"));
   assert.equal(record().base, head);
   review(record().head);
   commit(main, "later.txt", "later\n");
+  assert.equal(await finish(), 5);
   logged.length = 0;
   assert.equal(await finish(), 3);
   assert.match(logged.join("\n"), /^dev moved since the hand-off's checks/m);
@@ -743,6 +745,7 @@ test("the platform rule marks setup, platform code, assistants' tools, scenarios
     "scripts/setup.mjs",
     "app/electron/main.cjs",
     "backend/dazedtl/system.py",
+    "backend/dazedtl/translation/jobs.py",
     "backend/dazedtl/engine/data/skills/game-translation/tools/Game Archives/KiriKiri XP3/pack_xp3.py",
     "scripts/testkit/scenarios.mjs",
     ".github/workflows/ci.yml",
@@ -794,14 +797,18 @@ function standInGitHub(repo: string, pushed: () => string, first = "failure") {
     const id = Number(/runs\/(\d+)$/.exec(route)?.[1]);
     return runs.find((run) => run.id === id) ?? null;
   };
+  // Errors the next writes throw, as GitHub's refusals do.
+  const refusals: string[] = [];
   const write = async (route: string, request?: { body?: any }) => {
     writes.push(route.replace(`repos/${repo}/actions/`, ""));
+    const refused = refusals.shift();
+    if (refused) throw new Error(`GitHub answered ${refused} for ${route}.`);
     if (route.endsWith("/dispatches")) add(pushed(), first, 1);
     else Object.assign(runs.at(-1), { conclusion: "success", run_attempt: 2 });
     assert.equal(request?.body?.ref ?? "land/work", "land/work");
     return null;
   };
-  return { runs, writes, add, read, write };
+  return { runs, writes, refusals, add, read, write };
 }
 
 test("a platform-sensitive branch lands once CI on GitHub passes, after one rerun of a first failure, and never on red", async (t) => {
@@ -939,4 +946,33 @@ test("a platform-sensitive branch lands once CI on GitHub passes, after one reru
   const writes = github.writes.length;
   assert.equal((await check(false))?.code, 5);
   assert.equal(github.writes.length, writes);
+
+  // A run GitHub could not start gets a new one, and a dispatch refused
+  // just after the push is sent again; a landing that waits deletes its
+  // branch however it ends, and lacking a token, --finish comes back later.
+  const stuck = commit(work, "scripts/setup.mjs", "five\n");
+  github.add(stuck, "startup_failure", 1);
+  github.refusals.push("422", "500");
+  assert.equal((await check(true))?.code, 1);
+  assert.deepEqual(github.writes.slice(writes), [
+    "workflows/ci.yml/dispatches",
+    "workflows/ci.yml/dispatches",
+  ]);
+  assert.equal(pushed(), "");
+  const unsigned = { ...deps, read: null, write: null };
+  assert.equal(
+    (
+      await branchCI(unsigned, {
+        git,
+        cwd: work,
+        main,
+        branch: "work",
+        tip: stuck,
+        sensitive: ["scripts/setup.mjs"],
+        follow: false,
+        again: "hand work off again",
+      })
+    )?.code,
+    5,
+  );
 });
