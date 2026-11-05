@@ -11,8 +11,9 @@ for an event text block its first command's, such as a message's window,
 with `/parameters/4` after it for the message's name box and `~<n>` for its
 later parts. A nameplate on a message's first row, where the project's
 speaker settings read one, is a part of its own and names the speech's
-speaker, as the engine sends them (file_lines `nameplated`). A command the original doesn't hold at a place, such as one a
-game update added, keeps its pointer into the copy.
+speaker, as the engine sends them (file_lines `nameplated`). A command the
+original doesn't hold at a place, such as one a game update added, keeps its
+pointer into the copy.
 
 Importing writes into each file's working copy, as a run's output does
 (guided_inputs), and records each changed value's source as Guided does,
