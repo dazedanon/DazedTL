@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { api } from "../../api/client";
 import { messageOf } from "../../api/errors";
 import type {
+  CompareOperation,
   CompareState,
   Comparison,
   EffortLevel,
@@ -9,11 +10,10 @@ import type {
 } from "../../api/contracts";
 import { useApplication } from "../../app/ApplicationProvider";
 import { useOnChange } from "../../state/useOnChange";
-import { useAction, type Observer } from "../../state/useAction";
+import type { Observer } from "../../state/useAction";
 import { useRead } from "../../state/useRead";
 import { unavailableReason } from "../../ui/displayText";
 import { Message } from "../../ui/Feedback";
-import { ActionControl } from "../../ui/ActionControl";
 import { Notice } from "../../ui/Notice";
 import { StatusIcon } from "../../ui/StatusIcon";
 import {
@@ -25,6 +25,7 @@ import {
 import { StackedTabPanels, Tabs } from "../../ui/Tabs";
 import { onSettingsSaved } from "../settings/settingsChanges";
 import { configured } from "./AddModels";
+import { StopComparison } from "./StopComparison";
 import {
   compareInputs,
   Rereads,
@@ -41,7 +42,7 @@ const tabs = [
   { id: "versus", label: "Model vs model" },
   { id: "tune", label: "Tune settings" },
 ] as const;
-type CompareTab = (typeof tabs)[number]["id"];
+export type CompareTab = (typeof tabs)[number]["id"];
 
 const actions = ["compare_estimate", "compare_translate"];
 
@@ -55,6 +56,11 @@ export type CompareContext = {
   base: ChosenModel | null;
   /** The thinking effort Settings sends that model. */
   baseEffort: EffortLevel | null;
+  /** The comparison operation running for the game, from any tab. */
+  running: CompareOperation | null;
+  /** Says which operations the tab's footer shows, whose run the page then
+   * leaves to it. */
+  footer: (kind: CompareTab, operations: readonly string[]) => void;
   /** Reads the comparisons again, once shown, ending once they are read. */
   reload: () => Promise<void>;
   /** For an action that changes the comparisons: it finishes once the page
@@ -71,8 +77,8 @@ function useShownKey(shown: boolean, key: string) {
 }
 
 /**
- * The comparison running for this game, shown on every tab with its Stop,
- * since the game's other work waits for it.
+ * The comparison running for this game, with its Stop, on a tab whose
+ * footer doesn't show it, since the game's other work waits for it.
  */
 function RunningComparison({
   projectId,
@@ -81,9 +87,6 @@ function RunningComparison({
   projectId: string;
   running: NonNullable<ReturnType<typeof runningComparison>>;
 }) {
-  const application = useApplication();
-  const stop = useAction({ observer: application });
-  const { operation } = running;
   return (
     <Notice>
       <span className="compare-running">
@@ -92,16 +95,7 @@ function RunningComparison({
           {running.text}. {running.waits}
         </span>
       </span>
-      <ActionControl
-        label="Stop"
-        inline
-        pending={stop.busy || operation.stopping}
-        pendingText="Stopping…"
-        error={stop.error}
-        onClick={() =>
-          void stop.run(() => api.compare.stop(projectId, operation.id))
-        }
-      />
+      <StopComparison projectId={projectId} operation={running.operation} />
     </Notice>
   );
 }
@@ -188,6 +182,15 @@ export default function Compare({
     );
     return job ? { ...item, status: job.status, message: job.message } : item;
   });
+  const running = runningComparison(operations);
+  // The operations each tab's footer shows, which say their run themselves.
+  const [footers, setFooters] = useState<Record<string, string>>({});
+  const footer = useCallback((kind: CompareTab, ids: readonly string[]) => {
+    const key = ids.join(",");
+    setFooters((value) =>
+      value[kind] === key ? value : { ...value, [kind]: key },
+    );
+  }, []);
   const context: CompareContext | null = state
     ? {
         projectId: project.id,
@@ -195,12 +198,13 @@ export default function Compare({
         comparisons,
         base,
         baseEffort,
+        running: running?.operation ?? null,
+        footer,
         reload,
         observer: { mark: () => 0, settle: reload },
       }
     : null;
   const error = read.error === undefined ? "" : messageOf(read.error);
-  const running = runningComparison(operations);
   return (
     <PageLayout
       variant="editor"
@@ -233,9 +237,12 @@ export default function Compare({
           </div>
           <PageMessages>
             {error && !state && <Notice tone="warning">{error}</Notice>}
-            {running && (
-              <RunningComparison projectId={project.id} running={running} />
-            )}
+            {running &&
+              !(footers[tab] ?? "")
+                .split(",")
+                .includes(running.operation.id) && (
+                <RunningComparison projectId={project.id} running={running} />
+              )}
           </PageMessages>
           {!context ? (
             <PageBody>

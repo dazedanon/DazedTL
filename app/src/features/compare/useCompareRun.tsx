@@ -1,9 +1,11 @@
+import { useEffect } from "react";
 import { api } from "../../api/client";
 import type { Comparison, Job } from "../../api/contracts";
 import { useAction } from "../../state/useAction";
 import { ActionControl } from "../../ui/ActionControl";
 import type { CompareContext } from "./Compare";
 import { Button } from "../../ui/Button";
+import { StopComparison } from "./StopComparison";
 import {
   current,
   formatCost,
@@ -40,6 +42,19 @@ export function useCompareRun(
   const action = useAction({ observer: context.observer });
   const { latest, shown } = current(context.comparisons, choices);
   const step = runStep(latest, shown);
+  // The footer says how the latest comparison's run goes, with its Stop, so
+  // the page's notice leaves it out on this tab.
+  const ids = latest ? [latest.id, latest.translationId ?? ""] : [];
+  const { footer, running } = context;
+  const footerKey = ids.join(",");
+  useEffect(
+    () => footer(choices.kind, footerKey ? footerKey.split(",") : []),
+    [footer, choices.kind, footerKey],
+  );
+  const stop =
+    running && ids.includes(running.id) ? (
+      <StopComparison projectId={context.projectId} operation={running} />
+    ) : null;
   const estimate = () =>
     action.run(
       async () => {
@@ -123,43 +138,48 @@ export function useCompareRun(
       );
     if (step.step === "translating")
       return (
-        <ActionControl
-          variant="primary"
-          label={`Translate · about ${formatCost(step.cost)}`}
-          pendingText="Translating…"
-          job={operation("Translation")}
-        />
+        <>
+          {stop}
+          <ActionControl
+            variant="primary"
+            label={`Translate · about ${formatCost(step.cost)}`}
+            pendingText="Translating…"
+            job={operation("Translation")}
+          />
+        </>
       );
     return (
-      <ActionControl
-        variant={secondary && yields ? undefined : "primary"}
-        label={step.again ? "Estimate again" : "Estimate cost"}
-        pending={pending("estimate")}
-        pendingText="Starting the estimate…"
-        error={failure("estimate")}
-        disabled={!!blocked}
-        disabledReason={blocked}
-        note={
-          step.reason ||
-          (step.again ? "" : "Estimating is free and sends nothing.")
-        }
-        job={
-          latest && latest.status !== "complete"
-            ? operation(
-                latest.stage === "translation" ? "Translation" : "Estimate",
-              )
-            : undefined
-        }
-        onClick={() => void estimate()}
-      />
+      <>
+        {stop}
+        <ActionControl
+          variant={secondary && yields ? undefined : "primary"}
+          label={step.again ? "Estimate again" : "Estimate cost"}
+          pending={pending("estimate")}
+          pendingText="Starting the estimate…"
+          error={failure("estimate")}
+          disabled={!!blocked}
+          disabledReason={blocked}
+          note={
+            step.reason ||
+            (step.again ? "" : "Estimating is free and sends nothing.")
+          }
+          job={
+            latest && latest.status !== "complete"
+              ? operation(
+                  latest.stage === "translation" ? "Translation" : "Estimate",
+                )
+              : undefined
+          }
+          onClick={() => void estimate()}
+        />
+      </>
     );
   };
-  /** What the grid says while it has no lines: what runs, or `idle`. */
+  /** What the grid says while it has no lines: where they come, while the
+   * footer says what runs, or `idle`. */
   const empty = (idle: string) =>
     latest && working(latest.status)
-      ? latest.stage === "translation"
-        ? "Translating these lines…"
-        : "Reading these lines and pricing them…"
+      ? "These lines show here once they are read."
       : idle;
   return { latest, shown, control, yields, action, empty };
 }
