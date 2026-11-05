@@ -5,12 +5,15 @@ import path from "node:path";
 import test from "node:test";
 import {
   acquireLock,
+  changedPaths,
   gitIn,
+  lensDue,
   LockBusy,
   lockRef,
   platformSensitive,
   releaseLock,
   repeatReviewDue,
+  screensCommand,
 } from "../scripts/land-lock.mjs";
 import { spawnSync } from "node:child_process";
 import {
@@ -542,18 +545,29 @@ test("a landing's review record comes from an independent reviewer and accounts 
     record({
       ...reviewed,
       level: "high",
-      lenses: ["places-and-chains", "places-and-chains"],
+      lenses: ["live-check", "places-and-chains", "places-and-chains"],
       findings: [],
     }),
     {
       ...reviewed,
       level: "high",
       reviews: 1,
-      lenses: ["places-and-chains"],
+      lenses: ["places-and-chains", "live-check"],
       findings: [],
     },
   );
-  for (const lenses of ["places-and-chains", ["places"], null])
+  // The intake lists every lens unasked, so its live check is left out.
+  assert.deepEqual(
+    readReview(
+      JSON.stringify({
+        ...intakeRecord,
+        lenses: ["places-and-chains", "live-check"],
+      }),
+      { intake: true },
+    ).lenses,
+    ["places-and-chains"],
+  );
+  for (const lenses of ["places-and-chains", ["places"], ["live"], null])
     assert.throws(
       () => record({ ...reviewed, level: "high", lenses, findings: [] }),
       /"lenses" lists the lenses every review ran/,
@@ -957,6 +971,51 @@ test("the platform rule marks every file a fix for Windows alone changed since 2
     "tests/test_images.py",
   ];
   assert.deepEqual(platformSensitive([...elsewhere, ...changed]), changed);
+});
+
+test("the Live check is due on a branch that changes a screen or flow, which the screens command lists", (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dazedtl-screens-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const git = gitIn(dir);
+  git(["init", "-q", "-b", "dev"]);
+  git(["config", "user.email", "test@example.com"]);
+  git(["config", "user.name", "Test"]);
+  git(["commit", "-q", "--allow-empty", "-m", "feat: base"]);
+  git(["switch", "-q", "-c", "work"]);
+  const write = (file: string) => {
+    fs.mkdirSync(path.dirname(path.join(dir, file)), { recursive: true });
+    fs.writeFileSync(path.join(dir, file), "x\n");
+    git(["add", file]);
+    git(["commit", "-q", "-m", `feat: ${file}`]);
+  };
+  write("backend/dazedtl/actions.py");
+  write("tests/app.test.ts");
+  write("docs/architecture.md");
+  // Every lens but the Live check is due on any branch.
+  assert.deepEqual(screensCommand(git, ["screens", "dev", "work"]), {
+    code: 0,
+    lines: [
+      "This branch changes no screen or user flow; the Live check is not due.",
+    ],
+  });
+  assert.equal(lensDue("live-check", changedPaths(git, "dev", "work")), false);
+  assert.equal(lensDue("places-and-chains", []), true);
+  write("app/src/ui/Row.tsx");
+  write("app/electron/main.cjs");
+  write("app/index.html");
+  assert.deepEqual(screensCommand(git, ["screens", "dev", "work"]), {
+    code: 0,
+    lines: [
+      "This branch changes a screen or user flow, so its review runs the Live check:",
+      "  app/electron/main.cjs",
+      "  app/index.html",
+      "  app/src/ui/Row.tsx",
+    ],
+  });
+  assert.equal(lensDue("live-check", changedPaths(git, "dev", "work")), true);
+  // A ref Git can't find never reads as a branch with no screen.
+  assert.equal(screensCommand(git, ["screens", "dev", "nope"]).code, 2);
+  assert.equal(screensCommand(git, ["screens", "dev"]).code, 2);
 });
 
 /**

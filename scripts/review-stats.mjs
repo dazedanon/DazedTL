@@ -15,7 +15,13 @@ import {
   readCommits,
   tracedFix,
 } from "./fix-trailers.mjs";
-import { gitIn, knownLenses, reviewLog } from "./land-lock.mjs";
+import {
+  gitIn,
+  knownLenses,
+  lensDue,
+  reviewLenses,
+  reviewLog,
+} from "./land-lock.mjs";
 
 /**
  * @typedef {{ kind?: string, outcome: string, review: number }} Finding
@@ -24,9 +30,9 @@ import { gitIn, knownLenses, reviewLog } from "./land-lock.mjs";
  * all ran (land-lock.mjs `reviewLenses`), their findings and when it landed, in
  * milliseconds; one its author reviewed or skipped, before independent
  * reviews, ran none, and its findings count as review 0.
- * @typedef {Logged & { commits: string[], lines: number }} Landing
- * A logged landing with the full hashes of its range's commits and its
- * `codeLines`.
+ * @typedef {Logged & { commits: string[], lines: number, changed: string[] }} Landing
+ * A logged landing with the full hashes of its range's commits, its
+ * `codeLines` and the paths it changed.
  * @typedef {{ fix: string, introduced: string[], marks: string[], found: string | null }} Fix
  * A commit with an Introduced-by trailer: the full hashes of the commits it
  * names, its `unknown` or `none` marks and who found the bug.
@@ -116,24 +122,35 @@ export function loggedLandings(text) {
 }
 
 /**
- * The lines a landing changed in code, from its `git diff --numstat
- * --no-renames -z` output, whose paths Git leaves unquoted: tests folders,
- * Markdown, JSON and the generated API contracts are left out, and binary
- * files count none.
+ * The files a landing changed, from its `git diff --numstat --no-renames -z`
+ * output, whose paths Git leaves unquoted, each with its lines added and
+ * deleted, none for a binary file.
+ * @param {string} text
+ */
+export function numstatFiles(text) {
+  return text.split("\0").flatMap((entry) => {
+    const [added, deleted, file] = entry.split("\t");
+    return file
+      ? [{ file, lines: (Number(added) || 0) + (Number(deleted) || 0) }]
+      : [];
+  });
+}
+
+/**
+ * The lines a landing changed in code, from its numstatFiles: tests folders,
+ * Markdown, JSON and the generated API contracts are left out.
  * @param {string} text
  */
 export function codeLines(text) {
   let total = 0;
-  for (const entry of text.split("\0")) {
-    const [added, deleted, file] = entry.split("\t");
+  for (const { file, lines } of numstatFiles(text)) {
     if (
-      !file ||
       /(^|\/)tests\//.test(file) ||
       /\.(md|json)$/i.test(file) ||
       generated.includes(file)
     )
       continue;
-    total += (Number(added) || 0) + (Number(deleted) || 0);
+    total += lines;
   }
   return total;
 }
@@ -153,7 +170,8 @@ export function highEnd(low, { named, unknown }) {
 
 /**
  * Landings old enough to count and the bugs that got past them, by how many
- * reviews each ran and by its code lines; findings by the review that
+ * reviews each ran, by its code lines and, for each review lens, by whether
+ * every review ran it where it was due; findings by the review that
  * reported them, their kind and outcome; who found the bugs that got past
  * those landings;
  * how the fixes name where their bug came from; chains of fixes whose bug
@@ -174,8 +192,16 @@ export function summarize(landings, fixes, { landed, fixCommits }) {
   const byReviews = new Map();
   /** @type {Map<number, { landings: number, escapes: number }>} */
   const bySize = new Map();
-  /** @type {Map<string, { landings: number, escapes: number }>} */
-  const byLenses = new Map();
+  /** Each lens's landings where it was due, with it and without it. */
+  const byLens = new Map(
+    reviewLenses.map((lens) => [
+      lens,
+      {
+        with: { landings: 0, escapes: 0 },
+        without: { landings: 0, escapes: 0 },
+      },
+    ]),
+  );
   /** @type {Map<number, Record<string, { fixed: number, dismissed: number }>>} */
   const rounds = new Map();
   /** @type {Map<string, Landing>} */
@@ -197,12 +223,13 @@ export function summarize(landings, fixes, { landed, fixCommits }) {
       map.set(key, group);
     }
     // A landing with no independent review ran no lens either, so it stays
-    // out of the lens rows rather than skew those without one.
+    // out of the lens rows rather than skew those without one, and so does
+    // one a lens was not due on, such as a Live check on a branch that
+    // changes no screen.
     if (!landing.reviews) return;
-    const lenses = landing.lenses.join(" + ");
-    const group = byLenses.get(lenses) ?? { landings: 0, escapes: 0 };
-    group[field] += 1;
-    byLenses.set(lenses, group);
+    for (const [lens, groups] of byLens)
+      if (lensDue(lens, landing.changed))
+        groups[landing.lenses.includes(lens) ? "with" : "without"][field] += 1;
   };
   let recent = 0;
   let undated = 0;
@@ -301,7 +328,7 @@ export function summarize(landings, fixes, { landed, fixCommits }) {
           : `${sizes[bucket - 1]} or more`,
       group,
     ]),
-    byLenses: sorted(byLenses),
+    byLens: [...byLens],
     recent,
     undated,
     rounds: sorted(rounds),
@@ -385,6 +412,7 @@ function main() {
           ...landing,
           commits: listed.stdout.split("\n").filter(Boolean),
           lines: codeLines(diff.stdout),
+          changed: numstatFiles(diff.stdout).map(({ file }) => file),
         },
       ];
     problems.push(
@@ -474,9 +502,13 @@ function main() {
     (bucket) => bucket,
   );
   buckets(
-    "with independent reviews, by the lenses every review ran",
-    summary.byLenses,
-    (lenses) => lenses || "no lens",
+    "with independent reviews, with and without each lens every review ran, where it was due (live-check only on a branch that changes a screen or flow)",
+    summary.byLens.flatMap(([lens, groups]) =>
+      /** @type {const} */ (["with", "without"])
+        .filter((which) => groups[which].landings)
+        .map((which) => [`${which} ${lens}`, groups[which]]),
+    ),
+    (row) => row,
   );
   console.log(
     `${count(summary.recent, "landing")} under ${exposureDays} active days old ${summary.recent === 1 ? "is" : "are"} left out of these until then; an active day is one on which a landing reached dev.`,

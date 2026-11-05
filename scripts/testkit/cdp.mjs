@@ -319,6 +319,51 @@ export class Page {
     }
   }
 
+  /**
+   * Restores the window from maximized and sizes it to `width` by `height`
+   * pixels, frame included, as a user dragging its edge would, through the
+   * app's main process at inspector port `inspect`; the app's minimum size
+   * (app/electron/window-size.cjs) stops a smaller one. Resolves with the
+   * page's size once it has taken the window's.
+   * @param {number} width
+   * @param {number} height
+   * @param {{ root: string, inspect: number }} options
+   */
+  async resize(width, height, { root, inspect }) {
+    const main = await Page.connect(inspect, { root, node: true });
+    const window = `process.mainModule.require("electron").BrowserWindow.getAllWindows()[0]`;
+    try {
+      // A window manager restores a window a moment after it is asked, and
+      // a size set before that gives way to the restored one.
+      await main.evaluate(`${window}.unmaximize()`);
+      await until("the window to leave its maximized size", () =>
+        main.evaluate(`!${window}.isMaximized()`),
+      );
+      return await until("the window to take its new size", async () => {
+        const bounds = await main.evaluate(`(() => {
+          const window = ${window};
+          const [minWidth, minHeight] = window.getMinimumSize();
+          const wanted = [Math.max(${width}, minWidth), Math.max(${height}, minHeight)];
+          const [width, height] = window.getSize();
+          if (width !== wanted[0] || height !== wanted[1]) {
+            window.setSize(...wanted);
+            return null;
+          }
+          return window.getContentBounds();
+        })()`);
+        if (!bounds) return false;
+        const [innerWidth, innerHeight] = await this.evaluate(
+          "[innerWidth, innerHeight]",
+        );
+        return innerWidth === bounds.width && innerHeight === bounds.height
+          ? { width: innerWidth, height: innerHeight }
+          : false;
+      });
+    } finally {
+      main.close();
+    }
+  }
+
   close() {
     this.socket.close();
   }
