@@ -592,7 +592,8 @@ class Compare:
         """Makes a compared model the one the game translates with: Settings'
         connection and model, and, from Tune settings, the effort it was sent
         with, its glossary and its instruction, saved as the game's guidance.
-        Everything is checked before anything is written."""
+        Everything is checked before anything is written, so only a failing
+        disk can save the guidance without switching the model."""
         guided = self.guided
         # As Settings' own saves, never under a running translation.
         guided.idle()

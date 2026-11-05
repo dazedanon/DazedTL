@@ -208,13 +208,15 @@ class Settings:
             self._validate,
         )
 
-    def _write(self, value, bump=True):
+    def _write(self, value, bump=True, check=False):
+        """Saves *value*, or with `check` only refuses what saving would."""
         self._validate(value)
         if bump:
             value["revision"] += 1
         if len(json.dumps(value).encode()) > 8_000_000:
             raise ValueError("Saved settings are too large.")
-        write_json(self.path, value)
+        if not check:
+            write_json(self.path, value)
 
     @staticmethod
     def _connection(value, identity=None):
@@ -1002,7 +1004,7 @@ class Settings:
         """Makes a saved connection the active one and `model` its model,
         with `options` changing that model's options, checked as save checks
         them and written at once, so a refusal switches nothing; `check`
-        only checks."""
+        only checks, so that only a failing disk can refuse the write after."""
         state = self._read()
         self._revision(state, revision)
         if self._pending(state):
@@ -1020,11 +1022,9 @@ class Settings:
                 **options,
             }
         self._set_preferences(state, {**saved["values"], "model": model}, model_options)
-        if check:
-            return None
         self._clear_draft(state, connection_id)
-        self._write(state)
-        return self.describe()
+        self._write(state, check=check)
+        return None if check else self.describe()
 
     def _set_preferences(self, state, values, model_options):
         """Sets the active connection's preferences in `state`, refusing

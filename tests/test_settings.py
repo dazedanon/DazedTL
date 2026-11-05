@@ -453,6 +453,16 @@ class SettingsTests(unittest.TestCase):
                 settings.use_model(revision, router, "vendor/model:batch")
             settings.use_model(revision, router, "vendor/model", check=True)
             self.assertEqual(settings.describe(), view)
+            # The check refuses what the write would, such as settings too
+            # large to save, before Tune saves the game's guidance.
+            with (
+                patch(
+                    "dazedtl.settings.store.json",
+                    SimpleNamespace(dumps=lambda _value: "x" * 8_000_001),
+                ),
+                self.assertRaisesRegex(ValueError, "too large"),
+            ):
+                settings.use_model(revision, router, "vendor/model", check=True)
             used = settings.use_model(
                 revision, router, "vendor/model", {"thinkingEffort": None}
             )
