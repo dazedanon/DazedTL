@@ -534,9 +534,31 @@ export function ciCommits(git, tip, dev) {
     const [hash, parents = "", subject = ""] = line.split("\t");
     if (git(["merge-base", "--is-ancestor", hash, dev]).status === 0) break;
     commits.push(hash);
-    if (!addsNothing(git, parents, subject, dev)) break;
+    if (
+      !addsNothing(git, parents, subject, dev) ||
+      resolved(git, hash, parents)
+    )
+      break;
   }
   return commits;
+}
+
+/**
+ * Whether a merge holds more than Git merges by itself, such as a resolved
+ * conflict, which no CI run of its parents checked.
+ * @param {ReturnType<typeof gitIn>} git
+ * @param {string} hash
+ * @param {string} parents
+ */
+function resolved(git, hash, parents) {
+  const merged = parents.split(" ");
+  if (merged.length < 2) return false;
+  const clean = git(["merge-tree", "--write-tree", ...merged]);
+  return (
+    clean.status !== 0 ||
+    lines(clean.stdout)[0] !==
+      git(["rev-parse", `${hash}^{tree}`]).stdout.trim()
+  );
 }
 
 /**

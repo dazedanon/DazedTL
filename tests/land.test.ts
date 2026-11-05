@@ -1009,4 +1009,17 @@ test("a platform-sensitive branch lands once CI on GitHub passes, after one reru
     )?.code,
     5,
   );
+
+  // A merge of dev that resolves a conflict holds work no earlier run
+  // checked, so it gets a run of its own.
+  github.add(commit(work, "scripts/setup.mjs", "six\n"), "success", 1);
+  commit(main, "scripts/setup.mjs", "dev's\n");
+  git(["merge", "-q", "--no-edit", "dev"]);
+  fs.writeFileSync(path.join(work, "scripts/setup.mjs"), "both\n");
+  git(["commit", "-qam", "Merge dev"]);
+  const before = github.writes.length;
+  assert.equal((await check(false))?.code, 5);
+  assert.deepEqual(github.writes.slice(before), [
+    "workflows/ci.yml/dispatches",
+  ]);
 });
