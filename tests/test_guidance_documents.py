@@ -274,6 +274,9 @@ class GuidanceDocumentTests(unittest.TestCase):
         entries = [
             back,
             entry("notes", ["AGENTS.md"]),
+            # A notes save that also brought .gitignore's rules up to date,
+            # which Go back leaves as well.
+            entry("rules", ["AGENTS.md", ".gitignore"]),
             entry("map", ["Map001.json"]),
             entry("target", ["Map001.json"]),
         ]

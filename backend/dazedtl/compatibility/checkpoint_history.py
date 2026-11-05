@@ -329,10 +329,12 @@ def edited_outside(root):
 
 def _left_by_go_back(entry):
     """Whether a checkpoint changed only documents Go back leaves, such as a
-    save of the assistant notes, so going back past it takes nothing out."""
+    save of the assistant notes, and the rule files it leaves too, which a
+    notes save may update, so going back past it takes nothing out."""
     from util.guidance_documents import kept_by_checkpoints
 
-    return bool(entry.changes) and all(map(kept_by_checkpoints, entry.changes))
+    documents = entry.changes.keys() - _RULES
+    return bool(documents) and all(map(kept_by_checkpoints, documents))
 
 
 def _taken_out(entries):
