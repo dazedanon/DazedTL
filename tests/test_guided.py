@@ -2272,19 +2272,27 @@ class GuidedTests(unittest.TestCase):
             self.guided.release_ready(self.identity, self.native, state),
             self.translation.ready.return_value,
         )
+
         # One holding a choice an earlier import stripped of its condition
-        # waits for the Apply that puts it back.
-        stripped = [
-            {"code": 102, "parameters": [["Yes"]], "_original": ["if(s[1])はい"]}
-        ]
-        game = self.source / "Items.json"
-        before = game.read_bytes()
-        write_json(game, stripped)
+        # waits for the Apply that puts it back; one whose output holds it
+        # was edited so in the game, and stays applied.
+        def applied(value, edit):
+            choice = {
+                "code": 102,
+                "parameters": [[value]],
+                "_original": ["if(s[1])はい"],
+            }
+            output = self.folder / "translated/Items.json"
+            write_json(output, [choice])
+            outputs = {"Items.json": digest(output.read_bytes())}
+            write_json(self.folder / "applied-outputs.json", {"files": outputs})
+            write_json(self.source / "Items.json", [{**choice, **edit}])
+            return self.guided.readiness(self.identity, self.native, state)
+
+        self.assertEqual(applied("Yes", {})["unapplied"], ["Items.json"])
         self.assertEqual(
-            self.guided.readiness(self.identity, self.native, state)["unapplied"],
-            ["Items.json"],
+            applied("if(s[1])Yes", {"parameters": [["Yes"]]})["unapplied"], []
         )
-        game.write_bytes(before)
         write_json(
             self.folder / "translated/Items.json", [{"name": "Newer saved output"}]
         )
@@ -5108,6 +5116,18 @@ class GuidedTests(unittest.TestCase):
             self.assertEqual(
                 read_json(self.source / "Map001.json"), choice("Potion", "if(s[1])Yes")
             )
+            # One whose output holds the conditions was edited so in the
+            # game, which Apply replaces as ever.
+            write_json(
+                self.folder / "translated/Map001.json", choice("Potion", "if(s[1])Yes")
+            )
+            receipt["files"]["Map001.json"] = digest(
+                (self.folder / "translated/Map001.json").read_bytes()
+            )
+            write_json(self.folder / "applied-outputs.json", receipt)
+            write_json(self.source / "Map001.json", choice("Potion", "Yes"))
+            apply = plan("export_selected", {"files": ["Map001.json"]})
+            self.assertTrue(prepare_publication(apply)["publication"][0]["later_edits"])
             # One an edit broke is put back whole.
             (self.source / "Map001.json").write_text('{"events": [', "utf-8")
             apply = plan("export_selected", {"files": ["Map001.json"]})

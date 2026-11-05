@@ -991,19 +991,37 @@ def unfitted(document, name, layout, reading=None):
     return fit_document(document, name, layout, reading=reading).misfits
 
 
+def applied_receipt(folder):
+    """The applied-output receipt of a Guided workspace *folder*, which names
+    each file's output the last Apply put in (`files`) and that output as
+    fitted to the Line widths (`written`), or none before an Apply."""
+    path = Path(folder) / "applied-outputs.json"
+    return read_json(path) if path.exists() else {}
+
+
+def as_applied(receipt, name, value):
+    """Whether a game file's hash *value* is what the last Apply in *receipt*
+    wrote: its output, or that output fitted to the Line widths."""
+    return value is not None and value in {
+        receipt.get("files", {}).get(name),
+        receipt.get("written", {}).get(name),
+    }
+
+
 def _kept_with_conditions(root, relative, output, receipt):
-    """The game's copy of a file whose saved *output* an Apply already put in
-    and which was edited since, such as by Text QA, with the choice
-    conditions an earlier translation file import left out put back
-    (rpgmaker_blocks `restore_conditions`), so Apply keeps those edits; None
-    for a copy that lacks none, which Apply overwrites as ever."""
+    """The game's copy of a file whose saved *output*, which lacks choice
+    conditions an earlier translation file import left out, an Apply already
+    put in and which was edited since, such as by Text QA, with those
+    conditions put back (rpgmaker_blocks `restore_conditions`), so Apply
+    keeps the edits; None for a copy that lacks none, which Apply overwrites
+    as ever."""
     from util.rpgmaker_blocks import restore_conditions
 
     name = relative.name
     if receipt.get("files", {}).get(name) != output:
         return None
     raw = project_path(root, relative.as_posix()).read_bytes()
-    if digest(raw) in {output, receipt.get("written", {}).get(name)}:
+    if as_applied(receipt, name, digest(raw)):
         return None
     try:
         document = decode_json(raw)
@@ -1056,11 +1074,7 @@ def prepare_publication(plan):
         output_folder = Path(saved["folder"]) if saved else folder
         layout = fitting_layout(plan)
         reading = fitting_reading(plan)
-        receipt = (
-            read_json(folder / "applied-outputs.json")
-            if (folder / "applied-outputs.json").exists()
-            else {}
-        )
+        receipt = applied_receipt(folder)
         for name in options["files"]:
             path = live_path(output_folder, "translated/" + name)
             output = path.read_bytes()
@@ -1077,22 +1091,22 @@ def prepare_publication(plan):
             # may be narrower than the game's now, and left System.json the
             # game's locale, which Assistant-led's writer sets as this does.
             fitted = None
-            kept = (
-                None
-                if saved or not layout
-                else _kept_with_conditions(root, prefix / name, outputs[name], receipt)
-            )
-            if kept is not None:
-                # Only the conditions go in, keeping the game's later edits.
-                candidates[(prefix / name).as_posix()] = kept
-                kept_edits.add(name)
-                continue
             if layout:
-                localized = write_locale(document, name, layout.target)
                 # A translation file import once wrote choices without their
                 # plugin conditions, which read as translated, so no import or
                 # run writes them again; Apply puts them back.
                 repaired = restore_conditions(document)
+                kept = (
+                    _kept_with_conditions(root, prefix / name, outputs[name], receipt)
+                    if repaired and not saved
+                    else None
+                )
+                if kept is not None:
+                    # Only the conditions go in, keeping the game's later edits.
+                    candidates[(prefix / name).as_posix()] = kept
+                    kept_edits.add(name)
+                    continue
+                localized = write_locale(document, name, layout.target)
                 fitted = fit_output(
                     document,
                     name,
@@ -1123,11 +1137,7 @@ def prepare_publication(plan):
         reading = fitting_reading(plan)
         plan["fitted_lines"] = 0
         plan["misfits"], plan["misfit_count"] = [], 0
-        receipt = (
-            read_json(folder / "applied-outputs.json")
-            if (folder / "applied-outputs.json").exists()
-            else {}
-        )
+        receipt = applied_receipt(folder)
         applied = receipt.get("files", {})
         # Only files an Apply published: one whose bytes merely equal a run's
         # output, such as a map with nothing to translate, is the game's own.
@@ -1155,10 +1165,7 @@ def prepare_publication(plan):
             plan["fitted_lines"] += changes
             # A file as the last Apply wrote it is still that Apply's, now
             # fitted to the new widths, so the next Apply reads no edits.
-            if digest(raw) in {
-                applied.get(name),
-                receipt.get("written", {}).get(name),
-            }:
+            if as_applied(receipt, name, digest(raw)):
                 written[name] = digest(fitted)
         if not candidates:
             return {"publication": [], "paths": [], "files": 0}
@@ -1272,11 +1279,7 @@ def prepare_publication(plan):
     if action == "export_selected":
         plan["overwrite_runtime"] = True
     plan["publication"] = frozen
-    receipt = (
-        read_json(folder / "applied-outputs.json")
-        if (folder / "applied-outputs.json").exists()
-        else {}
-    )
+    receipt = applied_receipt(folder)
     previous = receipt.get("files", {})
     rows = []
     for row in frozen["files"]:
@@ -1285,13 +1288,10 @@ def prepare_publication(plan):
         change = {
             **{key: row[key] for key in ("path", "before", "after", "size")},
             "destination": str(root / row["path"]),
-            # What the last Apply wrote: its output, or the output fitted to
-            # the Line widths.
             "later_edits": action == "export_selected"
             and name in previous
             and name not in kept_edits
-            and row["before"]
-            not in {previous[name], receipt.get("written", {}).get(name)},
+            and not as_applied(receipt, name, row["before"]),
         }
         if action in COMPARED:
             # A file a batch added compares with none.
