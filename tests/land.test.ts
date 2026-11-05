@@ -398,7 +398,7 @@ test("a landing's review record holds its evaluation, or the criteria its author
   );
   assert.throws(
     () => record({ ...evaluated, reviews: 3, findings: [blocking(3)] }),
-    /Evaluation 3 failed, the last of 3: stop and report to the user/,
+    /Evaluation 3 failed, and a landing runs 3 before it stops: report to the user/,
   );
   for (const findings of [
     [blocking(1)],
@@ -937,6 +937,17 @@ test("a sandboxed worker hands off a checked branch without writing the main che
   assert.match(logged.join("\n"), /its hand-off names each scenario/);
   assert.equal(stand.writes.length, dispatched);
   fs.writeFileSync(handoffFile, JSON.stringify(reasoned));
+  // This one changes no path the evaluation rule marks, a platform path
+  // alone, so a record of the criteria its worker checked lands it, once its
+  // CI passes.
+  fs.writeFileSync(
+    reviewFile,
+    JSON.stringify({
+      reviewer: "none",
+      head: reasoned.head,
+      criteria: ["Setup still runs"],
+    }),
+  );
   commit(main, "later.txt", "later\n");
   assert.equal(await finish(), 5);
   logged.length = 0;

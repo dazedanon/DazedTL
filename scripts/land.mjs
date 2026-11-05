@@ -222,7 +222,7 @@ export function readReview(text, { intake = false } = {}) {
     throw new Error(
       reviews < maxReviews
         ? `Evaluation ${reviews} failed: a fresh evaluator re-checks its blocking findings and what changed since before the branch lands (dazedtl-land, Evaluate).`
-        : `Evaluation ${reviews} failed, the last of ${maxReviews}: stop and report to the user, and record a blocking finding they overrule as "overruled" with their reason (dazedtl-land, Evaluate).`,
+        : `Evaluation ${reviews} failed, and a landing runs ${maxReviews} before it stops: report to the user, and record a blocking finding they overrule as "overruled" with their reason (dazedtl-land, Evaluate).`,
     );
   return {
     reviewer: "independent",
