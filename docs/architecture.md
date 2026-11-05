@@ -151,10 +151,10 @@ The [plugin service](../backend/dazedtl/plugins/service.py) owns investigation, 
 - Lookup values, code keys, expressions, structure and control tokens stay protected and are never asked about; original text comes from the game's recorded original files.
 - Labels Text QA finds squeezed come to Plugin files, since QA never writes plugin files, and each shortened label is confirmed on screen in the [game window](../backend/dazedtl/engine/util/rpgmaker_window/launcher.cjs).
 
-The [image service](../backend/dazedtl/images/service.py) owns the inventory, selection, discovery, editing contracts, reports and application receipts that Guided and Image Manager share.
+The [image service](../backend/dazedtl/images/service.py) owns the inventory, selection, discovery, editing contracts, reports and apply receipts that Guided and Image Manager share.
 
 - The selection moves through the four steps of [imageFlow](../app/src/features/images/imageFlow.ts), and the service alone decides whether the images are investigated.
-- [image_formats](../backend/dazedtl/engine/util/image_formats.py) alone converts BMP, JPEG and TLG to and from PNG copies.
+- [image_formats](../backend/dazedtl/engine/util/image_formats.py) alone converts BMP, JPEG and TLG to and from PNG.
 - Lettered sound effects are flavor, so an image with nothing else stays out of the list; detector misses alone never certify an image has no text.
 - Every image an assistant changes needs a [recipe](../backend/dazedtl/images/recipes.py), and reports pass the same [validation](../backend/dazedtl/images/validation.py) as the assistant's validator; only the user accepts an image the assistant can't prove, and the app never runs a recipe's command.
 - A [family](../backend/dazedtl/images/families.py) member is reviewed by the crop that differs from an examined sibling, so look-alike CG frames aren't paid for again.
