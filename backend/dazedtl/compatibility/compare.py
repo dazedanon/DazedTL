@@ -40,12 +40,28 @@ ACTIONS = (ESTIMATE, TRANSLATE)
 KEPT_REQUESTS = 20
 # A model's error when the user stopped its translation.
 STOPPED = "Stopped before it finished."
+# Why other work waits while a comparison runs, as they share one queue.
+RUNNING = (
+    "A comparison is running on Compare models. Stop it there, or wait for it to end."
+)
 # What a comparison's test-only guidance is saved as in a run's snapshot,
 # beside the game's own guidance files, which every request carries.
 INSTRUCTION = "game/.dazedtl/skills/comparison.md"
 GLOSSARY = "game/.dazedtl/glossary.txt"
 # An event command that ends a command list.
 END = {"code": 0, "indent": 0, "parameters": []}
+
+
+def running(operations):
+    """Why the game's other work waits, when it waits for a comparison."""
+    return (
+        RUNNING
+        if any(
+            job["status"] == "running" and job["action"] in ACTIONS
+            for job in operations.jobs.values()
+        )
+        else ""
+    )
 
 
 def _event_lists(name, document):

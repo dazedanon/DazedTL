@@ -190,8 +190,11 @@ class Guided:
             else self.backend.running()
         )
         if busy or self.translation.jobs.running():
+            from dazedtl.compatibility.compare import running
+
             raise ValueError(
-                "Finish or stop the current run before starting another action."
+                running(self.backend.operations)
+                or "Finish or stop the current run before starting another action."
             )
 
     def record(self, project_id):

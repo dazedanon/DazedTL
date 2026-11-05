@@ -319,8 +319,11 @@ class Translation:
                 "Pause this project's active operation before changing its inputs."
             )
         if self.settings.adapter.running():
+            from dazedtl.compatibility.compare import running
+
             raise ValueError(
-                "Finish or pause the existing phased run before changing project inputs."
+                running(self.settings.adapter.operations)
+                or "Finish or pause the existing phased run before changing project inputs."
             )
 
     def draft_path(self, identity):

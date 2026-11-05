@@ -737,3 +737,33 @@ class ApprovalTests(unittest.TestCase):
         self.operations.stop.assert_called_once_with(started["id"])
         with self.assertRaisesRegex(ValueError, "no longer running"):
             self.compare.stop("p1", other["id"])
+
+
+class WaitTests(unittest.TestCase):
+    def test_work_that_waits_for_a_comparison_says_so(self):
+        # Saves, compile and accept on other pages asked to finish a phased
+        # run while a comparison held their queue.
+        from dazedtl.translation.guided import Guided
+        from dazedtl.translation.service import Translation
+
+        jobs = {"o": {"status": "running", "action": "compare_translate"}}
+        operations = SimpleNamespace(jobs=jobs, running=lambda: True)
+        service = SimpleNamespace(
+            jobs=SimpleNamespace(running=lambda *_: False),
+            settings=SimpleNamespace(
+                adapter=SimpleNamespace(running=lambda: True, operations=operations)
+            ),
+        )
+        guided = SimpleNamespace(
+            backend=SimpleNamespace(operations=operations, running=lambda: True),
+            translation=SimpleNamespace(jobs=SimpleNamespace(running=lambda: False)),
+        )
+        for wait in (
+            lambda: Translation.idle(service, "p1"),
+            lambda: Guided.idle(guided),
+        ):
+            with self.assertRaisesRegex(ValueError, "Compare models"):
+                wait()
+        jobs["o"]["action"] = "tool_run"
+        with self.assertRaisesRegex(ValueError, "phased run"):
+            Translation.idle(service, "p1")
