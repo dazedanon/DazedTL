@@ -26,7 +26,12 @@ def definitions(root, drafted=()):
     root = Path(root)
     stems = {key.removeprefix(CUSTOM_PREFIX) for key in drafted if key.startswith(CUSTOM_PREFIX)}
     for parent in (root / ".dazedtl/skills", root / "skills"):
-        _game_path(root, parent)
+        try:
+            _game_path(root, parent)
+        except ValueError:
+            # A linked folder lists no skills, and the documents in it read
+            # as unreadable, so the others stay readable.
+            continue
         stems.update(path.stem for path in parent.glob("*.md"))
     return [*FIXED, *sorted(filter(None, (definition(CUSTOM_PREFIX + stem) for stem in stems)), key=lambda found: found.key)]
 
@@ -126,7 +131,9 @@ def _read(root, path):
     except ValueError:
         if path.is_symlink() or any(parent.is_symlink() for parent in path.parents if parent.is_relative_to(root)):
             raise Unreadable("it is a link, and DazedTL reads only the file itself", "Put the file in its place") from None
-        raise Unreadable("it is a folder, not a file", "Move it out of the way") from None
+        if path.is_dir():
+            raise Unreadable("it is a folder, not a file", "Move it out of the way") from None
+        raise Unreadable("it isn't a regular file", "Put a text file in its place") from None
     try:
         if path.stat().st_size > LIMIT:
             raise Unreadable("it is larger than 1 MB", "Shorten it")

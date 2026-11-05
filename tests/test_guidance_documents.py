@@ -58,6 +58,9 @@ class GuidanceDocumentTests(unittest.TestCase):
             "a folder": ("folder", "unreadable", "folder"),
             "another file in the other place": ("twice", "unreadable", "holds it too"),
         }
+        if os.name != "nt":
+            # Read as a folder once, which it isn't.
+            states["a pipe"] = ("pipe", "unreadable", "isn't a regular file")
         if os.name != "nt" and os.geteuid() != 0:
             states["without read permission"] = ("locked", "unreadable", "allowed")
         for name in (GLOSSARY, NOTES):
@@ -79,6 +82,8 @@ class GuidanceDocumentTests(unittest.TestCase):
                         path.symlink_to(self.root / "target.md")
                     elif content == "folder":
                         path.mkdir()
+                    elif content == "pipe":
+                        os.mkfifo(path)
                     elif content == "twice":
                         path.write_text("One", encoding="utf-8")
                         other = "agents.md" if name == NOTES else "glossary.txt"
@@ -112,6 +117,29 @@ class GuidanceDocumentTests(unittest.TestCase):
                             self.assertNotIn(name, documents(self.root))
                     if content == "locked":
                         path.chmod(0o644)
+        # A linked skills folder leaves the other documents readable: the
+        # whole read failed, so no editor opened.
+        for leftover in (self.root / "AGENTS.md", self.root / "agents.md"):
+            leftover.unlink(missing_ok=True)
+        elsewhere = self.root / "elsewhere"
+        elsewhere.mkdir()
+        (elsewhere / "quirks.md").write_text("Shared", encoding="utf-8")
+        skills = self.root / ".dazedtl/skills"
+        skills.rename(self.root / "skills-before")
+        skills.symlink_to(elsewhere)
+        found = read(self.root)
+        self.assertEqual(
+            {name: document["state"] for name, document in found.items()},
+            {
+                "glossary": "saved",
+                "quirks": "unreadable",
+                "game": "missing",
+                "notes": "missing",
+            },
+        )
+        self.assertIn("link", found["quirks"]["reason"])
+        skills.unlink()
+        (self.root / "skills-before").rename(skills)
         # A folder in the notes' name is the project's too, so its files
         # never join a patch: Release's review listed AGENTS.md/x.
         self.assertTrue(is_game_tool_file("agents.md/x.txt"))
