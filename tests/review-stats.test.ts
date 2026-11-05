@@ -100,8 +100,8 @@ test("review stats put each escaped bug on the landing that let it in, once it i
     ["under 100", { landings: 1, escapes: 0 }],
     ["1000 or more", { landings: 1, escapes: 1 }],
   ]);
+  // a..b ran no independent review, so it is in no lens row.
   assert.deepEqual(summary.byLenses, [
-    ["", { landings: 1, escapes: 0 }],
     ["places-and-chains", { landings: 1, escapes: 1 }],
   ]);
   assert.equal(summary.recent, 1);

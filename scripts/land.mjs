@@ -77,7 +77,7 @@ export const findingKinds = ["bug", "risk", "quality"];
  */
 export const reviewLenses = ["places-and-chains"];
 const reviewShape =
-  '{"level": "high", "reviewer": "independent", "reviews": 1, "head": "<hash of the last commit the last reviewer checked>", "lenses": ["places-and-chains"], "findings": [{"summary": "...", "kind": "bug", "outcome": "fixed", "review": 1}, {"summary": "...", "kind": "quality", "outcome": "dismissed", "reason": "...", "review": 1}]}';
+  '{"level": "high", "reviewer": "independent", "reviews": 1, "head": "<hash of the last commit the last reviewer checked>", "findings": [{"summary": "...", "kind": "bug", "outcome": "fixed", "review": 1}, {"summary": "...", "kind": "quality", "outcome": "dismissed", "reason": "...", "review": 1}]}';
 /** The subject of the commit holding what the formatter changed. */
 const formatSubject = "style: format";
 /** Where a hand-off's worker keeps origin's dev in its clone. */
@@ -105,7 +105,7 @@ const lockLimit = 10 * 60_000;
  * Throws with what is wrong, so no branch lands on its author's review alone.
  * @param {string} text
  * @param {{ kinds?: boolean }} [options]
- * @returns {{ level: string, reviewer: "independent", reviews: number, head: string, findings: { summary: string, kind?: string, outcome: "fixed" | "dismissed", reason?: string, review: number }[] }}
+ * @returns {{ level: string, reviewer: "independent", reviews: number, head: string, lenses?: string[], findings: { summary: string, kind?: string, outcome: "fixed" | "dismissed", reason?: string, review: number }[] }}
  */
 export function readReview(text, { kinds = false } = {}) {
   let record;

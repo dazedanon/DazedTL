@@ -190,7 +190,9 @@ export function summarize(landings, fixes, { landed, fixCommits }) {
     for (const [map, key] of /** @type {const} */ ([
       [byReviews, landing.reviews],
       [bySize, size(landing)],
-      [byLenses, landing.lenses.join(" + ")],
+      // A landing with no independent review ran no lens either, so it stays
+      // out of the lens rows rather than skew those without one.
+      ...(landing.reviews ? [[byLenses, landing.lenses.join(" + ")]] : []),
     ])) {
       const group = map.get(key) ?? { landings: 0, escapes: 0 };
       group[field] += 1;
@@ -467,7 +469,7 @@ function main() {
     (bucket) => bucket,
   );
   buckets(
-    "by review lenses every review ran",
+    "with independent reviews, by the lenses every review ran",
     summary.byLenses,
     (lenses) => lenses || "none",
   );
