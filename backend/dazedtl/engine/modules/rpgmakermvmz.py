@@ -3607,10 +3607,11 @@ CODE_NAMEPLATES = False
 
 # A text whose first row keeps a translation's source ends with that
 # translation's rows (util/rpgmaker_blocks `owned`), before a row an earlier
-# run left untranslated after it, which is sent as a text of its own. Frozen
-# per run: older runs send that first row's source alone and write its
-# translation over those rows too.
-LEFT_ROWS = False
+# run left untranslated after it, which is sent as a text of its own; from
+# level 2 also after a message's rows its source has lines for. Frozen per run
+# (settings/preferences LEFT_ROWS_LEVELS): older runs send that first row's
+# source alone and write its translation over those rows too.
+LEFT_ROWS = 0
 
 
 def _standalone_speaker(name):
@@ -3651,6 +3652,25 @@ def _message_end(commands, start, allowed):
         # in the eligibility preview; the native name handler advances to it.
         return _text_group_end(commands, start, allowed)
     return rpgmaker_blocks.text_end(commands, start, allowed, _own_source(commands))
+
+
+def _preview_texts(commands, start, end):
+    """The (first, last, source) of each text the skip check reads in the
+    rows from *start* to *end*: one, or from LEFT_ROWS level 2 the rows of
+    the translation whose source *start* keeps (util/rpgmaker_blocks `owned`)
+    and then the game's own after them, each read against its own source,
+    so a row of the game's own whose Japanese that source holds, such as a
+    lone kana, is sent as the run reads it, by its own text."""
+    ends = [end]
+    if LEFT_ROWS >= 2:
+        own = rpgmaker_blocks.text_end(commands, start, _GROUP_CODES, left=True)
+        if own < end:
+            ends = [own, end]
+    found, first = [], start
+    for last in ends:
+        found.append((first, last, _group_text(commands, first, last)))
+        first = last + 1
+    return found
 
 
 # Runs whose frozen policy collects menu choices once translate them on the
@@ -4020,19 +4040,21 @@ def _searchCodes(page, pbar, jobList, filename):
                     # Speaker parse must inspect source/_original even when live
                     # parameters are already English, or the unresolved count
                     # drifts as translation progress lands in files/.
-                    preview_text = _group_text(codeList, i, previewEnd)
-                    if not (
+                    previewTexts = _preview_texts(codeList, i, previewEnd)
+                    if not any(
                         _text_needs_translation(preview_text)
                         if SPEAKER_PARSE_MODE
                         else _text_needs_translation(
-                            _group_current(codeList, i, previewEnd),
-                            _group_recorded(codeList, i, previewEnd, preview_text),
+                            _group_current(codeList, first, last),
+                            _group_recorded(codeList, first, last, preview_text),
                         )
+                        for first, last, preview_text in previewTexts
                     ):
                         if not setData:
-                            _write_unsent_rows(
-                                codeList, i, previewEnd, preview_text
-                            )
+                            for first, last, preview_text in previewTexts:
+                                _write_unsent_rows(
+                                    codeList, first, last, preview_text
+                                )
                         i = previewEnd + 1
                         continue
                     jaString = codeList[i]["parameters"][0]
@@ -4066,7 +4088,8 @@ def _searchCodes(page, pbar, jobList, filename):
                     speakerWork,
                     _message_speakers,
                     _own_source(codeList) if SPEAKER_CONTEXT else None,
-                    left=LEFT_ROWS,
+                    left=LEFT_ROWS >= 1,
+                    by_lines=LEFT_ROWS >= 2,
                 )
                 speakerMatch = sentText.speakers
                 speakerList = list(speakerMatch.names) if speakerMatch else []

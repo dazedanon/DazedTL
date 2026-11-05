@@ -675,7 +675,7 @@ class TextBlockTests(unittest.TestCase):
             ],
         )
 
-    def test_a_translation_owns_no_row_left_in_japanese_after_it(self):
+    def test_a_translation_owns_no_row_of_the_games_own_after_it(self):
         # A run translated a name alone and left its speech in Japanese, and
         # the name's translation owned the speech's rows: Assistant-led's
         # writer kept the speech it translated under the name's source, and
@@ -694,8 +694,19 @@ class TextBlockTests(unittest.TestCase):
 
         speech = ("「すいません‼", "入り込みまして…‼")
         self.assertEqual(blocks.part_rows(page(*speech)["list"], 1), (1,))
+        # Nor a row past its source's lines holding no Japanese, such as ……
+        # or English, which a run with Skip already translated text off,
+        # sending the name again, wrote the name's translation over and
+        # emptied; runs frozen before read it as the name's.
+        for row in ("……", "Thanks!"):
+            listed = page(row)["list"]
+            self.assertEqual(
+                (blocks.part_rows(listed, 1), blocks.owned(listed, 1, by_lines=False)),
+                ((1,), (1, 2)),
+            )
         # A translation laid over its rows, as a run lays scrolling text, may
-        # keep a word of its source, such as a name, on a later row.
+        # keep a word of its source, such as a name, on a later row, or fill
+        # a blank row its source leaves out.
         scroll = [
             command(105, [2, False]),
             command(405, ["Long ago,"], _original="昔々、\n花子という娘が\nいました。"),
@@ -704,13 +715,20 @@ class TextBlockTests(unittest.TestCase):
             command(0, []),
         ]
         self.assertEqual(blocks.part_rows(scroll, 1), (1, 2, 3))
-        written = preserve_originals(
-            page(*speech), page('"Sorry!', 'They slipped in!"'), filename="Map001.json"
-        )["list"]
-        self.assertEqual(
-            [command.get("_original") for command in written[1:4]],
-            ["新米警察官", "\n".join(speech), None],
-        )
+        del scroll[3]
+        scroll[1]["_original"] = "昔々、花子という娘がいました。"
+        self.assertEqual(blocks.part_rows(scroll, 1), (1, 2))
+        for rows, translated, kept in (
+            (speech, ('"Sorry!', 'They slipped in!"'), ["\n".join(speech), None]),
+            (("……",), ("...",), ["……"]),
+        ):
+            written = preserve_originals(
+                page(*rows), page(*translated), filename="Map001.json"
+            )["list"]
+            self.assertEqual(
+                [command.get("_original") for command in written[1 : len(rows) + 2]],
+                ["新米警察官", *kept],
+            )
 
         # A run, the export and Assistant-led's writer read an import's text
         # alike: its recorded rows, but none left in Japanese.

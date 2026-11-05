@@ -1400,6 +1400,40 @@ try:
                 (text.rows, text.source)
                 for text in blocks.sent_texts(half, block, blocks.Reading())
             ] == [((1,), "新米警察官"), ((2, 3), None)]
+            # With Skip already translated text off, a run sends a name again;
+            # speech holding no Japanese, read as the name's rows, had the
+            # name's translation written over it, emptying it. With it on, a
+            # lone kana the name's source holds read as translated and was
+            # never sent. Under left-rows v2 each is a text of its own; v1
+            # runs keep their bodies.
+            letters = {**policy, "sourceText": SOURCE_TEXT}
+            older = {**letters, "leftRows": "event-left-rows-v1"}
+            newer = {**letters, "leftRows": LEFT_ROWS}
+            officer = ("Officer", "新米警察官", "……")
+            akari = ("Akari", "あかり", "あ")
+            for skip, (text, source, speech), generation, body, kept in (
+                (False, officer, older, ["新米警察官"], [("Hello.", "新米警察官")]),
+                (
+                    False,
+                    officer,
+                    newer,
+                    ["新米警察官", "……"],
+                    [("Hello.", "新米警察官"), ("Hello.", "……")],
+                ),
+                (True, akari, older, None, [("Akari", "あかり"), ("あ", None)]),
+                (True, akari, newer, ["あ"], [("Akari", "あかり"), ("Hello.", "あ")]),
+            ):
+                half[1:] = [
+                    command(401, [text], _original=source),
+                    command(401, [speech]),
+                ]
+                configure_states({"engine": "MVMZ"}, temporary, generation)
+                with patch.object(parser, "IGNORETLTEXT", skip):
+                    result = parse(half)
+                assert calls == ([(body, "")] if body else []), calls
+                assert [
+                    (c["parameters"][0], c.get("_original")) for c in result[1:-1]
+                ] == kept, result
             configure_states({"engine": "MVMZ"}, temporary, policy)
             with patch.object(parser, "INLINE401SPEAKERS", True):
                 parse([name(""), command(401, ["花「こんにちは」"])])

@@ -28,8 +28,9 @@ The engine sends a message's or scrolling text's rows in texts (see
 source on its first: every copy of a game names its lines by the texts of the
 game's own rows (:func:`sent_texts`). A row after a message's translation
 holding Japanese its source doesn't is the game's own, left untranslated,
-wherever it stands (:func:`uncovered`): the translation's part ends before it
-(:func:`owned`), for every reader.
+wherever it stands (:func:`uncovered`), and so is a row past those its source
+has lines for: the translation's part ends before it (:func:`owned`), for
+every reader.
 
 Commands the engine empties when it writes a message's translation over its
 rows (code -1, no parameters) are left out until it writes the list back.
@@ -60,7 +61,7 @@ from util.source_text import holds_source, source_left
 # translation laid it one Japanese line at a time and a game may follow those
 # lines with its own, such as "(1/3)" or a blank spacer. A run's message needs
 # none: it joins its rows into one command, and Assistant-led's rows run up to
-# the next translation or the game's own left untranslated (see `owned`); a
+# the next translation or the game's own, a source line each (see `owned`); a
 # translation file import, which lays a
 # message's text over its rows one by one, records them, since the game's own
 # rows may follow. Game updates and Assistant-led's writer carry the count
@@ -441,6 +442,7 @@ def owned(
     *,
     original: list | None = None,
     help_block: bool | None = None,
+    by_lines: bool = True,
 ) -> tuple[int, ...]:
     """The text rows the translation anchored at *anchor* owns, in order; a
     comment (108) anchor owns the rows after it.
@@ -449,8 +451,17 @@ def owned(
     never covered (:func:`uncovered`), the game's own, left untranslated,
     whatever its anchor records. Otherwise the rows its anchor records
     (``_rows``). Without that record:
-    - a message or scrolling text owns its rows up to the next translation;
-      rows never translated run up to the next translation too
+    - a message owns its rows up to the next translation, but no more than
+      its source has lines (*by_lines*): a run writes a message's text on
+      its first row, and a writer laying it over the rows one by one, as
+      Assistant-led's does, keeps a source line for each, so the rows after
+      them are the game's own, such as a punctuation-only row after a name a
+      run translated alone, or one in English. Runs frozen before
+      event-left-rows-v2 read it without (rpgmakermvmz LEFT_ROWS)
+    - scrolling text owns its rows up to the next translation: a run lays
+      its text over every row it joined, blank ones its source leaves out
+      included, so their count is not its source's; rows never translated
+      run up to the next translation too
     - a comment anchored on its 108, as Assistant-led writes them, owns its
       rows up to the next translation
     - choice help translated before translation recorded its rows owns the
@@ -467,6 +478,8 @@ def owned(
     rows = [] if head else [anchor]
     count = recorded(command)
     source = _translation(command) if row_code != 408 else None
+    if count is None and source is not None and row_code == 401 and by_lines:
+        count = source.count("\n") + 1
     for at in following(commands, anchor, row_code):
         if (
             "_original" in commands[at]
@@ -771,14 +784,15 @@ def text_end(
     stop: Callable[[int], bool] | None = None,
     *,
     left: bool = False,
+    by_lines: bool = True,
 ) -> int:
     """The last command whose text joins the one at *start* (:func:`joins`),
     before any command *stop* names by its index and, with *left*, past no
-    row of the translation whose source *start* keeps (:func:`owned`), so the
-    game's own rows after it, such as rows left untranslated, are texts of
-    their own."""
+    row of the translation whose source *start* keeps (:func:`owned`, read
+    *by_lines*), so the game's own rows after it, such as rows left
+    untranslated, are texts of their own."""
     rows = (
-        frozenset(owned(commands, start))
+        frozenset(owned(commands, start, by_lines=by_lines))
         if left and _translation(commands[start]) is not None
         else None
     )
@@ -811,6 +825,7 @@ def next_text(
     stop: Callable[[int], bool] | None = None,
     *,
     left: bool = False,
+    by_lines: bool = True,
 ) -> NextText:
     """The text the MV/MZ engine sends from the message or scrolling text row
     at *start*, whose text it reads as *line*: the speakers *speakers* reads
@@ -818,7 +833,8 @@ def next_text(
     text's rows (TEXT_CODES) and None otherwise; a nameplate on that row,
     which goes alone, and the rows after it, past emptied commands; and the
     rows joined to the first (:func:`text_end`), up to any *stop* names and,
-    with *left*, any left untranslated after the first's translation."""
+    with *left*, the game's own after the first's translation (read
+    *by_lines*)."""
     following = None
     if start + 1 < len(commands) and commands[start + 1].get("code") in TEXT_CODES:
         parameters = commands[start + 1].get("parameters") or []
@@ -829,7 +845,7 @@ def next_text(
         name, first = start, start + 1
         while commands[first]["code"] == -1:
             first += 1
-    end = text_end(commands, first, stop=stop, left=left)
+    end = text_end(commands, first, stop=stop, left=left, by_lines=by_lines)
     return NextText(found, name, tuple(range(first, end + 1)))
 
 
@@ -971,7 +987,8 @@ def _written_over(commands: list, part: Part, lines: list[str], reading: Reading
     row, and fitting may move a code to the start of one; in that shape the
     game's own start only at a row opening with a code its source doesn't
     hold. A row left untranslated, holding Japanese its source doesn't, ends
-    the part itself (:func:`owned`)."""
+    the part itself (:func:`owned`), as does a message's row past those its
+    source has lines for, so only scrolling text has rows after a nameplate."""
     rows = part.rows
     if len(rows) == 1 or recorded(commands[part.anchor]) is not None:
         return len(rows)

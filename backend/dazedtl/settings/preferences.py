@@ -63,7 +63,15 @@ CODE_NAMEPLATES = "event-code-nameplates-v1"
 # was refused. Those rows are sent and written as texts of their own. A run
 # frozen without it sends the first row's source alone for them and writes
 # its translation over them all, emptying them, as it did when approved.
-LEFT_ROWS = "event-left-rows-v1"
+LEFT_ROWS = "event-left-rows-v2"
+# Each left-rows policy a saved run may hold, by the engine level it enables:
+# v2 also ends a message's translation after the rows its source has lines
+# for, so a row after a name translated alone that holds no Japanese, such as
+# …… or speech in English, is the game's own, and a run with Skip already
+# translated text off, which sends that name's source again, no longer writes
+# its translation over that row, emptying it; v1 reads every row up to the
+# next translation as that translation's.
+LEFT_ROWS_LEVELS = {"event-left-rows-v1": 1, LEFT_ROWS: 2}
 # Small RPG Maker event pages of one file share a request, each page labelled,
 # because each request otherwise repeats the full system prompt: a 970-map
 # game's Maps & events estimate fell from 4,089 to 2,173 requests and from

@@ -528,7 +528,7 @@ def _is_blob(raw: bytes, blob: str | None) -> bool:
 # section names too (`counts_section`). System.json's counts are kept under
 # the drawn variables they read too (guided_inputs line_counts). Never reuse
 # a value a build kept counts under: 3 was a development build's.
-COUNT_VERSION = 4
+COUNT_VERSION = 5
 
 
 def counts_section() -> str:

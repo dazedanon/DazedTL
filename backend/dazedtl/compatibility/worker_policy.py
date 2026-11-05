@@ -16,7 +16,7 @@ from dazedtl.settings.preferences import (
     GALGE_ARGUMENTS,
     GALGE_CHOICES,
     GENERATION_PARAMETERS,
-    LEFT_ROWS,
+    LEFT_ROWS_LEVELS,
     MAP_NAME_IDENTITIES,
     PAGE_PACKING,
     RESENDS,
@@ -99,8 +99,9 @@ def configure_states(plan, root, policy):
         cast(Any, module).CODE_NAMEPLATES = bool(
             policy and policy.get("codeNameplates") == CODE_NAMEPLATES
         )
-        cast(Any, module).LEFT_ROWS = bool(
-            policy and policy.get("leftRows") == LEFT_ROWS
+        left_rows = (policy or {}).get("leftRows")
+        cast(Any, module).LEFT_ROWS = (
+            LEFT_ROWS_LEVELS.get(left_rows, 0) if isinstance(left_rows, str) else 0
         )
         cast(Any, module).PAGE_PACKING = bool(
             policy and policy.get("pagePacking") == PAGE_PACKING
@@ -259,7 +260,7 @@ def install(*, coordinator=False):
             or policy.get("speakerContext") not in (None, SPEAKER_CONTEXT)
             or policy.get("sameLineSpeakers") not in (None, SAME_LINE_SPEAKERS)
             or policy.get("codeNameplates") not in (None, CODE_NAMEPLATES)
-            or policy.get("leftRows") not in (None, LEFT_ROWS)
+            or policy.get("leftRows") not in (None, *LEFT_ROWS_LEVELS)
             or policy.get("pagePacking") not in (None, PAGE_PACKING)
             or policy.get("reuseStretches") not in (None, REUSE_STRETCHES)
             or policy.get("stretchNeighbours") not in (None, STRETCH_NEIGHBOURS)
