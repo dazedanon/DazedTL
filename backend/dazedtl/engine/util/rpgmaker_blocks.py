@@ -741,11 +741,13 @@ def texts(rows: Sequence[str], reading: Reading, starts: Iterable[int] = ()) -> 
     return tuple(found)
 
 
-def text_source(rows: Sequence[str]) -> str:
-    """The Japanese the engine keeps for a text it sends of rows never
-    translated: the first row, then each later row holding text, a line each
-    (rpgmakermvmz `_group_raw_text`)."""
-    return "\n".join([*rows[:1], *(row for row in rows[1:] if row.strip())])
+def text_source(rows: Sequence[str], shown: Sequence[str] | None = None) -> str:
+    """The text the engine sends of a text's *rows*, and keeps as its source:
+    the first row, then each later row that holds text, a line each. *shown*
+    is what each row shows now, where the row's text is its source; a later
+    row that shows nothing is left out."""
+    seen = rows if shown is None else shown
+    return "\n".join([*rows[:1], *(row for row, now in zip(rows[1:], seen[1:]) if now.strip())])
 
 
 class SentText(NamedTuple):

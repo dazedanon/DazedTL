@@ -1246,13 +1246,17 @@ def _message_entry(text: str, speaker: str) -> str | None:
     return rpgmaker_blocks.message_entry(text, speaker, unwrap=FIXTEXTWRAP)
 
 
-def _group_raw_text(codeList, group_start: int, source_parts: list[str]) -> str:
-    """Batch source for merged 401/405; anchor _original wins on re-run."""
-    if group_start < len(codeList):
-        orig = _scalar_original(codeList[group_start])
-        if orig is not None:
-            return orig
-    return "\n".join(source_parts)
+def _group_raw_text(codeList, rows) -> str:
+    """Batch source for the 401/405 *rows* sent as one: the anchor's
+    _original on re-run, else their sources as the run keeps them, without
+    the later rows that show nothing (util/rpgmaker_blocks `text_source`)."""
+    orig = _scalar_original(codeList[rows[0]])
+    if orig is not None:
+        return orig
+    return rpgmaker_blocks.text_source(
+        [_param_text(codeList[at], 0) for at in rows],
+        [_param_current(codeList[at], 0) for at in rows],
+    )
 
 
 def _group_current(codeList, start: int, end: int) -> str:
@@ -3689,26 +3693,24 @@ def _message_speakers(line, following):
     )
 
 
+def _own_source(commands):
+    """The rows of *commands* that start a text of their own as the run
+    joins them, by index: each retained scalar original owns an
+    independently translated unit. In particular, rejecting a former [prose]
+    nameplate must not merge it into the already-translated line after it
+    and discard either original."""
+    return lambda at: _scalar_original(commands[at]) is not None
+
+
 def _message_end(commands, start, allowed):
-    end = _text_group_end(commands, start, allowed)
     nameplate = re.fullmatch(
         rf"\[({SPEAKER_BRACKET_INNER})\]\s*", _param_text(commands[start], 0)
     )
     if nameplate and _standalone_speaker(nameplate[1]):
         # An English [Name] line still needs the following Japanese dialogue
         # in the eligibility preview; the native name handler advances to it.
-        return end
-    # Each retained scalar original owns an independently translated unit.
-    # In particular, rejecting a former [prose] nameplate must not merge it
-    # into the already-translated line after it and discard either original.
-    return next(
-        (
-            index - 1
-            for index in range(start + 1, end + 1)
-            if _scalar_original(commands[index]) is not None
-        ),
-        end,
-    )
+        return _text_group_end(commands, start, allowed)
+    return rpgmaker_blocks.text_end(commands, start, allowed, _own_source(commands))
 
 
 # Runs whose frozen policy collects menu choices once translate them on the
@@ -4037,8 +4039,6 @@ def _searchCodes(page, pbar, jobList, filename):
 
             # Declare Varss
             currentGroup = []
-            sourceGroup = []
-            currentSourceGroup = []
             nametag = ""
             speakerPrefix = ""
 
@@ -4125,9 +4125,7 @@ def _searchCodes(page, pbar, jobList, filename):
                     i,
                     speakerWork,
                     _message_speakers,
-                    # Each retained scalar original owns its own unit.
-                    lambda at: SPEAKER_CONTEXT
-                    and _scalar_original(codeList[at]) is not None,
+                    _own_source(codeList) if SPEAKER_CONTEXT else None,
                 )
                 speakerMatch = sentText.speakers
                 speakerList = list(speakerMatch.names) if speakerMatch else []
@@ -4225,9 +4223,6 @@ def _searchCodes(page, pbar, jobList, filename):
 
                 # Using this to keep track of 401's in a row (display text for Pass 2 formatting).
                 currentGroup.append(jaString)
-                anchor_has_orig = _scalar_original(codeList[groupStart]) is not None
-                sourceGroup.append(_param_text(codeList[i], 0))
-                currentSourceGroup.append(_param_current(codeList[i], 0))
 
                 # Join Up 401's into single string
                 for i in sentText.rows[1:]:
@@ -4235,14 +4230,13 @@ def _searchCodes(page, pbar, jobList, filename):
                     jaString = codeList[i]["parameters"][0]
                     if jaString.strip():
                         currentGroup.append(jaString)
-                        currentSourceGroup.append(_param_current(codeList[i], 0))
-                        if not anchor_has_orig:
-                            sourceGroup.append(_param_text(codeList[i], 0))
 
                 # Format String
                 if len(currentGroup) > 0:
-                    rawSource = _group_raw_text(codeList, groupStart, sourceGroup)
-                    currentSource = "\n".join(currentSourceGroup)
+                    rawSource = _group_raw_text(codeList, sentText.rows)
+                    currentSource = rpgmaker_blocks.text_source(
+                        [_param_current(codeList[at], 0) for at in sentText.rows]
+                    )
                     # Skip status is based on the live text, read against its
                     # preserved Japanese source.
                     if not rawSource.strip() or not _text_needs_translation(
@@ -4353,8 +4347,6 @@ def _searchCodes(page, pbar, jobList, filename):
                         match = []
                         nametag = ""
                         currentGroup = []
-                        sourceGroup = []
-                        currentSourceGroup = []
                         syncIndex = i + 1
 
                         if historyEntry is not None:
@@ -4383,7 +4375,7 @@ def _searchCodes(page, pbar, jobList, filename):
                             endtag = ""
                             list401.pop(0)
                         elif len(list401) > 0:
-                            rawSource = _group_raw_text(codeList, groupStart, sourceGroup)
+                            rawSource = _group_raw_text(codeList, sentText.rows)
                             translatedText = list401[0]
 
                             # Remove the speaker label it was sent with
@@ -4480,7 +4472,6 @@ def _searchCodes(page, pbar, jobList, filename):
                             speaker = ""
                             match = []
                             currentGroup = []
-                            sourceGroup = []
                             list401.pop(0)
 
             ## Event Code: 122 [Set Variables]
