@@ -385,30 +385,37 @@ test("a landing's review record comes from an independent reviewer and accounts 
       }),
     /Finding 1 .* needs a kind of bug, risk, quality/,
   );
-  // A --review landing gives every finding's kind and names its E2E runs;
-  // the Discord intake's record need not until it sends the kinds, and its
-  // worker names the runs in the hand-off. It counts as one review.
+  // Every record gives each finding's kind, the Discord intake's too; a
+  // --review landing names its E2E runs, while the intake's worker names them
+  // in the hand-off. It counts as one review.
   const intakeRecord = {
     reviewer: "independent",
     head: "abc1234",
     level: "high",
-    findings: [{ summary: "Off by one", outcome: "fixed" }],
+    findings: [{ summary: "Off by one", kind: "bug", outcome: "fixed" }],
   };
-  assert.throws(
-    () => record({ ...intakeRecord, e2e: [] }),
-    /Finding 1 .* needs a kind/,
-  );
+  for (const intake of [false, true])
+    assert.throws(
+      () =>
+        readReview(
+          JSON.stringify({
+            ...intakeRecord,
+            e2e: [],
+            findings: [{ summary: "Off by one", outcome: "fixed" }],
+          }),
+          { intake },
+        ),
+      /Finding 1 .* needs a kind/,
+    );
   assert.deepEqual(readReview(JSON.stringify(intakeRecord), { intake: true }), {
     ...intakeRecord,
     reviews: 1,
-    findings: [{ summary: "Off by one", outcome: "fixed", review: 1 }],
+    findings: [
+      { summary: "Off by one", kind: "bug", outcome: "fixed", review: 1 },
+    ],
   });
   assert.throws(
-    () =>
-      record({
-        ...intakeRecord,
-        findings: [{ ...intakeRecord.findings[0], kind: "bug" }],
-      }),
+    () => record(intakeRecord),
     /names the scenarios and live test its author ran as "e2e"/,
   );
   // E2E runs are scenario.mjs's own arguments, with names it knows, or a
@@ -502,12 +509,14 @@ test("a landing's review record comes from an independent reviewer and accounts 
     }).reviews,
     3,
   );
-  assert.equal(
-    readReview(
-      JSON.stringify({ ...intakeRecord, findings: fixes(1, thirdFix) }),
-      { intake: true },
-    ).reviews,
-    1,
+  // The intake's record is held to the same trigger.
+  assert.throws(
+    () =>
+      readReview(
+        JSON.stringify({ ...intakeRecord, findings: fixes(1, thirdFix) }),
+        { intake: true },
+      ),
+    due,
   );
   // The intake's own findings, numbered by its review, count the same way.
   assert.equal(
