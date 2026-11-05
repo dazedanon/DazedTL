@@ -21,7 +21,7 @@ from util.guidance_documents import GAME_CONTEXT, GLOSSARY
 
 from dazedtl import system
 from dazedtl.actions import label
-from dazedtl.compatibility.compare import ESTIMATE, TRANSLATE, UNITS
+from dazedtl.compatibility.compare import ACTIONS, ESTIMATE, TRANSLATE, UNITS
 from dazedtl.compatibility.compare_units import GUIDANCE
 from dazedtl.projects.store import working_method
 from dazedtl.settings import providers
@@ -362,6 +362,27 @@ class Compare:
         which a Guided run reads as a Translate run does."""
         if game.native is not None:
             self.guided.settings.prepare_engine(pair=self.guided.runs.pair(game.native))
+
+    def operations(self, project_id):
+        """The project's comparison operations, newest first, whichever
+        method filed them: under its Guided record or itself (Game.owner)."""
+        owners = {project_id, self.guided.projects.get(project_id).get("backend_id")}
+        return sorted(
+            (
+                job
+                for job in self.guided.backend.operations.jobs.values()
+                if job["project_id"] in owners and job["action"] in ACTIONS
+            ),
+            key=lambda job: job["created"],
+            reverse=True,
+        )
+
+    def stop(self, project_id, operation_id):
+        """Stops the project's running comparison operation, in any method;
+        a translation keeps what its models finished."""
+        if not any(job["id"] == operation_id for job in self.operations(project_id)):
+            raise ValueError("This comparison is no longer running.")
+        return self.guided.backend.operations.stop(operation_id)
 
     def _jobs(self, game, action):
         return sorted(

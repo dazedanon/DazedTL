@@ -614,3 +614,21 @@ class ApprovalTests(unittest.TestCase):
         for wrong in ({"/450": 0}, {"/0": 1}):
             with self.assertRaisesRegex(ValueError, "Pick one"):
                 self.compare.marks("p1", translation, wrong, True, False)
+
+    def test_a_comparison_stops_in_any_method(self):
+        # Assistant-led and Manual comparisons had no stop, as guided_stop
+        # reads a Guided record, while they held every other operation.
+        estimate = self.estimated()
+        started = self.compare.translate("p1", estimate)
+        other = self.operations.start(
+            {"action": "compare_translate", "project_id": "p2"}
+        )
+        self.assertEqual(
+            [job["id"] for job in self.compare.operations("p1")],
+            [started["id"], estimate],
+        )
+        self.operations.stop = Mock(return_value=started)
+        self.compare.stop("p1", started["id"])
+        self.operations.stop.assert_called_once_with(started["id"])
+        with self.assertRaisesRegex(ValueError, "no longer running"):
+            self.compare.stop("p1", other["id"])

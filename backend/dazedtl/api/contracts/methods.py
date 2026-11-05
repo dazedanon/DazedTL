@@ -714,6 +714,11 @@ class CompareTranslateRequest(TypedDict):
     estimate_id: Annotated[str, "The estimate whose price the click approves."]
 
 
+class CompareStopRequest(TypedDict):
+    project_id: str
+    operation_id: Annotated[str, "A running estimate or translation of the game."]
+
+
 class CompareMarksRequest(TypedDict):
     project_id: str
     comparison_id: str
@@ -886,6 +891,8 @@ METHODS: dict[str, Method] = {
     # Makes a compared model the game's: Settings' model, and for Tune
     # settings its effort, glossary and instruction.
     "compare_use": Method(CompareUseRequest, Saved),
+    # Stops a comparison in any method; a translation keeps what finished.
+    "compare_stop": Method(CompareStopRequest, Job),
     "guided_batch_cancel_preview": Method(
         GuidedBatchCancelPreviewRequest, BatchCancellation, refresh=False
     ),

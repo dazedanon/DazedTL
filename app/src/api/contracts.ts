@@ -3704,6 +3704,12 @@ export type CompareTranslateRequest = {
   estimate_id: string;
 };
 
+export type CompareStopRequest = {
+  project_id: string;
+  /** A running estimate or translation of the game. */
+  operation_id: string;
+};
+
 export type CompareMarksRequest = {
   project_id: string;
   comparison_id: string;
@@ -3885,6 +3891,7 @@ export type RpcContract = {
   compare_request: { request: CompareRequestRequest; response: RunPayload };
   compare_model: { request: CompareModelRequest; response: CompareModelInfo };
   compare_use: { request: CompareUseRequest; response: Saved };
+  compare_stop: { request: CompareStopRequest; response: Job };
   guided_batch_cancel_preview: {
     request: GuidedBatchCancelPreviewRequest;
     response: BatchCancellation;

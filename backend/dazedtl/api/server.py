@@ -17,7 +17,6 @@ from dazedtl import system
 from dazedtl.api.contracts.methods import METHODS
 from dazedtl.api.local import LocalAPI
 from dazedtl.compatibility import game_write, original_files, original_record
-from dazedtl.compatibility.compare import ACTIONS as COMPARE_ACTIONS
 from dazedtl.compatibility.dazedmtl import ExistingBackend
 from dazedtl.compatibility.runtime import ENGINE_ROOT
 from dazedtl.compatibility.translation import TranslationEngine
@@ -534,18 +533,10 @@ class Application:
                 assistant_tasks = []
         compare = []
         if project:
-            # Each method's comparisons are operations filed under its
-            # Guided record or its project (translation/compare Game.owner).
-            owners = {project["id"], project.get("backend_id")}
             compare = [
                 views.compare_operation(job)
-                for job in sorted(
-                    self.backend.operations.jobs.values(),
-                    key=lambda job: job["created"],
-                    reverse=True,
-                )
-                if job["project_id"] in owners and job["action"] in COMPARE_ACTIONS
-            ][:40]
+                for job in self.guided.compare.operations(project["id"])[:40]
+            ]
         return {
             "application": views.application(state),
             "assistantTasks": assistant_tasks,
@@ -1036,6 +1027,10 @@ def routes(app):
         "compare_request": (app.guided.compare.request, lambda value, _params: value),
         "compare_model": (app.guided.compare.model, lambda value, _params: value),
         "compare_use": (app.guided.compare.use, lambda value, _params: value),
+        "compare_stop": (
+            app.guided.compare.stop,
+            lambda value, _params: views.job(value),
+        ),
         "guided_batch_cancel_preview": (
             app.guided.batch_cancel_preview,
             lambda value, _params: value,

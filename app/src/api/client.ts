@@ -291,6 +291,8 @@ export const api = {
       }),
     translate: (project_id: string, estimate_id: string) =>
       request("compare_translate", { project_id, estimate_id }),
+    stop: (project_id: string, operation_id: string) =>
+      request("compare_stop", { project_id, operation_id }),
     marks: (
       project_id: string,
       comparison_id: string,

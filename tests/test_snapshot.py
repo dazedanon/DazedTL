@@ -53,7 +53,9 @@ class SnapshotTests(unittest.TestCase):
                 images=SimpleNamespace(state=unreadable),
                 plugins=SimpleNamespace(state=unreadable),
                 assistant_tasks=SimpleNamespace(view=unreadable),
-                backend=SimpleNamespace(operations=SimpleNamespace(jobs={})),
+                guided=SimpleNamespace(
+                    compare=SimpleNamespace(operations=lambda _project_id: [])
+                ),
                 failure=lambda failure, *_args, failures=failures: failures.append(
                     failure
                 ),
