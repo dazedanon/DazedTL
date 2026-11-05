@@ -355,23 +355,6 @@ export function runStatus(
 }
 
 /**
- * Whether a model translated a comparison's lines whole, so it can be used:
- * its translation ended and it came back without an error. A model that
- * failed or was stopped keeps its cost and finished lines, but not this.
- */
-export function finishedModel(
-  comparison: Comparison | undefined,
-  model: CompareModel | undefined,
-) {
-  return (
-    !!comparison?.translationId &&
-    !working(comparison.status) &&
-    model?.cost !== undefined &&
-    !model.error
-  );
-}
-
-/**
  * The requests Show request opens for a model: the first ones its
  * translation kept, and what it says when it kept fewer than it sent.
  */
@@ -393,7 +376,7 @@ export function modelDetail(model: CompareModel, translated: boolean) {
   if (translated && model.cost !== undefined)
     return [
       formatCost(model.cost),
-      model.seconds !== undefined && formatDuration(model.seconds),
+      model.seconds !== undefined && formatDuration(model.seconds, true),
     ]
       .filter(Boolean)
       .join(" · ");

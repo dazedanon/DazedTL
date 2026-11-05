@@ -11,9 +11,9 @@ import {
   compareInputs,
   current,
   estimateTotal,
-  finishedModel,
   glossaryChanges,
   keptRequests,
+  modelDetail,
   namesHidden,
   picks,
   recordedMarks,
@@ -286,27 +286,19 @@ test("Show request pages over the requests kept and says when fewer were kept th
   assert.equal(keptRequests(model(0, { requests: 2 })).kept, 0);
 });
 
-test("a model that failed or was stopped keeps its cost but is not offered for use", () => {
-  const translated = (extra: Partial<CompareModel>, status = "complete") => {
-    const item = comparison({
-      translationId: "run",
-      stage: "translation",
-      status,
-      candidates: [model(0, extra)],
-    });
-    return finishedModel(item, item.candidates[0]);
-  };
-  assert.equal(translated({ cost: 0.01, seconds: 3 }), true);
+test("a model's price under its name keeps tenths of a second for a short run", () => {
   assert.equal(
-    translated(
-      { cost: 0.004, error: "Stopped before it finished." },
-      "stopped",
-    ),
-    false,
+    modelDetail(model(0, { cost: 0.002, seconds: 0.4 }), true),
+    "$0.002 · 0.4 s",
   );
-  assert.equal(translated({ cost: 0.002, error: "HTTP 500" }), false);
-  // Still running: its cost so far is no finished translation.
-  assert.equal(translated({ cost: 0.001 }, "running"), false);
+  assert.equal(
+    modelDetail(model(0, { cost: 0.002, seconds: 3.4 }), true),
+    "$0.002 · 3.4 s",
+  );
+  assert.equal(
+    modelDetail(model(0, { cost: 0.002, seconds: 72 }), true),
+    "$0.002 · 1 min 12 s",
+  );
 });
 
 test("the comparison running for the game shows whatever the tab, until it ends", () => {
