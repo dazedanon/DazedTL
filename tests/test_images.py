@@ -10,7 +10,7 @@ from base64 import b64decode
 from contextlib import nullcontext, redirect_stdout
 from copy import deepcopy
 from io import BytesIO, StringIO
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -1800,6 +1800,49 @@ class DecodedImagePatchTests(unittest.TestCase):
             (self.game / row["editable"]).read_bytes(),
             encode(stream.getvalue()),
         )
+
+    def test_a_prepare_stopped_partway_leaves_nothing_that_blocks_the_next(self):
+        # A later image's check stopped Prepare after an earlier image's
+        # original was kept with no record naming it, so every later Prepare
+        # stopped with "Unrecognized preserved image files exist".
+        title, picture = "decoded/Picture/title.bmp", "decoded/Picture/title.png"
+        stream = BytesIO()
+        Image.new("RGB", (8, 8), (9, 9, 9)).save(stream, format="BMP")
+        write_bytes(self.game / title, stream.getvalue())
+        self.scan()
+        originals = self.game / service_module.WORK / "originals"
+        adapter, source_bytes = self.service.adapter, self.service.adapter.source_bytes
+
+        def changed(root, row, key):
+            raw = source_bytes(root, row, key)
+            return raw + b"changed" if row["id"] == title else raw
+
+        def prepare(*identities):
+            self.service.action(
+                self.identity, "prepare", {"asset_ids": list(identities)}
+            )
+
+        with (
+            patch.object(adapter, "source_bytes", changed),
+            self.assertRaisesRegex(ValueError, "A source image changed"),
+        ):
+            prepare(picture, title)
+        self.assertFalse([path for path in originals.rglob("*") if path.is_file()])
+        # One an older version or a crash left is this image's own when it
+        # holds the bytes Prepare would keep, and refused when it differs.
+        index = self.service._index(self.identity)
+        logo = "decoded/Picture/logo.png"
+        write_bytes(self.game / logo, png((1, 2, 3, 255)))
+        self.scan()
+        for name, raw in ((picture, png()), (logo, png((9, 9, 9, 255)))):
+            kept = PurePosixPath(name).with_name(
+                PurePosixPath(index.get(name)["editable"]).name
+            )
+            write_bytes(originals / kept, raw)
+        prepare(picture, title)
+        self.assertTrue(all(index.get(name)["frozen"] for name in (picture, title)))
+        with self.assertRaisesRegex(ValueError, "Unrecognized preserved image files"):
+            prepare(logo)
 
     def test_undoing_an_apply_into_a_decoded_folder_puts_its_original_back(self):
         # Undoing the apply deleted the decoded image, which only the apply
