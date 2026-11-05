@@ -10,7 +10,7 @@
 // A note may follow the value. `Found-by:` names, once, who found the bug:
 // one of `finders`.
 
-/** Who can find a bug: a landing's reviewer, CI, a test scenario, a playtest, a Discord post, the user, or the fix's author. */
+/** Who can find a bug: a landing's evaluator ("review"), CI, a test scenario, a playtest, a Discord post, the user, or the fix's author. */
 export const finders = [
   "review",
   "ci",

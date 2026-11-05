@@ -4,12 +4,13 @@
 // release it, so two sessions can never both hold it. A holder renews it
 // while it works; a lock whose process has gone, or that nobody renewed for
 // 20 minutes, may be taken over. It also holds the landing rules that tools
-// outside land.mjs can read, such as the Discord intake: maxReviews, when
-// another review is due, the review lenses and when each is due, the finding
-// kinds, and which changes are platform-sensitive or change a screen.
-// Run as a script, it lists the paths of a branch that change a screen or
-// user flow, for a reviewer deciding whether the Live check is due:
-//   node scripts/land-lock.mjs screens <base> <tip>
+// outside land.mjs can read, such as the Discord intake: which branches get
+// an evaluation (evaluationDue), how many evaluations one landing runs and
+// when a re-check is due, the finding severities, and which changes are
+// platform-sensitive or change a screen.
+// Run as a script, it says whether a branch gets an evaluation, for which
+// risks, and whether that evaluation runs the Live check:
+//   node scripts/land-lock.mjs evaluation <base> <tip>
 import fs from "node:fs";
 import { spawnSync } from "node:child_process";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -41,35 +42,44 @@ export const devMoved = 3;
 /** Where landed reviews are recorded, one JSON line each, in the shared Git directory. */
 export const reviewLog = "dazedtl-reviews.jsonl";
 
-/** The most independent reviews one landing runs; the dazedtl-land skill says when another runs. */
+/**
+ * The most evaluations one landing runs: the first, and a fresh re-check
+ * after each FAIL. After the last FAILs, the author stops and reports to the
+ * user (the dazedtl-land skill's Evaluate step).
+ */
 export const maxReviews = 3;
 
 /**
- * The checks a review may run besides code-review, each named in the
- * dazedtl-land skill's Review lens section: "places-and-chains" is its
- * Places checked and Fix chain and states checks, and "live-check" its Live
- * check. A record lists those every one of its reviews ran, so review-stats
- * can compare escapes with and without each where it is due (lensDue).
+ * What an evaluation finding is: blocking, which fails the evaluation (a
+ * criterion not met; something missing, broken or unsafe; new lint or test
+ * failures; a doc or runbook step that would lead someone to a wrong
+ * action), or minor, which the author fixes without failing it.
  */
-export const reviewLenses = ["places-and-chains", "live-check"];
+export const findingSeverities = ["blocking", "minor"];
 
 /**
- * A record's lenses as the reviews log keeps and review-stats groups them:
- * known names only, once each, in reviewLenses order.
- * @param {unknown[]} lenses
+ * Whether evaluation `review` failed and its fixes still need a fresh
+ * re-check before the branch lands: one of its blocking findings was fixed.
+ * A blocking finding the user overruled, and a finding of an older record,
+ * which has no severity, need none.
+ * @param {{ review?: number, severity?: string, outcome: string }[]} findings
+ * @param {number} review
  */
-export const knownLenses = (lenses) =>
-  reviewLenses.filter((lens) => lenses.includes(lens));
+export const recheckDue = (findings, review) =>
+  findings.some(
+    (finding) =>
+      finding.review === review &&
+      finding.severity === "blocking" &&
+      finding.outcome === "fixed",
+  );
 
 /**
  * The changed paths that make a branch change a screen or user flow, so its
- * reviewers run the Review lens's Live check in the running app: what the
- * window draws and how its actions, drafts and observed state flow (the
- * renderer), the packages and build that make it, and the Electron shell's
- * window, menus and dialogs. A backend change reaches users through these,
- * but its logic is what the other lenses check, so it is left out. Add a
- * path when a bug a live check would have caught got past a landing that
- * changed none of these.
+ * evaluation runs the Live check in the running app: what the window draws
+ * and how its actions, drafts and observed state flow (the renderer), the
+ * packages and build that make it, and the Electron shell's window, menus and
+ * dialogs. A backend change reaches users through these, but its logic is
+ * what the criteria's checks test, so it is left out.
  */
 export const screenPaths = [
   /^app\/src\//,
@@ -89,53 +99,6 @@ export const screenChanging = (changed) =>
       !generated.includes(file) &&
       screenPaths.some((pattern) => pattern.test(file)),
   );
-
-/**
- * Whether a review of a branch that changes `changed` runs `lens`: the Live
- * check only on a branch that changes a screen or flow, every other lens on
- * every branch.
- * @param {string} lens
- * @param {string[]} changed
- */
-export const lensDue = (lens, changed) =>
-  lens !== "live-check" || screenChanging(changed).length > 0;
-
-/**
- * What a review finding is: a bug its reviewer showed with a failing test or
- * a command's output, a risk it could not show, or quality such as wording,
- * docs, naming or design.
- */
-export const findingKinds = ["bug", "risk", "quality"];
-
-/**
- * How many of one review's findings that a user can hit, fixed in behavior,
- * in code or in rules other sessions follow, send the branch to another
- * fresh reviewer. A fix to wording, comments or naming alone, marked
- * `"behavior": false`, does not count, nor does a finding no user can hit,
- * marked `"userFacing": false`, such as one in a report like review-stats:
- * the dazedtl-land skill's Review step says which a user can hit.
- */
-export const repeatReviewFixes = 3;
-
-/**
- * Whether the dazedtl-land skill's Review step runs another fresh review
- * after review `review`: fewer than maxReviews ran and repeatReviewFixes of
- * its findings that a user can hit were fixed in behavior, those it raised
- * while checking the fixes included. A finding with no `userFacing` mark,
- * from a record older than the mark or one that leaves it out, counts as
- * one a user can hit, so leaving it out never skips a review.
- * @param {{ review?: number, outcome: string, behavior?: boolean, userFacing?: boolean }[]} findings
- * @param {number} review
- */
-export const repeatReviewDue = (findings, review) =>
-  review < maxReviews &&
-  findings.filter(
-    (finding) =>
-      finding.review === review &&
-      finding.outcome === "fixed" &&
-      finding.behavior !== false &&
-      finding.userFacing !== false,
-  ).length >= repeatReviewFixes;
 
 /**
  * The changed paths that make a landing platform-sensitive, so land.mjs lands
@@ -183,6 +146,90 @@ export const platformPaths = [
  */
 export const platformSensitive = (changed) =>
   changed.filter((file) => platformPaths.some((pattern) => pattern.test(file)));
+
+/**
+ * The risks whose changes an evaluation checks before they land, as
+ * DazedTL's version of the pipeline's step 4 list in the global AGENTS.md,
+ * each with the paths that hold it. The first four keep the "Foundation
+ * behaviors to protect" of the repository's AGENTS.md: drafts and saved work
+ * (saved data), paid work and its approval, project and run ownership, and
+ * credentials kept from the renderer and drafts; game files are kept by the
+ * gateway and checkpoints that platformPaths already marks. Then what breaks
+ * on one system alone (platformPaths), what users see (screenPaths), and the
+ * checks every landing runs, shared by every session (shared
+ * infrastructure). Add a path when a bug in one of these risks got past a
+ * landing that changed none of them.
+ * @type {{ risk: string, paths: RegExp[] }[]}
+ */
+export const riskPaths = [
+  {
+    risk: "saved data",
+    paths: [
+      /^backend\/dazedtl\/(storage|freshness|foreign_work)\.py$/,
+      /^backend\/dazedtl\/projects\//,
+      /^backend\/dazedtl\/engine\/util\/(freshness|guidance_documents|len_originals|original_values)\.py$/,
+      /^backend\/dazedtl\/engine\/util\/qa\/schema\.py$/,
+      /^backend\/dazedtl\/translation\/(backups|checkpoint_records|plan_file|saved_refusals|originals)\.py$/,
+      /^backend\/dazedtl\/compatibility\/(git_blobs|original_record)\.py$/,
+      /^app\/src\/state\/(DraftSession|documentSave|documentState|useDraft|useDocumentDraft|leaveGuards)\.ts$/,
+    ],
+  },
+  {
+    risk: "paid work",
+    paths: [
+      /^backend\/dazedtl\/actions\.py$/,
+      /^backend\/dazedtl\/compatibility\/(estimate_\w+|full_estimate|pricing_worker|batch_\w+|openrouter_\w+|transmission|resends|refusal_retry|request_\w+|worker_policy|model_defaults|provider_responses)\.py$/,
+      /^backend\/dazedtl\/translation\/(guided_actions|guided_runs|repricing|requests|full_estimate|batch_monitor)\.py$/,
+      /^backend\/dazedtl\/engine\/util\/(provider_costs|claude_tokens|batch_providers|batch_history)\.py$/,
+    ],
+  },
+  {
+    risk: "run ownership",
+    paths: [
+      /^backend\/dazedtl\/translation\/(ownership|jobs|runner|project|worker|start_over)\.py$/,
+      /^backend\/dazedtl\/compatibility\/(run_stops|runtime|operations|workflow_worker)\.py$/,
+      /^app\/src\/app\/applicationStore\.ts$/,
+    ],
+  },
+  {
+    risk: "credentials",
+    paths: [
+      /^backend\/dazedtl\/settings\//,
+      /^backend\/dazedtl\/api\/local\.py$/,
+      /^backend\/dazedtl\/engine\/util\/api_keys\.py$/,
+    ],
+  },
+  { risk: "platform", paths: platformPaths },
+  { risk: "UI", paths: screenPaths },
+  {
+    risk: "shared infrastructure",
+    paths: [
+      /^scripts\/(land|land-lock|test|build|fix-trailers|ci-wait|release)\.mjs$/,
+    ],
+  },
+];
+
+/**
+ * Whether a branch that changes `changed` gets an evaluation before it
+ * lands, the one rule the dazedtl-land skill, land.mjs and the Discord intake
+ * read: each risk riskPaths holds with the files of `changed` that make it,
+ * the generated API contracts left out of the UI as screenChanging leaves
+ * them out, then each risk its author `marked`, such as a multi-area rework
+ * or over about an hour of building, which no path shows. None means its
+ * checks and its author's checked criteria land it.
+ * @param {string[]} changed
+ * @param {{ marked?: string[] }} [options]
+ * @returns {{ risk: string, files: string[] }[]}
+ */
+export function evaluationDue(changed, { marked = [] } = {}) {
+  const due = riskPaths.flatMap(({ risk, paths }) => {
+    const files = (risk === "UI" ? screenChanging(changed) : changed).filter(
+      (file) => paths.some((pattern) => pattern.test(file)),
+    );
+    return files.length ? [{ risk, files }] : [];
+  });
+  return [...due, ...marked.map((risk) => ({ risk, files: [] }))];
+}
 
 /**
  * The paths a branch at `tip` changes since it left `base`, relative to the
@@ -413,17 +460,18 @@ export async function withLock(
 }
 
 /**
- * What `node scripts/land-lock.mjs screens <base> <tip>` prints for the
+ * What `node scripts/land-lock.mjs evaluation <base> <tip>` prints for the
  * branch at `tip`, run from its repository, and its exit code: 0 with the
- * paths screenPaths marks or a line saying it marks none, 2 with the usage,
- * a ref Git can't find or refs it can't compare.
+ * risks evaluationDue finds and their paths, or a line saying it finds none,
+ * and whether the Live check is due; 2 with the usage, a ref Git can't find
+ * or refs it can't compare.
  * @param {Git} git
  * @param {string[]} args
  */
-export function screensCommand(git, args) {
-  const usage = "Usage: node scripts/land-lock.mjs screens <base> <tip>";
+export function evaluationCommand(git, args) {
+  const usage = "Usage: node scripts/land-lock.mjs evaluation <base> <tip>";
   const [command, ...refs] = args;
-  if (command !== "screens" || refs.length !== 2)
+  if (command !== "evaluation" || refs.length !== 2)
     return { code: 2, lines: [usage] };
   for (const ref of refs)
     if (
@@ -436,30 +484,39 @@ export function screensCommand(git, args) {
       ]).status !== 0
     )
       return { code: 2, lines: [`Git can't find the commit ${ref}.`, usage] };
-  let marked;
+  let changed;
   try {
-    marked = screenChanging(changedPaths(git, refs[0], refs[1]));
+    changed = changedPaths(git, refs[0], refs[1]);
   } catch (error) {
     return {
       code: 2,
       lines: [error instanceof Error ? error.message : String(error)],
     };
   }
+  const due = evaluationDue(changed);
   return {
     code: 0,
-    lines: marked.length
-      ? [
-          "This branch changes a screen or user flow, so its review runs the Live check:",
-          ...marked.map((file) => `  ${file}`),
-        ]
-      : [
-          "This branch changes none of the renderer, app build or window paths that screenPaths marks; the Live check is not due.",
-        ],
+    lines: [
+      ...(due.length
+        ? [
+            "This branch gets an evaluation before it lands, for these risks:",
+            ...due.flatMap(({ risk, files }) => [
+              `  ${risk}:`,
+              ...files.map((file) => `    ${file}`),
+            ]),
+          ]
+        : [
+            "This branch changes no path the evaluation rule marks: unless you mark it a multi-area rework or over about an hour of building, its checks and your checked criteria land it.",
+          ]),
+      screenChanging(changed).length
+        ? "It changes a screen or user flow, so its evaluation runs the Live check."
+        : "It changes no screen or user flow, so the Live check is not due.",
+    ],
   };
 }
 
 if (import.meta.main) {
-  const { code, lines } = screensCommand(
+  const { code, lines } = evaluationCommand(
     gitIn(process.cwd()),
     process.argv.slice(2),
   );

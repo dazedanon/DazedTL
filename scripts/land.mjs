@@ -7,14 +7,15 @@
 // answers for a run still red. Runs on
 // Linux and macOS. A wait on the user's DazedTL or a slow landing lock is
 // told to the user on the desktop too, since agents run this in the
-// background. Each landing carries a record of the code review a reviewer
-// other than its author ran, kept in the shared Git directory to measure what
-// reviews catch. See "Landing" in docs/development.md.
+// background. Each landing carries a record of its evaluation by an agent
+// other than its author, or of its author's checked criteria where the
+// evaluation rule (land-lock.mjs evaluationDue) calls for none, kept in the
+// shared Git directory. See "Landing" in docs/development.md.
 //
 // A worker that may never write the main checkout, such as a Discord intake
 // worker in its own clone, lands in two steps. --hand-off runs the same
 // format, merge and checks against origin's dev and leaves the checked branch
-// as a bundle and record in <dir>. The intake has the bundle reviewed, then
+// as a bundle and record in <dir>. The intake has the bundle evaluated, then
 // --finish, run outside the worker's sandbox by the main checkout's own
 // land.mjs, moves dev to it with Git alone.
 //
@@ -64,15 +65,13 @@ import {
 import {
   changedPaths,
   devMoved,
-  findingKinds,
+  evaluationDue,
+  findingSeverities,
   gitIn,
-  knownLenses,
   LockBusy,
   maxReviews,
   platformSensitive,
-  repeatReviewDue,
-  repeatReviewFixes,
-  reviewLenses,
+  recheckDue,
   reviewLog,
   withLock,
 } from "./land-lock.mjs";
@@ -87,10 +86,9 @@ const appPoll = 30_000;
 const pushRetry = 60_000;
 const pushTimeout = 5 * 60_000;
 const icon = path.join(import.meta.dirname, "..", "resources", "icon.png");
-/** The code-review levels a landing's review may run at: high and up. */
-const reviewLevels = ["high", "xhigh", "max", "ultra"];
-const reviewShape =
-  '{"level": "high", "reviewer": "independent", "reviews": 1, "head": "<hash of the last commit the last reviewer checked>", "e2e": ["<scenario> [--game <variants>]", "live"], "findings": [{"summary": "...", "kind": "bug", "outcome": "fixed", "userFacing": true, "review": 1}, {"summary": "...", "kind": "quality", "outcome": "fixed", "behavior": false, "review": 1}, {"summary": "...", "kind": "risk", "outcome": "dismissed", "reason": "...", "review": 1}]}';
+const reviewShape = `{"reviewer": "independent", "reviews": 1, "head": "<hash of the last commit evaluated>", "e2e": ["<scenario> [--game <variants>]", "live"], "findings": [{"summary": "...", "severity": "blocking", "outcome": "fixed", "review": 1}, {"summary": "...", "severity": "minor", "outcome": "fixed", "review": 2}]}, or where no evaluation is due, {"reviewer": "none", "head": "<hash>", "criteria": ["<each criterion you checked>"], "e2e": [...]}`;
+/** The finding kinds of records from before findings carried a severity. */
+const olderKinds = ["bug", "risk", "quality"];
 /** The subject of the commit holding what the formatter changed. */
 const formatSubject = "style: format";
 /** Where a hand-off's worker keeps origin's dev in its clone. */
@@ -109,22 +107,25 @@ const mainBusy = 5;
 const lockLimit = 10 * 60_000;
 
 /**
- * Reads a landing's review record: the code-review level a reviewer that
- * never saw the work ran, how many such reviews ran (1 when not given), the
- * last commit the last one checked, the E2E runs its author ran (readE2e) and
- * what became of each finding, with the review that reported it, which only
- * a one-review record may leave out, its kind (findingKinds), whether a
- * user can hit it, in `userFacing`, which an older record may leave out, and,
- * for a fix to wording, comments or naming alone, `"behavior": false`. A
- * record whose last review was due another (repeatReviewDue) is refused.
- * The Discord intake's records, read with `intake`, are held to the same
- * kinds and repeat-review rule, but carry no E2E runs, since its worker names
- * those in the hand-off; their live-check lens is left out, since the intake
- * lists it unasked.
- * Throws with what is wrong, so no branch lands on its author's review alone.
+ * Reads a landing's review record. An evaluated branch's says
+ * `"reviewer": "independent"`, how many evaluations ran (1 when not given,
+ * at most maxReviews), the last commit evaluated, the E2E runs its author ran
+ * (readE2e) and each finding: the evaluation that reported it, which only a
+ * one-evaluation record may leave out, its severity (findingSeverities) and
+ * its outcome, fixed or, with the user's reason, overruled. A record whose
+ * last evaluation failed with fixes no fresh evaluator re-checked
+ * (recheckDue) is refused. A branch the evaluation rule calls for none of
+ * lands on `"reviewer": "none"`, its head and the criteria its author
+ * checked; land.mjs refuses that record for a branch the rule marks
+ * (unevaluated). Older records still read: a finding with a kind of
+ * bug, risk or quality in place of a severity may be dismissed with a
+ * reason, and their code-review level, lenses and marks are left out.
+ * The Discord intake's records, read with `intake`, carry no E2E runs, since
+ * its worker names those in the hand-off.
+ * Throws with what is wrong.
  * @param {string} text
  * @param {{ intake?: boolean }} [options]
- * @returns {{ level: string, reviewer: "independent", reviews: number, head: string, lenses?: string[], e2e?: string[], whyNoE2e?: string, findings: { summary: string, kind: string, outcome: "fixed" | "dismissed", userFacing?: boolean, behavior?: false, reason?: string, review: number }[] }}
+ * @returns {{ reviewer: "independent" | "none", reviews: number, head: string, criteria?: string[], e2e?: string[], whyNoE2e?: string, findings: { summary: string, severity?: string, kind?: string, outcome: "fixed" | "overruled" | "dismissed", reason?: string, review: number }[] }}
  */
 export function readReview(text, { intake = false } = {}) {
   let record;
@@ -135,45 +136,52 @@ export function readReview(text, { intake = false } = {}) {
   }
   const filled = (/** @type {unknown} */ value) =>
     typeof value === "string" && value.trim() !== "";
-  // A count of reviews, or the number of one of them, from 1 to `most`.
+  // A count of evaluations, or the number of one of them, from 1 to `most`.
   const counted = (/** @type {unknown} */ value, /** @type {number} */ most) =>
     Number.isInteger(value) && Number(value) >= 1 && Number(value) <= most;
-  if (record?.reviewer !== "independent")
+  if (record?.reviewer !== "independent" && record?.reviewer !== "none")
     throw new Error(
-      'The review record needs "reviewer": "independent": a reviewer that never saw the work reviews every landing, not its author (Landing in docs/development.md).',
+      'The review record needs "reviewer": "independent" for a branch an evaluator checked, or "none" with the criteria you checked where the evaluation rule calls for none (Landing in docs/development.md).',
     );
-  if (!reviewLevels.includes(record.level))
+  // A name such as HEAD would follow the branch past what was checked.
+  if (typeof record.head !== "string" || !/^[0-9a-f]{7,64}$/i.test(record.head))
     throw new Error(
-      `The review record needs a level of ${reviewLevels.join(", ")}.`,
+      "The review record needs the hash of the head commit that was checked.",
     );
+  const ran = intake ? {} : readE2e(record, "The review record");
+  if (record.reviewer === "none") {
+    if (
+      !Array.isArray(record.criteria) ||
+      !record.criteria.length ||
+      !record.criteria.every(filled)
+    )
+      throw new Error(
+        'The review record of a branch with no evaluation needs "criteria", each acceptance criterion its author checked.',
+      );
+    if (record.findings !== undefined && record.findings.length !== 0)
+      throw new Error(
+        "The review record of a branch with no evaluation has no findings.",
+      );
+    return {
+      reviewer: "none",
+      reviews: 0,
+      head: record.head,
+      criteria: record.criteria.map((/** @type {string} */ item) =>
+        item.trim(),
+      ),
+      ...ran,
+      findings: [],
+    };
+  }
   const reviews = record.reviews === undefined ? 1 : record.reviews;
   if (!counted(reviews, maxReviews))
     throw new Error(
-      `The review record needs "reviews", how many independent reviews ran, from 1 to ${maxReviews}.`,
-    );
-  // A name such as HEAD would follow the branch past what was reviewed.
-  if (typeof record.head !== "string" || !/^[0-9a-f]{7,64}$/i.test(record.head))
-    throw new Error(
-      "The review record needs the hash of the head commit its last reviewer checked.",
+      `The review record needs "reviews", how many evaluations ran, from 1 to ${maxReviews}.`,
     );
   if (!Array.isArray(record.findings))
     throw new Error(
-      "The review record needs a findings list, empty when the review found nothing.",
+      "The review record needs a findings list, empty when the evaluation found nothing.",
     );
-  const given = record.lenses === undefined ? [] : record.lenses;
-  if (
-    !Array.isArray(given) ||
-    given.some((lens) => !reviewLenses.includes(lens))
-  )
-    throw new Error(
-      `The review record's "lenses" lists the lenses every review ran, of ${reviewLenses.join(", ")}.`,
-    );
-  // The intake lists every lens once its reviewer wrote the "Places checked"
-  // line, and asks it for no live check, so until it records the Live
-  // check by its own "Live checked" line, its claim of one is left out.
-  const lenses = intake
-    ? given.filter((/** @type {string} */ lens) => lens !== "live-check")
-    : given;
   const findings = record.findings.map(
     (/** @type {any} */ item, /** @type {number} */ index) => {
       const which = `Finding ${index + 1} of the review record`;
@@ -182,57 +190,60 @@ export function readReview(text, { intake = false } = {}) {
         item.review === undefined && reviews === 1 ? 1 : item.review;
       if (!counted(review, reviews))
         throw new Error(
-          `${which} needs a review number from 1 to ${reviews}: the independent review that reported it, with "reviews" saying how many ran when more than one did.`,
+          `${which} needs a review number from 1 to ${reviews}: the evaluation that reported it, with "reviews" saying how many ran when more than one did.`,
         );
-      if (!findingKinds.includes(item.kind))
-        throw new Error(`${which} needs a kind of ${findingKinds.join(", ")}.`);
-      if (item.userFacing !== undefined && typeof item.userFacing !== "boolean")
+      const older =
+        item.severity === undefined && olderKinds.includes(item.kind);
+      if (!older && !findingSeverities.includes(item.severity))
         throw new Error(
-          `${which} says "userFacing" true or false: whether a user can hit it, as the dazedtl-land skill's Review step defines it.`,
+          `${which} needs a severity of ${findingSeverities.join(" or ")}.`,
         );
-      const userFacing =
-        item.userFacing === undefined ? {} : { userFacing: item.userFacing };
-      if (item.behavior !== undefined && typeof item.behavior !== "boolean")
+      const label = older ? { kind: item.kind } : { severity: item.severity };
+      if (item.outcome === "fixed")
+        return { summary: item.summary, ...label, outcome: "fixed", review };
+      const outcomes = older ? ["overruled", "dismissed"] : ["overruled"];
+      if (!outcomes.includes(item.outcome))
         throw new Error(
-          `${which} says "behavior" true or false: false for a fix to wording, comments or naming alone.`,
+          `${which} needs an outcome of fixed, or overruled with the user's reason: every finding is fixed unless the user overrules it.`,
         );
-      if (item.outcome === "fixed") {
-        return {
-          summary: item.summary,
-          kind: item.kind,
-          outcome: "fixed",
-          ...userFacing,
-          ...(item.behavior === false ? { behavior: false } : {}),
-          review,
-        };
-      }
-      if (item.outcome !== "dismissed")
-        throw new Error(`${which} needs an outcome of fixed or dismissed.`);
       if (!filled(item.reason))
-        throw new Error(`${which} is dismissed without a reason.`);
+        throw new Error(`${which} is ${item.outcome} without a reason.`);
       return {
         summary: item.summary,
-        kind: item.kind,
-        outcome: "dismissed",
-        ...userFacing,
+        ...label,
+        outcome: item.outcome,
         reason: item.reason,
         review,
       };
     },
   );
-  if (repeatReviewDue(findings, reviews))
+  if (recheckDue(findings, reviews))
     throw new Error(
-      `Review ${reviews} had ${repeatReviewFixes} or more findings that a user can hit fixed in behavior, so a fresh review of the branch as it now stands runs before it lands (dazedtl-land, Review). Mark a fix to wording, comments or naming alone with "behavior": false, and a finding its reviewer said no user can hit with "userFacing": false.`,
+      reviews < maxReviews
+        ? `Evaluation ${reviews} failed: a fresh evaluator re-checks its blocking findings and what changed since before the branch lands (dazedtl-land, Evaluate).`
+        : `Evaluation ${reviews} failed, the last of ${maxReviews}: stop and report to the user, and record a blocking finding they overrule as "overruled" with their reason (dazedtl-land, Evaluate).`,
     );
   return {
-    level: record.level,
     reviewer: "independent",
     reviews,
     head: record.head,
-    ...(lenses.length ? { lenses: knownLenses(lenses) } : {}),
-    ...(intake ? {} : readE2e(record, "The review record")),
+    ...ran,
     findings,
   };
+}
+
+/**
+ * Why a branch that changes `changed` may not land on `review`, or null: a
+ * record saying no evaluation was due, for a branch the evaluation rule
+ * marks.
+ * @param {ReturnType<typeof readReview>} review
+ * @param {string[]} changed
+ */
+export function unevaluated(review, changed) {
+  if (review.reviewer !== "none") return null;
+  const due = evaluationDue(changed);
+  if (!due.length) return null;
+  return `The evaluation rule marks this branch (${due.map(({ risk, files }) => `${risk}: ${files.join(", ")}`).join("; ")}), so it lands only once an evaluator checked it, with "reviewer": "independent" in its record (dazedtl-land, Evaluate).`;
 }
 
 /**
@@ -352,10 +363,10 @@ function addsNothing(git, parents, subject, dev) {
 }
 
 /**
- * Resolves the commit a landing's reviewer last checked to its full hash.
+ * Resolves the commit a landing's record says was checked to its full hash.
  * Throws when it is not on the branch at `git`, or when the branch has
  * commits of its own after it: apart from merges of dev and the formatter's
- * commits, a change made after the review lands only once it is reviewed.
+ * commits, a change made after the check lands only once it is checked.
  * @param {ReturnType<typeof gitIn>} git
  * @param {string} head
  */
@@ -383,7 +394,7 @@ export function reviewedHead(git, head) {
   });
   if (after.length)
     throw new Error(
-      `These commits came after the review record's head; have the reviewer check them and record the new head:\n${after.join("\n")}`,
+      `These commits came after the review record's head; check them as the dazedtl-land skill says and record the new head:\n${after.join("\n")}`,
     );
   return commit;
 }
@@ -1086,7 +1097,7 @@ export async function land(cwd, deps, reviewFile) {
   if (onWindows(log)) return 1;
   if (!reviewFile) {
     log(
-      `Land with --review <file.json> holding the branch's independent code review: ${reviewShape}.`,
+      `Land with --review <file.json> holding the branch's evaluation, or the criteria you checked where none is due: ${reviewShape}.`,
     );
     return 1;
   }
@@ -1120,12 +1131,12 @@ export async function land(cwd, deps, reviewFile) {
     git(["rev-parse", "--git-common-dir"]).stdout.trim(),
   );
   const main = path.dirname(common);
-  // The author's E2E answers for the change its reviewers checked, so it
-  // goes by the branch before formatting; CI, below, by what lands.
-  const untested = missingE2e(
-    platformSensitive(changedPaths(git, "refs/heads/dev", "HEAD")),
-    review,
-  );
+  // The author's evaluation and E2E answer for the change that was checked,
+  // so they go by the branch before formatting; CI, below, by what lands.
+  const changed = changedPaths(git, "refs/heads/dev", "HEAD");
+  const untested =
+    unevaluated(review, changed) ??
+    missingE2e(platformSensitive(changed), review);
   if (untested) {
     log(untested);
     return 1;
@@ -1495,7 +1506,7 @@ async function underLock(
   if (out("rev-parse", "HEAD") !== checked)
     return outcome(
       1,
-      `${branch} gained commits while this landing waited; have your last reviewer check them, record the new head and land again.`,
+      `${branch} gained commits while this landing waited; check them as the dazedtl-land skill says, record the new head and land again.`,
     );
   const before = out("rev-parse", "dev");
 
@@ -1717,7 +1728,7 @@ export async function finishHandOff(cwd, deps, dir, reviewFile) {
   if (onWindows(log)) return 1;
   if (!dir || !reviewFile) {
     log(
-      `Finish with --finish <dir> --review <file.json>: the hand-off's directory and the independent review of its bundle, ${reviewShape}.`,
+      `Finish with --finish <dir> --review <file.json>: the hand-off's directory and the record of its bundle's evaluation, ${reviewShape}.`,
     );
     return 1;
   }
@@ -1853,9 +1864,11 @@ async function finishUnderLock(
     time.lap("verify");
     // CI comes before the check that dev has not moved: dev moving while it
     // runs needs no new run, since its pass stands once the worker merges dev.
-    const sensitive = platformSensitive(changedPaths(git, base, head));
+    const changed = changedPaths(git, base, head);
+    const sensitive = platformSensitive(changed);
     // The hand-off names its E2E as a landing's record does, before CI runs.
-    const untested = missingE2e(sensitive, review, true);
+    const untested =
+      unevaluated(review, changed) ?? missingE2e(sensitive, review, true);
     if (untested) return outcome(1, untested, "Nothing landed.");
     if (sensitive.length) {
       const stopped = await branchCI(deps, {
