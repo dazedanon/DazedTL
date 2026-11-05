@@ -1028,6 +1028,7 @@ def prepare_publication(plan):
         saved = plan.get("run_output")
         output_folder = Path(saved["folder"]) if saved else folder
         layout = fitting_layout(plan)
+        reading = fitting_reading(plan)
         for name in options["files"]:
             path = live_path(output_folder, "translated/" + name)
             output = path.read_bytes()
@@ -1051,7 +1052,7 @@ def prepare_publication(plan):
                     name,
                     layout,
                     resized=True,
-                    reading=fitting_reading(plan),
+                    reading=reading,
                 )[0]
                 if fitted is None and localized:
                     fitted = engine_json(document)
@@ -1073,6 +1074,7 @@ def prepare_publication(plan):
         from util.len_originals import LISTED_MISFITS
 
         layout = fitting_layout(plan)
+        reading = fitting_reading(plan)
         plan["fitted_lines"] = 0
         plan["misfits"], plan["misfit_count"] = [], 0
         receipt = (
@@ -1094,11 +1096,11 @@ def prepare_publication(plan):
                 set(options["areas"]),
                 newline=raw.endswith(b"\n"),
                 resized=True,
-                reading=fitting_reading(plan),
+                reading=reading,
             )
             # What no wrap fits at these widths, in every area, as the game
             # will hold it once this fit is written.
-            misfits = unfitted(document, name, layout, fitting_reading(plan))
+            misfits = unfitted(document, name, layout, reading)
             plan["misfits"] += misfits[: LISTED_MISFITS - len(plan["misfits"])]
             plan["misfit_count"] += len(misfits)
             if fitted is None:
