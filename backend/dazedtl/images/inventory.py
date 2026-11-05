@@ -646,15 +646,16 @@ def inspect_row(root, adapter, row, old, key):
             families.VERSION,
         )
 
-    # An image in another format than PNG is read into PNG bytes again when
-    # what reads it changed, since its saved hashes are of those bytes.
+    # An image in another format than PNG is read into PNG bytes again, with
+    # its original, when what reads it changed, since its saved hashes are of
+    # those bytes.
     decoder = adapter.decoder() if hasattr(adapter, "decoder") else ""
     redecode = row.get("sourceDecoder", "") not in {"", decoder}
     pending = None
     if original and original[0] != row.get("runtime"):
         try:
             stamp = signature(project_path(root, original[0]))
-            if stale(original[0], stamp):
+            if stale(original[0], stamp) or redecode:
                 pending = (*original, stamp)
         except OSError, ValueError:
             original = None

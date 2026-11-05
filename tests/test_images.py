@@ -1732,6 +1732,34 @@ class DecodedImagePatchTests(unittest.TestCase):
             families.translated(self.service._index(self.identity).get(title)), ""
         )
 
+    def test_an_older_backup_original_is_read_again_with_its_image(self):
+        # Only the image was read again, so its backup original kept the old
+        # reader's hash and the image read as translated in the game.
+        from util import image_formats
+
+        title = "decoded/Picture/title.bmp"
+        stream = BytesIO()
+        Image.new("RGB", (8, 8), (9, 9, 9)).save(stream, format="BMP")
+        for path in (title, families.BACKUPS + title):
+            write_bytes(self.game / path, stream.getvalue())
+        self.scan()
+        encode = image_formats.to_png
+
+        def newer(raw):
+            with Image.open(BytesIO(encode(raw))) as image:
+                stream = BytesIO()
+                image.save(stream, format="PNG", compress_level=1)
+                return stream.getvalue()
+
+        with (
+            patch.object(image_formats, "to_png", newer),
+            patch.object(image_formats, "decoder", lambda: "newer"),
+        ):
+            self.scan()
+            row = self.service._index(self.identity).get(title)
+        self.assertEqual(row["original"]["path"], families.BACKUPS + title)
+        self.assertEqual(families.translated(row), "")
+
     def test_undoing_an_apply_into_a_decoded_folder_puts_its_original_back(self):
         # Undoing the apply deleted the decoded image, which only the apply
         # had brought onto the branch, so Images read it missing and the
