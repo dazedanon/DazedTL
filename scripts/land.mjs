@@ -225,23 +225,27 @@ export function readReview(text, { intake = false } = {}) {
  * Reads the E2E runs a record names, in `e2e`: each the arguments
  * scripts/scenario.mjs takes to run it, a scenario as `<scenario> [--game
  * <variants>] [--from <ref>]` or the live test as `live [--upgrade-from
- * <tag>]`, with `whyNoE2e` saying why it names none. A record from before
- * runs were named may leave both out unless `required`.
+ * <tag>]`, with `whyNoE2e` saying why it names none. Unless `required`, a
+ * record may leave both out, such as one from before runs were named, and
+ * reads as naming nothing, not as having run none. Without `names`, the
+ * names go unchecked, for a hand-off that the worker's own land.mjs checked
+ * against its branch's scenarios.
  * Throws with what is wrong, naming the record as `which`.
  * @param {any} record
  * @param {string} which
- * @param {{ required?: boolean }} [options]
- * @returns {{ e2e: string[], whyNoE2e?: string }}
+ * @param {{ required?: boolean, names?: boolean }} [options]
+ * @returns {{ e2e?: string[], whyNoE2e?: string }}
  */
-export function readE2e(record, which, { required = true } = {}) {
+export function readE2e(record, which, { required = true, names = true } = {}) {
   const shape = `${which} names the scenarios and live test its author ran as "e2e", such as "translated --game choice-help" and "live", or says why it names none as "whyNoE2e"`;
   if (record.e2e === undefined && record.whyNoE2e === undefined && !required)
-    return { e2e: [] };
+    return {};
   const runs =
     record.e2e === undefined && record.whyNoE2e !== undefined ? [] : record.e2e;
   if (!Array.isArray(runs)) throw new Error(`${shape}.`);
   const e2e = runs.map((/** @type {unknown} */ run) => {
-    const problem = e2eProblem(run);
+    const problem =
+      names || typeof run !== "string" || !run.trim() ? e2eProblem(run) : null;
     if (problem) throw new Error(`${shape}: ${problem}`);
     return String(run).trim().split(/\s+/).join(" ");
   });
@@ -276,10 +280,13 @@ function e2eProblem(run) {
   const live = name === "live";
   if (!live && !Object.hasOwn(scenarios, name))
     return `${name} is no scenario; node scripts/scenario.mjs list shows them, and live is the live test.`;
-  const options = testedOptions(live ? e2eOptions : scenarioOptions);
+  const all = live ? e2eOptions : scenarioOptions;
+  const options = testedOptions(all);
   const seen = new Set();
   for (let index = 0; index < rest.length; index += 2) {
     const [option, value] = [rest[index], rest[index + 1]];
+    if (Object.hasOwn(all, option) && !options.includes(option))
+      return `"${run}" names ${option}; leave it out, since it changes nothing the run tests.`;
     if (!options.includes(option) || seen.has(option))
       return `"${run}" takes ${options.join(" and ")} once each, not ${option}.`;
     seen.add(option);
@@ -298,7 +305,8 @@ function e2eProblem(run) {
  * Why a branch that changes `sensitive` paths may not land on `review`, or
  * null: a platform-sensitive branch's record names the E2E its author ran or
  * says why none fits. A hand-off records its runs without this check until
- * the intake, which reruns --hand-off and rewrites its record, carries them.
+ * the intake carries them through: today it reruns --hand-off without them
+ * and rewrites handoff.json without them when it accepts a hand-off.
  * @param {string[]} sensitive
  * @param {{ e2e?: string[], whyNoE2e?: string }} review
  */
@@ -1639,7 +1647,7 @@ async function handOffBranch(deps, { top, git, branch, dir, ran }, time) {
  * Reads a hand-off's record, with the E2E runs its worker ran (readE2e),
  * none in one from before they were named. Throws with what is wrong.
  * @param {string} text
- * @returns {{ branch: string, head: string, base: string, e2e: string[], whyNoE2e?: string }}
+ * @returns {{ branch: string, head: string, base: string, e2e?: string[], whyNoE2e?: string }}
  */
 export function readHandoff(text) {
   let record;
@@ -1666,7 +1674,10 @@ export function readHandoff(text) {
     branch: record.branch,
     head: record.head,
     base: record.base,
-    ...readE2e(record, "The hand-off's record", { required: false }),
+    ...readE2e(record, "The hand-off's record", {
+      required: false,
+      names: false,
+    }),
   };
 }
 
@@ -1729,7 +1740,7 @@ export async function finishHandOff(cwd, deps, dir, reviewFile) {
   review = {
     ...review,
     head: handoff.head,
-    e2e,
+    ...(e2e ? { e2e } : {}),
     ...(whyNoE2e ? { whyNoE2e } : {}),
   };
   const here = sealedGit(cwd);

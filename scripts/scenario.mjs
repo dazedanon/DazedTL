@@ -31,8 +31,7 @@ const usage = `Usage:
   node scripts/scenario.mjs provider --work <dir> '<mode JSON>'
   node scripts/scenario.mjs drive --work <dir> text|click|click-prefix|call|eval|shot ...
   node scripts/scenario.mjs live [--work <empty folder>] [--upgrade-from <tag> | previous]`;
-// The options building a scenario takes, and those each other command takes.
-const buildOptions = scenarioOptions;
+// The options each command but building a scenario takes.
 /** @type {Record<string, Record<string, "value" | "flag">>} */
 const commandOptions = {
   list: {},
@@ -45,11 +44,11 @@ const commandOptions = {
 };
 const { option, flag, given, positional, refuse } = readOptions(
   usage,
-  Object.assign({}, buildOptions, ...Object.values(commandOptions)),
+  Object.assign({}, scenarioOptions, ...Object.values(commandOptions)),
   { positionals: true },
 );
 const command = positional[0];
-const allowed = commandOptions[command || "list"] ?? buildOptions;
+const allowed = commandOptions[command || "list"] ?? scenarioOptions;
 for (const name of given)
   if (!(name in allowed)) refuse(`${command || "list"} takes no ${name}.`);
 // An app left running keeps its display and stand-in until stop or clean;

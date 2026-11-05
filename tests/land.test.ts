@@ -424,7 +424,9 @@ test("a landing's review record comes from an independent reviewer and accounts 
     [["no-such-scenario"], /no-such-scenario is no scenario/],
     [["translated --game choice-help+nope"], /nope is no game variant/],
     [["translated --game choice-help+"], /an empty name is no game variant/],
-    [["translated --app"], /takes --game and --from once each, not --app/],
+    [["translated --app"], /names --app; leave it out/],
+    [["live --work logs"], /names --work; leave it out/],
+    [["translated --nope x"], /takes --game and --from once each, not --nope/],
     [["translated --game mz --game mv"], /once each, not --game/],
     [["live --upgrade-from"], /gives --upgrade-from no value/],
     [["live --game mz"], /takes --upgrade-from once each/],
@@ -818,7 +820,10 @@ test("a sandboxed worker hands off a checked branch without writing the main che
   logged.length = 0;
   assert.equal(await finish(), 1);
   assert.match(logged.join("\n"), /not the head/);
-  fs.writeFileSync(handoffFile, JSON.stringify(handoff));
+  // --finish keeps the names the worker's land.mjs checked against its own
+  // branch, which may add a scenario dev lacks.
+  const named = { ...handoff, e2e: [...ran.e2e, "added-by-the-branch"] };
+  fs.writeFileSync(handoffFile, JSON.stringify(named));
   review(head);
   // The hand-off changes a platform-sensitive path, so it lands once CI on
   // GitHub passes: --finish starts it and is run again later.
@@ -850,7 +855,7 @@ test("a sandboxed worker hands off a checked branch without writing the main che
     .split("\n");
   assert.equal(entries.length, 1);
   assert.equal(JSON.parse(entries[0]).range, `${base}..${head}`);
-  assert.deepEqual(JSON.parse(entries[0]).e2e, ran.e2e);
+  assert.deepEqual(JSON.parse(entries[0]).e2e, named.e2e);
   // Only dev moved: the fetched ref and the lock are gone.
   assert.equal(refs(), before.replace(base, head));
 
@@ -867,7 +872,8 @@ test("a sandboxed worker hands off a checked branch without writing the main che
   // The intake reruns a hand-off's checks naming no runs, so a
   // platform-sensitive one is not refused for that yet.
   assert.equal(await handOff(clone, deps, dir), 0, logged.join("\n"));
-  assert.deepEqual(record().e2e, []);
+  // Naming none is not the same as having run none.
+  assert.equal(record().e2e, undefined);
   assert.equal(record().base, head);
   review(record().head);
   commit(main, "later.txt", "later\n");
