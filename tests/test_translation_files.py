@@ -522,6 +522,21 @@ def _map(commands):
     }
 
 
+def _choosing(choices, **original):
+    """A map of one two-choice list."""
+    return _map(
+        [
+            _command(102, choices, 1, 0, 2, 0, **original),
+            _command(402, 0, choices[0]),
+            _command(0, indent=1),
+            _command(402, 1, choices[1]),
+            _command(0, indent=1),
+            _command(404),
+            _command(0),
+        ]
+    )
+
+
 # A map as the game ships it: a named two-row message, a choice, and a
 # message left untranslated.
 ORIGINAL = _map(
@@ -880,23 +895,10 @@ class GuidedLineTests(unittest.TestCase):
         # choice whatever its condition.
         from dazedtl.translation.guided_lines import GuidedLines
 
-        def choosing(choices, **original):
-            return _map(
-                [
-                    _command(102, choices, 1, 0, 2, 0, **original),
-                    _command(402, 0, choices[0]),
-                    _command(0, indent=1),
-                    _command(402, 1, choices[1]),
-                    _command(0, indent=1),
-                    _command(404),
-                    _command(0),
-                ]
-            )
-
         japanese = ["if(s[1])はい", "いいえ en(v[3]<=50)"]
-        original = choosing(japanese)
+        original = _choosing(japanese)
         # As a run writes them.
-        ran = choosing(["if(s[1])Yes", "No en(v[3]<=50)"], _original=japanese)
+        ran = _choosing(["if(s[1])Yes", "No en(v[3]<=50)"], _original=japanese)
         head = "Map001.json#/events/1/pages/0/list/0/parameters/0"
         lines = GuidedLines(self.game("ran", ran, original), "ran", PAIR, True)
         exported = [(row["source"], row["translation"]) for row in lines.lines()]
@@ -912,7 +914,7 @@ class GuidedLineTests(unittest.TestCase):
         )
         # A condition mixed with a label's text stays in it, so its
         # translation keeps that one and no other.
-        mixed = choosing(["はいen(v[3]<=50)(条件)", "いいえ"])
+        mixed = _choosing(["はいen(v[3]<=50)(条件)", "いいえ"])
         mixed = GuidedLines(self.game("mixed", mixed, mixed), "mixed", PAIR, True)
         self.assertEqual(
             list(
@@ -946,6 +948,56 @@ class GuidedLineTests(unittest.TestCase):
             theirs.problems,
         )
         self.assertEqual(summary["changed"], 2)
+
+    def test_apply_puts_back_the_choice_conditions_an_earlier_import_left_out(self):
+        # An import before it kept them wrote if(s[1])はい as Yes, which the
+        # export lists as translated, a re-import reads as unchanged and
+        # Translate skips, so the game lost the condition for good.
+        from types import ModuleType
+
+        from dazedtl.compatibility.text import prepare_publication
+        from dazedtl.translation import publication
+        from dazedtl.translation.guided_lines import GuidedLines
+
+        from tests.engine import replaced_modules
+
+        japanese = ["if(s[1])はい", "いいえ en(v[3]<=50)"]
+        original = _choosing(japanese)
+        stripped = _choosing(["Yes", "No en(v[3]<=50)"], _original=japanese)
+        guided = self.game("stripped", original, original)
+        game, work = Path(guided.native["source"]), guided.working.folder
+        write_json(work / "translated/Map001.json", stripped)
+        # A copy whose clauses are right is published as it is.
+        ran = _choosing(["if(s[1])Yes", "No en(v[3]<=50)"], _original=japanese)
+        write_json(game / "data/Map002.json", original)
+        write_json(work / "translated/Map002.json", ran)
+        exported = [
+            (row["source"], row["translation"])
+            for row in GuidedLines(guided, "stripped", PAIR, True).lines()
+        ]
+        self.assertEqual(exported, [("はい", "Yes"), ("いいえ", "No")])
+
+        actions = ModuleType("desktop.backend.workflow_actions")
+        actions.validate_plan = lambda _plan: None
+        plan = {
+            "project": {
+                "source": str(game),
+                "data": str(game / "data"),
+                "engine": "MVMZ",
+            },
+            "folder": str(work),
+            "action": "export_selected",
+            "options": {"files": ["Map001.json", "Map002.json"]},
+        }
+        with replaced_modules({actions.__name__: actions}):
+            prepare_publication(plan)
+        publication.publish(work, game, plan["publication"])
+        stripped["events"][1]["pages"][0]["list"][0]["parameters"][0][0] = "if(s[1])Yes"
+        self.assertEqual(read_json(game / "data/Map001.json"), stripped)
+        self.assertEqual(
+            (game / "data/Map002.json").read_bytes(),
+            (work / "translated/Map002.json").read_bytes(),
+        )
 
     def test_a_nameplate_names_the_speaker_of_the_text_after_it_alone(self):
         # A nameplate's speaker went on to every later text of its message,

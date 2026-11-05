@@ -1023,6 +1023,7 @@ def prepare_publication(plan):
     prefix = data.relative_to(root)
     candidates, outputs, restored, sources, written = {}, {}, None, {}, {}
     if action == "export_selected":
+        from util.rpgmaker_blocks import restore_conditions
         from util.rpgmaker_locale import write_locale
 
         saved = plan.get("run_output")
@@ -1047,6 +1048,10 @@ def prepare_publication(plan):
             fitted = None
             if layout:
                 localized = write_locale(document, name, layout.target)
+                # A translation file import once wrote choices without their
+                # plugin conditions, which read as translated, so no import or
+                # run writes them again; Apply puts them back.
+                repaired = restore_conditions(document)
                 fitted = fit_output(
                     document,
                     name,
@@ -1054,7 +1059,7 @@ def prepare_publication(plan):
                     resized=True,
                     reading=reading,
                 )[0]
-                if fitted is None and localized:
+                if fitted is None and (localized or repaired):
                     fitted = engine_json(document)
             if fitted is not None:
                 candidates[(prefix / name).as_posix()] = fitted

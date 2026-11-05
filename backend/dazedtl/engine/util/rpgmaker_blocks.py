@@ -232,6 +232,24 @@ class Choice(NamedTuple):
         """*label* with this choice's clauses around it."""
         return self.prefix + label + self.suffix
 
+    def restored(self, value: str) -> str:
+        """*value*, a translation of the choice this splits, with the clauses
+        of each side it lacks put back, which a translation file import left
+        out before it kept them. A side is lacking when *value* has no clause
+        there and holds none of its clauses anywhere, so a translation keeping
+        them, or holding a condition of its own there, stays."""
+        held = set(conditions(value))
+        found = split_choice(value)
+
+        def lacking(clauses: str, there: str) -> bool:
+            return bool(clauses) and not there and not held & set(conditions(clauses))
+
+        return (
+            (self.prefix if lacking(self.prefix, found.prefix) else "")
+            + value
+            + (self.suffix if lacking(self.suffix, found.suffix) else "")
+        )
+
 
 _CONDITION = re.compile(r"(?:if|en)\(")
 # A condition as MPP_ChoiceEX reads one: anywhere in a choice's text.
@@ -266,6 +284,31 @@ def split_choice(value: str) -> Choice:
             if cursor == len(label):
                 return Choice(prefix, label[:start], label[start:])
     return Choice(prefix, label, "")
+
+
+def restore_conditions(document: Any) -> int:
+    """Put back, in place, the condition clauses each choice of *document*
+    lacks of those its source (`_original`) holds (`Choice.restored`), and
+    say how many choices that changed; a choice left in its source, or whose
+    clauses are as the source has them, stays as it is."""
+    changed = 0
+    for _path, commands in command_lists(document):
+        for command in commands:
+            parameters = command.get("parameters") if code(command) == 102 else None
+            sources = command.get("_original")
+            if not parameters or not isinstance(sources, list):
+                continue
+            choices = parameters[0]
+            if not isinstance(choices, list):
+                continue
+            for index, (value, source) in enumerate(zip(choices, sources)):
+                if not isinstance(value, str) or not isinstance(source, str):
+                    continue
+                restored = split_choice(source).restored(value)
+                if restored != value:
+                    choices[index] = restored
+                    changed += 1
+    return changed
 
 
 def _condition_end(value: str, start: int) -> int | None:

@@ -65,6 +65,17 @@ class TextBlockTests(unittest.TestCase):
                 found = blocks.split_choice(value)
                 self.assertEqual(tuple(found), parts)
                 self.assertEqual(found.written(found.label), value)
+        # A translation an earlier import wrote without a side's clauses gets
+        # that side's back; one keeping them, anywhere, stays.
+        source = blocks.split_choice("if(s[1])見る en(s[3])")
+        for value, restored in [
+            ("Look", "if(s[1])Look en(s[3])"),
+            ("if(s[1])Look", "if(s[1])Look en(s[3])"),
+            ("if(s[1])Look en(s[3])", "if(s[1])Look en(s[3])"),
+            ("Look en(s[3]) now", "if(s[1])Look en(s[3]) now"),
+        ]:
+            with self.subTest(value):
+                self.assertEqual(source.restored(value), restored)
 
     def test_a_line_left_in_japanese_shows_its_japanese_as_its_source(self):
         # The engine keeps no `_original` for text a model gave back as it
