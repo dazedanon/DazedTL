@@ -544,6 +544,30 @@ class TextBlockTests(unittest.TestCase):
         fit_written(twice, "Map001.json", narrow)
         self.assertEqual(twice, once)
 
+    def test_an_earlier_imports_rows_split_into_texts_only_where_they_follow_them(self):
+        # An import before each text kept its own source laid a message's
+        # translation over its rows without the source's blank row, so each
+        # later row sat one higher; split by place, its first text listed the
+        # \SE[1] sentence and an import from it wrote that there.
+        listed = [
+            command(101, ["", 0, 0, 2, ""]),
+            command(
+                401,
+                ["Hello."],
+                _original="こんにちは。\n\n元気？\n\\SE[1]よろしく。\nまたね。",
+            ),
+            command(401, ["How are you?"]),
+            command(401, ["\\SE[1]Nice to meet you."]),
+            command(401, ["See you."]),
+            command(401, [""]),
+            command(0, []),
+        ]
+        (block,) = blocks.blocks(listed)
+        self.assertEqual(
+            [text.rows for text in blocks.sent_texts(listed, block, blocks.Reading())],
+            [(1, 2, 3, 4, 5)],
+        )
+
     def test_list_items_of_the_japanese_keep_a_row_each_beside_a_face(self):
         help_text = wrap_help(
             "Effects: ・Attack power rises greatly for the rest of the battle "

@@ -788,11 +788,19 @@ def _written_over(commands: list, part: Part, lines: list[str], reading: Reading
 def _lined_up(commands: list, rows: tuple[int, ...], lines: list[str], read: list[Text]) -> bool:
     """Whether text laid over *rows* one by one follows the *read* texts of
     its source's *lines*, a row each: each text whose source holds text holds
-    text on its rows. A text written whole on the first row, with the others
-    left empty, does not, so the name its first row holds may come with the
-    speech."""
+    text on its rows, and each opening with a code opens with it on its first
+    row. A text written whole on the first row, with the others left empty,
+    does not, so the name its first row holds may come with the speech; nor
+    does one an import laid out without the source's blank rows, which moved
+    each later row up."""
+
+    def opening(value: str) -> str:
+        found = _OPENING_CODE.match(value)
+        return found.group(1).strip() if found else ""
+
     return len(rows) == len(lines) and all(
         any(text(commands[rows[at]]).strip() for at in each.rows)
+        and opening(text(commands[rows[each.rows[0]]])) == opening(lines[each.rows[0]])
         for each in read
         if any(lines[at].strip() for at in each.rows)
     )
