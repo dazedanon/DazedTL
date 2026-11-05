@@ -93,6 +93,13 @@ def _files(root, found):
     return [path for path in candidates if path.exists() or path.is_symlink()]
 
 
+def document_files(root, name):
+    """Every file in the game holding the document `name`, by its name in the
+    game: its own, its legacy ones, or every case of the notes' name."""
+    root = Path(root)
+    return [path.relative_to(root).as_posix() for path in _files(root, defined(name))]
+
+
 def _document(root, found):
     files = _files(root, found)
     path = files[0] if files else root / found.path

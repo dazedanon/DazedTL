@@ -260,6 +260,30 @@ class GuidanceDocumentTests(unittest.TestCase):
         )
         self.assertEqual(inspected["status"], "ready")
 
+    def test_start_over_lets_go_of_every_file_holding_a_document(self):
+        # A portable file beside its legacy one reads as unreadable, and
+        # Start over moved aside only the first, so the guidance the user
+        # let go came back from the legacy file.
+        from dazedtl.translation.start_over import run
+
+        self.file("quirks").write_text("Portable", encoding="utf-8")
+        (self.root / "translation_quirks.txt").write_text("Legacy", encoding="utf-8")
+        documents = read(self.root)
+        self.assertEqual(documents["quirks"]["state"], "unreadable")
+        with TemporaryDirectory() as workspace:
+            run(
+                workspace,
+                "game",
+                self.root,
+                {},
+                documents,
+                False,
+                configured=False,
+                stopped=lambda: False,
+                progress=lambda *_: None,
+            )
+        self.assertEqual(read(self.root)["quirks"]["state"], "missing")
+
     def test_go_back_takes_out_no_checkpoint_of_a_document_it_keeps(self):
         # Go back keeps the notes, yet listed a "Save Assistant notes" after
         # its target as taken out.

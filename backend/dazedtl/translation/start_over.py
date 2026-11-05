@@ -22,6 +22,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from desktop.backend.guidance import document_files
 from util.guidance_documents import defined
 from util.paths import is_project_file
 
@@ -139,17 +140,17 @@ def run(
     )
     with running(change), writing as game:
         kept = set()
-        for key, document in documents.items():
-            # By its name in the game, as a link outside it moves aside as
-            # the link it is.
-            name = document["file"]
-            path = root / name
-            if not path.is_file():
-                continue
-            if keep_context or defined(key).checkpoints == "keep":
-                kept.add(name)
-            else:
-                _move(path, archive / "context" / name)
+        for key in documents:
+            # Each file holding it, a legacy copy too, by its name in the
+            # game, so a link outside it moves aside as the link it is.
+            for name in document_files(root, key):
+                path = root / name
+                if not path.is_file():
+                    continue
+                if keep_context or defined(key).checkpoints == "keep":
+                    kept.add(name)
+                else:
+                    _move(path, archive / "context" / name)
 
         def keep(name):
             return save_game(name) or name in kept or is_project_file(name)
