@@ -171,9 +171,10 @@ class ImageCompatibility:
 
         return to_png(value)
 
-    def original_bytes(self, root, row, key):
+    def original_bytes(self, root, row, key, runtime=None):
         """The original Prepare freezes: an older publisher's backup of the
-        image, which it only reads, else the runtime file."""
+        image, which it only reads, else the runtime file, whose copy and
+        bytes `runtime` holds when they were read already."""
         from dazedtl.images import families
 
         relative, _encrypted = families.original_file(root, row)
@@ -183,6 +184,8 @@ class ImageCompatibility:
             if relative == row["runtime"]
             else "Preserved Qt image backup"
         )
+        if runtime and relative == row["runtime"]:
+            return (*runtime, origin)
         if original.stat().st_size > 128_000_000:
             raise ValueError(
                 "The preserved original exceeds the supported image size limit."
@@ -229,7 +232,10 @@ class ImageCompatibility:
                     "The image baseline manifest is invalid. Preserve it and resolve it before changing images."
                 )
 
-    def prepare(self, root, profile, rows, key, progress=lambda _: None):
+    def prepare(self, root, profile, rows, key, progress=lambda _: None, copies=None):
+        """Makes the editable copies, taking each one `copies` holds by ID,
+        with the hash of the game's file it was read from, while that file
+        still has it."""
         from util.image_manager import make_profile_assets_editable
 
         self._manifest(root)
@@ -240,6 +246,7 @@ class ImageCompatibility:
                 [self._asset(root, row) for row in rows],
                 key,
                 progress=progress,
+                copies=copies,
             )
         return self._result(root, result)
 

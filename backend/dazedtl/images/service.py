@@ -2617,7 +2617,7 @@ class ImageService:
             self._profile(project_id),
         )
         rows = [index.get(identity) for identity in identities]
-        errors, allowed = [], []
+        errors, allowed, copies = [], [], {}
         for row in rows:
             if (
                 row.get("sourceIssue")
@@ -2646,10 +2646,15 @@ class ImageService:
                     raise ValueError(
                         "A source image changed during preparation. Existing images were retained; refresh before continuing."
                     )
+                # Read once: a TLG takes about a second to read.
+                copies[row["id"]] = (row["sourceHash"], raw)
                 origin = "Runtime source before image preparation"
                 if hasattr(self.adapter, "original_bytes"):
                     raw, runtime_original, origin = self.adapter.original_bytes(
-                        root, row, self.adapter.key(root, profile)
+                        root,
+                        row,
+                        self.adapter.key(root, profile),
+                        runtime=(raw, runtime_bytes),
                     )
                 else:
                     runtime_original = runtime_bytes
@@ -2696,7 +2701,11 @@ class ImageService:
                 stage="Translate",
             ):
                 result = self.adapter.prepare(
-                    root, profile, allowed, self.adapter.key(root, profile)
+                    root,
+                    profile,
+                    allowed,
+                    self.adapter.key(root, profile),
+                    copies=copies,
                 )
         else:
             result = {"completed": 0, "skipped": 0, "errors": []}

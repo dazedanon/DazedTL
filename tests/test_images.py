@@ -91,10 +91,10 @@ class FixtureImages:
     def source_bytes(self, root, row, key):
         return (root / row["runtime"]).read_bytes()
 
-    def original_bytes(self, root, row, key):
-        return ImageCompatibility.original_bytes(self, root, row, key)
+    def original_bytes(self, root, row, key, runtime=None):
+        return ImageCompatibility.original_bytes(self, root, row, key, runtime)
 
-    def prepare(self, root, profile, rows, key):
+    def prepare(self, root, profile, rows, key, copies=None):
         completed, skipped = 0, 0
         for row in rows:
             target = root / row["editable"]
@@ -1759,6 +1759,37 @@ class DecodedImagePatchTests(unittest.TestCase):
             row = self.service._index(self.identity).get(title)
         self.assertEqual(row["original"]["path"], families.BACKUPS + title)
         self.assertEqual(families.translated(row), "")
+
+    def test_prepare_reads_an_image_in_another_format_once(self):
+        # It was read for the source check, the frozen original and the
+        # editable copy: about three seconds for each large TLG.
+        from util import image_formats, image_manager
+
+        title = "decoded/Picture/title.bmp"
+        stream = BytesIO()
+        Image.new("RGB", (8, 8), (9, 9, 9)).save(stream, format="BMP")
+        write_bytes(self.game / title, stream.getvalue())
+        self.scan()
+        self.choose([title])
+        reads, encode = [], image_formats.to_png
+
+        def counted(raw):
+            # A PNG comes back as it is.
+            if image_formats.image_format(raw) != "png":
+                reads.append(raw)
+            return encode(raw)
+
+        with (
+            patch.object(image_formats, "to_png", counted),
+            patch.object(image_manager, "to_png", counted),
+        ):
+            self.service.action(self.identity, "prepare")
+        row = self.service._index(self.identity).get(title)
+        self.assertEqual(len(reads), 1)
+        self.assertEqual(
+            (self.game / row["editable"]).read_bytes(),
+            encode(stream.getvalue()),
+        )
 
     def test_undoing_an_apply_into_a_decoded_folder_puts_its_original_back(self):
         # Undoing the apply deleted the decoded image, which only the apply

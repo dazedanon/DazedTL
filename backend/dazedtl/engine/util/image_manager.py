@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
-from typing import Callable, Iterable
+from typing import Callable, Iterable, Mapping
 import hashlib
 import json
 import os
@@ -365,7 +365,11 @@ def copy_plain_assets_to_workspace(
     assets: Iterable[ImageAsset],
     *,
     progress: Callable[[str], None] | None = None,
+    copies: Mapping[str, tuple[str, bytes]] | None = None,
 ) -> ImageActionResult:
+    """Makes each asset's editable PNG copy, taking the copy `copies` holds
+    by asset ID, read before from the runtime file with the hash it gives,
+    while that file still has that hash."""
     root = _resolved_root(game_root)
     workspace = ensure_editable_workspace(root)
     result = ImageActionResult()
@@ -381,7 +385,14 @@ def copy_plain_assets_to_workspace(
             _inside(workspace, asset.plain_path, label="Editable image target")
             if progress:
                 progress(f"Making {asset.asset_id} editable")
-            _atomic_write(asset.plain_path, to_png(runtime.read_bytes()))
+            raw = runtime.read_bytes()
+            known = (copies or {}).get(asset.asset_id)
+            copy = (
+                known[1]
+                if known and known[0] == hashlib.sha256(raw).hexdigest()
+                else to_png(raw)
+            )
+            _atomic_write(asset.plain_path, copy)
             record_asset_baseline(root, asset)
             result.completed += 1
         except Exception as exc:
@@ -623,6 +634,7 @@ def make_profile_assets_editable(
     key: bytes | None,
     *,
     progress: Callable[[str], None] | None = None,
+    copies: Mapping[str, tuple[str, bytes]] | None = None,
 ) -> ImageActionResult:
     assets = list(assets)
     if engine_id == PROFILE_RPGMAKER_MVMZ:
@@ -645,13 +657,17 @@ def make_profile_assets_editable(
                 for asset in encrypted:
                     if not before[asset.asset_id] and asset.plain_path.is_file():
                         record_asset_baseline(game_root, asset)
-        copied = copy_plain_assets_to_workspace(game_root, plain, progress=progress)
+        copied = copy_plain_assets_to_workspace(
+            game_root, plain, progress=progress, copies=copies
+        )
         result.completed += copied.completed
         result.skipped += copied.skipped
         result.errors.extend(copied.errors)
         return result
     if engine_id == PROFILE_GENERIC:
-        return copy_plain_assets_to_workspace(game_root, assets, progress=progress)
+        return copy_plain_assets_to_workspace(
+            game_root, assets, progress=progress, copies=copies
+        )
     raise ValueError(f"Unsupported image engine profile: {engine_id}")
 
 
