@@ -991,11 +991,12 @@ test("the Live check is due on a branch that changes a screen or flow, which the
   write("backend/dazedtl/actions.py");
   write("tests/app.test.ts");
   write("docs/architecture.md");
+  write("app/tsconfig.json");
   // Every lens but the Live check is due on any branch.
   assert.deepEqual(screensCommand(git, ["screens", "dev", "work"]), {
     code: 0,
     lines: [
-      "This branch changes no screen or user flow; the Live check is not due.",
+      "This branch changes none of the renderer, app build or window paths that screenPaths marks; the Live check is not due.",
     ],
   });
   assert.equal(lensDue("live-check", changedPaths(git, "dev", "work")), false);
@@ -1003,12 +1004,14 @@ test("the Live check is due on a branch that changes a screen or flow, which the
   write("app/src/ui/Row.tsx");
   write("app/electron/main.cjs");
   write("app/index.html");
+  write("app/package.json");
   assert.deepEqual(screensCommand(git, ["screens", "dev", "work"]), {
     code: 0,
     lines: [
       "This branch changes a screen or user flow, so its review runs the Live check:",
       "  app/electron/main.cjs",
       "  app/index.html",
+      "  app/package.json",
       "  app/src/ui/Row.tsx",
     ],
   });

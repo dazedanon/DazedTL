@@ -64,15 +64,16 @@ export const knownLenses = (lenses) =>
  * The changed paths that make a branch change a screen or user flow, so its
  * reviewers run the Review lens's Live check in the running app: what the
  * window draws and how its actions, drafts and observed state flow (the
- * renderer), and the Electron shell's window, menus and dialogs. A backend
- * change reaches users through these, but its logic is what the other
- * lenses check. Add a path when a bug a live check would have caught got
- * past a landing that changed none of these.
+ * renderer), the packages and build that make it, and the Electron shell's
+ * window, menus and dialogs. A backend change reaches users through these,
+ * but its logic is what the other lenses check, so it is left out. Add a
+ * path when a bug a live check would have caught got past a landing that
+ * changed none of these.
  */
 export const screenPaths = [
   /^app\/src\//,
   /^app\/electron\//,
-  /^app\/index\.html$/,
+  /^app\/(index\.html|package(-lock)?\.json|vite\.config\.ts)$/,
 ];
 
 /**
@@ -441,7 +442,7 @@ export function screensCommand(git, args) {
           ...marked.map((file) => `  ${file}`),
         ]
       : [
-          "This branch changes no screen or user flow; the Live check is not due.",
+          "This branch changes none of the renderer, app build or window paths that screenPaths marks; the Live check is not due.",
         ],
   };
 }
