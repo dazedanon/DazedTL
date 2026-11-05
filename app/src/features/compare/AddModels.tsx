@@ -1,5 +1,4 @@
 import { useId, useState } from "react";
-import { TriangleAlert } from "lucide-react";
 import { api } from "../../api/client";
 import { messageOf } from "../../api/errors";
 import type { Connection } from "../../api/contracts";
@@ -13,6 +12,7 @@ import {
   searchModels,
   typedChoice,
 } from "../settings/modelSearch";
+import { CompareFlag } from "./CompareGrid";
 import type { ChosenModel } from "./ModelChoice";
 
 /** Connections a comparison can send to: set up in Settings, with a key
@@ -37,11 +37,10 @@ function PriceCheck({
   );
   if (!info.value || info.value.priced) return null;
   return (
-    <small className="compare-flag">
-      <TriangleAlert size={13} aria-hidden="true" />
+    <CompareFlag status="warning">
       No price for this model, so it can’t be estimated. Set its rates in
       Settings first.
-    </small>
+    </CompareFlag>
   );
 }
 

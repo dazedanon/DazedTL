@@ -129,7 +129,6 @@
   /* Compare models: Tune settings' column and its labels, the Add models
      dialog's height and the test glossary's editor. */
   --compare-settings-width: 26rem;
-  --compare-label-width: 8rem;
   --compare-dialog-height: 40rem;
   --compare-glossary-height: 24rem;
   /* Image Manager's preview column beside the task and grid; narrow

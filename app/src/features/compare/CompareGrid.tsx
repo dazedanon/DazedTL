@@ -1,8 +1,9 @@
 import { useMemo, type ReactNode } from "react";
-import { Check, TriangleAlert } from "lucide-react";
+import { Check } from "lucide-react";
 import type { CompareRow, Comparison } from "../../api/contracts";
 import { useLanguages } from "../../app/LanguagesProvider";
 import { changedWords } from "../../ui/changedWords";
+import { StatusIcon } from "../../ui/StatusIcon";
 
 /** A model's column, in the order the grid shows them. */
 export type CompareColumn = {
@@ -13,9 +14,26 @@ export type CompareColumn = {
   badge?: ReactNode;
   /** A muted line under the title, such as the price. */
   detail?: ReactNode;
-  /** Why the model has no lines, in amber under its header. */
+  /** Why the model has no lines, as failed under its header. */
   error?: string;
 };
+
+/** A note under a model or a line: a model that failed, or what the checks
+ * found, after its status mark. */
+export function CompareFlag({
+  status,
+  children,
+}: {
+  status: "failed" | "warning";
+  children: ReactNode;
+}) {
+  return (
+    <span className="compare-flag" data-status={status}>
+      <StatusIcon status={status} size={13} />
+      <span>{children}</span>
+    </span>
+  );
+}
 
 /** How a line's text differs from another run's: on the earlier run's side
  * the words the later one dropped are marked, on the later run's side the
@@ -98,10 +116,7 @@ export function CompareGrid({
                 <span className="compare-grid-detail">{column.detail}</span>
               )}
               {column.error && (
-                <span className="compare-flag">
-                  <TriangleAlert size={13} aria-hidden="true" />
-                  {column.error}
-                </span>
+                <CompareFlag status="failed">{column.error}</CompareFlag>
               )}
             </th>
           ))}
@@ -154,10 +169,9 @@ export function CompareGrid({
                       )}
                     </span>
                     {problems.map((problem) => (
-                      <span className="compare-flag" key={problem}>
-                        <TriangleAlert size={13} aria-hidden="true" />
+                      <CompareFlag status="warning" key={problem}>
                         {problem}
-                      </span>
+                      </CompareFlag>
                     ))}
                   </>
                 );
