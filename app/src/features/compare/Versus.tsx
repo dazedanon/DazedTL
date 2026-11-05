@@ -224,12 +224,14 @@ export function Versus({ context }: { context: CompareContext }) {
             Reveal now
           </Button>
         )}
-        {run.control(!!winner)}
+        {run.control(!!winner?.finished)}
         {winner && shown && (
           <ActionControl
-            variant={run.yields ? "primary" : undefined}
+            variant={run.yields && winner.finished ? "primary" : undefined}
             label={`Use ${winner.model}`}
             title="Make it the connection and model Settings translates with, for every game."
+            disabled={!winner.finished}
+            disabledReason="It didn’t translate every line, so translate them again to use it."
             pending={adopt.busy}
             pendingText="Switching model…"
             error={adopt.error}

@@ -605,6 +605,13 @@ class Compare:
         guided.idle()
         game = self.game(project_id)
         row = self._candidate(game, comparison_id, model)
+        jobs = guided.backend.operations.jobs
+        translated = jobs.get(self._read(project_id)["used"].get(comparison_id) or "")
+        if not _finished(translated, _result(translated, model)):
+            raise ValueError(
+                "Only a model that translated every line can be used. "
+                "Translate the lines again."
+            )
         changes = self._guidance_changes(
             game, row, self._options(game, comparison_id, ESTIMATE)
         )
@@ -696,15 +703,7 @@ class Compare:
         game = self.game(project_id)
         self._options(game, comparison_id, TRANSLATE)
         job = self.guided.backend.operations.jobs[comparison_id]
-        found = next(
-            (
-                row
-                for row in (job.get("result") or {}).get("models", [])
-                if row.get("index") == model
-            ),
-            None,
-        )
-        requests = (found or {}).get("requests") or []
+        requests = _result(job, model).get("requests") or []
         if type(index) is not int or not 0 <= index < len(requests):
             raise ValueError("This request is no longer available.")
         return requests[index]
@@ -754,14 +753,11 @@ def view(estimate, options, translated, marks):
     models = {
         row["index"]: row for row in (estimate.get("result") or {}).get("models", [])
     }
-    results = {
-        row["index"]: row
-        for row in ((translated or {}).get("result") or {}).get("models", [])
-    }
     candidates = []
     for row in options["candidates"]:
         priced = models.get(row["index"], {})
-        done = results.get(row["index"], {})
+        done = _result(translated, row["index"])
+        # As written: Blind hides it with the names (compareView).
         error = done.get("error") or priced.get("error") or row.get("error")
         if error:
             # Its column names the model, which Blind hides until every row
@@ -782,6 +778,7 @@ def view(estimate, options, translated, marks):
                     else {}
                 ),
                 **({"error": error} if error else {}),
+                **({"finished": True} if _finished(translated, done) else {}),
                 # What it spent shows even when it failed or was stopped.
                 **({"cost": done["cost"]} if "cost" in done else {}),
                 **({"seconds": done["seconds"]} if "seconds" in done else {}),
@@ -803,11 +800,13 @@ def view(estimate, options, translated, marks):
             {
                 **line,
                 "translations": [
-                    (results.get(row["index"], {}).get("lines") or {}).get(line["id"])
+                    (_result(translated, row["index"]).get("lines") or {}).get(
+                        line["id"]
+                    )
                     for row in options["candidates"]
                 ],
                 "problems": [
-                    (results.get(row["index"], {}).get("problems") or {}).get(
+                    (_result(translated, row["index"]).get("problems") or {}).get(
                         line["id"], []
                     )
                     for row in options["candidates"]
@@ -830,6 +829,31 @@ def view(estimate, options, translated, marks):
         "blind": marks.get("blind", False),
         "revealed": marks.get("revealed", False),
     }
+
+
+def _result(translated, index):
+    """What a comparison's translation brought back for one of its models."""
+    return next(
+        (
+            row
+            for row in ((translated or {}).get("result") or {}).get("models", [])
+            if row.get("index") == index
+        ),
+        {},
+    )
+
+
+def _finished(translated, result):
+    """Whether a model translated a comparison's lines whole, so it can be
+    used: its translation ended and it came back without an error. A model
+    that failed or was stopped keeps its cost and finished lines, but not
+    this."""
+    return (
+        bool(translated)
+        and translated["status"] != "running"
+        and "cost" in result
+        and not result.get("error")
+    )
 
 
 def _lines(estimate, translated):

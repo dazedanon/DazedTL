@@ -496,7 +496,16 @@ class ApprovalTests(unittest.TestCase):
             status="complete",
             result={"models": [{"index": 0, "estimate": {"live_cost": 0.01}}]},
         )
-        return job["id"]
+        return self.finished(job["id"])
+
+    def finished(self, estimate):
+        """*estimate*, its model's translation of every line finished."""
+        job = self.operations.start({"action": "compare_translate", "project_id": "p1"})
+        job.update(status="complete", result={"models": [{"index": 0, "cost": 0.01}]})
+        record = self.compare._read("p1")
+        record["used"][estimate] = job["id"]
+        self.compare._write("p1", record)
+        return estimate
 
     def as_guided(self, estimate):
         """The same test, filed under the game's Guided record."""
@@ -507,7 +516,7 @@ class ApprovalTests(unittest.TestCase):
         self.compare.game = lambda _id: Game(
             "guided", "p1", "n1", str(self.game), native
         )
-        return self.operations.start({**plan, "project_id": "n1"})["id"]
+        return self.finished(self.operations.start({**plan, "project_id": "n1"})["id"])
 
     def estimated(self):
         job = self.compare.estimate(
@@ -625,7 +634,53 @@ class ApprovalTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "changed since this test"):
                     self.compare.use("p1", estimate, 0)
                 self.assertEqual(read(self.game)["glossary"]["text"], edited)
-                self.compare.guided.settings.save.assert_not_called()
+                self.compare.guided.settings.use_model.assert_not_called()
+
+    def test_a_test_glossary_edited_before_a_context_save_is_refused(self):
+        # Tune's glossary began from the text the page read; a save in
+        # Context before the estimate froze the new revision, so Use wrote
+        # the old text's edit over it.
+        base = read(self.game)["glossary"]["revision"]
+        documents_save(
+            self.game, {"glossary": {"revision": base, "text": "村長 (Elder)"}}
+        )
+        with self.assertRaisesRegex(ValueError, "changed in Context"):
+            self.tuned(glossary="ミカ (Mika)", glossary_revision=base)
+        self.assertEqual(
+            self.compare.state("p1")["glossaryRevision"],
+            read(self.game)["glossary"]["revision"],
+        )
+
+    def test_use_these_settings_saves_nothing_when_the_model_switch_is_refused(self):
+        # It saved the glossary and instruction, then Settings refused the
+        # model, leaving the guidance changed and the model as it was.
+        estimate = self.tuned(glossary="ミカ (Mika)", instruction="Be terse.")
+        before = read(self.game)
+        self.compare.guided.settings.use_model = Mock(
+            side_effect=ValueError("Save the base OpenRouter model ID")
+        )
+        with self.assertRaisesRegex(ValueError, "base OpenRouter"):
+            self.compare.use("p1", estimate, 0)
+        self.assertEqual(read(self.game), before)
+        self.assertEqual(
+            self.compare.guided.settings.use_model.call_args.kwargs, {"check": True}
+        )
+
+    def test_a_model_that_did_not_translate_every_line_is_not_used(self):
+        # Model vs model offered to use a model that failed or was stopped.
+        estimate = self.estimated()
+        translation = self.compare.translate("p1", estimate)
+        translation.update(
+            status="stopped",
+            result={"models": [{"index": 0, "cost": 0.01, "error": "Stopped."}]},
+        )
+        with self.assertRaisesRegex(ValueError, "every line"):
+            self.compare.use("p1", estimate, 0)
+        self.compare.guided.settings.use_model.assert_not_called()
+        translation.update(
+            status="complete", result={"models": [{"index": 0, "cost": 0.01}]}
+        )
+        self.compare.use("p1", estimate, 0)
 
     def test_use_these_settings_adds_its_instruction_once(self):
         # A second click added the same instruction to the game's again.

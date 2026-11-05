@@ -2974,6 +2974,8 @@ export type CompareModel = {
   requests?: number;
   /** The first requests it sent that Show request can open. */
   keptRequests?: number;
+  /** It translated every line, so it can be used. */
+  finished?: boolean;
 };
 
 export type CompareTranslation = {
