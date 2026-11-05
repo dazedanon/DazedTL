@@ -13,7 +13,7 @@
   A landing's evaluator (dazedtl-land skill, Evaluate step) takes its author's place in the two-agent count while the author waits on it, and counts as one when its author is not itself a delegated session or subagent.
   A session that starts others runs at the highest effort it hands out, since `start_session` cannot start one above its starter's.
 - Before fixing a bug, read the git history of the code involved.
-  If the same behavior was fixed before, stop and report the root cause with a proposed rework instead of patching it again.
+  At a behavior's third fix, propose a rework with its root cause, and patch the bug meanwhile, even while the rework is held.
   End each fix commit, after a blank line, with an `Introduced-by:` trailer naming the commit that brought the bug in, or `unknown` or `none`, and a `Found-by:` trailer, as [fix-trailers](scripts/fix-trailers.mjs) defines; land.mjs refuses a fix without them, and [review-stats](scripts/review-stats.mjs) reports which landings let bugs through.
 - Give each rule one definition, such as how a text block's rows are grouped or how a file's status is counted, and call it from every place that needs it.
   When a fix touches a rule that is defined in more than one place, merge the copies first, or report them if merging is large.
