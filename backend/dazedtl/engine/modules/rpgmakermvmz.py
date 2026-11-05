@@ -1177,7 +1177,8 @@ def _param_text(cmd, index: int) -> str:
     return ""
 
 
-_GROUP_CODES = (401, 405, -1)
+# The commands a message's or scrolling text's text joins over.
+_GROUP_CODES = rpgmaker_blocks.TEXT_CODES
 
 
 def _rows(codeList, rows, codes=None) -> list:
@@ -4054,7 +4055,7 @@ def _searchCodes(page, pbar, jobList, filename):
                 reduceWidthFlag = False
 
             ## Event Code: 401 Show Text
-            if "code" in codeList[i] and codeList[i]["code"] in [401, 405, -1] and (
+            if "code" in codeList[i] and codeList[i]["code"] in _GROUP_CODES and (
                 (
                     codeList[i]["code"] in [401, -1]
                     and (CODE401 or SPEAKER_PARSE_MODE)
@@ -4075,7 +4076,7 @@ def _searchCodes(page, pbar, jobList, filename):
                 # Grab String
                 if len(codeList[i]["parameters"]) > 0:
                     previewEnd = (_message_end if SPEAKER_CONTEXT else _text_group_end)(
-                        codeList, i, (401, 405, -1)
+                        codeList, i, _GROUP_CODES
                     )
                     # Speaker parse must inspect source/_original even when live
                     # parameters are already English, or the unresolved count
