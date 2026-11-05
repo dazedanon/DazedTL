@@ -880,13 +880,36 @@ test("a sandboxed worker hands off a checked branch without writing the main che
   // dev moving after the checks sends the worker back to merge it, but only
   // once the hand-off's CI has passed, which then stands after that merge.
   commit(clone, "scripts/setup.mjs", "more\n");
-  // The intake reruns a hand-off's checks naming no runs, so a
-  // platform-sensitive one is not refused for that yet.
-  assert.equal(await handOff(clone, deps, dir), 0, logged.join("\n"));
-  // Naming none is not the same as having run none.
-  assert.equal(record().e2e, undefined);
+  // A platform-sensitive hand-off names the E2E its worker ran, or says why
+  // none fits, before anything runs.
+  logged.length = 0;
+  assert.equal(await handOff(clone, deps, dir), 1);
+  assert.match(
+    logged.join("\n"),
+    /platform-sensitive paths \(scripts\/setup\.mjs\)[^]*--why-no-e2e/,
+  );
+  assert.equal(fs.existsSync(handoffFile), false);
+  const why = "The intake runs the worker's runs itself.";
+  assert.equal(
+    await handOff(clone, deps, dir, { whyNoE2e: why }),
+    0,
+    logged.join("\n"),
+  );
+  assert.deepEqual(record().e2e, []);
+  assert.equal(record().whyNoE2e, why);
   assert.equal(record().base, head);
   review(record().head);
+  // --finish refuses a record naming neither, as one written before they
+  // were named, before CI starts.
+  const reasoned = record();
+  const { e2e: _e2e, whyNoE2e: _why, ...unnamed } = reasoned;
+  fs.writeFileSync(handoffFile, JSON.stringify(unnamed));
+  const dispatched = stand.writes.length;
+  logged.length = 0;
+  assert.equal(await finish(), 1);
+  assert.match(logged.join("\n"), /its hand-off names each scenario/);
+  assert.equal(stand.writes.length, dispatched);
+  fs.writeFileSync(handoffFile, JSON.stringify(reasoned));
   commit(main, "later.txt", "later\n");
   assert.equal(await finish(), 5);
   logged.length = 0;
