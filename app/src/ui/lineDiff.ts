@@ -13,8 +13,10 @@ const context = 3;
  * longer than the comparison weighs is one change.
  */
 export function lineDiff(before: string, after: string) {
-  const left = before.split("\n");
-  const right = after.split("\n");
+  // An empty text, such as a missing file's, has no lines at all.
+  const lines = (text: string) => (text ? text.split("\n") : []);
+  const left = lines(before);
+  const right = lines(after);
   let start = 0;
   while (
     start < left.length &&

@@ -105,6 +105,10 @@ test("the changed-on-disk choice compares the draft with the file in hunks TextD
     ].join("\n"),
   );
   assert.equal(lineDiff("same", "same"), "");
+  // A missing or emptied file, or an emptied draft, has no blank line to
+  // remove or add.
+  assert.equal(lineDiff("", "Draft line"), "@@ -1,0 +1,1 @@\n+Draft line");
+  assert.equal(lineDiff("File line", ""), "@@ -1,1 +1,0 @@\n-File line");
 });
 
 test("a save says which files it left out unread, and never that guidance is saved while one is", () => {
