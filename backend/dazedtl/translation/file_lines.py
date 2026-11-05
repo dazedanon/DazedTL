@@ -116,9 +116,10 @@ def nameplated(line: Line, *, first_line: bool, inline: bool) -> Line:
     it, as the engine sends them: *first_line* and *inline* are the
     project's FIRSTLINESPEAKERS and INLINE401SPEAKERS, read with the run
     policy's newest reading (util/speakers `message_speakers`). Translation
-    writes the name and the speech apart, but a block it never touched holds
-    both in one text. One translated over its rows as one text stays one:
-    its first row may hold more than the name."""
+    writes the name and the speech apart, but a block it never touched, or
+    whose speech it left untranslated, holds both in one text. One
+    translated over its rows as one text stays one: its first row may hold
+    more than the name."""
     from util import rpgmaker_blocks as blocks
     from util.speakers import display_name, message_speakers, standalone_speaker
 
@@ -134,17 +135,16 @@ def nameplated(line: Line, *, first_line: bool, inline: bool) -> Line:
     texts = dict(zip(line.paths, line.texts))
     source = units[at][1]
     rows = [texts[path] for path in places[at]]
-    if "\n" in rows[0] or (source is not None and (len(rows) > 1 or "\n" in source)):
+    if source is not None and "\n" in source:
         return line
     # The text's rows from its first on as the engine reads them: each
-    # translated text's source, else the rows themselves.
-    read = [
-        row
-        for (_text, kept), paths in zip(units[at:], places[at:])
-        for row in (
+    # translated text's source, else the rows themselves, such as a speech a
+    # run left untranslated after writing its name.
+    read = ([source] if source is not None else rows[:1]) + rows[1:]
+    for (_text, kept), paths in zip(units[at + 1 :], places[at + 1 :]):
+        read += (
             kept.split("\n") if kept is not None else [texts[path] for path in paths]
         )
-    ]
     found = message_speakers(
         read[0],
         read[1] if len(read) > 1 else None,
@@ -157,7 +157,7 @@ def nameplated(line: Line, *, first_line: bool, inline: bool) -> Line:
         return line
     if len(rows) > 1:
         speech = "\n".join(row for row in rows[1:] if row.strip())
-        units[at : at + 1] = [(rows[0], None), (speech, None)]
+        units[at : at + 1] = [(rows[0], source), (speech, None)]
         places[at : at + 1] = [places[at][:1], places[at][1:]]
     return line._replace(
         units=tuple(units),

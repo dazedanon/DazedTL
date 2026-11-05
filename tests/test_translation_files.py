@@ -769,3 +769,42 @@ class GuidedLineTests(unittest.TestCase):
         self.assertEqual(rows(theirs), expected)
         fit_document(working, "Map001.json", Layout(55, 45, 60, 60, 4, "English"))
         self.assertEqual(commands[1]["parameters"], ["Rookie Police Officer"])
+
+        # A run that wrote the name and left the speech untranslated lists the
+        # speech apart, so an import writes each over its own rows; writing
+        # the name over all three blanked the speech.
+        half = _map(
+            [
+                _command(101, "", 0, 0, 2, ""),
+                _command(401, "Rookie Police Officer", _original=name),
+                *(_command(401, row) for row in speech.split("\n")),
+                _command(0),
+            ]
+        )
+        halfway = self.game("half", half, original, on)
+        self.assertEqual(
+            rows(halfway),
+            {head: expected[head], f"{head}~1": untranslated[f"{head}~1"]},
+        )
+        GuidedLines(halfway, "half", PAIR, True).save(
+            {head: "Officer", f"{head}~1": english}, "file.json"
+        )
+        commands = read_json(self.root / "half-work/translated/Map001.json")["events"][
+            1
+        ]["pages"][0]["list"]
+        self.assertEqual(
+            [
+                (command["parameters"][0], command.get("_original"))
+                for command in commands[1:4]
+            ],
+            [("Officer", name), (english, speech), ("", None)],
+        )
+        # The speech alone leaves the name row as the game has it.
+        alone = self.game("alone", original, original, on)
+        GuidedLines(alone, "alone", PAIR, True).save(
+            {f"{head}~1": english}, "file.json"
+        )
+        commands = read_json(self.root / "alone-work/translated/Map001.json")["events"][
+            1
+        ]["pages"][0]["list"]
+        self.assertEqual(commands[1], _command(401, name))

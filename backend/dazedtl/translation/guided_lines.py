@@ -4,21 +4,22 @@ working copy, named by its file and its place in the game's original file.
 Guided writes a translated message over fewer commands than the original
 holds, so naming a line by its original place keeps its ID whether or not
 the copy is translated, and two people's copies of one game version share
-their IDs.
+their IDs while their speaker settings match.
 
 An ID is `<file>#<JSON pointer>` into the original file: a value's own, and
 for an event text block its first command's, such as a message's window,
 with `/parameters/4` after it for the message's name box and `~<n>` for its
-later parts. A nameplate on a message's first row is a part of its own and
-names the speech's speaker, as the engine sends them (file_lines
-`nameplated`). A command the original doesn't hold at a place, such as one a
+later parts. A nameplate on a message's first row, where the project's
+speaker settings read one, is a part of its own and names the speech's
+speaker, as the engine sends them (file_lines `nameplated`). A command the original doesn't hold at a place, such as one a
 game update added, keeps its pointer into the copy.
 
 Importing writes into each file's working copy, as a run's output does
 (guided_inputs), and records each changed value's source as Guided does,
 a nameplate's apart from its speech's, so Translate's Apply puts the
-translations in the game as one checkpoint, fitted to the Line widths. Choice help and note labels are left out of an
-import: their rows and sources follow rules of their own.
+translations in the game as one checkpoint, fitted to the Line widths.
+Choice help and note labels are left out of an import: their rows and
+sources follow rules of their own.
 """
 
 import copy
@@ -145,7 +146,6 @@ class GuidedLines:
                     named = head is not None
                     speaker = None
                     part = 0
-                    starts = _starts(line)
                     for index, ((text, source), paths) in enumerate(
                         zip(line.sent(), line.places(), strict=True)
                     ):
@@ -195,9 +195,9 @@ class GuidedLines:
                             "paths": paths,
                             "line": line.kind,
                             "name_box": name_box,
-                            "starts": starts
+                            "start": (paths[0], shown)
                             if line.nameplate is not None and index >= line.nameplate
-                            else (),
+                            else None,
                         }
         self._found = found
         return found
@@ -269,10 +269,12 @@ class GuidedLines:
         with reading_game(self.native["source"]):
             for name, rows in by_file.items():
                 before = decode_json(system.read_bytes(self.inputs.newest(name)))
-                # A message's nameplate and speech keep their sources apart,
-                # as Guided writes them, so Apply fits each on its own.
+                # Each text written of a message split at its nameplate keeps
+                # its source on its first row, as Guided writes the name and
+                # the speech apart, so Apply fits each on its own.
                 for unit, _text in rows:
-                    for path, source in unit["starts"]:
+                    if unit["start"] is not None:
+                        path, source = unit["start"]
                         _parent(before, path[:-1])["_original"] = source
                 staged = copy.deepcopy(before)
                 for unit, text in rows:
@@ -300,20 +302,6 @@ class GuidedLines:
         for name, raw in written.items():
             system.write_bytes(self.inputs.path("translated", name), raw)
         self._found = None
-
-
-def _starts(line):
-    """The first rows of a line's nameplate and of the speech after it, each
-    with its source (file_lines `nameplated`), or ()."""
-    if line.nameplate is None:
-        return ()
-    sent, places = line.sent(), line.places()
-    starts = []
-    for at in (line.nameplate, line.nameplate + 1)[: len(sent) - line.nameplate]:
-        shown = file_lines.shown(*sent[at])
-        if shown.strip():
-            starts.append((places[at][0], shown))
-    return tuple(starts)
 
 
 def _parent(document, path):
