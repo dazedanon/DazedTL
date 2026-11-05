@@ -38,6 +38,8 @@ from .inventory import (
 )
 
 WORK = ".dazedtl/image_manager/guided"
+# The suffix of an original Prepare keeps until every chosen image passed.
+STAGED = ".preparing"
 CLASSIFICATIONS = {
     "recommended",
     "uncertain",
@@ -2648,9 +2650,12 @@ class ImageService:
 
     def _freeze(self, root, index, profile, rows):
         """Keeps the original of each of `rows` not yet prepared and records
-        it in the index, all or none: a stop on any image removes the
-        originals this call kept, so none is left that no record names."""
-        errors, allowed, copies, written = [], [], {}, []
+        it in the index, all or none, so none is left that no record names.
+        Each is staged until every image passed, then takes its name just
+        before the records naming it are saved: a stop before then, a kill
+        too, leaves only staged files, which never block, and a stop after
+        it removes what this call kept."""
+        errors, allowed, copies, staged, written = [], [], {}, [], []
         try:
             for row in rows:
                 issue = (
@@ -2661,25 +2666,30 @@ class ImageService:
                 if issue:
                     errors.append(row["id"] + ": " + issue)
                     continue
-                if not row.get("frozen") and self._keep_original(
-                    root, profile, row, copies
-                ):
-                    written.append(project_path(root, row["frozen"], exists=False))
+                if not row.get("frozen"):
+                    path = self._keep_original(root, profile, row, copies)
+                    if path:
+                        staged.append(path)
                 allowed.append(row)
+            for path in staged:
+                kept = path.with_name(path.name.removesuffix(STAGED))
+                system.replace(path, kept)
+                written.append(kept)
             with index.connection() as db:
                 for row in allowed:
                     index.put(db, row, row.get("generation", ""))
         except BaseException:
-            for path in written:
+            for path in staged + written:
                 system.unlink(path, missing_ok=True, ignore_errors=True)
             raise
         return errors, allowed, copies
 
     def _keep_original(self, root, profile, row, copies):
-        """Keeps the original of an image before it is first prepared, named
-        in `row`; true when this wrote it. One already kept with the same
-        bytes is the image's own, left by a stop nothing cleaned up, such as
-        a crash or an older version."""
+        """Stages the original of an image before it is first prepared,
+        named in `row`, and returns the staged file, or None when one is
+        already kept with the same bytes: the image's own, left by a kill
+        between taking its name and saving its record, or by an older
+        version."""
         raw = self.adapter.source_bytes(root, row, self.adapter.key(root, profile))
         runtime_bytes = project_path(root, row["runtime"]).read_bytes()
         if (
@@ -2709,9 +2719,11 @@ class ImageService:
             .as_posix()
         )
         frozen_path = project_path(root, frozen, exists=False)
-        wrote = not frozen_path.exists()
-        if wrote:
-            write_bytes(frozen_path, raw)
+        staged = None
+        if not frozen_path.exists():
+            # One left by a stop is this call's to overwrite.
+            staged = frozen_path.with_name(frozen_path.name + STAGED)
+            write_bytes(staged, raw)
         elif not frozen_path.is_file() or frozen_path.read_bytes() != raw:
             raise ValueError(
                 "Unrecognized preserved image files exist. Inspect them before preparing new originals."
@@ -2734,7 +2746,7 @@ class ImageService:
             originalOrigin=origin,
             runtimeBackupHash=digest(runtime_original),
         )
-        return wrote
+        return staged
 
     def _keep_decoded(self, project_id, root, profile, rows):
         """Takes the originals of `rows`, images in a folder an assistant

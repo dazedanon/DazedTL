@@ -1828,21 +1828,34 @@ class DecodedImagePatchTests(unittest.TestCase):
         ):
             prepare(picture, title)
         self.assertFalse([path for path in originals.rglob("*") if path.is_file()])
-        # One an older version or a crash left is this image's own when it
-        # holds the bytes Prepare would keep, and refused when it differs.
-        index = self.service._index(self.identity)
-        logo = "decoded/Picture/logo.png"
-        write_bytes(self.game / logo, png((1, 2, 3, 255)))
+        # A kill cleans nothing up; what it leaves blocks nothing, also once
+        # the image changes.
+        with (
+            patch.object(adapter, "source_bytes", changed),
+            patch.object(service_module.system, "unlink"),
+            self.assertRaises(ValueError),
+        ):
+            prepare(picture, title)
+        write_bytes(self.game / picture, png((5, 6, 7, 255)))
         self.scan()
-        for name, raw in ((picture, png()), (logo, png((9, 9, 9, 255)))):
+        prepare(picture, title)
+        index = self.service._index(self.identity)
+        self.assertTrue(all(index.get(name)["frozen"] for name in (picture, title)))
+        # One an older version left is the image's own when it holds the
+        # bytes Prepare would keep, and refused when it differs.
+        logo, other = "decoded/Picture/logo.png", "decoded/Picture/other.png"
+        for name in (logo, other):
+            write_bytes(self.game / name, png((1, 2, 3, 255)))
+        self.scan()
+        for name, raw in ((logo, png((1, 2, 3, 255))), (other, png())):
             kept = PurePosixPath(name).with_name(
                 PurePosixPath(index.get(name)["editable"]).name
             )
             write_bytes(originals / kept, raw)
-        prepare(picture, title)
-        self.assertTrue(all(index.get(name)["frozen"] for name in (picture, title)))
+        prepare(logo)
+        self.assertTrue(index.get(logo)["frozen"])
         with self.assertRaisesRegex(ValueError, "Unrecognized preserved image files"):
-            prepare(logo)
+            prepare(other)
 
     def test_undoing_an_apply_into_a_decoded_folder_puts_its_original_back(self):
         # Undoing the apply deleted the decoded image, which only the apply
