@@ -290,6 +290,66 @@ class StopTests(unittest.TestCase):
             [model["error"] for model in value["models"]], [compare_run.STOPPED] * 3
         )
 
+    def test_a_model_with_a_rejected_request_failed_whatever_came_back(self):
+        # A Manual model whose last request was rejected kept the others'
+        # lines with no error, so it read as finished and could be used.
+        record = {
+            "usage": {},
+            "request_usage": {},
+            "states": {
+                "r0": {"state": "accepted"},
+                "r1": {"state": "failed", "message": "Provider rejected the request."},
+            },
+        }
+        store = Mock(
+            create=Mock(return_value={"id": "j1"}), record=Mock(return_value=record)
+        )
+
+        class Runner:
+            def __init__(self, *_args):
+                pass
+
+            def step(self, recover):
+                pass
+
+            def response_path(self, identity):
+                return Path("/missing") / identity
+
+        class Results:
+            def __init__(self, _game):
+                pass
+
+            def get(self, request):
+                return {"translations": {"u1": "Hi"}} if request["id"] == "r0" else None
+
+        with (
+            patch.object(compare_units, "run_store", return_value=store),
+            patch("dazedtl.translation.runner.Runner", Runner),
+            patch("dazedtl.translation.results.Results", Results),
+            patch("dazedtl.settings.execution.worker_secret"),
+            patch("dazedtl.translation.repricing.route_of"),
+            patch("dazedtl.compatibility.translation.TranslationProvider"),
+            patch("dazedtl.compatibility.estimate_prices.usage_cost", return_value=0),
+        ):
+            value = compare_units.translate(
+                None,
+                Path("/workspace"),
+                {
+                    "selected": {},
+                    "inputPath": "u.json",
+                    "quotes": True,
+                    "projectId": "p",
+                },
+                {"configuration": {}},
+                [{"id": r, "sources": [], "params": {}} for r in ("r0", "r1")],
+                {},
+                Path("/game"),
+                Path("/runs"),
+                lambda: False,
+            )
+        self.assertEqual(value["lines"], {"u1": {"speaker": "", "text": "Hi"}})
+        self.assertEqual(value["error"], "Provider rejected the request.")
+
     def test_a_model_that_fails_sending_keeps_what_it_spent(self):
         # An Assistant-led model that failed after sending showed no cost.
         identities = [f"r{index}" for index in range(25)]

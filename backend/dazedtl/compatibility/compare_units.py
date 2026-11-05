@@ -249,5 +249,7 @@ def translate(
         "cost": round(float(cost or 0), 6),
         "requests": shown,
         "requestCount": len(requests),
-        **({"error": failure or failed[0]} if failure or failed and not lines else {}),
+        # A rejected request leaves lines untranslated, so the model failed,
+        # whatever lines its other requests brought back.
+        **({"error": failure or failed[0]} if failure or failed else {}),
     }
