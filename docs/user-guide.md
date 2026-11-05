@@ -207,7 +207,7 @@ In Guided steps the translations go into your working copies, so apply them in T
 2. **Estimate cost**, then **Translate** for the price shown.
 3. In **Model vs model**, click the best translation of each line; **Blind** hides the names until every line has a pick.
 
-**Tune settings** tries a thinking effort, glossary change or instruction and shows any two runs side by side, with the changed words marked; **Use these settings** keeps them, and **Use this model** makes it the model every game translates with.
+**Tune settings** tries a thinking effort, glossary change or instruction and shows any two runs side by side, changed words marked; **Use these settings** keeps them, and **Use this model** makes it the model every game translates with.
 
 ## Playtest checklist
 
