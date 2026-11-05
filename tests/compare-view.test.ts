@@ -10,6 +10,7 @@ import {
   compareInputs,
   current,
   estimateTotal,
+  finishedModel,
   glossaryChanges,
   keptRequests,
   picks,
@@ -278,4 +279,27 @@ test("Show request pages over the requests kept and says when fewer were kept th
   assert.match(many.note, /first 20 of its 45/);
   // A model that kept none has nothing to open.
   assert.equal(keptRequests(model(0, { requests: 2 })).kept, 0);
+});
+
+test("a model that failed or was stopped keeps its cost but is not offered for use", () => {
+  const translated = (extra: Partial<CompareModel>, status = "complete") => {
+    const item = comparison({
+      translationId: "run",
+      stage: "translation",
+      status,
+      candidates: [model(0, extra)],
+    });
+    return finishedModel(item, item.candidates[0]);
+  };
+  assert.equal(translated({ cost: 0.01, seconds: 3 }), true);
+  assert.equal(
+    translated(
+      { cost: 0.004, error: "Stopped before it finished." },
+      "stopped",
+    ),
+    false,
+  );
+  assert.equal(translated({ cost: 0.002, error: "HTTP 500" }), false);
+  // Still running: its cost so far is no finished translation.
+  assert.equal(translated({ cost: 0.001 }, "running"), false);
 });

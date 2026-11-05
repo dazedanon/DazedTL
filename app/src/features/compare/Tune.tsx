@@ -25,6 +25,7 @@ import { settingsSaved } from "../settings/settingsChanges";
 import type { CompareContext } from "./Compare";
 import { CompareGrid, type Difference } from "./CompareGrid";
 import {
+  finishedModel,
   glossaryChanges,
   glossaryEntries,
   modelDetail,
@@ -298,7 +299,7 @@ export function Tune({ context }: { context: CompareContext }) {
       : { other: before.text, side: "after" };
   };
   const result = shown?.candidates[0];
-  const translated = !!shown?.translationId && result?.cost !== undefined;
+  const translated = finishedModel(shown, result);
   const current = translated && shown === run.shown;
   const [editing, setEditing] = useState(false);
   const adopt = useAction({ observer: application });

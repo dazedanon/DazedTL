@@ -10,7 +10,7 @@ import { settingsSaved } from "../settings/settingsChanges";
 import type { CompareContext } from "./Compare";
 import { CompareGrid } from "./CompareGrid";
 import { CompareRequest } from "./CompareRequest";
-import { modelDetail } from "./compareView";
+import { finishedModel, modelDetail } from "./compareView";
 import { LinesMenu, useSceneChoice } from "./LinesMenu";
 import { ModelLink, sent, type ChosenModel } from "./ModelChoice";
 import { useCompareRun } from "./useCompareRun";
@@ -41,7 +41,7 @@ export function Single({ context }: { context: CompareContext }) {
   );
   const { shown } = run;
   const result = shown?.candidates[0];
-  const translated = !!shown?.translationId && result?.cost !== undefined;
+  const translated = finishedModel(shown, result);
   const adopt = useAction({ observer: application });
   const [inspecting, setInspecting] = useState(false);
   return (

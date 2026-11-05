@@ -273,6 +273,23 @@ export function formatCost(value: number) {
 }
 
 /**
+ * Whether a model translated a comparison's lines whole, so it can be used:
+ * its translation ended and it came back without an error. A model that
+ * failed or was stopped keeps its cost and finished lines, but not this.
+ */
+export function finishedModel(
+  comparison: Comparison | undefined,
+  model: CompareModel | undefined,
+) {
+  return (
+    !!comparison?.translationId &&
+    !working(comparison.status) &&
+    model?.cost !== undefined &&
+    !model.error
+  );
+}
+
+/**
  * The requests Show request opens for a model: the first ones its
  * translation kept, and what it says when it kept fewer than it sent.
  */
