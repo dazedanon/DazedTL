@@ -65,9 +65,17 @@ class GuidanceDocumentTests(unittest.TestCase):
             states["a pipe"] = ("pipe", "unreadable", "isn't a regular file")
         if os.name != "nt" and os.geteuid() != 0:
             states["without read permission"] = ("locked", "unreadable", "allowed")
+        (self.root / "Case").touch()
+        one_case = (self.root / "case").exists()
+        (self.root / "Case").unlink()
         for name in (GLOSSARY, NOTES):
             path = self.root / read(self.root)[name]["file"]
             for case, (content, state, reason) in states.items():
+                if content == "twice" and name == NOTES and one_case:
+                    # On a case-blind folder, as on Windows and macOS,
+                    # agents.md is AGENTS.md: it holds one file, the
+                    # second write's.
+                    state, reason = "saved", ""
                 with self.subTest(document=name, file=case):
                     for leftover in (
                         path,
@@ -105,7 +113,9 @@ class GuidanceDocumentTests(unittest.TestCase):
                             if other != name
                         )
                     )
-                    if content == "twice" and name == NOTES:
+                    if content == "twice" and name == NOTES and one_case:
+                        self.assertEqual(found[name]["text"], "Two")
+                    elif content == "twice" and name == NOTES:
                         # Every task said to keep the first while the
                         # editors refused both.
                         self.assertIn("merge them", notes_note(self.root))

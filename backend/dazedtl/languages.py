@@ -3,13 +3,7 @@ engine's ``util/languages.py`` so run workers follow it without importing
 the app; this module makes it importable from the app, with the game's own
 source language."""
 
-import sys
 from pathlib import Path
-
-from dazedtl.compatibility.runtime import ENGINE_ROOT
-
-if str(ENGINE_ROOT) not in sys.path:
-    sys.path.insert(0, str(ENGINE_ROOT))
 
 from util.languages import (
     DEFAULT_SOURCE,

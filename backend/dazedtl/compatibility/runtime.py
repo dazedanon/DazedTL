@@ -7,14 +7,21 @@ from pathlib import Path
 ENGINE_ROOT = Path(__file__).resolve().parents[1] / "engine"
 
 
+def importable():
+    """Put the bundled engine on the import path, so its packages, such as
+    ``util``, import. The package's ``__init__`` calls it, so any module of
+    the app may import them at module level, whichever is imported first."""
+    source = str(ENGINE_ROOT)
+    if source not in sys.path:
+        sys.path.insert(0, source)
+
+
 def activate():
     if not (ENGINE_ROOT / "modules/rpgmakermvmz.py").is_file():
         raise RuntimeError(
             "DazedTL's bundled engine is missing. Restore the application files."
         )
-    source = str(ENGINE_ROOT)
-    if source not in sys.path:
-        sys.path.insert(0, source)
+    importable()
     from .openrouter_batch import install as install_openrouter
 
     install_openrouter()
