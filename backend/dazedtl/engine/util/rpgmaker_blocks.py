@@ -37,6 +37,7 @@ rows (code -1, no parameters) are left out until it writes the list back.
 
 from __future__ import annotations
 
+import json
 import re
 from collections import Counter
 from dataclasses import dataclass
@@ -294,11 +295,12 @@ def restore_conditions(document: Any) -> int:
     changed = 0
     for _path, commands in command_lists(document):
         for command in commands:
-            parameters = command.get("parameters") if code(command) == 102 else None
-            sources = command.get("_original")
-            if not parameters or not isinstance(sources, list):
+            if code(command) != 102:
                 continue
-            choices = parameters[0]
+            parameters, sources = command.get("parameters"), command.get("_original")
+            if not isinstance(parameters, list) or not isinstance(sources, list):
+                continue
+            choices = parameters[0] if parameters else None
             if not isinstance(choices, list):
                 continue
             for index, (value, source) in enumerate(zip(choices, sources)):
@@ -309,6 +311,23 @@ def restore_conditions(document: Any) -> int:
                     choices[index] = restored
                     changed += 1
     return changed
+
+
+# Bytes a data file holds a condition clause in, which reading it for one
+# needs (see lacks_conditions).
+_RAW_CONDITION = re.compile(rb"(?:if|en)\(")
+
+
+def lacks_conditions(raw: bytes) -> bool:
+    """Whether a data file's *raw* bytes hold a choice that lacks condition
+    clauses its source holds, which `restore_conditions` puts back."""
+    if not _RAW_CONDITION.search(raw):
+        return False
+    try:
+        document = json.loads(raw.decode("utf-8-sig"))
+    except ValueError:
+        return False
+    return restore_conditions(document) > 0
 
 
 def _condition_end(value: str, start: int) -> int | None:

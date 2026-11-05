@@ -90,6 +90,8 @@ class Guided:
         self.confirmations = {}
         self.batch_confirmations = {}
         self.observed_files = Digests()
+        # Whether a game file lacks choice conditions, by its hash.
+        self.unconditioned = Digests()
         self.layout_failures = {}
         from dazedtl.compatibility.observations import RunObservations
 
@@ -595,11 +597,27 @@ class Guided:
                 and game_hash == written[name][1]
                 and written[name][0] == output_hash
             )
-            if matches or output_hash in versions.get(name, ()):
+            if (
+                matches or output_hash in versions.get(name, ())
+            ) and not self.lacks_conditions(source, game_hash):
                 applied.append(name)
                 if not matches:
                     edited.append(name)
         return outputs, applied, edited
+
+    def lacks_conditions(self, path, digest):
+        """Whether the game file at *path*, whose hash is *digest*, holds a
+        choice without plugin conditions its source holds, which an earlier
+        translation file import left out (rpgmaker_blocks
+        `lacks_conditions`): Apply puts them back, so the file isn't applied
+        until it does."""
+        from util.rpgmaker_blocks import lacks_conditions
+
+        found = self.unconditioned.get(path, digest)
+        if found is None:
+            found = lacks_conditions(Path(path).read_bytes())
+            self.unconditioned.put(path, digest, found)
+        return found
 
     def output_runs(self, native, names):
         """The run, and its task (phase), that saved each file's newest

@@ -1852,6 +1852,29 @@ class GuidedTests(unittest.TestCase):
             self.folder / "translated/Items.json", [{"name": "Manual game edit"}]
         )
         self.assertEqual(self.guided.applied_outputs(native)[1], ["Items.json"])
+        # A choice an earlier import wrote without its source's condition
+        # reads applied in a game holding it until Apply puts it back.
+        choice = {"code": 102, "parameters": [["Yes"]], "_original": ["if(s[1])はい"]}
+        write_json(self.folder / "translated/Items.json", [choice])
+        write_json(self.source / "Items.json", [choice])
+        self.assertEqual(self.guided.applied_outputs(native)[1], [])
+        write_json(
+            self.source / "Items.json", [{**choice, "parameters": [["if(s[1])Yes"]]}]
+        )
+        write_json(
+            self.folder / "applied-outputs.json",
+            {
+                "files": {
+                    "Items.json": digest(
+                        (self.folder / "translated/Items.json").read_bytes()
+                    )
+                },
+                "written": {
+                    "Items.json": digest((self.source / "Items.json").read_bytes())
+                },
+            },
+        )
+        self.assertEqual(self.guided.applied_outputs(native)[1], ["Items.json"])
         self.native["engine"] = native["engine"] = "ACE"
         self.backend.guided_ace_blocked = lambda _source: "Reads Game.rgss3a."
         self.assertEqual(self.guided.run_view(identity)["appliedOutputs"], [])
