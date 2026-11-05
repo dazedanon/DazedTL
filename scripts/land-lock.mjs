@@ -4,9 +4,9 @@
 // release it, so two sessions can never both hold it. A holder renews it
 // while it works; a lock whose process has gone, or that nobody renewed for
 // 20 minutes, may be taken over. It also holds the landing rules that tools
-// outside land.mjs read, such as the Discord intake: maxReviews, when another
-// review is due, the review lenses, the finding kinds and which changes are
-// platform-sensitive.
+// outside land.mjs can read, such as the Discord intake: maxReviews, when
+// another review is due, the review lenses, the finding kinds and which
+// changes are platform-sensitive.
 import fs from "node:fs";
 import { spawnSync } from "node:child_process";
 import { setTimeout as sleep } from "node:timers/promises";

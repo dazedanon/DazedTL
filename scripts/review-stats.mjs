@@ -510,7 +510,7 @@ function main() {
     );
   if (summary.rounds.some(([, kinds]) => kinds.unsorted))
     console.log(
-      "  unsorted: findings with no kind, from landings before 2026-11-04, when land.mjs began asking for one, and from the Discord intake's, which leave it out until the intake sends it.",
+      "  unsorted: findings with no kind, from landings through 2026-11-04, whose land.mjs did not yet ask for one, and from the Discord intake's, which leave it out until the intake sends it.",
     );
   if (summary.chains.length)
     console.log(

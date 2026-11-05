@@ -180,11 +180,11 @@ export function readReview(text, { intake = false } = {}) {
       )
         throw new Error(`${which} needs a kind of ${findingKinds.join(", ")}.`);
       const kind = item.kind === undefined ? {} : { kind: item.kind };
+      if (item.behavior !== undefined && typeof item.behavior !== "boolean")
+        throw new Error(
+          `${which} says "behavior" true or false: false for a fix to wording, comments or naming alone.`,
+        );
       if (item.outcome === "fixed") {
-        if (item.behavior !== undefined && typeof item.behavior !== "boolean")
-          throw new Error(
-            `${which} says "behavior" true or false: false for a fix to wording, comments or naming alone.`,
-          );
         return {
           summary: item.summary,
           ...kind,
@@ -1121,6 +1121,8 @@ export async function land(cwd, deps, reviewFile) {
     git(["rev-parse", "--git-common-dir"]).stdout.trim(),
   );
   const main = path.dirname(common);
+  // The author's E2E answers for the change its reviewers checked, so it
+  // goes by the branch before formatting; CI, below, by what lands.
   const untested = missingE2e(
     platformSensitive(changedPaths(git, "refs/heads/dev", "HEAD")),
     review,

@@ -526,6 +526,17 @@ test("a landing's review record comes from an independent reviewer and accounts 
       }),
     /"behavior" true or false/,
   );
+  assert.throws(
+    () =>
+      record({
+        ...reviewed,
+        level: "high",
+        findings: [
+          { ...thirdFix, outcome: "dismissed", reason: "No", behavior: "no" },
+        ],
+      }),
+    /"behavior" true or false/,
+  );
   // The lenses every review ran, so review-stats can compare escapes by lens.
   assert.deepEqual(
     record({
