@@ -188,6 +188,35 @@ class StopTests(unittest.TestCase):
             },
         }
 
+    def test_an_unreadable_saved_request_keeps_the_models_cost_and_lines(self):
+        # One request whose saved body was gone made a stopped model lose
+        # its cost and a finished one fail with no lines.
+        rows = [{"id": 0}, {"id": 1}, {"id": 2}]
+
+        def payload(_directory, _rows, index, _total):
+            if index == 1:
+                raise ValueError("This request is no longer available.")
+            return {"index": index}
+
+        with (
+            patch(
+                "dazedtl.compatibility.process_view.paid_receipts",
+                return_value={"Map001.json": {"cost": 0.42}},
+            ),
+            patch(
+                "dazedtl.compatibility.process_view.ledger_records",
+                return_value=rows,
+            ),
+            patch(
+                "dazedtl.compatibility.process_view.ledger_payload",
+                side_effect=payload,
+            ),
+        ):
+            spent = compare_run._spent(Path("unused"), 0)
+        self.assertEqual(spent["cost"], 0.42)
+        self.assertEqual(spent["requests"], [{"index": 0}])
+        self.assertEqual(spent["requestCount"], 3)
+
     def test_a_stopped_translation_keeps_what_each_model_finished_and_spent(self):
         # A stop dropped every model's lines and the cost of what was sent,
         # while translating again was refused.

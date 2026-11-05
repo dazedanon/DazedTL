@@ -437,19 +437,25 @@ def result(directory, name, phase, markers, seconds, original, found, pair):
 
 def _sent(directory):
     """What a Guided model's run paid for and the requests it sent, the
-    first KEPT_REQUESTS kept for Show request."""
+    first KEPT_REQUESTS kept for Show request, up to one whose saved body
+    can't be read, which costs the model neither its cost nor its lines."""
     from .process_view import ledger_payload, ledger_records, paid_receipts
 
     paid = paid_receipts(directory)
-    records = ledger_records(directory) or []
-    return {
-        "cost": round(sum(float(item.get("cost") or 0) for item in paid.values()), 6),
-        "requests": [
-            ledger_payload(directory, records, index, len(records))
-            for index in range(min(len(records), KEPT_REQUESTS))
-        ],
-        "requestCount": len(records),
+    value = {
+        "cost": round(sum(float(item.get("cost") or 0) for item in paid.values()), 6)
     }
+    try:
+        records = ledger_records(directory) or []
+    except OSError, ValueError:
+        return value
+    kept = []
+    for index in range(min(len(records), KEPT_REQUESTS)):
+        try:
+            kept.append(ledger_payload(directory, records, index, len(records)))
+        except OSError, ValueError:
+            break
+    return {**value, "requests": kept, "requestCount": len(records)}
 
 
 def run(plan, log):
