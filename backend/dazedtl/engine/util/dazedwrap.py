@@ -608,7 +608,7 @@ def _sentence_lines(
                 previous = best[row - 1][start - 1]
                 if previous == infinite:
                     continue
-                drift = (length / total - shares[row - 1]) ** 2 if shares else 0.0
+                drift = (length / total - shares[row - 1]) ** 2 if shares and total else 0.0
                 score = (previous[0] + drift, max(previous[1], length))
                 if score < best[row][end]:
                     best[row][end] = score
@@ -711,7 +711,9 @@ def _shaped(
     characters: bool,
     glue=None,
 ) -> str:
-    width = int(width)
+    # No window is narrower than one cell, though text of codes alone, such
+    # as pauses, shows none.
+    width = max(1, int(width))
     if not text or not text.strip():
         return text or ""
     source_lines = (source or "").replace("\r\n", "\n").split("\n")

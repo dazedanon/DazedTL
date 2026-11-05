@@ -794,9 +794,7 @@ def _widened(
     for read in readings:
         if len(_rows(wider[read])) >= len(held):
             continue
-        # No window is narrower than one cell, though rows of codes alone,
-        # such as pauses, show none.
-        for width in range(max(1, widest_line(text)), box.width):
+        for width in range(widest_line(text), box.width):
             if flowing and needed(width) < len(held):
                 break
             if (
