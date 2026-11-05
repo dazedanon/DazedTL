@@ -25,7 +25,8 @@ _SYSTEM_FIELDS = _FIELDS | {
     "switches", "variables", "locale",
 }
 # A command's rows that one translation covers: text blocks' rows (see
-# rpgmaker_blocks.run) and a script's lines.
+# rpgmaker_blocks.run, and source_rows for a message's or scrolling text's)
+# and a script's lines.
 _RUNS = {**blocks.ROW_CODES, 355: 655}
 
 
@@ -149,11 +150,14 @@ def _walk(before, after, *, system=False):
             item = before[index]
             code = blocks.code(item)
             if code in _RUNS:
-                end = (blocks.run(before, index, _RUNS[code]) or (index,))[-1] + 1
-                if code in blocks.MESSAGE_ROWS and blocks.recorded(item) is not None:
-                    # A translation file import recorded the rows its text
-                    # covers; the game's own after it keep sources of their own.
-                    end = min(end, index + blocks.recorded(item))
+                if code in blocks.MESSAGE_ROWS:
+                    # The rows one source covers: the game's own after a
+                    # translation, past the rows a translation file import
+                    # recorded it covers or left untranslated after it, keep
+                    # sources of their own.
+                    end = blocks.source_rows(before, index)[-1] + 1
+                else:
+                    end = (blocks.run(before, index, _RUNS[code]) or (index,))[-1] + 1
                 old = [row["parameters"][0] for row in before[index:end]]
                 new = [row["parameters"][0] for row in after[index:end]]
                 if old != new:
@@ -222,7 +226,7 @@ def write_messages(source, document, language) -> None:
             if row_code not in blocks.MESSAGE_ROWS:
                 index += 1
                 continue
-            rows = (index, *blocks.run(commands, index, row_code))
+            rows = blocks.source_rows(commands, index)
             index = rows[-1] + 1
             old = [blocks.text(commands[at]) for at in rows]
             new = [blocks.text(written[at]) for at in rows]

@@ -399,6 +399,7 @@ try:
             BATTLE_MESSAGE_USERS,
             CHOICE_COLLECTION,
             CODE_NAMEPLATES,
+            LEFT_ROWS,
             PAGE_PACKING,
             SAME_LINE_SPEAKERS,
             SOURCE_TEXT,
@@ -1369,6 +1370,37 @@ try:
                         sent,
                         kept,
                     )
+            # A run with First-line names on wrote a name and left its speech
+            # in Japanese; one with it off sent the name's source alone and
+            # wrote its translation over the speech, emptying it. Under the
+            # left-rows policy the speech is a text of its own, as the export
+            # lists it; older frozen runs keep their request bodies.
+            speech = ["「すいません‼", "入り込みまして…‼"]
+            half = [
+                name(""),
+                command(401, ["Officer"], _original="新米警察官"),
+                *(command(401, [row]) for row in speech),
+            ]
+            for generation, body, kept in (
+                (policy, "新米警察官", [("Hello.", "新米警察官")]),
+                (
+                    {**policy, "leftRows": LEFT_ROWS},
+                    '"すいません‼\n入り込みまして…‼',
+                    [("Officer", "新米警察官"), ("Hello.", "\n".join(speech))],
+                ),
+            ):
+                configure_states({"engine": "MVMZ"}, temporary, generation)
+                result = parse(half)
+                assert calls == [([body], "")], calls
+                assert [
+                    (c["parameters"][0], c.get("_original")) for c in result[1:-1]
+                ] == kept, result
+            (block,) = blocks.blocks(half)
+            assert [
+                (text.rows, text.source)
+                for text in blocks.sent_texts(half, block, blocks.Reading())
+            ] == [((1,), "新米警察官"), ((2, 3), None)]
+            configure_states({"engine": "MVMZ"}, temporary, policy)
             with patch.object(parser, "INLINE401SPEAKERS", True):
                 parse([name(""), command(401, ["花「こんにちは」"])])
                 assert calls == [(['[Hana]: "こんにちは"'], "")], calls

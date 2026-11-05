@@ -661,6 +661,31 @@ class TextBlockTests(unittest.TestCase):
             ],
         )
 
+    def test_rows_left_in_japanese_after_a_translation_keep_their_own_source(self):
+        # A run translated a name alone and left its speech in Japanese;
+        # Assistant-led's writer then kept the speech it translated under the
+        # name's source, so no copy held the speech's Japanese.
+        from util.len_originals import preserve_originals
+
+        def page(*rows):
+            return {
+                "list": [
+                    command(101, ["", 0, 0, 2, ""]),
+                    command(401, ["Officer"], _original="新米警察官"),
+                    *(command(401, [row]) for row in rows),
+                    command(0, []),
+                ]
+            }
+
+        speech = ("「すいません‼", "入り込みまして…‼")
+        written = preserve_originals(
+            page(*speech), page('"Sorry!', 'They slipped in!"'), filename="Map001.json"
+        )["list"]
+        self.assertEqual(
+            [command.get("_original") for command in written[1:4]],
+            ["新米警察官", "\n".join(speech), None],
+        )
+
     def test_a_translation_sharing_its_sources_kanji_holds_no_japanese_left(self):
         # Read without its pair, a Chinese translation's hanzi row opening
         # with a code read as the game's own Japanese, left untranslated.

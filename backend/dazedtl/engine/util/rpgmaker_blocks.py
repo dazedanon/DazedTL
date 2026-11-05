@@ -26,7 +26,9 @@ the comment (108) itself.
 The engine sends a message's or scrolling text's rows in texts (see
 :func:`texts`), and translation writes each text over its rows, keeping its
 source on its first: every copy of a game names its lines by the texts of the
-game's own rows (:func:`sent_texts`).
+game's own rows (:func:`sent_texts`). A row after a translation holding
+Japanese its source doesn't is the game's own, left untranslated, wherever it
+stands (:func:`uncovered`): no copy reads it as that translation's.
 
 Commands the engine empties when it writes a message's translation over its
 rows (code -1, no parameters) are left out until it writes the list back.
@@ -335,6 +337,47 @@ def run(commands: list, start: int, row_code: int) -> tuple[int, ...]:
             break
         rows.append(at)
     return tuple(rows)
+
+
+def uncovered(value: str, source: str) -> bool:
+    """Whether a message's or scrolling text's row reading *value*, after
+    the first of a translation of *source*, holds text that translation
+    never covered: Japanese *source* doesn't hold (util/source_text
+    `source_left`), in no row of it. Such a row is the game's own, left
+    untranslated, such as the speech after a nameplate a run translated
+    alone, under other speaker settings or with the speech's request refused;
+    a writer laying the translation over its rows leaves none."""
+    return value not in source.split("\n") and bool(source_left(value, source))
+
+
+def _translation(command: Any) -> str | None:
+    """The source a message's or scrolling text's row keeps of a translation
+    written from it, or None for none."""
+    source = command.get("_original") if isinstance(command, dict) else None
+    return source if isinstance(source, str) and source.strip() else None
+
+
+def covered(commands: list, rows: Sequence[int]) -> tuple[int, ...]:
+    """The rows of *rows*, a message's or scrolling text's rows from one
+    keeping a translation's source, its text covers: up to the first holding
+    text it never covered (:func:`uncovered`). Rows from one keeping no
+    source are their own."""
+    source = _translation(commands[rows[0]]) if rows else None
+    if source is None:
+        return tuple(rows)
+    return tuple(rows[:next(
+        (at for at in range(1, len(rows)) if uncovered(text(commands[rows[at]]), source)),
+        len(rows),
+    )])
+
+
+def source_rows(commands: list, start: int) -> tuple[int, ...]:
+    """The rows of a message or scrolling text, from the row at *start*, that
+    one source covers, as a writer keeping one over them, such as
+    Assistant-led's, reads them: the rows a translation there owns
+    (:func:`owned`) that its text covers (:func:`covered`), or for rows never
+    translated, the rows up to the next translation."""
+    return covered(commands, owned(commands, start))
 
 
 def owned(
@@ -661,11 +704,20 @@ def text_end(
     start: int,
     codes: tuple[int, ...] = TEXT_CODES,
     stop: Callable[[int], bool] | None = None,
+    *,
+    left: bool = False,
 ) -> int:
     """The last command whose text joins the one at *start* (:func:`joins`),
-    before any command *stop* names by its index."""
+    before any command *stop* names by its index and, with *left*, before a
+    row left untranslated after the translation whose source *start* keeps
+    (:func:`uncovered`), which is a text of its own."""
+    source = _translation(commands[start]) if left else None
     end = start
-    while joins(commands, end, codes) and not (stop is not None and stop(end + 1)):
+    while (
+        joins(commands, end, codes)
+        and not (stop is not None and stop(end + 1))
+        and not (source is not None and uncovered(text(commands[end + 1]), source))
+    ):
         end += 1
     return end
 
@@ -687,13 +739,16 @@ def next_text(
     line: str,
     speakers: Callable[[str, str | None], MessageSpeakers | None],
     stop: Callable[[int], bool] | None = None,
+    *,
+    left: bool = False,
 ) -> NextText:
     """The text the MV/MZ engine sends from the message or scrolling text row
     at *start*, whose text it reads as *line*: the speakers *speakers* reads
     there, given the next command's text when that command is another of the
     text's rows (TEXT_CODES) and None otherwise; a nameplate on that row,
     which goes alone, and the rows after it, past emptied commands; and the
-    rows joined to the first (:func:`text_end`), up to any *stop* names."""
+    rows joined to the first (:func:`text_end`), up to any *stop* names and,
+    with *left*, any left untranslated after the first's translation."""
     following = None
     if start + 1 < len(commands) and commands[start + 1].get("code") in TEXT_CODES:
         parameters = commands[start + 1].get("parameters") or []
@@ -704,7 +759,8 @@ def next_text(
         name, first = start, start + 1
         while commands[first]["code"] == -1:
             first += 1
-    return NextText(found, name, tuple(range(first, text_end(commands, first, stop=stop) + 1)))
+    end = text_end(commands, first, stop=stop, left=left)
+    return NextText(found, name, tuple(range(first, end + 1)))
 
 
 @dataclass(frozen=True)
@@ -844,7 +900,10 @@ def _written_over(commands: list, part: Part, lines: list[str], reading: Reading
     rows one by one, as Assistant-led's does, keeps a source line for each
     row, and fitting may move a code to the start of one; in that shape the
     game's own start only at a row opening with a code its source doesn't
-    hold, or whose text holds Japanese its source doesn't."""
+    hold, or whose text holds Japanese its source doesn't. In either shape
+    they start no later than a row left untranslated (:func:`covered`), such
+    as the speech after a nameplate a run translated alone under other
+    speaker settings."""
     rows = part.rows
     if len(rows) == 1 or recorded(commands[part.anchor]) is not None:
         return len(rows)
@@ -854,17 +913,19 @@ def _written_over(commands: list, part: Part, lines: list[str], reading: Reading
         if found is not None and found.own_line:
             return 1
     whole = "\n".join(lines)
-    theirs = set(lines)
+    own = len(covered(commands, rows))
     opening = [at for at in range(1, len(rows)) if opens_text(values[at])]
     for at, end in zip(opening, [*opening[1:], len(rows)]):
+        if at >= own:
+            break
         if len(rows) != len(lines):
             if not (at < len(lines) and opens_text(lines[at])):
                 return at
         elif _opening(values[at]) not in whole or any(
-            value not in theirs and source_left(value, whole) for value in values[at:end]
+            uncovered(value, whole) for value in values[at:end]
         ):
             return at
-    return len(rows)
+    return own
 
 
 def _lined_up(commands: list, rows: tuple[int, ...], lines: list[str], read: list[Text]) -> bool:

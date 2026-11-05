@@ -3605,6 +3605,12 @@ SAME_LINE_SPEAKERS = False
 # older runs keep reading that line as a nameplate and never send it.
 CODE_NAMEPLATES = False
 
+# A text whose first row keeps a translation's source ends before a row an
+# earlier run left untranslated after it (util/rpgmaker_blocks `uncovered`),
+# which is sent as a text of its own. Frozen per run: older runs send that
+# first row's source alone and write its translation over those rows too.
+LEFT_ROWS = False
+
 
 def _standalone_speaker(name):
     """util/speakers `standalone_speaker`, reading source text as the run
@@ -4059,6 +4065,7 @@ def _searchCodes(page, pbar, jobList, filename):
                     speakerWork,
                     _message_speakers,
                     _own_source(codeList) if SPEAKER_CONTEXT else None,
+                    left=LEFT_ROWS,
                 )
                 speakerMatch = sentText.speakers
                 speakerList = list(speakerMatch.names) if speakerMatch else []

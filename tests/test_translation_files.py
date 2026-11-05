@@ -802,6 +802,29 @@ class GuidedLineTests(unittest.TestCase):
             ],
             [("Officer", name), (english, speech), ("", None)],
         )
+        # With the setting off, the speech left in Japanese is still a line
+        # of its own, as Translate sends it, never part of the name's.
+        toggled = self.game("toggled", half, original)
+        self.assertEqual(
+            rows(toggled),
+            {
+                head: ("unknown", None, name, "Rookie Police Officer"),
+                f"{head}~1": ("unknown", None, speech, None),
+            },
+        )
+        GuidedLines(toggled, "toggled", PAIR, True).save(
+            {f"{head}~1": english}, "file.json"
+        )
+        commands = read_json(self.root / "toggled-work/translated/Map001.json")[
+            "events"
+        ][1]["pages"][0]["list"]
+        self.assertEqual(
+            [
+                (command["parameters"][0], command.get("_original"))
+                for command in commands[1:4]
+            ],
+            [("Rookie Police Officer", name), (english, speech), ("", None)],
+        )
         # The speech alone leaves the name row as the game has it.
         alone = self.game("alone", original, original, on)
         GuidedLines(alone, "alone", PAIR, True).save(
