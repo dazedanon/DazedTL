@@ -62,6 +62,7 @@ import {
   readCommits,
 } from "./fix-trailers.mjs";
 import {
+  changedPaths,
   devMoved,
   findingKinds,
   gitIn,
@@ -117,7 +118,8 @@ const lockLimit = 10 * 60_000;
  * last review was due another (repeatReviewDue) is refused.
  * The Discord intake's records, read with `intake`, may leave out the kinds
  * and behavior marks until the intake sends them, and carry no E2E runs,
- * since its worker names those in the hand-off.
+ * since its worker names those in the hand-off; their live-check lens is
+ * left out, since the intake lists it unasked.
  * Throws with what is wrong, so no branch lands on its author's review alone.
  * @param {string} text
  * @param {{ intake?: boolean }} [options]
@@ -157,14 +159,20 @@ export function readReview(text, { intake = false } = {}) {
     throw new Error(
       "The review record needs a findings list, empty when the review found nothing.",
     );
-  const lenses = record.lenses === undefined ? [] : record.lenses;
+  const given = record.lenses === undefined ? [] : record.lenses;
   if (
-    !Array.isArray(lenses) ||
-    lenses.some((lens) => !reviewLenses.includes(lens))
+    !Array.isArray(given) ||
+    given.some((lens) => !reviewLenses.includes(lens))
   )
     throw new Error(
       `The review record's "lenses" lists the lenses every review ran, of ${reviewLenses.join(", ")}.`,
     );
+  // The intake lists every lens once its reviewer wrote the "Places checked"
+  // line, and asks it for no live check, so until it records the Live
+  // check by its own "Live checked" line, its claim of one is left out.
+  const lenses = intake
+    ? given.filter((/** @type {string} */ lens) => lens !== "live-check")
+    : given;
   const findings = record.findings.map(
     (/** @type {any} */ item, /** @type {number} */ index) => {
       const which = `Finding ${index + 1} of the review record`;
@@ -612,19 +620,6 @@ async function warnRedDev(/** @type {Deps} */ { read, log }, main) {
 const ciStartPoll = 5000;
 const ciStartLimit = 3 * 60_000;
 const dispatchTries = 3;
-
-/**
- * The paths a branch changes since it left `base`, a renamed file under both
- * of its names.
- * @param {ReturnType<typeof gitIn>} git
- * @param {string} base
- * @param {string} tip
- */
-export function changedPaths(git, base, tip) {
-  return git(["diff", "--name-only", "--no-renames", "-z", `${base}...${tip}`])
-    .stdout.split("\0")
-    .filter(Boolean);
-}
 
 /**
  * The commits of a branch whose passed CI run stands for `tip`, newest
