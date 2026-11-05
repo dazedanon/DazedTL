@@ -298,6 +298,7 @@ Resync archives a file's working copy, staged outputs and cache, and advances it
 - [Compare](../backend/dazedtl/translation/compare.py) translates the same lines with up to four models, or one with changed settings, built as the game's method builds them: Guided as an engine run of the recorded original of one file, cut after a page or entry ([compare](../backend/dazedtl/compatibility/compare.py)); Assistant-led and Manual as their API run of a group's units, compiled against a copy of the game's guidance and sent by the run's Live runner from a store of its own ([compare_units](../backend/dazedtl/compatibility/compare_units.py)).
 - A model is any saved connection's, frozen through `Choice` in [execution](../backend/dazedtl/settings/execution.py).
 - An estimate operation prices the requests; the click on its price starts one translate operation, refused once used or when its inputs changed, and no reply reaches the game, its results, cache or runs.
+- Only the current method's comparisons show, as methods build different requests.
 
 #### Publication
 

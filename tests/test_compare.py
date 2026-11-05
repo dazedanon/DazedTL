@@ -684,11 +684,31 @@ class ApprovalTests(unittest.TestCase):
         plan = json.loads(
             (self.operations.root / estimate / "plan.json").read_text(encoding="utf-8")
         )
+        plan["options"]["method"] = "guided"
+        self.switch_to_guided()
+        return self.finished(self.operations.start({**plan, "project_id": "n1"})["id"])
+
+    def switch_to_guided(self):
         native = {"id": "n1", "source": str(self.game)}
         self.compare.game = lambda _id: Game(
             "guided", "p1", "n1", str(self.game), native
         )
-        return self.finished(self.operations.start({**plan, "project_id": "n1"})["id"])
+
+    def test_a_switched_method_leaves_the_comparisons_of_the_one_before(self):
+        # Once a refactor read both methods' owners, a Manual test still
+        # listed and could be used after the game switched to Guided,
+        # though Guided builds other requests.
+        estimate = self.tuned(instruction="Keep it short.")
+        self.switch_to_guided()
+        with self.assertRaisesRegex(ValueError, "no longer available"):
+            self.compare.use("p1", estimate, 0)
+        self.assertIsNone(
+            self.compare._frozen(
+                self.compare.game("p1"),
+                self.operations.jobs[estimate],
+                "compare_estimate",
+            )
+        )
 
     def estimated(self):
         job = self.compare.estimate(

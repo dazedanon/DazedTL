@@ -543,7 +543,7 @@ class Compare:
         jobs = self.guided.backend.operations.jobs
         rows = []
         for job in self.operations(project_id, (ESTIMATE,)):
-            options = _options(self.guided.backend.operations.root, job["id"])
+            options = self._frozen(game, job, ESTIMATE)
             if options is None:
                 continue
             translated = jobs.get(record["used"].get(job["id"]) or "")
@@ -666,15 +666,24 @@ class Compare:
             changes[name] = {"revision": document["revision"], "text": text}
         return changes
 
+    def _frozen(self, game, job, action):
+        """The options *job* froze, when it is an *action* operation of the
+        game in its current method. One from the method it used before a
+        switch compared other requests, so the page and its actions leave it
+        out; its operation still shows while it runs, with its Stop."""
+        if (
+            not job
+            or job["action"] != action
+            or job["project_id"] not in self._owners(game.project)
+        ):
+            return None
+        options = _options(self.guided.backend.operations.root, job["id"])
+        return options if options and options.get("method") == game.method else None
+
     def _options(self, game, identity, action):
         """The options a comparison operation of the game froze."""
-        job = self.guided.backend.operations.jobs.get(identity)
-        options = (
-            _options(self.guided.backend.operations.root, identity)
-            if job
-            and job["action"] == action
-            and job["project_id"] in self._owners(game.project)
-            else None
+        options = self._frozen(
+            game, self.guided.backend.operations.jobs.get(identity), action
         )
         if options is None:
             raise ValueError("This comparison is no longer available.")
