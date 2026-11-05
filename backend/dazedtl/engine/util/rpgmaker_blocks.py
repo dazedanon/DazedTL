@@ -213,6 +213,63 @@ def marker(command: Any) -> str:
     return text(command).strip()
 
 
+class Choice(NamedTuple):
+    """One choice of a choice list (102) as the engine sends it: its *label*,
+    with the plugin condition clauses around it, such as MPP_ChoiceEX's
+    ``if(s[1])`` and ``en(v[3]<=50)``, which the engine keeps out of the
+    request and puts back around the label's translation as the game has
+    them."""
+
+    prefix: str
+    label: str
+    suffix: str
+
+    def written(self, label: str) -> str:
+        """*label* with this choice's clauses around it."""
+        return self.prefix + label + self.suffix
+
+
+_CONDITION = re.compile(r"(?:if|en)\(")
+
+
+def split_choice(value: str) -> Choice:
+    """A choice's *value* split into its label and condition clauses: a
+    leading lowercase ``if(...)``/``en(...)`` clause, and trailing ones,
+    attached to the label or after whitespace, with nested calls such as
+    ``if($gameSwitches.value(1))``. An unbalanced clause, or trailing text
+    mixed with clauses, stays in the label, so no text players read is taken
+    out of it."""
+    end = _condition_end(value, 0)
+    prefix, label = (value[:end], value[end:]) if end is not None else ("", value)
+    for found in _CONDITION.finditer(label):
+        start = found.start()
+        while start > 0 and label[start - 1].isspace():
+            start -= 1
+        cursor = found.start()
+        while (end := _condition_end(label, cursor)) is not None:
+            cursor = end
+            while cursor < len(label) and label[cursor].isspace():
+                cursor += 1
+            if cursor == len(label):
+                return Choice(prefix, label[:start], label[start:])
+    return Choice(prefix, label, "")
+
+
+def _condition_end(value: str, start: int) -> int | None:
+    """The end of a balanced ``if(...)``/``en(...)`` clause at *start*."""
+    if not value.startswith(("if(", "en("), start):
+        return None
+    depth = 0
+    for index in range(start + 2, len(value)):
+        if value[index] == "(":
+            depth += 1
+        elif value[index] == ")":
+            depth -= 1
+            if depth == 0:
+                return index + 1
+    return None
+
+
 def source(commands: list, part: Part) -> str | None:
     """The Japanese a translated part's rows were translated from: a comment
     anchored on its 108 keeps its marker as the first line."""

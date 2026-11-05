@@ -1490,8 +1490,9 @@ def _choice_job(cmd):
             continue
 
         # Preserve plugin condition clauses outside the model.
-        conditionPrefix, jaString = _split_choice_condition_prefix(jaString)
-        jaString, conditionSuffix = _split_choice_condition_suffix(jaString)
+        conditionPrefix, jaString, conditionSuffix = rpgmaker_blocks.split_choice(
+            jaString
+        )
 
         job["conditions"].append((conditionPrefix, conditionSuffix))
         job["choices"].append(jaString)
@@ -1545,75 +1546,6 @@ def _apply_choices(cmd, job, translated):
         # Set the translation back to the original position
         cmd["parameters"][0][originalIndex] = translatedText
         _apply_choice_original(cmd, originalIndex, job["sources"][idx])
-
-
-def _choice_condition_end(text: str, start: int) -> int | None:
-    """Return the end of a balanced lowercase ``if(...)``/``en(...)`` clause."""
-    if not isinstance(text, str) or not text.startswith(("if(", "en("), start):
-        return None
-
-    depth = 0
-    for index in range(start + 2, len(text)):
-        char = text[index]
-        if char == "(":
-            depth += 1
-        elif char == ")":
-            depth -= 1
-            if depth == 0:
-                return index + 1
-            if depth < 0:
-                break
-    return None
-
-
-def _split_choice_condition_prefix(text: str) -> tuple[str, str]:
-    """Split a leading lowercase ``if(...)``/``en(...)`` plugin condition safely.
-
-    Conditions can contain nested calls such as ``if($gameSwitches.value(1))``.
-    Return the input untouched when the prefix is absent or unbalanced.
-    """
-    if not isinstance(text, str):
-        return "", text
-
-    end = _choice_condition_end(text, 0)
-    if end is not None:
-        return text[:end], text[end:]
-    return "", text
-
-
-def _split_choice_condition_suffix(text: str) -> tuple[str, str]:
-    """Split trailing plugin condition clauses while preserving their exact bytes.
-
-    A suffix can contain one or more ``if(...)``/``en(...)`` clauses, attached
-    directly to the label or separated by whitespace, including nested calls.
-    Unbalanced or mixed trailing text is left untouched so visible choice text
-    cannot be removed accidentally.
-    """
-    if not isinstance(text, str):
-        return text, ""
-
-    for match in re.finditer(r"(?:if|en)\(", text):
-        condition_start = match.start()
-        suffix_start = condition_start
-        while suffix_start > 0 and text[suffix_start - 1].isspace():
-            suffix_start -= 1
-        cursor = condition_start
-
-        while True:
-            end = _choice_condition_end(text, cursor)
-            if end is None:
-                break
-            cursor = end
-
-            while cursor < len(text) and text[cursor].isspace():
-                cursor += 1
-
-            if cursor == len(text):
-                return text[:suffix_start], text[suffix_start:]
-            if not text.startswith(("if(", "en("), cursor):
-                break
-
-    return text, ""
 
 
 def _122_inner_source(cmd) -> str | None:

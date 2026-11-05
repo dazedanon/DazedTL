@@ -33,6 +33,32 @@ def choosing(help_rows, face="Actor1"):
 
 
 class TextBlockTests(unittest.TestCase):
+    def test_a_choice_keeps_its_condition_clauses_apart_from_its_label(self):
+        # The engine and the translation file both read a choice's label
+        # here; a split that took visible text, or left a clause, would send
+        # it to the model or drop it from the game.
+        for value, parts in [
+            ("はい", ("", "はい", "")),
+            ("if(s[1])はい", ("if(s[1])", "はい", "")),
+            (
+                "if($gameSwitches.value(1))Yes",
+                ("if($gameSwitches.value(1))", "Yes", ""),
+            ),
+            ("いいえ en(v[3]<=50)", ("", "いいえ", " en(v[3]<=50)")),
+            (
+                "if(s[1])見る if(v[2]>0) en(s[3])",
+                ("if(s[1])", "見る", " if(v[2]>0) en(s[3])"),
+            ),
+            # Unbalanced, or text after a clause, stays in the label.
+            ("if(v[31]>=4迷宮", ("", "if(v[31]>=4迷宮", "")),
+            ("はいen(v[3]<=50)(条件)", ("", "はいen(v[3]<=50)(条件)", "")),
+            ("IF(s[1])はい", ("", "IF(s[1])はい", "")),
+        ]:
+            with self.subTest(value):
+                found = blocks.split_choice(value)
+                self.assertEqual(tuple(found), parts)
+                self.assertEqual(found.written(found.label), value)
+
     def test_a_line_left_in_japanese_shows_its_japanese_as_its_source(self):
         # The engine keeps no `_original` for text a model gave back as it
         # was, so the live text is its own source, with a speaker's name.
