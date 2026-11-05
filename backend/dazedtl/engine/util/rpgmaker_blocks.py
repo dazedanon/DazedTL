@@ -702,12 +702,15 @@ EVERY_SPEAKER = Reading(first_line=True, inline=True, named=True)
 
 
 class Text(NamedTuple):
-    """A text the engine sends of some rows (:func:`texts`): their indexes,
-    and for a nameplate on a row of its own, sent apart from the speech after
-    it, the speaker it names; "" for any other text."""
+    """A text the engine sends of some rows (:func:`texts`): their indexes;
+    for a nameplate on a row of its own, sent apart from the speech after
+    it, the speaker it names, "" for any other text; and whether the engine
+    reads it at all, False for rows it skips as holding nothing it sends,
+    which leave a speaker named before them to the text after them."""
 
     rows: tuple[int, ...]
     name: str = ""
+    sent: bool = True
 
 
 def texts(rows: Sequence[str], reading: Reading, starts: Iterable[int] = ()) -> tuple[Text, ...]:
@@ -727,10 +730,10 @@ def texts(rows: Sequence[str], reading: Reading, starts: Iterable[int] = ()) -> 
             skipped = [at]
             for later in range(at + 1, end + 1):
                 if apart(later):
-                    found.append(Text(tuple(skipped)))
+                    found.append(Text(tuple(skipped), sent=False))
                     skipped = []
                 skipped.append(later)
-            found.append(Text(tuple(skipped)))
+            found.append(Text(tuple(skipped), sent=False))
             at = end + 1
             continue
         sent = next_text(commands, at, rows[at], reading.speakers, apart)
@@ -753,12 +756,14 @@ def text_source(rows: Sequence[str], shown: Sequence[str] | None = None) -> str:
 class SentText(NamedTuple):
     """A text the engine sends of a message or scrolling text, in a copy of
     the game (:func:`sent_texts`): the rows holding it, the Japanese
-    translation keeps for it, None for rows never translated, and the speaker
-    a nameplate names (see :class:`Text`)."""
+    translation keeps for it as the engine sends it (:func:`text_source`),
+    None for rows never translated, and the speaker a nameplate names and
+    whether the engine reads it (see :class:`Text`)."""
 
     rows: tuple[int, ...]
     source: str | None
     name: str = ""
+    sent: bool = True
 
 
 def _written_over(commands: list, part: Part, lines: list[str], reading: Reading) -> int:
@@ -845,20 +850,23 @@ def sent_texts(commands: list, block: Block, reading: Reading) -> tuple[SentText
     read: list[list[Text]] = [[] for _segment in segments]
     for each in texts(original, reading, starts):
         number = owners[each.rows[0]][0]
-        read[number].append(Text(tuple(owners[at][1] for at in each.rows), each.name))
+        read[number].append(Text(tuple(owners[at][1] for at in each.rows), each.name, each.sent))
     found: list[SentText] = []
     for (rows, lines), mine in zip(segments, read):
         if lines is None or (len(mine) > 1 and _lined_up(commands, rows, lines, mine)):
-            found += [
-                SentText(
-                    tuple(rows[at] for at in each.rows),
-                    None if lines is None else text_source([lines[at] for at in each.rows]),
-                    each.name,
+            for each in mine:
+                own = None if lines is None else [lines[at] for at in each.rows]
+                found.append(
+                    SentText(
+                        tuple(rows[at] for at in each.rows),
+                        None if own is None else text_source(own),
+                        each.name,
+                        each.sent,
+                    )
                 )
-                for each in mine
-            ]
         else:
-            found.append(SentText(rows, text_source(lines), mine[0].name if len(mine) == 1 else ""))
+            (only,) = mine if len(mine) == 1 else (Text(rows),)
+            found.append(SentText(rows, text_source(lines), only.name, only.sent))
     return tuple(found)
 
 

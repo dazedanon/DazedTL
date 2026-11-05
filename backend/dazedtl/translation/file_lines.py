@@ -73,6 +73,10 @@ class Line(NamedTuple):
     # which the engine sends apart from the speech after it; "" for others.
     # Read only as lines() reads the texts the engine sends.
     names: tuple[str, ...] = ()
+    # For each of *units*, whether the engine reads it, False for rows it
+    # skips as holding nothing it sends (rpgmaker_blocks `Text`); read as
+    # names are.
+    read: tuple[bool, ...] = ()
 
     def sent(self) -> tuple[tuple[str, str | None], ...]:
         """The text the engine sends as one, each with its source."""
@@ -236,19 +240,20 @@ def lines(
                 paths.append((*listed, row, "parameters", 0))
                 texts.append(blocks.text(commands[row]))
             names = [""] * len(units)
+            read = [True] * len(units)
             # A message's texts as the engine sends them, read by *reading*.
             sending = reading if kind in (blocks.MESSAGE, blocks.SCROLL) else None
             if sending is not None:
                 sent = [
-                    (each.rows, each.source, each.name)
+                    (each.rows, each.source, each.name, each.sent)
                     for each in blocks.sent_texts(commands, block, sending)
                 ]
             else:
                 sent = [
-                    (part.rows, blocks.source(commands, part), "")
+                    (part.rows, blocks.source(commands, part), "", True)
                     for part in block.parts
                 ]
-            for rows, source, speaker in sent:
+            for rows, source, speaker, reached in sent:
                 if source is not None:
                     sources.append(source)
                 values = [blocks.text(commands[row]) for row in rows]
@@ -262,6 +267,7 @@ def lines(
                 )
                 places.append(tuple((*listed, row, "parameters", 0) for row in rows))
                 names.append(speaker)
+                read.append(reached)
             if paths:
                 listing.append(
                     Line(
@@ -273,6 +279,7 @@ def lines(
                         tuple(places),
                         (*listed, block.start),
                         tuple(names) if reading is not None else (),
+                        tuple(read) if reading is not None else (),
                     )
                 )
         # In file order: by the command each line starts at.

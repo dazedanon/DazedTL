@@ -871,6 +871,24 @@ class GuidedLineTests(unittest.TestCase):
             ],
             [("ui", None), ("dialogue", "アリス"), ("unknown", None)],
         )
+        # Rows the engine skips as holding nothing it sends leave the name
+        # box's speaker to the text after them.
+        boxed = _map(
+            [
+                _command(101, "", 0, 0, 2, "リリ"),
+                _command(401, "……"),
+                _command(401, "\\SE[1]「やめて」"),
+                _command(0),
+            ]
+        )
+        guided = self.game("boxed", boxed, boxed)
+        self.assertEqual(
+            [
+                (row["kind"], row["speaker"])
+                for row in GuidedLines(guided, "boxed", PAIR, True).lines()
+            ],
+            [("ui", None), ("dialogue", "リリ")],
+        )
 
     def test_a_messages_texts_list_alike_in_every_copy_and_import_as_a_run_writes(self):
         # The export read a message's parts by its sources: a row the engine

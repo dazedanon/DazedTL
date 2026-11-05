@@ -161,9 +161,10 @@ class GuidedLines:
                         said = None
                         if nameplate:
                             speaker = line.names[index]
-                        elif not name_box:
+                        elif not name_box and (not line.read or line.read[index]):
                             # A name box's or nameplate's speaker says the
-                            # text after it alone, as the engine sends it.
+                            # next text the engine reads alone, as it sends
+                            # them; rows it skips leave it to the one after.
                             said, speaker = speaker, None
                         if not holds_source(shown):
                             continue
