@@ -183,7 +183,7 @@ One landing runs at a time, under a lock that a release also holds.
 
 A Discord intake worker lands in two steps, since it works in its own clone and may never write the main checkout.
 It runs `node scripts/land.mjs --hand-off <dir>` with the directory its prompt gives: the same format, merge and checks against `origin`'s `dev`, leaving the branch as `handoff.bundle` and `handoff.json` there, with no review, lock, app wait or push.
-The intake's own reviewers review exactly that bundle as the dazedtl-land skill's Review step does, reading `maxReviews` and `reviewLenses` from the main checkout's [land-lock](../scripts/land-lock.mjs); then the intake runs the main checkout's own `node scripts/land.mjs --finish <dir> --review <file.json>`.
+The intake reviews that bundle by the land skill's Review step, with limits from [land-lock](../scripts/land-lock.mjs), then runs the main checkout's `node scripts/land.mjs --finish <dir> --review <file.json>`.
 Under the lock, that checks the bundle with Git alone and runs nothing from it, then fast-forwards `dev`, records the review and pushes as a landing does.
 It never waits without a limit: it exits 3 when `dev` moved after the checks, so the worker merges `dev` and hands off again, 4 at once while your DazedTL is open, and 5 when the main checkout can't take it now, such as with uncommitted changes or the lock held over 10 minutes.
 
