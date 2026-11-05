@@ -154,6 +154,9 @@ def _bmp_image(raw: bytes):
     from PIL import Image
 
     with Image.open(BytesIO(raw)) as opened:
+        if opened.mode == "1" and _bmp_header(raw)[3] == 8:
+            indexes, palette = _bmp_palette(raw, opened)
+            return Image.fromarray(palette[indexes], "RGB")
         image = opened.convert("RGBA" if "A" in opened.getbands() else "RGB")
     alpha = _bmp_alpha(raw)
     if alpha is not None:
@@ -192,24 +195,42 @@ def _bmp_file(image, original: bytes) -> bytes:
     return header + data
 
 
+def _bmp_palette(raw: bytes, opened):
+    """(indexes, palette) of the BMP with a palette that Pillow opened."""
+    import numpy as np
+
+    if opened.mode == "P":
+        palette = np.array(opened.getpalette(), np.uint8).reshape(-1, 3)
+        return np.asarray(opened).astype(np.uint8), palette
+    offset, width, height, bits, compression = _bmp_header(raw)
+    # Pillow reads a palette of grays at their own indexes as "L", or black
+    # and white as "1", an 8-bit one too, whose rows it then misreads.
+    colors = struct.unpack_from("<I", raw, 46)[0] or 1 << bits
+    levels = (0, 255) if opened.mode == "1" else range(colors)
+    palette = np.repeat(np.array(levels, np.uint8)[:, None], 3, axis=1)
+    if opened.mode != "1" or bits != 8:
+        return np.asarray(opened).astype(np.uint8), palette
+    stride = (width + 3) & ~3
+    rows = abs(height)
+    if compression != 0 or width <= 0 or offset + stride * rows > len(raw):
+        raise ValueError("The BMP image is damaged.")
+    indexes = np.frombuffer(raw, np.uint8, stride * rows, offset).reshape(rows, stride)
+    indexes = indexes[::-1] if height > 0 else indexes
+    return np.minimum(indexes[:, :width], 1), palette
+
+
 def _paletted_bmp(image, original: bytes, bits: int) -> bytes:
     """An 8-bit BMP of the RGB edit of a BMP with a palette, in that palette,
     which some engines take transparency from, such as Wolf RPG from its
     first color: each pixel the edit left keeps its color's index, and each
-    other one takes the nearest color, a tie the later one."""
+    other one takes the nearest color, a tie the later one, but the first
+    color only when it is that color exactly, so an opaque edit near it stays
+    opaque."""
     import numpy as np
     from PIL import Image
 
     with Image.open(BytesIO(original)) as opened:
-        indexes = np.asarray(opened).astype(np.uint8)
-        if opened.mode == "P":
-            palette = np.array(opened.getpalette(), np.uint8).reshape(-1, 3)
-        else:
-            # Pillow reads a palette of grays at their own indexes as "L", or
-            # black and white as "1".
-            colors = struct.unpack_from("<I", original, 46)[0] or 1 << bits
-            levels = (0, 255) if opened.mode == "1" else range(colors)
-            palette = np.repeat(np.array(levels, np.uint8)[:, None], 3, axis=1)
+        indexes, palette = _bmp_palette(original, opened)
     edited = np.asarray(image, np.uint8)
     changed = (edited != palette[indexes]).any(axis=2)
     if changed.any():
@@ -221,15 +242,16 @@ def _paletted_bmp(image, original: bytes, bits: int) -> bytes:
         squares = (backwards**2).sum(axis=1)
         nearest = np.empty(len(colors), np.intp)
         for start in range(0, len(colors), 4096):
-            share = colors[start : start + 4096].astype(np.float32)
-            distance = squares - 2 * share @ backwards.T
+            share = colors[start : start + 4096]
+            distance = squares - 2 * share.astype(np.float32) @ backwards.T
+            distance[:, -1][(share != palette[0]).any(axis=1)] = np.inf
             nearest[start : start + 4096] = distance.argmin(axis=1)
         indexes = indexes.copy()
         indexes[changed] = (len(palette) - 1 - nearest)[inverse.ravel()]
     result = Image.fromarray(indexes, "P")
-    # All 256 colors, as Pillow reads an 8-bit BMP of black and white alone
-    # as one bit per pixel.
-    result.putpalette(palette.tobytes().ljust(768, b"\0"))
+    # The palette's own colors alone, so applying the edit again maps it the
+    # same way.
+    result.putpalette(palette.tobytes())
     stream = BytesIO()
     result.save(stream, format="BMP")
     return stream.getvalue()

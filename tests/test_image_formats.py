@@ -430,6 +430,35 @@ class BmpAndJpegTests(unittest.TestCase):
             np.testing.assert_array_equal(np.asarray(image), expected)
         self.assertEqual(from_png(to_png(written), written), written)
 
+    def test_an_edited_paletted_bmp_applied_again_is_unchanged(self):
+        # Its palette was padded to 256 colors with black, so applying the
+        # edit again moved changed dark pixels from index 0 to the padding;
+        # and an edit near the first color took it, which Wolf RPG shows as
+        # transparent.
+        palette = [0, 0, 0, 40, 40, 40]
+        palette += [120 + 8 * level for level in range(14) for _ in range(3)]
+        for colors in (palette, [0, 0, 0, 255, 255, 255]):
+            with self.subTest(colors=len(colors) // 3):
+                indexes = np.ones((6, 8), np.uint8)
+                indexes[0] = 0
+                original = Image.fromarray(indexes, "P")
+                original.putpalette(colors)
+                stream = BytesIO()
+                original.save(stream, format="BMP")
+                edited = pixels_of(stream.getvalue()).copy()
+                edited[2, 1:7] = (5, 5, 5, 255)
+                edited[0, 2] = (*colors[3:6], 255)  # Text drawn over index 0.
+                edited[4, 3] = (0, 0, 0, 255)  # The first color exactly.
+                candidate = png(edited)
+                first = from_png(candidate, stream.getvalue())
+                with Image.open(BytesIO(first)) as image:
+                    # Pillow misreads an 8-bit BMP of black and white alone.
+                    written, read = image_formats._bmp_palette(first, image)
+                self.assertEqual(read.ravel().tolist(), colors)
+                self.assertTrue((written[2, 1:7] == 1).all())
+                self.assertEqual((written[0, 2], written[4, 3]), (1, 0))
+                self.assertEqual(from_png(candidate, first), first)
+
     def test_a_recolored_paletted_bmp_is_written_within_its_size(self):
         # Every new color was measured against the whole palette at once: a
         # redrawn 1280x720 title screen needed about 5 GB.
