@@ -2943,6 +2943,8 @@ export type CompareChoice = {
   effort?: EffortLevel | null;
   /** Tune settings: the whole glossary this test sends. */
   glossary?: string;
+  /** Tune settings: the game glossary's revision it was edited from. */
+  glossary_revision?: string;
   /** Tune settings: guidance this test adds to the game's. */
   instruction?: string;
 };
@@ -3039,6 +3041,8 @@ export type CompareState = {
   scenes: CompareScene[];
   /** The game's glossary, which a Tune test starts from. */
   glossary: string;
+  /** The revision of the glossary's file it read. */
+  glossaryRevision: string;
   /** Newest first. */
   comparisons: Comparison[];
 };

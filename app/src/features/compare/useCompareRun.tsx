@@ -41,14 +41,22 @@ export function useCompareRun(
   const step = runStep(latest, shown);
   const estimate = () =>
     action.run(
-      () =>
-        api.compare.estimate(
-          context.projectId,
-          choices.kind,
-          choices.file,
-          choices.lines,
-          [...choices.candidates],
-        ),
+      async () => {
+        try {
+          return await api.compare.estimate(
+            context.projectId,
+            choices.kind,
+            choices.file,
+            choices.lines,
+            [...choices.candidates],
+          );
+        } catch (error) {
+          // A refusal for changed guidance shows the game's as it is now,
+          // which Reset starts a test from.
+          await context.reload();
+          throw error;
+        }
+      },
       "",
       "estimate",
     );

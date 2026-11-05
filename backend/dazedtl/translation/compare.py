@@ -40,6 +40,8 @@ KINDS = ("single", "versus", "tune")
 MAX_LINES = 200
 # A test-only glossary or instruction, as the guidance editors take them.
 TEXT_LIMIT = 200_000
+# What a Tune test changes in a model's settings.
+TUNED = ("effort", "glossary", "glossary_revision", "instruction")
 # The comparisons a page lists.
 HISTORY = 20
 # Assistant-led and Manual runs freeze this mode for a Live request.
@@ -165,9 +167,7 @@ class Compare:
             if not isinstance(item, dict) or set(item) - {
                 "connection_id",
                 "model",
-                "effort",
-                "glossary",
-                "instruction",
+                *TUNED,
             }:
                 raise ValueError("Choose each model from a connection.")
             connection = item.get("connection_id")
@@ -191,6 +191,11 @@ class Compare:
                             "Keep the test glossary and instruction shorter."
                         )
                     row[key] = text
+                if "glossary" in row:
+                    revision = item.get("glossary_revision")
+                    if not isinstance(revision, str):
+                        raise ValueError("Edit the test glossary again.")
+                    row["glossary_revision"] = revision
             elif set(item) - {"connection_id", "model"}:
                 raise ValueError("Only Tune settings changes a model's settings.")
             rows.append(row)
@@ -232,11 +237,7 @@ class Compare:
             "connection": connection["name"],
             "connection_id": connection["id"],
             "model": candidate["model"],
-            **{
-                key: candidate[key]
-                for key in ("effort", "glossary", "instruction")
-                if key in candidate
-            },
+            **{key: candidate[key] for key in TUNED if key in candidate},
         }
         choice = Choice(
             connection["id"],
@@ -294,6 +295,12 @@ class Compare:
         if kind == "tune":
             # What Use these settings may save over, as the test read it.
             documents = _guidance(game.root)
+            edited = candidates[0].get("glossary_revision")
+            if edited is not None and edited != documents[GLOSSARY.key]["revision"]:
+                raise ValueError(
+                    "The game's glossary changed in Context since you edited "
+                    "this test's glossary. Edit it again from the game's."
+                )
             options["revisions"] = {
                 name: documents[name]["revision"]
                 for name in (GLOSSARY.key, GAME_CONTEXT.key)
@@ -422,11 +429,7 @@ class Compare:
             {
                 "connection_id": row["connection_id"],
                 "model": row["model"],
-                **{
-                    key: row[key]
-                    for key in ("effort", "glossary", "instruction")
-                    if key in row
-                },
+                **{key: row[key] for key in TUNED if key in row},
             }
             for row in options["candidates"]
         ]
@@ -540,6 +543,7 @@ class Compare:
                 "reason": str(error),
                 "scenes": [],
                 "glossary": "",
+                "glossaryRevision": "",
                 "comparisons": [],
             }
         record = self._read(project_id)
@@ -560,11 +564,13 @@ class Compare:
             )
             if len(rows) == HISTORY:
                 break
+        glossary = _guidance(game.root)[GLOSSARY.key]
         return {
             "available": True,
             "reason": "",
             "scenes": self.scenes(game),
-            "glossary": _glossary(game.root),
+            "glossary": glossary["text"],
+            "glossaryRevision": glossary["revision"],
             "comparisons": rows,
         }
 
@@ -741,11 +747,6 @@ def _guidance(root):
     from desktop.backend.guidance import read
 
     return read(root)
-
-
-def _glossary(root):
-    """The glossary a Tune test starts from: the Context editor's."""
-    return _guidance(root)[GLOSSARY.key]["text"]
 
 
 def _validate(value):

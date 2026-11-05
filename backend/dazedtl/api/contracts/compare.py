@@ -20,6 +20,11 @@ class CompareChoice(TypedDict):
     glossary: NotRequired[
         Annotated[str, "Tune settings: the whole glossary this test sends."]
     ]
+    glossary_revision: NotRequired[
+        Annotated[
+            str, "Tune settings: the game glossary's revision it was edited from."
+        ]
+    ]
     instruction: NotRequired[
         Annotated[str, "Tune settings: guidance this test adds to the game's."]
     ]
@@ -109,6 +114,7 @@ class CompareState(TypedDict):
     reason: Annotated[str, "Why the game can't be compared yet."]
     scenes: list[CompareScene]
     glossary: Annotated[str, "The game's glossary, which a Tune test starts from."]
+    glossaryRevision: Annotated[str, "The revision of the glossary's file it read."]
     comparisons: Annotated[list[Comparison], "Newest first."]
 
 

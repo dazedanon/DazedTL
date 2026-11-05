@@ -40,6 +40,8 @@ type Settings = {
   effort: EffortLevel | null;
   /** The whole glossary this test sends; null keeps the game's. */
   glossary: string | null;
+  /** The revision of the game's glossary that one was edited from. */
+  glossaryRevision: string | null;
   /** Guidance this test adds to the game's. */
   instruction: string;
 };
@@ -50,6 +52,7 @@ const start = (context: CompareContext): Settings | null =>
     model: context.base,
     effort: context.baseEffort,
     glossary: null,
+    glossaryRevision: null,
     instruction: "",
   };
 
@@ -190,7 +193,11 @@ export function Tune({ context }: { context: CompareContext }) {
     connection_id: settings.model.connection_id,
     model: settings.model.model,
     effort,
-    ...(changed.glossary && { glossary }),
+    ...(changed.glossary && {
+      glossary,
+      glossary_revision:
+        settings.glossaryRevision ?? context.state.glossaryRevision,
+    }),
     ...(instruction && { instruction }),
   };
   const run = useCompareRun(
@@ -485,7 +492,11 @@ export function Tune({ context }: { context: CompareContext }) {
                 await context.reload();
                 // They are the game's settings now, which the next test
                 // starts from.
-                edit({ glossary: null, instruction: "" });
+                edit({
+                  glossary: null,
+                  glossaryRevision: null,
+                  instruction: "",
+                });
               }, `Settings now translates with ${result?.model}.`)
             }
           />
@@ -496,7 +507,17 @@ export function Tune({ context }: { context: CompareContext }) {
         <GlossaryDialog
           text={glossary}
           save={(text) =>
-            edit({ glossary: text === gameGlossary ? null : text })
+            edit(
+              text === gameGlossary
+                ? { glossary: null, glossaryRevision: null }
+                : {
+                    glossary: text,
+                    // An edit of an edit keeps what the first started from.
+                    glossaryRevision:
+                      settings?.glossaryRevision ??
+                      context.state.glossaryRevision,
+                  },
+            )
           }
           close={() => setEditing(false)}
         />

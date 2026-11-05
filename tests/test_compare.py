@@ -483,7 +483,12 @@ class ApprovalTests(unittest.TestCase):
         )
 
     def tuned(self, **change):
-        """A finished Tune test of model "a" with *change*."""
+        """A finished Tune test of model "a" with *change*, a glossary edited
+        from the game's as Tune read it."""
+        if "glossary" in change:
+            change.setdefault(
+                "glossary_revision", read(self.game)["glossary"]["revision"]
+            )
         job = self.compare.estimate(
             "p1", "tune", "Map001", 0, [{"connection_id": "c1", "model": "a", **change}]
         )
