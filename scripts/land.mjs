@@ -856,6 +856,22 @@ async function ciOutcome(
       ? "failed"
       : `ended as ${run.conclusion}`;
   const checks = (result.failed ?? []).map(plainJob);
+  // A commit whose one run did not start gets a fresh one (startAgain).
+  if (
+    unstarted(run) &&
+    startAgain(
+      ciRuns(
+        await read(
+          `repos/${site.repo}/actions/runs?head_sha=${run.head_sha}&per_page=50`,
+        ).catch(() => null),
+      ),
+    )
+  )
+    return outcome(
+      unreached,
+      run.html_url,
+      `CI could not start for ${short}, which says nothing of the branch: ${again} for a fresh run.`,
+    );
   // The plain line comes last, where a caller reading the tail sees it.
   return outcome(
     1,
