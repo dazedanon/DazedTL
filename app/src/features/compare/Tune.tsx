@@ -469,7 +469,7 @@ export function Tune({ context }: { context: CompareContext }) {
       <ActionBar feedback={null}>
         <ActionControl
           label="Use these settings"
-          title="Make this model Settings' model for every game, and save its effort, glossary and instruction as this game's."
+          title="Make this model and its thinking effort what Settings translates with, for every game, and save the glossary and instruction as this game's."
           disabled={!current}
           disabledReason={
             translated && !current ? "Translate with these settings first." : ""
@@ -486,7 +486,7 @@ export function Tune({ context }: { context: CompareContext }) {
               // They are the game's settings now, which the next test
               // starts from.
               edit({ glossary: null, instruction: "" });
-            }, "Saved as the game’s settings.")
+            }, `Settings now translates with ${result?.model}.`)
           }
         />
         {run.control}
