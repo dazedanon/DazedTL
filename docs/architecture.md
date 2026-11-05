@@ -213,7 +213,7 @@ Use the flat, compact [Settings](../app/src/features/settings/Settings.tsx) and 
 
 #### Places and surfaces
 
-The sidebar has three places: the Project page holds everything about the game, Translation holds the work, and Settings holds the app.
+The sidebar has four places: the Project page holds everything about the game, Translation holds the work, Compare tries models on a few of its lines, and Settings holds the app.
 Beside them, the [Guide](../app/src/features/guide/Guide.tsx) shows the user guide from the install, through the main process so it opens while Python is busy or down; help that a guide section covers links to it with Learn more ([guideSections](../app/src/ui/guideSections.ts)).
 It draws the guide with marked's lexer and its own React components, so no HTML from the file reaches the page, and anchors come from github-slugger, so they match the forge's.
 Each game has one translation method, chosen in [MethodDialog](../app/src/features/project/MethodDialog.tsx); changing it keeps the other methods' work, and the Project page's Status, History and Checkpoints tabs serve all three.
