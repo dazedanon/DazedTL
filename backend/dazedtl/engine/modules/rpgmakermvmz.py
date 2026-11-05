@@ -46,8 +46,12 @@ from util.vocab import (
 from util.speakers import (
     NAMES_FILE,
     SPEAKER_BRACKET_INNER,
+    display_name as _speaker_display_name,
     inline_speaker,
+    message_speakers,
+    plausible_speaker as _is_plausible_speaker,
     speaker_translated,
+    standalone_speaker,
     strip_speaker_prefix,
     to_prefixed,
 )
@@ -3684,19 +3688,9 @@ CODE_NAMEPLATES = False
 
 
 def _standalone_speaker(name):
-    # Re-exported [Name] lines are implicit nameplates, unlike explicit 101
-    # fields. Apply discovery's prose rejection before routing them to the
-    # short-name prompt. Keep resolved runtime names and short Latin labels.
-    display = _speaker_display_name(name)
-    if re.fullmatch(r"\\[nNvV]\[\d+\]", display):
-        return True
-    if _has_japanese_text(display):
-        return _is_plausible_speaker(display)
-    return bool(
-        len(display) <= 40
-        and len(display.split()) <= 4
-        and re.fullmatch(r"[^\W\d_][\w '\u2019\-]*", display)
-    )
+    """util/speakers `standalone_speaker`, reading source text as the run
+    does."""
+    return standalone_speaker(name, _has_japanese_text)
 
 
 def _message_end(commands, start, allowed):
@@ -4128,105 +4122,21 @@ def _searchCodes(page, pbar, jobList, filename):
                 #     if VNameValue == 5:
                 #         jaString = re.sub(retardRegex, '富士見', jaString)
 
-                # Speaker Check
-                speakerList = []
-
-                # m and z Codes
-                match = re.search(r"(.*?)[\\]+m\[\d+?\][\\]+z\[\d+?\]", speakerWork)
-                if match and (match.group(1).strip() or not CODE_NAMEPLATES):
-                    speakerList.append(match.group(1))
-                    if "\\c" in speakerList[0]:
-                        speakerList = re.findall(
-                            r"^[\\]+[cC]\[\d+\]【?(.+?)】?[\\]+[cC]\[\d+\](?:[\\]+[A-Za-z]+(?:\[[^\]]*\])?)*[\\]*$",
-                            speakerList[0],
-                        )
-
-                # Brackets (support multiple names like 【A】【B】)
-                if len(speakerList) == 0:
-                    # Check for bracket at start with dialogue following (【name】dialogue...)
-                    inlineBracketMatch = re.match(r"^\s*【([^】]+)】(.+)", speakerWork, re.DOTALL)
-                    
-                    if inlineBracketMatch:
-                        # Inline bracket with dialogue on same line
-                        speakerList = [inlineBracketMatch.group(1).strip()]
-                    else:
-                        # Only consider bracketed names when the line starts with '【' and
-                        # ends with either '】' or trailing variable/control codes like \n[2], \FF[\w[3]], etc.
-                        startsWithBracket = re.match(r"^\s*【", speakerWork) is not None
-                        endsWithBracket = re.search(
-                            r"(】\s*|(?:[\\]+[A-Za-z]+(?:\[(?:[^\[\]]|\[[^\]]*\])*\])+\s*)$)",
-                            speakerWork,
-                        ) is not None
-
-                        if startsWithBracket and endsWithBracket:
-                            candidates = re.findall(r"【(.*?)】", speakerWork)
-                            if candidates:
-                                candidates = [c.strip() for c in candidates]
-                                if candidates:
-                                    speakerList = candidates
-
-                # Colors
-                if len(speakerList) == 0:
-                    speakerList = re.findall(
-                        r"^[\\]+[cC]\[\d+\]【?(.+?)】?[\\]+[cC]\[\d+\](?:[\\]+[A-Za-z]+(?:\[[^\]]*\])?)*[\\]*$",
-                        speakerWork,
-                    )
-
-                # Colons
-                if len(speakerList) == 0:
-                    speakerList = re.findall(
-                        r"(.+)：$",
-                        speakerWork,
-                    )
-
-                # [Speaker] standalone line format (written back by inline re-export)
-                if len(speakerList) == 0:
-                    inlineFmtMatch = re.match(rf"^\[({SPEAKER_BRACKET_INNER})\]\s*$", speakerWork, re.IGNORECASE)
-                    if inlineFmtMatch and (
-                        not SPEAKER_CONTEXT or _standalone_speaker(inlineFmtMatch.group(1))
-                    ):
-                        speakerList = [inlineFmtMatch.group(1).strip()]
-
-                # Inline speakers in any form (util/speakers.inline_speaker)
-                inlineSpeakerMatch = None
-                if len(speakerList) == 0 and INLINE401SPEAKERS:
-                    inlineSpeakerMatch = inline_speaker(speakerWork)
-                    if inlineSpeakerMatch:
-                        speakerList = [inlineSpeakerMatch.name]
-
-                # First Line Speakers
-                if len(speakerList) == 0 and FIRSTLINESPEAKERS is True:
-                    # Test Speaker
-                    if (
-                        len(speakerWork) < 40
-                        and i + 1 < len(codeList)
-                        and "code" in codeList[i + 1]
-                        and codeList[i + 1]["code"] in [401, 405, -1]
-                        and len(codeList[i + 1]["parameters"]) > 0
-                        and len(codeList[i + 1]["parameters"][0]) > 0
-                    ):
-                        nextString = codeList[i + 1]["parameters"][0].strip()
-
-                        # Remove any RPGMaker Code at start
-                        ffMatchNS = re.search(
-                            r"^((?:[\\]+[^cCnNiIkKvVSs{}]+?\[[\d\w\W]+?\]?\])+)",
-                            nextString,
-                        )
-                        formatMatch = re.search(r"(^[\\]+[\W]+?)", nextString)
-                        if ffMatchNS != None:
-                            nextString = nextString.replace(ffMatchNS.group(1), "")
-                        if formatMatch != None:
-                            nextString = nextString.replace(formatMatch.group(1), "")
-
-                        if nextString and nextString[0] in [
-                            "「",
-                            '"',
-                            "(",
-                            "（",
-                            "*",
-                            "[",
-                        ]:
-                            speakerList = re.findall(r".+", speakerWork)
+                # Speaker Check (util/speakers.message_speakers)
+                following = None
+                if i + 1 < len(codeList) and codeList[i + 1].get("code") in (401, 405, -1):
+                    parameters = codeList[i + 1].get("parameters") or []
+                    following = parameters[0] if parameters else ""
+                speakerMatch = message_speakers(
+                    speakerWork,
+                    following,
+                    first_line=FIRSTLINESPEAKERS is True,
+                    inline=INLINE401SPEAKERS,
+                    code_nameplates=CODE_NAMEPLATES,
+                    standalone=_standalone_speaker if SPEAKER_CONTEXT else None,
+                )
+                speakerList = list(speakerMatch.names) if speakerMatch else []
+                inlineSpeakerMatch = speakerMatch.inline if speakerMatch else None
 
                 # Replace Speaker
                 if len(speakerList) != 0:
@@ -4249,7 +4159,7 @@ def _searchCodes(page, pbar, jobList, filename):
                             code_locked.append(False)
                     speakerList = resolved_speakers
                     # Check if speaker+dialogue are on same line
-                    sameLineMatch = re.match(r"^\s*【([^】]+)】(?:\s*[：:])?(.+)", speakerWork, re.DOTALL)
+                    sameLineMatch = speakerMatch.same_line
                     if inlineSpeakerMatch and len(speakerList) == 1:
                         # Strip speaker prefix, keep everything after as dialogue
                         response = getSpeaker(speakerList[0])
@@ -4273,7 +4183,7 @@ def _searchCodes(page, pbar, jobList, filename):
                         if not setData:
                             nametag = f"[{speaker}]\n" + nametag
                         # Don't skip to next line - continue with current line
-                    elif codeList[i + 1]["code"] in [401, 405, -1]:
+                    elif speakerMatch.own_line:
                         # Original behavior: speaker on its own line, dialogue on next line
                         # Single
                         if len(speakerList) == 1:
@@ -6850,73 +6760,6 @@ def searchSystem(data, pbar):
                 pbar.refresh()
 
     return totalTokens
-
-# Regex that matches markup codes like \c[1], \n[2], \F[tt07], \FF[\w[3]], etc.
-_MARKUP_STRIP_RE = re.compile(r"[\\]+[A-Za-z]+\[(?:[^\[\]]|\[[^\]]*\])*\]")
-# Actor / game-variable nameplate codes that ARE the speaker identity.
-_SPEAKER_VAR_CODE_RE = re.compile(r"[\\]+[nNvV]\[\d+\]")
-
-
-def _speaker_display_name(name: str) -> str:
-    """Return the visible speaker nameplate with RPG Maker control codes removed.
-
-    FIRSTLINESPEAKERS (and some colour/plugin wrappers) leave trailing or
-    leading codes on the 401 name line, e.g. ``Tsubaki\\F[tt07]`` or
-    ``メア\\F[tme01]\\FF[tl05]\\AA[F]\\FH[ON]``.  Glossary lookup and the
-    ``[Speaker]:`` transport prefix need only the name; the written-back 401
-    parameter keeps the codes via ``_replace_speaker_in_param``.
-
-    Code-only nameplates such as ``\\v[007]\\AA[N]`` keep the variable/actor
-    code (``\\v[007]``) and drop presentation plugins (``\\AA``, ``\\FH``, …).
-    """
-    raw = str(name or "")
-    if not raw:
-        return raw
-    clean = _MARKUP_STRIP_RE.sub("", raw).strip()
-    if clean:
-        return clean
-    vars_only = "".join(_SPEAKER_VAR_CODE_RE.findall(raw))
-    return vars_only if vars_only else raw.strip()
-
-
-def _is_plausible_speaker(name: str) -> bool:
-    """Return True only if *name* looks like a character name rather than dialogue or junk.
-
-    Called during SPEAKER_PARSE_MODE to filter false positives before they
-    enter SPEAKER_COLLECTED.  Heuristics (applied after stripping markup):
-      • 1–20 characters long
-      • Contains at least one Japanese letter (util/source_text)
-      • No sentence-ending / mid-sentence punctuation (。！？…、)
-      • No dialogue-opening quotes (「"（)
-      • No newlines, underscores, slashes, or dots
-      • No brace/plugin markup or decorative symbols
-      • No clause-like particle/verb fragments scraped from prose
-    """
-    # Use the stripped form so trailing plugin codes (\F[tt07], etc.) do not
-    # poison length / character checks. Pure control-code nameplates stay empty.
-    clean = _MARKUP_STRIP_RE.sub("", str(name or "")).strip()
-    if not clean:
-        return False
-    if len(clean) > 20:
-        return False
-    # Must have at least one Japanese letter
-    if not holds_source(clean):
-        return False
-    # Reject sentence-like strings
-    if re.search(r"[。！？…、]", clean):
-        return False
-    # Reject dialogue openers / structural characters
-    if re.search(r"[「」""\n\r_/\\.]", clean):
-        return False
-    # Reject plugin placeholders and decorative junk ({{name}}, hearts, etc.)
-    if re.search(r"[{}<>=★☆※♥♡\\]", clean):
-        return False
-    # Reject clause fragments that FIRSTLINESPEAKERS sometimes mis-detects.
-    # Do not ban bare は/が/へ/を - those appear inside real names (はるか, かがやき).
-    if re.search(r"しながら|すると|になった|した時|する時", clean):
-        return False
-    return True
-
 
 def _normalize_speaker_nameplate(translated: str) -> str:
     """Normalize a model TL into a short dialogue nameplate."""

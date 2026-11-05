@@ -589,9 +589,13 @@ class _Inputs:
 
 
 class _Guided:
-    def __init__(self, game, folder):
-        self.native = {"source": str(game), "phase1_comments": False}
-        self.working = _Inputs(folder, game, ORIGINAL)
+    def __init__(self, game, folder, original=ORIGINAL, options=None):
+        self.native = {
+            "source": str(game),
+            "phase1_comments": False,
+            "engine_options": options or {},
+        }
+        self.working = _Inputs(folder, game, original)
         self.backend = type(
             "Backend", (), {"phase_files": lambda _self, _native, phase: []}
         )()
@@ -618,10 +622,10 @@ class GuidedLineTests(unittest.TestCase):
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
 
-    def game(self, name, document):
+    def game(self, name, document, original=ORIGINAL, options=None):
         game = self.root / name
         write_json(game / "data/Map001.json", document)
-        return _Guided(game, self.root / (name + "-work"))
+        return _Guided(game, self.root / (name + "-work"), original, options)
 
     def test_a_translated_and_an_untranslated_copy_name_their_lines_alike(self):
         from dazedtl.translation.guided_lines import GuidedLines
@@ -680,3 +684,83 @@ class GuidedLineTests(unittest.TestCase):
                 f"{head}/9": '"Goodbye."',
             },
         )
+
+    def test_a_first_line_speaker_is_its_own_line_and_stays_one_on_apply(self):
+        # The export read a first-line name and its speech as one line with
+        # no speaker, so an import saved them as one text and Apply wrapped
+        # the name into the speech.
+        from dazedtl.translation.guided_lines import GuidedLines
+        from util.rpgmaker_rewrap import Layout, fit_document
+
+        name, speech = (
+            "新米警察官",
+            "「すいません‼ちょっと目を離したすきに\n　入り込みまして…‼",
+        )
+        english = "\"I'm sorry! They slipped in when I took my eyes off for a moment…!"
+        original = _map(
+            [
+                _command(101, "", 0, 0, 2, ""),
+                _command(401, name),
+                *(_command(401, row) for row in speech.split("\n")),
+                _command(0),
+            ]
+        )
+        # As a run writes it: the name and the speech apart, each with its
+        # source, the speech joined into one row.
+        translated = _map(
+            [
+                _command(101, "", 0, 0, 2, ""),
+                _command(401, "Rookie Police Officer", _original=name),
+                _command(401, english, _original=speech),
+                _command(0),
+            ]
+        )
+        # As an import wrote it before: one text over the rows.
+        joined = _map(
+            [
+                _command(101, "", 0, 0, 2, ""),
+                _command(401, "Rookie Police Officer", _original=f"{name}\n{speech}"),
+                _command(401, english),
+                _command(401, ""),
+                _command(0),
+            ]
+        )
+        on = {"FIRSTLINESPEAKERS": True}
+        head = "Map001.json#/events/1/pages/0/list/0"
+
+        def rows(guided):
+            return {
+                row["id"]: (
+                    row["kind"],
+                    row["speaker"],
+                    row["source"],
+                    row["translation"],
+                )
+                for row in GuidedLines(guided, "game", PAIR, True).lines()
+            }
+
+        expected = {
+            head: ("ui", None, name, "Rookie Police Officer"),
+            f"{head}~1": ("dialogue", name, speech, english),
+        }
+        self.assertEqual(rows(self.game("run", translated, original, on)), expected)
+        self.assertEqual(rows(self.game("joined", joined, original, on)), expected)
+        untranslated = {key: (*row[:3], None) for key, row in expected.items()}
+        theirs = self.game("theirs", original, original, on)
+        self.assertEqual(rows(theirs), untranslated)
+        self.assertEqual(
+            rows(self.game("off", original, original)),
+            {head: ("unknown", None, f"{name}\n{speech}", None)},
+        )
+
+        lines = GuidedLines(theirs, "theirs", PAIR, True)
+        lines.save({key: row[3] for key, row in expected.items()}, "file.json")
+        working = read_json(self.root / "theirs-work/translated/Map001.json")
+        commands = working["events"][1]["pages"][0]["list"]
+        self.assertEqual(
+            [command.get("_original") for command in commands[1:4]],
+            [name, speech, None],
+        )
+        self.assertEqual(rows(theirs), expected)
+        fit_document(working, "Map001.json", Layout(55, 45, 60, 60, 4, "English"))
+        self.assertEqual(commands[1]["parameters"], ["Rookie Police Officer"])

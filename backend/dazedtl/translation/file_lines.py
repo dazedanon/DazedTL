@@ -69,6 +69,11 @@ class Line(NamedTuple):
     # The path of the command an event text block starts at, its window
     # command for a message; () for any other line.
     start: tuple = ()
+    # The index in *units* of a nameplate on a row of its own, which the
+    # engine sends apart from the speech after it, and the speaker it names
+    # (`nameplated`).
+    nameplate: int | None = None
+    speaker: str = ""
 
     def sent(self) -> tuple[tuple[str, str | None], ...]:
         """The text the engine sends as one, each with its source."""
@@ -95,6 +100,70 @@ class Line(NamedTuple):
             for text, source in self.sent()
         )
         return "\n".join(value for value in shown if value.strip())
+
+
+def nameplated(line: Line, *, first_line: bool, inline: bool) -> Line:
+    """*line* with the nameplate on its first row, if it is a message or
+    scrolling text whose first row is one, sent apart from the speech after
+    it, as the engine sends them: *first_line* and *inline* are the
+    project's FIRSTLINESPEAKERS and INLINE401SPEAKERS, read with the run
+    policy's newest reading (util/speakers `message_speakers`). Translation
+    writes the name and the speech apart, but a block it never touched, or
+    one written over as one text, holds both in one text."""
+    from util import rpgmaker_blocks as blocks
+    from util.speakers import display_name, message_speakers, standalone_speaker
+
+    if line.kind not in (blocks.MESSAGE, blocks.SCROLL):
+        return line
+    units, places = list(line.units), list(line.unit_paths)
+    at = next(
+        (
+            index
+            for index, paths in enumerate(places)
+            if paths[0][-2:] != ("parameters", 4)
+        ),
+        None,
+    )
+    if at is None:
+        return line
+    texts = dict(zip(line.paths, line.texts))
+    source = units[at][1]
+    rows = [texts[path] for path in places[at]]
+    if "\n" in rows[0] or (source is not None and ("\n" in source) != (len(rows) > 1)):
+        # Its rows don't part where its source's lines do: one text.
+        return line
+    # The text's rows from its first on as the engine reads them: each
+    # translated text's source, else the rows themselves.
+    read = [
+        row
+        for (_text, kept), paths in zip(units[at:], places[at:])
+        for row in (
+            kept.split("\n") if kept is not None else [texts[path] for path in paths]
+        )
+    ]
+    found = message_speakers(
+        read[0],
+        read[1] if len(read) > 1 else None,
+        first_line=first_line,
+        inline=inline,
+        code_nameplates=True,
+        standalone=standalone_speaker,
+    )
+    if found is None or not found.own_line:
+        return line
+    if len(rows) > 1:
+        speech = "\n".join(row for row in rows[1:] if row.strip())
+        units[at : at + 1] = [
+            (rows[0], None if source is None else read[0]),
+            (speech, None if source is None else source.split("\n", 1)[1]),
+        ]
+        places[at : at + 1] = [places[at][:1], places[at][1:]]
+    return line._replace(
+        units=tuple(units),
+        unit_paths=tuple(places),
+        nameplate=at,
+        speaker=display_name(found.names[0]),
+    )
 
 
 def _resolve(document: Any, path: tuple) -> Any:

@@ -149,7 +149,7 @@ A translation file carries a project's lines out of DazedTL and back in every me
 - Manual's **Save example…** writes `example`, organize's example units as a translation file.
 
 IDs are the units' own in Assistant-led and Manual.
-Guided names a line `<file>#<JSON pointer>` into the original game file: a value's own, and for a message, scrolling text or comment its first command's, with `/parameters/4` after it for a name box and `~<n>` for a later part, so translated and untranslated copies of one game version share IDs ([guided_lines](../backend/dazedtl/translation/guided_lines.py)).
+Guided names a line `<file>#<JSON pointer>` into the original game file: a value's own, or a message's, scrolling text's or comment's first command's, plus `/parameters/4` for a name box or `~<n>` for a later part, such as a first-row nameplate's speech, so translated and untranslated copies of one game version share IDs ([guided_lines](../backend/dazedtl/translation/guided_lines.py)).
 
 An import writes a line only where the project's source at its ID is the file's exactly and its translation passes the checks `accept` applies; a file naming another language pair is refused, and the import must read the bytes its preview read.
 
