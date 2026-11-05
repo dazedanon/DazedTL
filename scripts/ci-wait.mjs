@@ -116,6 +116,51 @@ export async function failedJobs(read, repository, run) {
 }
 
 /**
+ * A CI job's name in plain words: its runner image becomes the system it
+ * runs on, so "Live test (windows-2025)" reads "Live test on Windows".
+ * @param {string} name
+ */
+export const plainJob = (name) =>
+  name.replace(
+    /\s*\((windows|ubuntu|macos)-[^)]*\)$/i,
+    (_, system) =>
+      ` on ${{ windows: "Windows", ubuntu: "Linux", macos: "macOS" }[system.toLowerCase()]}`,
+  );
+
+/** A list of GitHub's runs as the CI workflow's alone, newest first. */
+export const ciRuns = (/** @type {any} */ found) =>
+  (found?.workflow_runs || [])
+    .filter((/** @type {any} */ item) => item.path === workflow)
+    .sort(
+      (/** @type {any} */ a, /** @type {any} */ b) =>
+        Date.parse(b.created_at) - Date.parse(a.created_at),
+    );
+
+/**
+ * Waits for a CI run with `wait`, and when its first attempt failed, reruns
+ * its failed jobs once (firstFailure) and waits for that attempt. `wait`
+ * takes the run and attempt to follow, null at first. Resolves the last
+ * attempt's result, as waitForCI gives it.
+ * @param {{ wait: (rerun: { id: number, attempt: number } | null) => Promise<any>, write: (route: string) => Promise<unknown>, repository: string, log?: (line: string) => void, start?: { id: number, attempt: number } | null }} options
+ */
+export async function withOneRerun({
+  wait,
+  write,
+  repository,
+  log = () => {},
+  start = null,
+}) {
+  const result = await wait(start);
+  if (!firstFailure(result.run)) return result;
+  const { id, head_sha: sha, run_attempt: attempt = 1 } = result.run;
+  log(
+    `CI failed for ${sha.slice(0, 7)} (${result.failed.map(plainJob).join(", ")}); rerunning the failed jobs once.`,
+  );
+  await write(`repos/${repository}/actions/runs/${id}/rerun-failed-jobs`);
+  return wait({ id, attempt: attempt + 1 });
+}
+
+/**
  * Waits for the CI run of `sha`, following a newer run on the same branch
  * when a later push supersedes it. Resolves `{ ok, run, failed }`. After a
  * rerun, `rerun` names the run and the attempt to wait for: that run is read
@@ -151,13 +196,7 @@ export async function waitForCI({
           : `repos/${repository}/actions/runs?head_sha=${sha}&per_page=50`,
       );
       if (run) run = found || run;
-      else
-        run =
-          (found?.workflow_runs || [])
-            .filter((item) => item.path === workflow)
-            .sort(
-              (a, b) => Date.parse(b.created_at) - Date.parse(a.created_at),
-            )[0] || null;
+      else run = ciRuns(found)[0] || null;
     }
     if (done(run)) {
       if (run.conclusion === "cancelled") {
@@ -165,15 +204,9 @@ export async function waitForCI({
         const found = await read(
           `repos/${repository}/actions/runs?branch=${encodeURIComponent(where)}&per_page=20`,
         );
-        const newer = (found?.workflow_runs || [])
-          .filter(
-            (item) =>
-              item.path === workflow &&
-              Date.parse(item.created_at) > Date.parse(run.created_at),
-          )
-          .sort(
-            (a, b) => Date.parse(b.created_at) - Date.parse(a.created_at),
-          )[0];
+        const newer = ciRuns(found).find(
+          (item) => Date.parse(item.created_at) > Date.parse(run.created_at),
+        );
         if (newer) {
           log(
             `Run ${run.id} was superseded; following ${newer.id} (${newer.head_sha.slice(0, 7)}).`,

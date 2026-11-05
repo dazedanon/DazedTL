@@ -8,10 +8,12 @@ import {
   gitIn,
   LockBusy,
   lockRef,
+  platformSensitive,
   releaseLock,
 } from "../scripts/land-lock.mjs";
 import { spawnSync } from "node:child_process";
 import {
+  branchCI,
   finishHandOff,
   formatBranch,
   handOff,
@@ -541,6 +543,7 @@ test("a sandboxed worker hands off a checked branch without writing the main che
   const main = path.join(root, "main");
   const clone = path.join(root, "clone");
   const mirror = path.join(root, "mirror.git");
+  const github = path.join(root, "github.git");
   const dir = path.join(root, "handoff");
   // Undoes the worker's read-only view of the main checkout.
   const writable = () => spawnSync("chmod", ["-R", "u+w", main]);
@@ -565,10 +568,14 @@ test("a sandboxed worker hands off a checked branch without writing the main che
   atMain(["config", "user.name", "Test"]);
   atMain(["config", "user.email", "test@example.com"]);
   gitIn(root)(["init", "-q", "--bare", mirror]);
+  gitIn(root)(["init", "-q", "--bare", github]);
   commit(
     main,
     "release/mirrors.json",
-    JSON.stringify([{ name: "Mirror", type: "forgejo", url: mirror }]),
+    JSON.stringify([
+      { name: "Mirror", type: "forgejo", url: mirror },
+      { name: "GitHub", type: "github", url: `file://${github}` },
+    ]),
   );
   gitIn(root)(["clone", "-q", "--no-hardlinks", main, clone]);
   atClone(["config", "user.name", "Test"]);
@@ -585,6 +592,18 @@ test("a sandboxed worker hands off a checked branch without writing the main che
         findings: [],
       }),
     );
+  const pushed = () =>
+    gitIn(github)([
+      "rev-parse",
+      "-q",
+      "--verify",
+      "refs/heads/land/work",
+    ]).stdout.trim();
+  const stand = standInGitHub(
+    new URL(`file://${github}`).pathname.replace(/^\/|\.git$/g, ""),
+    pushed,
+    "success",
+  );
   // Git runs for real; the format, test, build and contract scripts pass.
   let appOpen = false;
   const logged: string[] = [];
@@ -598,7 +617,8 @@ test("a sandboxed worker hands off a checked branch without writing the main che
       appOpen
         ? `${path.join(main, "app", "node_modules", "electron")}/dist/electron .`
         : "",
-    read: null,
+    read: stand.read,
+    write: stand.write,
     wait: async () => {},
     log: (line: string) => logged.push(line),
     notify: () => {},
@@ -620,6 +640,7 @@ test("a sandboxed worker hands off a checked branch without writing the main che
 
   // dev moved after the worker branched, so the hand-off merges it in.
   const work = commit(clone, "work.txt", "work\n");
+  commit(clone, "scripts/setup.mjs", "setup\n");
   const base = commit(main, "dev.txt", "dev\n");
   const before = refs();
   spawnSync("chmod", ["-R", "a-w", main]);
@@ -654,6 +675,11 @@ test("a sandboxed worker hands off a checked branch without writing the main che
   assert.match(logged.join("\n"), /not the head/);
   fs.writeFileSync(handoffFile, JSON.stringify(handoff));
   review(head);
+  // The hand-off changes a platform-sensitive path, so it lands once CI on
+  // GitHub passes: --finish starts it and is run again later.
+  assert.equal(await finish(), 5);
+  assert.equal(pushed(), head);
+  assert.deepEqual(stand.writes, ["workflows/ci.yml/dispatches"]);
   // A main checkout with changes of its own takes it later.
   fs.writeFileSync(path.join(main, "dev.txt"), "local\n");
   assert.equal(await finish(), 5);
@@ -664,6 +690,7 @@ test("a sandboxed worker hands off a checked branch without writing the main che
   assert.equal(await finish(), 1);
   fs.rmSync(path.join(main, "work.txt"));
   assert.equal(refs(), before);
+  assert.equal(pushed(), "");
 
   logged.length = 0;
   assert.equal(await finish(), 0, logged.join("\n"));
@@ -708,4 +735,197 @@ test("a sandboxed worker hands off a checked branch without writing the main che
     /fix: unexplained: no Introduced-by[^]*Then hand off again\.$/,
   );
   assert.equal(fs.existsSync(handoffFile), false);
+});
+
+test("the platform rule marks setup, platform code, assistants' tools, scenarios and CI, and no other change", () => {
+  const changed = [
+    "START.bat",
+    "scripts/setup.mjs",
+    "app/electron/main.cjs",
+    "backend/dazedtl/system.py",
+    "backend/dazedtl/engine/data/skills/game-translation/tools/Game Archives/KiriKiri XP3/pack_xp3.py",
+    "scripts/testkit/scenarios.mjs",
+    ".github/workflows/ci.yml",
+  ];
+  const elsewhere = [
+    "scripts/land.mjs",
+    "app/src/features/guided/progress.ts",
+    "backend/dazedtl/engine/modules/rpgmakermvmz.py",
+    "backend/dazedtl/engine/data/skills/game-translation/SKILL.md",
+    "docs/development.md",
+    "tests/test_images.py",
+  ];
+  assert.deepEqual(platformSensitive([...elsewhere, ...changed]), changed);
+});
+
+/**
+ * A stand-in GitHub whose dispatched CI runs end as `first`, failing unless
+ * said, and pass on a rerun.
+ */
+function standInGitHub(repo: string, pushed: () => string, first = "failure") {
+  const runs: any[] = [];
+  const writes: string[] = [];
+  const add = (sha: string, conclusion: string, attempt: number) =>
+    runs.push({
+      id: runs.length + 1,
+      head_sha: sha,
+      head_branch: "land/work",
+      path: ".github/workflows/ci.yml",
+      status: "completed",
+      conclusion,
+      run_attempt: attempt,
+      html_url: `https://github.test/runs/${runs.length + 1}`,
+      created_at: new Date(1000 + runs.length).toISOString(),
+    });
+  const read = async (route: string) => {
+    const sha = /head_sha=(\w+)/.exec(route)?.[1];
+    if (sha)
+      return { workflow_runs: runs.filter((run) => run.head_sha === sha) };
+    if (route.endsWith("/jobs?per_page=100"))
+      return {
+        jobs: [
+          { name: "Checks (ubuntu-24.04)", conclusion: "success" },
+          {
+            name: "Scenarios images-kirikiri (windows-2025)",
+            conclusion: "failure",
+          },
+        ],
+      };
+    const id = Number(/runs\/(\d+)$/.exec(route)?.[1]);
+    return runs.find((run) => run.id === id) ?? null;
+  };
+  const write = async (route: string, request?: { body?: any }) => {
+    writes.push(route.replace(`repos/${repo}/actions/`, ""));
+    if (route.endsWith("/dispatches")) add(pushed(), first, 1);
+    else Object.assign(runs.at(-1), { conclusion: "success", run_attempt: 2 });
+    assert.equal(request?.body?.ref ?? "land/work", "land/work");
+    return null;
+  };
+  return { runs, writes, add, read, write };
+}
+
+test("a platform-sensitive branch lands once CI on GitHub passes, after one rerun of a first failure, and never on red", async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dazedtl-land-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const main = path.join(dir, "main");
+  const work = path.join(dir, "work");
+  const mirror = path.join(dir, "github.git");
+  fs.mkdirSync(main);
+  const atMain = gitIn(main);
+  const git = gitIn(work);
+  gitIn(dir)(["init", "-q", "--bare", mirror]);
+  atMain(["init", "-q", "-b", "dev"]);
+  atMain(["config", "user.name", "Test"]);
+  atMain(["config", "user.email", "test@example.com"]);
+  const commit = (top: string, file: string, text: string) => {
+    fs.mkdirSync(path.dirname(path.join(top, file)), { recursive: true });
+    fs.writeFileSync(path.join(top, file), text);
+    gitIn(top)(["add", "-A"]);
+    gitIn(top)(["commit", "-qm", `change ${file}`]);
+    return gitIn(top)(["rev-parse", "HEAD"]).stdout.trim();
+  };
+  const url = `file://${mirror}`;
+  commit(
+    main,
+    "release/mirrors.json",
+    JSON.stringify([{ name: "GitHub", type: "github", url }]),
+  );
+  atMain(["worktree", "add", "-q", "-b", "work", work]);
+  const pushed = () =>
+    gitIn(mirror)([
+      "rev-parse",
+      "-q",
+      "--verify",
+      "refs/heads/land/work",
+    ]).stdout.trim();
+  const github = standInGitHub(
+    new URL(url).pathname.replace(/^\/|\.git$/g, ""),
+    pushed,
+  );
+  const logged: string[] = [];
+  const realGit = (cwd: string, args: string[]) => {
+    const ran = spawnSync("git", args, { cwd, encoding: "utf8" });
+    return { status: ran.status ?? 1, output: ran.stdout + ran.stderr };
+  };
+  const deps = {
+    // Git runs for real; the format, test and build scripts pass.
+    run: async (cwd: string, command: string, args: string[]) =>
+      command === "git" ? realGit(cwd, args) : { status: 0, output: "" },
+    processes: () => "",
+    read: github.read,
+    write: github.write,
+    wait: async () => {},
+    log: (line: string) => logged.push(line),
+    notify: () => {},
+    onStop: () => {},
+  };
+  const reviewFile = path.join(dir, "review.json");
+  const landReviewed = (head: string) => {
+    fs.writeFileSync(
+      reviewFile,
+      JSON.stringify({
+        level: "high",
+        reviewer: "independent",
+        head,
+        findings: [],
+      }),
+    );
+    logged.length = 0;
+    return land(work, deps, reviewFile);
+  };
+  const dev = () => atMain(["rev-parse", "dev"]).stdout.trim();
+  // land.mjs refuses to run on Windows, before it reads anything.
+  if (onWindows(() => {})) {
+    assert.equal(await landReviewed(dev()), 1);
+    assert.deepEqual(github.writes, []);
+    return;
+  }
+
+  const first = commit(work, "scripts/setup.mjs", "one\n");
+  assert.equal(await landReviewed(first), 0, logged.join("\n"));
+  assert.equal(dev(), first);
+  assert.deepEqual(github.writes, [
+    "workflows/ci.yml/dispatches",
+    "runs/1/rerun-failed-jobs",
+  ]);
+  assert.equal(github.runs[0].head_sha, first);
+  assert.equal(pushed(), "");
+
+  // A failure after the rerun stops the landing and names the check.
+  const red = commit(work, "scripts/setup.mjs", "two\n");
+  github.add(red, "failure", 2);
+  assert.equal(await landReviewed(red), 1);
+  assert.ok(
+    logged.includes(
+      `CI failed after one rerun for ${red.slice(0, 7)}, so nothing landed. Failed: Scenarios images-kirikiri on Windows.`,
+    ),
+    logged.join("\n"),
+  );
+  assert.equal(dev(), first);
+  assert.equal(github.writes.length, 2);
+
+  // A merge of dev after CI passed needs no second run; --finish, which never
+  // waits, starts the rerun of a first failure and comes back later.
+  const check = (follow: boolean) =>
+    branchCI(deps, {
+      git,
+      cwd: work,
+      main,
+      branch: "work",
+      tip: git(["rev-parse", "HEAD"]).stdout.trim(),
+      sensitive: ["scripts/setup.mjs"],
+      follow,
+      again: "land work again",
+    });
+  github.add(commit(work, "scripts/setup.mjs", "three\n"), "success", 1);
+  commit(main, "other.txt", "other\n");
+  git(["merge", "-q", "--no-edit", "dev"]);
+  assert.equal(await check(true), null);
+  assert.equal(github.writes.length, 2);
+  github.add(commit(work, "scripts/setup.mjs", "four\n"), "failure", 1);
+  assert.equal((await check(false))?.code, 5);
+  assert.equal(
+    github.writes.at(-1),
+    `runs/${github.runs.length}/rerun-failed-jobs`,
+  );
 });

@@ -6,8 +6,9 @@
 # docs/development.md.
 #
 # It runs for what lands on dev and main, for release tags, pull requests and
-# once a week. Feature branches are tested before landing by scripts/land.mjs;
-# run CI on one by hand with: gh workflow run CI --ref <branch>
+# once a week, and for a platform-sensitive branch that scripts/land.mjs
+# dispatches before landing it; run CI on another branch by hand with:
+# gh workflow run CI --ref <branch>
 name: CI
 
 on:

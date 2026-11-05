@@ -62,10 +62,9 @@ On Linux it needs a display: CI runs it under `xvfb-run`, and on a desktop `node
 
 [CI](../.github/workflows/ci.yml) runs the build checks, the behavior tests, the [previous-release QA check](#previous-release-qa-check), the live test, the upgrade test and every [test scenario](#test-scenarios) on Windows and Linux, for every push to `dev` and `main`, release tag and pull request, weekly and by hand.
 
-- **Wait for a commit's CI** with `node scripts/ci-wait.mjs <sha> [--branch <b>]`, never `gh run watch` or a `gh run list` loop: parallel sessions share GitHub's hourly API limit, which those use up.
+- **Wait for a commit's CI** with `node scripts/ci-wait.mjs <sha> [--branch <b>]`, never `gh run watch` or a `gh run list` loop: parallel sessions share GitHub's hourly API limit.
 - **Run what CI runs locally** with `node scripts/release-check.mjs`, in about three minutes on Linux, outside a sandbox.
   A check that fails runs once more, and one that passes then is reported as a flake.
-- **Run CI on a branch** before landing with `gh workflow run CI --ref <branch>`.
 
 Reproduce a Windows problem first on a disposable Windows machine with the [Windows run](../.github/workflows/windows-run.yml) workflow, from a ref pushed to GitHub:
 
@@ -179,13 +178,14 @@ One landing runs at a time, under a lock that a release also holds.
   A branch that repeats a notes line `dev` already released stops on `release/notes.md`: keep only what's new.
 - Any other conflict stops it with exit code 2 and the merge in progress: resolve the listed files, commit and land again.
 - `Notice:` lines, also desktop notifications, say when your own DazedTL or another landing holds it up.
-- CI runs on `dev` after the push; a run still red is fixed forward or reverted by the session cutting the next release.
+- A branch changing a path [platformPaths](../scripts/land-lock.mjs) marks lands only once CI on GitHub passes.
+  Other branches don't wait for CI, which runs on `dev` after the push; a run still red is fixed forward or reverted by the session cutting the next release.
 
-A Discord intake worker lands in two steps, since it works in its own clone and may never write the main checkout.
+A Discord intake worker, which may never write the main checkout, lands in two steps.
 It runs `node scripts/land.mjs --hand-off <dir>` with the directory its prompt gives: the same format, merge and checks against `origin`'s `dev`, leaving the branch as `handoff.bundle` and `handoff.json` there, with no review, lock, app wait or push.
 The intake reviews that bundle by the land skill's Review step, with limits from [land-lock](../scripts/land-lock.mjs), then runs the main checkout's `node scripts/land.mjs --finish <dir> --review <file.json>`.
 Under the lock, that checks the bundle with Git alone and runs nothing from it, then fast-forwards `dev`, records the review and pushes as a landing does.
-It never waits without a limit: it exits 3 when `dev` moved after the checks, so the worker merges `dev` and hands off again, 4 at once while your DazedTL is open, and 5 when the main checkout can't take it now, such as with uncommitted changes or the lock held over 10 minutes.
+It never waits without a limit: it exits 3 when `dev` moved after the checks, so the worker merges `dev` and hands off again, 4 at once while your DazedTL is open, and 5 when the main checkout can't take it now, such as with uncommitted changes, the lock held over 10 minutes or CI still running.
 
 ### Releasing
 

@@ -19,11 +19,11 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { execFileSync, spawnSync } from "node:child_process";
 import {
-  firstFailure,
   githubReader,
   githubWriter,
   ghToken,
   waitForCI,
+  withOneRerun,
 } from "./ci-wait.mjs";
 import { root } from "./dependencies.mjs";
 import { devMoved, gitIn, withLock } from "./land-lock.mjs";
@@ -203,21 +203,13 @@ export async function requireCI(commit, push) {
       throw new Error(`Push dev to GitHub so CI can test ${short} first.`);
     step("git", ["push", remote, "dev"]);
   }
-  const wait = (/** @type {{ id: number, attempt: number } | null} */ rerun) =>
-    waitForCI({ sha: commit, repository, read, rerun, log: console.log });
-  let result = await wait(null);
-  if (firstFailure(result.run)) {
-    console.log(
-      `CI failed for ${short} (${result.failed.join(", ")}); rerunning the failed jobs once.`,
-    );
-    await githubWriter({ token })(
-      `repos/${repository}/actions/runs/${result.run.id}/rerun-failed-jobs`,
-    );
-    result = await wait({
-      id: result.run.id,
-      attempt: (result.run.run_attempt ?? 1) + 1,
-    });
-  }
+  const result = await withOneRerun({
+    wait: (rerun) =>
+      waitForCI({ sha: commit, repository, read, rerun, log: console.log }),
+    write: githubWriter({ token }),
+    repository,
+    log: console.log,
+  });
   if (result.ok) {
     console.log(`CI passed for ${short}.`);
     return;

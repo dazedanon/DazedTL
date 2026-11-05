@@ -35,7 +35,7 @@
 
 - Run `node scripts/test.mjs` for foundation or shared behavior changes, and `node scripts/build.mjs` for any code change; it runs the formatting, lint and type checks.
   [Checks](docs/development.md#checks) lists what each covers, focused test commands, and the formatter.
-- Run the [live test](docs/development.md#live-test) for changes to setup, launching, updates, file or process handling, or other platform-specific behavior; CI runs it on Windows and Linux.
+- Run the [live test](docs/development.md#live-test) for platform-specific changes; [platformPaths](scripts/land-lock.mjs) marks their paths (add any it lacks), and land.mjs lands them only once CI passes on Windows and Linux.
 - Test every new feature end to end on Linux, as a user would, before reporting it done.
 - Reproduce bugs and test features end to end from a [test scenario](docs/development.md#test-scenarios).
   When none fits, add a scenario, game variant or stand-in mode there instead of building a private kit of games, profiles, providers or drivers.

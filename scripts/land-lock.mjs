@@ -3,9 +3,9 @@
 // names its holder. Git's compare-and-swap ref updates take, take over and
 // release it, so two sessions can never both hold it. A holder renews it
 // while it works; a lock whose process has gone, or that nobody renewed for
-// 20 minutes, may be taken over. It also holds the review-record limits that
-// tools outside land.mjs read, such as the Discord intake: maxReviews and the
-// review lenses.
+// 20 minutes, may be taken over. It also holds the landing rules that tools
+// outside land.mjs read, such as the Discord intake: maxReviews, the review
+// lenses and which changes are platform-sensitive.
 import fs from "node:fs";
 import { spawnSync } from "node:child_process";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -53,6 +53,44 @@ export const reviewLenses = ["places-and-chains"];
  */
 export const knownLenses = (lenses) =>
   reviewLenses.filter((lens) => lenses.includes(lens));
+
+/**
+ * The changed paths that make a landing platform-sensitive, so land.mjs lands
+ * it only once its branch passes CI on Windows and Linux: what installs,
+ * starts and updates DazedTL, the platform layer and the file and process
+ * handling that broke on one system before, game updates, programs the app
+ * and assistants run, and the live test, test scenarios and CI themselves.
+ * Add a path when a change outside these breaks on one system alone.
+ */
+export const platformPaths = [
+  // Setup, launching and updates.
+  /^START\.(bat|command|sh)$/,
+  /^scripts\/((setup|start|update|runtimes|dependencies|files|paths|shortcuts|tar|zip)\.mjs|bootstrap\.ps1|runtimes\.lock|(node|python|mingit)-version)$/,
+  /^(pyproject\.toml|app\/package(-lock)?\.json)$/,
+  /^app\/electron\//,
+  // The platform layer, and file and process handling.
+  /^scripts\/platform_calls\.py$/,
+  /^backend\/dazedtl\/(system|storage)\.py$/,
+  /^backend\/dazedtl\/compatibility\/(checkpoint_\w+|game_write|original_files)\.py$/,
+  /^backend\/dazedtl\/engine\/util\/((paths|subprocess_runner)\.py$|version_update\/)/,
+  /^backend\/dazedtl\/translation\/helper_command\.py$/,
+  // Game updates, and the programs and tools the app and assistants run.
+  /^backend\/dazedtl\/engine\/(gameupdate|scripts)\//,
+  /^backend\/dazedtl\/engine\/data\/skills\/.*\.(py|ps1|bat|cmd|sh|js|mjs|cjs)$/i,
+  /\.(exe|dll)$/i,
+  // The live test, test scenarios and CI.
+  /^scripts\/((e2e|scenario|release-check|qa-upgrade)\.mjs$|testkit\/)/,
+  /^tests\/fixtures\/game-variants\//,
+  /^\.github\//,
+];
+
+/**
+ * The paths of `changed`, relative to the repository's top, that
+ * platformPaths marks; none for a change that lands without branch CI.
+ * @param {string[]} changed
+ */
+export const platformSensitive = (changed) =>
+  changed.filter((file) => platformPaths.some((pattern) => pattern.test(file)));
 
 /** Runs Git in `cwd`. @returns {Git} */
 export function gitIn(/** @type {string} */ cwd) {
