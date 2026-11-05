@@ -153,12 +153,13 @@ export const platformSensitive = (changed) =>
  * each with the paths that hold it. The first four keep the "Foundation
  * behaviors to protect" of the repository's AGENTS.md: drafts and saved work
  * (saved data), paid work and its approval, project and run ownership, and
- * credentials kept from the renderer and drafts; game files are kept by the
- * gateway and checkpoints that platformPaths already marks. Then what breaks
- * on one system alone (platformPaths), what users see (screenPaths), and the
- * checks every landing runs, shared by every session (shared
- * infrastructure). Add a path when a bug in one of these risks got past a
- * landing that changed none of them.
+ * credentials kept from the renderer and drafts, with the game-write gateway,
+ * checkpoints and original files among saved data. Then what users see
+ * (screenPaths) and the checks every landing runs, shared by every session
+ * (shared infrastructure). What breaks on one system alone (platformPaths)
+ * is left to branch CI on Windows and Linux, and engine parsing to its
+ * tests, so neither calls for an evaluation by itself. Add a path when a bug
+ * in one of these risks got past a landing that changed none of them.
  * @type {{ risk: string, paths: RegExp[] }[]}
  */
 export const riskPaths = [
@@ -170,7 +171,7 @@ export const riskPaths = [
       /^backend\/dazedtl\/engine\/util\/(freshness|guidance_documents|len_originals|original_values)\.py$/,
       /^backend\/dazedtl\/engine\/util\/qa\/schema\.py$/,
       /^backend\/dazedtl\/translation\/(backups|checkpoint_records|plan_file|saved_refusals|originals)\.py$/,
-      /^backend\/dazedtl\/compatibility\/(git_blobs|original_record)\.py$/,
+      /^backend\/dazedtl\/compatibility\/(git_blobs|original_record|original_files|game_write|checkpoint\w*)\.py$/,
       /^app\/src\/state\/(DraftSession|documentSave|documentState|useDraft|useDocumentDraft|leaveGuards)\.ts$/,
     ],
   },
@@ -199,7 +200,6 @@ export const riskPaths = [
       /^backend\/dazedtl\/engine\/util\/api_keys\.py$/,
     ],
   },
-  { risk: "platform", paths: platformPaths },
   { risk: "UI", paths: screenPaths },
   {
     risk: "shared infrastructure",

@@ -792,6 +792,7 @@ test("a sandboxed worker hands off a checked branch without writing the main che
   // dev moved after the worker branched, so the hand-off merges it in.
   const work = commit(clone, "work.txt", "work\n");
   commit(clone, "scripts/setup.mjs", "setup\n");
+  commit(clone, "scripts/land.mjs", "land\n");
   const base = commit(main, "dev.txt", "dev\n");
   const before = refs();
   spawnSync("chmod", ["-R", "a-w", main]);
@@ -840,7 +841,7 @@ test("a sandboxed worker hands off a checked branch without writing the main che
   assert.equal(await finish(), 1);
   assert.match(
     logged.join("\n"),
-    /evaluation rule marks this branch \(platform: scripts\/setup\.mjs\)/,
+    /evaluation rule marks this branch \(shared infrastructure: scripts\/land\.mjs\)/,
   );
   assert.deepEqual(stand.writes, []);
   review(head);
@@ -1045,8 +1046,6 @@ test("a branch gets an evaluation for each risk its paths or its author mark, wh
       "    backend/dazedtl/translation/ownership.py",
       "  credentials:",
       "    backend/dazedtl/settings/store.py",
-      "  platform:",
-      "    backend/dazedtl/translation/ownership.py",
       "  UI:",
       "    app/src/ui/Row.tsx",
       "  shared infrastructure:",
