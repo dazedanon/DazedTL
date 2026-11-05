@@ -227,7 +227,7 @@ Look for these indicator files in the game folder:
 | `data/data.rbpack` + `data/bakinengine.dll` | **RPG Developer Bakin** | **`engine-bakin.md`** | `AppDomainManager` hook overlaying the launcher's temp folder |
 | `data.dts` + SRPG Studio `game.exe` | **SRPG Studio** | `engine-srpg-studio.md` | Patched exe + loose `Project/` JSON |
 | `Engine/` + `*.pak`/`*.utoc`/`*.ucas` | **Unreal** | `engine-unreal.md` | retoc/repak/UAssetGUI → patch pak |
-| `*.xp3` | **KiriKiri** | `engine-vn-engines.md` | XP3 unpack/repack |
+| `*.xp3` | **KiriKiri** | `engine-vn-engines.md` | XP3 unpack, patch.xp3 |
 | `Scene.pck` + `Gameexe.dat` + `SiglusEngine.exe` | **Siglus** | `engine-vn-engines.md` | Binary patch Scene.pck + exe + g00 |
 | `*.ypf` / `*.ystb` | **YU-RIS** | `engine-vn-engines.md` | YPF/YSTB extract/repack |
 | `resources/app.asar` or `app/` + `data/scenario/*.ks` | **TyranoScript/Builder** | **`engine-tyranoscript.md`** | Build-dependent loose override or verified ASAR installer |

@@ -10,7 +10,7 @@ import uuid
 from contextlib import closing
 from copy import deepcopy
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from util.guidance_documents import HANDOFF, REQUEST_WORK
 
@@ -2617,7 +2617,7 @@ class ImageService:
             self._profile(project_id),
         )
         rows = [index.get(identity) for identity in identities]
-        errors, allowed = [], []
+        errors, allowed, copies = [], [], {}
         for row in rows:
             if (
                 row.get("sourceIssue")
@@ -2649,18 +2649,37 @@ class ImageService:
                 origin = "Runtime source before image preparation"
                 if hasattr(self.adapter, "original_bytes"):
                     raw, runtime_original, origin = self.adapter.original_bytes(
-                        root, row, self.adapter.key(root, profile)
+                        root,
+                        row,
+                        self.adapter.key(root, profile),
+                        runtime=(raw, runtime_bytes),
                     )
                 else:
                     runtime_original = runtime_bytes
                 original_metadata = png_metadata(raw)
-                frozen = WORK + "/originals/" + row["id"]
+                # Named as its editable copy: a PNG, whatever the game's
+                # file format.
+                frozen = (
+                    WORK
+                    + "/originals/"
+                    + PurePosixPath(row["id"])
+                    .with_name(PurePosixPath(row["editable"]).name)
+                    .as_posix()
+                )
                 frozen_path = project_path(root, frozen, exists=False)
                 if frozen_path.exists():
                     raise ValueError(
                         "Unrecognized preserved image files exist. Inspect them before preparing new originals."
                     )
                 write_bytes(frozen_path, raw)
+                if (
+                    digest(runtime_original) == row["sourceHash"]
+                    and row["sourcePngHash"] != row["sourceHash"]
+                ):
+                    # The editable copy is the frozen original, read from the
+                    # game's file in another format: read once, as a TLG takes
+                    # about a second, and kept on disk, not in memory.
+                    copies[row["id"]] = (row["sourceHash"], frozen_path)
                 # Restore puts back the game's bytes these hash to, which the
                 # game's record of its original files holds.
                 row.update(
@@ -2688,7 +2707,11 @@ class ImageService:
                 stage="Translate",
             ):
                 result = self.adapter.prepare(
-                    root, profile, allowed, self.adapter.key(root, profile)
+                    root,
+                    profile,
+                    allowed,
+                    self.adapter.key(root, profile),
+                    copies=copies,
                 )
         else:
             result = {"completed": 0, "skipped": 0, "errors": []}

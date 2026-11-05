@@ -41,7 +41,8 @@ ignore = ["TRY004"]
 "backend/dazedtl/system.py" = ["TID251"]
 # Runs with the previous release's code too, which may predate the layer.
 "scripts/qa_upgrade.py" = ["TID251"]
-# Stands in for an outside assistant, which has only the project helper.
+# Stands in for an outside assistant, which has only the project helper and the
+# Python command its prompt gives (python_command).
 "scripts/testkit/assistant.py" = ["TID251"]
 # A single call that must stay raw is marked `# noqa: TID251 - <reason>`.
 # scripts/platform_calls.py applies these ignores to the calls this rule cannot

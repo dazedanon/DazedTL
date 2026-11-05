@@ -5,8 +5,9 @@ Grouped because each is a smaller, archive-centric pipeline: **unpack archive �
 ## KiriKiri (`*.xp3`)
 
 - **Indicators:** `.xp3` archives, `data.xp3` + `patch.xp3`, KiriKiri2/KAG3 (`*.ks`, `*.tjs`).
-- **Tool:** `tools/Game Archives/KiriKiri XP3/unpack_xp3.py`.
+- **Tools:** `tools/Game Archives/KiriKiri XP3/unpack_xp3.py`, and `pack_xp3.py` to build an unencrypted patch archive.
 - **Flow:** unpack `.xp3` → `.ks` scenario scripts (KAG tags `[...]`) + `.tjs` config. Translate visible text, keep KAG tags. KiriKiri loads a `patch.xp3` / `patch2.xp3` over the base - ship the translation as a patch archive (no need to repack the original). Font may need a CJK→Latin-capable replacement in `Config.tjs`.
+- **Images:** see [KiriKiri images](image-translation.md#kirikiri-images).
 
 ## Siglus (`Scene.pck` + `Gameexe.dat` + `SiglusEngine.exe`)
 

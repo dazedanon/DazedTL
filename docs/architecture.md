@@ -151,15 +151,16 @@ The [plugin service](../backend/dazedtl/plugins/service.py) owns investigation, 
 - Lookup values, code keys, expressions, structure and control tokens stay protected and are never asked about; original text comes from the game's recorded original files.
 - Labels Text QA finds squeezed come to Plugin files, since QA never writes plugin files, and each shortened label is confirmed on screen in the [game window](../backend/dazedtl/engine/util/rpgmaker_window/launcher.cjs).
 
-The [image service](../backend/dazedtl/images/service.py) owns the inventory, selection, discovery, editing contracts, reports and application receipts that Guided and Image Manager share.
+The [image service](../backend/dazedtl/images/service.py) owns the inventory, selection, discovery, editing contracts, reports and apply receipts that Guided and Image Manager share.
 
 - The selection moves through the four steps of [imageFlow](../app/src/features/images/imageFlow.ts), and the service alone decides whether the images are investigated.
-- Lettered sound effects are flavor, often hundreds per game, so an image with nothing else stays out of the list; detector misses alone never certify an image has no text.
+- [image_formats](../backend/dazedtl/engine/util/image_formats.py) alone converts BMP, JPEG and TLG to and from PNG.
+- Lettered sound effects are flavor, so an image with nothing else stays out of the list; detector misses alone never certify an image has no text.
 - Every image an assistant changes needs a [recipe](../backend/dazedtl/images/recipes.py), and reports pass the same [validation](../backend/dazedtl/images/validation.py) as the assistant's validator; only the user accepts an image the assistant can't prove, and the app never runs a recipe's command.
 - A [family](../backend/dazedtl/images/families.py) member is reviewed by the crop that differs from an examined sibling, so look-alike CG frames aren't paid for again.
-- Revision notes are the user's per-image intent, so they save with the selection through `images_update` until a report answers them; each answered note, apply and restore then joins the image's capped revision history on its inventory row.
+- Revision notes are the user's per-image intent, so they save with the selection through `images_update` until a report answers them; each answered note, apply and restore joins the image's capped revision history on its inventory row.
 - Apply freezes the batch in a one-use preview, and Restore originals reads each selected image from the game's [original files](#original-game-files) instead of undoing apply checkpoints, which would bring back an earlier translation after a reapply and images the user didn't select.
-- The [background solver](../backend/dazedtl/images/background.py) and the [image text editor](../backend/dazedtl/images/editor.py) use only offline resources, never a hosted fallback or model download.
+- The [background solver](../backend/dazedtl/images/background.py) and the [image text editor](../backend/dazedtl/images/editor.py) use only offline resources.
 
 Plugin and image progress belongs to the project that saved it: work from a copied game or another profile is reported by [foreign_work](../backend/dazedtl/foreign_work.py) and used only when the user chooses.
 

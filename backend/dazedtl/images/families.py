@@ -251,10 +251,12 @@ def translated(row):
     if row.get("changed"):
         return "edited"
     original = row.get("original") or {}
-    if (
-        original.get("path") not in (None, row.get("runtime"))
-        and original.get("pngHash")
-        and original["pngHash"] != row.get("sourcePngHash")
-    ):
+    if original.get("path") in (None, row.get("runtime")):
+        return ""
+    # A frozen original is a PNG copy, whose bytes depend on what read the
+    # game's file then; the game's own bytes, kept when it was frozen, don't.
+    if row.get("frozen") and row.get("runtimeBackupHash"):
+        return "game" if row["runtimeBackupHash"] != row.get("sourceHash") else ""
+    if original.get("pngHash") and original["pngHash"] != row.get("sourcePngHash"):
         return "game"
     return ""
