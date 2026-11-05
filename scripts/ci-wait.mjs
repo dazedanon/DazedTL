@@ -152,12 +152,36 @@ export async function withOneRerun({
 }) {
   const result = await wait(start);
   if (!firstFailure(result.run)) return result;
-  const { id, head_sha: sha, run_attempt: attempt = 1 } = result.run;
+  return wait(
+    await rerunFailed({
+      run: result.run,
+      failed: result.failed,
+      write,
+      repository,
+      log,
+    }),
+  );
+}
+
+/**
+ * Reruns the failed jobs of a run that failed on its first attempt, as
+ * firstFailure allows once. Resolves the run and attempt to follow next.
+ * @param {{ run: any, failed?: string[], write: (route: string) => Promise<unknown>, repository: string, log?: (line: string) => void }} options
+ */
+export async function rerunFailed({
+  run,
+  failed = [],
+  write,
+  repository,
+  log = () => {},
+}) {
+  const { id, head_sha: sha, run_attempt: attempt = 1 } = run;
+  const jobs = failed.length ? ` (${failed.map(plainJob).join(", ")})` : "";
   log(
-    `CI failed for ${sha.slice(0, 7)} (${result.failed.map(plainJob).join(", ")}); rerunning the failed jobs once.`,
+    `CI failed for ${sha.slice(0, 7)}${jobs}; rerunning the failed jobs once: ${run.html_url}`,
   );
   await write(`repos/${repository}/actions/runs/${id}/rerun-failed-jobs`);
-  return wait({ id, attempt: attempt + 1 });
+  return { id, attempt: attempt + 1 };
 }
 
 /**

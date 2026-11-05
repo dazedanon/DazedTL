@@ -72,11 +72,12 @@ export const platformPaths = [
   /^scripts\/platform_calls\.py$/,
   /^backend\/dazedtl\/(system|storage)\.py$/,
   /^backend\/dazedtl\/compatibility\/(checkpoint_\w+|game_write|original_files)\.py$/,
-  /^backend\/dazedtl\/engine\/util\/((paths|subprocess_runner)\.py$|version_update\/)/,
+  /^backend\/dazedtl\/engine\/util\/((paths|subprocess_runner|linux_desktop|release_package)\.py$|version_update\/)/,
   /^backend\/dazedtl\/translation\/helper_command\.py$/,
   // Game updates, and the programs and tools the app and assistants run.
   /^backend\/dazedtl\/engine\/(gameupdate|scripts)\//,
   /^backend\/dazedtl\/engine\/data\/skills\/.*\.(py|ps1|bat|cmd|sh|js|mjs|cjs)$/i,
+  /^backend\/dazedtl\/engine\/util\/(imagetools\/resources\.py|playtest\/run\.py|wolfdawn\/(__init__\.py|build_tools\.py|bin\/))/,
   /\.(exe|dll)$/i,
   // The live test, test scenarios and CI.
   /^scripts\/((e2e|scenario|release-check|qa-upgrade)\.mjs$|testkit\/)/,

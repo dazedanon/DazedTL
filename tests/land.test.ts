@@ -897,7 +897,7 @@ test("a platform-sensitive branch lands once CI on GitHub passes, after one reru
   assert.equal(await landReviewed(red), 1);
   assert.ok(
     logged.includes(
-      `CI failed after one rerun for ${red.slice(0, 7)}, so nothing landed. Failed: Scenarios images-kirikiri on Windows.`,
+      `CI failed after one rerun for ${red.slice(0, 7)}, so nothing landed. Failed: Scenarios images-kirikiri on Windows. Fix it, then land work again.`,
     ),
     logged.join("\n"),
   );
@@ -928,4 +928,15 @@ test("a platform-sensitive branch lands once CI on GitHub passes, after one reru
     github.writes.at(-1),
     `runs/${github.runs.length}/rerun-failed-jobs`,
   );
+  // A merge of dev while that rerun runs follows it rather than starting
+  // another run, which would cancel it.
+  Object.assign(github.runs.at(-1), {
+    status: "in_progress",
+    conclusion: null,
+  });
+  commit(main, "later.txt", "later\n");
+  git(["merge", "-q", "--no-edit", "dev"]);
+  const writes = github.writes.length;
+  assert.equal((await check(false))?.code, 5);
+  assert.equal(github.writes.length, writes);
 });

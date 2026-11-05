@@ -42,6 +42,7 @@ import {
   githubReader,
   githubWriter,
   plainJob,
+  rerunFailed,
   waitForCI,
   withOneRerun,
   workflow,
@@ -538,8 +539,8 @@ export function ciCommits(git, tip, dev) {
 /**
  * What CI on GitHub says of a branch's commits (ciCommits): "passed" when a
  * run of any of them passed; else, from the newest run of the first,
- * "running" or "failed", and "none" when there is no run to follow, such as
- * a cancelled one.
+ * "running" or "failed"; else "running" while a run of a later one is; and
+ * "none" when there is no run to follow, such as a cancelled one.
  * @param {(route: string) => Promise<any>} read
  * @param {string} repo
  * @param {string[]} commits
@@ -547,6 +548,7 @@ export function ciCommits(git, tip, dev) {
  */
 async function ciStatus(read, repo, commits) {
   let newest = null;
+  let running = null;
   for (const [index, sha] of commits.entries()) {
     const runs = ciRuns(
       await read(`repos/${repo}/actions/runs?head_sha=${sha}&per_page=50`),
@@ -556,10 +558,14 @@ async function ciStatus(read, repo, commits) {
     );
     if (passed) return { state: "passed", run: passed };
     if (index === 0) newest = runs[0] ?? null;
+    running ??= runs.find((run) => run.status !== "completed") ?? null;
   }
   if (newest && newest.status !== "completed")
     return { state: "running", run: newest };
   if (newest && failedRun(newest)) return { state: "failed", run: newest };
+  // A run of an earlier commit, such as from before a merge of dev, stands
+  // if it passes, and a new one on the same branch would cancel it.
+  if (running) return { state: "running", run: running };
   return { state: "none", run: null };
 }
 
@@ -569,13 +575,15 @@ async function ciStatus(read, repo, commits) {
 
 /**
  * Pushes `sha` to GitHub as the landing's CI branch and starts CI on it.
- * Resolves the new run, or the lines saying why it did not start.
+ * Resolves the new run, looked for only when `find` says so, or the lines
+ * saying why it did not start.
  * @param {Deps} deps
  * @param {CIBranch} where
  * @param {string} sha
+ * @param {boolean} find
  * @returns {Promise<{ run: any } | { reason: string[] }>}
  */
-async function startCI(deps, { cwd, options, site, branch }, sha) {
+async function startCI(deps, { cwd, options, site, branch }, sha, find) {
   const read = /** @type {NonNullable<Deps["read"]>} */ (deps.read);
   const write = /** @type {NonNullable<Deps["write"]>} */ (deps.write);
   const now = deps.now ?? Date.now;
@@ -599,11 +607,14 @@ async function startCI(deps, { cwd, options, site, branch }, sha) {
       ],
     };
   const route = `repos/${site.repo}/actions/runs?head_sha=${sha}&per_page=50`;
-  const known = new Set(ciRuns(await read(route)).map((run) => run.id));
+  const known = new Set(
+    find ? ciRuns(await read(route)).map((run) => run.id) : [],
+  );
   await write(
     `repos/${site.repo}/actions/workflows/${path.basename(workflow)}/dispatches`,
     { body: { ref: ciBranch(branch) } },
   );
+  if (!find) return { run: null };
   const since = now();
   for (;;) {
     const run = ciRuns(await read(route)).find((item) => !known.has(item.id));
@@ -699,9 +710,16 @@ export async function branchCI(
       ciCommits(git, tip, "refs/heads/dev"),
     );
     if (status.state === "none") {
-      const started = await startCI(deps, where, tip);
+      const started = await startCI(deps, where, tip, follow);
       if ("reason" in started)
         return outcome(unreached, ...started.reason, retry);
+      // --finish comes back for the run it started.
+      if (!started.run)
+        return outcome(
+          mainBusy,
+          `CI started on Windows and Linux for ${short}; it lands once CI passes.`,
+          retry,
+        );
       status = { state: "running", run: started.run };
     }
     const { run } = status;
@@ -724,18 +742,12 @@ export async function branchCI(
         log,
       });
     else if (status.state === "running" || firstFailure(run)) {
-      if (status.state === "failed") {
-        log(
-          `CI failed for ${short}; rerunning its failed jobs once: ${run.html_url}`,
-        );
-        await write(
-          `repos/${site.repo}/actions/runs/${run.id}/rerun-failed-jobs`,
-        );
-      }
+      if (status.state === "failed")
+        await rerunFailed({ run, write, repository: site.repo, log });
       return outcome(
         mainBusy,
         `CI runs on Windows and Linux for ${short} before it lands: ${run.html_url}`,
-        "Nothing changed; finish again later.",
+        retry,
       );
     } else
       result = {
@@ -766,12 +778,12 @@ export async function branchCI(
   const rerun = (run.run_attempt ?? 1) > 1 ? " after one rerun" : "";
   const ended = failedRun(run) ? "failed" : `ended as ${run.conclusion}`;
   const checks = (result.failed ?? []).map(plainJob);
+  // The plain line comes last, where a caller reading the tail sees it.
   return outcome(
     1,
-    `CI ${ended}${rerun} for ${short}, so nothing landed${checks.length ? `. Failed: ${checks.join("; ")}` : ""}.`,
     run.html_url,
     `Read the log with: gh run view ${run.id} --repo ${site.repo} --log-failed`,
-    `Fix it, then ${again}.`,
+    `CI ${ended}${rerun} for ${short}, so nothing landed${checks.length ? `. Failed: ${checks.join("; ")}` : ""}. Fix it, then ${again}.`,
   );
 }
 
