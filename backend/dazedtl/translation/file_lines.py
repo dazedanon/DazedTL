@@ -236,11 +236,12 @@ def lines(
                 paths.append((*listed, row, "parameters", 0))
                 texts.append(blocks.text(commands[row]))
             names = [""] * len(units)
-            texts_sent = kind in (blocks.MESSAGE, blocks.SCROLL) and reading is not None
-            if texts_sent and reading is not None:
+            # A message's texts as the engine sends them, read by *reading*.
+            sending = reading if kind in (blocks.MESSAGE, blocks.SCROLL) else None
+            if sending is not None:
                 sent = [
                     (each.rows, each.source, each.name)
-                    for each in blocks.sent_texts(commands, block, reading)
+                    for each in blocks.sent_texts(commands, block, sending)
                 ]
             else:
                 sent = [
@@ -254,7 +255,7 @@ def lines(
                 units.append(
                     (
                         blocks.text_source(values)
-                        if texts_sent
+                        if sending is not None
                         else "\n".join(value for value in values if value.strip()),
                         source,
                     )

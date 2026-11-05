@@ -12,9 +12,9 @@ with `/parameters/4` after it for the message's name box and `~<n>` for its
 later parts. A message's or scrolling text's parts are the texts the engine
 sends of the game's own rows, read by the project's speaker settings
 (rpgmaker_blocks `sent_texts`): a row opening with a code such as \\SE[1]
-starts one, and a nameplate on a row of its own is one and names the
-speaker of the speech after it. A command the original doesn't hold at a place, such as one a
-game update added, keeps its pointer into the copy.
+starts one, and a nameplate on a row of its own is one and names the speaker
+of the speech after it. A command the original doesn't hold at a place, such
+as one a game update added, keeps its pointer into the copy.
 
 Importing writes into each file's working copy, as a run's output does
 (guided_inputs), and records each changed value's source as Guided does,
@@ -266,6 +266,10 @@ class GuidedLines:
         from util import rpgmaker_blocks as blocks
 
         units = self._units()
+        kept = defaultdict(list)
+        for unit in units.values():
+            if unit["kept"] and unit["block"] is not None:
+                kept[unit["block"]].append(unit)
         by_file = defaultdict(list)
         for identity, text in translations.items():
             unit = units[identity]
@@ -286,9 +290,7 @@ class GuidedLines:
                 # `sent_texts`): Apply fits each on its own.
                 touched = {unit["block"] for unit, _text in rows}
                 marks = [unit for unit, _text in rows] + [
-                    unit
-                    for unit in units.values()
-                    if unit["kept"] and unit["block"] in touched - {None}
+                    unit for block in touched for unit in kept.get(block, ())
                 ]
                 for unit in marks:
                     if unit["start"] is not None:
