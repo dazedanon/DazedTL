@@ -114,6 +114,12 @@ def main():
 
 
 if __name__ == "__main__":
+    # Game paths are Japanese; a cp1252 or cp932 pipe must not abort the run.
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="backslashreplace")
+        except (AttributeError, ValueError):
+            pass
     try:
         main()
     except XP3Error as exc:

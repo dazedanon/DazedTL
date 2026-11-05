@@ -1,7 +1,9 @@
 """Len's KiriKiri XP3 tools, run as an assistant runs them, on small archives."""
 
 import importlib.util
+import os
 import struct
+import subprocess
 import sys
 import unittest
 import zlib
@@ -47,14 +49,29 @@ def run(name, *args):
     return code, errors.getvalue()
 
 
+def run_piped(name, *args):
+    """The tool's exit code and stderr, run in a child whose pipes use
+    cp1252, as Windows gives a Python not in UTF-8 mode."""
+    result = subprocess.run(
+        [sys.executable, "-s", str(TOOLS / f"{name}.py"), *map(str, args)],
+        capture_output=True,
+        env={**os.environ, "PYTHONIOENCODING": "cp1252"},
+        check=False,
+    )
+    return result.returncode, result.stderr.decode("utf-8", "replace")
+
+
 class Xp3ToolTests(unittest.TestCase):
     def test_a_patch_archive_unpacks_to_the_files_packed(self):
         with TemporaryDirectory() as folder:
-            root = Path(folder)
+            # A game folder named in Japanese: on Windows, printing its path
+            # to a cp1252 pipe failed both tools with exit 1, after pack had
+            # written the archive.
+            root = Path(folder) / "ゲーム"
             (root / "decoded/image").mkdir(parents=True)
             (root / "decoded/image/title.bmp").write_bytes(b"BM" + bytes(300))
             (root / "decoded/image/menu.tlg").write_bytes(b"TLG5.0")
-            code, _ = run(
+            code, errors = run_piped(
                 "pack_xp3",
                 root / "patch.xp3",
                 "--root",
@@ -63,8 +80,9 @@ class Xp3ToolTests(unittest.TestCase):
                 "image/title.bmp",
                 "image/menu.tlg",
             )
-            self.assertEqual(code, 0)
-            self.assertEqual(run("unpack_xp3", root / "patch.xp3", root / "out")[0], 0)
+            self.assertEqual(code, 0, errors)
+            code, errors = run_piped("unpack_xp3", root / "patch.xp3", root / "out")
+            self.assertEqual(code, 0, errors)
             # Flat: KiriKiri finds a patch archive's files by bare name.
             self.assertEqual(
                 sorted(path.name for path in (root / "out").iterdir()),
