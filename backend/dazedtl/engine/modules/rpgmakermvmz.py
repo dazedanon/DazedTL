@@ -3605,10 +3605,11 @@ SAME_LINE_SPEAKERS = False
 # older runs keep reading that line as a nameplate and never send it.
 CODE_NAMEPLATES = False
 
-# A text whose first row keeps a translation's source ends before a row an
-# earlier run left untranslated after it (util/rpgmaker_blocks `uncovered`),
-# which is sent as a text of its own. Frozen per run: older runs send that
-# first row's source alone and write its translation over those rows too.
+# A text whose first row keeps a translation's source ends with that
+# translation's rows (util/rpgmaker_blocks `owned`), before a row an earlier
+# run left untranslated after it, which is sent as a text of its own. Frozen
+# per run: older runs send that first row's source alone and write its
+# translation over those rows too.
 LEFT_ROWS = False
 
 

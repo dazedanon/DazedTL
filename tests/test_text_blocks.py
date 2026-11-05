@@ -661,10 +661,11 @@ class TextBlockTests(unittest.TestCase):
             ],
         )
 
-    def test_rows_left_in_japanese_after_a_translation_keep_their_own_source(self):
-        # A run translated a name alone and left its speech in Japanese;
-        # Assistant-led's writer then kept the speech it translated under the
-        # name's source, so no copy held the speech's Japanese.
+    def test_a_translation_owns_no_row_left_in_japanese_after_it(self):
+        # A run translated a name alone and left its speech in Japanese, and
+        # the name's translation owned the speech's rows: Assistant-led's
+        # writer kept the speech it translated under the name's source, and
+        # Text QA would write a correction of the name over the speech.
         from util.len_originals import preserve_originals
 
         def page(*rows):
@@ -678,6 +679,7 @@ class TextBlockTests(unittest.TestCase):
             }
 
         speech = ("「すいません‼", "入り込みまして…‼")
+        self.assertEqual(blocks.part_rows(page(*speech)["list"], 1), (1,))
         written = preserve_originals(
             page(*speech), page('"Sorry!', 'They slipped in!"'), filename="Map001.json"
         )["list"]
@@ -685,6 +687,29 @@ class TextBlockTests(unittest.TestCase):
             [command.get("_original") for command in written[1:4]],
             ["新米警察官", "\n".join(speech), None],
         )
+
+        # A run, the export and Assistant-led's writer read an import's text
+        # alike: its recorded rows, but none left in Japanese.
+        def imported(*rows):
+            return [
+                command(101, ["", 0, 0, 2, ""]),
+                command(401, ["Hello"], _original="こんにちは\n元気？", _rows=2),
+                *(command(401, [row]) for row in rows),
+                command(0, []),
+            ]
+
+        for rows, own in (
+            (["How are you?", "See you."], 2),
+            (["あのね", "See you."], 1),
+        ):
+            listed = imported(*rows)
+            (block,) = blocks.blocks(listed)
+            sent = blocks.sent_texts(listed, block, blocks.Reading())
+            self.assertEqual(
+                (sent[0].rows, blocks.text_end(listed, 1, left=True)),
+                (tuple(range(1, own + 1)), own),
+                rows,
+            )
 
     def test_a_translation_sharing_its_sources_kanji_holds_no_japanese_left(self):
         # Read without its pair, a Chinese translation's hanzi row opening
@@ -698,8 +723,8 @@ class TextBlockTests(unittest.TestCase):
             command(401, ["再见。"]),
             command(0, []),
         ]
-        (block,) = blocks.blocks(listed)
         with reading("Japanese", "Simplified Chinese"):
+            (block,) = blocks.blocks(listed)
             texts = blocks.sent_texts(listed, block, blocks.Reading())
         self.assertEqual(
             [(text.rows, text.source) for text in texts],

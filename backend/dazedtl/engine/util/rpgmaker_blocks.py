@@ -26,9 +26,10 @@ the comment (108) itself.
 The engine sends a message's or scrolling text's rows in texts (see
 :func:`texts`), and translation writes each text over its rows, keeping its
 source on its first: every copy of a game names its lines by the texts of the
-game's own rows (:func:`sent_texts`). A row after a translation holding
-Japanese its source doesn't is the game's own, left untranslated, wherever it
-stands (:func:`uncovered`): no copy reads it as that translation's.
+game's own rows (:func:`sent_texts`). A row after a message's translation
+holding Japanese its source doesn't is the game's own, left untranslated,
+wherever it stands (:func:`uncovered`): the translation's part ends before it
+(:func:`owned`), for every reader.
 
 Commands the engine empties when it writes a message's translation over its
 rows (code -1, no parameters) are left out until it writes the list back.
@@ -58,7 +59,8 @@ from util.source_text import holds_source, source_left
 # translation laid it one Japanese line at a time and a game may follow those
 # lines with its own, such as "(1/3)" or a blank spacer. A run's message needs
 # none: it joins its rows into one command, and Assistant-led's rows run up to
-# the next translation (see `run`); a translation file import, which lays a
+# the next translation or the game's own left untranslated (see `owned`); a
+# translation file import, which lays a
 # message's text over its rows one by one, records them, since the game's own
 # rows may follow. Game updates and Assistant-led's writer carry the count
 # with the translation.
@@ -329,8 +331,8 @@ def following(commands: list, start: int, row_code: int):
 
 
 def run(commands: list, start: int, row_code: int) -> tuple[int, ...]:
-    """The text rows after *start* up to the next translation: what a
-    message's translation and Assistant-led's write own."""
+    """The text rows after *start* up to the next translation, such as the
+    rows Assistant-led's write of a comment or a script owns."""
     rows = []
     for at in following(commands, start, row_code):
         if "_original" in commands[at]:
@@ -342,42 +344,21 @@ def run(commands: list, start: int, row_code: int) -> tuple[int, ...]:
 def uncovered(value: str, source: str) -> bool:
     """Whether a message's or scrolling text's row reading *value*, after
     the first of a translation of *source*, holds text that translation
-    never covered: Japanese *source* doesn't hold (util/source_text
-    `source_left`), in no row of it. Such a row is the game's own, left
-    untranslated, such as the speech after a nameplate a run translated
-    alone, under other speaker settings or with the speech's request refused;
-    a writer laying the translation over its rows leaves none."""
+    never covered: Japanese left in it read against *source* (util/source_text
+    `source_left`), as the engine reads it, in no row of *source*. Such a row
+    is the game's own, left untranslated, such as the speech after a
+    nameplate a run translated alone, under other speaker settings or with
+    the speech's request refused; a writer laying the translation over its
+    rows leaves none."""
     return value not in source.split("\n") and bool(source_left(value, source))
 
 
 def _translation(command: Any) -> str | None:
     """The source a message's or scrolling text's row keeps of a translation
-    written from it, or None for none."""
+    written from it, as the engine reads one (rpgmakermvmz
+    `_scalar_original`): a string holding text, or None."""
     source = command.get("_original") if isinstance(command, dict) else None
     return source if isinstance(source, str) and source.strip() else None
-
-
-def covered(commands: list, rows: Sequence[int]) -> tuple[int, ...]:
-    """The rows of *rows*, a message's or scrolling text's rows from one
-    keeping a translation's source, its text covers: up to the first holding
-    text it never covered (:func:`uncovered`). Rows from one keeping no
-    source are their own."""
-    source = _translation(commands[rows[0]]) if rows else None
-    if source is None:
-        return tuple(rows)
-    return tuple(rows[:next(
-        (at for at in range(1, len(rows)) if uncovered(text(commands[rows[at]]), source)),
-        len(rows),
-    )])
-
-
-def source_rows(commands: list, start: int) -> tuple[int, ...]:
-    """The rows of a message or scrolling text, from the row at *start*, that
-    one source covers, as a writer keeping one over them, such as
-    Assistant-led's, reads them: the rows a translation there owns
-    (:func:`owned`) that its text covers (:func:`covered`), or for rows never
-    translated, the rows up to the next translation."""
-    return covered(commands, owned(commands, start))
 
 
 def owned(
@@ -390,9 +371,14 @@ def owned(
     """The text rows the translation anchored at *anchor* owns, in order; a
     comment (108) anchor owns the rows after it.
 
-    The rows its anchor records (``_rows``). Without that record:
-    - a message, scrolling text, or comment anchored on its 108 (as
-      Assistant-led writes them) owns its rows up to the next translation
+    A message's or scrolling text's translation owns none from a row it
+    never covered (:func:`uncovered`), the game's own, left untranslated,
+    whatever its anchor records. Otherwise the rows its anchor records
+    (``_rows``). Without that record:
+    - a message or scrolling text owns its rows up to the next translation;
+      rows never translated run up to the next translation too
+    - a comment anchored on its 108, as Assistant-led writes them, owns its
+      rows up to the next translation
     - choice help translated before translation recorded its rows owns the
       rows after it the game's original file did not have there (*original*,
       the original's command list), or without one the rows up to the next
@@ -406,8 +392,13 @@ def owned(
     head = code(command) == 108
     rows = [] if head else [anchor]
     count = recorded(command)
+    source = _translation(command) if row_code != 408 else None
     for at in following(commands, anchor, row_code):
-        if "_original" in commands[at] or (count is not None and len(rows) >= count):
+        if (
+            "_original" in commands[at]
+            or (count is not None and len(rows) >= count)
+            or (source is not None and uncovered(text(commands[at]), source))
+        ):
             break
         rows.append(at)
     if count is not None or head or row_code != 408:
@@ -708,15 +699,20 @@ def text_end(
     left: bool = False,
 ) -> int:
     """The last command whose text joins the one at *start* (:func:`joins`),
-    before any command *stop* names by its index and, with *left*, before a
-    row left untranslated after the translation whose source *start* keeps
-    (:func:`uncovered`), which is a text of its own."""
-    source = _translation(commands[start]) if left else None
+    before any command *stop* names by its index and, with *left*, past no
+    row of the translation whose source *start* keeps (:func:`owned`), so the
+    game's own rows after it, such as rows left untranslated, are texts of
+    their own."""
+    rows = (
+        frozenset(owned(commands, start))
+        if left and _translation(commands[start]) is not None
+        else None
+    )
     end = start
     while (
         joins(commands, end, codes)
         and not (stop is not None and stop(end + 1))
-        and not (source is not None and uncovered(text(commands[end + 1]), source))
+        and not (rows is not None and end + 1 not in rows)
     ):
         end += 1
     return end
@@ -900,10 +896,8 @@ def _written_over(commands: list, part: Part, lines: list[str], reading: Reading
     rows one by one, as Assistant-led's does, keeps a source line for each
     row, and fitting may move a code to the start of one; in that shape the
     game's own start only at a row opening with a code its source doesn't
-    hold, or whose text holds Japanese its source doesn't. In either shape
-    they start no later than a row left untranslated (:func:`covered`), such
-    as the speech after a nameplate a run translated alone under other
-    speaker settings."""
+    hold. A row left untranslated, holding Japanese its source doesn't, ends
+    the part itself (:func:`owned`)."""
     rows = part.rows
     if len(rows) == 1 or recorded(commands[part.anchor]) is not None:
         return len(rows)
@@ -913,19 +907,15 @@ def _written_over(commands: list, part: Part, lines: list[str], reading: Reading
         if found is not None and found.own_line:
             return 1
     whole = "\n".join(lines)
-    own = len(covered(commands, rows))
-    opening = [at for at in range(1, len(rows)) if opens_text(values[at])]
-    for at, end in zip(opening, [*opening[1:], len(rows)]):
-        if at >= own:
-            break
+    for at in range(1, len(rows)):
+        if not opens_text(values[at]):
+            continue
         if len(rows) != len(lines):
             if not (at < len(lines) and opens_text(lines[at])):
                 return at
-        elif _opening(values[at]) not in whole or any(
-            uncovered(value, whole) for value in values[at:end]
-        ):
+        elif _opening(values[at]) not in whole:
             return at
-    return own
+    return len(rows)
 
 
 def _lined_up(commands: list, rows: tuple[int, ...], lines: list[str], read: list[Text]) -> bool:

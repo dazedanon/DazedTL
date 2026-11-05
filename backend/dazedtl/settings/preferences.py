@@ -55,13 +55,14 @@ SAME_LINE_SPEAKERS = "event-same-line-speakers-v1"
 # sent and stayed in Japanese however often the run was retried.
 CODE_NAMEPLATES = "event-code-nameplates-v1"
 # A message's or scrolling text's text whose first row keeps a translation's
-# source ends before a row holding Japanese that source doesn't (engine
-# util/rpgmaker_blocks `uncovered`): the game's own, left untranslated after
-# it, such as the speech after a name an earlier run translated alone with
-# First-line names on, or whose request was refused. Those rows are sent and
-# written as texts of their own. A run frozen without it sends the first
-# row's source alone for them and writes its translation over them all,
-# emptying them, as it did when approved.
+# source ends with that translation's rows (engine util/rpgmaker_blocks
+# `owned`): before the next translation, after the rows a translation file
+# import recorded, and before any row holding Japanese that source doesn't,
+# the game's own, left untranslated after it, such as the speech after a name
+# an earlier run translated alone with First-line names on, or whose request
+# was refused. Those rows are sent and written as texts of their own. A run
+# frozen without it sends the first row's source alone for them and writes
+# its translation over them all, emptying them, as it did when approved.
 LEFT_ROWS = "event-left-rows-v1"
 # Small RPG Maker event pages of one file share a request, each page labelled,
 # because each request otherwise repeats the full system prompt: a 970-map

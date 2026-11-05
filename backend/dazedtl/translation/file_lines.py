@@ -526,8 +526,9 @@ def _is_blob(raw: bytes, blob: str | None) -> bool:
 # again. What counts as a refusal note is refusals.RULES_VERSION, and what
 # reads as Japanese left engine util/source_text RULES_VERSION, which their
 # section names too (`counts_section`). System.json's counts are kept under
-# the drawn variables they read too (guided_inputs line_counts).
-COUNT_VERSION = 2
+# the drawn variables they read too (guided_inputs line_counts). Never reuse
+# a value a build kept counts under: 3 was a development build's.
+COUNT_VERSION = 4
 
 
 def counts_section() -> str:
