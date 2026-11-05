@@ -510,6 +510,7 @@ class ApprovalTests(unittest.TestCase):
                 projects=SimpleNamespace(
                     get=lambda _id: {
                         "id": "p1",
+                        "backend_id": "n1",
                         "method": "manual",
                         "source": str(self.game),
                     }

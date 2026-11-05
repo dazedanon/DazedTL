@@ -370,15 +370,19 @@ class Compare:
         if game.native is not None:
             self.guided.settings.prepare_engine(pair=self.guided.runs.pair(game.native))
 
-    def operations(self, project_id):
-        """The project's comparison operations, newest first, whichever
-        method filed them: under its Guided record or itself (Game.owner)."""
-        owners = {project_id, self.guided.projects.get(project_id).get("backend_id")}
+    def _owners(self, project_id):
+        """Who the project's comparison operations are filed under, whichever
+        method filed them: itself or its Guided record (Game.owner)."""
+        return {project_id, self.guided.projects.get(project_id).get("backend_id")}
+
+    def operations(self, project_id, actions=ACTIONS):
+        """The project's comparison operations, newest first."""
+        owners = self._owners(project_id)
         return sorted(
             (
                 job
                 for job in self.guided.backend.operations.jobs.values()
-                if job["project_id"] in owners and job["action"] in ACTIONS
+                if job["project_id"] in owners and job["action"] in actions
             ),
             key=lambda job: job["created"],
             reverse=True,
@@ -390,17 +394,6 @@ class Compare:
         if not any(job["id"] == operation_id for job in self.operations(project_id)):
             raise ValueError("This comparison is no longer running.")
         return self.guided.backend.operations.stop(operation_id)
-
-    def _jobs(self, game, action):
-        return sorted(
-            (
-                job
-                for job in self.guided.backend.operations.jobs.values()
-                if job["project_id"] == game.owner and job["action"] == action
-            ),
-            key=lambda job: job["created"],
-            reverse=True,
-        )
 
     # Methods
 
@@ -549,7 +542,7 @@ class Compare:
         record = self._read(project_id)
         jobs = self.guided.backend.operations.jobs
         rows = []
-        for job in self._jobs(game, ESTIMATE):
+        for job in self.operations(project_id, (ESTIMATE,)):
             options = _options(self.guided.backend.operations.root, job["id"])
             if options is None:
                 continue
@@ -677,7 +670,9 @@ class Compare:
         job = self.guided.backend.operations.jobs.get(identity)
         options = (
             _options(self.guided.backend.operations.root, identity)
-            if job and job["action"] == action and job["project_id"] == game.owner
+            if job
+            and job["action"] == action
+            and job["project_id"] in self._owners(game.project)
             else None
         )
         if options is None:
