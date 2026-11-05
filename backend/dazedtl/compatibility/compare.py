@@ -442,7 +442,7 @@ def run(plan, log):
         report("Reading the original lines")
         inventory, found = stage(
             root / "source",
-            folder.parent.parent,
+            Path(options["workspace"]),
             options["projectId"],
             plan["project"]["source"],
             options["relative"],

@@ -284,6 +284,8 @@ class Compare:
             "lines": lines,
             "pair": language_pair.pair(guided.settings, game.root),
             "claudeCount": guided.backend.manual.allow_providers,
+            # Where the game's records are, such as the original it stages.
+            "workspace": str(guided.translation.workspace),
             "candidates": [
                 {"index": index, **self._row(game, state, candidate)}
                 for index, candidate in enumerate(candidates)
@@ -300,7 +302,6 @@ class Compare:
             root = Path(game.root)
             _record, project = guided.translation.project(game.project)
             options.update(
-                workspace=str(guided.translation.workspace),
                 source=game.root,
                 inputPath=game.units,
                 selected={**project.read()["options"], "mode": LIVE},

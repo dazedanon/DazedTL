@@ -7,8 +7,9 @@ import uuid
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
+from dazedtl.compatibility import compare as compare_run
 from dazedtl.compatibility.compare import END, cut, glossary_text, rows, sources
 from dazedtl.compatibility.compare_units import stage
 from dazedtl.storage import write_json
@@ -122,6 +123,41 @@ class GlossaryTests(unittest.TestCase):
                 text.split(GLOSSARY_BASE_SEPARATOR)[0].rstrip(),
                 "村長 (Village Chief)\nミカ (Mika)",
             )
+
+
+class RunTests(unittest.TestCase):
+    def test_a_guided_comparison_reads_the_original_from_the_games_records(self):
+        # The engine's folder was passed as the workspace, so a game whose
+        # original is kept only as an older backup record never compared.
+        with TemporaryDirectory() as temporary:
+            app = Path(temporary)
+            folder = app / "engine/projects/n1"
+            folder.mkdir(parents=True)
+            plan = {
+                "action": compare_run.TRANSLATE,
+                "folder": str(folder),
+                "project": {"source": str(app / "game")},
+                "options": {
+                    "method": "guided",
+                    "workspace": str(app / "workspace"),
+                    "projectId": "p1",
+                    "file": "Map001.json",
+                    "phase": "dialogue",
+                    "relative": "data/Map001.json",
+                    "lines": 0,
+                    "candidates": [],
+                },
+            }
+            log = Mock(stopped=lambda: False)
+            with (
+                patch("desktop.backend.workflow_actions.validate_plan"),
+                patch.object(
+                    compare_run, "stage", side_effect=ValueError("staged")
+                ) as staged,
+                self.assertRaisesRegex(ValueError, "staged"),
+            ):
+                compare_run.run(plan, log)
+            self.assertEqual(staged.call_args.args[1:3], (app / "workspace", "p1"))
 
 
 class Operations:
