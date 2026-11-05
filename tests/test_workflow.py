@@ -2509,7 +2509,10 @@ class WorkflowTests(unittest.TestCase):
         (self.game / "agents.md").write_text("Repack Data.wolf.", encoding="utf-8")
         write_json(self.game / "source.json", {"line": "はい。"})
         _git(self.game, "add", "-f", ".gitattributes", "agents.md", "source.json")
-        _git(self.game, "commit", "-m", "Took the notes")
+        # Made outside DazedTL. The identity is the test's own, since CI's
+        # runners have none.
+        player = ("-c", "user.name=Player", "-c", "user.email=player@example.invalid")
+        _git(self.game, *player, "commit", "-m", "Took the notes")
         with (
             running(for_action("export_selected")),
             write_game(self.game, paths=["source.json"]) as written,

@@ -65,10 +65,9 @@ _IDENTIFIER_RE = re.compile(r"[A-Za-z_$][\w$]*")
 _WORD_RE = re.compile(r"[\w.:-]+")
 # Names shorter than this are too common to tie a use to one plugin.
 _NAME_MINIMUM = 4
-_EVENT_FILE_RE = re.compile(r"(?:Map\d+|CommonEvents|Troops)\.json")
 
 
-def _lex(source: str) -> tuple[str, list[str]]:
+def lex(source: str) -> tuple[str, list[str]]:
     """Code without its comments, and its string literals."""
     code: list[str] = []
     strings: list[str] = []
@@ -123,7 +122,7 @@ def _core(js: Path) -> _Core:
     core = _Core()
     for path in sorted(js.glob("rmmz_*.js")) or sorted(js.glob("rpg_*.js")):
         try:
-            code, _strings = _lex(path.read_text(encoding="utf-8-sig"))
+            code, _strings = lex(path.read_text(encoding="utf-8-sig"))
         except (OSError, UnicodeDecodeError):
             continue
         core.owners.update(
@@ -178,7 +177,7 @@ def _plugin(js: Path, entry: dict[str, Any], loaded: bool, core: _Core) -> _Plug
     except (OSError, UnicodeDecodeError):
         return plugin
     plugin.readable = True
-    code, strings = _lex(source)
+    code, strings = lex(source)
     plugin.strings += strings
     plugin.tokens.update(_IDENTIFIER_RE.findall(code))
     for string in strings:
@@ -224,7 +223,7 @@ def _plugin(js: Path, entry: dict[str, Any], loaded: bool, core: _Core) -> _Plug
     return plugin
 
 
-def _script(command: dict[str, Any]) -> list[str]:
+def scripts(command: dict[str, Any]) -> list[str]:
     """The script an event command runs: Script, a Conditional Branch or
     Control Variables script, a movement route's Script, or a plugin
     command's arguments."""
@@ -247,10 +246,12 @@ def _script(command: dict[str, Any]) -> list[str]:
     return []
 
 
-def _commands(document: Any):
+def event_commands(document: Any):
+    """Every event command a data file holds, a movement route's included,
+    outside its `_original`."""
     if isinstance(document, list):
         for child in document:
-            yield from _commands(child)
+            yield from event_commands(child)
     elif isinstance(document, dict):
         if blocks.code(document) is not None and isinstance(
             document.get("parameters"), list
@@ -258,7 +259,7 @@ def _commands(document: Any):
             yield document
         for key, child in document.items():
             if key != "_original":
-                yield from _commands(child)
+                yield from event_commands(child)
 
 
 class Reach:
@@ -289,9 +290,9 @@ class Reach:
 
     def scan(self, name: str, document: Any) -> None:
         """Record the plugin commands and script one event file holds."""
-        if not _EVENT_FILE_RE.fullmatch(name):
+        if not blocks.EVENT_FILE.fullmatch(name):
             return
-        for command in _commands(document):
+        for command in event_commands(document):
             parameters = command["parameters"]
             if command["code"] == 357 and len(parameters) > 1 and all(
                 isinstance(value, str) for value in parameters[:2]
@@ -303,7 +304,7 @@ class Reach:
                 words = parameters[0].split()
                 if words:
                     self._words.setdefault(words[0].casefold(), [0, name])[0] += 1
-            for value in _script(command):
+            for value in scripts(command):
                 if isinstance(value, str):
                     for token in _IDENTIFIER_RE.findall(value):
                         self._scripts.setdefault(token, name)

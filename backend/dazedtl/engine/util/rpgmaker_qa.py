@@ -54,7 +54,6 @@ from util.qa.storage import (
 )
 from util.qa.records import _set_pointer
 from util.qa.fitting import (
-    APPROVED_NONBLOCKING_MECHANICAL_FLAGS,
     _box,
     correction_problems,
     _fit,

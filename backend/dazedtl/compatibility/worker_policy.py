@@ -27,6 +27,7 @@ from dazedtl.settings.preferences import (
     SOURCE_TEXT_LEVELS,
     SPEAKER_CONTEXT,
     STRETCH_NEIGHBOURS,
+    SYSTEM_TEXT,
     batch_input_tokens,
     output_tokens,
 )
@@ -78,6 +79,13 @@ def configure_cache_reads(translation, policy):
     translation.LIVE_CACHE_READ_MULTIPLE = (policy or {}).get("cacheReadMultiple")
 
 
+def _variable_ids(value):
+    """Whether a policy's drawn variable ids read as the run froze them."""
+    return isinstance(value, list) and all(
+        type(item) is int and item > 0 for item in value
+    )
+
+
 def configure_states(plan, root, policy):
     module = sys.modules.get("modules.rpgmakermvmz")
     if module is not None and plan.get("engine") in {"MVMZ", "RPG Maker MV/MZ"}:
@@ -101,6 +109,11 @@ def configure_states(plan, root, policy):
         )
         cast(Any, module).GALGE_ARGUMENTS = bool(
             policy and policy.get("galgeArguments") == GALGE_ARGUMENTS
+        )
+        system_text = bool(policy and policy.get("systemText") == SYSTEM_TEXT)
+        cast(Any, module).SYSTEM_TEXT = system_text
+        cast(Any, module).DRAWN_VARIABLES = frozenset(
+            policy.get("drawnVariables", ()) if policy and system_text else ()
         )
         source_text = (policy or {}).get("sourceText")
         cast(Any, module).SOURCE_TEXT = (
@@ -237,6 +250,8 @@ def install(*, coordinator=False):
             or policy.get("choiceCollection") not in (None, CHOICE_COLLECTION)
             or policy.get("galgeChoices") not in (None, GALGE_CHOICES)
             or policy.get("galgeArguments") not in (None, GALGE_ARGUMENTS)
+            or policy.get("systemText") not in (None, SYSTEM_TEXT)
+            or not _variable_ids(policy.get("drawnVariables", []))
             or policy.get("speakerContext") not in (None, SPEAKER_CONTEXT)
             or policy.get("sameLineSpeakers") not in (None, SAME_LINE_SPEAKERS)
             or policy.get("codeNameplates") not in (None, CODE_NAMEPLATES)

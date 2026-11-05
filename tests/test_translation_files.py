@@ -577,6 +577,9 @@ class _Inputs:
     def original_document(self, _name):
         return self.original
 
+    def drawn_variables(self, _names):
+        return frozenset()
+
     def prepare(self, names):
         for name in names:
             self.path("files", name).parent.mkdir(parents=True, exist_ok=True)

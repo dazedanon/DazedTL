@@ -3,6 +3,7 @@
 import json
 import os
 import re
+import shutil
 import socket
 import sys
 import threading
@@ -4648,6 +4649,44 @@ try:
             ),
             encoding="utf-8",
         )
+        # The hud game variant's System.json, plugins and opening event: a
+        # currency unit, and a plugin that draws one variable's name, which
+        # its plugin command names.
+        from dazedtl.settings.preferences import SYSTEM_TEXT
+        from util.rpgmaker_variable_names import data_drawn
+
+        hud = fixtures / "game-variants/hud"
+        variant = json.loads((hud / "variant.json").read_text("utf-8"))
+        system = {
+            **json.loads((fixtures / "mz-game/data/System.json").read_text("utf-8")),
+            **variant["system"],
+        }
+        (lines_game / "data/System.json").write_text(
+            json.dumps(system, ensure_ascii=False), encoding="utf-8"
+        )
+        (lines_game / "data/CommonEvents.json").write_text(
+            json.dumps(
+                [
+                    None,
+                    {
+                        "id": 1,
+                        "name": "オープニング",
+                        "switchId": 1,
+                        "trigger": 0,
+                        "list": variant["events"][0]["pages"][0]["list"],
+                    },
+                ],
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+        (lines_game / "js").mkdir()
+        shutil.copytree(hud / "js/plugins", lines_game / "js/plugins")
+        (lines_game / "js/plugins.js").write_text(
+            f"var $plugins =\n{json.dumps(variant['plugins'], ensure_ascii=False)};\n",
+            encoding="utf-8",
+        )
+        assert data_drawn(lines_game / "data") == {1}
         markers = comment_markers(PluginList())
         policy = {
             "choiceCollection": CHOICE_COLLECTION,
@@ -4679,14 +4718,28 @@ try:
             assert older["events"][4]["note"].endswith(
                 "><Shadow:false><Sound:古びた井戸>"
             )
-            configure_states(
-                {"engine": "MVMZ"}, temporary, {**policy, "sourceText": SOURCE_TEXT}
+            # They leave the currency unit and every variable name as they were.
+            assert not {"ゴールド", "現在のドローン"} & set(
+                engine_pass("System.json", deepcopy(system), False)
             )
             for folder, vxace in (
                 (fixtures / "mz-game/data", False),
                 (fixtures / "ace/ace_json", True),
                 (lines_game / "data", False),
             ):
+                # Runs freeze the ids of the variable names the game's
+                # plugins draw (compatibility/manual freeze_variables).
+                variables = data_drawn(folder)
+                configure_states(
+                    {"engine": "MVMZ"},
+                    temporary,
+                    {
+                        **policy,
+                        "sourceText": SOURCE_TEXT,
+                        "systemText": SYSTEM_TEXT,
+                        "drawnVariables": sorted(variables),
+                    },
+                )
                 for path in sorted(folder.glob("*.json")):
                     file = path.name
                     phase = "database" if file in DB_FILES else "dialogue"
@@ -4698,10 +4751,14 @@ try:
                         continue
                     document = json.loads(path.read_text("utf-8-sig"))
                     translated = deepcopy(document)
-                    before = file_lines.count(file, document, phase, markers)
+                    before = file_lines.count(
+                        file, document, phase, markers, variables=variables
+                    )
                     unfinished = "\n".join(
                         row["text"]
-                        for row in file_lines.left(file, document, phase, markers)
+                        for row in file_lines.left(
+                            file, document, phase, markers, variables=variables
+                        )
                     )
                     sends = engine_pass(file, translated, vxace)
                     # Players read the names, nicknames and profiles events
@@ -4717,7 +4774,12 @@ try:
                     ]
                     assert not changed, (folder.name, file, changed)
                     after = file_lines.count(
-                        file, translated, phase, markers, lambda: document
+                        file,
+                        translated,
+                        phase,
+                        markers,
+                        lambda: document,
+                        variables=variables,
                     )
                     # A translated map name's source is the original's name.
                     if after.pop("mapName", None) is not None and holds_source(
@@ -4739,10 +4801,17 @@ try:
                         "translated": before["lines"],
                     }, (
                         report,
-                        file_lines.left(file, translated, phase, markers),
+                        file_lines.left(
+                            file, translated, phase, markers, variables=variables
+                        ),
                     )
                     again = engine_pass(file, translated, vxace)
                     assert not again, (report, again)
+            # The currency unit and the name the plugin draws are sent, and
+            # the name only the editor shows is not.
+            sends = engine_pass("System.json", deepcopy(system), False)
+            assert {"ゴールド", "現在のドローン"} <= set(sends), sends
+            assert "作業用" not in sends, sends
             # Messages and choices the game wrote without Japanese letters,
             # alone or below a speaker's name, show its Japanese punctuation
             # in English, and a code keeps its argument as the game wrote it.

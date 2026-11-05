@@ -220,7 +220,12 @@ def lines_left(inputs, name, runtime, phase, markers, offset=0, query=""):
         found = [
             {**row, "source": row["source"] or None}
             for row in left(
-                name, value, phase, markers, lambda: inputs.original_document(name)
+                name,
+                value,
+                phase,
+                markers,
+                lambda: inputs.original_document(name),
+                inputs.drawn_variables([name]),
             )
         ]
     return _page(name, origin, value, found, offset, query)
