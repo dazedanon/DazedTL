@@ -941,11 +941,16 @@ class Settings:
             },
             "model": model,
             "host": active.get("openrouter_host", ""),
+            "anyConnection": any_connection,
         }
 
     def pricing_selection(self, lookup):
+        """The connection a lookup read prices for, refusing one that changed
+        since; only a model comparison's may be other than the active one."""
         state = self._read()
-        active = self._connection(state, lookup["connection"]["id"])
+        active = self._connection(
+            state, lookup["connection"]["id"] if lookup["anyConnection"] else None
+        )
         if not active or any(
             active.get(key, "") != value for key, value in lookup["connection"].items()
         ):

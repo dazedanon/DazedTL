@@ -354,6 +354,68 @@ class SettingsTests(unittest.TestCase):
                     else:
                         Settings(temporary, adapter).prepare_engine(resume=resume)
 
+    def test_a_price_lookup_keeps_to_the_active_connection_unless_a_comparison_names_one(
+        self,
+    ):
+        # Lookups found their connection by ID for every caller, so one for
+        # the active connection kept going after a switch and its action
+        # failed later with no price, instead of asking to try again.
+        metadata = {
+            "values": {
+                "language": "English",
+                "model": "fixture-model",
+                "api": "",
+                "API_PROVIDER": "openai",
+            }
+        }
+        adapter = SimpleNamespace(
+            settings_metadata=lambda: metadata,
+            allow_providers=True,
+            validate_route=lambda values: ExistingBackend.validate_route(
+                ExistingBackend, values
+            ),
+            engine_route=ExistingBackend.engine_route,
+            provider_defaults=lambda _: {"batch_supported": False},
+            manual=SimpleNamespace(request_policy=None),
+            install_settings=Mock(),
+        )
+        state = {
+            "version": 2,
+            "revision": 0,
+            "values": {"language": "English", "model": "fixture-model"},
+            "legacy": {"values": metadata["values"], "engines": {}, "draft": None},
+            "model_options": {},
+            "active": "",
+            "draft": None,
+            "connections": [],
+        }
+        with TemporaryDirectory() as temporary:
+            write_json(Path(temporary) / "settings/settings.json", state)
+            settings = Settings(temporary, adapter)
+            with patch.object(providers, "check"):
+                view = settings.save_connection(0, "openrouter", secret="first-key")
+                first = view["activeConnectionId"]
+                view = settings.save_connection(
+                    view["revision"], "openrouter", secret="second-key"
+                )
+            second = view["activeConnectionId"]
+            self.assertNotEqual(second, first)
+            # Settings' own lookup for its active connection's model.
+            active = settings.pricing_lookup(
+                connection_id=second, model="fixture-model", explicit=True
+            )
+            compared = settings.pricing_lookup(
+                connection_id=first,
+                model="fixture-model",
+                explicit=True,
+                any_connection=True,
+            )
+            assert active is not None and compared is not None
+            settings.select(view["revision"], first)
+            with self.assertRaisesRegex(ValueError, "Try again"):
+                settings.pricing_selection(active)
+            self.assertEqual(settings.pricing_selection(compared)["id"], first)
+
     def test_removing_a_connection_forgets_its_key_and_respects_saved_runs(self):
         # Removal must not strand a run silently or leave the removed key in the engine's derived key cache.
         metadata = {
