@@ -11,6 +11,7 @@ import {
   compareInputs,
   current,
   estimateTotal,
+  footerRuns,
   glossaryChanges,
   glossaryOutdated,
   keptRequests,
@@ -434,4 +435,17 @@ test("a test glossary edited before a Context save asks which to send, until cho
     glossaryOutdated(edit, { ...game, glossary: "村長 (Chief)" }),
     false,
   );
+});
+
+test("a tab's footer shows the run it just started before the page reads it", () => {
+  // Right after Translate the page showed its notice with Stop beside the
+  // footer's own, as the tab's latest comparison named no translation yet.
+  const estimate = { id: "e1", translationId: null } as unknown as Comparison;
+  assert.deepEqual(footerRuns(estimate, "t1"), ["e1", "t1"]);
+  assert.deepEqual(footerRuns({ ...estimate, translationId: "t1" }, "t1"), [
+    "e1",
+    "t1",
+    "t1",
+  ]);
+  assert.deepEqual(footerRuns(undefined, null), []);
 });

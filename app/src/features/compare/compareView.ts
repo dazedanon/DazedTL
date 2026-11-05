@@ -57,6 +57,21 @@ export function matching(
  * one whose lines show: the newest of them translated, so a new estimate
  * keeps the last results in view until it is translated too.
  */
+/**
+ * The operations whose run a tab's footer shows, with its Stop, which the
+ * page's notice then leaves out on that tab: its latest comparison's
+ * estimate and translation, and the one it just started, which reads as its
+ * latest only once the page has read it.
+ */
+export function footerRuns(
+  latest: Comparison | undefined,
+  started: string | null,
+) {
+  return [latest?.id, latest?.translationId, started].filter(
+    (id): id is string => !!id,
+  );
+}
+
 export function current(
   comparisons: readonly Comparison[],
   choices: CompareChoices,

@@ -1,13 +1,15 @@
-import { useEffect } from "react";
+import { useLayoutEffect, useState } from "react";
 import { api } from "../../api/client";
 import type { Comparison, Job } from "../../api/contracts";
 import { useAction } from "../../state/useAction";
+import { useOnChange } from "../../state/useOnChange";
 import { ActionControl } from "../../ui/ActionControl";
 import type { CompareContext } from "./Compare";
 import { Button } from "../../ui/Button";
 import { StopComparison } from "./StopComparison";
 import {
   current,
+  footerRuns,
   formatCost,
   runStatus,
   runStep,
@@ -43,11 +45,15 @@ export function useCompareRun(
   const { latest, shown } = current(context.comparisons, choices);
   const step = runStep(latest, shown);
   // The footer says how the latest comparison's run goes, with its Stop, so
-  // the page's notice leaves it out on this tab.
-  const ids = latest ? [latest.id, latest.translationId ?? ""] : [];
+  // the page's notice leaves it out on this tab, told before the screen
+  // paints, so the two never show at once.
+  const [begun, setBegun] = useState<string | null>(null);
+  // Other choices, or the started one read as the latest, leave it.
+  useOnChange(latest?.id, () => setBegun(null));
+  const ids = footerRuns(latest, begun);
   const { footer, running } = context;
   const footerKey = ids.join(",");
-  useEffect(
+  useLayoutEffect(
     () => footer(choices.kind, footerKey ? footerKey.split(",") : []),
     [footer, choices.kind, footerKey],
   );
@@ -59,13 +65,15 @@ export function useCompareRun(
     action.run(
       async () => {
         try {
-          return await api.compare.estimate(
+          const job = await api.compare.estimate(
             context.projectId,
             choices.kind,
             choices.file,
             choices.lines,
             [...choices.candidates],
           );
+          setBegun(job.id);
+          return job;
         } catch (error) {
           // A refusal for changed guidance shows the game's as it is now,
           // which Reset starts a test from.
@@ -88,6 +96,7 @@ export function useCompareRun(
           await context.reload();
           throw error;
         }
+        setBegun(job.id);
         await started?.(job);
       },
       "",
@@ -108,6 +117,7 @@ export function useCompareRun(
     if (step.step === "translate")
       return (
         <>
+          {stop}
           {failure("translate") && (
             // A refusal may need a new estimate, such as after the game
             // changed; the reason beside Translate says which.
