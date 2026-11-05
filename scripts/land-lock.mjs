@@ -34,6 +34,9 @@ export const devMoved = 3;
 /** Where landed reviews are recorded, one JSON line each, in the shared Git directory. */
 export const reviewLog = "dazedtl-reviews.jsonl";
 
+/** The most independent reviews one landing runs; the dazedtl-land skill says when another runs. */
+export const maxReviews = 3;
+
 /**
  * The checks a review may run besides code-review, each named in the
  * dazedtl-land skill's Review lens section; a record lists those every one
