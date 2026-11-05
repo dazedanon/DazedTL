@@ -549,6 +549,8 @@ export function ciCommits(git, tip, dev) {
  */
 async function ciStatus(read, repo, commits) {
   let newest = null;
+  /** @type {any[]} */
+  let headRuns = [];
   let running = null;
   for (const [index, sha] of commits.entries()) {
     const runs = ciRuns(
@@ -558,13 +560,23 @@ async function ciStatus(read, repo, commits) {
       (run) => run.status === "completed" && run.conclusion === "success",
     );
     if (passed) return { state: "passed", run: passed };
-    if (index === 0) newest = runs[0] ?? null;
+    if (index === 0) {
+      headRuns = runs;
+      newest = runs[0] ?? null;
+    }
     running ??= runs.find((run) => run.status !== "completed") ?? null;
   }
   if (newest && newest.status !== "completed")
     return { state: "running", run: newest };
-  // A run GitHub could not start says nothing of the branch: start another.
-  if (newest && failedRun(newest) && newest.conclusion !== "startup_failure")
+  // A run GitHub could not start says nothing of the branch, so it gets one
+  // more; a second may be the branch's own, such as a broken workflow file.
+  const unstarted = (/** @type {any} */ run) =>
+    run.conclusion === "startup_failure";
+  if (
+    newest &&
+    failedRun(newest) &&
+    (!unstarted(newest) || headRuns.filter(unstarted).length > 1)
+  )
     return { state: "failed", run: newest };
   // A run of an earlier commit, such as from before a merge of dev, stands
   // if it passes, and a new one on the same branch would cancel it.
@@ -811,7 +823,12 @@ async function ciOutcome(
       retry,
     );
   const rerun = (run.run_attempt ?? 1) > 1 ? " after one rerun" : "";
-  const ended = failedRun(run) ? "failed" : `ended as ${run.conclusion}`;
+  const ended =
+    run.conclusion === "startup_failure"
+      ? "could not start"
+      : failedRun(run)
+        ? "failed"
+        : `ended as ${run.conclusion}`;
   const checks = (result.failed ?? []).map(plainJob);
   // The plain line comes last, where a caller reading the tail sees it.
   return outcome(
