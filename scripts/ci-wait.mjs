@@ -10,6 +10,13 @@ import { pathToFileURL } from "node:url";
 
 export const defaultRepository = "dazedanon/DazedTL";
 export const workflow = ".github/workflows/ci.yml";
+/**
+ * The branch land.mjs pushes to GitHub for a landing's CI run, deleted once
+ * the run's outcome is known; the Discord intake deletes it for a hand-off
+ * it gives up while CI runs.
+ * @param {string} branch the landing's branch
+ */
+export const ciBranch = (branch) => `land/${branch}`;
 const lowCalls = 50;
 
 /**
