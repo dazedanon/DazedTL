@@ -45,9 +45,9 @@ from util.vocab import (
 )
 from util.speakers import (
     NAMES_FILE,
+    COLOURED_NAME_RE,
     SPEAKER_BRACKET_INNER,
     display_name as _speaker_display_name,
-    inline_speaker,
     message_speakers,
     plausible_speaker as _is_plausible_speaker,
     speaker_translated,
@@ -2088,16 +2088,11 @@ def _normalize_system_message_translation(key: str, translated: str) -> str:
     return text
 
 
-_COLOR_SPEAKER_RE = re.compile(
-    r"^[\\]+[cC]\[\d+\]【?(.+?)】?[\\]+[cC]\[\d+\](?:[\\]+[A-Za-z]+(?:\[[^\]]*\])?)*[\\]*$"
-)
-
-
 def _replace_speaker_in_param(param_str: str, source_name: str, translated_name: str) -> str:
     """Replace a speaker name inside a 401/101 parameter while keeping colour/bracket wrappers."""
     if not param_str or not translated_name:
         return param_str
-    m = _COLOR_SPEAKER_RE.match(param_str)
+    m = COLOURED_NAME_RE.match(param_str)
     if m:
         return param_str.replace(m.group(1), translated_name, 1)
     bracket_disp = re.findall(r"【(.+?)】", param_str)

@@ -95,11 +95,19 @@ class Line(NamedTuple):
         """The Japanese a person compares the line with: each sent text's
         source, else the text itself, which is its own source while the engine
         keeps none (util/source_text)."""
-        shown = (
-            source if source and source.strip() else text
-            for text, source in self.sent()
-        )
-        return "\n".join(value for value in shown if value.strip())
+        shown_texts = (shown(text, source) for text, source in self.sent())
+        return "\n".join(value for value in shown_texts if value.strip())
+
+
+def shown(text: str, source: str | None) -> str:
+    """The Japanese a person compares a sent text with: its source, else
+    the text itself, which is its own source while the engine keeps none."""
+    return source if source and source.strip() else text
+
+
+def name_box(paths: tuple[tuple, ...]) -> bool:
+    """Whether a sent text's paths are a message's name box."""
+    return paths[0][-2:] == ("parameters", 4)
 
 
 def nameplated(line: Line, *, first_line: bool, inline: bool) -> Line:
@@ -108,8 +116,9 @@ def nameplated(line: Line, *, first_line: bool, inline: bool) -> Line:
     it, as the engine sends them: *first_line* and *inline* are the
     project's FIRSTLINESPEAKERS and INLINE401SPEAKERS, read with the run
     policy's newest reading (util/speakers `message_speakers`). Translation
-    writes the name and the speech apart, but a block it never touched, or
-    one written over as one text, holds both in one text."""
+    writes the name and the speech apart, but a block it never touched holds
+    both in one text. One translated over its rows as one text stays one:
+    its first row may hold more than the name."""
     from util import rpgmaker_blocks as blocks
     from util.speakers import display_name, message_speakers, standalone_speaker
 
@@ -117,11 +126,7 @@ def nameplated(line: Line, *, first_line: bool, inline: bool) -> Line:
         return line
     units, places = list(line.units), list(line.unit_paths)
     at = next(
-        (
-            index
-            for index, paths in enumerate(places)
-            if paths[0][-2:] != ("parameters", 4)
-        ),
+        (index for index, paths in enumerate(places) if not name_box(paths)),
         None,
     )
     if at is None:
@@ -129,8 +134,7 @@ def nameplated(line: Line, *, first_line: bool, inline: bool) -> Line:
     texts = dict(zip(line.paths, line.texts))
     source = units[at][1]
     rows = [texts[path] for path in places[at]]
-    if "\n" in rows[0] or (source is not None and ("\n" in source) != (len(rows) > 1)):
-        # Its rows don't part where its source's lines do: one text.
+    if "\n" in rows[0] or (source is not None and (len(rows) > 1 or "\n" in source)):
         return line
     # The text's rows from its first on as the engine reads them: each
     # translated text's source, else the rows themselves.
@@ -153,10 +157,7 @@ def nameplated(line: Line, *, first_line: bool, inline: bool) -> Line:
         return line
     if len(rows) > 1:
         speech = "\n".join(row for row in rows[1:] if row.strip())
-        units[at : at + 1] = [
-            (rows[0], None if source is None else read[0]),
-            (speech, None if source is None else source.split("\n", 1)[1]),
-        ]
+        units[at : at + 1] = [(rows[0], None), (speech, None)]
         places[at : at + 1] = [places[at][:1], places[at][1:]]
     return line._replace(
         units=tuple(units),

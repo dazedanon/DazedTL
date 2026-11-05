@@ -715,12 +715,14 @@ class GuidedLineTests(unittest.TestCase):
                 _command(0),
             ]
         )
-        # As an import wrote it before: one text over the rows.
+        # As an import wrote it before: one text over the rows, here all on
+        # the first, which a split would read as the name.
+        whole = f"Rookie Police Officer: {english}"
         joined = _map(
             [
                 _command(101, "", 0, 0, 2, ""),
-                _command(401, "Rookie Police Officer", _original=f"{name}\n{speech}"),
-                _command(401, english),
+                _command(401, whole, _original=f"{name}\n{speech}"),
+                _command(401, ""),
                 _command(401, ""),
                 _command(0),
             ]
@@ -744,7 +746,10 @@ class GuidedLineTests(unittest.TestCase):
             f"{head}~1": ("dialogue", name, speech, english),
         }
         self.assertEqual(rows(self.game("run", translated, original, on)), expected)
-        self.assertEqual(rows(self.game("joined", joined, original, on)), expected)
+        self.assertEqual(
+            rows(self.game("joined", joined, original, on)),
+            {head: ("unknown", None, f"{name}\n{speech}", whole)},
+        )
         untranslated = {key: (*row[:3], None) for key, row in expected.items()}
         theirs = self.game("theirs", original, original, on)
         self.assertEqual(rows(theirs), untranslated)

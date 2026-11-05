@@ -265,7 +265,8 @@ def standalone_speaker(name: str, holds: Callable[[str], bool] = holds_source) -
 
 
 _CODE_NAMEPLATE = re.compile(r"(.*?)[\\]+m\[\d+?\][\\]+z\[\d+?\]")
-_COLOURED_NAME = re.compile(
+# A name between colour codes, such as \C[2]【アリス】\C[0].
+COLOURED_NAME_RE = re.compile(
     r"^[\\]+[cC]\[\d+\]【?(.+?)】?[\\]+[cC]\[\d+\](?:[\\]+[A-Za-z]+(?:\[[^\]]*\])?)*[\\]*$"
 )
 _BRACKETED_SPEECH = re.compile(r"^\s*【([^】]+)】(.+)", re.DOTALL)
@@ -316,7 +317,7 @@ def message_speakers(
     if match and (match.group(1).strip() or not code_nameplates):
         names.append(match.group(1))
         if "\\c" in names[0]:
-            names = _COLOURED_NAME.findall(names[0])
+            names = COLOURED_NAME_RE.findall(names[0])
     # Brackets, one name or more, such as 【A】【B】
     if not names:
         bracketed = _BRACKETED_SPEECH.match(line)
@@ -325,7 +326,7 @@ def message_speakers(
         elif re.match(r"^\s*【", line) and _BRACKETS_END.search(line):
             names = [name.strip() for name in re.findall(r"【(.*?)】", line)]
     if not names:
-        names = _COLOURED_NAME.findall(line)
+        names = COLOURED_NAME_RE.findall(line)
     if not names:
         names = _COLON_NAME.findall(line)
     if not names:

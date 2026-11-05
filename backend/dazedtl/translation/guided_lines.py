@@ -149,8 +149,8 @@ class GuidedLines:
                     for index, ((text, source), paths) in enumerate(
                         zip(line.sent(), line.places(), strict=True)
                     ):
-                        shown = source if source and source.strip() else text
-                        name_box = named and paths[0][-2:] == ("parameters", 4)
+                        shown = file_lines.shown(text, source)
+                        name_box = named and file_lines.name_box(paths)
                         nameplate = index == line.nameplate
                         if nameplate:
                             speaker = line.speaker
@@ -310,8 +310,7 @@ def _starts(line):
     sent, places = line.sent(), line.places()
     starts = []
     for at in (line.nameplate, line.nameplate + 1)[: len(sent) - line.nameplate]:
-        text, source = sent[at]
-        shown = source if source and source.strip() else text
+        shown = file_lines.shown(*sent[at])
         if shown.strip():
             starts.append((places[at][0], shown))
     return tuple(starts)
