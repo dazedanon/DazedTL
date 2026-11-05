@@ -126,8 +126,8 @@
   --change-label-width: 5.5rem;
   --field-column-gap: var(--space-4);
   --action-column-width: 19rem;
-  /* Compare models: Tune settings' column and its labels, the Add models
-     dialog's height and the test glossary's editor. */
+  /* Compare models: Tune settings' column, the Add models dialog's height
+     and the test glossary's editor. */
   --compare-settings-width: 26rem;
   --compare-dialog-height: 40rem;
   --compare-glossary-height: 24rem;

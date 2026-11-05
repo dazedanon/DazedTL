@@ -46,7 +46,10 @@ class CompareModel(TypedDict):
     seconds: NotRequired[float]
     requests: NotRequired[Annotated[int, "The requests its translation sent."]]
     keptRequests: NotRequired[
-        Annotated[int, "The first requests Show request can open, at most 20."]
+        Annotated[int, "The first requests it sent that Show request can open."]
+    ]
+    finished: NotRequired[
+        Annotated[bool, "It translated every line, so it can be used."]
     ]
 
 

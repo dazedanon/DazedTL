@@ -2970,7 +2970,7 @@ export type CompareModel = {
   seconds?: number;
   /** The requests its translation sent. */
   requests?: number;
-  /** The first requests Show request can open, at most 20. */
+  /** The first requests it sent that Show request can open. */
   keptRequests?: number;
 };
 

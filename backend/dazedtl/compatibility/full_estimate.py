@@ -232,7 +232,6 @@ def estimate_task(directory, folder, plan, inventory, task, log):
     label = LABELS[task["phase"]]
     phase = task["phase"]
     log(f"{label} · preparing", phase, state="starting")
-    engine = plan["options"].get("engine")
     workspace, native = stage_run(
         directory,
         folder,
@@ -243,9 +242,6 @@ def estimate_task(directory, folder, plan, inventory, task, log):
         task["workflow"],
         plan["options"]["policy"],
         log.stopped,
-        configuration=engine_configuration(folder.parent.parent, engine)
-        if engine
-        else None,
     )
     return counted(
         directory,
