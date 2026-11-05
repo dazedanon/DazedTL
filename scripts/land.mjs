@@ -43,6 +43,8 @@ import {
   githubWriter,
   plainJob,
   rerunFailed,
+  startAgain,
+  unstarted,
   waitForCI,
   withOneRerun,
   workflow,
@@ -568,15 +570,7 @@ async function ciStatus(read, repo, commits) {
   }
   if (newest && newest.status !== "completed")
     return { state: "running", run: newest };
-  // A run GitHub could not start says nothing of the branch, so it gets one
-  // more; a second may be the branch's own, such as a broken workflow file.
-  const unstarted = (/** @type {any} */ run) =>
-    run.conclusion === "startup_failure";
-  if (
-    newest &&
-    failedRun(newest) &&
-    (!unstarted(newest) || headRuns.filter(unstarted).length > 1)
-  )
+  if (newest && failedRun(newest) && !startAgain(headRuns))
     return { state: "failed", run: newest };
   // A run of an earlier commit, such as from before a merge of dev, stands
   // if it passes, and a new one on the same branch would cancel it.
@@ -823,12 +817,11 @@ async function ciOutcome(
       retry,
     );
   const rerun = (run.run_attempt ?? 1) > 1 ? " after one rerun" : "";
-  const ended =
-    run.conclusion === "startup_failure"
-      ? "could not start"
-      : failedRun(run)
-        ? "failed"
-        : `ended as ${run.conclusion}`;
+  const ended = unstarted(run)
+    ? "could not start"
+    : failedRun(run)
+      ? "failed"
+      : `ended as ${run.conclusion}`;
   const checks = (result.failed ?? []).map(plainJob);
   // The plain line comes last, where a caller reading the tail sees it.
   return outcome(

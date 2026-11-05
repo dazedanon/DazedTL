@@ -99,11 +99,27 @@ export const failedRun = (run) =>
   ["failure", "timed_out", "startup_failure"].includes(run?.conclusion);
 
 /**
+ * Whether GitHub could not start a run at all, as for a broken workflow
+ * file. Such a run is never rerun; its commit gets one fresh run instead
+ * (startAgain), and a second that does not start stands as red.
+ */
+export const unstarted = (run) => run?.conclusion === "startup_failure";
+
+/**
  * Whether a run failed on its first attempt. It gets one rerun of its failed
- * jobs, since most first failures are Windows flakes; a second is real.
+ * jobs, since most first failures are Windows flakes; a second is real. A
+ * run that did not start has no jobs to rerun.
  */
 export const firstFailure = (run) =>
-  failedRun(run) && (run.run_attempt ?? 1) === 1;
+  failedRun(run) && !unstarted(run) && (run.run_attempt ?? 1) === 1;
+
+/**
+ * Whether a commit whose runs, newest first, end with one that did not
+ * start gets a fresh run: only after the first such run.
+ * @param {any[]} runs
+ */
+export const startAgain = (runs) =>
+  unstarted(runs[0]) && runs.filter(unstarted).length === 1;
 
 /** The names of a finished run's jobs that did not pass. */
 export async function failedJobs(read, repository, run) {

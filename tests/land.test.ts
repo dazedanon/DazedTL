@@ -987,14 +987,11 @@ test("a platform-sensitive branch lands once CI on GitHub passes, after one reru
   assert.equal(pushed(), "");
   // A second run that could not start, as with a broken workflow file, is
   // the branch's to fix: --finish refuses instead of starting runs forever.
-  github.add(stuck, "startup_failure", 2);
+  github.add(stuck, "startup_failure", 1);
   const started = github.writes.length;
   const unstartable = await check(false);
   assert.equal(unstartable?.code, 1);
-  assert.match(
-    unstartable?.report.at(-1) ?? "",
-    /^CI could not start after one rerun for /,
-  );
+  assert.match(unstartable?.report.at(-1) ?? "", /^CI could not start for /);
   assert.equal(github.writes.length, started);
   const unsigned = { ...deps, read: null, write: null };
   assert.equal(
