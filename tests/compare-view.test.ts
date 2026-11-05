@@ -11,6 +11,7 @@ import {
   current,
   estimateTotal,
   glossaryChanges,
+  keptRequests,
   picks,
   Rereads,
   runStep,
@@ -265,4 +266,16 @@ test("an action on the comparisons waits for a read asked after it", async () =>
   rereads.settled(second.after);
   await new Promise((resolve) => setImmediate(resolve));
   assert.deepEqual(ended, [1, 2]);
+});
+
+test("Show request pages over the requests kept and says when fewer were kept than sent", () => {
+  assert.deepEqual(keptRequests(model(0, { requests: 3, keptRequests: 3 })), {
+    kept: 3,
+    note: "",
+  });
+  const many = keptRequests(model(0, { requests: 45, keptRequests: 20 }));
+  assert.equal(many.kept, 20);
+  assert.match(many.note, /first 20 of its 45/);
+  // A model that kept none has nothing to open.
+  assert.equal(keptRequests(model(0, { requests: 2 })).kept, 0);
 });

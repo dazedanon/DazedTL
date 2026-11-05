@@ -272,6 +272,22 @@ export function formatCost(value: number) {
   return `$${value.toFixed(3).replace(/0$/, "")}`;
 }
 
+/**
+ * The requests Show request opens for a model: the first ones its
+ * translation kept, and what it says when it kept fewer than it sent.
+ */
+export function keptRequests(model: CompareModel) {
+  const kept = model.keptRequests ?? 0;
+  const sent = model.requests ?? kept;
+  return {
+    kept,
+    note:
+      kept && sent > kept
+        ? `Only the first ${kept.toLocaleString()} of its ${sent.toLocaleString()} requests are kept.`
+        : "",
+  };
+}
+
 /** A model's price under its name: the estimate's before it translates,
  * then what it cost and how long it took. */
 export function modelDetail(model: CompareModel, translated: boolean) {

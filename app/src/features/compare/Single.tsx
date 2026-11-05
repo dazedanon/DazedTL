@@ -79,8 +79,8 @@ export function Single({ context }: { context: CompareContext }) {
       </PageBody>
       <ActionBar
         feedback={
-          translated &&
-          !!result?.requests && (
+          !!shown?.translationId &&
+          !!result?.keptRequests && (
             <Button variant="quiet" onClick={() => setInspecting(true)}>
               Show request
             </Button>

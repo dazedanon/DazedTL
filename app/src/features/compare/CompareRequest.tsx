@@ -13,6 +13,7 @@ import { RequestPager } from "../guided/RequestPager";
 import { RequestSource } from "../guided/RequestSource";
 import { RequestTechnical } from "../guided/RequestTechnical";
 import { responseText } from "../guided/requestView";
+import { keptRequests } from "./compareView";
 
 const tabs = [
   { id: "source", label: "Source" },
@@ -38,7 +39,7 @@ export function CompareRequest({
   const tabId = useId();
   const [tab, setTab] = useState<(typeof tabs)[number]["id"]>("source");
   const [index, setIndex] = useState(0);
-  const total = model.requests ?? 0;
+  const { kept: total, note } = keptRequests(model);
   const request = useRead(`${translationId}:${model.index}:${index}`, () =>
     api.compare.request(projectId, translationId, model.index, index),
   );
@@ -61,7 +62,9 @@ export function CompareRequest({
     >
       <DialogHeader
         title="Show request"
-        description={`${model.model} on ${model.connection}`}
+        description={[`${model.model} on ${model.connection}`, note]
+          .filter(Boolean)
+          .join(". ")}
         onClose={close}
       />
       <DialogBody className="payload-inspector prepared-request-body">
