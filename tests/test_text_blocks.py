@@ -11,7 +11,14 @@ from dazedtl.translation import comment_text, file_lines
 from util import original_values
 from util import rpgmaker_blocks as blocks
 from util.rpgmaker_markers import comment_markers, data_plugins, game_plugins
-from util.rpgmaker_rewrap import Layout, fit_document, wrap_help
+from util.rpgmaker_rewrap import (
+    Layout,
+    fit_document,
+    fit_value,
+    message_box,
+    wrap_help,
+    wrap_message,
+)
 
 
 def command(code, parameters, indent=0, **extra):
@@ -413,6 +420,22 @@ class TextBlockTests(unittest.TestCase):
         self.assertFalse(
             fit_document({"list": listed}, "Map001.json", wide, resized=True).changes
         )
+
+    def test_rows_of_codes_alone_stay_as_they_are(self):
+        # Rows of pauses alone are zero cells wide: laying them out again for
+        # wider Line widths tried a window of none, and text that breaks
+        # between characters shared none of its width out between sentences.
+        text = "\\.\\.\\.\n\\.\\.\\."
+        for target in ("English", "zh", "ja"):
+            box = message_box(Layout(60, 60, 74, 45, 4, target))
+            self.assertEqual(
+                fit_value(text, box, source="あ。\nい。", resized=True), text
+            )
+            # Translation wraps every message, fitting or not.
+            self.assertEqual(
+                wrap_message(text, 60, source="……\n……", rows=4, target=target),
+                "\\.\\.\\. \\.\\.\\." if target == "English" else "\\.\\.\\.\\.\\.\\.",
+            )
 
     def test_message_paged_narrower_is_laid_out_again_once_the_width_grows(self):
         # At 45 the message takes two windows, the first filled with blank
