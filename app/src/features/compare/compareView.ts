@@ -216,6 +216,21 @@ export function picks(comparison: Comparison, marks: Record<string, number>) {
   };
 }
 
+/**
+ * Whether Model vs model hides a translation's model names: from the moment
+ * it starts, while it is blind and not revealed, until every line has a
+ * pick. `saved` holds the picks saved here ahead of the next read.
+ */
+export function namesHidden(
+  comparison: Comparison | undefined,
+  saved: { blind: boolean; revealed: boolean } | undefined,
+  finished: boolean,
+) {
+  if (!comparison?.translationId) return false;
+  const { blind, revealed } = saved ?? comparison;
+  return blind && !revealed && !finished;
+}
+
 /** The Tune settings runs of one file's lines, oldest first, translated. */
 export function tuneRuns(
   comparisons: readonly Comparison[],

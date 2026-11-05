@@ -13,6 +13,7 @@ import {
   finishedModel,
   glossaryChanges,
   keptRequests,
+  namesHidden,
   picks,
   Rereads,
   runningComparison,
@@ -349,5 +350,34 @@ test("the footer's run status keeps hidden names hidden and a stop short", () =>
   assert.equal(
     runStatus(item("failed"), "Translation", false).message,
     "stand-in · 2 of 6 lines",
+  );
+});
+
+test("a blind comparison hides its names while its lines come in, until revealed or every line is picked", () => {
+  const running = comparison({
+    stage: "translation",
+    translationId: "run",
+    status: "running",
+    blind: true,
+  });
+  assert.equal(namesHidden(running, undefined, false), true);
+  // Picks saved here lead the read, which may not hold them yet.
+  assert.equal(
+    namesHidden(
+      { ...running, blind: false },
+      { blind: true, revealed: false },
+      false,
+    ),
+    true,
+  );
+  assert.equal(
+    namesHidden(running, { blind: true, revealed: true }, false),
+    false,
+  );
+  assert.equal(namesHidden(running, undefined, true), false);
+  // Not translated yet: the names are the user's own choices.
+  assert.equal(
+    namesHidden(comparison({ blind: true }), undefined, false),
+    false,
   );
 });

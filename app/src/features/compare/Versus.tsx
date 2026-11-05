@@ -12,7 +12,13 @@ import { PageBody } from "../../ui/PageLayout";
 import { settingsSaved } from "../settings/settingsChanges";
 import type { CompareContext } from "./Compare";
 import { CompareGrid, type CompareColumn } from "./CompareGrid";
-import { blindOrder, modelDetail, picks, working } from "./compareView";
+import {
+  blindOrder,
+  modelDetail,
+  namesHidden,
+  picks,
+  working,
+} from "./compareView";
 import { LinesMenu, useSceneChoice } from "./LinesMenu";
 import { ModelChips, sent, type ChosenModel } from "./ModelChoice";
 import { useCompareRun } from "./useCompareRun";
@@ -95,9 +101,14 @@ export function Versus({ context }: { context: CompareContext }) {
       : null;
   const score = shown && mark ? picks(shown, mark.marks) : null;
   const finished = !!score && score.total > 0 && score.picked === score.total;
-  const hidden = !!mark && mark.blind && !mark.revealed && !finished;
+  // Names stay hidden while the lines come in too.
+  const hidden = namesHidden(
+    shown,
+    translationId ? saved[translationId] : undefined,
+    finished,
+  );
   const order =
-    shown && mark?.blind
+    shown && (mark?.blind ?? hidden)
       ? blindOrder(shown.id, shown.candidates.length)
       : (shown?.candidates ?? chosen).map((_, index) => index);
   const winner =
