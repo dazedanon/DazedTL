@@ -887,6 +887,21 @@ class GuidedLineTests(unittest.TestCase):
             list(theirs.problems({f"{head}/0": "Yes if(s[2]) now", f"{head}/1": "No"})),
             [f"{head}/0"],
         )
+        # A condition mixed with a label's text stays in it, so its
+        # translation keeps that one and no other.
+        mixed = choosing(["はいen(v[3]<=50)(条件)", "いいえ"])
+        mixed = GuidedLines(self.game("mixed", mixed, mixed), "mixed", PAIR, True)
+        self.assertEqual(
+            list(
+                mixed.problems(
+                    {f"{head}/0": "Yesen(v[3]<=50)(cond)", f"{head}/1": "No(cond)"}
+                )
+            ),
+            [],
+        )
+        self.assertEqual(
+            list(mixed.problems({f"{head}/0": "Yes(cond)"})), [f"{head}/0"]
+        )
         theirs.save({f"{head}/0": "Yes", f"{head}/1": "No"}, "file.json")
         working = read_json(self.root / "theirs-work/translated/Map001.json")
         choice = working["events"][1]["pages"][0]["list"][0]

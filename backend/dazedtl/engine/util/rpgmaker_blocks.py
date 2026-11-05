@@ -234,11 +234,11 @@ _CONDITION = re.compile(r"(?:if|en)\(")
 _READ_CONDITION = re.compile(r"(?:if|en)\(.+?\)")
 
 
-def holds_condition(value: str) -> bool:
-    """Whether a choice plugin reads a condition clause anywhere in a
-    choice's *value*, as MPP_ChoiceEX does, a word such as "Open(door)"
-    included."""
-    return _READ_CONDITION.search(value) is not None
+def conditions(value: str) -> list[str]:
+    """The condition clauses a choice plugin reads anywhere in a choice's
+    *value*, as MPP_ChoiceEX does, a word such as "Open(door)" included, in
+    order."""
+    return _READ_CONDITION.findall(value)
 
 
 def split_choice(value: str) -> Choice:
