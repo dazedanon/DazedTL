@@ -44,6 +44,7 @@ node --test --test-isolation=none tests/application.test.ts
   Near the end, the runner prints where Python is waiting; [tests/run.py](../tests/run.py) explains how it schedules modules.
 - Python test modules share worker interpreters, so a test that replaces modules in `sys.modules` uses `replaced_modules` from [tests/engine.py](../tests/engine.py).
 - Ruff and [platform_calls](../scripts/platform_calls.py) reject file and process calls that go around the [platform layer](../backend/dazedtl/system.py), and text files opened without an encoding.
+- [Platform-sensitive](#ci) changes pass CI before landing.
 
 ### Thinking effort table
 
@@ -184,7 +185,7 @@ One landing runs at a time, under a lock that a release also holds.
 A Discord intake worker, which may never write the main checkout, lands in two steps.
 It runs `node scripts/land.mjs --hand-off <dir>` with the directory its prompt gives: the same format, merge and checks against `origin`'s `dev`, leaving the branch as `handoff.bundle` and `handoff.json` there, with no review, lock, app wait or push.
 The intake reviews that bundle by the land skill's Review step, with limits from [land-lock](../scripts/land-lock.mjs), then runs the main checkout's `node scripts/land.mjs --finish <dir> --review <file.json>`.
-Under the lock, that checks the bundle with Git alone and runs nothing from it, then fast-forwards `dev`, records the review and pushes as a landing does.
+Under the lock, it checks the bundle with Git alone, runs nothing from it and lands as a landing does.
 It never waits without a limit: it exits 3 when `dev` moved after the checks, so the worker merges `dev` and hands off again, 4 at once while your DazedTL is open, and 5 when the main checkout can't take it now, such as uncommitted changes, the lock held over 10 minutes or CI pending or unreachable.
 
 ### Releasing
