@@ -380,6 +380,27 @@ test("a landing's review record comes from an independent reviewer and accounts 
       findings: [{ summary: "Off by one", outcome: "fixed", review: 1 }],
     },
   );
+  // The lenses every review ran, so review-stats can compare escapes by lens.
+  assert.deepEqual(
+    record({
+      ...reviewed,
+      level: "high",
+      lenses: ["places-and-chains", "places-and-chains"],
+      findings: [],
+    }),
+    {
+      ...reviewed,
+      level: "high",
+      reviews: 1,
+      lenses: ["places-and-chains"],
+      findings: [],
+    },
+  );
+  for (const lenses of ["places-and-chains", ["places"], null])
+    assert.throws(
+      () => record({ ...reviewed, level: "high", lenses, findings: [] }),
+      /"lenses" lists the lenses every review ran/,
+    );
   assert.throws(() => record({ ...reviewed, level: "high" }), /findings list/);
   assert.throws(() => readReview("level: high"), /not JSON/);
 });

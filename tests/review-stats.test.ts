@@ -39,6 +39,7 @@ test("review stats put each escaped bug on the landing that let it in, once it i
       {
         range: "a..b",
         reviews: 0,
+        lenses: [],
         findings: [],
         landed: old - day,
         commits: ["b1"],
@@ -47,6 +48,7 @@ test("review stats put each escaped bug on the landing that let it in, once it i
       {
         range: "b..c",
         reviews: 2,
+        lenses: ["places-and-chains"],
         findings: [
           { kind: "bug", outcome: "fixed", review: 1 },
           { kind: "bug", outcome: "dismissed", review: 2 },
@@ -60,6 +62,7 @@ test("review stats put each escaped bug on the landing that let it in, once it i
       {
         range: "c..d",
         reviews: 1,
+        lenses: [],
         findings: [],
         landed: now - day,
         commits: ["d1", "d2"],
@@ -68,6 +71,7 @@ test("review stats put each escaped bug on the landing that let it in, once it i
       {
         range: "d..e",
         reviews: 1,
+        lenses: [],
         findings: [],
         landed: null,
         commits: ["e1"],
@@ -95,6 +99,10 @@ test("review stats put each escaped bug on the landing that let it in, once it i
   assert.deepEqual(summary.bySize, [
     ["under 100", { landings: 1, escapes: 0 }],
     ["1000 or more", { landings: 1, escapes: 1 }],
+  ]);
+  // a..b ran no independent review, so it is in no lens row.
+  assert.deepEqual(summary.byLenses, [
+    ["places-and-chains", { landings: 1, escapes: 1 }],
   ]);
   assert.equal(summary.recent, 1);
   assert.equal(summary.undated, 1);
@@ -146,6 +154,7 @@ test("review stats count a landing's age in days on which landings reached dev",
         {
           range: "a..b",
           reviews: 1,
+          lenses: [],
           findings: [],
           landed: at(0, 9),
           commits: ["b1"],
@@ -176,6 +185,7 @@ test("review stats list a chain of fixes across landings, and only those", () =>
   const landing = (range: string, commits: string[]) => ({
     range,
     reviews: 1,
+    lenses: [],
     findings: [],
     landed: old,
     commits,
@@ -328,6 +338,8 @@ test("review stats read real trailers by their first word, code lines from numst
       JSON.stringify({
         landed: "2026-11-02T18:04:12.670Z",
         range: "a..b",
+        // An author's review ran no lens, whatever its record says.
+        lenses: ["places-and-chains"],
         findings: [{ summary: "Typo", outcome: "fixed" }],
       }),
       '{"range":"abc',
@@ -335,6 +347,7 @@ test("review stats read real trailers by their first word, code lines from numst
         range: "b..c",
         reviewer: "independent",
         reviews: 2,
+        lenses: ["places-and-chains", "places-and-chains", "unknown"],
         findings: [
           { kind: "bug", outcome: "fixed", review: 2 },
           { outcome: "dismissed" },
@@ -353,19 +366,21 @@ test("review stats read real trailers by their first word, code lines from numst
     {
       range: "a..b",
       reviews: 0,
+      lenses: [],
       findings: [{ outcome: "fixed", review: 0 }],
       landed: Date.parse("2026-11-02T18:04:12.670Z"),
     },
     {
       range: "b..c",
       reviews: 2,
+      lenses: ["places-and-chains"],
       findings: [
         { kind: "bug", outcome: "fixed", review: 2 },
         { outcome: "dismissed", review: 1 },
       ],
       landed: null,
     },
-    { range: "d..e", reviews: 0, findings: [], landed: null },
+    { range: "d..e", reviews: 0, lenses: [], findings: [], landed: null },
   ]);
   // A line read as no landing still reached dev, so its day is active.
   assert.deepEqual(times, [

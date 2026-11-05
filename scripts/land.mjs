@@ -48,7 +48,9 @@ import {
 import {
   devMoved,
   gitIn,
+  knownLenses,
   LockBusy,
+  reviewLenses,
   reviewLog,
   withLock,
 } from "./land-lock.mjs";
@@ -99,7 +101,7 @@ const lockLimit = 10 * 60_000;
  * Throws with what is wrong, so no branch lands on its author's review alone.
  * @param {string} text
  * @param {{ kinds?: boolean }} [options]
- * @returns {{ level: string, reviewer: "independent", reviews: number, head: string, findings: { summary: string, kind?: string, outcome: "fixed" | "dismissed", reason?: string, review: number }[] }}
+ * @returns {{ level: string, reviewer: "independent", reviews: number, head: string, lenses?: string[], findings: { summary: string, kind?: string, outcome: "fixed" | "dismissed", reason?: string, review: number }[] }}
  */
 export function readReview(text, { kinds = false } = {}) {
   let record;
@@ -134,6 +136,14 @@ export function readReview(text, { kinds = false } = {}) {
   if (!Array.isArray(record.findings))
     throw new Error(
       "The review record needs a findings list, empty when the review found nothing.",
+    );
+  const lenses = record.lenses === undefined ? [] : record.lenses;
+  if (
+    !Array.isArray(lenses) ||
+    lenses.some((lens) => !reviewLenses.includes(lens))
+  )
+    throw new Error(
+      `The review record's "lenses" lists the lenses every review ran, of ${reviewLenses.join(", ")}.`,
     );
   const findings = record.findings.map(
     (/** @type {any} */ item, /** @type {number} */ index) => {
@@ -171,6 +181,7 @@ export function readReview(text, { kinds = false } = {}) {
     reviewer: "independent",
     reviews,
     head: record.head,
+    ...(lenses.length ? { lenses: knownLenses(lenses) } : {}),
     findings,
   };
 }
