@@ -141,22 +141,27 @@ def restore(document, original=lambda: None):
                     theirs = resolve(source_document(), first[:-3])
                 except KeyError, IndexError, TypeError:
                     theirs = None
-                listed[index][blocks.ROWS] = len(
-                    blocks.owned(
-                        listed,
-                        index,
-                        original=theirs if isinstance(theirs, list) else None,
-                    )
+                blocks.record_rows(
+                    listed[index],
+                    len(
+                        blocks.owned(
+                            listed,
+                            index,
+                            original=theirs if isinstance(theirs, list) else None,
+                        )
+                    ),
                 )
         parent, key = resolve(document, first[:-1]), first[-1]
         if note.code in MESSAGES:
             # Each line is (..., command list, position, "parameters", 0); the
-            # source goes back over every row, so the event keeps them all.
+            # source goes back over every row, so the event keeps them all,
+            # and their record stays as it is (rpgmaker_blocks ROWS).
             blocks.write_text(
                 resolve(document, first[:-3]),
                 tuple(path[-3] for path in note.paths),
                 note.source,
                 joined=False,
+                record=False,
             )
         elif note.transform != "identity":
             match = QUOTED.search(parent[key])

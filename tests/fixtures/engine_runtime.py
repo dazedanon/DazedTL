@@ -1374,7 +1374,8 @@ try:
             # in Japanese; one with it off sent the name's source alone and
             # wrote its translation over the speech, emptying it. Under the
             # left-rows policy the speech is a text of its own, as the export
-            # lists it; older frozen runs keep their request bodies.
+            # lists it, and the one row it is joined into records it holds
+            # it; older frozen runs keep their request bodies and record none.
             speech = ["「すいません‼", "入り込みまして…‼"]
             half = [
                 name(""),
@@ -1382,18 +1383,19 @@ try:
                 *(command(401, [row]) for row in speech),
             ]
             for generation, body, kept in (
-                (policy, "新米警察官", [("Hello.", "新米警察官")]),
+                (policy, "新米警察官", [("Hello.", "新米警察官", None)]),
                 (
                     {**policy, "leftRows": LEFT_ROWS},
                     '"すいません‼\n入り込みまして…‼',
-                    [("Officer", "新米警察官"), ("Hello.", "\n".join(speech))],
+                    [("Officer", "新米警察官", None), ("Hello.", "\n".join(speech), 1)],
                 ),
             ):
                 configure_states({"engine": "MVMZ"}, temporary, generation)
                 result = parse(half)
                 assert calls == [([body], "")], calls
                 assert [
-                    (c["parameters"][0], c.get("_original")) for c in result[1:-1]
+                    (c["parameters"][0], c.get("_original"), c.get("_rows"))
+                    for c in result[1:-1]
                 ] == kept, result
             (block,) = blocks.blocks(half)
             assert [
@@ -1434,6 +1436,48 @@ try:
                 assert [
                     (c["parameters"][0], c.get("_original")) for c in result[1:-1]
                 ] == kept, result
+            # Scrolling text's rows can't tell a name a run translated alone
+            # from the speech after it, which a run lays scrolling text over
+            # as it does blank rows its source leaves out: with Skip already
+            # translated text off, a run sent the name again and wrote its
+            # translation over 「……」, emptying it. Under left-rows v3 each
+            # text a run writes records the rows it wrote it over, so the
+            # speech is a text of its own; v2 runs keep their bodies.
+            scroll = [
+                command(105, [2, False]),
+                command(405, ["新米警察官"]),
+                command(405, ["「……」"]),
+            ]
+            for generation, body, kept in (
+                (
+                    {**letters, "leftRows": "event-left-rows-v2"},
+                    ["新米警察官"],
+                    [("Hello.", "新米警察官", None), ("", None, None)],
+                ),
+                (
+                    newer,
+                    ["新米警察官", '"……"'],
+                    [("Hello.", "新米警察官", 1), ("Hello.", '"……"', 1)],
+                ),
+            ):
+                configure_states({"engine": "MVMZ"}, temporary, generation)
+                with patch.object(parser, "FIRSTLINESPEAKERS", True):
+                    named = parse(scroll)[:-1]
+                with patch.object(parser, "IGNORETLTEXT", False):
+                    result = parse(named)
+                assert calls == [(body, "")], calls
+                assert [
+                    (c["parameters"][0], c.get("_original"), c.get("_rows"))
+                    for c in result[1:3]
+                ] == kept, result
+            # A text that is a name window alone gets its name written in its
+            # row, which records it too.
+            result = parse([name(""), command(401, ["\\n<アリス>"])])
+            assert (
+                result[1]["parameters"][0],
+                result[1]["_original"],
+                result[1].get("_rows"),
+            ) == ("\\n<Hana>", "\\n<アリス>", 1), result
             configure_states({"engine": "MVMZ"}, temporary, policy)
             with patch.object(parser, "INLINE401SPEAKERS", True):
                 parse([name(""), command(401, ["花「こんにちは」"])])
