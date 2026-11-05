@@ -93,8 +93,9 @@ FIT_STOPPED = (
 )
 ESTIMATE_STOPPED = "No new estimate was saved. Estimating again starts over."
 COMPARE_STOPPED = (
-    "The lines that came back before it stopped are kept, and what each model "
-    "sent is in its cost. Translating these lines again needs a new estimate."
+    "Models that finished before it stopped keep their lines, and each "
+    "model's cost shows what it sent. Translating these lines again needs a "
+    "new estimate."
 )
 RELEASE_STOPPED = (
     "No new ZIP was saved, and any earlier ZIP is unchanged. Building again "

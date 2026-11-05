@@ -210,15 +210,29 @@ class StopTests(unittest.TestCase):
                 patch.object(compare_run, "engine_configuration"),
                 patch.object(compare_run, "translate", side_effect=translate),
                 patch.object(compare_run, "result", return_value=finished),
-                patch.object(compare_run, "_spent", return_value={"cost": 0.2}),
+                # A stopped Guided model kept no cost below a cent, no
+                # requests and no time.
+                patch.object(
+                    compare_run,
+                    "_sent",
+                    return_value={"cost": 0.0, "requests": [{}], "requestCount": 3},
+                ),
             ):
                 value = compare_run.run(self.guided_plan(folder, ["a", "b"]), log)
         self.assertTrue(value["stopped"])
         self.assertEqual(value["message"], stopped_note(compare_run.TRANSLATE))
         self.assertEqual(value["models"][0], {"index": 0, **finished})
+        stopped_model = dict(value["models"][1])
+        self.assertIsInstance(stopped_model.pop("seconds"), float)
         self.assertEqual(
-            value["models"][1],
-            {"index": 1, "error": compare_run.STOPPED, "cost": 0.2},
+            stopped_model,
+            {
+                "index": 1,
+                "error": compare_run.STOPPED,
+                "cost": 0.0,
+                "requests": [{}],
+                "requestCount": 3,
+            },
         )
         self.assertEqual(outcome(value), "stopped")
         # The page shows the stopped model's cost beside its error.

@@ -422,22 +422,30 @@ def problems(name, found, lines, glossary, pair):
 def result(directory, name, phase, markers, seconds, original, found, pair):
     """What a finished run returns: each line it wrote, what its checks
     found, its cost and time, and the requests it sent."""
-    from .process_view import ledger_payload, ledger_records, paid_receipts
-
     path = directory / "translated" / name
     if not path.is_file():
         raise ValueError(f"{name} came back without a translation.")
     document = json.loads(system.read_bytes(path).decode("utf-8-sig"))
-    paid = paid_receipts(directory)
-    records = ledger_records(directory) or []
     lines = rows(name, document, phase, original, markers)
     return {
         "lines": lines,
         "problems": problems(
             name, found, lines, glossary_text((directory / GLOSSARY).parents[1]), pair
         ),
-        "cost": round(sum(float(item.get("cost") or 0) for item in paid.values()), 6),
         "seconds": round(seconds, 1),
+        **_sent(directory),
+    }
+
+
+def _sent(directory):
+    """What a Guided model's run paid for and the requests it sent, the
+    first KEPT_REQUESTS kept for Show request."""
+    from .process_view import ledger_payload, ledger_records, paid_receipts
+
+    paid = paid_receipts(directory)
+    records = ledger_records(directory) or []
+    return {
+        "cost": round(sum(float(item.get("cost") or 0) for item in paid.values()), 6),
         "requests": [
             ledger_payload(directory, records, index, len(records))
             for index in range(min(len(records), KEPT_REQUESTS))
@@ -538,7 +546,7 @@ def run(plan, log):
                 if action == ESTIMATE:
                     raise
                 report(f"{label} · stopped", index, "failed")
-                return {"index": index, "error": STOPPED, **_spent(directory)}
+                return {"index": index, "error": STOPPED, **_spent(directory, started)}
             except (
                 OSError,
                 RuntimeError,
@@ -553,7 +561,7 @@ def run(plan, log):
                 return {
                     "index": index,
                     "error": _message(error),
-                    **_spent(directory),
+                    **_spent(directory, started),
                 }
 
         with ThreadPoolExecutor(max_workers=len(candidates) or 1) as pool:
@@ -687,14 +695,12 @@ def _message(error):
     return str(error) if isinstance(error, ValueError) else type(error).__name__
 
 
-def _spent(directory):
-    """What a run that failed after sending paid for, which its result
-    still shows."""
-    from .process_view import paid_receipts
-
+def _spent(directory, started):
+    """What a Guided model's run that stopped or failed sent, paid for and
+    took, which its column still shows. Its lines come only with the file
+    it finishes."""
+    value = {"seconds": round(time.monotonic() - started, 1)}
     try:
-        paid = paid_receipts(directory)
+        return {**value, **_sent(directory)}
     except OSError, ValueError:
-        return {}
-    cost = sum(float(item.get("cost") or 0) for item in paid.values())
-    return {"cost": round(cost, 6)} if cost else {}
+        return value
