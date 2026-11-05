@@ -172,10 +172,10 @@ def inline_speaker(text: str, form: str = ANY) -> InlineSpeaker | None:
 # ============================================================================
 # MV/MZ message speakers
 # ----------------------------------------------------------------------------
-# The MV/MZ parser reads a message's speaker from its first row: a nameplate
-# on a row of its own, with the speech on the rows after it, or a name in
-# front of the speech on the same row. Guided's translation file names its
-# lines by the same reading (translation/file_lines `nameplated`).
+# The MV/MZ parser reads a speaker from the first row of each text it sends
+# of a message (util/rpgmaker_blocks `next_text`): a nameplate on a row of its
+# own, with the speech on the rows after it, or a name in front of the speech
+# on the same row.
 # ============================================================================
 
 # Codes such as \c[1], \n[2], \F[tt07] or \FF[\w[3]].

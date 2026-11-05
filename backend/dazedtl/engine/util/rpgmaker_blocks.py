@@ -32,10 +32,10 @@ from __future__ import annotations
 import re
 from collections import Counter
 from dataclasses import dataclass
-from typing import Any, Iterable, Iterator
+from typing import Any, Callable, Iterable, Iterator, NamedTuple
 
 from util import target_text
-from util.speakers import to_prefixed
+from util.speakers import MessageSpeakers, to_prefixed
 from util.source_text import holds_source
 
 # The number of rows a part's text owns, kept on its anchor beside
@@ -535,6 +535,89 @@ def part_rows(commands: list, anchor: int, *, original: list | None = None) -> t
     *anchor*, the anchor first (see :func:`owned`)."""
     rows = owned(commands, anchor, original=original)
     return ((anchor,) if code(commands[anchor]) == 108 else ()) + rows
+
+
+# ----------------------------------------------- the texts the engine sends
+
+# A row that opens with a code taking an argument, such as \SE[1] or \F[tt07],
+# other than the colour, icon, name, key and variable codes (\C \I \N \K \V),
+# which are part of the text.
+_OPENING_CODE = re.compile(r"^(\s*[\\]+[aAbBdDeEfFgGhHjJlLmMoOpPqQrRsStTuUwWxXyYzZ]+\[[\w\d\[\]\\]+\])")
+# The commands a message's or scrolling text's text joins over: its rows and
+# the ones translation emptied.
+TEXT_CODES = (401, 405, -1)
+
+
+def opens_text(row: Any) -> bool:
+    """Whether a message or scrolling text row starts a text of its own: one
+    opening with a code such as \\SE[1] (see _OPENING_CODE)."""
+    return _OPENING_CODE.match(str(row)) is not None
+
+
+def joins(commands: list, at: int, codes: tuple[int, ...] = TEXT_CODES) -> bool:
+    """Whether the command after *at* joins the text of the one at *at* in
+    what the engine sends: a command of *codes*, both holding parameters, the
+    later opening no text of its own (:func:`opens_text`)."""
+    if at + 1 >= len(commands):
+        return False
+    current, following = commands[at], commands[at + 1]
+    return (
+        following.get("code") in codes
+        and bool(current.get("parameters"))
+        and bool(following.get("parameters"))
+        and not opens_text(following["parameters"][0])
+    )
+
+
+def text_end(
+    commands: list,
+    start: int,
+    codes: tuple[int, ...] = TEXT_CODES,
+    stop: Callable[[int], bool] | None = None,
+) -> int:
+    """The last command whose text joins the one at *start* (:func:`joins`),
+    before any command *stop* names by its index."""
+    end = start
+    while joins(commands, end, codes) and not (stop is not None and stop(end + 1)):
+        end += 1
+    return end
+
+
+class NextText(NamedTuple):
+    """The text the engine sends from a row (:func:`next_text`)."""
+
+    # The speakers the row names (util/speakers `message_speakers`), or None.
+    speakers: MessageSpeakers | None
+    # The row of a nameplate the row is, sent apart from the text after it.
+    name: int | None
+    # The rows sent as one text, after the nameplate if any.
+    rows: tuple[int, ...]
+
+
+def next_text(
+    commands: list,
+    start: int,
+    line: str,
+    speakers: Callable[[str, str | None], MessageSpeakers | None],
+    stop: Callable[[int], bool] | None = None,
+) -> NextText:
+    """The text the MV/MZ engine sends from the message or scrolling text row
+    at *start*, whose text it reads as *line*: the speakers *speakers* reads
+    there, given the next command's text when that command is another of the
+    text's rows (TEXT_CODES) and None otherwise; a nameplate on that row,
+    which goes alone, and the rows after it, past emptied commands; and the
+    rows joined to the first (:func:`text_end`), up to any *stop* names."""
+    following = None
+    if start + 1 < len(commands) and commands[start + 1].get("code") in TEXT_CODES:
+        parameters = commands[start + 1].get("parameters") or []
+        following = parameters[0] if parameters else ""
+    found = speakers(line, following)
+    name, first = None, start
+    if found is not None and found.own_line:
+        name, first = start, start + 1
+        while commands[first]["code"] == -1:
+            first += 1
+    return NextText(found, name, tuple(range(first, text_end(commands, first, stop=stop) + 1)))
 
 
 def spread(value: str, count: int) -> list[str]:

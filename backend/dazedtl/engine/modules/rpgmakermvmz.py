@@ -1270,24 +1270,11 @@ def _group_current(codeList, start: int, end: int) -> str:
 def _text_group_end(codeList, start: int, allowed_codes: tuple[int, ...]) -> int:
     """Return the last command joined into a contiguous visible-text group.
 
-    This groups a request, not a block's rows (util/rpgmaker_blocks): a row
-    led by a control code starts a new request, so walking blocks instead
-    would change requests and the identities of saved Batch results."""
-    end = start
-    while end + 1 < len(codeList):
-        current = codeList[end]
-        following = codeList[end + 1]
-        if following.get("code") not in allowed_codes:
-            break
-        if not current.get("parameters") or not following.get("parameters"):
-            break
-        if re.match(
-            r"^(\s*[\\]+[aAbBdDeEfFgGhHjJlLmMoOpPqQrRsStTuUwWxXyYzZ]+\[[\w\d\[\]\\]+\])",
-            str(following["parameters"][0]),
-        ):
-            break
-        end += 1
-    return end
+    This groups a request, not a block's rows: a row led by a control code
+    starts a new request (util/rpgmaker_blocks `text_end`), so walking blocks
+    instead would change requests and the identities of saved Batch
+    results."""
+    return rpgmaker_blocks.text_end(codeList, start, allowed_codes)
 
 
 def _code408_block(codeList, index: int):
@@ -3688,6 +3675,20 @@ def _standalone_speaker(name):
     return standalone_speaker(name, _has_japanese_text)
 
 
+def _message_speakers(line, following):
+    """The speakers a message's or scrolling text's row names, read as the
+    run's settings and frozen policy read them (util/speakers
+    `message_speakers`)."""
+    return message_speakers(
+        line,
+        following,
+        first_line=FIRSTLINESPEAKERS is True,
+        inline=INLINE401SPEAKERS,
+        code_nameplates=CODE_NAMEPLATES,
+        standalone=_standalone_speaker if SPEAKER_CONTEXT else None,
+    )
+
+
 def _message_end(commands, start, allowed):
     end = _text_group_end(commands, start, allowed)
     nameplate = re.fullmatch(
@@ -4117,19 +4118,18 @@ def _searchCodes(page, pbar, jobList, filename):
                 #     if VNameValue == 5:
                 #         jaString = re.sub(retardRegex, '富士見', jaString)
 
-                # Speaker Check (util/speakers.message_speakers)
-                following = None
-                if i + 1 < len(codeList) and codeList[i + 1].get("code") in (401, 405, -1):
-                    parameters = codeList[i + 1].get("parameters") or []
-                    following = parameters[0] if parameters else ""
-                speakerMatch = message_speakers(
+                # Speaker Check and the rows sent as one
+                # (util/rpgmaker_blocks.next_text)
+                sentText = rpgmaker_blocks.next_text(
+                    codeList,
+                    i,
                     speakerWork,
-                    following,
-                    first_line=FIRSTLINESPEAKERS is True,
-                    inline=INLINE401SPEAKERS,
-                    code_nameplates=CODE_NAMEPLATES,
-                    standalone=_standalone_speaker if SPEAKER_CONTEXT else None,
+                    _message_speakers,
+                    # Each retained scalar original owns its own unit.
+                    lambda at: SPEAKER_CONTEXT
+                    and _scalar_original(codeList[at]) is not None,
                 )
+                speakerMatch = sentText.speakers
                 speakerList = list(speakerMatch.names) if speakerMatch else []
                 inlineSpeakerMatch = speakerMatch.inline if speakerMatch else None
 
@@ -4219,11 +4219,7 @@ def _searchCodes(page, pbar, jobList, filename):
                         nametag = ""
 
                         # Iterate to next string
-                        i += 1
-                        j = i
-                        while codeList[i]["code"] in [-1]:
-                            i += 1
-                            j = i
+                        i = j = sentText.rows[0]
                         jaString = codeList[i]["parameters"][0]
                         groupStart = i
 
@@ -4234,21 +4230,14 @@ def _searchCodes(page, pbar, jobList, filename):
                 currentSourceGroup.append(_param_current(codeList[i], 0))
 
                 # Join Up 401's into single string
-                if len(codeList) > i + 1:
-                    while codeList[i + 1]["code"] in [401, 405, -1] and len(codeList[i]["parameters"]) > 0 and len(codeList[i + 1]["parameters"]) > 0 and not re.match(r"^(\s*[\\]+[aAbBdDeEfFgGhHjJlLmMoOpPqQrRsStTuUwWxXyYzZ]+\[[\w\d\[\]\\]+\])", codeList[i+1]["parameters"][0]) and (not SPEAKER_CONTEXT or _scalar_original(codeList[i + 1]) is None):
-                        i += 1
-                        j = i
-
-                        jaString = codeList[i]["parameters"][0]
-                        if jaString.strip():
-                            currentGroup.append(jaString)
-                            currentSourceGroup.append(_param_current(codeList[i], 0))
-                            if not anchor_has_orig:
-                                sourceGroup.append(_param_text(codeList[i], 0))
-
-                        # Make sure not the end of the list.
-                        if len(codeList) <= i + 1:
-                            break
+                for i in sentText.rows[1:]:
+                    j = i
+                    jaString = codeList[i]["parameters"][0]
+                    if jaString.strip():
+                        currentGroup.append(jaString)
+                        currentSourceGroup.append(_param_current(codeList[i], 0))
+                        if not anchor_has_orig:
+                            sourceGroup.append(_param_text(codeList[i], 0))
 
                 # Format String
                 if len(currentGroup) > 0:
