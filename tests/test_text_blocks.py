@@ -680,6 +680,16 @@ class TextBlockTests(unittest.TestCase):
 
         speech = ("「すいません‼", "入り込みまして…‼")
         self.assertEqual(blocks.part_rows(page(*speech)["list"], 1), (1,))
+        # A translation laid over its rows, as a run lays scrolling text, may
+        # keep a word of its source, such as a name, on a later row.
+        scroll = [
+            command(105, [2, False]),
+            command(405, ["Long ago,"], _original="昔々、\n花子という娘が\nいました。"),
+            command(405, ["there was a girl named 花子"]),
+            command(405, ["who lived here."]),
+            command(0, []),
+        ]
+        self.assertEqual(blocks.part_rows(scroll, 1), (1, 2, 3))
         written = preserve_originals(
             page(*speech), page('"Sorry!', 'They slipped in!"'), filename="Map001.json"
         )["list"]

@@ -344,13 +344,18 @@ def run(commands: list, start: int, row_code: int) -> tuple[int, ...]:
 def uncovered(value: str, source: str) -> bool:
     """Whether a message's or scrolling text's row reading *value*, after
     the first of a translation of *source*, holds text that translation
-    never covered: Japanese left in it read against *source* (util/source_text
-    `source_left`), as the engine reads it, in no row of *source*. Such a row
-    is the game's own, left untranslated, such as the speech after a
-    nameplate a run translated alone, under other speaker settings or with
-    the speech's request refused; a writer laying the translation over its
-    rows leaves none."""
-    return value not in source.split("\n") and bool(source_left(value, source))
+    never covered: Japanese left in it, read against *source* as the engine
+    reads it (util/source_text `source_left`), that no word of *source*
+    holds. Such a row is the game's own, left untranslated, such as the
+    speech after a nameplate a run translated alone, under other speaker
+    settings or with the speech's request refused. A writer laying the
+    translation over its rows leaves none, though a row may keep a word of
+    the source, such as a name; a row of the game's own whose Japanese the
+    source holds reads as the translation's too."""
+    theirs = source_left(source)
+    return any(
+        not any(run in word for word in theirs) for run in source_left(value, source)
+    )
 
 
 def _translation(command: Any) -> str | None:
