@@ -9,11 +9,13 @@ import type {
 } from "../../api/contracts";
 import { useApplication } from "../../app/ApplicationProvider";
 import { useOnChange } from "../../state/useOnChange";
-import type { Observer } from "../../state/useAction";
+import { useAction, type Observer } from "../../state/useAction";
 import { useRead } from "../../state/useRead";
 import { unavailableReason } from "../../ui/displayText";
 import { Message } from "../../ui/Feedback";
+import { ActionControl } from "../../ui/ActionControl";
 import { Notice } from "../../ui/Notice";
+import { StatusIcon } from "../../ui/StatusIcon";
 import {
   PageBody,
   PageHeader,
@@ -23,7 +25,12 @@ import {
 import { StackedTabPanels, Tabs } from "../../ui/Tabs";
 import { onSettingsSaved } from "../settings/settingsChanges";
 import { configured } from "./AddModels";
-import { compareInputs, Rereads, shownKey } from "./compareView";
+import {
+  compareInputs,
+  Rereads,
+  runningComparison,
+  shownKey,
+} from "./compareView";
 import type { ChosenModel } from "./ModelChoice";
 import { Single } from "./Single";
 import { Tune } from "./Tune";
@@ -61,6 +68,42 @@ function useShownKey(shown: boolean, key: string) {
   const next = shownKey(shown, key, last);
   if (next !== last) setLast(next);
   return next;
+}
+
+/**
+ * The comparison running for this game, shown on every tab with its Stop,
+ * since the game's other work waits for it.
+ */
+function RunningComparison({
+  projectId,
+  running,
+}: {
+  projectId: string;
+  running: NonNullable<ReturnType<typeof runningComparison>>;
+}) {
+  const application = useApplication();
+  const stop = useAction({ observer: application });
+  const { operation } = running;
+  return (
+    <Notice>
+      <span className="compare-running">
+        <StatusIcon status="active" size={14} />
+        <span>
+          {running.text}. {running.waits}
+        </span>
+      </span>
+      <ActionControl
+        label="Stop"
+        inline
+        pending={stop.busy || operation.stopping}
+        pendingText="Stopping…"
+        error={stop.error}
+        onClick={() =>
+          void stop.run(() => api.compare.stop(projectId, operation.id))
+        }
+      />
+    </Notice>
+  );
 }
 
 /**
@@ -157,6 +200,7 @@ export default function Compare({
       }
     : null;
   const error = read.error === undefined ? "" : messageOf(read.error);
+  const running = runningComparison(operations);
   return (
     <PageLayout
       variant="editor"
@@ -189,6 +233,9 @@ export default function Compare({
           </div>
           <PageMessages>
             {error && !state && <Notice tone="warning">{error}</Notice>}
+            {running && (
+              <RunningComparison projectId={project.id} running={running} />
+            )}
           </PageMessages>
           {!context ? (
             <PageBody>

@@ -334,3 +334,20 @@
   grid-column: 2 / -1;
   margin: 0 0 var(--space-2);
 }
+
+/* The comparison running for the game: its mark beside what it does, which
+   wraps before its Stop does. */
+.notice:has(> .compare-running) {
+  flex-wrap: nowrap;
+  align-items: center;
+}
+.compare-running {
+  display: flex;
+  flex: 1 1 0;
+  min-width: 0;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+.compare-running > .status-icon {
+  margin-top: var(--space-half);
+}

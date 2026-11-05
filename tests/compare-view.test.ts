@@ -15,6 +15,7 @@ import {
   keptRequests,
   picks,
   Rereads,
+  runningComparison,
   runStep,
   shownKey,
 } from "../app/src/features/compare/compareView.ts";
@@ -302,4 +303,34 @@ test("a model that failed or was stopped keeps its cost but is not offered for u
   assert.equal(translated({ cost: 0.002, error: "HTTP 500" }), false);
   // Still running: its cost so far is no finished translation.
   assert.equal(translated({ cost: 0.001 }, "running"), false);
+});
+
+test("the comparison running for the game shows whatever the tab, until it ends", () => {
+  const operation = (status: string, extra = {}) => ({
+    id: "op",
+    action: "compare_translate" as const,
+    label: "Compare models",
+    status,
+    message: "stand-in · 2 of 6 lines",
+    stopping: false,
+    ...extra,
+  });
+  const running = runningComparison([
+    operation("complete"),
+    operation("running"),
+  ]);
+  assert.equal(running?.operation.status, "running");
+  assert.match(running!.text, /^Translating a comparison · stand-in/);
+  assert.match(running!.waits, /waits/);
+  // Its message ends the sentence the page adds to.
+  assert.equal(
+    runningComparison([
+      operation("running", {
+        stopping: true,
+        message: "Stopping at the next safe boundary.",
+      }),
+    ])!.text,
+    "Translating a comparison · Stopping at the next safe boundary",
+  );
+  assert.equal(runningComparison([operation("stopped")]), null);
 });

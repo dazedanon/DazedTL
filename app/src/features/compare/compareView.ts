@@ -3,6 +3,7 @@ import type {
   CompareKind,
   CompareModel,
   CompareScene,
+  CompareOperation,
   Comparison,
   WorkspaceSnapshot,
 } from "../../api/contracts.ts";
@@ -270,6 +271,28 @@ export function formatCost(value: number) {
   if (value < 0.001) return "<$0.001";
   if (value >= 1) return `$${value.toFixed(2)}`;
   return `$${value.toFixed(3).replace(/0$/, "")}`;
+}
+
+/**
+ * The comparison running for the game, whichever tab or choices it was
+ * started from, and what the page says of it: what it does, where it is,
+ * and that the game's other work waits for it, as they share one queue.
+ */
+export function runningComparison(operations: readonly CompareOperation[]) {
+  const operation = operations.find((item) => working(item.status));
+  if (!operation) return null;
+  const doing =
+    operation.action === "compare_translate"
+      ? "Translating a comparison"
+      : "Estimating a comparison";
+  return {
+    operation,
+    /** What it does and where it is, without a closing period. */
+    text: [doing, operation.message.trim().replace(/\.+$/, "")]
+      .filter(Boolean)
+      .join(" · "),
+    waits: "Other work on this game waits until it ends.",
+  };
 }
 
 /**
