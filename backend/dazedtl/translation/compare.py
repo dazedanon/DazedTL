@@ -17,6 +17,8 @@ from copy import deepcopy
 from pathlib import Path
 from typing import NamedTuple
 
+from util.guidance_documents import GAME_CONTEXT, GLOSSARY
+
 from dazedtl import system
 from dazedtl.actions import label
 from dazedtl.compatibility.compare import ESTIMATE, TRANSLATE, UNITS
@@ -287,6 +289,13 @@ class Compare:
                 for index, candidate in enumerate(candidates)
             ],
         }
+        if kind == "tune":
+            # What Use these settings may save over, as the test read it.
+            documents = _guidance(game.root)
+            options["revisions"] = {
+                name: documents[name]["revision"]
+                for name in (GLOSSARY.key, GAME_CONTEXT.key)
+            }
         if game.native is None:
             root = Path(game.root)
             _record, project = guided.translation.project(game.project)
@@ -557,18 +566,31 @@ class Compare:
     def use(self, project_id, comparison_id, model):
         """Makes a compared model the one the game translates with: Settings'
         connection and model, and, from Tune settings, the effort it was sent
-        with, its glossary and its instruction, saved as the game's guidance."""
+        with, its glossary and its instruction, saved as the game's guidance.
+        Everything is checked before anything is written, and the guidance,
+        which a later edit refuses, is saved before Settings."""
         guided = self.guided
         # As Settings' own saves, never under a running translation.
         guided.idle()
         game = self.game(project_id)
         row = self._candidate(game, comparison_id, model)
+        changes = self._guidance_changes(
+            game, row, self._options(game, comparison_id, ESTIMATE)
+        )
         settings = guided.settings
         described = settings.describe()
         if described.get("draft"):
             raise ValueError(
                 "Save or discard your Settings changes before switching models."
             )
+        if not settings._configured(
+            settings._connection(settings._read(), row["connection_id"])
+        ):
+            raise ValueError("That connection is no longer set up in Settings.")
+        if changes and game.native is not None:
+            guided.save_guidance(game.native, changes)
+        elif changes:
+            guided.translation.engine.documents_save(game.root, changes)
         if described["activeConnectionId"] != row["connection_id"]:
             described = settings.select(described["revision"], row["connection_id"])
         model_options = deepcopy(described["modelOptions"])
@@ -585,36 +607,43 @@ class Compare:
             {**described["values"], "model": row["model"]},
             model_options,
         )
-        changes = {}
+        return {"saved": True}
+
+    @staticmethod
+    def _guidance_changes(game, row, options):
+        """The guidance documents a Tune test's settings change, as
+        documents_save takes them, at the revisions its estimate froze; a
+        document edited since refuses, as the test didn't read it."""
+        from desktop.backend.guidance import holds
+
+        wanted = {}
         if row.get("glossary") is not None:
-            changes["glossary"] = lambda _text: row["glossary"]
+            wanted[GLOSSARY.key] = lambda _text: row["glossary"]
         if (row.get("instruction") or "").strip():
-            changes["game"] = lambda text: (
+            wanted[GAME_CONTEXT.key] = lambda text: (
                 (text.rstrip() + "\n\n" if text.strip() else "")
                 + row["instruction"].strip()
                 + "\n"
             )
-        if changes and game.native is not None:
-            current = guided.backend.workflows.editable(game.native["id"])
-            guided.save_documents(
-                project_id,
-                {
-                    name: {"text": change((current.get(name) or {}).get("text") or "")}
-                    for name, change in changes.items()
-                },
-            )
-        elif changes:
-            service = guided.translation
-            current = service.documents(project_id)
-            for name, change in changes.items():
-                document = current.get(name) or {}
-                service.save_document(
-                    project_id,
-                    name,
-                    document.get("revision", ""),
-                    change(document.get("text") or ""),
+        if not wanted:
+            return {}
+        current = _guidance(game.root)
+        frozen = options.get("revisions") or {}
+        changes = {}
+        for name, change in wanted.items():
+            document = current[name]
+            if document["state"] == "unreadable":
+                raise ValueError(document["reason"])
+            text = change(document["text"])
+            if holds(name, document, text):
+                continue
+            if document["revision"] != frozen.get(name):
+                raise ValueError(
+                    f"The {document['title']} changed since this test. "
+                    "Run the test again."
                 )
-        return {"saved": True}
+            changes[name] = {"revision": document["revision"], "text": text}
+        return changes
 
     def _options(self, game, identity, action):
         """The options a comparison operation of the game froze."""
@@ -684,8 +713,6 @@ def _guidance(root):
 
 def _glossary(root):
     """The glossary a Tune test starts from: the Context editor's."""
-    from util.guidance_documents import GLOSSARY
-
     return _guidance(root)[GLOSSARY.key]["text"]
 
 

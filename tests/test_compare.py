@@ -12,8 +12,9 @@ from unittest.mock import Mock
 from dazedtl.compatibility.compare import END, cut, glossary_text, rows, sources
 from dazedtl.compatibility.compare_units import stage
 from dazedtl.storage import write_json
-from dazedtl.translation.compare import Compare
+from dazedtl.translation.compare import Compare, Game
 from dazedtl.translation.project import MANUAL_UNITS
+from desktop.backend.guidance import documents_save, read
 from util.paths import GLOSSARY_BASE_SEPARATOR
 
 
@@ -163,8 +164,13 @@ class ApprovalTests(unittest.TestCase):
                         "source": str(self.game),
                     }
                 ),
+                # Saves guidance as both methods' own saves end, without Git.
+                save_guidance=lambda native, changes: documents_save(
+                    native["source"], changes
+                ),
                 translation=SimpleNamespace(
                     workspace=root / "workspace",
+                    engine=SimpleNamespace(documents_save=documents_save),
                     api_configuration=lambda mode, _root, choice: (
                         {"mode": mode, "model": choice.model, "rates": {}},
                         None,
@@ -175,6 +181,14 @@ class ApprovalTests(unittest.TestCase):
                     ),
                 ),
                 settings=SimpleNamespace(
+                    describe=lambda: {
+                        "draft": None,
+                        "activeConnectionId": "c1",
+                        "revision": 1,
+                        "modelOptions": {},
+                        "values": {"language": "English", "model": "old"},
+                    },
+                    save=Mock(),
                     _read=dict,
                     _connection=lambda _state, _id: connection,
                     _configured=lambda _connection: True,
@@ -199,6 +213,28 @@ class ApprovalTests(unittest.TestCase):
                 ],
             },
         )
+
+    def tuned(self, **change):
+        """A finished Tune test of model "a" with *change*."""
+        job = self.compare.estimate(
+            "p1", "tune", "Map001", 0, [{"connection_id": "c1", "model": "a", **change}]
+        )
+        job.update(
+            status="complete",
+            result={"models": [{"index": 0, "estimate": {"live_cost": 0.01}}]},
+        )
+        return job["id"]
+
+    def as_guided(self, estimate):
+        """The same test, filed under the game's Guided record."""
+        plan = json.loads(
+            (self.operations.root / estimate / "plan.json").read_text(encoding="utf-8")
+        )
+        native = {"id": "n1", "source": str(self.game)}
+        self.compare.game = lambda _id: Game(
+            "guided", "p1", "n1", str(self.game), native
+        )
+        return self.operations.start({**plan, "project_id": "n1"})["id"]
 
     def estimated(self):
         job = self.compare.estimate(
@@ -268,3 +304,49 @@ class ApprovalTests(unittest.TestCase):
         self.assertEqual(self.compare.state("p1")["glossary"], "村長 (Village Chief)")
         # A model's checks read its glossary hints from the same file.
         self.assertEqual(glossary_text(self.game), held)
+
+    def test_use_these_settings_saves_the_tested_guidance_on_both_methods(self):
+        # On a Guided game Use these settings switched the model, then failed
+        # reading the guidance, which it never saved.
+        for guided in (False, True):
+            with self.subTest(guided=guided):
+                documents_save(
+                    self.game,
+                    {
+                        name: {"revision": document["revision"], "text": ""}
+                        for name, document in read(self.game).items()
+                        if name in {"glossary", "game"}
+                    },
+                )
+                estimate = self.tuned(
+                    glossary="ミカ (Mika)", instruction="Use British spelling."
+                )
+                if guided:
+                    estimate = self.as_guided(estimate)
+                self.compare.use("p1", estimate, 0)
+                documents = read(self.game)
+                self.assertEqual(documents["glossary"]["text"], "ミカ (Mika)")
+                self.assertEqual(documents["game"]["text"], "Use British spelling.\n")
+                self.assertEqual(
+                    self.compare.guided.settings.save.call_args.args[2]["model"], "a"
+                )
+
+    def test_use_these_settings_refuses_guidance_edited_since_the_test(self):
+        # It saved the glossary the test froze over an edit made in Context
+        # after the test ran.
+        for guided in (False, True):
+            with self.subTest(guided=guided):
+                estimate = self.tuned(glossary="ミカ (Mika)")
+                if guided:
+                    estimate = self.as_guided(estimate)
+                glossary = read(self.game)["glossary"]
+                edited = f"村長 (Elder {guided})"
+                documents_save(
+                    self.game,
+                    {"glossary": {"revision": glossary["revision"], "text": edited}},
+                )
+                self.compare.guided.settings.save.reset_mock()
+                with self.assertRaisesRegex(ValueError, "changed since this test"):
+                    self.compare.use("p1", estimate, 0)
+                self.assertEqual(read(self.game)["glossary"]["text"], edited)
+                self.compare.guided.settings.save.assert_not_called()

@@ -223,6 +223,12 @@ class TranslationEngine:
     def document_save(self, source, name, revision, text):
         """Saves one guidance document as its own checkpoint; returns the
         names it wrote."""
+        return self.documents_save(source, {name: {"revision": revision, "text": text}})
+
+    def documents_save(self, source, changes):
+        """Saves a set of guidance documents, {name: {revision, text}}, as
+        one checkpoint, writing none when one is refused; returns the names
+        it wrote."""
         from desktop.backend.guidance import documents_save, written
         from util.guidance_documents import save_summary
 
@@ -232,11 +238,11 @@ class TranslationEngine:
         with write_game(
             source,
             pack=False,
-            paths=written(source, [name]),
-            summary=save_summary([name]),
+            paths=written(source, list(changes)),
+            summary=save_summary(list(changes)),
             stage="Context",
         ):
-            return documents_save(source, {name: {"revision": revision, "text": text}})
+            return documents_save(source, changes)
 
     def glossary_add(self, source, sections, summary):
         """Adds *sections*' rows to the game glossary as append_vocab_rows
