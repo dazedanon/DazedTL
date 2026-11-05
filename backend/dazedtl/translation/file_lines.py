@@ -69,6 +69,14 @@ class Line(NamedTuple):
     # The path of the command an event text block starts at, its window
     # command for a message; () for any other line.
     start: tuple = ()
+    # For each of *units*, the speaker a nameplate on a row of its own names,
+    # which the engine sends apart from the speech after it; "" for others.
+    # Read only as lines() reads the texts the engine sends.
+    names: tuple[str, ...] = ()
+    # For each of *units*, whether the engine reads it, False for rows it
+    # skips as holding nothing it sends (rpgmaker_blocks `Text`); read as
+    # names are.
+    read: tuple[bool, ...] = ()
 
     def sent(self) -> tuple[tuple[str, str | None], ...]:
         """The text the engine sends as one, each with its source."""
@@ -90,11 +98,19 @@ class Line(NamedTuple):
         """The Japanese a person compares the line with: each sent text's
         source, else the text itself, which is its own source while the engine
         keeps none (util/source_text)."""
-        shown = (
-            source if source and source.strip() else text
-            for text, source in self.sent()
-        )
-        return "\n".join(value for value in shown if value.strip())
+        shown_texts = (shown(text, source) for text, source in self.sent())
+        return "\n".join(value for value in shown_texts if value.strip())
+
+
+def shown(text: str, source: str | None) -> str:
+    """The Japanese a person compares a sent text with: its source, else
+    the text itself, which is its own source while the engine keeps none."""
+    return source if source and source.strip() else text
+
+
+def name_box(paths: tuple[tuple, ...]) -> bool:
+    """Whether a sent text's paths are a message's name box."""
+    return paths[0][-2:] == ("parameters", 4)
 
 
 def _resolve(document: Any, path: tuple) -> Any:
@@ -139,6 +155,7 @@ def lines(
     phase: str,
     markers: frozenset[str] = frozenset(),
     variables: frozenset[int] = frozenset(),
+    reading: Any = None,
 ) -> list[Line]:
     """Each line of a phase's scope ("database" or "dialogue") in one data
     file, in file order, whether or not it is in scope. Event text reads its
@@ -146,7 +163,12 @@ def lines(
     comments a plugin shows, count under *markers*, the comment markers
     Comment text translates, none while it is off. System.json's terms
     include the names of the *variables* the game's plugins draw
-    (util/rpgmaker_variable_names)."""
+    (util/rpgmaker_variable_names). With a *reading* (rpgmaker_blocks
+    `Reading`, the project's speaker settings), a message's and scrolling
+    text's units are the texts the engine sends of the game's own rows
+    (rpgmaker_blocks `sent_texts`), alike in every copy, each read as the
+    engine joins its rows (`text_source`); otherwise its parts, which counts
+    read."""
     from util import rpgmaker_blocks as blocks
     from util.rpgmaker_scope import changes
 
@@ -217,15 +239,35 @@ def lines(
             for row in block.rows:
                 paths.append((*listed, row, "parameters", 0))
                 texts.append(blocks.text(commands[row]))
-            for part in block.parts:
-                source = blocks.source(commands, part)
+            names = [""] * len(units)
+            read = [True] * len(units)
+            # A message's texts as the engine sends them, read by *reading*.
+            sending = reading if kind in (blocks.MESSAGE, blocks.SCROLL) else None
+            if sending is not None:
+                sent = [
+                    (each.rows, each.source, each.name, each.sent)
+                    for each in blocks.sent_texts(commands, block, sending)
+                ]
+            else:
+                sent = [
+                    (part.rows, blocks.source(commands, part), "", True)
+                    for part in block.parts
+                ]
+            for rows, source, speaker, reached in sent:
                 if source is not None:
                     sources.append(source)
-                rows = (blocks.text(commands[row]) for row in part.rows)
-                units.append(("\n".join(row for row in rows if row.strip()), source))
-                places.append(
-                    tuple((*listed, row, "parameters", 0) for row in part.rows)
+                values = [blocks.text(commands[row]) for row in rows]
+                units.append(
+                    (
+                        blocks.text_source(values)
+                        if sending is not None
+                        else "\n".join(value for value in values if value.strip()),
+                        source,
+                    )
                 )
+                places.append(tuple((*listed, row, "parameters", 0) for row in rows))
+                names.append(speaker)
+                read.append(reached)
             if paths:
                 listing.append(
                     Line(
@@ -236,6 +278,8 @@ def lines(
                         tuple(units),
                         tuple(places),
                         (*listed, block.start),
+                        tuple(names) if reading is not None else (),
+                        tuple(read) if reading is not None else (),
                     )
                 )
         # In file order: by the command each line starts at.
@@ -378,13 +422,14 @@ def _read(
     markers: frozenset[str],
     original: Callable[[], Any],
     variables: frozenset[int] = frozenset(),
+    reading: Any = None,
 ) -> list[Line]:
     """lines() of a file, where a map name or note label keeps no source
     and the original game file decides it, read against `original()`'s
     map: read only then, once."""
     from util.source_text import source_left
 
-    found = lines(name, document, phase, markers, variables)
+    found = lines(name, document, phase, markers, variables, reading)
     if not any(
         line.kind in _UNKEPT
         and not line.sources
@@ -407,10 +452,12 @@ def read(
     markers: frozenset[str],
     original: Callable[[], Any],
     variables: frozenset[int] = frozenset(),
+    reading: Any = None,
 ) -> list[Line]:
-    """lines() of a file as counts read it: a map name or note label keeping
-    no source of its own takes the original game file's (`_read`)."""
-    return _read(name, document, phase, markers, original, variables)
+    """lines() of a file as counts read it, or with a *reading* as the
+    engine sends its texts: a map name or note label keeping no source of
+    its own takes the original game file's (`_read`)."""
+    return _read(name, document, phase, markers, original, variables, reading)
 
 
 def state(line: Line, notes: frozenset[str]) -> str | None:
@@ -479,8 +526,9 @@ def _is_blob(raw: bytes, blob: str | None) -> bool:
 # again. What counts as a refusal note is refusals.RULES_VERSION, and what
 # reads as Japanese left engine util/source_text RULES_VERSION, which their
 # section names too (`counts_section`). System.json's counts are kept under
-# the drawn variables they read too (guided_inputs line_counts).
-COUNT_VERSION = 2
+# the drawn variables they read too (guided_inputs line_counts). Never reuse
+# a value a build kept counts under: 3 was a development build's.
+COUNT_VERSION = 4
 
 
 def counts_section() -> str:

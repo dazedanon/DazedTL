@@ -44,7 +44,7 @@ The base glossary, the SFX reference and the honorific rules apply to a Japanese
 
 ### RPG Maker text blocks
 
-[rpgmaker_blocks](../backend/dazedtl/engine/util/rpgmaker_blocks.py) is the one definition of how MV/MZ event commands form the text one window shows; translation, the fitter, Text QA, Assistant-led's writer and the playtest all read blocks there.
+[rpgmaker_blocks](../backend/dazedtl/engine/util/rpgmaker_blocks.py) is the one definition of how MV/MZ event commands form a window's text and the texts the engine sends of it; every reader of event text reads them there.
 Writers lay text over a block's rows and never add or remove a command, so a saved game's place in an event stays valid.
 Which comments players read comes from the plugins the game loads ([rpgmaker_markers](../backend/dazedtl/engine/util/rpgmaker_markers.py)).
 

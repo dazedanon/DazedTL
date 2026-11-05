@@ -50,6 +50,7 @@ import {
   gitIn,
   knownLenses,
   LockBusy,
+  maxReviews,
   reviewLenses,
   reviewLog,
   withLock,
@@ -64,8 +65,6 @@ const pushTimeout = 5 * 60_000;
 const icon = path.join(import.meta.dirname, "..", "resources", "icon.png");
 /** The code-review levels a landing's review may run at: high and up. */
 const reviewLevels = ["high", "xhigh", "max", "ultra"];
-/** The most independent reviews one landing runs; the dazedtl-land skill says when another runs. */
-const maxReviews = 3;
 /**
  * What a finding is: a bug its reviewer showed with a failing test or a
  * command's output, a risk it could not show, or quality such as wording,

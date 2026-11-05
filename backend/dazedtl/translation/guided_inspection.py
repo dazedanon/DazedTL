@@ -136,6 +136,20 @@ class RunInspection:
                     for name, expected in outputs.items()
                     if expected in applied.get(name, ()) or current[name] == expected
                 ]
+                # A run whose output is the newest copy waits, as Translate
+                # does, for the Apply that puts back the choice conditions an
+                # earlier import left out; an older run's output stays applied.
+                lacking = self.guided.lacking_conditions(
+                    native,
+                    [
+                        name
+                        for name in job["appliedOutputs"]
+                        if self.guided.newest_output(native, name) == outputs[name]
+                    ],
+                )
+                job["appliedOutputs"] = [
+                    name for name in job["appliedOutputs"] if name not in lacking
+                ]
                 if not self.guided.reads_data(native):
                     job["appliedOutputs"] = []
         except OSError, ValueError, KeyError:

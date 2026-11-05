@@ -25,7 +25,8 @@ _SYSTEM_FIELDS = _FIELDS | {
     "switches", "variables", "locale",
 }
 # A command's rows that one translation covers: text blocks' rows (see
-# rpgmaker_blocks.run) and a script's lines.
+# rpgmaker_blocks.run, and owned for a message's or scrolling text's) and a
+# script's lines.
 _RUNS = {**blocks.ROW_CODES, 355: 655}
 
 
@@ -149,7 +150,14 @@ def _walk(before, after, *, system=False):
             item = before[index]
             code = blocks.code(item)
             if code in _RUNS:
-                end = (blocks.run(before, index, _RUNS[code]) or (index,))[-1] + 1
+                if code in blocks.MESSAGE_ROWS:
+                    # The rows one source covers: the game's own after a
+                    # translation, past the rows a translation file import
+                    # recorded it covers or left untranslated after it, keep
+                    # sources of their own.
+                    end = blocks.owned(before, index)[-1] + 1
+                else:
+                    end = (blocks.run(before, index, _RUNS[code]) or (index,))[-1] + 1
                 old = [row["parameters"][0] for row in before[index:end]]
                 new = [row["parameters"][0] for row in after[index:end]]
                 if old != new:
@@ -218,7 +226,7 @@ def write_messages(source, document, language) -> None:
             if row_code not in blocks.MESSAGE_ROWS:
                 index += 1
                 continue
-            rows = (index, *blocks.run(commands, index, row_code))
+            rows = blocks.owned(commands, index)
             index = rows[-1] + 1
             old = [blocks.text(commands[at]) for at in rows]
             new = [blocks.text(written[at]) for at in rows]
@@ -241,10 +249,15 @@ def fit_written(document, filename: str, layout) -> dict:
     never added or removed, so later writes still line up with the source.
     Its text may have been fitted to other widths, such as a staged copy
     taken before the widths changed, so it is fitted as resized (see
-    util.rpgmaker_rewrap.fit_document)."""
+    util.rpgmaker_rewrap.fit_document). A message keeps one source over its
+    rows (preserve_originals), so each text the game's rows lay out apart,
+    such as a nameplate and its speech, is fitted on its own
+    (rpgmaker_blocks EVERY_SPEAKER)."""
     from util.rpgmaker_rewrap import fit_document
 
-    report = fit_document(document, filename, layout, resized=True)
+    report = fit_document(
+        document, filename, layout, resized=True, reading=blocks.EVERY_SPEAKER
+    )
     return {
         "fitted": len(report.changes),
         "misfits": report.misfits[:LISTED_MISFITS],

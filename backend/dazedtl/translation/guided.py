@@ -90,6 +90,8 @@ class Guided:
         self.confirmations = {}
         self.batch_confirmations = {}
         self.observed_files = Digests()
+        # Whether a game file lacks choice conditions, by its hash.
+        self.unconditioned = Digests()
         self.layout_failures = {}
         from dazedtl.compatibility.observations import RunObservations
 
@@ -601,6 +603,47 @@ class Guided:
                     edited.append(name)
         return outputs, applied, edited
 
+    def lacking_conditions(self, native, names):
+        """The files of *names* whose game copy holds a choice without plugin
+        conditions its source holds that its newest saved output lacks too,
+        which an earlier translation file import left out (rpgmaker_blocks
+        `lacking_conditions`): Apply puts them back, so they read as waiting
+        for it, though DazedTL applied them. A choice whose output holds
+        them was edited so in the game, and stays as it is."""
+        folder = self.backend.workflows.folder(native["id"])
+        return {
+            name
+            for name in names
+            if self._lacking(self.observed_path(native["data"], name))
+            & self._lacking(folder / "translated" / name)
+        }
+
+    def newest_output(self, native, name):
+        """The hash of a file's newest saved output, its working copy, or
+        None while it has none."""
+        try:
+            return self.observed_digest(
+                self.backend.workflows.folder(native["id"]) / "translated" / name
+            )
+        except OSError, ValueError:
+            return None
+
+    def _lacking(self, path):
+        """The places of the choices in the file at *path* that lack
+        conditions, read once per version of it; a file that is gone lacks
+        nothing Apply restores."""
+        from util.rpgmaker_blocks import lacking_conditions
+
+        try:
+            digest = self.observed_digest(path)
+            found = self.unconditioned.get(path, digest)
+            if found is None:
+                found = lacking_conditions(Path(path).read_bytes())
+                self.unconditioned.put(path, digest, found)
+        except OSError, ValueError:
+            return frozenset()
+        return found
+
     def output_runs(self, native, names):
         """The run, and its task (phase), that saved each file's newest
         translated copy, where a run's output is that copy. A run builds on
@@ -635,6 +678,8 @@ class Guided:
 
     def readiness(self, project_id, native, value, source_status=None):
         outputs, applied, edited = self.applied_outputs(native)
+        lacking = self.lacking_conditions(native, applied)
+        applied = [name for name in applied if name not in lacking]
         state = lifecycle(self.translation.workspace, project_id)
         latest = self.text_fit.latest(native)
         return {

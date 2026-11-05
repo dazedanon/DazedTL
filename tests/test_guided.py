@@ -1852,6 +1852,20 @@ class GuidedTests(unittest.TestCase):
             self.folder / "translated/Items.json", [{"name": "Manual game edit"}]
         )
         self.assertEqual(self.guided.applied_outputs(native)[1], ["Items.json"])
+        # A game file holding a choice an earlier import wrote without its
+        # source's condition waits for the Apply that puts it back, though
+        # DazedTL applied it, so a Line widths fit still covers it.
+        choice = {"code": 102, "parameters": [["Yes"]], "_original": ["if(s[1])はい"]}
+        write_json(self.folder / "translated/Items.json", [choice])
+        write_json(self.source / "Items.json", [choice])
+        self.assertEqual(self.guided.applied_outputs(native)[1], ["Items.json"])
+        self.assertEqual(
+            self.guided.lacking_conditions(native, ["Items.json"]), {"Items.json"}
+        )
+        write_json(
+            self.source / "Items.json", [{**choice, "parameters": [["if(s[1])Yes"]]}]
+        )
+        self.assertEqual(self.guided.lacking_conditions(native, ["Items.json"]), set())
         self.native["engine"] = native["engine"] = "ACE"
         self.backend.guided_ace_blocked = lambda _source: "Reads Game.rgss3a."
         self.assertEqual(self.guided.run_view(identity)["appliedOutputs"], [])
@@ -2257,6 +2271,27 @@ class GuidedTests(unittest.TestCase):
         self.assertIs(
             self.guided.release_ready(self.identity, self.native, state),
             self.translation.ready.return_value,
+        )
+
+        # One holding a choice an earlier import stripped of its condition
+        # waits for the Apply that puts it back; one whose output holds it
+        # was edited so in the game, and stays applied.
+        def applied(value, edit):
+            choice = {
+                "code": 102,
+                "parameters": [[value]],
+                "_original": ["if(s[1])はい"],
+            }
+            output = self.folder / "translated/Items.json"
+            write_json(output, [choice])
+            outputs = {"Items.json": digest(output.read_bytes())}
+            write_json(self.folder / "applied-outputs.json", {"files": outputs})
+            write_json(self.source / "Items.json", [{**choice, **edit}])
+            return self.guided.readiness(self.identity, self.native, state)
+
+        self.assertEqual(applied("Yes", {})["unapplied"], ["Items.json"])
+        self.assertEqual(
+            applied("if(s[1])Yes", {"parameters": [["Yes"]]})["unapplied"], []
         )
         write_json(
             self.folder / "translated/Items.json", [{"name": "Newer saved output"}]
@@ -5038,6 +5073,76 @@ class GuidedTests(unittest.TestCase):
             again = plan("export_selected", {"files": ["Items.json"]})
             rows = prepare_publication(again)["publication"]
             self.assertFalse(rows[0]["later_edits"])
+
+            # A game copy an Apply put in before choices kept their conditions,
+            # edited since, such as by Text QA or by hand, takes only those
+            # its output lacks.
+            def choice(text, *values):
+                return {
+                    "events": [
+                        None,
+                        {
+                            "pages": [
+                                {
+                                    "list": [
+                                        {
+                                            "code": 102,
+                                            "parameters": [list(values)],
+                                            "_original": [
+                                                "if(s[1])はい",
+                                                "if(s[2])いいえ",
+                                            ],
+                                        },
+                                        {
+                                            "code": 401,
+                                            "parameters": [text],
+                                            "_original": "薬",
+                                        },
+                                    ]
+                                }
+                            ]
+                        },
+                    ],
+                }
+
+            write_json(
+                self.folder / "translated/Map001.json",
+                choice("Potoin", "Yes", "if(s[2])No"),
+            )
+            receipt = read_json(self.folder / "applied-outputs.json")
+            receipt["files"]["Map001.json"] = digest(
+                (self.folder / "translated/Map001.json").read_bytes()
+            )
+            write_json(self.folder / "applied-outputs.json", receipt)
+            write_json(self.source / "Map001.json", choice("Potion", "Yes", "No"))
+            apply = plan("export_selected", {"files": ["Map001.json"]})
+            self.assertFalse(
+                prepare_publication(apply)["publication"][0]["later_edits"]
+            )
+            run_publication(apply, lambda _: None)
+            self.assertEqual(
+                read_json(self.source / "Map001.json"),
+                choice("Potion", "if(s[1])Yes", "No"),
+            )
+            # One whose output holds the conditions was edited so in the
+            # game, which Apply replaces as ever.
+            write_json(
+                self.folder / "translated/Map001.json",
+                choice("Potion", "if(s[1])Yes", "if(s[2])No"),
+            )
+            receipt["files"]["Map001.json"] = digest(
+                (self.folder / "translated/Map001.json").read_bytes()
+            )
+            write_json(self.folder / "applied-outputs.json", receipt)
+            write_json(
+                self.source / "Map001.json", choice("Potion", "Yes", "if(s[2])No")
+            )
+            apply = plan("export_selected", {"files": ["Map001.json"]})
+            self.assertTrue(prepare_publication(apply)["publication"][0]["later_edits"])
+            # One an edit broke is put back whole.
+            (self.source / "Map001.json").write_text('{"events": [', "utf-8")
+            apply = plan("export_selected", {"files": ["Map001.json"]})
+            self.assertTrue(prepare_publication(apply)["publication"][0]["later_edits"])
             # New widths fit the applied text again in their own area only.
             # Weapons.json counts as applied where its bytes equal a run's
             # output, but no Apply wrote it.
