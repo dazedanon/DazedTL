@@ -213,7 +213,6 @@ class GuidedLines:
                             if block is not None and not name_box
                             else None,
                             "block": block,
-                            "kept": source is not None,
                         }
         self._found = found
         return found
@@ -272,10 +271,6 @@ class GuidedLines:
         from util import rpgmaker_blocks as blocks
 
         units = self._units()
-        kept = defaultdict(list)
-        for unit in units.values():
-            if unit["kept"] and unit["block"] is not None:
-                kept[unit["block"]].append(unit)
         by_file = defaultdict(list)
         for identity, text in translations.items():
             unit = units[identity]
@@ -289,16 +284,17 @@ class GuidedLines:
         with reading_game(self.native["source"]):
             for name, rows in by_file.items():
                 before = decode_json(system.read_bytes(self.inputs.newest(name)))
-                # Each text written of a message or scrolling text keeps its
-                # source on its first row, as a run writes the texts it
-                # sends, and so does every text a writer kept one source over
-                # with it, which an export reads apart (rpgmaker_blocks
-                # `sent_texts`): Apply fits each on its own.
-                touched = {unit["block"] for unit, _text in rows}
-                marks = [unit for unit, _text in rows] + [
-                    unit for block in touched for unit in kept.get(block, ())
-                ]
-                for unit in marks:
+                # The texts a writer kept one source over with the ones
+                # written keep their own, as the export reads them
+                # (rpgmaker_blocks `keep_sources`), and each text written
+                # keeps its source on its first row, as a run writes the texts
+                # it sends, so each keeps its line and Apply fits it on its own.
+                for _name, start in {unit["block"] for unit, _text in rows} - {None}:
+                    listed = _parent(before, start)
+                    block = blocks.block_at(listed, start[-1])
+                    if block is not None:
+                        blocks.keep_sources(listed, block, self.reading)
+                for unit, _text in rows:
                     if unit["start"] is not None:
                         path, source = unit["start"]
                         command = _parent(before, path[:-1])

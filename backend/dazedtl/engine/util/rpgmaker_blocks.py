@@ -757,13 +757,15 @@ class SentText(NamedTuple):
     """A text the engine sends of a message or scrolling text, in a copy of
     the game (:func:`sent_texts`): the rows holding it, the Japanese
     translation keeps for it as the engine sends it (:func:`text_source`),
-    None for rows never translated, and the speaker a nameplate names and
-    whether the engine reads it (see :class:`Text`)."""
+    None for rows never translated, the speaker a nameplate names and
+    whether the engine reads it (see :class:`Text`), and the lines of the
+    Japanese the copy keeps that are its own, as its writer kept them."""
 
     rows: tuple[int, ...]
     source: str | None
     name: str = ""
     sent: bool = True
+    kept: str | None = None
 
 
 def _written_over(commands: list, part: Part, lines: list[str], reading: Reading) -> int:
@@ -862,12 +864,30 @@ def sent_texts(commands: list, block: Block, reading: Reading) -> tuple[SentText
                         None if own is None else text_source(own),
                         each.name,
                         each.sent,
+                        None if own is None else "\n".join(own),
                     )
                 )
         else:
             (only,) = mine if len(mine) == 1 else (Text(rows),)
-            found.append(SentText(rows, text_source(lines), only.name, only.sent))
+            found.append(
+                SentText(rows, text_source(lines), only.name, only.sent, "\n".join(lines))
+            )
     return tuple(found)
+
+
+def keep_sources(commands: list, block: Block, reading: Reading) -> None:
+    """Keep each translated text of a message or scrolling text *block* its
+    own Japanese on its first row, with the rows it covers (ROWS), as
+    :func:`sent_texts` reads them, where a writer kept one source over it and
+    others: so a text written after keeps the texts around it apart. A text
+    whose first row keeps its Japanese already is left as its writer kept
+    it."""
+    for each in sent_texts(commands, block, reading):
+        first = commands[each.rows[0]]
+        if each.kept is None or first.get("_original") == each.kept:
+            continue
+        first["_original"] = each.kept
+        first[ROWS] = len(each.rows)
 
 
 def spread(value: str, count: int) -> list[str]:

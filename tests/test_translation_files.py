@@ -890,6 +890,70 @@ class GuidedLineTests(unittest.TestCase):
             [("ui", None), ("dialogue", "リリ")],
         )
 
+    def test_an_import_keeps_the_texts_a_writer_kept_one_source_over_apart(self):
+        # Writing one text of a message a writer kept one source over left
+        # the others under that source, so a text the file doesn't list took
+        # the next one's Japanese and its line, and the file no longer
+        # matched; and the import rewrote the Japanese of texts it didn't
+        # write, without their blank rows.
+        from dazedtl.translation.guided_lines import GuidedLines
+
+        original = _map(
+            [
+                _command(101, "", 0, 0, 2, ""),
+                _command(401, "……"),
+                _command(401, "\\SE[1]ああ"),
+                _command(101, "", 0, 0, 2, ""),
+                _command(401, "あ"),
+                _command(401, ""),
+                _command(401, "い"),
+                _command(401, "\\SE[2]う"),
+                _command(0),
+            ]
+        )
+        laid = _map(
+            [
+                _command(101, "", 0, 0, 2, ""),
+                _command(401, "...", _original="……\n\\SE[1]ああ"),
+                _command(401, "\\SE[1]Ah"),
+                _command(101, "", 0, 0, 2, ""),
+                _command(401, "A", _original="あ\n\nい\n\\SE[2]う"),
+                _command(401, ""),
+                _command(401, "I"),
+                _command(401, "\\SE[2]U"),
+                _command(0),
+            ]
+        )
+        guided = self.game("laid", laid, original)
+        before = [row["id"] for row in GuidedLines(guided, "laid", PAIR, True).lines()]
+        head = "Map001.json#/events/1/pages/0/list"
+        self.assertEqual(before, [f"{head}/0", f"{head}/3", f"{head}/3~1"])
+        GuidedLines(guided, "laid", PAIR, True).save(
+            {f"{head}/0": "\\SE[1]Oh", f"{head}/3~1": "\\SE[2]Oh"}, "file.json"
+        )
+        commands = read_json(self.root / "laid-work/translated/Map001.json")["events"][
+            1
+        ]["pages"][0]["list"]
+        self.assertEqual(
+            [
+                (command.get("_original"), command.get("_rows"))
+                for command in commands[1:8]
+            ],
+            [
+                ("……", 1),
+                ("\\SE[1]ああ", 1),
+                (None, None),
+                ("あ\n\nい", 3),
+                (None, None),
+                (None, None),
+                ("\\SE[2]う", 1),
+            ],
+        )
+        self.assertEqual(
+            [row["id"] for row in GuidedLines(guided, "laid", PAIR, True).lines()],
+            before,
+        )
+
     def test_a_messages_texts_list_alike_in_every_copy_and_import_as_a_run_writes(self):
         # The export read a message's parts by its sources: a row the engine
         # sends apart, opening with a code, listed as one line in an
