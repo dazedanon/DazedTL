@@ -1032,4 +1032,12 @@ test("a platform-sensitive branch lands once CI on GitHub passes, after one reru
   assert.deepEqual(github.writes.slice(before), [
     "workflows/ci.yml/dispatches",
   ]);
+  // Release notes that mergeDev joins by itself are no resolution.
+  github.add(commit(work, "release/notes.md", "- branch\n"), "success", 1);
+  commit(main, "release/notes.md", "- dev\n");
+  git(["merge", "-q", "--no-edit", "dev"]);
+  fs.writeFileSync(path.join(work, "release/notes.md"), "- branch\n- dev\n");
+  git(["commit", "-qam", "Merge dev"]);
+  assert.equal(await check(false), null);
+  assert.equal(github.writes.length, before + 1);
 });

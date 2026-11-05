@@ -553,13 +553,24 @@ export function ciCommits(git, tip, dev) {
 function resolved(git, hash, parents) {
   const merged = parents.split(" ");
   if (merged.length < 2) return false;
-  const clean = git(["merge-tree", "--write-tree", ...merged]);
+  // Git writes a tree even for a conflicting merge, markers and all.
+  const tree = lines(git(["merge-tree", "--write-tree", ...merged]).stdout)[0];
+  if (!tree) return true;
+  const differs = git(["diff", "--name-only", "-z", tree, hash]);
   return (
-    clean.status !== 0 ||
-    lines(clean.stdout)[0] !==
-      git(["rev-parse", `${hash}^{tree}`]).stdout.trim()
+    differs.status !== 0 ||
+    differs.stdout
+      .split("\0")
+      .some((file) => file && !mergedByLanding.includes(file))
   );
 }
+
+/**
+ * The files mergeDev merges in its own way, which a plain merge of Git's
+ * would leave conflicting: the release notes, merged by kind, and the
+ * generated API contracts, written again.
+ */
+export const mergedByLanding = [NOTES, ...generated];
 
 /**
  * What CI on GitHub says of a branch's commits (ciCommits): "passed" when a
