@@ -42,10 +42,12 @@ from .results import game_line
 _KINDS = {"message": "dialogue", "scroll": "narration"}
 # Lines whose rows or sources an import leaves alone.
 _KEPT = {"help": "Choice help", "label": "Note labels"}
-# Why a choice's translation holding a condition clause is not imported.
-_CONDITION = (
-    "A choice's condition, such as if(s[1]), stays as the game has it; "
-    "leave it out of the translation."
+# Why a choice's translation a choice plugin reads a condition in is not
+# imported.
+_ADDS_CONDITION = (
+    "A choice plugin such as MPP_ChoiceEX reads if(...) or en(...) in a "
+    "choice as its condition, as in Open(door), so this would add one; "
+    "reword it. The import keeps the game's own condition."
 )
 
 
@@ -252,7 +254,7 @@ class GuidedLines:
         ]
 
     def problems(self, translations):
-        from util.rpgmaker_blocks import split_choice
+        from util.rpgmaker_blocks import holds_condition
 
         from .unit_results import import_problems
 
@@ -264,11 +266,11 @@ class GuidedLines:
         }
         problems.update(
             {
-                identity: _CONDITION
+                identity: _ADDS_CONDITION
                 for identity, text in translations.items()
                 if identity not in problems
                 and units[identity]["choice"] is not None
-                and split_choice(text).label != text
+                and holds_condition(text)
             }
         )
         checked = {

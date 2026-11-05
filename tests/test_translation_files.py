@@ -881,9 +881,10 @@ class GuidedLineTests(unittest.TestCase):
         theirs = GuidedLines(
             self.game("theirs", original, original), "theirs", PAIR, True
         )
-        # A translation holding a clause of its own would add a condition.
+        # A translation holding a clause of its own, where the plugin reads
+        # one, anywhere in it, would add a condition.
         self.assertEqual(
-            list(theirs.problems({f"{head}/0": "if(s[2])Yes", f"{head}/1": "No"})),
+            list(theirs.problems({f"{head}/0": "Yes if(s[2]) now", f"{head}/1": "No"})),
             [f"{head}/0"],
         )
         theirs.save({f"{head}/0": "Yes", f"{head}/1": "No"}, "file.json")

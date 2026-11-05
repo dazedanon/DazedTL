@@ -230,6 +230,15 @@ class Choice(NamedTuple):
 
 
 _CONDITION = re.compile(r"(?:if|en)\(")
+# A condition as MPP_ChoiceEX reads one: anywhere in a choice's text.
+_READ_CONDITION = re.compile(r"(?:if|en)\(.+?\)")
+
+
+def holds_condition(value: str) -> bool:
+    """Whether a choice plugin reads a condition clause anywhere in a
+    choice's *value*, as MPP_ChoiceEX does, a word such as "Open(door)"
+    included."""
+    return _READ_CONDITION.search(value) is not None
 
 
 def split_choice(value: str) -> Choice:
