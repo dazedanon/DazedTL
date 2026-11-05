@@ -256,6 +256,26 @@ class GuidanceDocumentTests(unittest.TestCase):
         self.assertEqual((game["state"], game["text"]), ("saved", "Lore"))
         self.assertEqual(documents(self.root)["game"]["text"], "Lore")
 
+    def test_a_save_a_folder_refuses_writes_nothing(self):
+        # Two skills folders refuse a skill's save, which wrote the glossary
+        # before the skills' place was asked for, so half the set saved.
+        (self.root / "skills").mkdir()
+        (self.root / "skills/battle.md").write_text("Battle", encoding="utf-8")
+        self.file("quirks").write_text("Quirks", encoding="utf-8")
+        found = read(self.root)
+        with self.assertRaisesRegex(RuntimeError, "skills folders"):
+            documents_save(
+                self.root,
+                {
+                    "glossary": {
+                        "revision": found["glossary"]["revision"],
+                        "text": "Lili (リリ)",
+                    },
+                    "quirks": {"revision": found["quirks"]["revision"], "text": "New"},
+                },
+            )
+        self.assertEqual(read(self.root)["glossary"]["state"], "missing")
+
     def test_start_over_lets_go_of_every_file_holding_a_document(self):
         # A portable file beside its legacy one reads as unreadable, and
         # Start over moved aside only the first, so the guidance the user
@@ -301,7 +321,7 @@ class GuidanceDocumentTests(unittest.TestCase):
             {
                 "glossary": "missing",
                 "quirks": "unreadable",
-                "game": "missing",
+                "game": "unreadable",
                 "notes": "missing",
                 "custom:battle": "unreadable",
             },
@@ -309,6 +329,17 @@ class GuidanceDocumentTests(unittest.TestCase):
         self.assertIn("link", found["custom:battle"]["reason"])
         with self.assertRaisesRegex(ValueError, "link"):
             documents(self.root)
+        # Its missing game context read as missing, so every Save guidance
+        # created it, writing the notes, then failing on the link.
+        with self.assertRaisesRegex(ValueError, "link"):
+            documents_save(
+                self.root,
+                {
+                    "notes": {"revision": "", "text": "Mine"},
+                    "game": {"revision": "", "text": ""},
+                },
+            )
+        self.assertFalse((self.root / "AGENTS.md").exists())
         with TemporaryDirectory() as workspace:
             run(
                 workspace,

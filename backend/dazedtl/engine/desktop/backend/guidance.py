@@ -116,6 +116,8 @@ def _document(root, found):
     try:
         if len(files) > 1:
             raise Unreadable(f"{files[1].relative_to(root).as_posix()} holds it too", "Keep one of them")
+        if through_link(root, path):
+            raise Unreadable("its folder is a link, and DazedTL reads only the game's own folders", "Put the folder in its place")
         if not files:
             return {**document, "text": "", "revision": digest(b""), "state": "missing"}
         text = stored(found.key, _read(root, path))
@@ -142,7 +144,7 @@ def _read(root, path):
     try:
         regular(root, path)
     except ValueError:
-        if path.is_symlink() or through_link(root, path):
+        if path.is_symlink():
             raise Unreadable("it is a link, and DazedTL reads only the file itself", "Put the file in its place") from None
         if path.is_dir():
             raise Unreadable("it is a folder, not a file", "Move it out of the way") from None
@@ -250,13 +252,19 @@ def documents_save(root, changes):
         name for name, change in changes.items()
         if change["text"] or current[name]["state"] != "missing" or defined(name).created == "always"
     ]
+    # Every file's place, which moving a legacy file or refusing a folder
+    # decides, before any is written, so a refused set writes nothing.
+    if GLOSSARY.key in saved:
+        from util.paths import validate_game_glossary_migration
+        validate_game_glossary_migration(root)
+    targets = {name: _target(root, defined(name), current[name]) for name in saved if name != GLOSSARY.key}
     for name in saved:
-        found, text = defined(name), changes[name]["text"]
-        if found is GLOSSARY:
+        text = changes[name]["text"]
+        if name == GLOSSARY.key:
             from util.vocab import write_game_vocab
             write_game_vocab(text, game_root=root)
             continue
-        path = _target(root, found, current[name])
+        path = targets[name]
         # A file outside DazedTL's folder, as the notes are, is written
         # beside DazedTL's own files, which no record of the original game
         # holds.
