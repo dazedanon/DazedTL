@@ -26,7 +26,7 @@ if [ ! -x "$node" ]; then
   url="${line##* }"
   mkdir -p "$root/.runtime"
   archive="$root/.runtime/$name.tar.gz"
-  echo "Downloading Node $version…"
+  echo "Downloading Node ${version}…"
   if command -v curl > /dev/null; then
     curl -fL --retry 3 -o "$archive" "$url" || fail "Node could not be downloaded."
   elif command -v wget > /dev/null; then
