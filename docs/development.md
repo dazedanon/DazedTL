@@ -250,7 +250,7 @@ The build holds each document to its word limit in [docs.mjs](../scripts/docs.mj
   The app's **Guide** page shows it, so a renamed heading also renames the anchor that help's Learn more links name, which the guide tests check.
   What the app already says on screen stays out: errors and edge cases, recovery offers and each option's help.
   A change adds to it only when it adds a task or changes what the user does.
-- This development guide says which command to run when, and the rules around it; a script's options and details belong in its header and `--help`.
+- This development guide says which command to run when, and the rules around it; a script's details belong in its header and `--help`.
 - [Architecture](architecture.md) covers code ownership, boundaries and design decisions.
 - [UI design](ui-design.md) covers screens.
 - The [translation contract](translation-contract.md) is for engine adapter authors and assistant integrations.
