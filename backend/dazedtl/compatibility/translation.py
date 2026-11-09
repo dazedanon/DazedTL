@@ -644,12 +644,12 @@ class TranslationEngine:
         names and nameplates Len translates through the glossary."""
         import re
 
-        from util.paths import GLOSSARY_BASE_SEPARATOR
+        from util.paths import read_glossary_file, split_glossary
 
         path = Path(source) / ".dazedtl/glossary.txt"
         if not path.is_file():
             return []
-        game = path.read_text(encoding="utf-8-sig").split(GLOSSARY_BASE_SEPARATOR, 1)[0]
+        game = split_glossary(read_glossary_file(path))[0]
         terms = []
         for line in game.splitlines():
             match = re.match(r"^([^#].*?)\s+\((.+)\)\s*$", line.strip())

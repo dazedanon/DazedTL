@@ -83,10 +83,11 @@ def install(module, root):
 def _glossary_rows(path, stamp):
     # Legacy recovery accepts exact, unambiguous saved entries only. It does
     # not guess aliases, identity, or a translation from the current project.
+    from util.paths import read_glossary_file
     from util.vocab import split_glossary_row
 
     rows = {}
-    for line in Path(path).read_text(encoding="utf-8-sig").splitlines():
+    for line in read_glossary_file(path).splitlines():
         row = split_glossary_row(line.strip())
         if row and row[1] and re.fullmatch(r"(?:\s+-.*)?\s*", row[2]):
             rows.setdefault(row[0], set()).add(row[1])
@@ -267,8 +268,9 @@ def reusable(candidates):
     return list(rows.values())
 
 
-def merge_missing(text, rows, parse, aliases, keys, base_separator=""):
-    """Append missing names while preserving every current glossary line and note."""
+def merge_missing(text, rows, parse, aliases, keys):
+    """Append missing names above the shipped base while preserving every
+    current glossary line and note."""
     known = {
         key
         for term, _line, _category in parse(text)
@@ -302,8 +304,9 @@ def merge_missing(text, rows, parse, aliases, keys, base_separator=""):
         + newline
         for row in added
     )
-    boundary = text.find(base_separator) if base_separator else -1
-    boundary = len(text) if boundary < 0 else boundary
+    from util.paths import split_glossary
+
+    boundary = len(split_glossary(text)[0])
     section = re.search(r"(?m)^[\t ]*#+\s*Speakers\s*\r?\n", text[:boundary])
     if section:
         return text[: section.end()] + entries + text[section.end() :], added
@@ -328,23 +331,21 @@ def merge_missing(text, rows, parse, aliases, keys, base_separator=""):
 def seed(root, plan, rows):
     if not rows:
         return
+    from util.paths import read_glossary_file
     from util.translation import (
         parseVocabWithCategories,
         speaker_source_lookup_keys,
         split_vocab_source_aliases,
     )
-    from util.vocab import BASE_SEPARATOR
 
     root = Path(root)
     path = project_path(root, "game/.dazedtl/glossary.txt")
-    raw = path.read_bytes()
     content, added = merge_missing(
-        raw.decode("utf-8"),
+        read_glossary_file(path),
         rows,
         parseVocabWithCategories,
         split_vocab_source_aliases,
         speaker_source_lookup_keys,
-        BASE_SEPARATOR,
     )
     if added:
         write_bytes(path, content.encode("utf-8"))

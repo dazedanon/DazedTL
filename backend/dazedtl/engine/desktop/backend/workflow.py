@@ -481,8 +481,8 @@ class Workflows:
                 for name, expected in job["outputs"].items():
                     if Path(name).name != name or file_digest(source, source / "translated" / name) != expected:
                         raise ValueError("A completed phase output changed. Its original saved run is retained.")
-                from util.vocab import _split_base
-                glossary = _split_base((source / "game/.dazedtl/glossary.txt").read_text(encoding="utf-8"))[0].rstrip("\n")
+                from util.paths import read_glossary_file, split_glossary
+                glossary = split_glossary(read_glossary_file(source / "game/.dazedtl/glossary.txt"))[0].rstrip("\n")
                 current = self.documents(project["id"])["glossary"]
                 if glossary != current["text"]:
                     if current["revision"] != plan["workflow"]["glossary_revision"]:

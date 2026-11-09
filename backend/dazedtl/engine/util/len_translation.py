@@ -14,7 +14,7 @@ from util.paths import (
     DATA_DIR, GAME_TOOL_GITIGNORE_BEGIN, GLOSSARY_BASE_SEPARATOR, LEN_PATCH_GITIGNORE_BEGIN, LEN_WORK_GITIGNORE_BEGIN,
     LEN_WORK_GITIGNORE_END, SKILLS_DIR, game_git_set_up, game_glossary_path, glossary_base_text,
     runtime_data_files_pinned,
-    prepare_game_translation_context, read_game_glossary, without_gitignore_section,
+    prepare_game_translation_context, read_game_glossary, split_glossary, without_gitignore_section,
 )
 from util.languages import active_source
 from util.prompt_pair import render as render_prompt, run_language
@@ -131,7 +131,7 @@ def request_glossary(game_glossary: str, include_base: bool = True) -> str:
     """The glossary an Assistant-led request matches: the custom section of
     the game's glossary file, then the shipped base terms when the project
     includes them."""
-    custom = game_glossary.split(GLOSSARY_BASE_SEPARATOR, 1)[0].rstrip()
+    custom = split_glossary(game_glossary)[0].rstrip()
     # The shared editor owns the custom section; refreshed shipped defaults are derived.
     base = glossary_base_text() if include_base else ""
     glossary = custom + "\n"

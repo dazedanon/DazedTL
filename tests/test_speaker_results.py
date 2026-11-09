@@ -9,6 +9,7 @@ from types import SimpleNamespace
 from dazedtl.compatibility import speaker_results
 from dazedtl.storage import write_bytes, write_json
 from dazedtl.translation.files import digest
+from util.paths import GLOSSARY_BASE_SEPARATOR
 
 from tests.engine import point, replaced_modules
 
@@ -203,14 +204,14 @@ class SpeakerResultTests(unittest.TestCase):
             speaker_results.merge_missing(merged, rows, parse, aliases, keys),
             (merged, []),
         )
-        base = "## Base separator\n# Speakers\n基本 (Base)\n"
+        base = GLOSSARY_BASE_SEPARATOR + "# Speakers\n基本 (Base)\n"
         text_with_base = "# Notes\nKeep these notes.\n" + base
         combined, _ = speaker_results.merge_missing(
-            text_with_base, rows[-1:], parse, aliases, keys, "## Base separator"
+            text_with_base, rows[-1:], parse, aliases, keys
         )
         self.assertTrue(combined.endswith(base))
         self.assertIn(
-            "回想部屋 (Recollection Room)", combined.split("## Base separator")[0]
+            "回想部屋 (Recollection Room)", combined.split(GLOSSARY_BASE_SEPARATOR)[0]
         )
         write_bytes(self.glossary, text.encode())
         self.plan["context_hashes"] = {
@@ -227,7 +228,6 @@ class SpeakerResultTests(unittest.TestCase):
             {
                 "util.translation": fake,
                 "util.vocab": SimpleNamespace(
-                    BASE_SEPARATOR="## Base separator",
                     unverified_nameplate_row=unverified_nameplate_row,
                 ),
             },
