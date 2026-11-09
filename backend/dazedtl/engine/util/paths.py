@@ -867,6 +867,37 @@ def active_glossary_path(*, create: bool = True) -> Path | None:
     )
 
 
+def guidance_text(raw: bytes) -> str:
+    """A guidance file's bytes as every reader takes its text: UTF-16 with
+    its byte order mark, as Windows PowerShell 5's Out-File and `>` write
+    it, else UTF-8 with or without one, and each Windows or old Mac line end
+    as a newline, as Notepad and older tools may save a file. Raises
+    UnicodeDecodeError for other bytes, such as the ANSI code page
+    Set-Content writes, which can't be told from them."""
+    if raw.startswith((b"\xff\xfe", b"\xfe\xff")):
+        text = raw.decode("utf-16")
+    else:
+        text = raw.decode("utf-8-sig")
+    return text.replace("\r\n", "\n").replace("\r", "\n")
+
+
+def read_glossary_file(path: str | Path) -> str:
+    """A glossary file's whole text, its shipped base included, by
+    :func:`guidance_text`'s rule."""
+    return guidance_text(system.read_bytes(path))
+
+
+def split_glossary(text: str) -> tuple[str, str]:
+    """A glossary's text, as :func:`guidance_text` reads it, as the game's
+    own part and the shipped base part, which starts at the last
+    :data:`GLOSSARY_BASE_SEPARATOR`, the one the save appended the base
+    after, or is empty. A file a save once wrote with the base shown as the
+    game's own keeps that copy in the game's part, where its editors show
+    it and nothing typed after it is lost."""
+    game, separator, base = text.rpartition(GLOSSARY_BASE_SEPARATOR)
+    return (game, separator + base) if separator else (text, "")
+
+
 def read_game_glossary(game_root: str | Path, *, create: bool = True) -> str:
     """Read one game's glossary, optionally previewing its seed without writing."""
     if create:
@@ -878,13 +909,13 @@ def read_game_glossary(game_root: str | Path, *, create: bool = True) -> str:
     if path is None:
         raise ValueError("No game folder is selected.")
     if path.is_file():
-        return path.read_text(encoding="utf-8")
+        return read_glossary_file(path)
     if not create:
         root, _preferred, legacy = locations
         if legacy.is_file() and not legacy.is_symlink():
-            return legacy.read_text(encoding="utf-8")
+            return read_glossary_file(legacy)
     if create:
-        return ensure_game_glossary(game_root).read_text(encoding="utf-8")
+        return read_glossary_file(ensure_game_glossary(game_root))
     root = path.parents[1]
     if not root.is_dir():
         raise FileNotFoundError(f"Game folder not found: {root}")
@@ -895,11 +926,9 @@ def read_active_glossary() -> str:
     """Read the active game's glossary, falling back to shipped base terms."""
     path = active_glossary_path()
     if path and path.is_file():
-        text = path.read_text(encoding="utf-8")
+        text = read_glossary_file(path)
         if (os.getenv(GLOSSARY_OVERRIDE_ENV) or "").strip():
-            separator_index = text.find(GLOSSARY_BASE_SEPARATOR)
-            custom = text[:separator_index] if separator_index >= 0 else text
-            custom = custom.rstrip()
+            custom = split_glossary(text)[0].rstrip()
             include_base = (
                 os.getenv(GLOSSARY_BASE_ENABLED_ENV, "true").strip().casefold()
                 not in {"0", "false", "no", "off"}

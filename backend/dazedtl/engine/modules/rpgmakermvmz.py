@@ -63,6 +63,7 @@ from util.paths import (
     GLOSSARY_OVERRIDE_ENV,
     active_glossary_path,
     read_active_glossary,
+    read_glossary_file,
 )
 from util.rpgmaker_markers import PluginList, comment_markers, game_plugins
 from util.rpgmaker_files import mvmz_file_kind
@@ -476,13 +477,13 @@ def _reload_vocab():
         else:
             vocab_path = active_glossary_path() or VOCAB_PATH
             VOCAB = (
-                vocab_path.read_text(encoding="utf-8")
+                read_glossary_file(vocab_path)
                 if vocab_path
                 else read_active_glossary()
             )
     except (FileNotFoundError, OSError):
         vocab_path = VOCAB_PATH
-        VOCAB = vocab_path.read_text(encoding="utf-8") if vocab_path else ""
+        VOCAB = read_glossary_file(vocab_path) if vocab_path else ""
     TRANSLATION_CONFIG.vocab = VOCAB
 
 

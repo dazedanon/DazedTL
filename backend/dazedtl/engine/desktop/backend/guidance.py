@@ -137,11 +137,9 @@ def through_link(root, path):
 
 
 def _read(root, path):
-    """A document's file as text: a regular file below 1 MB, in UTF-8 or in
-    UTF-16 with its byte order mark, as Windows PowerShell 5's Out-File and
-    `>` write it. Its Set-Content writes the ANSI code page, such as cp1252
-    or cp932, which can't be told from other bytes, so such a file is
-    unreadable until it is saved as UTF-8."""
+    """A document's file as text: a regular file below 1 MB, decoded as
+    `guidance_text` reads every guidance file, so a file in another
+    encoding is unreadable until it is saved as UTF-8."""
     try:
         regular(root, path)
     except ValueError:
@@ -158,8 +156,9 @@ def _read(root, path):
         raise Unreadable("DazedTL isn't allowed to open it, as when another program holds it", "Close that program or let DazedTL read it") from None
     except OSError as error:
         raise Unreadable(f"it can't be opened ({error.strerror or error})", "Fix the file") from None
+    from util.paths import guidance_text
     try:
-        return raw.decode("utf-16") if raw.startswith((b"\xff\xfe", b"\xfe\xff")) else raw.decode("utf-8-sig")
+        return guidance_text(raw)
     except UnicodeDecodeError:
         raise Unreadable("it isn't saved as UTF-8 or UTF-16 text", "Save it as UTF-8, or delete it") from None
 
@@ -175,11 +174,13 @@ def whole(root, path):
 
 
 def stored(name, text):
-    """`text` as `read` reads it back from a file that holds it: a glossary
-    file also keeps the shipped base, which is not part of it."""
+    """`text` as `read` reads it back from a file that holds it: with its
+    line ends as newlines, and a glossary file also keeps the shipped base,
+    which is not part of it."""
+    from util.paths import guidance_text, split_glossary
+    text = guidance_text(text.encode())
     if name == GLOSSARY.key:
-        from util.vocab import _split_base
-        return _split_base(text)[0].rstrip("\n")
+        return split_glossary(text)[0].rstrip("\n")
     return text
 
 

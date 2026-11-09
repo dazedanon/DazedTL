@@ -9,6 +9,7 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from dazedtl.compatibility.checkpoint_commits import ACTION_TRAILER, TARGET_TRAILER
 from dazedtl.compatibility.checkpoint_history import BACK, Entry, _taken_out
@@ -25,7 +26,15 @@ from util.guidance_documents import (
     kept_by_checkpoints,
     save_summary,
 )
-from util.paths import is_game_tool_file, is_project_file
+from util.paths import (
+    GLOSSARY_BASE_SEPARATOR,
+    GLOSSARY_OVERRIDE_ENV,
+    glossary_base_text,
+    is_game_tool_file,
+    is_project_file,
+    read_active_glossary,
+    read_game_glossary,
+)
 
 GLOSSARY, NOTES = "glossary", "notes"
 
@@ -148,6 +157,59 @@ class GuidanceDocumentTests(unittest.TestCase):
         )
         self.assertEqual((self.root / "agents.md").read_text(encoding="utf-8"), "Kept.")
         self.assertIn("agents.md", written(self.root, [NOTES]))
+
+    def test_a_glossary_saved_on_windows_reads_saves_and_sends_one_base(self):
+        # Context read a CRLF glossary's shipped base as the game's own and a
+        # save then sent it twice in every request, and a run failed reading
+        # a UTF-16 one that Context showed as saved.
+        from util.len_translation import request_glossary
+        from util.vocab import read_game_vocab
+
+        base = glossary_base_text()
+        self.assertTrue(base)
+        own = "村長 (Village Chief)"
+        sent = own + "\n\n" + GLOSSARY_BASE_SEPARATOR + base
+        windows = sent.replace("\n", "\r\n")
+        files = {
+            "CRLF, as Notepad saves it": windows.encode(),
+            "UTF-8 with its byte order mark": windows.encode("utf-8-sig"),
+            "UTF-16, as Out-File writes it": windows.encode("utf-16"),
+        }
+        path = self.file(GLOSSARY)
+        for case, content in files.items():
+            for override in (False, True):
+                with (
+                    self.subTest(file=case, override=override),
+                    patch.dict(
+                        os.environ,
+                        {
+                            "DAZED_GAME_ROOT": str(self.root),
+                            GLOSSARY_OVERRIDE_ENV: str(path) if override else "",
+                        },
+                    ),
+                ):
+                    path.write_bytes(content)
+                    held = read(self.root)[GLOSSARY]
+                    self.assertEqual(held["text"], own)
+                    self.assertEqual(read_game_vocab(self.root), own)
+                    self.assertEqual(read_active_glossary(), sent)
+                    self.assertEqual(
+                        request_glossary(read_game_glossary(self.root)), sent
+                    )
+                    documents_save(
+                        self.root,
+                        {
+                            GLOSSARY: {
+                                "revision": held["revision"],
+                                "text": own + "\n魔王 (Demon King)",
+                            }
+                        },
+                    )
+                    saved = (
+                        own + "\n魔王 (Demon King)\n\n" + GLOSSARY_BASE_SEPARATOR + base
+                    )
+                    self.assertEqual(path.read_bytes(), saved.encode())
+                    self.assertEqual(read_active_glossary(), saved)
 
     def test_an_edit_on_disk_under_a_draft_is_saved_over_only_by_keeping_the_draft(
         self,

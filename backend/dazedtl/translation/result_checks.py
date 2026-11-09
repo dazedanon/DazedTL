@@ -164,7 +164,7 @@ def check(root, source_language, target, answers=None):
     """Checks the game at *root*'s exported translations, saving the hits
     with the answers given now and before at CHECK_FILE, and gives the
     counts and the next step."""
-    from util.paths import GAME_GLOSSARY_RELATIVE
+    from util.paths import GAME_GLOSSARY_RELATIVE, read_glossary_file
 
     from dazedtl.languages import reading
 
@@ -172,9 +172,7 @@ def check(root, source_language, target, answers=None):
     # correct.
     rows = [row for row in exported_translations(root) if not row.get("converted")]
     glossary = project_path(root, GAME_GLOSSARY_RELATIVE.as_posix(), exists=False)
-    glossary_text = (
-        glossary.read_text(encoding="utf-8-sig") if glossary.is_file() else ""
-    )
+    glossary_text = read_glossary_file(glossary) if glossary.is_file() else ""
     basis = Basis(
         CHECK_VERSION,
         {

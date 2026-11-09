@@ -153,10 +153,11 @@ def glossary_lines(
     """The glossary's lines as (pairs, line, section, is_base): each
     `source (translation)` pair of a line that lists several, and the whole
     line, which keeps the notes after them, such as a character's gender."""
-    from util.vocab import BASE_SEPARATOR, split_glossary_row
+    from util.paths import split_glossary
+    from util.vocab import split_glossary_row
 
     lines = []
-    game, _separator, base = str(text or "").partition(BASE_SEPARATOR)
+    game, base = split_glossary(str(text or ""))
     for part, is_base in ((game, False), (base, True)):
         section = ""
         for raw in part.splitlines():

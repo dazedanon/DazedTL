@@ -29,6 +29,8 @@ from util.paths import (
     glossary_base_path,
     read_active_glossary,
     read_game_glossary,
+    read_glossary_file,
+    split_glossary,
 )
 from util import system
 
@@ -61,8 +63,8 @@ def batch_glossary_phase() -> str:
 
 def freeze_batch_glossary(*, game_root=None) -> Path:
     """Snapshot the live glossary for the current batch collect/consume cycle."""
-    text = read_active_glossary() if game_root is None else _path(game_root).read_text(
-        encoding="utf-8"
+    text = read_active_glossary() if game_root is None else read_glossary_file(
+        _path(game_root)
     )
     return write_batch_glossary_freeze(text)
 
@@ -142,17 +144,10 @@ def read_translation_glossary() -> str:
     return read_active_glossary()
 
 
-def _split_base(text: str) -> tuple[str, str]:
-    index = text.find(BASE_SEPARATOR)
-    if index == -1:
-        return text, ""
-    return text[:index], text[index:]
-
-
 def read_game_vocab(game_root=None, *, create: bool = True) -> str:
     """Return the game section, optionally previewing a missing glossary read-only."""
     if create:
-        text = _path(game_root).read_text(encoding="utf-8")
+        text = read_glossary_file(_path(game_root))
     elif game_root is not None:
         text = read_game_glossary(game_root, create=False)
     else:
@@ -160,8 +155,7 @@ def read_game_vocab(game_root=None, *, create: bool = True) -> str:
         if path is None:
             return _EMPTY_PLACEHOLDER
         text = read_game_glossary(path.parents[1], create=False)
-    game_part, _base_part = _split_base(text)
-    return game_part.rstrip("\n") or _EMPTY_PLACEHOLDER
+    return split_glossary(text)[0].rstrip("\n") or _EMPTY_PLACEHOLDER
 
 
 def write_game_vocab(game_text: str, game_root=None) -> None:
@@ -191,7 +185,7 @@ def _read_glossary(game_root=None) -> str:
     """The whole glossary as a merge starts from it: a named game's without
     creating it, else the active glossary, which may be the user's own file."""
     if game_root is None:
-        return _path(None).read_text(encoding="utf-8")
+        return read_glossary_file(_path(None))
     return read_game_glossary(game_root, create=False)
 
 
@@ -513,7 +507,7 @@ def _change_game_vocab(change, game_root=None) -> None:
     """
     with _VOCAB_LOCK:
         existing = _read_glossary(game_root)
-        game_part, base_part = _split_base(existing)
+        game_part, base_part = split_glossary(existing)
         new_game = change(game_part)
         if new_game == game_part:
             return
