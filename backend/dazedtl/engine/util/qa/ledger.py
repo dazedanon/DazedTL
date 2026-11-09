@@ -420,7 +420,12 @@ class _Reviewed:
         self.layout = _layout_key(layout)
         self.ledgers = []
         for ledger in ledgers:
-            before = ledger.get("guidance") or {}
+            # Versions up to 2.70.0 kept a file's byte order mark on its
+            # first line, which is the same line as Context reads it now.
+            before = {
+                line.removeprefix("﻿"): terms
+                for line, terms in (ledger.get("guidance") or {}).items()
+            }
             changed = {
                 term for line in before.keys() ^ guidance.keys()
                 for term in before.get(line) or guidance.get(line) or []

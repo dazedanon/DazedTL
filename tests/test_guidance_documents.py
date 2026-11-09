@@ -5,6 +5,7 @@ review found the next reader without its branch."""
 
 import os
 import shutil
+import subprocess
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -252,6 +253,51 @@ class GuidanceDocumentTests(unittest.TestCase):
                     (game / ".dazedtl/skills" / name).write_bytes(encode(text))
                 self.assertEqual(read(game)["quirks"]["state"], "saved")
                 self.assertEqual(load_system_prompt(game), expected)
+
+    def test_a_draft_over_a_recovered_save_of_a_windows_file_reads(self):
+        # A Context save that ended without its checkpoint, of a file
+        # PowerShell had saved as UTF-16, failed every read with a draft
+        # once the next write committed it.
+        from dazedtl.compatibility.checkpoint_commits import (
+            RECOVERED_TRAILER,
+            STAGE_TRAILER,
+        )
+
+        def git(*arguments):
+            subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    str(self.root),
+                    "-c",
+                    "core.autocrlf=false",
+                    "-c",
+                    "user.name=Test",
+                    "-c",
+                    "user.email=test@example.com",
+                    *arguments,
+                ],
+                capture_output=True,
+                check=True,
+            )
+
+        quirks = self.root / ".dazedtl/skills/quirks.md"
+        quirks.write_bytes("Keep honorifics.\r\n".encode("utf-16"))
+        began = read(self.root)["quirks"]["revision"]
+        git("init", "-q")
+        git("add", "-A")
+        git("commit", "-q", "-m", "Original")
+        quirks.write_bytes(b"Keep honorifics.\nDrop sound effects.\n")
+        git(
+            "commit",
+            "-q",
+            "-am",
+            "Context: Save Style & quirks",
+            "-m",
+            f"{STAGE_TRAILER}: Context\n{RECOVERED_TRAILER}: true",
+        )
+        draft = {"quirks": {"text": "My draft", "revision": began}}
+        self.assertFalse(read(self.root, draft)["quirks"]["changed"])
 
     def test_text_qa_reviews_guidance_saved_on_windows_and_keeps_its_tasks(self):
         # Text QA left a UTF-16 skill out of the review as unreadable and

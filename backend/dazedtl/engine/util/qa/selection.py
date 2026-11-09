@@ -154,14 +154,17 @@ def _located(document: dict[str, Any], game_root: str | Path) -> dict[str, Any]:
 def _read_before(document: dict[str, Any]) -> dict[str, Any]:
     """*document* with its text as versions up to 2.70.0 read its file: the
     text with Windows line ends or a byte order mark whose UTF-8 bytes are
-    the file's, by its sha256, or as it is."""
+    the file's, by its sha256, or as it is. A file mixing line ends can't
+    be told from its text, so its task is prepared again."""
     text = document.get("text")
-    if not isinstance(text, str) or not text:
+    if not isinstance(text, str):
         return document
     windows = text.replace("\n", "\r\n")
     for candidate in (windows, "\ufeff" + text, "\ufeff" + windows):
-        if _sha256(candidate.encode()) == document.get("sha256"):
-            return {**document, "text": candidate}
+        if candidate != text and _sha256(candidate.encode()) == document.get("sha256"):
+            # A byte order mark alone read as text, which isn't empty.
+            status = "loaded" if candidate.strip() else document.get("status")
+            return {**document, "status": status, "text": candidate}
     return document
 
 
