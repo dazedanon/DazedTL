@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import threading
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -176,6 +177,60 @@ class TextQATests(unittest.TestCase):
                 with self.assertRaises(ValueError) as refused:
                     service.run("project", step_name, findings=["QA-0001"])
                 self.assertEqual(str(refused.exception), step)
+
+    def test_start_over_waits_for_running_steps_and_clears_the_playtest_if_asked(
+        self,
+    ):
+        # A task stuck in review offered only Copy QA task, and preparing
+        # again resumed it; starting over must not race a running step.
+        with TemporaryDirectory() as folder:
+            root = Path(folder)
+            qa = {
+                "current": False,
+                "applied": False,
+                "status": {},
+                "findings": [],
+                "questions": [],
+                "message": "No QA task prepared for this focus.",
+            }
+            guided, _calls = fake_guided(folder, qa)
+            operations = guided.backend.operations
+            operations.lock = threading.Lock()
+            operations.running = lambda: bool(operations.active)
+            service = TextQA(guided)  # type: ignore[arg-type]
+            pointer = root / "text-qa-release.json"
+            playtest = root / "playtest.json"
+            stops = root / "playtest-stops.json"
+
+            def prepared(key):
+                task = root / "text-qa/project/release" / key
+                task.mkdir(parents=True)
+                pointer.write_text(json.dumps({"task": str(task)}), encoding="utf-8")
+                for path in (playtest, stops, root / "playtest/report/report.json"):
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_text("{}", encoding="utf-8")
+                return task
+
+            task = prepared("a" * 16)
+            operations.jobs["play"] = {"label": "Play the game"}
+            operations.active = "play"
+            with self.assertRaisesRegex(ValueError, "Wait for Play the game"):
+                service.start_over("project", True)
+            self.assertTrue(pointer.exists() and task.is_dir() and playtest.exists())
+            operations.active = ""
+            state = service.start_over("project")
+            self.assertFalse(pointer.exists() or task.exists())
+            self.assertTrue(task.with_name(task.name + "-discarded").is_dir())
+            self.assertEqual(state["next"], "Run qa --prepare.")
+            # The playtest's results stay unless the user clears them; its
+            # saved stops stay either way.
+            self.assertTrue(playtest.exists())
+            prepared("b" * 16)
+            service.start_over("project", True)
+            self.assertFalse(playtest.exists() or (root / "playtest").exists())
+            self.assertTrue(stops.exists())
+            with self.assertRaisesRegex(ValueError, "No QA task"):
+                service.start_over("project")
 
     def test_assistant_led_status_lists_labels_qa_cannot_correct(self):
         # Once the Text QA page stopped listing them, nothing told an

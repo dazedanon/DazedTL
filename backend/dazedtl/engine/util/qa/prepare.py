@@ -3,6 +3,7 @@ inventory and bundles a new task starts with."""
 
 from __future__ import annotations
 
+import glob
 import re
 from collections.abc import Callable, Iterable, Mapping
 from pathlib import Path
@@ -82,6 +83,7 @@ from util.qa.storage import (
     _safe_task_root,
     _task_lock,
     game_tasks,
+    receipts,
     task_rules,
 )
 from util.qa.validation import _read_observations
@@ -107,6 +109,12 @@ SCOPE_FILE = "scope.json"
 # Beside a focus's tasks, the key of the one preparing QA returned last; the
 # others are replaced, and a helper still holding one's path is sent on.
 CURRENT_FILE = "current.json"
+# Beside a game's focus folders, how many times the user started QA over,
+# which every later task's key holds, so preparing never resumes a task from
+# before, and whether the next task prepared still reviews every line.
+RESTART_FILE = "restart.json"
+# A task the user started over goes aside under its key with this suffix.
+DISCARDED = "-discarded"
 # Each data file's part of the game's text, by focus, reused while the file is
 # unchanged: the app reads the game's text on every status of a task.
 _FILE_TEXT = Digests()
@@ -136,7 +144,18 @@ def replaced_by(task_dir: str | Path) -> Path | None:
 
 def require_current(task_dir: str | Path) -> None:
     """Refuses work on a task a newer one replaced, naming the newer one, so
-    a helper can't review, report or finish the wrong task."""
+    a helper can't review, report or finish the wrong task, and on a task the
+    user started over from, which no newer one carries on."""
+    root = Path(task_dir).expanduser().resolve()
+    if DISCARDED in root.name or (
+        not (root / "task.json").is_file()
+        and any(root.parent.glob(glob.escape(root.name) + DISCARDED + "*"))
+    ):
+        raise ValueError(
+            "The user started QA over in DazedTL and discarded this task. Stop "
+            "working on it: don't review, prepare or apply QA, and tell the user "
+            "you stopped."
+        )
     if current := replaced_by(task_dir):
         raise ValueError(
             "QA was prepared again, and a newer task replaced this one; run "
@@ -186,6 +205,56 @@ def _last_scope(path: Path) -> str | None:
         return str(_read_json(path).get("everything") or "")
     except (OSError, ValueError, AttributeError):
         return None
+
+
+def _restart(games: Path) -> tuple[int, bool]:
+    """How many times the user started this game's QA over, and whether the
+    next task prepared reviews every line."""
+    try:
+        saved = _read_json(games / RESTART_FILE)
+        return int(saved.get("generation") or 0), saved.get("fresh") is True
+    except (OSError, ValueError, AttributeError, TypeError):
+        return 0, False
+
+
+def start_over(task_dir: str | Path, game_root: str | Path) -> Path | None:
+    """Starts a game's QA over from its task in *task_dir*, whether or not
+    the task's files can be read: removes the review notes its reviewers kept
+    in the game at *game_root*, sets the task aside where no review builds on
+    it, and has the next task prepared review every line under a key no
+    earlier task had, so preparing never resumes one from before and a helper
+    still holding this one's path is told to stop (require_current). Returns
+    where the task went, or None when it was gone."""
+    root = Path(task_dir).expanduser().resolve()
+    notes = receipts(game_root, root)
+    try:
+        system.remove_tree(notes, missing_ok=True)
+    except OSError as error:
+        raise ValueError(
+            f"Couldn't remove QA's review notes in {notes}. Close programs using "
+            "them, such as your assistant, then try again."
+        ) from error
+    games = root.parent.parent
+    target = None
+    with _task_lock(root.parent):
+        if root.is_dir():
+            number, target = 1, root.with_name(root.name + DISCARDED)
+            while target.exists():
+                number += 1
+                target = root.with_name(f"{root.name}{DISCARDED}-{number}")
+            try:
+                system.rename(root, target)
+            except OSError as error:
+                raise ValueError(
+                    "Couldn't set the QA task aside. Close programs using its "
+                    "files, such as your assistant, then try again."
+                ) from error
+        with _task_lock(games):
+            _atomic_write_json(
+                games / RESTART_FILE,
+                {"generation": _restart(games)[0] + 1, "fresh": True},
+            )
+    return target
 
 
 def _earlier_reviews(
@@ -258,9 +327,12 @@ def prepare_task(
     updated to or a Git revision, whose earlier text was checked before. A
     baseline stays in effect for the game's later tasks. *earlier* False
     reviews everything, and preparing again without a new *since* goes on
-    with that review while the text is the same. *origins* limits the earlier
-    reviews to those a task names as its `reviewed_before`, as a task rebuilt
-    from another reads what that one read.
+    with that review while the text is the same. The first task after the
+    user started QA over (start_over) reviews everything too, and every
+    task's key counts the start overs, so none from before goes on. *origins*
+    limits the earlier reviews to those a task names as its
+    `reviewed_before`, as a task rebuilt from another reads what that one
+    read.
 
     *fit* holds the Line widths the task fits corrections to; a task already
     prepared keeps the ones it was made with.
@@ -319,6 +391,10 @@ def prepare_task(
         if all(_observation_key(row) != _observation_key(observation) for row in observed):
             observed.append(observation)
     games = game_tasks(storage, game, storage_key)
+    # The first task after the user started QA over reviews every line.
+    generation, fresh = _restart(games)
+    if fresh:
+        earlier, since = False, None
     if since and earlier:
         _baseline_ledger(games, game, data, focus, since)
     if origins is not None:
@@ -335,6 +411,8 @@ def prepare_task(
     # Versions up to 2.34.3 named the game folder in the context, so a task
     # one of them made of the same inputs here has the key of that context.
     contexts = context_digests(context, game)
+    # A start over is a new review of the same text, under keys of its own.
+    restarted = f"\0restart:{generation}" if generation else ""
     keys = [
         _task_keys(
             _task_basis(
@@ -343,7 +421,8 @@ def prepare_task(
                 _sha256(_canonical_bytes(_inventory_text(manifest))),
                 digest,
                 screen_configuration,
-            ),
+            )
+            + restarted,
             baselines,
         )
         for digest in [
@@ -385,6 +464,8 @@ def prepare_task(
             if observed:
                 _observe_again(task_dir, observed, observer)
             _atomic_write_json(task_parent / CURRENT_FILE, {"task": task_key})
+            if fresh:
+                _started_fresh(games, generation)
             return task_dir, status(task_dir)
 
         staging = new_folder(task_parent, f".{task_key}.")
@@ -599,7 +680,19 @@ def prepare_task(
                 system.remove_tree(staging)
             raise
         _atomic_write_json(task_parent / CURRENT_FILE, {"task": task_key})
+        if fresh:
+            _started_fresh(games, generation)
     return task_dir, status(task_dir)
+
+
+def _started_fresh(games: Path, generation: int) -> None:
+    """Records that the task of a start over is prepared, so later tasks
+    build on earlier reviews again; a start over since keeps its own."""
+    with _task_lock(games):
+        if _restart(games) == (generation, True):
+            _atomic_write_json(
+                games / RESTART_FILE, {"generation": generation, "fresh": False}
+            )
 
 
 def inventory_matches(task_dir: str | Path, manifest: dict[str, Any]) -> bool:

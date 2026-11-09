@@ -275,6 +275,7 @@ Drafts and actions:
 - Whether saved work is current has one rule, in [freshness](../backend/dazedtl/engine/util/freshness.py): it is keyed on its inputs and an explicit version, never on hashes of source files, so an update alone never outdates it.
 - A Text QA task is keyed on what it reviews and `QA_RULES_VERSION` in [qa/schema](../backend/dazedtl/engine/util/qa/schema.py), raised only when saved reviews become wrong or unreadable, and reads the game by its own version (`task_rules`); the [previous-release QA check](development.md#previous-release-qa-check) fails when a change needs it.
   A prepared task stays current through QA's own Apply and Undo ([compatibility/text](../backend/dazedtl/compatibility/text.py)).
+  Its key also counts the user's start overs ([qa/prepare](../backend/dazedtl/engine/util/qa/prepare.py) `start_over`), so a start over never resumes an earlier task.
 - Workflow options live in the game's `.dazedtl/len-method/workflow.json`, its original files in its Git repository and its guidance in its own files ([paths](../backend/dazedtl/engine/util/paths.py)); the app profile holds connections, recoverable drafts, run plans and receipts.
 - [guidance_documents](../backend/dazedtl/engine/util/guidance_documents.py) defines each guidance document once; editors, saves, the drafts gate and checkpoints read it, never a name.
   Its [reader](../backend/dazedtl/engine/desktop/backend/guidance.py) reads each as saved, missing or unreadable with why; Save replaces a file changed under a draft only if the user keeps the draft.

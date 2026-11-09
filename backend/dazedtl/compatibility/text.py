@@ -353,6 +353,26 @@ def _set_aside(plan, log):
     log(f"Set aside {folder} as {target.name}: {failure}")
 
 
+def qa_start_over(plan):
+    """Starts the focus's QA over: its task goes aside with its review notes
+    (rpgmaker_qa.start_over), and its record with it, so QA reads as not
+    started and the next task prepared reviews every line. A record that
+    can't name its task goes too."""
+    from util import rpgmaker_qa as qa
+
+    pointer = _pointer(plan)
+    with _pointer_lock(pointer):
+        if not pointer.exists():
+            raise ValueError("No QA task is prepared to start over.")
+        try:
+            task = _task_folder(plan, read_json(pointer))
+        except ValueError, OSError, KeyError, TypeError:
+            task = None
+        if task is not None:
+            qa.start_over(task, plan["project"]["source"])
+        system.unlink(pointer)
+
+
 def qa_state(plan):
     from util import rpgmaker_qa as qa
 
@@ -546,6 +566,11 @@ def qa_state(plan):
         **({"activity": activity} if activity else {}),
         **({"rules_changed": True} if rules_changed else {}),
         "prepared_at": task["created_at"],
+        **(
+            {"updated_at": checkpoint["updated_at"]}
+            if checkpoint.get("updated_at")
+            else {}
+        ),
         "message": "Saved results match current project text."
         if current
         else "An update changed QA's rules while this task was in review."

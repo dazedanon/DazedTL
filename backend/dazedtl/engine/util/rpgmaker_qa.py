@@ -166,6 +166,7 @@ from util.qa.prepare import (
     replaced_by,
     require_current,
     SCOPE_FILE,
+    start_over,
     text_digest,
 )
 from util.qa.rebuild import rebuild_deep_from_screen

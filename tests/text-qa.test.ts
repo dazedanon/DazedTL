@@ -4,6 +4,7 @@ import {
   qaActivity,
   qaPhase,
   qaStages,
+  qaStartOver,
   qaSummary,
 } from "../app/src/features/guided/qaView.ts";
 import { changedWords } from "../app/src/ui/changedWords.ts";
@@ -117,4 +118,36 @@ test("an applied correction marks only the words it changed", () => {
     "The fox jumps.",
     "A cat sleeps.",
   ]);
+});
+
+test("Start over warns of an assistant still at work and offers to clear only results the playtest has", () => {
+  const now = Date.parse("2026-11-09T12:00:00Z");
+  const qa = (updated_at: string) =>
+    ({
+      task: "/qa/task",
+      current: true,
+      applied: false,
+      message: "",
+      findings: [
+        { id: "a", state: "applied" },
+        { id: "b", state: "undone" },
+      ],
+      questions: [{ id: "c", choice: "use", state: "applied" }],
+      status: { stage: "screen" },
+      updated_at,
+    }) as never;
+  const playtest = (report: string, problems: number) =>
+    ({ report, problems: Array(problems).fill({}) }) as never;
+  assert.deepEqual(
+    qaStartOver(qa("2026-11-09T11:50:00Z"), playtest("r1", 2), now),
+    { applied: 2, active: "2026-11-09T11:50:00Z", playtest: 2 },
+  );
+  // A review quiet for 15 minutes, and a playtest without a report, such
+  // as one that never ran, ask nothing.
+  assert.deepEqual(
+    qaStartOver(qa("2026-11-09T11:45:00Z"), playtest("", 0), now),
+    { applied: 2, active: "", playtest: null },
+  );
+  assert.equal(qaStartOver(qa(""), null, now).active, "");
+  assert.equal(qaStartOver(qa(""), playtest("r1", 0), now).playtest, 0);
 });

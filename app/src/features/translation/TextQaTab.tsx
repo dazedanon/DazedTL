@@ -5,7 +5,7 @@
  */
 
 import type { ReactNode } from "react";
-import type { QaState } from "../../api/contracts";
+import type { PlaytestState, QaState } from "../../api/contracts";
 import type { useAction } from "../../state/useAction";
 import type { OperationEnd } from "../guided/qaSteps";
 import {
@@ -22,6 +22,7 @@ import { PageBody } from "../../ui/PageLayout";
 export function TextQaTab({
   projectId,
   qa,
+  playtest,
   action,
   disabled,
   finished,
@@ -29,6 +30,8 @@ export function TextQaTab({
 }: {
   projectId: string;
   qa: QaState;
+  /** The playtest's results, which starting QA over can clear. */
+  playtest: PlaytestState | null;
   action: ReturnType<typeof useAction>;
   disabled: boolean;
   finished: OperationEnd;
@@ -58,7 +61,9 @@ export function TextQaTab({
     <>
       <PageBody>
         <TextQaWork
+          projectId={projectId}
           qa={qa}
+          playtest={playtest}
           // The starting prompt hands QA to the assistant.
           waiting
           disabled={disabled}

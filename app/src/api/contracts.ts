@@ -914,6 +914,7 @@ export type QaState = {
   activity?: QaActivity;
   rules_changed?: boolean;
   prepared_at?: string;
+  updated_at?: string;
   unreadable?: QaUnreadable;
 };
 
@@ -3314,6 +3315,12 @@ export type TranslationQaRequest = {
   everything?: boolean;
 };
 
+export type QaStartOverRequest = {
+  project_id: string;
+  /** Also clear the playtest's results. */
+  playtest?: boolean;
+};
+
 export type TranslationQaCheckRequest = {
   project_id: string;
   /** Hit ID to a one-line reason the line is right, kept while the hit stays the same. */
@@ -4088,6 +4095,7 @@ export type RpcContract = {
     response: TextQaCheck;
   };
   guided_qa_report: { request: ProjectRequest; response: QaReport };
+  guided_qa_start_over: { request: QaStartOverRequest; response: TextQaStatus };
   translation_playtest: {
     request: TranslationPlaytestRequest;
     response: PlaytestStatus;

@@ -40,6 +40,7 @@ from util.qa.storage import (
     _load_task,
     _read_json,
     _task_lock,
+    receipts,
     task_json,
 )
 from util.skills import rpgmaker_qa_skill_parts
@@ -100,9 +101,7 @@ def _skill_values(task_dir: Path, task: dict[str, Any]) -> dict[str, str]:
         # first command, the brief, start with it. It goes at the start of a
         # line, never indented: its here-document's end marker must be.
         "SHELL_NOTE": system.shell_note(),
-        "RECEIPTS": str(
-            Path(task["game_root"]) / ".dazedtl" / "qa-receipts" / task_dir.name
-        ),
+        "RECEIPTS": str(receipts(task["game_root"], task_dir)),
         "CATEGORIES": ", ".join(sorted(FINDING_CATEGORIES)),
         "SUMMARY_LIMIT": str(SUMMARY_LIMIT),
         "SCREEN_SCHEMA": SCREEN_RESULT_SCHEMA,

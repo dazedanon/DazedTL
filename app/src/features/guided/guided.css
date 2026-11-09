@@ -1553,3 +1553,15 @@
   line-height: 1.5;
   vertical-align: 0.1em;
 }
+/* The fields QA offers before it starts lay out as the page's own. */
+.qa-fields {
+  display: contents;
+}
+/* Start over sits under the QA stages, or alone in the panel's body. */
+.qa-start-over {
+  margin: 0;
+  font-size: var(--font-control);
+}
+.step-progress + .qa-start-over {
+  margin-top: var(--space-3);
+}

@@ -130,7 +130,7 @@ function Workspace({
   };
   // Until the assistant first uses the project, the page opens on Options,
   // so the choices are made before the starting prompt is copied.
-  const [view, setView] = useState<View>(
+  const [selected, setView] = useState<View>(
     initialView ??
       (state.assistantSeenAt || state.progress?.updated_at
         ? "progress"
@@ -218,6 +218,8 @@ function Workspace({
       : []),
     ...(state.release ? [{ id: "release" as const, label: "Release" }] : []),
   ];
+  // A tab that goes, such as Text QA once it starts over, leaves Progress.
+  const view = tabs.some((tab) => tab.id === selected) ? selected : "progress";
   const disabled = state.active || action.busy || draft.committing;
   const edit = <K extends keyof TranslationOptions>(
     key: K,
@@ -419,6 +421,7 @@ function Workspace({
           <TextQaTab
             projectId={project.id}
             qa={qa}
+            playtest={playtest}
             action={action}
             disabled={disabled}
             finished={finished}

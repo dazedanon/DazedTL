@@ -587,6 +587,9 @@ class QaState(TypedDict):
     rules_changed: NotRequired[bool]
     # When this task was prepared; preparing again resumes a task, keeping it.
     prepared_at: NotRequired[str]
+    # When its review last moved, such as a reviewer taking or handing in a
+    # bundle, or preparing it again.
+    updated_at: NotRequired[str]
     # The prepared task can't be read or trusted, so QA is blocked; message
     # says why, and preparing again sets it aside.
     unreadable: NotRequired[QaUnreadable]

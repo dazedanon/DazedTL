@@ -5,6 +5,7 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type {
+  PlaytestState,
   PluginLabel,
   QaFinding,
   QaInterfaceText,
@@ -24,6 +25,7 @@ import { useLanguages } from "../../app/LanguagesProvider";
 import { Notice } from "../../ui/Notice";
 import { StatusMark } from "../../ui/StatusMark";
 import { StepProgress } from "../../ui/StepProgress";
+import { QaStartOver } from "./QaStartOver";
 import type { QaStepDetails } from "./qaSteps";
 import {
   qaActivity,
@@ -50,11 +52,14 @@ export type Feedback = (
 };
 
 /**
- * The task's panel, then its questions, a failed apply and the corrections.
- * Each page adds its own footer and the fields it offers before QA starts.
+ * The task's panel, with Start over once a task exists, then its questions,
+ * a failed apply and the corrections. Each page adds its own footer and the
+ * fields it offers before QA starts.
  */
 export function TextQaWork({
+  projectId,
   qa,
+  playtest,
   waiting,
   disabled,
   feedback,
@@ -65,7 +70,10 @@ export function TextQaWork({
   children,
   beside,
 }: {
+  projectId: string;
   qa: QaState;
+  /** The playtest's results, which starting QA over can clear. */
+  playtest?: PlaytestState | null;
   /** The task went to an assistant that has not started on it yet. */
   waiting: boolean;
   disabled: boolean;
@@ -109,13 +117,32 @@ export function TextQaWork({
               : waiting || phase === "running"
                 ? "waiting"
                 : "not_started";
+  // Starting over removes the control that had focus; it goes to the first
+  // field QA offers before it starts.
+  const fields = useRef<HTMLDivElement>(null);
+  const started = useRef(phase !== "not_started");
+  useEffect(() => {
+    if (
+      started.current &&
+      phase === "not_started" &&
+      (!document.activeElement || document.activeElement === document.body)
+    )
+      fields.current
+        ?.querySelector<HTMLElement>("select, input, button")
+        ?.focus({ preventScroll: true });
+    started.current = phase !== "not_started";
+  }, [phase]);
   const undo = (id: string) =>
     run("qa-undo:" + id, "undo", { findings: [id] }, "Undone.");
   const reapply = (id: string) =>
     run("qa-reapply:" + id, "reapply", { findings: [id] }, "Applied again.");
   return (
     <>
-      {phase === "not_started" && children}
+      {phase === "not_started" && children && (
+        <div ref={fields} className="qa-fields">
+          {children}
+        </div>
+      )}
       <AssistantTask
         title="Text QA"
         state={state}
@@ -149,9 +176,21 @@ export function TextQaWork({
       >
         {/* The stages show where review is; once it is over, the panel's
             summary and the rows below say what QA did. */}
-        {phase === "running" && (
-          <StepProgress label="QA stages" steps={qaStages(qa)} />
-        )}
+        {phase !== "not_started" ? (
+          <>
+            {phase === "running" && (
+              <StepProgress label="QA stages" steps={qaStages(qa)} />
+            )}
+            <QaStartOver
+              projectId={projectId}
+              qa={qa}
+              playtest={playtest}
+              focus={!!children}
+              restorable={restorable}
+              disabled={disabled}
+            />
+          </>
+        ) : undefined}
       </AssistantTask>
       {beside}
       {questions.length > 0 && phase !== "outdated" && (

@@ -177,6 +177,12 @@ def located(task_dir: Path, task: dict[str, Any]) -> dict[str, Any]:
             PREPARED_AT: {"game_root": task["game_root"], "data_root": task["data_root"]}}
 
 
+def receipts(game_root: str | Path, task_dir: str | Path) -> Path:
+    """Where a task's reviewers keep their result files, its review notes:
+    in the game's folder, by the task's key."""
+    return Path(game_root) / ".dazedtl" / "qa-receipts" / Path(task_dir).name
+
+
 def task_json(task_dir: str | Path) -> dict[str, Any]:
     """A task folder's task, its game where it is now."""
     root = Path(task_dir).expanduser().resolve()

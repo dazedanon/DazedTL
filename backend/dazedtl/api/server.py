@@ -1169,6 +1169,11 @@ def routes(app):
         lambda value, _params: value,
     )
     methods["guided_qa_report"] = (app.text_qa.report, lambda value, _params: value)
+    # Absent from the helper's methods: only the user starts QA over.
+    methods["guided_qa_start_over"] = (
+        app.text_qa.start_over,
+        lambda value, _params: value,
+    )
     methods["translation_playtest"] = (
         app.translation_playtest,
         lambda value, _params: value,

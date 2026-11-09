@@ -289,6 +289,11 @@ class TranslationQaRequest(TypedDict):
     everything: NotRequired[bool]
 
 
+class QaStartOverRequest(TypedDict):
+    project_id: str
+    playtest: NotRequired[Annotated[bool, "Also clear the playtest's results."]]
+
+
 class TranslationQaCheckRequest(TypedDict):
     project_id: str
     answers: NotRequired[
@@ -1003,6 +1008,7 @@ METHODS: dict[str, Method] = {
         TranslationQaCheckRequest, TextQaCheck, refresh=False
     ),
     "guided_qa_report": Method(ProjectRequest, QaReport, refresh=False),
+    "guided_qa_start_over": Method(QaStartOverRequest, TextQaStatus),
     "translation_playtest": Method(TranslationPlaytestRequest, PlaytestStatus),
     "guided_playtest_capture": Method(
         PlaytestCaptureRequest, PlaytestCapture, refresh=False

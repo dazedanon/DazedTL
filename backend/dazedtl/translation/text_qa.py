@@ -514,6 +514,37 @@ class TextQA:
             }
         )
 
+    def start_over(self, project_id, playtest=False):
+        """Starts the game's text QA over, as only the user does: its task
+        and review notes go aside (qa_start_over), and with *playtest* the
+        playtest's results too, so QA reads as not started and its next task
+        reviews every line. Corrections already applied stay in the game."""
+        from dazedtl.compatibility.playtest import clear
+        from dazedtl.compatibility.text import qa_start_over
+
+        native = self.native(project_id)
+        folder = self.folder(native)
+        operations = self.guided.backend.operations
+        # No QA step or play starts while the task goes.
+        with operations.lock:
+            if operations.running():
+                job = operations.jobs.get(operations.active) or {}
+                raise ValueError(
+                    f"Wait for {job.get('label') or 'the running step'} to "
+                    "finish, then start QA over."
+                )
+            qa_start_over(
+                {
+                    "folder": str(folder),
+                    "project_id": native["id"],
+                    "project": native,
+                    "options": {"focus": self.focus(project_id)},
+                }
+            )
+            if playtest:
+                clear(folder)
+        return self.status(project_id, native)
+
     def started(self, project_id, kind, job):
         write_json(
             self.guided.path(project_id, "text-qa-operation"),

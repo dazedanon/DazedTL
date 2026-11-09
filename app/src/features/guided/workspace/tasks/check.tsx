@@ -92,8 +92,10 @@ export function qaView(w: GuidedWorkspace): TaskView {
     preparing.result?.task === qa.task &&
     (preparing.result?.status as { stage?: string } | undefined)?.stage ===
       "complete";
+  // A copy of a task QA started over from describes nothing either.
   const staleCopy =
-    ["outdated", "blocked"].includes(phase) || (done && !copiedFinished);
+    ["outdated", "blocked", "not_started"].includes(phase) ||
+    (done && !copiedFinished);
   const start = (label: string, variant: "primary" | "default" = "primary") => (
     <ActionControl
       label={label}
@@ -126,7 +128,9 @@ export function qaView(w: GuidedWorkspace): TaskView {
         </Notice>
       )}
       <TextQaWork
+        projectId={project.id}
         qa={qa}
+        playtest={playtest}
         waiting={assisted}
         disabled={disabled}
         feedback={feedback}

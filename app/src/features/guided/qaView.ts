@@ -2,6 +2,7 @@
 
 import type {
   GuidedState,
+  PlaytestState,
   QaFinding,
   QaState,
   QaUntranslatedSource,
@@ -176,6 +177,28 @@ export function qaCorrections(qa: QaState) {
     total: rows.length,
     applied: count("applied"),
     undone: count("undone"),
+  };
+}
+
+/** A task whose review moved this recently may still have an assistant on it. */
+const ACTIVE_MINUTES = 15;
+
+/**
+ * What the Start over dialog says before QA starts over: how many of the
+ * task's corrections stay in the game, when its review last moved while an
+ * assistant may still be at it, and how many problems the playtest's
+ * results hold, null without results to clear.
+ */
+export function qaStartOver(
+  qa: QaState,
+  playtest: PlaytestState | null | undefined,
+  now: number,
+) {
+  const moved = qa.updated_at ? Date.parse(qa.updated_at) : NaN;
+  return {
+    applied: qaCorrections(qa).applied,
+    active: now - moved < ACTIVE_MINUTES * 60_000 ? qa.updated_at! : "",
+    playtest: playtest?.report ? playtest.problems.length : null,
   };
 }
 

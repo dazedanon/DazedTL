@@ -462,6 +462,9 @@ export const api = {
     ) => request("translation_qa", { project_id, step, ...details }),
     qaReport: (project_id: string) =>
       request("guided_qa_report", { project_id }),
+    /** Starts text QA over, with the playtest's results when asked. */
+    qaStartOver: (project_id: string, playtest: boolean) =>
+      request("guided_qa_start_over", { project_id, playtest }),
     /** Starts the release playtest or reads where it stands, as the
      * assistant's project helper does. */
     playtest: (project_id: string, step: "status" | "run") =>

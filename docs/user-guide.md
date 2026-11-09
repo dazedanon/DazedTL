@@ -104,7 +104,7 @@ For a Chinese or Japanese target, measure **Line widths** before you apply anyth
 | **Names & glossary** | Copy the task to your assistant. It writes the glossary, describing each character, and the game context; edit them and its **Assistant notes** in **Guidance**. |
 | **Event text sources** | Copy the task. Your assistant finds text the game shows through plugins and scripts; change its choices under **Source choices**. |
 | **Line widths** | Optional: copy the task, and your assistant measures the game's text boxes. Adjust the widths if you like; saving rewraps text already applied. |
-| **Cost estimate** | Click **Estimate cost** to see what translating the whole game will cost. Estimating is free. |
+| **Cost estimate** | **Estimate cost** shows, for free, what translating the whole game costs. |
 
 ### 3. Translate
 
@@ -134,15 +134,16 @@ To ask for changes, write **Revision notes** in **Compare images**; they stay wi
 The **Notes** view lists the noted images; **Copy revision task** sends one from Compare images, or all from the footer.
 
 If a run fails, a banner says why, and **Run history > Inspect** shows each request and the AI's reply.
-Lines that failed keep their original text until you translate them again.
+Failed lines keep their original text until translated again.
 
 ### 4. Check
 
 **Text QA** is optional.
 Click **Start text QA** and paste the task into your assistant: it reviews the translation, fixes what it can verify and asks you only what it can't settle.
 Every correction is listed with **Undo**.
+**Start over…** in its panel redoes QA from scratch, even mid-run.
 
-For MV and MZ games, the same task also playtests the game in a hidden window without changing it, and your assistant fixes what it finds, such as untranslated text, text cut off on screen and crashes.
+For MV and MZ games, the same task also playtests the game in a hidden window without changing it, and your assistant fixes what it finds, such as untranslated text, cut-off text and crashes.
 The **Playtest** panel shows what's left.
 
 **Playtest tools** installs TL Inspector and Forge to help you playtest MV and MZ games yourself.

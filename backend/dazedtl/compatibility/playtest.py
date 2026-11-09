@@ -381,6 +381,17 @@ def latest_labels(folder) -> dict | None:
     return {**read_json(path), **saved, "folder": str(path.parent)}
 
 
+def clear(folder):
+    """Forgets the playtest's reports and its checks of the assistant's
+    fixes, so nothing they found carries over to text QA and the next play
+    starts afresh; its saved stops and the fixes stay."""
+    folder = Path(folder)
+    for name in (POINTER, FIX_POINTER):
+        system.unlink(folder / name, missing_ok=True)
+    for name in (STORAGE, FIX_STORAGE):
+        system.remove_tree(folder / name, missing_ok=True)
+
+
 def latest(folder) -> tuple[dict, dict] | None:
     """The pointer to the latest report and the report, or None."""
     pointer = Path(folder) / POINTER

@@ -610,3 +610,51 @@ assert (
 )
 readme = (fresh / "README.md").read_text(encoding="utf-8")
 assert str(moved) in readme and str(game) not in readme
+
+# Starting QA over sets its task aside with the review notes its reviewers
+# kept in the game: a user's assistant read an earlier attempt's notes there
+# and stopped. The next task reviews every line under a key of its own, even
+# of unchanged text, so preparing never resumes the old one, whose helpers
+# are told to stop.
+notes = qa_storage.receipts(moved, fresh)
+notes.mkdir(parents=True)
+(notes / "screen-001.json").write_text("{}", encoding="utf-8")
+plan["project"]["data"] = str(moved / "data")
+text.qa_start_over(plan)
+assert not (workflow / "text-qa-release.json").exists()
+assert not notes.exists() and not fresh.exists()
+assert fresh.with_name(fresh.name + qa_prepare.DISCARDED).is_dir()
+
+
+def prepare_moved():
+    return qa.prepare_task(moved, moved / "data", "release", storage, storage_key=key)[
+        0
+    ]
+
+
+def refused(task):
+    try:
+        qa.require_current(task)
+    except ValueError as error:
+        assert "started QA over" in str(error), error
+    else:
+        raise AssertionError("A discarded task still took work.")
+
+
+refused(fresh)
+refused(fresh.with_name(fresh.name + qa_prepare.DISCARDED))
+restarted = prepare_moved()
+assert restarted != fresh and prepare_moved() == restarted
+qa.require_current(restarted)
+assert "reviewed_before" not in qa.status(restarted)
+# Starting over from a review of every line makes another all the same.
+qa.start_over(restarted, moved)
+again = prepare_moved()
+assert again != restarted and "reviewed_before" not in qa.status(again)
+refused(restarted)
+# Only that task reviews everything: once the text changes, QA builds on
+# earlier reviews again.
+data = moved / "data"
+LINES[0] = ("おはよう", "Morning!")
+write_game(LINES)
+assert qa.status(prepare_moved())["reviewed_before"]["lines"]
