@@ -9,6 +9,7 @@ import type {
 } from "../../api/contracts";
 import type { StepState } from "../../ui/StepProgress";
 import { plural, sentence } from "../../ui/displayText.ts";
+import { mayStillBeWorking } from "../assistant/assistantActivity.ts";
 
 /** Where text QA stands on the page. */
 export type QaPhase =
@@ -180,9 +181,6 @@ export function qaCorrections(qa: QaState) {
   };
 }
 
-/** A task whose review moved this recently may still have an assistant on it. */
-const ACTIVE_MINUTES = 15;
-
 /**
  * What the Start over dialog says before QA starts over: how many of the
  * task's corrections stay in the game, when its review last moved while an
@@ -194,10 +192,9 @@ export function qaStartOver(
   playtest: PlaytestState | null | undefined,
   now: number,
 ) {
-  const moved = qa.updated_at ? Date.parse(qa.updated_at) : NaN;
   return {
     applied: qaCorrections(qa).applied,
-    active: now - moved < ACTIVE_MINUTES * 60_000 ? qa.updated_at! : "",
+    active: mayStillBeWorking(qa.updated_at, now) ? qa.updated_at! : "",
     playtest: playtest?.report ? playtest.problems.length : null,
   };
 }

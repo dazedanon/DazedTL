@@ -15,9 +15,7 @@ import { CheckField } from "../../ui/FieldRow";
 import { Modal } from "../../ui/Modal";
 import { Notice } from "../../ui/Notice";
 import { PathText } from "../../ui/PathText";
-
-/** An assistant this recent may still be working in the game folder. */
-const RECENT_MINUTES = 15;
+import { mayStillBeWorking } from "../assistant/assistantActivity";
 
 /**
  * Starts an Assistant-led project over: the original game files come back
@@ -84,8 +82,7 @@ function StartOverDialog({
       item.kind === "translation" &&
       ["running", "waiting", "uncertain"].includes(item.status),
   );
-  const recent =
-    activity && now - Date.parse(activity) < RECENT_MINUTES * 60_000;
+  const recent = mayStillBeWorking(activity, now) ? activity : "";
   const archive =
     typeof job?.result?.archive === "string" ? job.result.archive : "";
   return (
@@ -129,7 +126,7 @@ function StartOverDialog({
           )}
           {recent && (
             <Notice tone="warning">
-              Your assistant used DazedTL {timeAgo(activity, now)}. Stop its
+              Your assistant used DazedTL {timeAgo(recent, now)}. Stop its
               session first; DazedTL can&apos;t stop it.
             </Notice>
           )}
