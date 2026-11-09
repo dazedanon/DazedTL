@@ -285,6 +285,19 @@ def scope_ignore(existing: str, paths: set[str]) -> str:
     return normalize_game_tool_gitignore_text(existing.rstrip() + "\n\n" + "\n".join(lines) + "\n")
 
 
+def _scoped(text: str) -> set[str]:
+    """The exact paths the patch block in .gitignore *text* allows, as
+    scope_ignore writes them, files that don't exist yet included."""
+    if _BEGIN not in text or _END not in text:
+        return set()
+    block = text[text.index(_BEGIN) : text.index(_END)]
+    return {
+        re.sub(r"\\(.)", r"\1", line[2:])
+        for line in block.splitlines()
+        if line.startswith("!/") and not line.endswith("/")
+    }
+
+
 def keep_out_of_downloads(repo: Path) -> bool:
     """Adds to the game's .gitattributes the rules keeping DazedTL's own
     files out of players' downloads that it lacks; whether it changed."""
@@ -298,8 +311,10 @@ def keep_out_of_downloads(repo: Path) -> bool:
 
 def grow_scope(repo: Path, tracked: Collection[str], added: Iterable[str]) -> tuple[list[str], list[str]]:
     """Lets `added`, files a patch-scoped translation branch lacks, into its
-    patch: the .gitignore patch block allows them besides what Git tracks,
-    and the inventory of the original's files Git leaves out drops them.
+    patch: the .gitignore patch block allows them besides what Git tracks
+    and what it allowed already, such as files Set up declared before they
+    exist, and the inventory of the original's files Git leaves out drops
+    them.
     Returns the files let in and the rule files changed, .gitattributes too
     when it lacks a rule keeping DazedTL's own files, such as ace_json, out
     of players' downloads; a branch without a patch block, which every file
@@ -317,8 +332,8 @@ def grow_scope(repo: Path, tracked: Collection[str], added: Iterable[str]) -> tu
     accepted = sorted(p for p in set(accepted) if not is_portable_game_file(p) and p not in _METADATA)
     if not accepted:
         return [], []
-    scope = {p for p in tracked if not is_portable_game_file(p)} | set(accepted) | repository_files(repo)
-    updated = scope_ignore(text, scope)
+    kept = {p for p in chain(tracked, _scoped(text)) if not is_portable_game_file(p)}
+    updated = scope_ignore(text, kept | set(accepted) | repository_files(repo))
     rules = []
     if updated != text:
         _write_atomic(ignore, updated)
