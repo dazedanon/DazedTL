@@ -37,14 +37,23 @@ UNSENT = "unsent-lines-v1"
 # scene's translated lines too; an organize frozen without it packs the
 # untranslated lines as if they were the whole scene.
 NEIGHBOURS = "neighbours-v1"
-# A Live run compiled by an organize under this policy sends each later part
-# of a split scene after the part before it with the translation that part
-# got for the earlier lines the later one quotes (layout's preceding;
+# A Live run compiled by an organize under this policy sends each request
+# that quotes earlier lines, such as a later part of a split scene, with the
+# translation the run delivered for them (layout's preceding;
 # runner.Runner.delivered), as Guided's Live chunks carry the previous
 # chunk's English; a Batch builds every request before any result exists,
-# and a run frozen without the policy sends its parts with their source
+# and a run frozen without the policy sends its requests with their source
 # lines alone.
 DELIVERED = "delivered-v1"
+# Organize under this policy gives every request the last CONTEXT_LINES
+# lines it follows in play order, across the scenes of its group (_before),
+# so a conversation an extractor cut into several scenes, such as a Unity
+# event's dialogue blocks, continues in each request after the first, and a
+# Live run sends their English too (DELIVERED); a field's table neither
+# gets nor gives them, since its entries are no conversation. An organize
+# frozen without it quotes only a split scene's own earlier lines, in its
+# later parts.
+LEAD_IN = "lead-in-v1"
 KINDS = {"dialogue", "narration", "ui", "unknown"}
 FIELDS = {
     "id",
@@ -282,6 +291,26 @@ def _parts(scene, lines, characters):
     return parts
 
 
+def _before(units, position, lead_in):
+    """The last CONTEXT_LINES units that units[position] follows in play
+    order: its scene's and, under LEAD_IN, unless either is a field's table,
+    those of its group's scenes just before it. A line of another group or
+    a table ends them, since groups have no play order between them."""
+    unit = units[position]
+    start = position
+    while start and position - start < CONTEXT_LINES:
+        previous = units[start - 1]
+        if previous["scene"] != unit["scene"] and not (
+            lead_in
+            and previous["group"] == unit["group"]
+            and previous["field"] is None
+            and unit["field"] is None
+        ):
+            break
+        start -= 1
+    return units[start:position]
+
+
 def _scenes(units):
     """Units in play order as their scenes' lists."""
     scenes = []
@@ -345,9 +374,12 @@ def plan(
     characters=MAX_CHARACTERS,
     shared=None,
     translated=None,
+    lead_in=True,
 ):
     """The source plan layout gives."""
-    return layout(units, input_path, complete, lines, characters, shared, translated)[0]
+    return layout(
+        units, input_path, complete, lines, characters, shared, translated, lead_in
+    )[0]
 
 
 def layout(
@@ -358,24 +390,29 @@ def layout(
     characters=MAX_CHARACTERS,
     shared=None,
     translated=None,
+    lead_in=True,
 ):
     """A version-2 source plan, with the unit IDs of the earlier lines each
-    later part of a split scene quotes as its context, in order, by the
-    part's batch ID (DELIVERED).
+    request quotes as its context, in order, by the request's batch ID
+    (DELIVERED).
 
     Whole scenes of one group and field share a request of at most lines
     units and characters of source, if each has at most shared lines;
-    larger scenes split with their earlier lines as context. A request holding several scenes names which lines belong to
-    each, so context stays apart. Each request takes its first line's ID.
+    larger scenes split. Every request quotes the lines it follows in its
+    group as context (LEAD_IN, _before); with lead_in False, as an organize
+    frozen before that policy, only a split scene's later parts quote its
+    earlier lines. A request holding several scenes names which lines
+    belong to each, so context stays apart. Each request takes its first
+    line's ID.
 
     Under NEIGHBOURS, units are whole scenes in play order and translated
     holds those of their units an earlier request answered, by unit ID,
     with the translation the game gets where a request quotes it (None
     elsewhere): only the others are packed, a request lists each stretch of
-    them it begins with the lines just before it (stretches), and a later
-    part of a split scene takes the scene's real earlier lines as context."""
+    them it begins with the lines just before it (stretches), and a
+    request's context counts the translated lines too."""
     scenes = _scenes(units)
-    found, place = {}, {}
+    found = {}
     if translated is not None:
         whole, scenes = scenes, []
         for scene in whole:
@@ -384,17 +421,10 @@ def layout(
                     [unit["id"] for unit in stretch],
                     [[_line(unit), translated.get(unit["id"])] for unit in before],
                 )
-            for position, unit in enumerate(scene):
-                place[unit["id"]] = (scene, position)
             left = [unit for unit in scene if unit["id"] not in translated]
             if left:
                 scenes.append(left)
-
-    def earlier(part, start, scene):
-        if translated is None:
-            return scene[max(0, start - CONTEXT_LINES) : start]
-        whole, position = place[part[0]["id"]]
-        return whole[max(0, position - CONTEXT_LINES) : position]
+    order = {unit["id"]: position for position, unit in enumerate(units)}
 
     requests = []
     current = None
@@ -403,20 +433,12 @@ def layout(
         key = (scene[0]["group"], scene[0]["field"])
         if len(scene) > lines or size > characters:
             current = None
-            start = 0
-            for part in _parts(scene, lines, characters):
-                requests.append(
-                    {
-                        "units": part,
-                        "field": key[1],
-                        "context": earlier(part, start, scene) if start else [],
-                    }
-                )
-                start += len(part)
+            for number, part in enumerate(_parts(scene, lines, characters)):
+                requests.append({"units": part, "field": key[1], "later": number > 0})
             continue
         if shared is not None and len(scene) > shared:
             current = None
-            requests.append({"units": list(scene), "field": key[1], "context": []})
+            requests.append({"units": list(scene), "field": key[1]})
             continue
         if (
             current
@@ -427,7 +449,7 @@ def layout(
             current["units"] += scene
             current["size"] += size
             continue
-        current = {"units": list(scene), "field": key[1], "context": []}
+        current = {"units": list(scene), "field": key[1]}
         current.update(key=key, size=size)
         requests.append(current)
     batches, preceding = [], {}
@@ -439,9 +461,14 @@ def layout(
             "kinds": {unit["id"]: unit["kind"] for unit in members},
             "speakers": {unit["id"]: unit["speaker"] for unit in members},
         }
-        if request["context"]:
-            batch["source_context"] = _context(request["context"])
-            preceding[batch["id"]] = [unit["id"] for unit in request["context"]]
+        context = (
+            _before(units, order[batch["id"]], lead_in)
+            if lead_in or request.get("later")
+            else []
+        )
+        if context:
+            batch["source_context"] = _context(context)
+            preceding[batch["id"]] = [unit["id"] for unit in context]
         scenes = {}
         for unit in members:
             scenes.setdefault(unit["scene"], []).append(unit["id"])

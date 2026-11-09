@@ -23,7 +23,7 @@ Translate names and terminology before dependent dialogue when that prevents rep
 Under DazedTL's project helper, the extractor saves everything in scope as source units, and `organize` groups them into requests and compiles the run.
 A unit is one message as the player reads it: join the lines an engine stores separately, such as RPG Maker's consecutive `401` commands, with newlines.
 Requests hold a fixed number of units, each repeating the shared guidance, so a unit per stored line multiplies requests and cuts sentences apart; organize refuses RPG Maker units split that way.
-Run the helper's `units-format` for the file's shape: stable occurrence IDs the injector maps back, scene and group keys in play order, kinds, evidenced speakers or null, literal protected tokens and layout bounds.
+Run the helper's `units-format` for the file's shape: stable occurrence IDs the injector maps back, scene and group keys in play order with each scene one whole event or conversation rather than one of its blocks, kinds, evidenced speakers or null, literal protected tokens and layout bounds.
 Move game text only with scripts; never paste, retype or summarize the Japanese or its translation in replies or hand-written files.
 
 ```bash

@@ -365,8 +365,8 @@ def provider_view(request, configuration):
 
 
 def delivered_params(params, lines, context):
-    """A Live payload, *params*, of a later part of a split scene with the
-    translation already delivered for the earlier lines it quotes, *lines*
+    """A Live payload, *params*, of a request with the translation already
+    delivered for the earlier lines it quotes, *lines*
     (organize DELIVERED), in Guided's block right after those lines and
     before the request's own text, as Guided's Live chunks send it
     (util/prompt_pair delivered_block)."""

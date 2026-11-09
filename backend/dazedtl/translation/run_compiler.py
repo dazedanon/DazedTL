@@ -329,6 +329,9 @@ def _organize(engine, workspace, job, plan, progress):
         frozen["characters"],
         frozen.get("shared"),
         translated,
+        # Each request quotes the lines it follows in its group; an organize
+        # frozen without the policy quotes only a split scene's own.
+        lead_in=frozen.get("lead_in") == organize.LEAD_IN,
     )
     relative = organize.plan_path(value)
     path = project_path(root, relative, exists=False)
@@ -351,9 +354,9 @@ def _organize(engine, workspace, job, plan, progress):
         read,
         reused=reused,
         converted=converted,
-        # A Live run's later parts of a split scene carry the translation
-        # delivered for the earlier lines they quote; an API run keeps them
-        # in any mode, since a waiting run may be priced again for Live.
+        # A Live run's requests carry the translation delivered for the
+        # earlier lines they quote; an API run keeps them in any mode, since
+        # a waiting run may be priced again for Live.
         preceding=preceding
         if frozen.get("delivered") == organize.DELIVERED
         and frozen["configuration"]["mode"] != "agent"

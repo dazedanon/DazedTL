@@ -805,6 +805,76 @@ class WorkflowTests(unittest.TestCase):
         self.assertNotIn("reused", plan)
         self.assertEqual(sum(len(row["sources"]) for row in plan["requests"]), 4)
 
+    def test_a_scene_continuing_its_group_quotes_the_lines_before_it(self):
+        # An extractor that made each dialogue block of a Unity event a
+        # scene had each block over 10 lines sent as a request of its own
+        # with no context, opening mid-conversation; only a split scene's
+        # later parts quoted the lines before them.
+        selected = self.project.read()
+        self.service.save(
+            self.identity, selected["revision"], {**selected["options"], "mode": "live"}
+        )
+        units = WORK + "/work/source-units.json"
+        write_json(
+            self.game / units,
+            {
+                "version": 1,
+                "units": [
+                    {
+                        "id": "e/0/0",
+                        "scene": "e/0",
+                        "group": "level",
+                        "source": "大事なのは二つよ。",
+                        "speaker": "フリアナ",
+                    },
+                    *(
+                        {
+                            "id": f"e/1/{n}",
+                            "scene": "e/1",
+                            "group": "level",
+                            "source": f"{n}つ目。",
+                        }
+                        for n in range(11)
+                    ),
+                ],
+            },
+        )
+
+        def organized(lead_in=True):
+            operation = self.service.organize(self.identity, units, True)
+            job, plan = self.service.jobs.store.load(operation["id"], self.identity)
+            if not lead_in:
+                # As an organize prepared before the policy froze it.
+                del plan["compile"]["lead_in"]
+            with patch("dazedtl.translation.run_compiler.require_coverage"):
+                result = execute(self.engine, self.profile, job, plan, lambda: False)
+            return self.service.jobs.store.load(result["run"])[1]
+
+        # An organize frozen before the policy compiles the payloads it did,
+        # which its run's worker compiles again before sending.
+        older = organized(lead_in=False)
+        self.assertEqual(
+            [
+                row["context"]["preceding_japanese_source_context"]
+                for row in older["requests"]
+            ],
+            ["", ""],
+        )
+        self.assertEqual(older["preceding"], {})
+        self.service.validate_current(self.identity, older)
+        # Now the block's own request quotes the one before it, and a Live
+        # run sends the English it delivered for it.
+        plan = organized()
+        self.assertEqual([row["id"] for row in plan["requests"]], ["e/0/0", "e/1/0"])
+        self.assertEqual(
+            plan["requests"][1]["context"]["preceding_japanese_source_context"],
+            "フリアナ: 大事なのは二つよ。",
+        )
+        self.assertEqual(plan["preceding"], {"e/1/0": ["e/0/0"]})
+        self.assertNotEqual(
+            plan["requests"][1]["fingerprint"], older["requests"][1]["fingerprint"]
+        )
+
     def test_the_newest_run_corrects_a_line_it_reused_from_an_earlier_run(self):
         # Once organize kept a line from an earlier run, nothing could
         # correct it after a guidance edit: the newest run held no request

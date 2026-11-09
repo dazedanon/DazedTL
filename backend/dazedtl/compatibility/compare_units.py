@@ -91,8 +91,8 @@ def stage(root, target, candidate):
 
 def build(engine, workspace, options, candidate, found, game):
     """A candidate's requests for *found*, compiled against its staged
-    *game*, with their provider payloads, and the earlier lines each later
-    part of a split scene quotes (organize.layout)."""
+    *game*, with their provider payloads, and the earlier lines each request
+    quotes, as a new organize lays them out (organize.layout)."""
     from util.request_packing import SHARED_LINES
 
     from dazedtl.translation import name_codes, organize, skill_users

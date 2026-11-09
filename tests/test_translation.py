@@ -2376,21 +2376,60 @@ class TranslationTests(unittest.TestCase):
         self.assertEqual(list(batches), ["a1", "c0", "c3", "d1"])
         self.assertEqual(list(batches["a1"]["sources"]), ["a1", "a2", "b1"])
         self.assertEqual(len(batches["c0"]["sources"]), 3)
-        self.assertNotIn("source_context", batches["c0"])
         # Packed scenes are named, so the model keeps their context apart.
         self.assertIn(
             "- A: 2 lines, a1 to a2\n- B: 1 line, b1 to b1",
             batches["a1"]["scene_context"],
         )
         self.assertNotIn("scene_context", batches["c3"])
+        # Each request quotes the lines it follows in its group, across its
+        # scenes, so a conversation cut into scenes continues; organize sent
+        # each scene after the first cold. Another group's table gets none.
+        lead = "リリ: a1。\na2。\nb1。"
+        self.assertNotIn("source_context", batches["a1"])
+        self.assertEqual(batches["c0"]["source_context"], lead)
         self.assertEqual(
-            batches["c3"]["source_context"], "ゴウ: c0。\nゴウ: c1。\nゴウ: c2。"
+            batches["c3"]["source_context"],
+            lead + "\nゴウ: c0。\nゴウ: c1。\nゴウ: c2。",
         )
+        self.assertNotIn("source_context", batches["d1"])
         # Organize names those lines, whose English a Live run sends with
-        # the part (organize.DELIVERED).
+        # the request (organize.DELIVERED).
+        quoted = ["a1", "a2", "b1"]
         self.assertEqual(
             organize.layout(units, "work/source-units.json", False, 4),
-            (value, {"c3": ["c0", "c1", "c2"]}),
+            (value, {"c0": quoted, "c3": [*quoted, "c0", "c1", "c2"]}),
+        )
+        # An organize frozen before LEAD_IN quotes only a split scene's
+        # earlier lines in its later parts, and sends the same lines.
+        older, preceding = organize.layout(
+            units, "work/source-units.json", False, 4, lead_in=False
+        )
+        self.assertEqual(
+            [batch["sources"] for batch in older["batches"]],
+            [batch["sources"] for batch in value["batches"]],
+        )
+        self.assertEqual(
+            [batch.get("source_context") for batch in older["batches"]],
+            [None, None, "ゴウ: c0。\nゴウ: c1。\nゴウ: c2。", None],
+        )
+        self.assertEqual(preceding, {"c3": ["c0", "c1", "c2"]})
+        # A field's table neither gets nor gives the lines before it, and a
+        # line of another group ends them.
+        table = organize.units_input(
+            {
+                "version": 1,
+                "units": [
+                    unit("x1", "X", group="Map"),
+                    unit("m1", "Menu", group="Map", kind="ui", field="database.item"),
+                    unit("y1", "Y", group="Map"),
+                    unit("z1", "Z", group="Town"),
+                    unit("w1", "W", group="Map"),
+                ],
+            }
+        )
+        self.assertEqual(
+            organize.layout(table, "work/source-units.json", False, 4)[1], {}
         )
         self.assertEqual(batches["a1"]["kinds"]["a1"], "dialogue")
         self.assertEqual(batches["a1"]["kinds"]["b1"], "unknown")
@@ -2412,6 +2451,8 @@ class TranslationTests(unittest.TestCase):
                 units, "work/source-units.json", False, 50, shared=shared
             )
             self.assertEqual([len(b["sources"]) for b in larger["batches"]], expected)
+        # The scene in a request of its own still quotes those before it.
+        self.assertEqual(larger["batches"][1]["source_context"], lead)
         summary = organize.summary(units, value)
         self.assertEqual(
             (summary["units"], summary["requests"], summary["scenes"]), (9, 4, 4)
@@ -2467,8 +2508,9 @@ class TranslationTests(unittest.TestCase):
                 },
             ],
         )
-        # A split stretch is labelled in the part it begins, and the later
-        # part's context counts the scene's translated lines too.
+        # A split stretch is labelled in the part it begins, and each
+        # request's context, at most eight lines, counts the translated
+        # lines too.
         self.assertEqual(
             batches["c3"]["stretches"],
             [
@@ -2479,13 +2521,26 @@ class TranslationTests(unittest.TestCase):
                 }
             ],
         )
-        self.assertNotIn("source_context", batches["c3"])
         self.assertNotIn("stretches", batches["c7"])
+        quoted = {
+            "a2": ["a1"],
+            "c3": ["a2", "a3", "a4", "a5", "a6", "b1", "c1", "c2"],
+            "c7": ["a6", "b1", *(f"c{n}" for n in range(1, 7))],
+        }
         self.assertEqual(
-            batches["c7"]["source_context"], "\n".join(f"c{n}。" for n in range(1, 7))
+            batches["c7"]["source_context"],
+            "\n".join(identity + "。" for identity in quoted["c7"]),
         )
         self.assertEqual(
             organize.layout(units, "work/u.json", True, 6, translated=translated)[1],
+            quoted,
+        )
+        # An organize frozen before LEAD_IN quotes only the later part's
+        # own scene.
+        self.assertEqual(
+            organize.layout(
+                units, "work/u.json", True, 6, translated=translated, lead_in=False
+            )[1],
             {"c7": [f"c{n}" for n in range(1, 7)]},
         )
         # Nothing translated, the plan is the one organize made before.

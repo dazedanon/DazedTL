@@ -129,8 +129,8 @@ class Runner:
         self.askers = {}
         for asker, sender in self.sender.items():
             self.askers.setdefault(sender, []).append(asker)
-        # The earlier lines each later part of a split scene quotes, whose
-        # delivered translation a Live run sends with it (delivered).
+        # The earlier lines each request quotes, whose delivered translation
+        # a Live run sends with it (delivered).
         self.preceding = (
             self.plan["preceding"] if self.plan.get("delivered") == DELIVERED else {}
         )
@@ -180,12 +180,12 @@ class Runner:
         return provider_sources(self.requests[identity], self.plan["configuration"])
 
     def delivered(self, identity):
-        """The translation this run delivered for the earlier lines a later
-        part of a split scene quotes (organize.DELIVERED), in order, or None
-        unless each has one, as Guided passes a Live chunk's English on only
-        when every line of it was translated: each line is held by a request
-        accepted before it, as the part before is, since Live sends its
-        requests in plan order, and its receipt translates it. It joins the
+        """The translation this run delivered for the earlier lines a request
+        quotes (organize.DELIVERED), in order, or None unless each has one,
+        as Guided passes a Live chunk's English on only when every line of it
+        was translated: each line is held by a request accepted before it,
+        since Live sends its requests in plan order, and its receipt
+        translates it. It joins the
         request only at send time, so the request's fingerprint and compiled
         payload stay the bytes the user approved."""
         quoted = self.preceding.get(identity)
