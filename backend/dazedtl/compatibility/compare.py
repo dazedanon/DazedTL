@@ -452,6 +452,19 @@ def result(directory, name, phase, markers, original, found, pair):
     }
 
 
+def reused(candidate, action, report):
+    """A model an earlier translation finished with the same lines, inputs
+    and settings (translation/compare's _reuse), or None: its estimate is
+    free and its translation copies that result, sending nothing."""
+    if "reuse" not in candidate:
+        return None
+    index = candidate["index"]
+    report(f"{candidate['label']} · reused", index, "done")
+    if action == TRANSLATE:
+        return {**candidate["reused"], "index": index, "reused": True}
+    return {"index": index, "reused": True}
+
+
 def unread(error):
     """A model's error when what it spent can't be read."""
     return f"What it spent can't be read: {error}"
@@ -534,6 +547,9 @@ def run(plan, log):
             if "error" in candidate:
                 report(f"{label} · can't be compared", index, "failed")
                 return {"index": index, "error": candidate["error"]}
+            copied = reused(candidate, action, report)
+            if copied is not None:
+                return copied
             directory = root / f"model-{index}"
             report(f"{label} · preparing", index, "preparing")
             workspace = folder.parent.parent
@@ -650,7 +666,7 @@ def run_units(plan, log):
         built = {}
         for candidate in candidates:
             index, label = candidate["index"], candidate["label"]
-            if "error" in candidate:
+            if "error" in candidate or "reuse" in candidate:
                 continue
             if report.keeps and log.stopped():
                 # Stopped before it was prepared: nothing more is copied.
@@ -672,6 +688,9 @@ def run_units(plan, log):
             index, label = candidate["index"], candidate["label"]
             if "error" in candidate:
                 return {"index": index, "error": candidate["error"]}
+            copied = reused(candidate, action, report)
+            if copied is not None:
+                return copied
             value = built[index]
             if isinstance(value, InterruptedError):
                 return {"index": index, "error": STOPPED}

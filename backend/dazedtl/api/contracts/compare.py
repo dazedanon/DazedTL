@@ -5,29 +5,23 @@ from typing import Annotated, Literal, NotRequired, TypedDict
 
 from dazedtl.api.contracts.settings import EffortLevel, EffortOption
 
+# "tune" names only comparisons saved before Tune settings joined the one
+# workspace; new ones are "single" or "versus".
 type CompareKind = Literal["single", "versus", "tune"]
 
 
 class CompareChoice(TypedDict):
-    """A model on one of Settings' connections, and for Tune settings what
-    its test changes."""
+    """A model on one of Settings' connections, with the settings its
+    column changes from the game's."""
 
     connection_id: str
     model: str
-    effort: NotRequired[
-        Annotated[EffortLevel | None, "Tune settings: the thinking effort sent."]
-    ]
-    glossary: NotRequired[
-        Annotated[str, "Tune settings: the whole glossary this test sends."]
-    ]
+    effort: NotRequired[Annotated[EffortLevel | None, "The thinking effort sent."]]
+    glossary: NotRequired[Annotated[str, "The whole glossary this column sends."]]
     glossary_revision: NotRequired[
-        Annotated[
-            str, "Tune settings: the game glossary's revision it was edited from."
-        ]
+        Annotated[str, "The game glossary's revision its glossary was edited from."]
     ]
-    instruction: NotRequired[
-        Annotated[str, "Tune settings: guidance this test adds to the game's."]
-    ]
+    instruction: NotRequired[Annotated[str, "Guidance this column adds to the game's."]]
 
 
 class ComparePrice(TypedDict):
@@ -41,13 +35,13 @@ class CompareModel(TypedDict):
     model: str
     choice: Annotated[
         CompareChoice,
-        "What its estimate was made from, settings and all, as a tab's choice.",
+        "What its estimate was made from, settings and all, as a column's choice.",
     ]
     glossaryChanged: NotRequired[
         Annotated[
             bool,
-            "Tune settings: the game's glossary changed in Context after this "
-            "test's edit, so Use these settings asks which to keep.",
+            "The game's glossary changed in Context after this column's "
+            "glossary edit, so Use asks which to keep.",
         ]
     ]
     estimate: NotRequired[ComparePrice]
@@ -62,6 +56,13 @@ class CompareModel(TypedDict):
     ]
     finished: NotRequired[
         Annotated[bool, "It translated every line, so it can be used."]
+    ]
+    reused: NotRequired[
+        Annotated[
+            bool,
+            "An earlier translation of the same lines, inputs and settings "
+            "finished, so this one sends nothing and shows that one's lines.",
+        ]
     ]
 
 
@@ -120,7 +121,9 @@ class CompareState(TypedDict):
     available: bool
     reason: Annotated[str, "Why the game can't be compared yet."]
     scenes: list[CompareScene]
-    glossary: Annotated[str, "The game's glossary, which a Tune test starts from."]
+    glossary: Annotated[
+        str, "The game's glossary, which a column's test glossary starts from."
+    ]
     glossaryRevision: Annotated[str, "The revision of the glossary's file it read."]
     comparisons: Annotated[list[Comparison], "Newest first."]
 

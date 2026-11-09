@@ -2934,18 +2934,18 @@ export type PluginActionResult = {
 
 export type CompareKind = "single" | "versus" | "tune";
 
-/** A model on one of Settings' connections, and for Tune settings what
-its test changes. */
+/** A model on one of Settings' connections, with the settings its
+column changes from the game's. */
 export type CompareChoice = {
   connection_id: string;
   model: string;
-  /** Tune settings: the thinking effort sent. */
+  /** The thinking effort sent. */
   effort?: EffortLevel | null;
-  /** Tune settings: the whole glossary this test sends. */
+  /** The whole glossary this column sends. */
   glossary?: string;
-  /** Tune settings: the game glossary's revision it was edited from. */
+  /** The game glossary's revision its glossary was edited from. */
   glossary_revision?: string;
-  /** Tune settings: guidance this test adds to the game's. */
+  /** Guidance this column adds to the game's. */
   instruction?: string;
 };
 
@@ -2960,9 +2960,9 @@ export type CompareModel = {
   /** The connection's name in Settings. */
   connection: string;
   model: string;
-  /** What its estimate was made from, settings and all, as a tab's choice. */
+  /** What its estimate was made from, settings and all, as a column's choice. */
   choice: CompareChoice;
-  /** Tune settings: the game's glossary changed in Context after this test's edit, so Use these settings asks which to keep. */
+  /** The game's glossary changed in Context after this column's glossary edit, so Use asks which to keep. */
   glossaryChanged?: boolean;
   estimate?: ComparePrice;
   /** Why the model has no estimate or lines. */
@@ -2976,6 +2976,8 @@ export type CompareModel = {
   keptRequests?: number;
   /** It translated every line, so it can be used. */
   finished?: boolean;
+  /** An earlier translation of the same lines, inputs and settings finished, so this one sends nothing and shows that one's lines. */
+  reused?: boolean;
 };
 
 export type CompareTranslation = {
@@ -3041,7 +3043,7 @@ export type CompareState = {
   /** Why the game can't be compared yet. */
   reason: string;
   scenes: CompareScene[];
-  /** The game's glossary, which a Tune test starts from. */
+  /** The game's glossary, which a column's test glossary starts from. */
   glossary: string;
   /** The revision of the glossary's file it read. */
   glossaryRevision: string;
@@ -3735,7 +3737,7 @@ export type CompareUseRequest = {
   comparison_id: string;
   /** The model's index in the comparison. */
   model: number;
-  /** Which glossary to keep when a Tune test's would replace a Context save made after its edit. */
+  /** Which glossary to keep when a column's test glossary would replace a Context save made after its edit. */
   glossary?: "game" | "test";
 };
 

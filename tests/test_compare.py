@@ -749,14 +749,18 @@ class ApprovalTests(unittest.TestCase):
         )
 
     def tuned(self, **change):
-        """A finished Tune test of model "a" with *change*, a glossary edited
-        from the game's as Tune read it."""
+        """A finished comparison of model "a" with *change* in its column's
+        settings, a glossary edited from the game's as the column read it."""
         if "glossary" in change:
             change.setdefault(
                 "glossary_revision", read(self.game)["glossary"]["revision"]
             )
         job = self.compare.estimate(
-            "p1", "tune", "Map001", 0, [{"connection_id": "c1", "model": "a", **change}]
+            "p1",
+            "single",
+            "Map001",
+            0,
+            [{"connection_id": "c1", "model": "a", **change}],
         )
         job.update(
             status="complete",
@@ -802,6 +806,161 @@ class ApprovalTests(unittest.TestCase):
                 self.operations.jobs[estimate],
                 "compare_estimate",
             )
+        )
+
+    def plan(self, identity):
+        return json.loads(
+            (self.operations.root / identity / "plan.json").read_text(encoding="utf-8")
+        )["options"]
+
+    def translated(self, models, failed=()):
+        """*models* estimated and translated, each finishing every line but
+        those whose index *failed* names; returns the translation's ID."""
+        kind = "versus" if len(models) > 1 else "single"
+        estimate = self.compare.estimate("p1", kind, "Map001", 0, models)
+        estimate.update(
+            status="complete",
+            result={
+                "models": [
+                    {"index": row["index"], "reused": True}
+                    if "reuse" in row
+                    else {"index": row["index"], "estimate": {"live_cost": 0.01}}
+                    for row in self.plan(estimate["id"])["candidates"]
+                ]
+            },
+        )
+        started = self.compare.translate("p1", estimate["id"])
+        started.update(
+            status="complete",
+            result={
+                "lines": [{"id": "u1", "speaker": "", "source": "村長、ようこそ。"}],
+                "models": [
+                    row.get("reused")
+                    or {
+                        "index": row["index"],
+                        "cost": 0.01,
+                        "seconds": 1.0,
+                        "lines": {"u1": {"speaker": "", "text": f"Hi {row['model']}"}},
+                        **({"error": "Failed."} if row["index"] in failed else {}),
+                    }
+                    for row in self.plan(started["id"])["candidates"]
+                ],
+            },
+        )
+        return started["id"]
+
+    def test_a_model_translated_before_with_the_same_settings_is_reused(self):
+        # Changing one column of a comparison paid every column again.
+        a, b, c = ({"connection_id": "c1", "model": name} for name in "abc")
+        first = self.translated([a, b])
+        estimate = self.compare.estimate("p1", "versus", "Map001", 0, [c, a])
+        rows = self.plan(estimate["id"])["candidates"]
+        self.assertNotIn("reuse", rows[0])
+        self.assertEqual(rows[1]["reuse"], {"translation": first, "index": 0})
+        estimate.update(
+            status="complete",
+            result={
+                "models": [
+                    {"index": 0, "estimate": {"live_cost": 0.02}},
+                    {"index": 1, "reused": True},
+                ]
+            },
+        )
+        started = self.compare.translate("p1", estimate["id"])
+        sent = self.plan(started["id"])["candidates"]
+        # Its translation copies the earlier lines instead of sending.
+        self.assertNotIn("reused", sent[0])
+        self.assertEqual(
+            sent[1]["reused"]["lines"], {"u1": {"speaker": "", "text": "Hi a"}}
+        )
+        shown = next(
+            item
+            for item in self.compare.state("p1")["comparisons"]
+            if item["id"] == estimate["id"]
+        )
+        self.assertEqual(
+            [model.get("reused", False) for model in shown["candidates"]],
+            [False, True],
+        )
+
+    def test_reuse_needs_the_same_settings_inputs_and_a_finished_model(self):
+        a, b = ({"connection_id": "c1", "model": name} for name in "ab")
+        self.translated([a, b], failed={1})
+
+        def reused(models):
+            estimate = self.compare.estimate("p1", "versus", "Map001", 0, models)
+            return ["reuse" in row for row in self.plan(estimate["id"])["candidates"]]
+
+        # A model that failed or stopped is translated again.
+        self.assertEqual(reused([a, b]), [True, False])
+        # So is one with other settings, or the same one after its lines changed.
+        self.assertEqual(reused([{**a, "effort": "high"}, b]), [False, False])
+        self.write_units("村長、よく来たな。")
+        self.assertEqual(reused([a, b]), [False, False])
+
+    def test_a_reused_model_whose_earlier_lines_went_is_estimated_again(self):
+        a, b = ({"connection_id": "c1", "model": name} for name in "ab")
+        first = self.translated([a])
+        estimate = self.compare.estimate("p1", "versus", "Map001", 0, [a, b])
+        estimate.update(
+            status="complete",
+            result={
+                "models": [
+                    {"index": 0, "reused": True},
+                    {"index": 1, "estimate": {"live_cost": 0.01}},
+                ]
+            },
+        )
+        del self.operations.jobs[first]
+        with self.assertRaisesRegex(ValueError, "Estimate again"):
+            self.compare.translate("p1", estimate["id"])
+
+    def test_columns_may_hold_one_model_with_other_settings_but_not_twice(self):
+        a = {"connection_id": "c1", "model": "a"}
+        tuned = {**a, "effort": "high", "instruction": "Be terse."}
+        estimate = self.compare.estimate("p1", "versus", "Map001", 0, [a, tuned])
+        self.assertEqual(
+            [row.get("instruction") for row in self.plan(estimate["id"])["candidates"]],
+            [None, "Be terse."],
+        )
+        with self.assertRaisesRegex(ValueError, "once"):
+            self.compare.estimate("p1", "versus", "Map001", 0, [tuned, dict(tuned)])
+
+    def test_a_tune_comparison_saved_before_the_workspace_still_reads(self):
+        estimate = self.tuned(instruction="Keep it short.")
+        plan = json.loads(
+            (self.operations.root / estimate / "plan.json").read_text(encoding="utf-8")
+        )
+        plan["options"]["kind"] = "tune"
+        write_json(self.operations.root / estimate / "plan.json", plan)
+        self.assertEqual(
+            [item["kind"] for item in self.compare.state("p1")["comparisons"]],
+            ["tune"],
+        )
+
+    def test_reused_models_send_nothing_and_estimate_free(self):
+        report = Mock()
+        row = {
+            "index": 1,
+            "label": "a",
+            "reuse": {"translation": "t1", "index": 0},
+            "reused": {"lines": {"u1": {"speaker": "", "text": "Hi"}}, "cost": 0.01},
+        }
+        self.assertEqual(
+            compare_run.reused(row, compare_run.TRANSLATE, report),
+            {
+                "lines": {"u1": {"speaker": "", "text": "Hi"}},
+                "cost": 0.01,
+                "index": 1,
+                "reused": True,
+            },
+        )
+        self.assertEqual(
+            compare_run.reused(row, compare_run.ESTIMATE, report),
+            {"index": 1, "reused": True},
+        )
+        self.assertIsNone(
+            compare_run.reused({"index": 0, "label": "b"}, compare_run.ESTIMATE, report)
         )
 
     def estimated(self):
@@ -861,7 +1020,9 @@ class ApprovalTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Finish or stop"):
             self.compare.use("p1", estimate, 0)
 
-    def test_tune_starts_from_a_legacy_or_utf16_glossary_as_context_shows_it(self):
+    def test_a_test_glossary_starts_from_a_legacy_or_utf16_one_as_context_shows_it(
+        self,
+    ):
         # Tune read only .dazedtl/glossary.txt as UTF-8, so these games showed
         # an empty glossary, which Use these settings then saved over theirs.
         held = "村長 (Village Chief)\n\n" + GLOSSARY_BASE_SEPARATOR + "魔法 (Magic)\n"
@@ -874,7 +1035,7 @@ class ApprovalTests(unittest.TestCase):
         # A model's checks read its glossary hints from the same file.
         self.assertEqual(glossary_text(self.game), held)
 
-    def test_use_these_settings_saves_the_tested_guidance_on_both_methods(self):
+    def test_use_saves_the_tested_guidance_on_both_methods(self):
         # On a Guided game Use these settings switched the model, then failed
         # reading the guidance, which it never saved.
         for guided in (False, True):
@@ -903,7 +1064,7 @@ class ApprovalTests(unittest.TestCase):
                     [{"check": True}, {}],
                 )
 
-    def test_use_these_settings_refuses_a_game_context_edited_since_the_test(self):
+    def test_use_refuses_a_game_context_edited_since_the_test(self):
         # Its instruction joins the game context the test sent, never one
         # Context changed after it ran.
         estimate = self.tuned(instruction="Be terse.")
@@ -912,12 +1073,12 @@ class ApprovalTests(unittest.TestCase):
             self.game, {"game": {"revision": game["revision"], "text": "Edited."}}
         )
         edited = read(self.game)["game"]["text"]
-        with self.assertRaisesRegex(ValueError, "changed since this test"):
+        with self.assertRaisesRegex(ValueError, "changed since this comparison"):
             self.compare.use("p1", estimate, 0)
         self.assertEqual(read(self.game)["game"]["text"], edited)
         self.compare.guided.settings.use_model.assert_not_called()
 
-    def test_use_these_settings_asks_which_glossary_after_a_context_save(self):
+    def test_use_asks_which_glossary_after_a_context_save(self):
         # A test glossary edited before a Context save was refused at every
         # estimate, and "Keep this test's" then offered Translate for an
         # estimate that was refused again; now the test runs, and only Use,
@@ -950,7 +1111,7 @@ class ApprovalTests(unittest.TestCase):
                     shown = self.compare.state("p1")["comparisons"][0]
                     self.assertNotIn("glossaryChanged", shown["candidates"][0])
 
-    def test_use_these_settings_saves_nothing_when_the_model_switch_is_refused(self):
+    def test_use_saves_nothing_when_the_model_switch_is_refused(self):
         # It saved the glossary and instruction, then Settings refused the
         # model, leaving the guidance changed and the model as it was.
         estimate = self.tuned(glossary="ミカ (Mika)", instruction="Be terse.")
@@ -981,7 +1142,7 @@ class ApprovalTests(unittest.TestCase):
         )
         self.compare.use("p1", estimate, 0)
 
-    def test_use_these_settings_adds_its_instruction_once(self):
+    def test_use_adds_its_instruction_once(self):
         # A second click added the same instruction to the game's again.
         estimate = self.tuned(instruction="Use British spelling.")
         self.compare.use("p1", estimate, 0)

@@ -739,8 +739,8 @@ class CompareUseRequest(TypedDict):
     glossary: NotRequired[
         Annotated[
             Literal["game", "test"],
-            "Which glossary to keep when a Tune test's would replace a Context "
-            "save made after its edit.",
+            "Which glossary to keep when a column's test glossary would replace "
+            "a Context save made after its edit.",
         ]
     ]
 

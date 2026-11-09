@@ -1,13 +1,16 @@
 """Compare models: the same lines of one game file translated by up to four
-models, or by one model with changed settings, to choose between them in
-equal conditions.
+models, each with its own settings, to choose between them in equal
+conditions.
 
 A comparison is two operations (compatibility/compare). Its estimate prices
 each model's requests offline, built as the game's own method builds them:
 Guided's engine run of the file, or Assistant-led's and Manual's requests of
 their units. The Translate button carries that price, and its click approves
 it once: the translate operation starts only from a finished estimate whose
-inputs are unchanged and that no translate used before. Results are the
+inputs are unchanged and that no translate used before. A model that an
+earlier translation already finished with the same lines, inputs and
+settings is reused: its estimate is free and its translation copies that
+one's result instead of sending anything (_reuse). Results are the
 operations' own records; the best line a person picks in each row, and
 whether model names stay hidden, are kept beside them here.
 """
@@ -35,12 +38,14 @@ from .files import digest, evidence, project_path, read_json
 VERSION = 1
 # What fits side by side on a laptop screen.
 MODELS = 4
-KINDS = ("single", "versus", "tune")
+# One model, or two to four side by side. Comparisons saved before the
+# Tune settings tab joined them keep its "tune".
+KINDS = ("single", "versus")
 # How many lines a comparison may hold, so its requests stay a few.
 MAX_LINES = 200
 # A test-only glossary or instruction, as the guidance editors take them.
 TEXT_LIMIT = 200_000
-# What a Tune test changes in a model's settings.
+# What a model's column changes in its settings.
 TUNED = ("effort", "glossary", "glossary_revision", "instruction")
 # The comparisons a page lists.
 HISTORY = 20
@@ -52,9 +57,14 @@ UNORGANIZED = (
 )
 UNLOADED = "Load your text file on Text first; Compare uses its lines."
 GLOSSARY_CHANGED = (
-    "The game's glossary changed in Context after this test's edit. "
-    "Choose which to keep."
+    "The game's glossary changed in Context after this column's glossary "
+    "edit. Choose which to keep."
 )
+# What a reused model's key leaves out of a plan's options: what names the
+# comparison rather than the lines and inputs its model saw.
+UNKEYED = {"claudeCount", "inputs", "kind", "candidates", "estimate"}
+# And what a model's frozen row holds about its place in one comparison.
+UNSHARED = {"index", "reuse", "reuseKey", "reused"}
 
 
 class Game(NamedTuple):
@@ -159,10 +169,10 @@ class Compare:
     @staticmethod
     def _candidates(kind, value):
         if kind not in KINDS:
-            raise ValueError("Choose Single model, Model vs model or Tune settings.")
+            raise ValueError("Compare one model, or two to four side by side.")
         if not isinstance(value, list) or not value:
             raise ValueError("Add a model to compare.")
-        if kind in {"single", "tune"} and len(value) != 1:
+        if kind == "single" and len(value) != 1:
             raise ValueError("Choose one model.")
         if kind == "versus" and not 2 <= len(value) <= MODELS:
             raise ValueError(f"Add two to {MODELS} models to compare.")
@@ -181,31 +191,27 @@ class Compare:
                 "connection_id": connection,
                 "model": _model(item.get("model")),
             }
-            if kind == "tune":
-                if "effort" in item:
-                    from dazedtl.settings.effort import checked
+            if "effort" in item:
+                from dazedtl.settings.effort import checked
 
-                    row["effort"] = checked(item["effort"])
-                for key in ("glossary", "instruction"):
-                    text = item.get(key)
-                    if text is None:
-                        continue
-                    if not isinstance(text, str) or len(text) > TEXT_LIMIT:
-                        raise ValueError(
-                            "Keep the test glossary and instruction shorter."
-                        )
-                    row[key] = text
-                if "glossary" in row:
-                    revision = item.get("glossary_revision")
-                    if not isinstance(revision, str):
-                        raise ValueError("Edit the test glossary again.")
-                    row["glossary_revision"] = revision
-            elif set(item) - {"connection_id", "model"}:
-                raise ValueError("Only Tune settings changes a model's settings.")
+                row["effort"] = checked(item["effort"])
+            for key in ("glossary", "instruction"):
+                text = item.get(key)
+                if text is None:
+                    continue
+                if not isinstance(text, str) or len(text) > TEXT_LIMIT:
+                    raise ValueError("Keep the test glossary and instruction shorter.")
+                row[key] = text
+            if "glossary" in row:
+                revision = item.get("glossary_revision")
+                if not isinstance(revision, str):
+                    raise ValueError("Edit the test glossary again.")
+                row["glossary_revision"] = revision
             rows.append(row)
-        keys = [(row["connection_id"], row["model"]) for row in rows]
-        if kind == "versus" and len(set(keys)) != len(keys):
-            raise ValueError("Each model is in the comparison once.")
+        # A model may compare against itself with other settings.
+        keys = [digest(row) for row in rows]
+        if len(set(keys)) != len(keys):
+            raise ValueError("Each model and its settings are in the comparison once.")
         return rows
 
     def _phase(self, game, file, lines):
@@ -296,13 +302,12 @@ class Compare:
                 for index, candidate in enumerate(candidates)
             ],
         }
-        if kind == "tune":
-            # The game context Use these settings adds the instruction to, as
-            # the test read it; a test glossary keeps the revision it was
-            # edited from (_replaces).
-            options["revisions"] = {
-                GAME_CONTEXT.key: _guidance(game.root)[GAME_CONTEXT.key]["revision"]
-            }
+        # The game context Use adds a column's instruction to, as the
+        # comparison read it; a test glossary keeps the revision it was
+        # edited from (_replaces).
+        options["revisions"] = {
+            GAME_CONTEXT.key: _guidance(game.root)[GAME_CONTEXT.key]["revision"]
+        }
         if game.native is None:
             root = Path(game.root)
             _record, project = guided.translation.project(game.project)
@@ -338,6 +343,7 @@ class Compare:
                 workflow=guided.backend.workflows.phase_workflow(native["id"], phase),
             )
             guard = guided.backend.guided_guard(native, folder)
+        self._reuse(game, options, guard)
         options["inputs"] = digest(
             {
                 "version": VERSION,
@@ -356,6 +362,45 @@ class Compare:
             "guard": guard,
             "options": options,
         }
+
+    def _reuse(self, game, options, guard):
+        """Keys each model by everything its translation depends on, and
+        points one that an earlier translation of the game finished under
+        the same key to the oldest such result, which its translation then
+        copies instead of sending anything. A model whose earlier run failed
+        or stopped has no such result, so it is translated again."""
+        shared = {
+            "version": VERSION,
+            "options": {
+                key: value for key, value in options.items() if key not in UNKEYED
+            },
+            "guard": guard,
+        }
+        earlier = {}
+        # Oldest first, so a newer copy of the same result never moves it.
+        for job in reversed(self.operations(game.project, (TRANSLATE,))):
+            frozen = self._frozen(game, job, TRANSLATE)
+            for row in (frozen or {}).get("candidates", []):
+                result = _result(job, row["index"])
+                if (
+                    row.get("reuseKey")
+                    and _finished(job, result)
+                    and result.get("lines")
+                ):
+                    earlier.setdefault(
+                        row["reuseKey"],
+                        {"translation": job["id"], "index": row["index"]},
+                    )
+        for row in options["candidates"]:
+            if "error" in row:
+                continue
+            # The whole frozen model: its choice, and what Settings made of it,
+            # such as the effort and request policy a column without its own
+            # settings is sent with.
+            model = {key: value for key, value in row.items() if key not in UNSHARED}
+            row["reuseKey"] = digest({**shared, "model": model})
+            if row["reuseKey"] in earlier:
+                row["reuse"] = earlier[row["reuseKey"]]
 
     def _start(self, plan, action):
         return self.guided.backend.operations.start(
@@ -427,13 +472,27 @@ class Compare:
         priced = {
             row["index"]
             for row in job["result"].get("models", [])
-            if isinstance(row.get("estimate"), dict)
+            if isinstance(row.get("estimate"), dict) or row.get("reused")
         }
         if not priced:
             raise ValueError("No model could be estimated. Check its connection.")
         plan["options"]["candidates"] = [
             row for row in plan["options"]["candidates"] if row["index"] in priced
         ]
+        jobs = guided.backend.operations.jobs
+        for row in plan["options"]["candidates"]:
+            if "reuse" not in row:
+                continue
+            earlier = jobs.get(row["reuse"]["translation"])
+            value = _result(earlier, row["reuse"]["index"])
+            if not _finished(earlier, value):
+                raise ValueError(
+                    "A model's earlier lines are no longer available. Estimate again."
+                )
+            # Its translation copies these instead of sending anything.
+            row["reused"] = {
+                key: deepcopy(item) for key, item in value.items() if key != "index"
+            }
         plan["options"]["estimate"] = estimate_id
         # Saved before the operation starts, so a second click or a retry
         # can't send the same requests again.
@@ -583,14 +642,14 @@ class Compare:
 
     def use(self, project_id, comparison_id, model, glossary=None):
         """Makes a compared model the one the game translates with: Settings'
-        connection and model, and, from Tune settings, the effort it was sent
-        with, its glossary and its instruction, saved as the game's guidance.
-        A test glossary that would replace a Context save made after its edit
-        is saved only once *glossary* chooses "test"; "game" keeps the game's.
+        connection and model, the effort its column sent, and its column's
+        glossary and instruction, saved as the game's guidance. A test
+        glossary that would replace a Context save made after its edit is
+        saved only once *glossary* chooses "test"; "game" keeps the game's.
         Everything is checked before anything is written, so only a failing
         disk can save the guidance without switching the model."""
         if glossary not in {None, "game", "test"}:
-            raise ValueError("Choose the game's glossary or this test's.")
+            raise ValueError("Choose the game's glossary or this column's.")
         guided = self.guided
         # As Settings' own saves, never under a running translation.
         guided.idle()
@@ -623,7 +682,7 @@ class Compare:
 
     @staticmethod
     def _guidance_changes(game, row, options, keep):
-        """The guidance documents a Tune test's settings change, as
+        """The guidance documents a column's settings change, as
         documents_save takes them: its glossary, unless *keep* keeps the
         game's, refusing one that would replace a Context save made after its
         edit until *keep* chooses; and its instruction, added to the game
@@ -657,8 +716,8 @@ class Compare:
                 GAME_CONTEXT.key
             ):
                 raise ValueError(
-                    f"The {document['title']} changed since this test. "
-                    "Run the test again."
+                    f"The {document['title']} changed since this comparison. "
+                    "Estimate it again."
                 )
             text = document["text"]
             changes[GAME_CONTEXT.key] = {
@@ -749,9 +808,9 @@ def _choice(row):
 
 
 def _replaces(row, documents):
-    """Whether saving a Tune test's glossary would replace a save the
-    game's glossary had in Context after the test's edit, which Use these
-    settings then asks about."""
+    """Whether saving a column's test glossary would replace a save the
+    game's glossary had in Context after the column's edit, which Use then
+    asks about."""
     from desktop.backend.guidance import holds
 
     document = documents[GLOSSARY.key]
@@ -810,6 +869,7 @@ def view(estimate, options, translated, marks, documents=None):
                 ),
                 **({"error": error} if error else {}),
                 **({"finished": True} if _finished(translated, done) else {}),
+                **({"reused": True} if "reuse" in row else {}),
                 # What it spent shows even when it failed or was stopped.
                 **({"cost": done["cost"]} if "cost" in done else {}),
                 **({"seconds": done["seconds"]} if "seconds" in done else {}),

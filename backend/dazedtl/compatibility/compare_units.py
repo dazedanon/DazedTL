@@ -4,7 +4,7 @@ runs those of a Guided game).
 Its lines are the units its extractor saved: the first of one group, whole
 scenes at a time. Each model's requests are organized, compiled and priced
 as an API run of the game would build them (translation/run_compiler), but
-against a private copy of the game's guidance, which a Tune test may
+against a private copy of the game's guidance, which a column's settings may
 change, and sent by the run's own Live runner from a run store of the
 operation's own (``Store``), so no reply reaches the game's results, its
 runs or its reuse.
