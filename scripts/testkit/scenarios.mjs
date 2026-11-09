@@ -434,7 +434,7 @@ const moved = [
       const before = await projectView(page, state.game);
       const game = path.join(path.dirname(state.game), "Renamed");
       await page.click("Compare");
-      await page.waitText("Single model");
+      await page.waitText("Compare models");
       moveGame(state, game);
       // Compare models says the game is gone, as the other pages do.
       await page.waitText("Game folder unavailable");
