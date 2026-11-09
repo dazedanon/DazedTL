@@ -881,9 +881,9 @@ def guidance_text(raw: bytes) -> str:
     return text.replace("\r\n", "\n").replace("\r", "\n")
 
 
-def read_glossary_file(path: str | Path) -> str:
-    """A glossary file's whole text, its shipped base included, by
-    :func:`guidance_text`'s rule."""
+def read_guidance_file(path: str | Path) -> str:
+    """A guidance file's whole text by :func:`guidance_text`'s rule: a
+    skill's, the notes', or a glossary's with its shipped base included."""
     return guidance_text(system.read_bytes(path))
 
 
@@ -909,13 +909,13 @@ def read_game_glossary(game_root: str | Path, *, create: bool = True) -> str:
     if path is None:
         raise ValueError("No game folder is selected.")
     if path.is_file():
-        return read_glossary_file(path)
+        return read_guidance_file(path)
     if not create:
         root, _preferred, legacy = locations
         if legacy.is_file() and not legacy.is_symlink():
-            return read_glossary_file(legacy)
+            return read_guidance_file(legacy)
     if create:
-        return read_glossary_file(ensure_game_glossary(game_root))
+        return read_guidance_file(ensure_game_glossary(game_root))
     root = path.parents[1]
     if not root.is_dir():
         raise FileNotFoundError(f"Game folder not found: {root}")
@@ -926,7 +926,7 @@ def read_active_glossary() -> str:
     """Read the active game's glossary, falling back to shipped base terms."""
     path = active_glossary_path()
     if path and path.is_file():
-        text = read_glossary_file(path)
+        text = read_guidance_file(path)
         if (os.getenv(GLOSSARY_OVERRIDE_ENV) or "").strip():
             custom = split_glossary(text)[0].rstrip()
             include_base = (

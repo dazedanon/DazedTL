@@ -211,6 +211,78 @@ class GuidanceDocumentTests(unittest.TestCase):
                     self.assertEqual(path.read_bytes(), saved.encode())
                     self.assertEqual(read_active_glossary(), saved)
 
+    def test_skills_saved_on_windows_build_the_prompt_a_run_sends(self):
+        # Context showed a UTF-16 skill as saved while the run building its
+        # system prompt failed reading it, and a byte order mark reached the
+        # prompt as a character. Every encoding Context reads builds the
+        # prompt an LF UTF-8 file builds, which is the prompt it built before.
+        from util.skills import load_system_prompt
+        from util.skills.system import (
+            base_system_prompt,
+            compose_system_prompt,
+            prompt_overlays,
+        )
+
+        texts = {
+            "game.md": "# Lore\nThe village sits by the sea.",
+            "quirks.md": "Keep honorifics.\nDrop sound effects.",
+            "battle.md": "Attacks are verbs.\nKeep them short.",
+        }
+        encodings = {
+            "LF UTF-8": lambda text: text.encode(),
+            "CRLF, as Notepad saves it": lambda text: text.replace(
+                "\n", "\r\n"
+            ).encode(),
+            "UTF-8 with its byte order mark": lambda text: text.encode("utf-8-sig"),
+            "UTF-16, as Out-File writes it": lambda text: text.replace(
+                "\n", "\r\n"
+            ).encode("utf-16"),
+        }
+        expected = compose_system_prompt(
+            base_system_prompt(),
+            prompt_overlays(
+                texts["game.md"], texts["quirks.md"], [("battle", texts["battle.md"])]
+            ),
+        )
+        for case, encode in encodings.items():
+            with self.subTest(file=case):
+                game = self.root / case
+                (game / ".dazedtl/skills").mkdir(parents=True)
+                for name, text in texts.items():
+                    (game / ".dazedtl/skills" / name).write_bytes(encode(text))
+                self.assertEqual(read(game)["quirks"]["state"], "saved")
+                self.assertEqual(load_system_prompt(game), expected)
+
+    def test_text_qa_reviews_guidance_saved_on_windows_and_keeps_its_tasks(self):
+        # Text QA left a UTF-16 skill out of the review as unreadable and
+        # showed a byte order mark and Windows line ends; read as Context
+        # reads it, a task prepared before from the same files goes on.
+        from util.qa.schema import _canonical_bytes, _sha256
+        from util.qa.selection import _context_pack, context_digests
+
+        skills = self.root / ".dazedtl/skills"
+        (self.root / ".dazedtl/glossary.txt").write_bytes(b"\xe6\xb0\xb4 (Water)\r\n")
+        (skills / "game.md").write_bytes("Lore\nSea".encode("utf-8-sig"))
+        (skills / "battle.md").write_bytes(b"Attacks\r\nare verbs.")
+        pack = _context_pack(self.root)
+        self.assertEqual(
+            [pack[key]["text"] for key in ("glossary", "game")]
+            + [row["text"] for row in pack["overlays"]],
+            ["水 (Water)\n", "Lore\nSea", "Attacks\nare verbs."],
+        )
+        before = {key: value for key, value in pack.items() if key != "content_sha256"}
+        for document in (before["glossary"], before["game"], *before["overlays"]):
+            raw = (self.root / document["path"]).read_bytes()
+            document["text"] = raw.decode("utf-8")
+        self.assertIn(
+            _sha256(_canonical_bytes(before)), context_digests(pack, self.root)
+        )
+        (skills / "quirks.md").write_bytes("Keep honorifics.".encode("utf-16"))
+        quirks = _context_pack(self.root)["quirks"]
+        self.assertEqual(
+            (quirks["status"], quirks["text"]), ("loaded", "Keep honorifics.")
+        )
+
     def test_an_edit_on_disk_under_a_draft_is_saved_over_only_by_keeping_the_draft(
         self,
     ):

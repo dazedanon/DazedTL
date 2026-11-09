@@ -12,7 +12,7 @@ from typing import Any
 
 from util import rpgmaker_qa_glossary as glossary_rules
 from util import system
-from util.paths import GAME_GLOSSARY_RELATIVE, GAME_QUIRKS_RELATIVE
+from util.paths import GAME_GLOSSARY_RELATIVE, GAME_QUIRKS_RELATIVE, guidance_text
 from util.qa.fitting import _written
 from util.qa.records import _changes, _record_maps, _result_declines
 from util.qa.schema import (
@@ -51,6 +51,17 @@ JUDGED_DISPOSITIONS = frozenset({"clean", "not-corrected"})
 
 def _pair_key(source: Any, translation: Any) -> str:
     return _sha256(f"{source}\0{translation}")[:32]
+
+
+def _shown_guidance(shown: Any) -> str:
+    """The text of a guidance file `git show` printed, read as Context reads
+    the file, or "" when Git had none or it isn't text Context reads."""
+    if shown.returncode != 0:
+        return ""
+    try:
+        return guidance_text(shown.stdout.encode("utf-8", "surrogateescape"))
+    except UnicodeDecodeError:
+        return ""
 
 
 def _guidance_lines(context: dict[str, Any]) -> dict[str, list[str]]:
@@ -338,8 +349,10 @@ def _baseline_ledger(
         ("glossary", GAME_GLOSSARY_RELATIVE), ("quirks", GAME_QUIRKS_RELATIVE),
     ):
         pointer = (game / relative_path).relative_to(repo).as_posix()
-        shown = _run_git(repo, "show", f"{commit}:{pointer}", check=False)
-        guidance[name] = {"text": shown.stdout if shown.returncode == 0 else ""}
+        shown = _run_git(
+            repo, "show", f"{commit}:{pointer}", check=False, errors="surrogateescape"
+        )
+        guidance[name] = {"text": _shown_guidance(shown)}
     groups, _cluster_ids = _scene_groups(manifest)
     ledger = {
         "schema": REVIEWED_SCHEMA,

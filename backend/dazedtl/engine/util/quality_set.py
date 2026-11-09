@@ -65,6 +65,7 @@ from util.paths import (
     LEGACY_GAME_GLOSSARY_RELATIVE,
     LEGACY_GAME_SKILL_RELATIVE,
     LEGACY_QUIRKS_FILENAME,
+    guidance_text,
 )
 from util.qa.selection import _scene_records
 from util.skills.system import prompt_overlays
@@ -206,7 +207,7 @@ def _receipts_material(
             ["git", "-C", str(history.repo), "show", f"{parent}:{path}"],
             capture_output=True,
         )
-        return done.stdout.decode("utf-8") if done.returncode == 0 else None
+        return guidance_text(done.stdout) if done.returncode == 0 else None
 
     def shown(*candidates: Path) -> str:
         for candidate in candidates:

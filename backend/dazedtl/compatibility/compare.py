@@ -300,9 +300,11 @@ def stage(target, workspace, project_id, root, relative, name, phase, lines, mar
 def held(context, instruction):
     """Whether the game context a column is sent with already holds its
     instruction, as once Use saved it there, so it is sent once."""
+    from util.paths import read_guidance_file
+
     try:
-        text = Path(context).read_bytes().decode("utf-8-sig", errors="replace")
-    except OSError:
+        text = read_guidance_file(context)
+    except OSError, UnicodeDecodeError:
         return False
     return instruction.strip() in text
 

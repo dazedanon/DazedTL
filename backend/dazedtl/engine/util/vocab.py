@@ -29,7 +29,7 @@ from util.paths import (
     glossary_base_path,
     read_active_glossary,
     read_game_glossary,
-    read_glossary_file,
+    read_guidance_file,
     split_glossary,
 )
 from util import system
@@ -63,7 +63,7 @@ def batch_glossary_phase() -> str:
 
 def freeze_batch_glossary(*, game_root=None) -> Path:
     """Snapshot the live glossary for the current batch collect/consume cycle."""
-    text = read_active_glossary() if game_root is None else read_glossary_file(
+    text = read_active_glossary() if game_root is None else read_guidance_file(
         _path(game_root)
     )
     return write_batch_glossary_freeze(text)
@@ -147,7 +147,7 @@ def read_translation_glossary() -> str:
 def read_game_vocab(game_root=None, *, create: bool = True) -> str:
     """Return the game section, optionally previewing a missing glossary read-only."""
     if create:
-        text = read_glossary_file(_path(game_root))
+        text = read_guidance_file(_path(game_root))
     elif game_root is not None:
         text = read_game_glossary(game_root, create=False)
     else:
@@ -185,7 +185,7 @@ def _read_glossary(game_root=None) -> str:
     """The whole glossary as a merge starts from it: a named game's without
     creating it, else the active glossary, which may be the user's own file."""
     if game_root is None:
-        return read_glossary_file(_path(None))
+        return read_guidance_file(_path(None))
     return read_game_glossary(game_root, create=False)
 
 

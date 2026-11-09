@@ -83,11 +83,11 @@ def install(module, root):
 def _glossary_rows(path, stamp):
     # Legacy recovery accepts exact, unambiguous saved entries only. It does
     # not guess aliases, identity, or a translation from the current project.
-    from util.paths import read_glossary_file
+    from util.paths import read_guidance_file
     from util.vocab import split_glossary_row
 
     rows = {}
-    for line in read_glossary_file(path).splitlines():
+    for line in read_guidance_file(path).splitlines():
         row = split_glossary_row(line.strip())
         if row and row[1] and re.fullmatch(r"(?:\s+-.*)?\s*", row[2]):
             rows.setdefault(row[0], set()).add(row[1])
@@ -331,7 +331,7 @@ def merge_missing(text, rows, parse, aliases, keys):
 def seed(root, plan, rows):
     if not rows:
         return
-    from util.paths import read_glossary_file
+    from util.paths import read_guidance_file
     from util.translation import (
         parseVocabWithCategories,
         speaker_source_lookup_keys,
@@ -341,7 +341,7 @@ def seed(root, plan, rows):
     root = Path(root)
     path = project_path(root, "game/.dazedtl/glossary.txt")
     content, added = merge_missing(
-        read_glossary_file(path),
+        read_guidance_file(path),
         rows,
         parseVocabWithCategories,
         split_vocab_source_aliases,

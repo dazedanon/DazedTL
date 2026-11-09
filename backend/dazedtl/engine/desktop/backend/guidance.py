@@ -220,7 +220,11 @@ def _replaced(root, name, held, revision):
     except ValueError:
         return False
     def before():
-        found = recovered_text(root, relative)
+        try:
+            found = recovered_text(root, relative)
+        except UnicodeDecodeError:
+            # A file Context couldn't read was no draft's revision.
+            return None
         return None if found is None else digest(stored(name, found[0] or "").encode())
 
     return _recoveries.get((str(root), relative), root, before, (held["revision"],)) == revision

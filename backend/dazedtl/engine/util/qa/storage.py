@@ -12,6 +12,7 @@ from typing import Any
 
 from util import extensions, system
 from util.freshness import Basis, compare
+from util.paths import guidance_text
 from util.qa.schema import (
     CHECKPOINT_SCHEMA,
     PREPARED_AT,
@@ -125,7 +126,8 @@ def _read_optional(path: Path | None) -> dict[str, Any]:
         }
     raw = resolved.read_bytes()
     try:
-        text = raw.decode("utf-8")
+        # As Context reads it, so the reviewer sees the guidance it shows.
+        text = guidance_text(raw)
     except UnicodeDecodeError as exc:
         return {
             "path": str(resolved),

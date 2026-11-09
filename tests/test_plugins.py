@@ -1452,7 +1452,9 @@ class AceScriptTests(unittest.TestCase):
                 "end\r\n"
             ).encode(),
         )
-        write_bytes(game / ".dazedtl/glossary.txt", b"Terms\n")
+        # A glossary saved by Windows PowerShell, which Context reads, refused
+        # the task.
+        write_bytes(game / ".dazedtl/glossary.txt", "Terms\r\n".encode("utf-16"))
         projects = Projects(profile)
         project = projects.open({"source": str(game), "engine": "ACE"})
         identity = project["id"]
@@ -1494,6 +1496,9 @@ class AceScriptTests(unittest.TestCase):
         task = service.action(identity, "plugin_task")
         self.assertIn("Ruby scripts", task["text"])
         request = read_json(task["request"])
+        self.assertEqual(
+            request["guidance"][".dazedtl/glossary.txt"]["text"], "Terms\n"
+        )
         self.assertEqual(request["gameData"], str(game / "ace_json"))
         # Each script with Japanese text is asked about, apart from lookup keys.
         [asked] = request["files"]

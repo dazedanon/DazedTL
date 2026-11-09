@@ -881,8 +881,10 @@ def recovered_text(root, relative):
     checkpoint that changed it, None where there was no file, when that
     checkpoint is a context save (stage Context, no action) committed after
     it ended without its checkpoint and the file is as it left it; a run's or
-    QA's change to it is another's, so otherwise None."""
-    from util.paths import game_git_set_up
+    QA's change to it is another's, so otherwise None. Each text is read as
+    Context reads a guidance file, raising UnicodeDecodeError for bytes it
+    doesn't read."""
+    from util.paths import game_git_set_up, guidance_text
 
     if not game_git_set_up(root):
         return None
@@ -912,7 +914,9 @@ def recovered_text(root, relative):
 
     def text(revision):
         shown = _git(root, "show", f"{revision}:{relative}", check=False)
-        return shown.stdout.removeprefix("﻿") if shown.returncode == 0 else None
+        if shown.returncode != 0:
+            return None
+        return guidance_text(shown.stdout.encode("utf-8", "surrogateescape"))
 
     return text(commit + "^"), text(commit)
 

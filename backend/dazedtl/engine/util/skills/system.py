@@ -25,6 +25,7 @@ from util.paths import (
     game_metadata_dir,
     is_portable_game_file,
     prepare_game_translation_context,
+    read_guidance_file,
 )
 
 _SKILL_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
@@ -413,20 +414,12 @@ def _game_system_prompt(base: str, root: str) -> str:
     # and GUI translation all see the same complete portable context.
     prepare_game_translation_context(root)
 
-    skill_file = game_skill_path_for_game(root)
-    skill = (
-        skill_file.read_text(encoding="utf-8")
-        if skill_file and skill_file.is_file()
-        else ""
-    )
-    quirks_file = quirks_path_for_game(root)
-    quirks = (
-        quirks_file.read_text(encoding="utf-8")
-        if quirks_file and quirks_file.is_file()
-        else ""
-    )
-    custom = [
-        (path.stem, path.read_text(encoding="utf-8"))
-        for path in list_custom_skill_paths(root)
-    ]
+    # Each file as Context reads it, so a skill it shows as saved is the
+    # text the run sends.
+    def text(path: Path | None) -> str:
+        return read_guidance_file(path) if path and path.is_file() else ""
+
+    skill = text(game_skill_path_for_game(root))
+    quirks = text(quirks_path_for_game(root))
+    custom = [(path.stem, text(path)) for path in list_custom_skill_paths(root)]
     return compose_system_prompt(base, prompt_overlays(skill, quirks, custom))

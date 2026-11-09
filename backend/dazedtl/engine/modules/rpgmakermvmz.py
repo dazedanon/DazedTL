@@ -63,7 +63,7 @@ from util.paths import (
     GLOSSARY_OVERRIDE_ENV,
     active_glossary_path,
     read_active_glossary,
-    read_glossary_file,
+    read_guidance_file,
 )
 from util.rpgmaker_markers import PluginList, comment_markers, game_plugins
 from util.rpgmaker_files import mvmz_file_kind
@@ -477,13 +477,13 @@ def _reload_vocab():
         else:
             vocab_path = active_glossary_path() or VOCAB_PATH
             VOCAB = (
-                read_glossary_file(vocab_path)
+                read_guidance_file(vocab_path)
                 if vocab_path
                 else read_active_glossary()
             )
     except (FileNotFoundError, OSError):
         vocab_path = VOCAB_PATH
-        VOCAB = read_glossary_file(vocab_path) if vocab_path else ""
+        VOCAB = read_guidance_file(vocab_path) if vocab_path else ""
     TRANSLATION_CONFIG.vocab = VOCAB
 
 
@@ -7730,7 +7730,7 @@ def finalizeSpeakerParse():
             except Exception:
                 pass
 
-        content = vocab_path.read_text(encoding="utf-8")
+        content = read_guidance_file(vocab_path)
         new_content = _merge_speaker_rows_into_game_characters(
             content, newly_translated
         )

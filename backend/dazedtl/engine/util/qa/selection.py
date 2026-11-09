@@ -124,18 +124,45 @@ def _context_pack(
 
 
 def context_digests(context: dict[str, Any], game_root: str | Path) -> set[str]:
-    """The content_sha256 a task's context has, and the one versions up to
-    2.34.3 gave it, whose paths named the game folder, *game_root* then."""
+    """The content_sha256 a task's context has, and the ones earlier versions
+    gave the same files: up to 2.34.3 its paths named the game folder,
+    *game_root* then, and up to 2.70.0 a document's text kept the byte order
+    mark and Windows line ends its file had."""
     pack = {key: value for key, value in context.items() if key != "content_sha256"}
-    for key in ("glossary", "quirks", "game"):
-        if isinstance(pack.get(key), dict):
-            pack[key] = _located(pack[key], game_root)
-    pack["overlays"] = [_located(row, game_root) for row in pack.get("overlays") or []]
-    return {context["content_sha256"], _sha256(_canonical_bytes(pack))}
+    digests = {context["content_sha256"]}
+    for located, read_before in ((True, False), (False, True), (True, True)):
+
+        def change(
+            document: dict[str, Any], located: bool = located, read_before: bool = read_before
+        ) -> dict[str, Any]:
+            document = _located(document, game_root) if located else document
+            return _read_before(document) if read_before else document
+
+        changed = dict(pack)
+        for key in ("glossary", "quirks", "game"):
+            if isinstance(pack.get(key), dict):
+                changed[key] = change(pack[key])
+        changed["overlays"] = [change(row) for row in pack.get("overlays") or []]
+        digests.add(_sha256(_canonical_bytes(changed)))
+    return digests
 
 
 def _located(document: dict[str, Any], game_root: str | Path) -> dict[str, Any]:
     return {**document, "path": from_game(str(document.get("path") or ""), game_root)}
+
+
+def _read_before(document: dict[str, Any]) -> dict[str, Any]:
+    """*document* with its text as versions up to 2.70.0 read its file: the
+    text with Windows line ends or a byte order mark whose UTF-8 bytes are
+    the file's, by its sha256, or as it is."""
+    text = document.get("text")
+    if not isinstance(text, str) or not text:
+        return document
+    windows = text.replace("\n", "\r\n")
+    for candidate in (windows, "\ufeff" + text, "\ufeff" + windows):
+        if _sha256(candidate.encode()) == document.get("sha256"):
+            return {**document, "text": candidate}
+    return document
 
 
 def context_target(context: dict[str, Any]) -> str:

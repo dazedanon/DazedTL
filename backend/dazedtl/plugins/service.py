@@ -10,6 +10,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path, PurePosixPath
 
 from util.guidance_documents import HANDOFF
+from util.paths import guidance_text
 
 from dazedtl import foreign_work, freshness
 from dazedtl.foreign_work import ForeignWorkError
@@ -193,6 +194,15 @@ def bounded(value, label, limit=4000):
 
 def pick(value, keys):
     return {key: value[key] for key in keys if key in value}
+
+
+def same_guidance(one, other):
+    """Whether two requests' guidance (PluginService.guidance) holds the same
+    files with the same bytes, as a request saved before its text was read
+    as Context reads it still does."""
+    return {path: row["sha256"] for path, row in one.items()} == {
+        path: row["sha256"] for path, row in other.items()
+    }
 
 
 def undecided(item):
@@ -883,6 +893,15 @@ class PluginService:
             }
 
     def source(self, root, path):
+        raw = self.read(root, path)
+        try:
+            raw.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise ValueError("Plugin files must be UTF-8 text.") from exc
+        return raw
+
+    def read(self, root, path):
+        """A file of the game's as bytes, refused while its writer changes it."""
         target = project_path(root, path)
         if not target.is_file() or target.stat().st_size > 16_000_000:
             raise ValueError("Plugin files must be regular files below 16 MB.")
@@ -893,10 +912,6 @@ class PluginService:
             raise ValueError(
                 "A plugin file changed during reading. Refresh when its writer finishes."
             )
-        try:
-            raw.decode("utf-8")
-        except UnicodeDecodeError as exc:
-            raise ValueError("Plugin files must be UTF-8 text.") from exc
         return raw
 
     def inventory(self, project_id):
@@ -2179,6 +2194,8 @@ class PluginService:
         )
 
     def guidance(self, root):
+        """The game's glossary and skills a request carries: each file's
+        digest, which `same_guidance` compares, and its text."""
         paths = [
             ".dazedtl/glossary.txt",
             *[
@@ -2186,14 +2203,18 @@ class PluginService:
                 for path in (root / ".dazedtl/skills").glob("*.md")
             ],
         ]
-        return {
-            path: {
-                "sha256": digest(self.source(root, path)),
-                "text": self.source(root, path).decode(),
-            }
-            for path in paths
-            if (root / path).is_file()
-        }
+        found = {}
+        for path in paths:
+            if not (root / path).is_file():
+                continue
+            raw = self.read(root, path)
+            try:
+                # As Context reads it, so the assistant sees what it shows.
+                text = guidance_text(raw)
+            except UnicodeDecodeError:
+                raise ValueError(f"Save {path} as UTF-8 text.") from None
+            found[path] = {"sha256": digest(raw), "text": text}
+        return found
 
     def request(self, project_id, value, kind, scope, *, previous="", recheck=False):
         """A request-bound stage of the copied task for exactly `scope`: the
@@ -2684,7 +2705,7 @@ class PluginService:
         same = (
             request["kind"] == kind
             and request["binding"] == value["binding"]
-            and request["guidance"] == self.guidance(root)
+            and same_guidance(request["guidance"], self.guidance(root))
             and request["originals"]
             == pick(value["originals"], ("backupId", "binding"))
             and request["layout"] == value["layout"]
@@ -2837,7 +2858,7 @@ class PluginService:
             raise ValueError(
                 "Saved report is foreign, stale or belongs to another task. No findings were accepted."
             )
-        if self.guidance(root) != request["guidance"]:
+        if not same_guidance(self.guidance(root), request["guidance"]):
             raise ValueError(
                 "Saved guidance changed. Copy a new scoped task before accepting results."
             )
