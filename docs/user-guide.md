@@ -201,13 +201,14 @@ In Guided steps the translations go into your working copies, so apply them in T
 
 ## Compare models
 
-**Compare** in the sidebar translates a few lines with up to four models, or one model with changed settings, sent as a real run sends them, with your glossary and guidance; nothing goes into the game.
+**Compare** in the sidebar translates a few lines with up to four models side by side, as a real run sends them; nothing goes into the game.
 
-1. Choose **Lines**, then add models from any of your connections.
-2. **Estimate cost**, then **Translate** for the price shown.
-3. In **Model vs model**, click the best translation of each line; **Blind** hides the names until every line has a pick.
+1. Choose **Lines**. The first column is your current model; **Add model** adds others.
+2. Click a column's settings under its name to try another thinking effort, glossary or instruction.
+3. **Estimate cost**, then **Translate** for the price shown; a column translated before with the same settings is reused free.
+4. With several columns, click the best translation of each line; **Mark differences** marks each column's changes from the first.
 
-**Tune settings** tries a thinking effort, glossary change or instruction and shows any two runs side by side, changed words marked; **Use these settings** keeps them, and **Use this model** makes it the model every game translates with.
+**Use most picked**, or **Use this model** in a column's menu, makes that model and its settings the game's.
 
 ## Playtest checklist
 
