@@ -1,5 +1,9 @@
 <!-- The next release's notes; see docs/development.md#release-notes. -->
 
+### Added
+
+- **Text QA:** Assistant-led's Options can narrow its review or skip it, and both methods say how much of your assistant's plan a review takes.
+
 ### Changed
 
 - **Assistant-led:** each request now carries the lines just before it in its map or area, so a conversation split across requests reads as one.
