@@ -1470,6 +1470,96 @@ try:
                     (c["parameters"][0], c.get("_original"), c.get("_rows"))
                     for c in result[1:3]
                 ] == kept, result
+            # Assistant-led's writer lays one source over a message's rows one
+            # by one, over every text there: a row opening with a code, such
+            # as \SE[1], starts one. With Skip already translated text off, a
+            # run sent that whole source for the rows before such a row, wrote
+            # its translation there and sent the row's English as a text of
+            # its own, so its text showed twice. Under left-rows v4 each text
+            # is sent with its own Japanese, the source the export lists it
+            # with, recorded or not, and a fit that moved a code to a row's
+            # start keeps that row in its text; a row of the game's own that
+            # opens with a code is still a text of its own, and v3 runs keep
+            # their bodies.
+            laid = [
+                name(""),
+                command(
+                    401,
+                    ["Hi."],
+                    _original="こんにちは。\n元気？\n\\SE[1]またね。",
+                    _rows=3,
+                ),
+                command(401, ["How are you?"]),
+                command(401, ["\\SE[1]See you."]),
+            ]
+            unrecorded = deepcopy(laid)
+            del unrecorded[1]["_rows"]
+            fitted = [
+                name(""),
+                command(
+                    401,
+                    ["Hi."],
+                    _original="こんにちは。\\SE[1]元気？\nまたね。",
+                    _rows=2,
+                ),
+                command(401, ["\\SE[1]How are you? See you."]),
+            ]
+            games_own = [
+                name(""),
+                command(401, ["Hi."], _original="こんにちは。\n元気？"),
+                command(401, ["\\SE[1]See you."]),
+            ]
+            split = [
+                ("Hello.", "こんにちは。\n元気？", 1),
+                ("\\SE[1]Hello.", "\\SE[1]またね。", 1),
+            ]
+            for page, generation, body, kept in (
+                (
+                    laid,
+                    {**letters, "leftRows": "event-left-rows-v3"},
+                    ["こんにちは。\n元気？\n\\SE[1]またね。", "See you."],
+                    [
+                        ("Hello.", laid[1]["_original"], 1),
+                        ("\\SE[1]Hello.", "\\SE[1]See you.", 1),
+                    ],
+                ),
+                (laid, newer, ["こんにちは。\n元気？", "またね。"], split),
+                (unrecorded, newer, ["こんにちは。\n元気？", "またね。"], split),
+                (
+                    fitted,
+                    newer,
+                    [fitted[1]["_original"]],
+                    [("Hello.", fitted[1]["_original"], 1)],
+                ),
+                (
+                    games_own,
+                    newer,
+                    ["こんにちは。\n元気？", "See you."],
+                    [
+                        ("Hello.", "こんにちは。\n元気？", 1),
+                        ("\\SE[1]Hello.", "\\SE[1]See you.", 1),
+                    ],
+                ),
+            ):
+                configure_states({"engine": "MVMZ"}, temporary, generation)
+                with patch.object(parser, "IGNORETLTEXT", False):
+                    result = parse(page)
+                assert calls == [(body, "")], (page, calls)
+                assert [
+                    (c["parameters"][0], c.get("_original"), c.get("_rows"))
+                    for c in result[1:-1]
+                ] == kept, result
+                if generation is newer:
+                    (block,) = blocks.blocks(page)
+                    assert [
+                        text.source or blocks.text(page[text.rows[0]])
+                        for text in blocks.sent_texts(
+                            page, block, blocks.Reading(skip_translated=False)
+                        )
+                    ] == [source for _text, source, _rows in kept], page
+            # With it on, a run sends none of them and leaves them as they are.
+            configure_states({"engine": "MVMZ"}, temporary, newer)
+            assert parse(laid)[:-1] == laid and calls == [], calls
             # A text that is a name window alone gets its name written in its
             # row, which records it too.
             result = parse([name(""), command(401, ["\\n<アリス>"])])

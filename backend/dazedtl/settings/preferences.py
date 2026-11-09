@@ -63,8 +63,16 @@ CODE_NAMEPLATES = "event-code-nameplates-v1"
 # was refused. Those rows are sent and written as texts of their own. A run
 # frozen without it sends the first row's source alone for them and writes
 # its translation over them all, emptying them, as it did when approved.
-LEFT_ROWS = "event-left-rows-v3"
+LEFT_ROWS = "event-left-rows-v4"
 # Each left-rows policy a saved run may hold, by the engine level it enables:
+# v4 sends a translation laid over its rows one by one, as Assistant-led's
+# writer lays a message, a text each where a row of it opens a text of its
+# own, such as with \SE[1], each with its own Japanese, as a translation file
+# lists them (engine util/rpgmaker_blocks `keep_opened_sources`), and joins a
+# text over every row it was written over, one a fit opened with a code
+# included, so a run with Skip already translated text off no longer writes
+# the whole translation over the rows before such a row and sends that row's
+# English as a text of its own, showing its text twice;
 # v3 records on each text it writes the rows it laid it over (engine
 # util/rpgmaker_blocks `record_rows`), by which later runs read them, so one
 # with Skip already translated text off no longer empties a row of scrolling
@@ -76,7 +84,12 @@ LEFT_ROWS = "event-left-rows-v3"
 # sends that name's source again, no longer writes its translation over that
 # row, emptying it; v1 reads every row up to the next translation as that
 # translation's.
-LEFT_ROWS_LEVELS = {"event-left-rows-v1": 1, "event-left-rows-v2": 2, LEFT_ROWS: 3}
+LEFT_ROWS_LEVELS = {
+    "event-left-rows-v1": 1,
+    "event-left-rows-v2": 2,
+    "event-left-rows-v3": 3,
+    LEFT_ROWS: 4,
+}
 # Small RPG Maker event pages of one file share a request, each page labelled,
 # because each request otherwise repeats the full system prompt: a 970-map
 # game's Maps & events estimate fell from 4,089 to 2,173 requests and from

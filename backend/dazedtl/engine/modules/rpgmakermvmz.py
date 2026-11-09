@@ -3610,7 +3610,11 @@ CODE_NAMEPLATES = False
 # run left untranslated after it, which is sent as a text of its own; from
 # level 2 also after a message's rows its source has lines for. From level 3
 # each text it writes records the rows it laid it over (rpgmaker_blocks
-# `record_rows`), by which later readers read the translation's rows.
+# `record_rows`), by which later readers read the translation's rows. From
+# level 4 a translation whose rows open texts of their own, such as one
+# opening with \SE[1], is sent a text each with its own source, as the
+# export lists them (`_keep_opened_sources`), and a text joins every row it
+# was written over, one opening with a code included (`_written`).
 # Frozen per run (settings/preferences LEFT_ROWS_LEVELS): older runs send
 # that first row's source alone and write its translation over those rows
 # too, and record none.
@@ -3680,6 +3684,34 @@ def _records() -> bool:
     """Whether the run records the rows of each text it writes: from
     LEFT_ROWS level 3."""
     return LEFT_ROWS >= 3
+
+
+def _written():
+    """From LEFT_ROWS level 4, the reading by which the run reads the texts
+    of a translation as the export lists them, joining each over every row
+    it was written over (util/rpgmaker_blocks `text_end`): the run's speaker
+    and skip settings, as a Guided project's export reads them
+    (`Reading.of`); None before."""
+    if LEFT_ROWS < 4:
+        return None
+    return rpgmaker_blocks.Reading.of(
+        {
+            "FIRSTLINESPEAKERS": FIRSTLINESPEAKERS is True,
+            "INLINE401SPEAKERS": INLINE401SPEAKERS,
+            "IGNORETLTEXT": IGNORETLTEXT,
+        }
+    )
+
+
+def _keep_opened_sources(commands, anchor) -> None:
+    """From LEFT_ROWS level 4, before the run reads the text it sends from
+    the row at *anchor*, keep each text of the translation there its own
+    source where its rows open texts of their own (util/rpgmaker_blocks
+    `keep_opened_sources`), as a translation file import does, so each is
+    sent with its own Japanese and written over its own rows."""
+    reading = _written()
+    if reading is not None:
+        rpgmaker_blocks.keep_opened_sources(commands, anchor, reading)
 
 
 def _record_rows(command, rows: int) -> None:
@@ -4074,6 +4106,7 @@ def _searchCodes(page, pbar, jobList, filename):
                                 )
                         i = previewEnd + 1
                         continue
+                    _keep_opened_sources(codeList, i)
                     jaString = codeList[i]["parameters"][0]
                     oldjaString = _param_text(codeList[i], 0)
                     speakerWork = oldjaString
@@ -4107,6 +4140,7 @@ def _searchCodes(page, pbar, jobList, filename):
                     _own_source(codeList) if SPEAKER_CONTEXT else None,
                     left=LEFT_ROWS >= 1,
                     by_lines=LEFT_ROWS >= 2,
+                    reading=_written(),
                 )
                 speakerMatch = sentText.speakers
                 speakerList = list(speakerMatch.names) if speakerMatch else []

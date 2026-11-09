@@ -802,20 +802,28 @@ def text_end(
     *,
     left: bool = False,
     by_lines: bool = True,
+    reading: Reading | None = None,
 ) -> int:
     """The last command whose text joins the one at *start* (:func:`joins`),
     before any command *stop* names by its index and, with *left*, past no
     row of the translation whose source *start* keeps (:func:`owned`, read
     *by_lines*), so the game's own rows after it, such as rows left
-    untranslated, are texts of their own."""
-    rows = (
-        frozenset(owned(commands, start, by_lines=by_lines))
-        if left and _translation(commands[start]) is not None
-        else None
-    )
+    untranslated, are texts of their own. Given the *reading* too, every row
+    that translation's text was written over joins it, as :func:`sent_texts`
+    reads them (:func:`_written_over`), one opening with a code included: a
+    fit may move a code to a row's start."""
+    rows: frozenset[int] | None = None
+    over: frozenset[int] = frozenset()
+    kept = _translation(commands[start]) if left else None
+    if kept is not None:
+        mine = owned(commands, start, by_lines=by_lines)
+        rows = frozenset(mine)
+        if reading is not None:
+            written = _written_over(commands, Part(start, mine), kept.split("\n"), reading)
+            over = frozenset(mine[:written])
     end = start
     while (
-        joins(commands, end, codes)
+        (joins(commands, end, codes) or end + 1 in over)
         and not (stop is not None and stop(end + 1))
         and not (rows is not None and end + 1 not in rows)
     ):
@@ -843,6 +851,7 @@ def next_text(
     *,
     left: bool = False,
     by_lines: bool = True,
+    reading: Reading | None = None,
 ) -> NextText:
     """The text the MV/MZ engine sends from the message or scrolling text row
     at *start*, whose text it reads as *line*: the speakers *speakers* reads
@@ -851,7 +860,7 @@ def next_text(
     which goes alone, and the rows after it, past emptied commands; and the
     rows joined to the first (:func:`text_end`), up to any *stop* names and,
     with *left*, the game's own after the first's translation (read
-    *by_lines*)."""
+    *by_lines*), and given the *reading*, every row it was written over."""
     following = None
     if start + 1 < len(commands) and commands[start + 1].get("code") in TEXT_CODES:
         parameters = commands[start + 1].get("parameters") or []
@@ -862,7 +871,7 @@ def next_text(
         name, first = start, start + 1
         while commands[first]["code"] == -1:
             first += 1
-    end = text_end(commands, first, stop=stop, left=left, by_lines=by_lines)
+    end = text_end(commands, first, stop=stop, left=left, by_lines=by_lines, reading=reading)
     return NextText(found, name, tuple(range(first, end + 1)))
 
 
@@ -1101,19 +1110,45 @@ def sent_texts(commands: list, block: Block, reading: Reading) -> tuple[SentText
     return tuple(found)
 
 
-def keep_sources(commands: list, block: Block, reading: Reading) -> None:
-    """Keep each translated text of a message or scrolling text *block* its
-    own Japanese on its first row, with the rows it covers (ROWS), as
-    :func:`sent_texts` reads them, where a writer kept one source over it and
-    others: so a text written after keeps the texts around it apart. A text
-    whose first row keeps its Japanese already is left as its writer kept
-    it."""
+def keep_sources(
+    commands: list, block: Block, reading: Reading, part: Part | None = None
+) -> None:
+    """Keep each translated text of a message or scrolling text *block*, or
+    of its *part* when given, its own Japanese on its first row, with the
+    rows it covers (ROWS), as :func:`sent_texts` reads them, where a writer
+    kept one source over it and others: so a text written after keeps the
+    texts around it apart. A text whose first row keeps its Japanese already
+    is left as its writer kept it."""
     for each in sent_texts(commands, block, reading):
+        if part is not None and each.rows[0] not in part.rows:
+            continue
         first = commands[each.rows[0]]
         if each.kept is None or first.get("_original") == each.kept:
             continue
         first["_original"] = each.kept
         record_rows(first, len(each.rows))
+
+
+def keep_opened_sources(commands: list, anchor: int, reading: Reading) -> None:
+    """Keep each text of the message's or scrolling text's translation
+    anchored at *anchor* its own Japanese (:func:`keep_sources`, read by
+    *reading*) where a row of it after the first opens a text of its own
+    (:func:`opens_text`), such as \\SE[1]: a writer laying one source over a
+    message's rows one by one, as Assistant-led's does, keeps it over every
+    text there, and a run reading the text from the anchor, which ends before
+    such a row, would send that whole source for the rows before it and the
+    row's own text after."""
+    block = block_at(commands, anchor)
+    part = block.part(anchor) if block is not None else None
+    if (
+        block is None
+        or part is None
+        or part.anchor != anchor
+        or _translation(commands[anchor]) is None
+        or not any(opens_text(text(commands[at])) for at in part.rows[1:])
+    ):
+        return
+    keep_sources(commands, block, reading, part)
 
 
 def spread(value: str, count: int) -> list[str]:
