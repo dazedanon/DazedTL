@@ -16,19 +16,19 @@ import { ActionBar } from "../../ui/ActionBar";
 import { ActionControl } from "../../ui/ActionControl";
 import { Button } from "../../ui/Button";
 import { DialogBody, DialogHeader } from "../../ui/Dialog";
+import { lineDiff } from "../../ui/lineDiff";
 import { Menu, MenuItem, MenuSeparator } from "../../ui/Menu";
 import { Modal } from "../../ui/Modal";
-import { Notice } from "../../ui/Notice";
-import { PageBody } from "../../ui/PageLayout";
+import { PageBody, PageMessages } from "../../ui/PageLayout";
 import { SegmentedControl } from "../../ui/SegmentedControl";
 import { useTabPanelShown } from "../../ui/Tabs";
+import { TextDiff } from "../../ui/TextDiff";
 import { settingsSaved } from "../settings/settingsChanges";
 import type { CompareContext } from "./Compare";
 import { CompareGrid, type Difference } from "./CompareGrid";
 import {
   glossaryChanges,
   glossaryEntries,
-  glossaryOutdated,
   modelDetail,
   runName,
   tuneRuns,
@@ -42,7 +42,8 @@ type Settings = {
   effort: EffortLevel | null;
   /** The whole glossary this test sends; null keeps the game's. */
   glossary: string | null;
-  /** The revision of the game's glossary that one was edited from. */
+  /** The revision of the game's glossary that one was edited from, which
+   * tells Use these settings whether Context saved over it since. */
   glossaryRevision: string | null;
   /** Guidance this test adds to the game's. */
   instruction: string;
@@ -60,12 +61,12 @@ const start = (context: CompareContext): Settings | null =>
 
 /** What a run changed from the game's settings, in a few words. */
 function settingsOf(item: Comparison) {
-  const model = item.candidates[0];
+  const { choice } = item.candidates[0];
   return [
-    model.model,
-    model.effort ? `${model.effort} effort` : "",
-    model.glossary !== undefined ? "test glossary" : "",
-    model.instruction ? "instruction" : "",
+    choice.model,
+    choice.effort ? `${choice.effort} effort` : "",
+    choice.glossary !== undefined ? "test glossary" : "",
+    choice.instruction ? "instruction" : "",
   ]
     .filter(Boolean)
     .join(" · ");
@@ -147,6 +148,54 @@ function GlossaryDialog({
 }
 
 /**
+ * Asks which glossary Use these settings keeps when the game's changed in
+ * Context after this test's edit, as Save asks about a document changed on
+ * disk (DocumentsChangedDialog).
+ */
+function GlossaryChoiceDialog({
+  game,
+  test,
+  choose,
+  cancel,
+}: {
+  game: string;
+  test: string;
+  choose: (glossary: "game" | "test") => void;
+  cancel: () => void;
+}) {
+  return (
+    <Modal label="Glossary changed in Context" size="sm" onDismiss={cancel}>
+      <DialogHeader title="Keep the game’s glossary or this test’s?" />
+      <DialogBody>
+        <p>The game’s glossary changed in Context after this test’s edit.</p>
+        <section>
+          <p className="muted">
+            This test’s glossary (+) compared with the game’s (−):
+          </p>
+          <TextDiff
+            diff={lineDiff(game, test)}
+            label="This test’s glossary compared with the game’s"
+          />
+        </section>
+        <p className="muted">
+          Keeping this test’s replaces the game’s glossary. Keeping the game’s
+          saves the model and instruction without this test’s glossary.
+        </p>
+      </DialogBody>
+      <ActionBar feedback={null}>
+        <Button data-autofocus onClick={cancel}>
+          Cancel
+        </Button>
+        <Button onClick={() => choose("game")}>Keep the game’s</Button>
+        <Button variant="primary" onClick={() => choose("test")}>
+          Keep this test’s
+        </Button>
+      </ActionBar>
+    </Modal>
+  );
+}
+
+/**
  * Tune settings: one model's translation of the lines with its thinking
  * effort, glossary or an instruction changed for the test, marking what
  * the words that changed between two runs of the same lines it shows side
@@ -191,7 +240,6 @@ export function Tune({ context }: { context: CompareContext }) {
     glossary: glossary !== gameGlossary,
     instruction: !!instruction,
   };
-  const outdated = !!settings && glossaryOutdated(settings, context.state);
   const candidate: CompareChoice | null = settings && {
     connection_id: settings.model.connection_id,
     model: settings.model.model,
@@ -216,9 +264,7 @@ export function Tune({ context }: { context: CompareContext }) {
         ? "This game has no lines to compare yet."
         : !candidate
           ? "Choose a model first."
-          : outdated
-            ? "Choose which glossary this test sends first."
-            : "",
+          : "",
     },
   );
   const runs = tuneRuns(context.comparisons, scene.file, scene.lines);
@@ -314,12 +360,24 @@ export function Tune({ context }: { context: CompareContext }) {
   const translated = !!result?.finished;
   const current = translated && shown === run.shown;
   const [editing, setEditing] = useState(false);
+  const [choosing, setChoosing] = useState(false);
   const adopt = useAction({ observer: application });
-  // A refusal named the settings the test had then.
-  const edit = (change: Partial<Settings>) => {
-    run.action.clear();
+  const edit = (change: Partial<Settings>) =>
     setSettings((value) => value && { ...value, ...change });
-  };
+  const use = (id: string, glossary?: "game" | "test") =>
+    void adopt.run(async () => {
+      try {
+        await api.compare.use(context.projectId, id, 0, glossary);
+      } catch (error) {
+        // A glossary saved in Context since the last read asks next time.
+        await context.reload();
+        throw error;
+      }
+      settingsSaved();
+      await context.reload();
+      // They are the game's settings now, which the next test starts from.
+      edit({ glossary: null, glossaryRevision: null, instruction: "" });
+    }, `Settings now translates with ${result?.model}.`);
   const count = glossaryEntries(glossary).length;
   const edits = changed.glossary ? glossaryChanges(gameGlossary, glossary) : 0;
   const disabled = run.action.busy;
@@ -329,6 +387,7 @@ export function Tune({ context }: { context: CompareContext }) {
       .join(" · ");
   return (
     <>
+      <PageMessages>{run.notice}</PageMessages>
       <PageBody className="compare-body">
         <div className="compare-setup">
           <div className="compare-setup-row">
@@ -428,37 +487,6 @@ export function Tune({ context }: { context: CompareContext }) {
                 {count.toLocaleString()} {count === 1 ? "entry" : "entries"}
                 {edits > 0 && ` · ${edits} changed for this test`}
               </Button>
-              {outdated && (
-                <Notice tone="warning">
-                  <span>
-                    The game’s glossary changed in Context since this test’s
-                    edit.
-                  </span>
-                  <span>
-                    <Button
-                      variant="link"
-                      disabled={disabled}
-                      onClick={() =>
-                        edit({ glossary: null, glossaryRevision: null })
-                      }
-                    >
-                      Use the game’s
-                    </Button>
-                    {" · "}
-                    <Button
-                      variant="link"
-                      disabled={disabled}
-                      onClick={() =>
-                        edit({
-                          glossaryRevision: context.state.glossaryRevision,
-                        })
-                      }
-                    >
-                      Keep this test’s
-                    </Button>
-                  </span>
-                </Notice>
-              )}
             </Setting>
             <Setting
               id="tune-instruction"
@@ -518,30 +546,32 @@ export function Tune({ context }: { context: CompareContext }) {
           <ActionControl
             label="Use these settings"
             title="Make this model and its thinking effort what Settings translates with, for every game, and save the glossary and instruction as this game's."
-            disabled={!current}
-            disabledReason="Translate with these settings first."
+            disabled={!current || !!run.waiting}
+            disabledReason={
+              run.waiting || "Translate with these settings first."
+            }
             pending={adopt.busy}
             pendingText="Saving the settings…"
             error={adopt.error}
             notice={adopt.notice}
             onClick={() =>
-              void adopt.run(async () => {
-                await api.compare.use(context.projectId, shown.id, 0);
-                settingsSaved();
-                await context.reload();
-                // They are the game's settings now, which the next test
-                // starts from.
-                edit({
-                  glossary: null,
-                  glossaryRevision: null,
-                  instruction: "",
-                });
-              }, `Settings now translates with ${result?.model}.`)
+              result?.glossaryChanged ? setChoosing(true) : use(shown.id)
             }
           />
         )}
         {run.control()}
       </ActionBar>
+      {choosing && shown && result?.choice.glossary !== undefined && (
+        <GlossaryChoiceDialog
+          game={gameGlossary}
+          test={result.choice.glossary}
+          choose={(glossary) => {
+            setChoosing(false);
+            use(shown.id, glossary);
+          }}
+          cancel={() => setChoosing(false)}
+        />
+      )}
       {editing && (
         <GlossaryDialog
           text={glossary}

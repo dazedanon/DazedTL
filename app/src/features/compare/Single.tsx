@@ -5,7 +5,7 @@ import { useAction } from "../../state/useAction";
 import { ActionBar } from "../../ui/ActionBar";
 import { ActionControl } from "../../ui/ActionControl";
 import { Button } from "../../ui/Button";
-import { PageBody } from "../../ui/PageLayout";
+import { PageBody, PageMessages } from "../../ui/PageLayout";
 import { settingsSaved } from "../settings/settingsChanges";
 import type { CompareContext } from "./Compare";
 import { CompareGrid } from "./CompareGrid";
@@ -46,6 +46,7 @@ export function Single({ context }: { context: CompareContext }) {
   const [inspecting, setInspecting] = useState(false);
   return (
     <>
+      <PageMessages>{run.notice}</PageMessages>
       <PageBody className="compare-body">
         <div className="compare-setup">
           <div className="compare-setup-row">
@@ -91,6 +92,8 @@ export function Single({ context }: { context: CompareContext }) {
           <ActionControl
             label="Use this model"
             title="Make it the connection and model Settings translates with, for every game."
+            disabled={!!run.waiting}
+            disabledReason={run.waiting}
             pending={adopt.busy}
             pendingText="Switching model…"
             error={adopt.error}

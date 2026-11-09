@@ -51,6 +51,10 @@ UNORGANIZED = (
     "they are organized into requests."
 )
 UNLOADED = "Load your text file on Text first; Compare uses its lines."
+GLOSSARY_CHANGED = (
+    "The game's glossary changed in Context after this test's edit. "
+    "Choose which to keep."
+)
 
 
 class Game(NamedTuple):
@@ -293,18 +297,11 @@ class Compare:
             ],
         }
         if kind == "tune":
-            # What Use these settings may save over, as the test read it.
-            documents = _guidance(game.root)
-            edited = candidates[0].get("glossary_revision")
-            if edited is not None and edited != documents[GLOSSARY.key]["revision"]:
-                raise ValueError(
-                    "The game's glossary changed in Context since you edited "
-                    "this test's glossary. Choose the game's or this test's "
-                    "beside Glossary."
-                )
+            # The game context Use these settings adds the instruction to, as
+            # the test read it; a test glossary keeps the revision it was
+            # edited from (_replaces).
             options["revisions"] = {
-                name: documents[name]["revision"]
-                for name in (GLOSSARY.key, GAME_CONTEXT.key)
+                GAME_CONTEXT.key: _guidance(game.root)[GAME_CONTEXT.key]["revision"]
             }
         if game.native is None:
             root = Path(game.root)
@@ -419,14 +416,7 @@ class Compare:
         if estimate_id in record["used"]:
             raise ValueError("These lines were already translated. Estimate again.")
         self._prepare(game)
-        candidates = [
-            {
-                "connection_id": row["connection_id"],
-                "model": row["model"],
-                **{key: row[key] for key in TUNED if key in row},
-            }
-            for row in options["candidates"]
-        ]
+        candidates = [_choice(row) for row in options["candidates"]]
         plan = self._plan(
             game, options["kind"], options["file"], options["lines"], candidates
         )
@@ -542,6 +532,7 @@ class Compare:
             }
         record = self._read(project_id)
         jobs = self.guided.backend.operations.jobs
+        documents = _guidance(game.root)
         rows = []
         for job in self.operations(project_id, (ESTIMATE,)):
             options = self._frozen(game, job, ESTIMATE)
@@ -554,11 +545,12 @@ class Compare:
                     options,
                     translated,
                     record["marks"].get(translated["id"] if translated else "", {}),
+                    documents,
                 )
             )
             if len(rows) == HISTORY:
                 break
-        glossary = _guidance(game.root)[GLOSSARY.key]
+        glossary = documents[GLOSSARY.key]
         return {
             "available": True,
             "reason": "",
@@ -589,12 +581,16 @@ class Compare:
             "priced": all(rate not in (None, "") for rate in rates),
         }
 
-    def use(self, project_id, comparison_id, model):
+    def use(self, project_id, comparison_id, model, glossary=None):
         """Makes a compared model the one the game translates with: Settings'
         connection and model, and, from Tune settings, the effort it was sent
         with, its glossary and its instruction, saved as the game's guidance.
+        A test glossary that would replace a Context save made after its edit
+        is saved only once *glossary* chooses "test"; "game" keeps the game's.
         Everything is checked before anything is written, so only a failing
         disk can save the guidance without switching the model."""
+        if glossary not in {None, "game", "test"}:
+            raise ValueError("Choose the game's glossary or this test's.")
         guided = self.guided
         # As Settings' own saves, never under a running translation.
         guided.idle()
@@ -608,7 +604,7 @@ class Compare:
                 "Translate the lines again."
             )
         changes = self._guidance_changes(
-            game, row, self._options(game, comparison_id, ESTIMATE)
+            game, row, self._options(game, comparison_id, ESTIMATE), glossary
         )
         settings = guided.settings
         switch = (
@@ -626,45 +622,51 @@ class Compare:
         return {"saved": True}
 
     @staticmethod
-    def _guidance_changes(game, row, options):
+    def _guidance_changes(game, row, options, keep):
         """The guidance documents a Tune test's settings change, as
-        documents_save takes them, at the revisions its estimate froze; a
-        document edited since refuses, as the test didn't read it."""
+        documents_save takes them: its glossary, unless *keep* keeps the
+        game's, refusing one that would replace a Context save made after its
+        edit until *keep* chooses; and its instruction, added to the game
+        context at the revision its estimate read, as one edited since
+        wasn't what the test sent."""
         from desktop.backend.guidance import holds
 
-        wanted = {}
-        if row.get("glossary") is not None:
-            wanted[GLOSSARY.key] = lambda _text: row["glossary"]
+        glossary = row.get("glossary") is not None and keep != "game"
         instruction = (row.get("instruction") or "").strip()
-        if instruction:
-            # Added once: a game context already holding it stays as it is.
-            wanted[GAME_CONTEXT.key] = lambda text: (
-                text
-                if instruction in text
-                else (
-                    (text.rstrip() + "\n\n" if text.strip() else "")
-                    + instruction
-                    + "\n"
-                )
-            )
-        if not wanted:
+        if not glossary and not instruction:
             return {}
         current = _guidance(game.root)
-        frozen = options.get("revisions") or {}
         changes = {}
-        for name, change in wanted.items():
-            document = current[name]
+        if glossary:
+            document = current[GLOSSARY.key]
             if document["state"] == "unreadable":
                 raise ValueError(document["reason"])
-            text = change(document["text"])
-            if holds(name, document, text):
-                continue
-            if document["revision"] != frozen.get(name):
+            if keep is None and _replaces(row, current):
+                raise ValueError(GLOSSARY_CHANGED)
+            if not holds(GLOSSARY.key, document, row["glossary"]):
+                changes[GLOSSARY.key] = {
+                    "revision": document["revision"],
+                    "text": row["glossary"],
+                }
+        document = current[GAME_CONTEXT.key]
+        # Added once: a game context already holding it stays as it is.
+        if instruction and document["state"] == "unreadable":
+            raise ValueError(document["reason"])
+        if instruction and instruction not in document["text"]:
+            if document["revision"] != (options.get("revisions") or {}).get(
+                GAME_CONTEXT.key
+            ):
                 raise ValueError(
                     f"The {document['title']} changed since this test. "
                     "Run the test again."
                 )
-            changes[name] = {"revision": document["revision"], "text": text}
+            text = document["text"]
+            changes[GAME_CONTEXT.key] = {
+                "revision": document["revision"],
+                "text": (text.rstrip() + "\n\n" if text.strip() else "")
+                + instruction
+                + "\n",
+            }
         return changes
 
     def _frozen(self, game, job, action):
@@ -736,6 +738,30 @@ def _guidance(root):
     return read(root)
 
 
+def _choice(row):
+    """A model's choice as its estimate froze it: what the page compares
+    whole with its own, and what translating it plans again."""
+    return {
+        "connection_id": row["connection_id"],
+        "model": row["model"],
+        **{key: row[key] for key in TUNED if key in row},
+    }
+
+
+def _replaces(row, documents):
+    """Whether saving a Tune test's glossary would replace a save the
+    game's glossary had in Context after the test's edit, which Use these
+    settings then asks about."""
+    from desktop.backend.guidance import holds
+
+    document = documents[GLOSSARY.key]
+    return (
+        row.get("glossary") is not None
+        and document["revision"] != row.get("glossary_revision")
+        and not holds(GLOSSARY.key, document, row["glossary"])
+    )
+
+
 def _validate(value):
     if (
         not isinstance(value, dict)
@@ -754,8 +780,9 @@ def _options(root, identity):
         return None
 
 
-def view(estimate, options, translated, marks):
-    """How a comparison reads on the page."""
+def view(estimate, options, translated, marks, documents=None):
+    """How a comparison reads on the page, with the game's guidance
+    *documents* as they are now."""
     models = {
         row["index"]: row for row in (estimate.get("result") or {}).get("models", [])
     }
@@ -769,11 +796,13 @@ def view(estimate, options, translated, marks):
             {
                 "index": row["index"],
                 "connection": row["connection"],
-                "connectionId": row["connection_id"],
                 "model": row["model"],
-                **({"effort": row["effort"]} if "effort" in row else {}),
-                **({"glossary": row["glossary"]} if "glossary" in row else {}),
-                **({"instruction": row["instruction"]} if "instruction" in row else {}),
+                "choice": _choice(row),
+                **(
+                    {"glossaryChanged": True}
+                    if documents is not None and _replaces(row, documents)
+                    else {}
+                ),
                 **(
                     {"estimate": _price(priced["estimate"])}
                     if isinstance(priced.get("estimate"), dict)

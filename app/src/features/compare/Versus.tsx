@@ -8,7 +8,7 @@ import { ActionControl } from "../../ui/ActionControl";
 import { Button } from "../../ui/Button";
 import { Feedback } from "../../ui/Feedback";
 import { CheckField } from "../../ui/FieldRow";
-import { PageBody } from "../../ui/PageLayout";
+import { PageBody, PageMessages } from "../../ui/PageLayout";
 import { settingsSaved } from "../settings/settingsChanges";
 import type { CompareContext } from "./Compare";
 import { CompareGrid, type CompareColumn } from "./CompareGrid";
@@ -152,6 +152,7 @@ export function Versus({ context }: { context: CompareContext }) {
       : `Click the best translation of each line · ${score.picked} of ${score.total} picked`;
   return (
     <>
+      <PageMessages>{run.notice}</PageMessages>
       <PageBody className="compare-body">
         <div className="compare-setup">
           <div className="compare-setup-row">
@@ -226,8 +227,11 @@ export function Versus({ context }: { context: CompareContext }) {
             variant={run.yields && winner.finished ? "primary" : undefined}
             label={`Use ${winner.model}`}
             title="Make it the connection and model Settings translates with, for every game."
-            disabled={!winner.finished}
-            disabledReason="It didn’t translate every line, so translate them again to use it."
+            disabled={!winner.finished || !!run.waiting}
+            disabledReason={
+              run.waiting ||
+              "It didn’t translate every line, so translate them again to use it."
+            }
             pending={adopt.busy}
             pendingText="Switching model…"
             error={adopt.error}

@@ -1,4 +1,4 @@
-import { useLayoutEffect, useState } from "react";
+import { useState } from "react";
 import { api } from "../../api/client";
 import type { Comparison, Job } from "../../api/contracts";
 import { useAction } from "../../state/useAction";
@@ -6,11 +6,13 @@ import { useOnChange } from "../../state/useOnChange";
 import { ActionControl } from "../../ui/ActionControl";
 import type { CompareContext } from "./Compare";
 import { Button } from "../../ui/Button";
-import { StopComparison } from "./StopComparison";
+import { RunningNotice, StopComparison } from "./StopComparison";
 import {
+  actionFeedback,
+  actionKey,
   current,
-  footerRuns,
   formatCost,
+  runPlace,
   runStatus,
   runStep,
   working,
@@ -44,23 +46,28 @@ export function useCompareRun(
   const action = useAction({ observer: context.observer });
   const { latest, shown } = current(context.comparisons, choices);
   const step = runStep(latest, shown);
-  // The footer says how the latest comparison's run goes, with its Stop, so
-  // the page's notice leaves it out on this tab, told before the screen
-  // paints, so the two never show at once.
+  // The run this tab just started, which its latest comparison names only
+  // once the page has read the comparisons again; other choices, or the
+  // started one read as the latest, leave it.
   const [begun, setBegun] = useState<string | null>(null);
-  // Other choices, or the started one read as the latest, leave it.
   useOnChange(latest?.id, () => setBegun(null));
-  const ids = footerRuns(latest, begun);
-  const { footer, running } = context;
-  const footerKey = ids.join(",");
-  useLayoutEffect(
-    () => footer(choices.kind, footerKey ? footerKey.split(",") : []),
-    [footer, choices.kind, footerKey],
-  );
+  const { running } = context;
+  // The tab alone says where the game's running comparison shows.
+  const place = runPlace(running?.operation, latest, begun);
   const stop =
-    running && ids.includes(running.id) ? (
-      <StopComparison projectId={context.projectId} operation={running} />
+    running && place === "footer" ? (
+      <StopComparison
+        projectId={context.projectId}
+        operation={running.operation}
+      />
     ) : null;
+  const notice =
+    running && place === "notice" ? (
+      <RunningNotice projectId={context.projectId} running={running} />
+    ) : null;
+  /** Why the page's own actions wait: a comparison runs. */
+  const waiting = running?.blocked ?? "";
+  const reason = blocked || waiting;
   const estimate = () =>
     action.run(
       async () => {
@@ -82,7 +89,7 @@ export function useCompareRun(
         }
       },
       "",
-      "estimate",
+      actionKey("estimate", choices),
     );
   const translate = (id: string) =>
     action.run(
@@ -100,10 +107,10 @@ export function useCompareRun(
         await started?.(job);
       },
       "",
-      "translate",
+      actionKey("translate", choices),
     );
-  const pending = (key: string) => action.busy && action.key === key;
-  const failure = (key: string) => (action.key === key ? action.error : "");
+  const estimating = actionFeedback(action, "estimate", choices);
+  const translating = actionFeedback(action, "translate", choices);
   const operation = (label: string) =>
     latest && runStatus(latest, label, namesHidden(latest));
   /** Whether the control gives way to a primary of the tab's own, which
@@ -118,25 +125,29 @@ export function useCompareRun(
       return (
         <>
           {stop}
-          {failure("translate") && (
+          {translating.error && (
             // A refusal may need a new estimate, such as after the game
             // changed; the reason beside Translate says which.
-            <Button disabled={action.busy} onClick={() => void estimate()}>
+            <Button
+              disabled={action.busy || !!reason}
+              title={reason || undefined}
+              onClick={() => void estimate()}
+            >
               Estimate again
             </Button>
           )}
           <ActionControl
             variant="primary"
             label={`Translate · about ${formatCost(step.cost)}`}
-            pending={pending("translate") || pending("estimate")}
+            pending={translating.pending || estimating.pending}
             pendingText={
-              pending("estimate")
+              estimating.pending
                 ? "Starting the estimate…"
                 : "Starting the translation…"
             }
-            error={failure("translate") || failure("estimate")}
-            disabled={!!blocked}
-            disabledReason={blocked}
+            error={translating.error || estimating.error}
+            disabled={!!reason}
+            disabledReason={reason}
             note={
               step.left.length
                 ? `Leaves out ${step.left.join(" and ")}, which couldn’t be estimated.`
@@ -164,11 +175,11 @@ export function useCompareRun(
         <ActionControl
           variant={secondary && yields ? undefined : "primary"}
           label={step.again ? "Estimate again" : "Estimate cost"}
-          pending={pending("estimate")}
+          pending={estimating.pending}
           pendingText="Starting the estimate…"
-          error={failure("estimate")}
-          disabled={!!blocked}
-          disabledReason={blocked}
+          error={estimating.error}
+          disabled={!!reason}
+          disabledReason={reason}
           note={
             step.reason ||
             (step.again ? "" : "Estimating is free and sends nothing.")
@@ -191,5 +202,5 @@ export function useCompareRun(
     latest && working(latest.status)
       ? "These lines show here once they are read."
       : idle;
-  return { latest, shown, control, yields, action, empty };
+  return { latest, shown, control, yields, action, empty, notice, waiting };
 }

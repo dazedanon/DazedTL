@@ -1,8 +1,7 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "../../api/client";
 import { messageOf } from "../../api/errors";
 import type {
-  CompareOperation,
   CompareState,
   Comparison,
   EffortLevel,
@@ -15,7 +14,6 @@ import { useRead } from "../../state/useRead";
 import { unavailableReason } from "../../ui/displayText";
 import { Message } from "../../ui/Feedback";
 import { Notice } from "../../ui/Notice";
-import { StatusIcon } from "../../ui/StatusIcon";
 import {
   PageBody,
   PageHeader,
@@ -25,12 +23,13 @@ import {
 import { StackedTabPanels, Tabs } from "../../ui/Tabs";
 import { onSettingsSaved } from "../settings/settingsChanges";
 import { configured } from "./AddModels";
-import { StopComparison } from "./StopComparison";
+import { RunningNotice } from "./StopComparison";
 import {
   compareInputs,
   Rereads,
   runningComparison,
   shownKey,
+  type RunningComparison,
 } from "./compareView";
 import type { ChosenModel } from "./ModelChoice";
 import { Single } from "./Single";
@@ -56,11 +55,9 @@ export type CompareContext = {
   base: ChosenModel | null;
   /** The thinking effort Settings sends that model. */
   baseEffort: EffortLevel | null;
-  /** The comparison operation running for the game, from any tab. */
-  running: CompareOperation | null;
-  /** Says which operations the tab's footer shows, whose run the page then
-   * leaves to it. */
-  footer: (kind: CompareTab, operations: readonly string[]) => void;
+  /** The comparison running for the game, from any tab, which each tab
+   * shows in its footer or as a notice (runPlace). */
+  running: RunningComparison | null;
   /** Reads the comparisons again, once shown, ending once they are read. */
   reload: () => Promise<void>;
   /** For an action that changes the comparisons: it finishes once the page
@@ -74,30 +71,6 @@ function useShownKey(shown: boolean, key: string) {
   const next = shownKey(shown, key, last);
   if (next !== last) setLast(next);
   return next;
-}
-
-/**
- * The comparison running for this game, with its Stop, on a tab whose
- * footer doesn't show it, since the game's other work waits for it.
- */
-function RunningComparison({
-  projectId,
-  running,
-}: {
-  projectId: string;
-  running: NonNullable<ReturnType<typeof runningComparison>>;
-}) {
-  return (
-    <Notice>
-      <span className="compare-running">
-        <StatusIcon status="active" size={14} />
-        <span>
-          {running.text}. {running.waits}
-        </span>
-      </span>
-      <StopComparison projectId={projectId} operation={running.operation} />
-    </Notice>
-  );
 }
 
 /**
@@ -183,14 +156,6 @@ export default function Compare({
     return job ? { ...item, status: job.status, message: job.message } : item;
   });
   const running = runningComparison(operations);
-  // The operations each tab's footer shows, which say their run themselves.
-  const [footers, setFooters] = useState<Record<string, string>>({});
-  const footer = useCallback((kind: CompareTab, ids: readonly string[]) => {
-    const key = ids.join(",");
-    setFooters((value) =>
-      value[kind] === key ? value : { ...value, [kind]: key },
-    );
-  }, []);
   const context: CompareContext | null = state
     ? {
         projectId: project.id,
@@ -198,8 +163,7 @@ export default function Compare({
         comparisons,
         base,
         baseEffort,
-        running: running?.operation ?? null,
-        footer,
+        running,
         reload,
         observer: { mark: () => 0, settle: reload },
       }
@@ -237,12 +201,10 @@ export default function Compare({
           </div>
           <PageMessages>
             {error && !state && <Notice tone="warning">{error}</Notice>}
-            {running &&
-              !(footers[tab] ?? "")
-                .split(",")
-                .includes(running.operation.id) && (
-                <RunningComparison projectId={project.id} running={running} />
-              )}
+            {/* Each tab shows it once it has read the lines. */}
+            {running && !context && (
+              <RunningNotice projectId={project.id} running={running} />
+            )}
           </PageMessages>
           {!context ? (
             <PageBody>

@@ -134,6 +134,7 @@ class Application:
             detect=self.translation.engine.detect,
             has_work=self.has_work,
             busy=lambda: self.backend.running() or self.translation.jobs.running(),
+            waits=lambda: compare_running(self.backend.operations, self.projects),
             relocate=self.relocate,
         )
         self.languages = ProjectLanguages(

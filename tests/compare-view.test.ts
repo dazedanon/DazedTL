@@ -6,20 +6,21 @@ import type {
   WorkspaceSnapshot,
 } from "../app/src/api/contracts.ts";
 import {
+  actionFeedback,
+  actionKey,
   blindOrder,
   columnError,
   compareInputs,
   current,
   estimateTotal,
-  footerRuns,
   glossaryChanges,
-  glossaryOutdated,
   keptRequests,
   modelDetail,
   namesHidden,
   picks,
   recordedMarks,
   runName,
+  runPlace,
   Rereads,
   runningComparison,
   runStatus,
@@ -31,8 +32,8 @@ const model = (index: number, extra: Partial<CompareModel> = {}) =>
   ({
     index,
     connection: "Stand-in",
-    connectionId: "local",
     model: `model-${index}`,
+    choice: { connection_id: "local", model: `model-${index}` },
     ...extra,
   }) satisfies CompareModel;
 
@@ -76,17 +77,73 @@ test("a new estimate of the same choices acts next while the last translation st
   assert.equal(latest?.id, "new");
   assert.equal(shown?.id, "old");
   // A Tune test with a changed effort is not the run without one.
+  const sent = { connection_id: "local", model: "model-0", effort: null };
   const tune = comparison({
     kind: "tune",
-    candidates: [model(0, { effort: "low" })],
+    candidates: [model(0, { choice: { ...sent, effort: "low" } })],
+  });
+  const tuned = { ...choices, kind: "tune" as const, candidates: [sent] };
+  assert.equal(current([tune], tuned).latest, undefined);
+  // The default effort reads as the backend keeps it, left out.
+  assert.equal(
+    current([comparison({ kind: "tune", candidates: [model(0)] })], tuned)
+      .latest?.kind,
+    "tune",
+  );
+  // After Keep this test's, an estimate of the glossary as edited from the
+  // revision before a Context save offered Translate, which was refused.
+  const edited = { ...sent, glossary: "勇者 (Hero)", glossary_revision: "r1" };
+  const before = comparison({
+    kind: "tune",
+    candidates: [model(0, { choice: edited })],
   });
   assert.equal(
-    current([tune], {
-      ...choices,
-      kind: "tune",
-      candidates: [{ connection_id: "local", model: "model-0", effort: null }],
+    current([before], {
+      ...tuned,
+      candidates: [{ ...edited, glossary_revision: "r2" }],
     }).latest,
     undefined,
+  );
+  assert.equal(
+    current([before], { ...tuned, candidates: [edited] }).latest,
+    before,
+  );
+});
+
+test("a footer's refusal shows only for the choices it ran with, and a start stays busy through any edit", () => {
+  // Reset and other lines left a refusal under an enabled Estimate cost.
+  const refused = {
+    busy: false,
+    key: actionKey("estimate", choices),
+    error: "Refused.",
+  };
+  assert.deepEqual(actionFeedback(refused, "estimate", choices), {
+    pending: false,
+    error: "Refused.",
+  });
+  assert.equal(
+    actionFeedback(refused, "estimate", { ...choices, lines: 25 }).error,
+    "",
+  );
+  assert.equal(
+    actionFeedback(refused, "estimate", {
+      ...choices,
+      candidates: choices.candidates.slice(0, 1),
+    }).error,
+    "",
+  );
+  assert.equal(actionFeedback(refused, "translate", choices).error, "");
+  // Use these settings while an estimate started cleared it, so Estimate
+  // again looked ready while a click did nothing.
+  const starting = { ...refused, busy: true, error: "" };
+  assert.equal(
+    actionFeedback(starting, "estimate", { ...choices, lines: 25 }).pending,
+    true,
+  );
+  assert.equal(actionFeedback(starting, "translate", choices).pending, false);
+  assert.deepEqual(
+    actionFeedback({ busy: false, key: "", error: "" }, "estimate", choices),
+    { pending: false, error: "" },
   );
 });
 
@@ -155,7 +212,7 @@ test("an edited glossary entry counts once, not as a removal and an addition", (
   assert.equal(glossaryChanges(game, game + "祠 (Shrine)\n剣 (Sword)\n"), 2);
 });
 
-test("a method change, a loaded Manual file, a new Assistant-led run and Start over read the comparisons again", () => {
+test("a method change, a loaded Manual file, a new Assistant-led run, Start over and a Context save read the comparisons again", () => {
   const job = (id: string, created: string, kind = "translation") => ({
     id,
     kind,
@@ -167,6 +224,7 @@ test("a method change, a loaded Manual file, a new Assistant-led run and Start o
     jobs = [job("run-1", "2026-11-04T10:00:00Z")],
     startedOver = "",
     progress = 0,
+    glossary = "g1",
   } = {}) =>
     ({
       application: {
@@ -182,6 +240,10 @@ test("a method change, a loaded Manual file, a new Assistant-led run and Start o
           ...(startedOver && { started_over: { at: startedOver } }),
         },
         progress: { done: progress },
+        documents: {
+          glossary: { revision: glossary },
+          game: { revision: "c1" },
+        },
       },
     }) as unknown as WorkspaceSnapshot;
   const before = compareInputs(observed(), "p");
@@ -195,6 +257,8 @@ test("a method change, a loaded Manual file, a new Assistant-led run and Start o
       ],
     }),
     observed({ startedOver: "2026-11-05T10:00:00Z" }),
+    // Tune notices a glossary saved in Context, which Use then asks about.
+    observed({ glossary: "g2" }),
   ])
     assert.notEqual(compareInputs(changed, "p"), before);
   // Progress and operations alone leave the lines as they were.
@@ -321,7 +385,9 @@ test("the comparison running for the game shows whatever the tab, until it ends"
   assert.equal(running?.operation.status, "running");
   // Its message names the model it is at, which a blind comparison hides.
   assert.equal(running!.text, "Translating a comparison");
-  assert.match(running!.waits, /waits/);
+  // The app runs one at a time, so every game's work waits, not this one's.
+  assert.doesNotMatch(running!.waits, /this game/);
+  assert.match(running!.blocked, /stop it/);
   assert.equal(runningComparison([operation("stopped")]), null);
 });
 
@@ -415,37 +481,19 @@ test("a Tune test estimated but not translated yet is no numbered run", () => {
   assert.equal(runName([run], estimated), "This test");
 });
 
-test("a test glossary edited before a Context save asks which to send, until chosen", () => {
-  // After a save in Context every estimate was refused, and only Reset,
-  // which dropped the whole test, got out.
-  const game = { glossary: "村長 (Mayor)", glossaryRevision: "r2" };
-  const edit = { glossary: "村長 (Chief)", glossaryRevision: "r1" };
-  assert.equal(glossaryOutdated(edit, game), true);
-  // Keep this test's takes the game's revision; Use the game's drops it.
-  assert.equal(
-    glossaryOutdated({ ...edit, glossaryRevision: "r2" }, game),
-    false,
-  );
-  assert.equal(
-    glossaryOutdated({ glossary: null, glossaryRevision: null }, game),
-    false,
-  );
-  // A save that made the game's glossary the test's leaves nothing to choose.
-  assert.equal(
-    glossaryOutdated(edit, { ...game, glossary: "村長 (Chief)" }),
-    false,
-  );
-});
-
-test("a tab's footer shows the run it just started before the page reads it", () => {
+test("a running comparison shows once: in the footer of the tab that started it, from the start, else as a notice", () => {
   // Right after Translate the page showed its notice with Stop beside the
   // footer's own, as the tab's latest comparison named no translation yet.
-  const estimate = { id: "e1", translationId: null } as unknown as Comparison;
-  assert.deepEqual(footerRuns(estimate, "t1"), ["e1", "t1"]);
-  assert.deepEqual(footerRuns({ ...estimate, translationId: "t1" }, "t1"), [
-    "e1",
-    "t1",
-    "t1",
-  ]);
-  assert.deepEqual(footerRuns(undefined, null), []);
+  const running = { id: "t1" };
+  const estimate = comparison({ id: "e1" });
+  assert.equal(runPlace(running, estimate, "t1"), "footer");
+  assert.equal(runPlace(running, estimate, null), "notice");
+  assert.equal(
+    runPlace(running, { ...estimate, translationId: "t1" }, null),
+    "footer",
+  );
+  // A running estimate is its own comparison.
+  assert.equal(runPlace({ id: "e1" }, estimate, null), "footer");
+  assert.equal(runPlace(running, undefined, null), "notice");
+  assert.equal(runPlace(null, estimate, "t1"), null);
 });

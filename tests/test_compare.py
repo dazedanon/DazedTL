@@ -902,40 +902,52 @@ class ApprovalTests(unittest.TestCase):
                     [{"check": True}, {}],
                 )
 
-    def test_use_these_settings_refuses_guidance_edited_since_the_test(self):
-        # It saved the glossary the test froze over an edit made in Context
-        # after the test ran.
+    def test_use_these_settings_refuses_a_game_context_edited_since_the_test(self):
+        # Its instruction joins the game context the test sent, never one
+        # Context changed after it ran.
+        estimate = self.tuned(instruction="Be terse.")
+        game = read(self.game)["game"]
+        documents_save(
+            self.game, {"game": {"revision": game["revision"], "text": "Edited."}}
+        )
+        edited = read(self.game)["game"]["text"]
+        with self.assertRaisesRegex(ValueError, "changed since this test"):
+            self.compare.use("p1", estimate, 0)
+        self.assertEqual(read(self.game)["game"]["text"], edited)
+        self.compare.guided.settings.use_model.assert_not_called()
+
+    def test_use_these_settings_asks_which_glossary_after_a_context_save(self):
+        # A test glossary edited before a Context save was refused at every
+        # estimate, and "Keep this test's" then offered Translate for an
+        # estimate that was refused again; now the test runs, and only Use,
+        # which would replace that save, asks which glossary to keep.
         for guided in (False, True):
             with self.subTest(guided=guided):
-                estimate = self.tuned(glossary="ミカ (Mika)")
-                if guided:
-                    estimate = self.as_guided(estimate)
-                glossary = read(self.game)["glossary"]
+                base = read(self.game)["glossary"]["revision"]
                 edited = f"村長 (Elder {guided})"
                 documents_save(
-                    self.game,
-                    {"glossary": {"revision": glossary["revision"], "text": edited}},
+                    self.game, {"glossary": {"revision": base, "text": edited}}
                 )
-                self.compare.guided.settings.use_model.reset_mock()
-                with self.assertRaisesRegex(ValueError, "changed since this test"):
+                estimate = self.tuned(glossary="ミカ (Mika)", glossary_revision=base)
+                if guided:
+                    estimate = self.as_guided(estimate)
+                else:
+                    shown = self.compare.state("p1")["comparisons"][0]
+                    self.assertTrue(shown["candidates"][0]["glossaryChanged"])
+                switch = self.compare.guided.settings.use_model
+                switch.reset_mock()
+                with self.assertRaisesRegex(ValueError, "Choose which to keep"):
                     self.compare.use("p1", estimate, 0)
+                switch.assert_not_called()
+                self.compare.use("p1", estimate, 0, "game")
                 self.assertEqual(read(self.game)["glossary"]["text"], edited)
-                self.compare.guided.settings.use_model.assert_not_called()
-
-    def test_a_test_glossary_edited_before_a_context_save_is_refused(self):
-        # Tune's glossary began from the text the page read; a save in
-        # Context before the estimate froze the new revision, so Use wrote
-        # the old text's edit over it.
-        base = read(self.game)["glossary"]["revision"]
-        documents_save(
-            self.game, {"glossary": {"revision": base, "text": "村長 (Elder)"}}
-        )
-        with self.assertRaisesRegex(ValueError, "changed in Context"):
-            self.tuned(glossary="ミカ (Mika)", glossary_revision=base)
-        self.assertEqual(
-            self.compare.state("p1")["glossaryRevision"],
-            read(self.game)["glossary"]["revision"],
-        )
+                self.assertEqual(switch.call_args.args[1:3], ("c1", "a"))
+                self.compare.use("p1", estimate, 0, "test")
+                self.assertEqual(read(self.game)["glossary"]["text"], "ミカ (Mika)")
+                if not guided:
+                    # Saved, it leaves nothing to choose.
+                    shown = self.compare.state("p1")["comparisons"][0]
+                    self.assertNotIn("glossaryChanged", shown["candidates"][0])
 
     def test_use_these_settings_saves_nothing_when_the_model_switch_is_refused(self):
         # It saved the glossary and instruction, then Settings refused the
@@ -1047,8 +1059,12 @@ class WaitTests(unittest.TestCase):
             lambda: Translation.idle(service, "b"),
             lambda: Guided.idle(guided),
         ):
+            # Its words fit any page, the running game's own included, where
+            # "Stop it on Compare models for that game" read wrong.
             with self.assertRaisesRegex(
-                ValueError, "comparison of Fuuma is running. Stop it on Compare"
+                ValueError,
+                "^A comparison of Fuuma is running. Stop it on Compare models "
+                "with Fuuma open, or wait for it to end.$",
             ):
                 wait()
         jobs["o"]["action"] = "tool_run"

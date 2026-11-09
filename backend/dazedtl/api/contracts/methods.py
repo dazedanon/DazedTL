@@ -736,6 +736,13 @@ class CompareUseRequest(TypedDict):
     project_id: str
     comparison_id: str
     model: Annotated[int, "The model's index in the comparison."]
+    glossary: NotRequired[
+        Annotated[
+            Literal["game", "test"],
+            "Which glossary to keep when a Tune test's would replace a Context "
+            "save made after its edit.",
+        ]
+    ]
 
 
 class CompareRequestRequest(TypedDict):

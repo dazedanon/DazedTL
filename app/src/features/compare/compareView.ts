@@ -24,15 +24,55 @@ export type CompareChoices = {
 const unfinished = ["ready", "running", "waiting"];
 export const working = (status: string) => unfinished.includes(status);
 
-/** Whether a compared model was sent as `choice`, settings and all. */
-export function sameChoice(model: CompareModel, choice: CompareChoice) {
-  return (
-    model.connectionId === choice.connection_id &&
-    model.model === choice.model &&
-    (model.effort ?? null) === (choice.effort ?? null) &&
-    (model.glossary ?? null) === (choice.glossary ?? null) &&
-    (model.instruction ?? null) === (choice.instruction ?? null)
+/**
+ * A choice's identity, as the backend keeps it: what it sets, in a fixed
+ * order, leaving out what it leaves to the game's settings.
+ */
+export function choiceKey(choice: CompareChoice) {
+  return JSON.stringify(
+    Object.entries(choice)
+      .filter(([, value]) => value !== undefined && value !== null)
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)),
   );
+}
+
+/** Whether a compared model was estimated from `choice`, settings and all. */
+export const sameChoice = (model: CompareModel, choice: CompareChoice) =>
+  choiceKey(model.choice) === choiceKey(choice);
+
+/** What a tab's choices now are, whole, as an action keeps them. */
+export const choicesKey = (choices: CompareChoices) =>
+  JSON.stringify([
+    choices.kind,
+    choices.file,
+    choices.lines,
+    choices.candidates.map(choiceKey),
+  ]);
+
+type RunAction = "estimate" | "translate";
+
+/** The key a footer's action runs under: what it does, for which choices. */
+export const actionKey = (action: RunAction, choices: CompareChoices) =>
+  JSON.stringify([action, choicesKey(choices)]);
+
+/**
+ * What a footer says of its last action for the choices now: whether
+ * `action` is starting, whatever the choices became meanwhile, and its
+ * error, which describes the choices it ran with, so any change to them,
+ * Reset or other lines included, leaves it behind.
+ */
+export function actionFeedback(
+  state: { busy: boolean; key: string; error: string },
+  action: RunAction,
+  choices: CompareChoices,
+) {
+  const [ran, ranWith] = state.key
+    ? (JSON.parse(state.key) as [string, string])
+    : ["", ""];
+  return {
+    pending: state.busy && ran === action,
+    error: ran === action && ranWith === choicesKey(choices) ? state.error : "",
+  };
 }
 
 /** The saved comparisons of exactly these choices, newest first. */
@@ -57,21 +97,6 @@ export function matching(
  * one whose lines show: the newest of them translated, so a new estimate
  * keeps the last results in view until it is translated too.
  */
-/**
- * The operations whose run a tab's footer shows, with its Stop, which the
- * page's notice then leaves out on that tab: its latest comparison's
- * estimate and translation, and the one it just started, which reads as its
- * latest only once the page has read it.
- */
-export function footerRuns(
-  latest: Comparison | undefined,
-  started: string | null,
-) {
-  return [latest?.id, latest?.translationId, started].filter(
-    (id): id is string => !!id,
-  );
-}
-
 export function current(
   comparisons: readonly Comparison[],
   choices: CompareChoices,
@@ -83,6 +108,23 @@ export function current(
       ? latest
       : found.find((item) => item.stage === "translation") || latest;
   return { latest, shown };
+}
+
+/**
+ * Where a tab shows the comparison running for the game, with its Stop: in
+ * its footer when it is the run of the tab's latest comparison, or the one
+ * the tab just started, which reads as its latest only once the page has
+ * read the comparisons again; otherwise as a notice above the tab.
+ */
+export function runPlace(
+  running: { id: string } | null | undefined,
+  latest: Comparison | undefined,
+  started: string | null,
+) {
+  if (!running) return null;
+  return [latest?.id, latest?.translationId, started].includes(running.id)
+    ? "footer"
+    : "notice";
 }
 
 /**
@@ -305,22 +347,6 @@ export function glossaryEntries(text: string) {
 }
 
 /**
- * Whether a Tune test's glossary was edited from a version of the game's
- * that Context has saved over since, so the test chooses which it sends
- * before it estimates: Use these settings would save over that save.
- */
-export function glossaryOutdated(
-  edit: { glossary: string | null; glossaryRevision: string | null },
-  game: { glossary: string; glossaryRevision: string },
-) {
-  return (
-    edit.glossary !== null &&
-    edit.glossary !== game.glossary &&
-    edit.glossaryRevision !== game.glossaryRevision
-  );
-}
-
-/**
  * How many entries a test glossary changes from the game's: each entry
  * edited, added or removed counts once.
  */
@@ -354,8 +380,9 @@ export function formatCost(value: number) {
 
 /**
  * The comparison running for the game, whichever tab or choices it was
- * started from, and what the page says of it: what it does, where it is,
- * and that the game's other work waits for it, as they share one queue.
+ * started from, and what the page says of it: what it does, that other work
+ * waits for it, as the app runs one at a time, and why the page's own
+ * actions wait.
  */
 export function runningComparison(operations: readonly CompareOperation[]) {
   const operation = operations.find((item) => working(item.status));
@@ -368,9 +395,15 @@ export function runningComparison(operations: readonly CompareOperation[]) {
       operation.action === "compare_translate"
         ? "Translating a comparison"
         : "Estimating a comparison",
-    waits: "Other work on this game waits until it ends.",
+    waits: "Other work waits until it ends.",
+    /** Why Estimate, Translate and Use wait on the page meanwhile. */
+    blocked: "Wait for the running comparison to end, or stop it.",
   };
 }
+
+export type RunningComparison = NonNullable<
+  ReturnType<typeof runningComparison>
+>;
 
 /**
  * A comparison's operation as its footer reports it: its state, with its
@@ -420,10 +453,11 @@ export function modelDetail(model: CompareModel, translated: boolean) {
 }
 
 /**
- * What a game's comparable lines come from, as the observed state shows it:
- * its method, its Guided preparation, the Manual file loaded, the newest
- * Assistant-led run, whose organize made the groups, and Start over. Each
- * change reads the comparisons again.
+ * What a game's comparable lines and Tune's guidance come from, as the
+ * observed state shows it: its method, its Guided preparation, the Manual
+ * file loaded, the newest Assistant-led run, whose organize made the groups,
+ * Start over, and the glossary and game context Context saves. Each change
+ * reads the comparisons again.
  */
 export function compareInputs(
   snapshot: WorkspaceSnapshot | null | undefined,
@@ -449,6 +483,10 @@ export function compareInputs(
     translation?.manual?.loaded?.loaded ?? null,
     translation?.lifecycle.started_over?.at ?? null,
     newest ?? null,
+    ...[guided?.documents, translation?.documents].flatMap((documents) => [
+      documents?.glossary?.revision ?? null,
+      documents?.game?.revision ?? null,
+    ]),
   ]);
 }
 

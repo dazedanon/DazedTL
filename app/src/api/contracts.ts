@@ -2959,11 +2959,11 @@ export type CompareModel = {
   index: number;
   /** The connection's name in Settings. */
   connection: string;
-  connectionId: string;
   model: string;
-  effort?: EffortLevel | null;
-  glossary?: string;
-  instruction?: string;
+  /** What its estimate was made from, settings and all, as a tab's choice. */
+  choice: CompareChoice;
+  /** Tune settings: the game's glossary changed in Context after this test's edit, so Use these settings asks which to keep. */
+  glossaryChanged?: boolean;
   estimate?: ComparePrice;
   /** Why the model has no estimate or lines. */
   error?: string;
@@ -3735,6 +3735,8 @@ export type CompareUseRequest = {
   comparison_id: string;
   /** The model's index in the comparison. */
   model: number;
+  /** Which glossary to keep when a Tune test's would replace a Context save made after its edit. */
+  glossary?: "game" | "test";
 };
 
 export type CompareRequestRequest = {

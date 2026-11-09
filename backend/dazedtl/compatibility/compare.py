@@ -50,9 +50,10 @@ END = {"code": 0, "indent": 0, "parameters": []}
 
 
 def running(operations, projects):
-    """Why other work waits, when it waits for a comparison. The app runs
-    one operation at a time, so it names the comparison's game, which may
-    not be the open one."""
+    """Why other work waits, when it waits for a comparison, in words that
+    fit any page: the app runs one operation at a time, so it names the
+    comparison's game, which may not be the open one. The running game's own
+    Compare page holds its actions back first (compareView)."""
     job = next(
         (
             job
@@ -76,8 +77,8 @@ def running(operations, projects):
             "A comparison is running. Stop it on Compare models, or wait for it to end."
         )
     return (
-        f"A comparison of {name} is running. Stop it on Compare models for "
-        "that game, or wait for it to end."
+        f"A comparison of {name} is running. Stop it on Compare models with "
+        f"{name} open, or wait for it to end."
     )
 
 

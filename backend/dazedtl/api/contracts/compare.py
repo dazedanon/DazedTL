@@ -38,11 +38,18 @@ class ComparePrice(TypedDict):
 class CompareModel(TypedDict):
     index: int
     connection: Annotated[str, "The connection's name in Settings."]
-    connectionId: str
     model: str
-    effort: NotRequired[EffortLevel | None]
-    glossary: NotRequired[str]
-    instruction: NotRequired[str]
+    choice: Annotated[
+        CompareChoice,
+        "What its estimate was made from, settings and all, as a tab's choice.",
+    ]
+    glossaryChanged: NotRequired[
+        Annotated[
+            bool,
+            "Tune settings: the game's glossary changed in Context after this "
+            "test's edit, so Use these settings asks which to keep.",
+        ]
+    ]
     estimate: NotRequired[ComparePrice]
     error: NotRequired[Annotated[str, "Why the model has no estimate or lines."]]
     cost: NotRequired[

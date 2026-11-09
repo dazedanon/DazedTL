@@ -316,8 +316,18 @@ export const api = {
       request("compare_request", { project_id, comparison_id, model, index }),
     model: (connection_id: string, model: string) =>
       request("compare_model", { connection_id, model }),
-    use: (project_id: string, comparison_id: string, model: number) =>
-      request("compare_use", { project_id, comparison_id, model }),
+    use: (
+      project_id: string,
+      comparison_id: string,
+      model: number,
+      glossary?: "game" | "test",
+    ) =>
+      request("compare_use", {
+        project_id,
+        comparison_id,
+        model,
+        ...(glossary && { glossary }),
+      }),
   },
   guided: {
     outputFolder: (project_id: string) =>
