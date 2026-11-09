@@ -21,6 +21,8 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+from util.guidance_documents import GAME_CONTEXT
+
 from dazedtl import system
 from dazedtl.actions import stopped_note
 from dazedtl.translation.files import digest
@@ -295,6 +297,16 @@ def stage(target, workspace, project_id, root, relative, name, phase, lines, mar
     return inventory, found
 
 
+def held(context, instruction):
+    """Whether the game context a column is sent with already holds its
+    instruction, as once Use saved it there, so it is sent once."""
+    try:
+        text = Path(context).read_bytes().decode("utf-8-sig", errors="replace")
+    except OSError:
+        return False
+    return instruction.strip() in text
+
+
 def guidance(candidate):
     """Writes a candidate's test-only glossary and instruction over the
     game's guidance a run froze, and binds them in its plan."""
@@ -305,6 +317,10 @@ def guidance(candidate):
             (INSTRUCTION, candidate.get("instruction")),
         ):
             if text is None or relative == INSTRUCTION and not text.strip():
+                continue
+            if relative == INSTRUCTION and held(
+                Path(directory) / "game" / GAME_CONTEXT.path, text
+            ):
                 continue
             path = Path(directory) / relative
             path.parent.mkdir(parents=True, exist_ok=True)

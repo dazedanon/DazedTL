@@ -129,6 +129,34 @@ class GlossaryTests(unittest.TestCase):
                 "村長 (Village Chief)\nミカ (Mika)",
             )
 
+    def test_an_instruction_the_game_context_holds_is_sent_once(self):
+        # Once Use saved a column's instruction into the game context, the
+        # same column sent it twice: in the context and as its own.
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            game = root / "game"
+            context = game / ".dazedtl/skills/game.md"
+            context.parent.mkdir(parents=True)
+            context.write_bytes(b"Mika is a mage.\n\nUse British spelling.\n")
+            held = stage(game, root / "held", {"instruction": "Use British spelling."})
+            self.assertFalse((held / compare_units.INSTRUCTION).exists())
+            other = stage(game, root / "other", {"instruction": "Be terse."})
+            self.assertEqual(
+                (other / compare_units.INSTRUCTION).read_text(encoding="utf-8"),
+                "Be terse.",
+            )
+            # A Guided run's snapshot keeps the game under game/.
+            snapshot = root / "snapshot"
+            (snapshot / "game/.dazedtl/skills").mkdir(parents=True)
+            (snapshot / "game/.dazedtl/skills/game.md").write_bytes(
+                context.read_bytes()
+            )
+            native = {"context_hashes": {}}
+            compare_run.guidance({"instruction": "Use British spelling."})(
+                snapshot, native
+            )
+            self.assertEqual(native["context_hashes"], {})
+
 
 class RunTests(unittest.TestCase):
     def test_a_guided_comparison_reads_the_original_from_the_games_records(self):

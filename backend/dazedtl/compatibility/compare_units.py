@@ -78,7 +78,12 @@ def stage(root, target, candidate):
         # As Context saves it: over a legacy glossary moved into .dazedtl,
         # with the shipped base after it.
         write_game_vocab(candidate["glossary"], game_root=target)
-    if (candidate.get("instruction") or "").strip():
+    from util.guidance_documents import GAME_CONTEXT
+
+    from .compare import held
+
+    instruction = candidate.get("instruction") or ""
+    if instruction.strip() and not held(target / GAME_CONTEXT.path, instruction):
         (target / INSTRUCTION).parent.mkdir(parents=True, exist_ok=True)
         system.write_text(target / INSTRUCTION, candidate["instruction"])
     return target
