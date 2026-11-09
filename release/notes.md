@@ -7,5 +7,5 @@
 ### Fixed
 
 - **Glossary:** a glossary saved with Windows line ends or as UTF-16 no longer shows the base glossary among your own entries or stops a run.
-- **Glossary:** one saved while that happened may hold a copy of the base glossary among your own entries, which you can delete.
+- **Glossary:** a glossary saved before this fix may list a copy of the base glossary among your own entries, which you can delete.
 - **Context:** game context, style and quirks and custom skills saved as UTF-16 no longer stop a run, Plugin files or Text QA reading them.
