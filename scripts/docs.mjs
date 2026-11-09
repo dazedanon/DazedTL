@@ -18,7 +18,7 @@ const limits = {
   "AGENTS.md": 1000,
   "README.md": 1200,
   "docs/architecture.md": 9950,
-  "docs/development.md": 3000,
+  "docs/development.md": 3050,
   "docs/text-qa-redesign.md": 4000,
   "docs/translation-contract.md": 3200,
   "docs/ui-design.md": 2400,

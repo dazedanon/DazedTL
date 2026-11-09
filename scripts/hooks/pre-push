@@ -1,0 +1,10 @@
+#!/bin/sh
+# Refuses pushing a branch DazedTL's mirrors are not for; scripts/branches.mjs
+# holds the rule. Passes when that script or Node is missing, such as in a
+# worktree from before it or where Node is not on PATH.
+script="$(dirname "$0")/../branches.mjs"
+if [ ! -f "$script" ] || ! command -v node >/dev/null 2>&1; then
+  cat >/dev/null
+  exit 0
+fi
+exec node "$script" pre-push "$@"
