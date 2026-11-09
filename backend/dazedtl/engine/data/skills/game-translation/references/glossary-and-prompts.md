@@ -53,6 +53,8 @@ When changing voice guidance for an existing translation, use the bounded scene 
 guidance edits, and revalidate affected cached outputs and review evidence under the current rules.
 
 Record distinctive laughs, interjections, verbal tics, and catchphrases alongside the other voice notes, with source anchors and the context where they apply.
+When the English could render a trait more than one way, such as an archaic or dialect pronoun like そなた, 余 or わし, a recurring sentence ending, or a verbal tic, fix one choice written as `source form → English`, with when it applies and a short delivery example, such as `そなた → thou, whenever the speaker addresses one person directly ("Thou art late.")`.
+Write that choice as a rule, never with "sometimes", "sparingly", "occasionally" or "may": separate requests cannot see each other's English, so a hedged trait comes out differently in each one.
 For example, an observed recurring `ふふ` can support "Keeps a soft Fufu laugh; preserve longer Fufufu only where the source extends it."
 That describes a speaker's delivery, not a global glossary replacement for every `ふ` sound or permission to add laughter.
 An intelligible signature sound is not an untranslated word; apply the shared system prompt's "Laughs and Character Sounds" guidance and preserve it during polish.

@@ -86,6 +86,8 @@ calls for a conservative note, not a manufactured voice. Preserve compatible cur
 Include distinctive laughs, interjections, verbal tics, and recurring catchphrases when observed.
 Record their source forms, chosen English wording or Latin-letter sound spelling, and the situations where they occur; retain a recognizable laugh such as `ふふ → Fufu` instead of normalizing it to "Hehe."
 Keep these choices specific to the speaker and source context, rather than turning one example into a rule for every character or line.
+When the English could render a trait more than one way, such as an archaic or dialect pronoun like そなた, 余 or わし, a recurring sentence ending, or a verbal tic, fix one choice written as `source form → English`, with when it applies and a short delivery example, such as `そなた → thou, whenever the speaker addresses one person directly ("Thou art late.")`.
+Write that choice as a rule, never with "sometimes", "sparingly", "occasionally" or "may": separate requests cannot see each other's English, so a hedged trait comes out differently in each one.
 
 ### Optional reference translations
 

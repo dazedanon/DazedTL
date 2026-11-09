@@ -63,7 +63,11 @@ try:
             speaker_scan_inputs,
         )
         from util.paths import PROMPT_PATH, runtime_data_file
-        from util.skills import load_project_setup, load_system_prompt
+        from util.skills import (
+            load_generic_project_setup,
+            load_project_setup,
+            load_system_prompt,
+        )
 
         # The app and its estimate workers start without the provider SDKs,
         # which took seconds of every worker's startup on Windows.
@@ -351,6 +355,14 @@ try:
         )
         assert "One-pass discovery" in standard and "Launch exactly" not in standard
         assert "Launch exactly three" in thorough and "One-pass" not in thorough
+        # Batch requests cannot see each other's English, so a voice note that
+        # said "thou, sparingly" left a character's speech archaic in half of them.
+        voice_rule = "cannot see each other's English, so a hedged trait"
+        len_reference = runtime_data_file(
+            PROMPT_PATH.parent / "game-translation/references/glossary-and-prompts.md"
+        ).read_text(encoding="utf-8")
+        for setup in (standard, load_generic_project_setup(game), len_reference):
+            assert voice_rule in setup, setup[:80]
         manual = app.backend.manual
         listing = manual.inspect(str(game), "RPG Maker MV/MZ")
         job = manual.start(
