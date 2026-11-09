@@ -13,7 +13,7 @@ node scripts/start.mjs
 
 - `setup.mjs` installs the pinned Python, the locked packages (with the format, lint and type-check tools) and Electron into `.runtime`, `.venv` and `app/node_modules`.
   On Windows it also installs portable Git; other systems need their own `git`.
-  It also installs the mirrors' [pre-push hook](#branches-and-releases).
+  It also points Git at the mirrors' [pre-push hook](#branches-and-releases) unless you use hooks of your own.
 - `start.mjs` keeps the app attached to the terminal, and `--offline` disables provider calls.
   Like the `START` launchers, it repeats a setup step only when its inputs change.
 - The pinned versions are in [python-version](../scripts/python-version), [node-version](../scripts/node-version) and [mingit-version](../scripts/mingit-version); after changing one, run `node scripts/runtimes.mjs`.

@@ -122,9 +122,10 @@ export function installHooks(folder) {
  * Deletes from the mirror `target` each run/ branch whose newest commit is
  * older than scratchAge, since a Windows run may use a younger one, and each
  * other branch but dev and main whose commits the dev of the checkout at
- * `main` already has, then logs any other branch it holds that dev lacks. Run right after pushing dev there. Git runs with `options`
- * before each command. Never throws: a mirror it cannot read or change is
- * logged and left.
+ * `main` already has, then logs any other branch it holds that dev lacks.
+ * Run right after pushing dev there. Git runs with `options` before each
+ * command. Never throws: a mirror it cannot read or change is logged and
+ * left.
  * @param {PruneDeps} deps
  * @param {string} main
  * @param {{ name: string, url: string }} target
