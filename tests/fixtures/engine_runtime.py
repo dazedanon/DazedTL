@@ -1560,6 +1560,77 @@ try:
             # With it on, a run sends none of them and leaves them as they are.
             configure_states({"engine": "MVMZ"}, temporary, newer)
             assert parse(laid)[:-1] == laid and calls == [], calls
+            # Its writer keeps one source over a name on a row of its own and
+            # its speech too. With First-line names on, a run read that whole
+            # source as the name's row: it sent the speech to the speaker step
+            # as a second name and its English as the text, and left its
+            # Japanese no row's source.
+            # Under left-rows v5 the name goes to the speaker step alone and
+            # the speech is sent with its own Japanese, as the export lists
+            # them; v4 runs keep their bodies, and with Skip already
+            # translated text on a run still sends none of them.
+            spoken = [
+                name(""),
+                command(401, ["Arlo"], _original="アルロ\n「柚月。", _rows=2),
+                command(401, ['"Yuzuki.']),
+            ]
+            (block,) = blocks.blocks(spoken)
+            listed = blocks.sent_texts(
+                spoken, block, blocks.Reading(first_line=True, skip_translated=False)
+            )
+            assert [(text.source, text.name) for text in listed] == [
+                ("アルロ", "アルロ"),
+                ("「柚月。", ""),
+            ], listed
+            with patch.object(parser, "FIRSTLINESPEAKERS", True):
+                for generation, body, asked, kept in (
+                    (
+                        {**letters, "leftRows": "event-left-rows-v4"},
+                        '"Yuzuki.',
+                        ["アルロ", "「柚月。"],
+                        [
+                            ("Arlo", spoken[1]["_original"], 1),
+                            ("Hello.", '"Yuzuki.', 1),
+                        ],
+                    ),
+                    (
+                        newer,
+                        '"柚月。',
+                        ["アルロ"],
+                        [("Arlo", "アルロ", 1), ("Hello.", "「柚月。", 1)],
+                    ),
+                ):
+                    configure_states({"engine": "MVMZ"}, temporary, generation)
+                    with patch.object(parser, "IGNORETLTEXT", False):
+                        result = parse(spoken)
+                    assert calls == [([f"[Hana]: {body}"], "")], calls
+                    assert names == asked * 2, names
+                    assert [
+                        (c["parameters"][0], c.get("_original"), c.get("_rows"))
+                        for c in result[1:-1]
+                    ] == kept, result
+                assert parse(spoken)[:-1] == spoken and calls == [], calls
+                # Nor do a source's lines name a speaker by the English of its
+                # next row, one of its own, such as a blank row and speech it
+                # was laid over: under left-rows v5 a short row before speech
+                # names one only from one row, as the export reads them.
+                blank = [
+                    name(""),
+                    command(401, [""], _original="\n「違う。」", _rows=2),
+                    command(401, ['"No."']),
+                ]
+                for generation, body, asked in (
+                    (
+                        {**letters, "leftRows": "event-left-rows-v4"},
+                        '[Hana]: "No."',
+                        ["「違う。」"] * 2,
+                    ),
+                    (newer, '\n"違う。"', []),
+                ):
+                    configure_states({"engine": "MVMZ"}, temporary, generation)
+                    with patch.object(parser, "IGNORETLTEXT", False):
+                        parse(blank)
+                    assert calls == [([body], "")] and names == asked, (calls, names)
             # A text that is a name window alone gets its name written in its
             # row, which records it too.
             result = parse([name(""), command(401, ["\\n<アリス>"])])

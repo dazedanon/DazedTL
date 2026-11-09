@@ -1129,23 +1129,30 @@ def keep_sources(
         record_rows(first, len(each.rows))
 
 
-def keep_opened_sources(commands: list, anchor: int, reading: Reading) -> None:
+def keep_sent_sources(
+    commands: list, anchor: int, reading: Reading, *, opened_only: bool = False
+) -> None:
     """Keep each text of the message's or scrolling text's translation
-    anchored at *anchor* its own Japanese (:func:`keep_sources`, read by
-    *reading*) where a row of it after the first opens a text of its own
-    (:func:`opens_text`), such as \\SE[1]: a writer laying one source over a
+    anchored at *anchor* its own Japanese, as :func:`sent_texts` reads them
+    by *reading* (:func:`keep_sources`): a writer laying one source over a
     message's rows one by one, as Assistant-led's does, keeps it over every
-    text there, and a run reading the text from the anchor, which ends before
-    such a row, would send that whole source for the rows before it and the
-    row's own text after."""
+    text there, such as a name on a row of its own and its speech, or a row
+    opening a text of its own with a code such as \\SE[1] (:func:`opens_text`).
+    A run reading the text from the anchor would read that whole source as
+    the anchor's row, a name's speech as a second name, and send the rows
+    after it apart, the speech's English as its text, or the whole source
+    for the rows before a code row and that row's own text after. With
+    *opened_only*, as runs frozen at event-left-rows-v4 do, only where a row
+    of it after the first opens a text of its own."""
     block = block_at(commands, anchor)
     part = block.part(anchor) if block is not None else None
     if (
         block is None
         or part is None
         or part.anchor != anchor
+        or len(part.rows) < 2
         or _translation(commands[anchor]) is None
-        or not any(opens_text(text(commands[at])) for at in part.rows[1:])
+        or (opened_only and not any(opens_text(text(commands[at])) for at in part.rows[1:]))
     ):
         return
     keep_sources(commands, block, reading, part)
