@@ -33,7 +33,7 @@ Behavior one module owns is described in its docstring and pinned by its tests; 
 The engine ships inside this package: the [runtime locator](../backend/dazedtl/compatibility/runtime.py) selects it whatever the working directory, with no external fallback.
 It was imported from `b91bede18fd2bbd5a9b99f1a866f061bc13865c1` with its [license](../backend/dazedtl/engine/LICENSE.md) and component notices.
 The compatibility layer extends it only through declared [extension points](../backend/dazedtl/engine/util/extensions.py) and engine settings: mark an engine function as a point DazedTL extends instead of wrapping it from outside.
-Its translation modules are the ones DazedTL's own flows run (`TRANSLATION_MODULE_SPECS` in [translation_task](../backend/dazedtl/engine/util/translation_task.py)): RPG Maker MV/MZ, which also translates VX Ace data, and Image Text; Assistant-led extracts and writes with Len's tools instead.
+Its translation modules are the ones DazedTL's own flows run (`TRANSLATION_MODULE_SPECS` in [translation_task](../backend/dazedtl/engine/util/translation_task.py)): RPG Maker MV/MZ, which translates VX Ace data too, and Image Text; Assistant-led extracts and writes with Len's tools instead.
 A saved run of a module retired since is refused when resumed, naming its engine, and sends nothing.
 Saved manual runs record their engine's [version](../backend/dazedtl/engine/desktop/backend/manual.py) (`ENGINE_VERSIONS`); raise it when a change makes the engine build different requests from the same files, except RPG Maker MV/MZ, whose request changes are [frozen policies](#frozen-request-policies).
 
@@ -45,7 +45,7 @@ The base glossary, the SFX reference and the honorific rules apply to a Japanese
 ### RPG Maker text blocks
 
 [rpgmaker_blocks](../backend/dazedtl/engine/util/rpgmaker_blocks.py) is the one definition of how MV/MZ event commands form a window's text and the texts the engine sends of it; every reader of event text reads them there.
-Writers lay text over a block's rows and never add or remove a command, so a saved game's place in an event stays valid.
+Writers lay text over a block's rows, each text keeping its own source, and never add or remove a command, so a saved game's place in an event stays valid.
 Which comments players read comes from the plugins the game loads ([rpgmaker_markers](../backend/dazedtl/engine/util/rpgmaker_markers.py)).
 
 ## Guided runs and paid work
@@ -124,9 +124,9 @@ A later run reuses it line by line, never as a whole-file skip, while the source
 
 ### File status and Lines
 
-Database files and Maps & events read each file's status and Lines from the file itself through [file_lines](../backend/dazedtl/translation/file_lines.py), whatever runs wrote it.
+Database files and Maps & events read each file's status and Lines from the file through [file_lines](../backend/dazedtl/translation/file_lines.py), whatever runs wrote it.
 [rpgmaker_scope](../backend/dazedtl/engine/util/rpgmaker_scope.py) defines what an event file holds, and a line is left while it holds source-language text by the engine's own rule ([source_text](../backend/dazedtl/engine/util/source_text.py)), read against the value's `_original` or the game's recorded original file ([original_values](../backend/dazedtl/engine/util/original_values.py)) in the game's language pair ([languages](../backend/dazedtl/engine/util/languages.py)), or while it holds a refusal note.
-The engine probe ([engine_runtime](../tests/fixtures/engine_runtime.py)) checks that the engine sends exactly the lines this counts as left, so the two can't drift apart.
+The engine probe ([engine_runtime](../tests/fixtures/engine_runtime.py)) checks that the engine sends exactly the lines this counts as left.
 
 ### Apply and release
 
@@ -250,11 +250,11 @@ Shortcuts come from [useShortcut](../app/src/state/useShortcut.ts), scoped to th
 - Work items say where they stand in one vocabulary, the display states in [displayStatus.ts](../app/src/ui/displayStatus.ts), each with one mark; each feature maps its own states there and keeps its specific reason in the item's detail.
 - Waiting means the work is with an assistant, never that the app is running something; Done is finished work that never writes into the game; Outdated marks a saved result whose basis changed before it went into the game, while edits after it was applied leave it as it was.
 - Action controls pair the shared pending button and status feedback with `useAction`'s guarded action key; a result or disabled reason sits beside its own control, so buttons keep their place.
-- A confirmation with nothing left to do, such as a copy, fades away by itself in [FadingNote](../app/src/ui/FadingNote.tsx); failures and results the user still acts on stay.
+- A confirmation with nothing left to do, such as a copy, fades away in [FadingNote](../app/src/ui/FadingNote.tsx); failures and results the user still acts on stay.
 - Each status shows once: a heading that shows an action's outcome names that action's key, and while it says Done or Applied the control leaves out its success; pending work and failures always stay beside the control.
   [FeedbackOwners](../app/src/ui/FeedbackOwners.tsx) links the two, and saved operations carry their action identity, so feedback stays beside the right control after navigation or restart.
 - Keep failures beside their action or in the run or file inspector; never collect historical errors into page-wide reminders or counters.
-- Saved results, logs, frozen scope and record IDs belong in the inspector's Technical view; routine views also leave out zero counters, finished progress bars and repeated explanations.
+- Saved results, logs, frozen scope and record IDs belong in the inspector's Technical view; routine views leave out zero counters, finished progress bars and repeated explanations.
 - A control presents a saved artifact as available only after checking it on disk.
 
 #### Guided stages and tasks
@@ -291,7 +291,7 @@ Resync archives a file's working copy, staged outputs and cache, and advances it
 
 - [Manual](../app/src/features/translation/ManualTranslation.tsx) runs on Assistant-led's machinery: its loaded file becomes the units organize packs, the API run panel's button is the only approval, and History lists its runs; the [translation contract](translation-contract.md#translation-files) says what its runs leave out.
 - Each method's pages show only its current runs (`own` in `job_views`): not another method's, one an import superseded, or a finished Manual run of an earlier file.
-- A [translation file](../backend/dazedtl/translation/exchange.py) exports and imports a project's lines in every method through one line set per method; an import never writes the game itself, only accepted results or Guided's working copies, which Apply publishes.
+- A [translation file](../backend/dazedtl/translation/exchange.py) exports and imports a project's lines in every method through one line set per method; an import never writes the game, only accepted results or Guided's working copies, which Apply publishes.
 
 #### Compare models
 
@@ -308,14 +308,14 @@ A batch that stopped midway, or failed after writing all its files, made no chec
 
 #### Text QA
 
-- Text QA and the release playtest are optional and never prerequisites for navigation or Release.
+- Text QA and the release playtest are optional, never needed for navigation or Release.
 - One [QA policy](../backend/dazedtl/engine/data/skills/rpgmaker_translation_qa.md) makes the task README, every reviewer brief and the copied handoff, so they can't disagree; the [design](text-qa-redesign.md) holds the goals, decisions and evidence.
 - The [QA engine](../backend/dazedtl/engine/util/qa/__init__.py) owns stages, bundles, workers, declines, observations, findings and the review ledger; content is never classified or excluded in advance.
 - Its [preflight](../backend/dazedtl/engine/util/rpgmaker_qa_preflight.py) reports Japanese never translated, with its [reach](../backend/dazedtl/engine/util/rpgmaker_qa_reach.py), but QA neither reviews it nor blocks on it; in Assistant-led, the helper's `qa` status sends what players may see, the census counts and the assistant didn't decline back to the assistant's extraction and injection, and the rest stays reported, so that step always ends (`untranslated` in [text_qa](../backend/dazedtl/translation/text_qa.py)).
 - On an engine Text QA can't read, Assistant-led gets its text-only checks through the helper's `qa --check` ([result_checks](../backend/dazedtl/translation/result_checks.py)).
 - Corrections pass the engine's correction and regression checks on disposable copies and are fitted by the one fitter, so findings store what the game gets; one that reads as a refusal fails them.
 - Each [lint](../backend/dazedtl/engine/util/rpgmaker_qa_lint.py) family names the targets it checks, and only families whose fix was always right in released games apply automatically; the evidence is beside `AUTOMATIC` there.
-- Release QA applies its finished findings without asking, as one `qa_apply` batch History can undo; apply waits only for questions, and no QA command writes game files itself or pushes.
+- Release QA applies its finished findings without asking, as one `qa_apply` batch History can undo; apply waits only for questions, and no QA command writes game files or pushes.
 - Preparing QA captures the interface screens in the [game window](../backend/dazedtl/engine/util/rpgmaker_window/launcher.cjs), offscreen, read-only and offline, so nothing reaches the game's saves; since QA never writes plugin files, squeezed plugin text goes to Plugin files in Guided and to the assistant through the helper's `qa` status in Assistant-led.
 - The playtest's [checks](../backend/dazedtl/engine/util/playtest/checks.py) and [tour](../backend/dazedtl/engine/util/playtest/harness/main.cjs) report problems as observations of a `playtest` worker, so findings never make another task ([its design](text-qa-redesign.md#release-playtest)).
 - The assistant's [fixes plugin](../backend/dazedtl/engine/util/playtest/fixes.py) is written only after a play with it passes, and joins every patch's manifest.
@@ -357,14 +357,14 @@ Drafts and actions:
 
 - Project-format changes raise `SCHEMA_VERSION` with consecutive upgrades in [projects/store.py](../backend/dazedtl/projects/store.py); [`read_versioned_json`](../backend/dazedtl/storage.py) validates the result, backs up the original and replaces it atomically.
 - Whether saved work is current has one rule, in [freshness](../backend/dazedtl/engine/util/freshness.py): it is keyed on its inputs and an explicit version, never on hashes of source files, so an update alone never outdates it.
-- A Text QA task is keyed on what it reviews and `QA_RULES_VERSION` in [qa/schema](../backend/dazedtl/engine/util/qa/schema.py), raised only when saved reviews become wrong or unreadable; the [previous-release QA check](development.md#previous-release-qa-check) fails when a change needs it.
+- A Text QA task is keyed on what it reviews and `QA_RULES_VERSION` in [qa/schema](../backend/dazedtl/engine/util/qa/schema.py), raised only when saved reviews become wrong or unreadable, and reads the game by its own version (`task_rules`); the [previous-release QA check](development.md#previous-release-qa-check) fails when a change needs it.
   A prepared task stays current through QA's own Apply and Undo ([compatibility/text](../backend/dazedtl/compatibility/text.py)).
 - Workflow options live in the game's `.dazedtl/len-method/workflow.json`, its original files in its Git repository and its guidance in its own files ([paths](../backend/dazedtl/engine/util/paths.py)); the app profile holds connections, recoverable drafts, run plans and receipts.
 - [guidance_documents](../backend/dazedtl/engine/util/guidance_documents.py) defines each guidance document once; editors, saves, the drafts gate and checkpoints read it, never a name.
   Its [reader](../backend/dazedtl/engine/desktop/backend/guidance.py) reads each as saved, missing or unreadable with why; Save replaces a file changed under a draft only if the user keeps the draft.
 - The assistant notes, `AGENTS.md` at the game's root in any case ([is_project_file](../backend/dazedtl/engine/util/paths.py)), are the project's: Git keeps them, but no request, patch, download or original record carries them, and every checkpoint but their own, Go back and Start over leave them.
   Every assistant task opens by saying to read and keep them ([task_opening](../backend/dazedtl/translation/helper_command.py)).
-- Opening and selecting a project publish ownership only after it is saved, and removing a game from the recent list hides its record, so its runs keep their owner.
+- Opening and selecting a project publish ownership only once saved, and removing a game from the recent list hides its record, so its runs keep their owner.
 - The project registry is the only record of where a project's game is ([location](../backend/dazedtl/projects/location.py)): the game folder names its project in a marker Git never commits, so a moved game keeps its project and a copy opens a new one.
   Other records find the game through the registry, and no saved key names the game folder: estimates, Text QA context and bindings name the game's files relative to it, so a move changes one record, outdates nothing and needs no new approval.
 - Diagnostics record only fixed metadata and code locations, never messages, payloads or raw stderr; a [watchdog](../backend/dazedtl/watchdog.py) records hangs, workers report through the [diagnostics](../backend/dazedtl/diagnostics.py) hooks, and the report names the checkout revision.
@@ -498,7 +498,7 @@ A release is a `v` tag on every mirror in [mirrors.json](../release/mirrors.json
 - [update.mjs](../scripts/update.mjs) lists tags through each mirror's Git ref advertisement and takes the newest version any reachable mirror has.
 - GitGud answers requests without one of the headers its Cloudflare rule looks for with a challenge, so every request to a GitLab host carries `X-Gitlab-Token`, whose value GitLab ignores: `mirrorHeaders` here, [gitgud](../backend/dazedtl/engine/util/gitgud.py) for the maintainer tools, and GameUpdate's scripts; never a real token, which would ship to every install.
 - Players' [GameUpdate](../backend/dazedtl/engine/gameupdate/gameupdate) takes a patch from the forge's API and archive, and when either fails, from a shallow `git fetch` of the branch packed with `git archive`, so its files match the forge's archive.
-  Before any Git, a plain GET of the ref advertisement reads the branch, which also settles a missing or private repository and "already up to date"; the in-game check reads it the same way.
+  Before any Git, a plain GET of the ref advertisement reads the branch, which settles a missing or private repository and "already up to date"; the in-game check reads it the same way.
   Git's requests are Git's own, never dressed as a browser's or another client's.
   Before copying anything, a patch that holds Git LFS pointer files, which Git and some forges' archives bring in place of LFS files, is refused, and so on Windows is one whose paths would not fit in the temporary folder or the game's: `Get-PatchPathLimit` in `patch.ps1` is that rule, 259 characters for a file and 247 for a folder, unless PowerShell 7 runs with long paths on.
   The copy is all or nothing: before each change, the scripts write it to a journal in the game's `gameupdate/undo`, where each game file a patch replaces is moved, so a failed or stopped copy puts the game back and keeps the previous patch's state, and the next run finishes that when the window was closed; WOLF's Data.wolf unpacking, done before the copy, stays.

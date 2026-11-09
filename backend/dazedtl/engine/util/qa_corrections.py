@@ -33,7 +33,7 @@ from util.dazedwrap import cells
 from util.project_scanner import find_data_folder
 from util.qa.records import _changes, _record_maps
 from util.qa.selection import _scene_records
-from util.qa.storage import _read_json, answers, read_task
+from util.qa.storage import _read_json, answers, read_task, task_rules
 from util.rpgmaker_qa_manifest import file_inventory
 
 # The export's form and the rules that label it: raise it when a field, the
@@ -336,7 +336,10 @@ def _read_task(origin: Origin) -> tuple[list[dict[str, Any]], set[tuple[str, str
     for filename in sorted({place["file"] for place in places}):
         path = data / filename
         held[filename] = (
-            {row["identity"]: row for row in file_inventory(path, filename, focus)[1]}
+            {
+                row["identity"]: row
+                for row in file_inventory(path, filename, focus, task_rules(task))[1]
+            }
             if path.is_file() else {}
         )
     for place in places:

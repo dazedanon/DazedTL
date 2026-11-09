@@ -113,7 +113,7 @@ def _pointer_lock(pointer):
     return exclusive(pointer.with_name(pointer.name + ".lock"))
 
 
-def _bound_texts(plan, saved, root, in_game):
+def _bound_texts(plan, saved, root, task, in_game):
     """The game text a saved task's binding expects (see _texts), saving a
     binding of an earlier form as BINDING_VERSION. One saved before bound the
     whole game folder, which the task's own Apply changed; it reads as
@@ -126,7 +126,9 @@ def _bound_texts(plan, saved, root, in_game):
         return _texts(saved)
     texts = {(): qa.text_digest(read_json(root / "inventory.json"))}
     if in_game:
-        texts[in_game] = qa.game_text(plan["project"]["data"], _focus(plan))
+        texts[in_game] = qa.game_text(
+            plan["project"]["data"], _focus(plan), rules=qa.task_rules(task)
+        )
     _bind(plan, root, texts)
     return texts
 
@@ -463,12 +465,16 @@ def qa_state(plan):
     # own corrections in place, whatever else changed, such as plugins. A
     # finished task stays current through an update of QA's rules.
     in_game = _in_game(findings, questions)
-    expected = _bound_texts(plan, saved, root, in_game).get(in_game)
+    expected = _bound_texts(plan, saved, root, task, in_game).get(in_game)
     current = not rules_changed and not compare(
         Basis(BINDING_VERSION, {"text": expected}) if expected else None,
         Basis(
             BINDING_VERSION,
-            {"text": qa.game_text(plan["project"]["data"], _focus(plan))},
+            {
+                "text": qa.game_text(
+                    plan["project"]["data"], _focus(plan), rules=qa.task_rules(task)
+                )
+            },
         ),
     )
     if current:
@@ -1254,7 +1260,10 @@ def prepare_publication(plan):
                 in_game = set(_in_game(state["findings"], state["questions"]))
                 after = in_game | named if action == "qa_apply" else in_game - named
                 text = qa.game_text(
-                    data, _focus(plan), {name: scratch / name for name in changed}
+                    data,
+                    _focus(plan),
+                    {name: scratch / name for name in changed},
+                    rules=qa.task_rules(task),
                 )
                 _bind(plan, state["task"], {tuple(sorted(after)): text})
     else:

@@ -10,6 +10,8 @@ import re
 from datetime import UTC, datetime
 from typing import Any
 
+from util import rpgmaker_blocks as blocks
+
 TASK_SCHEMA = "rpgmaker-qa-task-v3"
 # The rules a task is reviewed under. Bump it only when a change makes reviews
 # an earlier version saved wrong or unreadable: a task in review then prepares
@@ -23,8 +25,21 @@ TASK_SCHEMA = "rpgmaker-qa-task-v3"
 # against the game's original files, so the never-translated report leaves
 # out a Chinese translation of them. Version 4 sends a line whose censor masks
 # (〇, ●) its source does not share, and a pronoun against a character's
-# glossary gender, to deep review.
-QA_RULES_VERSION = 4
+# glossary gender, to deep review. Version 5 reads each text of a message or
+# scrolling text as a record of its own (TEXT_RECORDS).
+QA_RULES_VERSION = 5
+# From this rules version an inventory reads a message's and scrolling text's
+# texts as the engine sends them, a record each with its own source, where a
+# writer laid one source over several, such as a name on a row of its own and
+# its speech, so each is reviewed and its correction fitted on its own
+# (read_texts). A task of an earlier version keeps reading, applying and
+# comparing its game's text as it was made.
+TEXT_RECORDS = 5
+# How QA reads those texts: as the engine sends them where no engine settings
+# read them, a speaker in any form the engine reads a text of its own, the
+# reading Assistant-led's writer splits and fits by (util/len_originals
+# READING), so QA's inventory never changes with a project's speaker settings.
+TEXT_READING = blocks.EVERY_SPEAKER
 CHECKPOINT_SCHEMA = "rpgmaker-qa-checkpoint-v3"
 BUNDLE_SCHEMA = "rpgmaker-qa-bundle-v3"
 SCREEN_RESULT_SCHEMA = "rpgmaker-qa-screen-result-v2"
@@ -86,6 +101,20 @@ _JAPANESE_ANCHOR_RE = re.compile(r"[一-龠々〆〤ぁ-ゔァ-ヴー]{2,}")
 
 class QAResultError(ValueError):
     """Raised when an AI-helper result violates its immutable bundle contract."""
+
+
+
+def read_texts(document: Any, rules: int = QA_RULES_VERSION) -> Any:
+    """A data file's *document* as QA's *rules* version reads it, in place:
+    from TEXT_RECORDS, each text of a message or scrolling text keeps its own
+    source on its first row, read by TEXT_READING (rpgmaker_blocks
+    `keep_document_texts`), so one source laid over a name and its speech
+    reads as two records. Earlier versions read it as it is. The inventory
+    builder and its verifier read the game by it, and Apply keeps the texts
+    it corrects so in the game (util/qa/fitting `keep_corrected_texts`)."""
+    if rules >= TEXT_RECORDS:
+        blocks.keep_document_texts(document, TEXT_READING)
+    return document
 
 
 def _utc_now() -> str:

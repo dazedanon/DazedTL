@@ -841,10 +841,11 @@ WIDTH-TRIGGERED"). Bakin's is, so pre-wrapping there is safe and worthwhile.
 commands.** A save file stores a command index, so any added or dropped command
 moves it. A page of `[101, 401, 401, 0]` stays `[101, 401, 401, 0]` and its first
 401 keeps the message's stored source. In DazedTL, operation `write_rpgmaker` does
-this for MV/MZ as it writes: it lays each message out as one text at the game's
-saved Line widths and puts its rows back over the same 401s, a row each, the rest
-in the last and empty ones when it has fewer (`fit_run` and `spread` in
-`DAZEDTL_ROOT/util/rpgmaker_rewrap.py`). Joining the rows with spaces gives back the
+this for MV/MZ as it writes: it lays each text of a message out on its own at the
+game's saved Line widths, a name on its own row apart from its speech, each
+keeping its own `_original` on its first 401, and puts its rows back over the same
+401s, a row each, the rest in the last and empty ones when it has fewer (`fit_run`
+and `spread` in `DAZEDTL_ROOT/util/rpgmaker_rewrap.py`). Joining the rows with spaces gives back the
 message, so the pass is repeatable at any width: wrap to 12, then widen to 40.
 
 This is also the binding constraint on the "join consecutive 401s for translation,

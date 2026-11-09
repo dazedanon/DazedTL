@@ -22,7 +22,12 @@ from util.game_settings import (
     normalize_wrap_widths,
 )
 from util.qa import mechanical
-from util.qa.schema import _QUOTED_VALUE_RE, ADDED_BATTLER_NAME
+from util.qa.schema import (
+    _QUOTED_VALUE_RE,
+    ADDED_BATTLER_NAME,
+    TEXT_READING,
+    TEXT_RECORDS,
+)
 from util.rpgmaker_qa_manifest import (
     QUOTED_TRANSFORMS,
     SCRIPT_STRINGS,
@@ -515,6 +520,31 @@ def _written(
     if rows > 1 and _message_record(record):
         return "\n".join(rewrap.spread(text, rows))
     return text
+
+
+def keep_corrected_texts(document: Any, operations: Iterable[dict], rules: int) -> None:
+    """Before *operations* are written into *document*, in place, keep each
+    text of the messages and scrolling text they write its own source, as
+    QA's *rules* version reads them (util/qa/schema `read_texts`), in those
+    blocks only: the game then holds the texts its inventory read apart,
+    however a correction lays out over them, as a translation file import
+    keeps them."""
+    if rules < TEXT_RECORDS:
+        return
+    corrected: dict[str, set[int]] = {}
+    for operation in operations:
+        for pointer in operation.get("live_pointers") or ():
+            listed, _slash, place = pointer.rpartition("/parameters/0")
+            listed, _slash, index = listed.rpartition("/")
+            if not place and index.isdigit():
+                corrected.setdefault(listed, set()).add(int(index))
+    for listed, rows in corrected.items():
+        try:
+            commands = resolve_pointer(document, listed)
+        except (KeyError, IndexError, TypeError, ValueError):
+            continue
+        if blocks.is_command_list(commands):
+            blocks.keep_texts(commands, TEXT_READING, rows)
 
 
 def _operation_writes(document: Any, operation: dict) -> list[tuple[str, Any]]:

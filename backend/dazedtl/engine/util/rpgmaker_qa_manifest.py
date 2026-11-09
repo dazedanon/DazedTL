@@ -16,6 +16,7 @@ from typing import Any
 from util import system
 from util import rpgmaker_blocks as blocks
 from util.qa import mechanical
+from util.qa.schema import QA_RULES_VERSION, read_texts
 
 SCHEMA = "rpgmaker-qa-manifest-v1"
 EXTRACTOR = "dazedtl-rpgmaker-qa-extractor-v1"
@@ -339,17 +340,18 @@ def data_files(root: Path) -> list[Path]:
 
 
 def file_inventory(
-    path: Path, filename: str, focus: str
+    path: Path, filename: str, focus: str, rules: int = QA_RULES_VERSION
 ) -> tuple[dict[str, str], list[dict[str, Any]], list[dict[str, Any]]]:
-    """One data file's part of an inventory of *focus*: its file row, its
-    records and what could not be resolved, which build_manifest sorts with
-    the other files'. *filename* names the file in the data folder."""
+    """One data file's part of an inventory of *focus* under QA's *rules*
+    version (util/qa/schema `read_texts`): its file row, its records and what could not be
+    resolved, which build_manifest sorts with the other files'. *filename*
+    names the file in the data folder."""
     raw = path.read_bytes()
     row = {"path": filename, "sha256": _sha256(raw)}
     records: list[dict[str, Any]] = []
     unresolved: list[dict[str, Any]] = []
     try:
-        document = json.loads(raw.decode("utf-8-sig"))
+        document = read_texts(json.loads(raw.decode("utf-8-sig")), rules)
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         unresolved.append(
             {"file": filename, "source_pointer": None, "reason": f"parse-error: {exc}"}
@@ -511,8 +513,11 @@ def file_inventory(
     return row, records, unresolved
 
 
-def build_manifest(data_root: str | Path, focus: str) -> dict[str, Any]:
-    """Return a deterministic, side-effect-free QA inventory manifest."""
+def build_manifest(
+    data_root: str | Path, focus: str, rules: int = QA_RULES_VERSION
+) -> dict[str, Any]:
+    """Return a deterministic, side-effect-free QA inventory manifest, read
+    as QA's *rules* version reads the game (util/qa/schema `read_texts`)."""
     root = inventory_root(data_root, focus)
 
     files: list[dict[str, str]] = []
@@ -520,7 +525,7 @@ def build_manifest(data_root: str | Path, focus: str) -> dict[str, Any]:
     unresolved: list[dict[str, Any]] = []
     for path in data_files(root):
         row, found, missing = file_inventory(
-            path, path.relative_to(root).as_posix(), focus
+            path, path.relative_to(root).as_posix(), focus, rules
         )
         files.append(row)
         records += found

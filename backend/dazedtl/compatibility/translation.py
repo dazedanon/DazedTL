@@ -1096,7 +1096,7 @@ class TranslationEngine:
     def rebase_rpgmaker(
         self, root, source, translated, output, expected_original_commit
     ):
-        from util.len_originals import fit_written, preserve_originals
+        from util.len_originals import fit_written, preserve_texts
         from util.rpgmaker_blocks import NOTES
         from util.version_update.git_workflow import _run_git
 
@@ -1140,7 +1140,7 @@ class TranslationEngine:
             )
 
         layout = self.line_layout(root)
-        result = preserve_originals(
+        result = preserve_texts(
             read_json(source),
             without_metadata(read_json(translated)),
             filename=output.name,

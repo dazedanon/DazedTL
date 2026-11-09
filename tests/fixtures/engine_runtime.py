@@ -1791,6 +1791,46 @@ try:
             with patch.object(parser, "CODE_NAMEPLATES", False):
                 parse(codes)
             assert calls == [(["[Hana]: ね。"], "")], calls
+            # Assistant-led's writer keeps each text its own source, so the
+            # translation file export lists and a v6 run sends the same texts,
+            # each with its own Japanese, under any First-line names setting.
+            from util.len_originals import preserve_texts
+
+            said = ["アリス", "「こんにちは。", "元気？」", "\\SE[1]またね。"]
+            english = ["Alice", '"Hello.', 'How are you?"', "\\SE[1]Bye."]
+
+            def assistant_message(rows):
+                return {"list": [name(""), *(command(401, [row]) for row in rows)]}
+
+            written = preserve_texts(
+                assistant_message(said),
+                assistant_message(english),
+                filename="Map001.json",
+            )["list"]
+            (block,) = blocks.blocks(written)
+            speech = "\n".join(said[1:3])
+            configure_states({"engine": "MVMZ"}, temporary, newer)
+            for first, nameplate, sent in (
+                (False, "", ["アリス", '"こんにちは。\n元気？"', "またね。"]),
+                (True, "アリス", ['[Hana]: "こんにちは。\n元気？"', "またね。"]),
+            ):
+                listed = blocks.sent_texts(
+                    written,
+                    block,
+                    blocks.Reading(first_line=first, skip_translated=False),
+                )
+                assert [(text.rows, text.source, text.name) for text in listed] == [
+                    ((1,), said[0], nameplate),
+                    ((2, 3), speech, ""),
+                    ((4,), said[3], ""),
+                ], listed
+                with (
+                    patch.object(parser, "FIRSTLINESPEAKERS", first),
+                    patch.object(parser, "IGNORETLTEXT", False),
+                ):
+                    parse(written)
+                assert calls == [(sent, "")], calls
+                assert names == [nameplate] * 2 if first else not names, names
             # A text that is a name window alone gets its name written in its
             # row, which records it too.
             result = parse([name(""), command(401, ["\\n<アリス>"])])

@@ -1104,6 +1104,75 @@ class GuidedLineTests(unittest.TestCase):
             before,
         )
 
+    def test_an_assistant_led_write_lists_and_imports_as_its_laid_message_did(self):
+        # Assistant-led's writer kept one source over a name, its speech and
+        # a row opening with \SE[1]; it keeps each text's own now. Keeping
+        # them so by the project's speaker settings, as an import and a run
+        # do, lists every line as before; Assistant-led's own split, by every
+        # speaker form, lists the name apart where First-line names is off,
+        # and an older file's lines there no longer match their source.
+        from dazedtl.translation.guided_lines import GuidedLines
+        from util.len_originals import preserve_originals, preserve_texts
+
+        rows = ["新米警察官", "「すいません‼", "　入り込みまして…‼", "\\SE[1]またね。"]
+        english = ["Rookie Officer", "\"I'm sorry!", 'They slipped in!"', "\\SE[1]Bye."]
+
+        def page(values):
+            return _map(
+                [
+                    _command(101, "", 0, 0, 2, ""),
+                    *(_command(401, value) for value in values),
+                    _command(0),
+                ]
+            )
+
+        original = page(rows)
+        laid = preserve_originals(page(rows), page(english), filename="Map001.json")
+        written = preserve_texts(page(rows), page(english), filename="Map001.json")
+        head = "Map001.json#/events/1/pages/0/list/0"
+
+        def lines(name, document, options):
+            guided = self.game(name, document, original, options)
+            return {
+                row["id"].removeprefix(head): (row["source"], row["translation"])
+                for row in GuidedLines(guided, name, PAIR, True).lines()
+            }
+
+        speech = "\n".join(rows[1:3])
+        for options in ({}, {"FIRSTLINESPEAKERS": True}):
+            reading = Reading.of(options)
+            before = lines(f"laid{len(options)}", laid, options)
+            kept = copy.deepcopy(laid)
+            for _path, commands in blocks.command_lists(kept):
+                blocks.keep_texts(commands, reading)
+            self.assertEqual(lines(f"kept{len(options)}", kept, options), before)
+            after = lines(f"written{len(options)}", written, options)
+            if options:
+                self.assertEqual(after, before)
+            else:
+                self.assertEqual(
+                    (before[""][0], after[""][0], after["~1"][0]),
+                    (f"{rows[0]}\n{speech}", rows[0], speech),
+                )
+        # An import writes the speech over its own rows, under its own
+        # source, and leaves the name's.
+        guided = self.game("import", written, original, {})
+        GuidedLines(guided, "import", PAIR, True).save(
+            {f"{head}~1": '"Sorry! They got in!"'}, "file.json"
+        )
+        commands = read_json(self.root / "import-work/translated/Map001.json")[
+            "events"
+        ][1]["pages"][0]["list"]
+        self.assertEqual(
+            [(blocks.text(row), row.get("_original")) for row in commands[1:5]],
+            [
+                (english[0], rows[0]),
+                ('"Sorry! They got in!"', speech),
+                ("", None),
+                (english[3], rows[3]),
+            ],
+        )
+
     def test_a_messages_texts_list_alike_in_every_copy_and_import_as_a_run_writes(self):
         # The export read a message's parts by its sources: a row the engine
         # sends apart, opening with a code, listed as one line in an

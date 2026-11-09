@@ -465,7 +465,8 @@ class PublicationTests(unittest.TestCase):
         engine.status = lambda root: {"stage": "complete"}
         engine.answers = lambda root: {}
         engine.text_digest = lambda manifest: "reviewed"
-        engine.game_text = lambda data, focus, replaced=None: "reviewed"
+        engine.game_text = lambda data, focus, replaced=None, rules=None: "reviewed"
+        engine.task_rules = lambda task: 5
         refreshed = []
         engine.refresh_kept = lambda root, kept: refreshed.append((root, kept))
         write_json(
@@ -586,7 +587,7 @@ class PublicationTests(unittest.TestCase):
         engine, plan = qa.engine, qa.plan
         game = self.root / "data/A.json"
 
-        def game_text(data, focus, replaced=None):
+        def game_text(data, focus, replaced=None, rules=None):
             return digest(Path((replaced or {}).get("A.json", game)).read_bytes())
 
         def corrections(root, chosen, proposals, undo=False):

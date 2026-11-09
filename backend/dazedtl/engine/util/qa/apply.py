@@ -21,6 +21,7 @@ from util.qa.fitting import (
     _operation_writes,
     _written,
     introduced_flags,
+    keep_corrected_texts,
     nameplate_problems,
     show_text_allowance,
 )
@@ -47,6 +48,7 @@ from util.qa.storage import (
     answers,
     read_task,
     recorded_layout,
+    task_rules,
 )
 from util.rpgmaker_qa_manifest import build_manifest
 from util.rpgmaker_qa_verify import verify_manifest
@@ -385,6 +387,7 @@ def apply_loaded_correction_map(
         raw = path.read_bytes()
         originals[path] = raw
         document = json.loads(raw.decode("utf-8-sig"))
+        keep_corrected_texts(document, operations, task_rules(task))
         for operation in operations:
             for pointer, replacement in _operation_writes(document, operation):
                 _set_pointer(document, pointer, replacement)
@@ -437,8 +440,10 @@ def _regression_check_loaded(
     before: dict[str, Any],
     corrections: dict[str, Any] | None,
 ) -> dict[str, Any]:
-    after = build_manifest(task["data_root"], task["focus"])
-    validation = verify_manifest(task["data_root"], after)
+    # Read as the task's inventory was, whichever rules version made it.
+    rules = task_rules(task)
+    after = build_manifest(task["data_root"], task["focus"], rules)
+    validation = verify_manifest(task["data_root"], after, rules)
     before_records = {item["identity"]: item for item in before["records"]}
     after_records = {item["identity"]: item for item in after["records"]}
     errors = list(validation.get("errors") or [])

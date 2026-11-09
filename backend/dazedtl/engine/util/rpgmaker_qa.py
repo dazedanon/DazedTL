@@ -51,6 +51,7 @@ from util.qa.storage import (
     rules_changed,
     _slug,
     _task_lock,
+    task_rules,
 )
 from util.qa.records import _set_pointer
 from util.qa.fitting import (
