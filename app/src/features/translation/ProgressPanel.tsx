@@ -41,6 +41,7 @@ import {
   redoneEstimate,
 } from "./apiRun";
 import { assistantRunState, phaseStates } from "./assistantPhases";
+import { qaChecksOnly, qaReviews } from "../guided/qaUsage";
 import { DeclinedLines } from "./DeclinedLines";
 import { modeLabels } from "./OptionsPanel";
 import { OpenReleaseFolder, patchWaiting } from "./ReleaseTab";
@@ -186,6 +187,9 @@ export function ProgressPanel({
             options.include_images,
             qa,
             finalCheck,
+            // The assistant follows the saved choice.
+            state.options.text_qa === qaChecksOnly[0] &&
+              qaReviews(state.engine),
           )}
         />
         {!!(

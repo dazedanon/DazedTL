@@ -7,15 +7,21 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
+from unittest import mock
 
 from dazedtl.api.contracts.guided import TextQaCheck, TextQaStatus
 from dazedtl.api.contracts.validation import _close_contracts
-from dazedtl.translation import census, progress_report
+from dazedtl.translation import census, progress_report, qa_size
 from dazedtl.translation.operations import census_path
 from dazedtl.translation.project import WORK
 from dazedtl.translation.result_checks import CHECK_FILE, CHECK_STEP, CHECK_VERSION
 from dazedtl.translation.run_compiler import SCOPE_RULES
-from dazedtl.translation.text_qa import UNTRANSLATED_FILE, UNTRANSLATED_STEP, TextQA
+from dazedtl.translation.text_qa import (
+    REVIEW_OFF,
+    UNTRANSLATED_FILE,
+    UNTRANSLATED_STEP,
+    TextQA,
+)
 from pydantic import TypeAdapter
 from util import rpgmaker_qa
 from util.rpgmaker_qa_preflight import preflight
@@ -37,6 +43,7 @@ def fake_guided(folder, qa, method="guided"):
             {"id": "native", "source": str(folder), "data": str(Path(folder) / "data")},
         ),
         saved_form=lambda _id: {"text": {"focus": "release"}},
+        qa_focus=lambda _id: "release",
         backend=SimpleNamespace(
             guided_text_state=lambda _native, _focus: {"qa": qa},
             operations=SimpleNamespace(jobs=jobs, active=""),
@@ -638,3 +645,115 @@ class TextQATests(unittest.TestCase):
             (game / "js/plugins.js").write_text("var $plugins = [];", encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "qa --prepare"):
                 service.check("project")
+            # With the review off in Options, these checks are all that run
+            # there: the helper prepares no review and says so.
+            guided.qa_focus = lambda _id: None
+            self.assertEqual(service.check("project")["hits"], 1)
+            for step in ("prepare", "apply", "choose"):
+                with self.subTest(step=step), self.assertRaises(ValueError) as off:
+                    service.run("project", step)
+                self.assertEqual(str(off.exception), REVIEW_OFF)
+            guided.backend.guided_text_state = lambda _native, _focus: {
+                "qa": {
+                    "current": False,
+                    "applied": False,
+                    "status": {},
+                    "findings": [],
+                    "questions": [],
+                    "message": "",
+                }
+            }
+            state = service.run("project", "status")
+            TypeAdapter(TextQaStatus).validate_json(json.dumps(state), strict=True)
+            self.assertEqual((state["focus"], state["next"]), ("checks", REVIEW_OFF))
+
+    def test_size_counts_what_each_focus_reviews_from_either_source(self):
+        # Neither method said how much of the game a review reads before it
+        # started, though a full review of a big game takes much of an
+        # assistant plan's usage.
+        def say(original, text):
+            return {
+                "code": 401,
+                "indent": 0,
+                "parameters": [text],
+                "_original": original,
+            }
+
+        def page(*commands):
+            return {"list": [*commands, {"code": 0, "indent": 0, "parameters": []}]}
+
+        def entry(file, location, kind, code=None):
+            field = (
+                f"events/*/pages/*/list/*[code={code}]/parameters/0"
+                if code
+                else "*/name"
+            )
+            return {"file": file, "location": location, "kind": kind, "field": field}
+
+        dialogue = {"lines": 3, "scenes": 2}
+        expected = {
+            "release": {"lines": 4, "scenes": 2},
+            "database": {"lines": 1, "scenes": 0},
+            "dialogue": dialogue,
+            "risky-codes": {"lines": 0, "scenes": 0},
+        }
+        with TemporaryDirectory() as folder:
+            data = Path(folder) / "data"
+            data.mkdir()
+            self.assertEqual(qa_size.of_game(data)["focuses"], None)
+            (data / "Map001.json").write_text(
+                json.dumps(
+                    {
+                        "events": [
+                            None,
+                            {
+                                "id": 1,
+                                "pages": [
+                                    page(say("はい", "Yes."), say("いいえ", "No.")),
+                                    page(say("またね", "Bye.")),
+                                ],
+                            },
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (data / "Actors.json").write_text(
+                json.dumps(
+                    [None, {"id": 1, "name": "Hero", "_original": {"name": "勇者"}}]
+                ),
+                encoding="utf-8",
+            )
+            # Guided counts the game's translated text as Text QA reads it.
+            self.assertEqual(
+                qa_size.of_game(data), {"counting": False, "focuses": expected}
+            )
+            # Assistant-led counts its census of the original game the same
+            # way, VX Ace's data and all, but not the plugins QA can't read.
+            map_line = "events/1/pages/{}/list/{}/parameters/0"
+            rows = [
+                entry("data/Map001.json", map_line.format(0, 0), "rpgmaker:map", 401),
+                entry("data/Map001.json", map_line.format(0, 1), "rpgmaker:map", 401),
+                entry("Data/Map002.rvdata2", map_line.format(0, 0), "rgss:map", 401),
+                entry("data/Actors.json", "1/name", "rpgmaker:database:Actors"),
+                entry("js/plugins/Menu.js", "3:4", "js:plugin"),
+                entry("Data/Scripts.rvdata2", "0:1", "rgss:scripts"),
+            ]
+            path = Path(folder) / "census.json"
+            path.write_text(json.dumps({"entries": rows}), encoding="utf-8")
+            self.assertEqual(qa_size.of_census(path)["focuses"], expected)
+            self.assertEqual(
+                qa_size.of_census(Path(folder) / "none.json"),
+                {"counting": False, "focuses": None},
+            )
+            # A big game is counted off the request, which reads as counting
+            # until it ends.
+            path.write_text(json.dumps({"entries": rows[:1]}), encoding="utf-8")
+            with mock.patch.object(qa_size, "INLINE_BYTES", 0):
+                self.assertEqual(qa_size.of_census(path)["counting"], True)
+                for _ in range(500):
+                    size = qa_size.of_census(path)
+                    if not size["counting"]:
+                        break
+                    threading.Event().wait(0.01)
+            self.assertEqual(size["focuses"]["dialogue"], {"lines": 1, "scenes": 1})

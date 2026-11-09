@@ -34,7 +34,12 @@ function qaStep(
   finalCheck: boolean,
   current: boolean,
 ): { state: StepState; detail?: string } | null {
-  if (!qa) return null;
+  const checking: { state: StepState; detail?: string } | null =
+    reported === "done" && finalCheck
+      ? { state: current ? "current" : "started", detail: "Final check" }
+      : null;
+  // With no task, as with the review off, only the final check holds QA.
+  if (!qa) return checking;
   const phase = qaPhase(qa);
   if (phase === "blocked")
     return reported === "done"
@@ -52,9 +57,7 @@ function qaStep(
       state: reported === "current" ? "current" : "started",
       detail: qaActivity(qa) || undefined,
     };
-  if (reported === "done" && finalCheck)
-    return { state: current ? "current" : "started", detail: "Final check" };
-  return null;
+  return checking;
 }
 
 /**
@@ -82,7 +85,9 @@ export function assistantRunState(
  * started. Images shows only when the project includes image text, and QA
  * follows its task once the assistant prepares one, and for MV/MZ its final
  * check (finalCheckOpen). QA reported done but still checking is current
- * unless the assistant reports working in another phase.
+ * unless the assistant reports working in another phase. With Text QA's
+ * review off in Options (`checksOnly`), QA reads as its checks only, never
+ * as reviewed.
  */
 export function phaseStates(
   progress: TranslationProgress | null,
@@ -90,12 +95,17 @@ export function phaseStates(
   images: boolean,
   qa: QaState | null = null,
   finalCheck = false,
+  checksOnly = false,
 ): { id: string; label: string; state: StepState; detail?: string }[] {
   const steps = reportedStates(progress, started, images);
   const current = !steps.some((step) => step.state === "current");
   return steps.map((step) =>
     step.id === "qa" && progress?.updated_at
-      ? { ...step, ...qaStep(qa, step.state, finalCheck, current) }
+      ? {
+          ...step,
+          ...(checksOnly && !step.detail && { detail: "Checks only" }),
+          ...qaStep(qa, step.state, finalCheck, current),
+        }
       : step,
   );
 }

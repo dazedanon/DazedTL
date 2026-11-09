@@ -19,7 +19,8 @@ from dazedtl import system
 from dazedtl.storage import write_json
 
 from .files import read_json
-from .project import WORK
+from .project import CHECKS, WORK
+from .result_checks import CHECK_STEP
 
 if TYPE_CHECKING:
     from .guided import Guided
@@ -64,6 +65,12 @@ UNTRANSLATED_STEP = (
     "the game, run playtest --run --wait 20 again, so QA takes the new "
     "report's findings; then run qa --prepare, which reads the game again. "
     "Text the census sets aside and lines you declined are not counted."
+)
+# What an Assistant-led assistant does when the project's Options turn Text
+# QA's review off: the mechanical checks alone, and no review task.
+REVIEW_OFF = (
+    "Text QA's review is off in this project's Options, so it prepares no "
+    "review task and qa --prepare refuses. " + CHECK_STEP
 )
 
 
@@ -334,6 +341,8 @@ class TextQA:
     ):
         if step not in STEPS:
             raise ValueError("Choose a text QA step: " + ", ".join(STEPS) + ".")
+        if step not in {"status", "report", "checkpoint"}:
+            self.reviewed(project_id)
         native = self.native(project_id)
         if step == "prepare":
             self.prepare(project_id, since, everything)
@@ -370,7 +379,9 @@ class TextQA:
         record, project = translation.project(project_id)
         if record.get("method") != "len":
             raise ValueError("qa --check reads an Assistant-led game's translations.")
-        if _reads(project.root):
+        # Text QA's own review checks an RPG Maker game's text the same way;
+        # with the review off, these checks are all that run.
+        if _reads(project.root) and self.focus(project_id):
             raise ValueError(
                 "Text QA reads this RPG Maker game; run qa --prepare instead."
             )
@@ -381,7 +392,16 @@ class TextQA:
         return Path(self.guided.backend.workflows.folder(native["id"]))
 
     def focus(self, project_id):
-        return self.guided.saved_form(project_id)["text"]["focus"]
+        """The focus the game's review takes, or None when it is off."""
+        return self.guided.qa_focus(project_id)
+
+    def reviewed(self, project_id):
+        """The focus of a review the project's choice allows; refuses when
+        the review is off."""
+        focus = self.focus(project_id)
+        if not focus:
+            raise ValueError(REVIEW_OFF)
+        return focus
 
     def qa(self, project_id, native):
         return self.guided.backend.guided_text_state(native, self.focus(project_id))[
@@ -397,7 +417,7 @@ class TextQA:
             "qa_prepare",
             None,
             {
-                "focus": self.focus(project_id),
+                "focus": self.reviewed(project_id),
                 **({"since": since} if since else {}),
                 **({"everything": True} if everything else {}),
             },
@@ -500,9 +520,23 @@ class TextQA:
             raise ValueError("This task's findings are already applied.")
         rpgmaker_qa.answer(qa["task"], question, choice)
 
+    def size(self, project_id):
+        """How much the game's review reads, for the usage note both methods
+        show before it starts (qa_size): an Assistant-led project's from its
+        census, a Guided one's from the game's translated text."""
+        from . import qa_size
+        from .operations import census_path
+
+        if self.guided.projects.get(project_id).get("method") == "len":
+            return qa_size.of_census(
+                census_path(self.guided.translation.workspace, project_id)
+            )
+        return qa_size.of_game(self.guided.record(project_id)[1]["data"])
+
     def report(self, project_id):
         from dazedtl.compatibility.text import qa_report
 
+        focus = self.reviewed(project_id)
         native = self.native(project_id)
         return qa_report(
             {
@@ -510,7 +544,7 @@ class TextQA:
                 "project": native,
                 "folder": str(self.folder(native)),
                 "guard": self.guided.backend.guided_guard(native, self.folder(native)),
-                "options": {"focus": self.focus(project_id)},
+                "options": {"focus": focus},
             }
         )
 
@@ -526,6 +560,7 @@ class TextQA:
 
         from . import progress_report
 
+        focus = self.reviewed(project_id)
         native = self.native(project_id)
         folder = self.folder(native)
         operations = self.guided.backend.operations
@@ -542,7 +577,7 @@ class TextQA:
                     "folder": str(folder),
                     "project_id": native["id"],
                     "project": native,
-                    "options": {"focus": self.focus(project_id)},
+                    "options": {"focus": focus},
                 }
             )
             if playtest:
@@ -604,7 +639,10 @@ class TextQA:
             if row.get("choice") == "use" and not row.get("state")
         ]
         operation = self.operation(project_id)
-        if qa.get("unreadable"):
+        focus = self.focus(project_id)
+        if not focus:
+            following = REVIEW_OFF
+        elif qa.get("unreadable"):
             following = _unreadable_step(qa)
         elif not qa.get("task"):
             following = "Run qa --prepare."
@@ -667,7 +705,7 @@ class TextQA:
         if missed:
             following = UNTRANSLATED_STEP + " " + following
         state = {
-            "focus": self.focus(project_id),
+            "focus": focus or CHECKS,
             "task": qa.get("task", ""),
             "stage": stage,
             "current": qa["current"],

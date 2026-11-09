@@ -369,9 +369,8 @@ class Playtest:
         }
 
     def status(self, project_id, native, report=False):
-        text = self.guided.backend.guided_text_state(
-            native, self.text_qa.focus(project_id)
-        )
+        focus = self.text_qa.focus(project_id)
+        text = self.guided.backend.guided_text_state(native, focus)
         state = text["playtest"]
         operation = self.operation(project_id)
         problems = state["problems"]
@@ -432,8 +431,15 @@ class Playtest:
                     if assistant
                     else "send plugin text to Plugin files, "
                 )
-                + "let text QA correct its lines, and add stops for what the tour "
-                "could not reach with playtest --run --stops FILE."
+                + (
+                    "let text QA correct its lines, "
+                    if focus
+                    else "correct the lines it lists for text QA yourself with "
+                    "correction receipts and write them into the game again, as "
+                    "Text QA's review is off, "
+                )
+                + "and add stops for what the tour could not reach with playtest "
+                "--run --stops FILE."
             )
         else:
             following = (

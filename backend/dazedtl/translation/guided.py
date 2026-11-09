@@ -208,6 +208,17 @@ class Guided:
             )
         return project, native
 
+    def qa_focus(self, project_id):
+        """The focus Text QA reviews in the project: its Check task's, or an
+        Assistant-led project's Options choice, which is None when the
+        review is off and only the mechanical checks run."""
+        if self.projects.get(project_id).get("method") == "len":
+            from .project import review_focus
+
+            _record, project = self.translation.project(project_id)
+            return review_focus(project.read()["options"])
+        return self.saved_form(project_id)["text"]["focus"]
+
     def open(self, project_id):
         project = self.projects.get(project_id)
         if project.get("backend_id"):
@@ -689,9 +700,7 @@ class Guided:
         state = lifecycle(self.translation.workspace, project_id)
         latest = self.text_fit.latest(native)
         return {
-            **self.backend.guided_text_state(
-                native, self.saved_form(project_id)["text"]["focus"]
-            ),
+            **self.backend.guided_text_state(native, self.qa_focus(project_id)),
             "outputs": outputs,
             "applied": applied,
             "unapplied": sorted(

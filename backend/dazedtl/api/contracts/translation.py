@@ -19,6 +19,8 @@ class TranslationOptions(TypedDict):
     install_gameupdate: bool
     install_tl_inspector: bool
     thorough_investigation: bool
+    # What Text QA reviews after injection, or only its checks.
+    text_qa: Literal["release", "database", "dialogue", "risky-codes", "checks"]
 
 
 class ProjectOptions(TypedDict):

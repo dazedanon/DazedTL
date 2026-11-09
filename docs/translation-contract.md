@@ -21,7 +21,7 @@ The helper also drives the tasks the app hands out:
 | --- | --- |
 | `plugins` | Reads the active Plugin files request; `--continue-request ID` checks the saved report and returns the next request, until every plugin file is done and every label Text QA found too long is shortened or kept. `--capture` plays the game with the working copies and shows how each label draws. |
 | `images` | Runs Assistant-led's Images steps, `--scan`, `--investigate`, `--translate` and `--apply`, and `--status` names the next. Images decoded from the game's archives go in a game folder named with `--scan --root`. |
-| `qa` | Text QA for RPG Maker MV/MZ and VX Ace: `--prepare` prepares or resumes the task, whose README the assistant follows, and `--apply` applies the finished findings as a checkpoint, with `--wait` for the user's answers; `--undo` and `--apply-again` take back or reapply one correction. On other engines, `qa --check` runs the text-only checks. |
+| `qa` | Text QA for RPG Maker MV/MZ and VX Ace: `--prepare` prepares or resumes the task, whose README the assistant follows, and `--apply` applies findings as a checkpoint, with `--wait` for the user's answers; `--undo` and `--apply-again` undo or reapply one correction. On other engines, or Options' Checks only, `qa --check` runs text-only checks. |
 | `playtest` | The release playtest for MV/MZ: `--run` plays the game in a hidden window, `--stops FILE` adds places to visit, and `--fix` writes the fixes plugin only once a play with it breaks nothing new. |
 
 ### Sandboxed connections

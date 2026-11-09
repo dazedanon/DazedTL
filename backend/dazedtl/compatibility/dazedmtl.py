@@ -495,6 +495,8 @@ class ExistingBackend:
         }
 
     def guided_text_state(self, native, focus="release"):
+        """Text QA's task for *focus* and the playtest's report; a focus of
+        None is a project whose review is off, which reads no task."""
         from dazedtl.translation.checkpoint_records import undoes
         from dazedtl.translation.playtest import PLAYS, described
         from dazedtl.translation.publication import history
@@ -515,10 +517,12 @@ class ExistingBackend:
             "status": {},
             "findings": [],
             "questions": [],
-            "message": "No QA task prepared for this focus.",
+            "message": "No QA task prepared for this focus."
+            if focus
+            else "Text QA's review is off in Options; only its checks run.",
         }
         playtest = {"current": False, "problems": [], "gaps": []}
-        prepared = (folder / ("text-qa-" + focus + ".json")).exists()
+        prepared = bool(focus) and (folder / ("text-qa-" + focus + ".json")).exists()
         played = (folder / POINTER).exists()
         if prepared or played:
             # A game file the app can't read is no fault of the QA task or

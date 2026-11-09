@@ -12,6 +12,7 @@ import { runQaStep, type QaStepDetails, type QaStepName } from "../../qaSteps";
 import { qaPhase, qaTaskDone } from "../../qaView";
 import { PlaytestWork } from "../../Playtest";
 import { playtestFailure } from "../../playtestView";
+import { qaFocuses, useQaUsageNote } from "../../qaUsage";
 
 export function qaView(w: GuidedWorkspace): TaskView {
   const {
@@ -186,27 +187,14 @@ export function qaView(w: GuidedWorkspace): TaskView {
           )
         }
       >
-        <FieldRow id="qa-focus" label="QA focus">
-          {(props) => (
-            <select
-              {...props}
-              value={fields.text.focus}
-              disabled={disabled}
-              onChange={(event) => editText("focus", event.target.value)}
-            >
-              {[
-                ["release", "Full game text"],
-                ["database", "Database"],
-                ["dialogue", "Dialogue"],
-                ["risky-codes", "Risky event codes"],
-              ].map(([key, label]) => (
-                <option key={key} value={key}>
-                  {label}
-                </option>
-              ))}
-            </select>
-          )}
-        </FieldRow>
+        <QaFocusField
+          projectId={project.id}
+          focus={fields.text.focus}
+          // Before QA starts; a later run reviews only text changed since.
+          note={phase === "not_started"}
+          disabled={disabled}
+          onChange={(focus) => editText("focus", focus)}
+        />
       </TextQaWork>
     </>
   );
@@ -253,4 +241,39 @@ export function qaView(w: GuidedWorkspace): TaskView {
         : "Your assistant reviews the game's text and applies verified corrections; you answer only what it can't settle.",
     },
   };
+}
+
+/** Guided's QA focus, with how much of the game its review reads. */
+function QaFocusField({
+  projectId,
+  focus,
+  note,
+  disabled,
+  onChange,
+}: {
+  projectId: string;
+  focus: string;
+  note: boolean;
+  disabled: boolean;
+  onChange: (focus: string) => void;
+}) {
+  const usage = useQaUsageNote(projectId, focus, note);
+  return (
+    <FieldRow id="qa-focus" label="QA focus" help={note ? usage : undefined}>
+      {(props) => (
+        <select
+          {...props}
+          value={focus}
+          disabled={disabled}
+          onChange={(event) => onChange(event.target.value)}
+        >
+          {qaFocuses.map(([key, label]) => (
+            <option key={key} value={key}>
+              {label}
+            </option>
+          ))}
+        </select>
+      )}
+    </FieldRow>
+  );
 }

@@ -508,6 +508,24 @@ class QaReport(TypedDict):
     interface_error: NotRequired[str]
 
 
+class QaFocusSize(TypedDict):
+    """About how much one focus of Text QA's review reads in the game."""
+
+    lines: int
+    scenes: Annotated[int, "Event command lists holding the dialogue it reads."]
+
+
+class QaSize(TypedDict):
+    """How much Text QA's review reads in the game, for the usage note shown
+    before it starts (translation/qa_size)."""
+
+    counting: Annotated[bool, "A big game is still being counted."]
+    focuses: Annotated[
+        dict[str, QaFocusSize] | None,
+        "Each focus's size by its key; None before the game has text to count.",
+    ]
+
+
 class TextQaOperation(TypedDict):
     kind: Literal["prepare", "apply", "undo", "reapply", "checkpoint"]
     id: str
@@ -647,8 +665,8 @@ class PlaytestProblem(TypedDict):
     new: NotRequired[Annotated[bool, "The previous playtest did not find it."]]
     review: NotRequired[
         Annotated[
-            Literal["reviewing", "reviewed", "waiting", "outside"],
-            "Where text QA stands on a problem it corrects: in its review now, reviewed, waiting for QA to run again, or outside the lines its focus holds.",
+            Literal["reviewing", "reviewed", "waiting", "outside", "off"],
+            "Where text QA stands on a problem it corrects: in its review now, reviewed, waiting for QA to run again, outside the lines its focus holds, or off: an Assistant-led project whose Options turn the review off.",
         ]
     ]
 

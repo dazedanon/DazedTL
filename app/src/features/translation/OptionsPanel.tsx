@@ -10,6 +10,12 @@ import { OptionCards, type OptionCard } from "../../ui/OptionCards";
 import { GameLanguagesRow } from "../project/GameLanguages";
 import { GameUpdatePanel } from "../project/GameUpdatePanel";
 import { ModelMenu } from "../settings/ModelMenu";
+import {
+  qaChecksOnly,
+  qaFocuses,
+  qaReviews,
+  useQaUsageNote,
+} from "../guided/qaUsage";
 import type { SettingsSection } from "../settings/Settings";
 
 export type Mode = TranslationOptions["mode"];
@@ -329,6 +335,49 @@ export function OptionsPanel({
           onChange={(checked) => edit("thorough_investigation", checked)}
         />
       </CheckGroup>
+      {/* Text QA's review reads RPG Maker MV/MZ and VX Ace games. */}
+      {qaReviews(project.engine) && (
+        <TextQaField
+          projectId={project.id}
+          value={options.text_qa}
+          onChange={(value) => edit("text_qa", value)}
+        />
+      )}
     </fieldset>
+  );
+}
+
+/**
+ * What Text QA reviews after injection, as Guided's QA focus chooses, or
+ * only its mechanical checks, with how much of the game the review reads.
+ */
+function TextQaField({
+  projectId,
+  value,
+  onChange,
+}: {
+  projectId: string;
+  value: TranslationOptions["text_qa"];
+  onChange: (value: TranslationOptions["text_qa"]) => void;
+}) {
+  const usage = useQaUsageNote(projectId, value, true);
+  return (
+    <FieldRow id="translation-text-qa" label="Text QA" help={usage}>
+      {(props) => (
+        <select
+          {...props}
+          value={value}
+          onChange={(event) =>
+            onChange(event.target.value as TranslationOptions["text_qa"])
+          }
+        >
+          {[...qaFocuses, qaChecksOnly].map(([key, label]) => (
+            <option key={key} value={key}>
+              {label}
+            </option>
+          ))}
+        </select>
+      )}
+    </FieldRow>
   );
 }
