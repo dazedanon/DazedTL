@@ -18,8 +18,8 @@ from util.freshness import (
     signature_settled,
 )
 from util.original_values import Originals
-from util.qa import voice
 from util.paths import new_folder
+from util.qa import voice
 from util.qa.advance import _screen_targets
 from util.qa.briefs import _task_instructions, write_instructions
 from util.qa.bundles import (
@@ -659,6 +659,7 @@ def prepare_task(
                         {"voice": {
                             "items": len(voices),
                             "lines": sum(item["target_count"] for item in voices),
+                            "speakers": sorted(item["speaker"] for item in voices),
                         }}
                         if (voices := [
                             item for item in items if item.get("kind") == voice.KIND

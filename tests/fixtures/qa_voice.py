@@ -23,7 +23,9 @@ CHAR = (
     "シャル (Char) - Female. Lordly, old-fashioned speech: そなた → thou, "
     'whenever she addresses one person ("Thou art late."); no contractions.'
 )
-GLOSSARY = f"# Game Characters\n{CHAR}\nイリス (Iris) - Female\n商人 (Merchant) - Polite.\n"
+GLOSSARY = (
+    f"# Game Characters\n{CHAR}\nイリス (Iris) - Female\n商人 (Merchant) - Polite.\n"
+)
 
 # Lines no RPG Maker file holds: units of a script engine, their speaker
 # named in Japanese, one text said twice, and more of one speaker than an
@@ -44,7 +46,10 @@ units += [
     {**units[3], "order": 100},
     # Speakers the glossary gives no note, or too few lines, get no item.
     *({**unit, "id": "iris/" + unit["id"], "speaker": "イリス"} for unit in units),
-    *({**unit, "id": "shop/" + unit["id"], "speaker": "Merchant"} for unit in units[:11]),
+    *(
+        {**unit, "id": "shop/" + unit["id"], "speaker": "Merchant"}
+        for unit in units[:11]
+    ),
 ]
 (item,), targets = voice.voice_items(reversed(units), GLOSSARY, line_limit=16)
 assert (item["kind"], item["speaker"], item["note"]) == ("voice", "シャル", CHAR), item
@@ -296,11 +301,14 @@ def apply_and_undo():
 # with it as it is, and it completes, applies and undoes.
 with mock.patch.object(selection, "_voice_items", lambda *_args, **_more: ([], {})):
     before, state = qa.prepare_task(game, data, "release", temporary / "storage")
-assert "voice" not in json.loads(
-    (before / "checkpoint.json").read_text(encoding="utf-8")
-)["screen"]
+assert (
+    "voice"
+    not in json.loads((before / "checkpoint.json").read_text(encoding="utf-8"))[
+        "screen"
+    ]
+)
 task, state = qa.prepare_task(game, data, "release", temporary / "storage")
-assert task == before and state["screen"]["voice"] == {"items": 0, "lines": 0}, state
+assert task == before and state["screen"]["voice"]["items"] == 0, state
 read = review({"scene"})
 # No item of it puts her two scenes' lines together.
 lordly, casual = ({source for source, _english in side} for side in (LORDLY, CASUAL))
@@ -316,7 +324,10 @@ apply_and_undo()
 task, state = qa.prepare_task(
     game, data, "release", temporary / "storage", earlier=False
 )
-assert task != before and state["screen"]["voice"] == {"items": 1, "lines": 12}, state
+assert task != before, task
+assert state["screen"]["voice"] == {"items": 1, "lines": 12, "speakers": ["Char"]}, (
+    state
+)
 checkpoint = json.loads((task / "checkpoint.json").read_text(encoding="utf-8"))
 (row,) = [
     row
@@ -327,7 +338,9 @@ checkpoint = json.loads((task / "checkpoint.json").read_text(encoding="utf-8"))
 assert [line["source"] for line in item["lines"]] == [
     source for source, _english in LORDLY + CASUAL
 ], item["lines"]
-assert (item["speaker"], item["note"], item["speaker_lines"]) == ("Char", CHAR, 12), item
+assert (item["speaker"], item["note"], item["speaker_lines"]) == ("Char", CHAR, 12), (
+    item
+)
 shown = qa.render_bundle(task, row["id"])
 assert f"### VOICE {item['id']} Char (the speaker's 12 lines, in play order)" in shown
 assert f"glossary: {CHAR}" in shown and shown.count("  -- Map001.json#/events/") == 2

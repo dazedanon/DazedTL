@@ -684,25 +684,31 @@ def _speeches(records: list[dict[str, Any]]) -> list[tuple[dict[str, Any], str]]
     its speech, as the engine reads them (util/qa/schema TEXT_READING). A
     nameplate's own row is no message, and a message nobody names is left
     out."""
-    messages = [record for record in records if record.get("event_code") == 401]
-    numbers = [_scene_position(record)[1] for record in messages]
+    # Each message with the number of the event command that holds it.
+    messages = [
+        (record, place[1])
+        for record in records
+        if record.get("event_code") == 401 and (place := _scene_position(record))
+    ]
     found = []
     plate = ("", -1)
-    for position, record in enumerate(messages):
+    for position, (record, number) in enumerate(messages):
         speaker = str((record.get("speaker") or {}).get("display_name") or "")
         if speaker:
             found.append((record, speaker))
             continue
         rows = str(record["source"]).split("\n")
         following = rows[1] if len(rows) > 1 else None
-        adjacent = position + 1 < len(messages) and numbers[position + 1] == numbers[position] + 1
-        if following is None and adjacent:
-            following = str(messages[position + 1]["source"]).split("\n")[0]
+        if following is None and position + 1 < len(messages):
+            # The next row of the same message, where it is a text of its own.
+            after, after_number = messages[position + 1]
+            if after_number == number + 1:
+                following = str(after["source"]).split("\n")[0]
         named = TEXT_READING.speakers(rows[0], following)
         if named is not None and named.own_line:
-            plate = (display_name(named.names[0]), numbers[position] + 1)
+            plate = (display_name(named.names[0]), number + 1)
             continue
-        if plate[1] == numbers[position]:
+        if plate[1] == number:
             speaker = plate[0]
         elif named is not None:
             speaker = display_name(named.names[0])
@@ -747,8 +753,10 @@ def _voice_items(
     )
     return items, {
         target: {
-            "cluster_id": line["id"],
-            "representative_identity": (shown or {}).get(line["id"], line["identity"]),
+            "cluster_id": str(line["id"]),
+            "representative_identity": str(
+                (shown or {}).get(line["id"], line["identity"])
+            ),
         }
         for target, line in targets.items()
     }

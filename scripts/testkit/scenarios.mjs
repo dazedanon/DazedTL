@@ -279,6 +279,96 @@ export async function reviewQa({ page, state }, ...options) {
 
 const qa = ["Review and apply Text QA as an assistant does", reviewQa];
 
+// The voice-drift game's princess: her glossary line with its voice note, as
+// a setup investigation saves it, and the casual line of her second event,
+// which the scripted reviewer reports from her voice item alone.
+const princess =
+  '姫 (Princess) - Female. Lordly, old-fashioned speech: そなた → thou, whenever she addresses one person ("Thou art late."); no contractions.';
+const drifted = { translation: "You're late.", correction: "Thou art late." };
+
+const voiceQa = [
+  "Text QA reads the princess's lines across her two events, and the casual line her voice item's reviewer reports is corrected, undone and applied again",
+  async ({ page, state }) => {
+    // The game's own entries come before the base glossary's.
+    const glossary = path.join(state.game, ".dazedtl/glossary.txt");
+    const text = fs.readFileSync(glossary, "utf8");
+    const base = text.indexOf("# ── Base Glossary");
+    fs.writeFileSync(
+      glossary,
+      base < 0
+        ? `${text}\n${princess}\n`
+        : `${text.slice(0, base)}${princess}\n\n${text.slice(base)}`,
+    );
+    const prepared = await helper(page, state, "qa", "--prepare");
+    const voice = prepared.progress.screen.voice;
+    console.log(`\n  Voice items: ${JSON.stringify(voice)}`);
+    if (
+      voice.items !== 1 ||
+      voice.lines !== 12 ||
+      voice.speakers.join() !== "Princess"
+    )
+      throw new Error(
+        `Text QA prepared no voice item of the princess's twelve lines: ${JSON.stringify(voice)}`,
+      );
+    const corrections = path.join(state.work, "voice-corrections.json");
+    fs.writeFileSync(
+      corrections,
+      JSON.stringify([
+        {
+          ...drifted,
+          item: "voice",
+          category: "voice",
+          summary: "The princess says a plain 'you' here.",
+          editorial_basis: {
+            defect: "Her register changes between her two events.",
+            source_support: "The Japanese keeps そなた, which her note fixes.",
+            not_preference: true,
+          },
+        },
+      ]),
+    );
+    await reviewQa({ page, state }, "--corrections", corrections);
+    // Only her voice item's reviewer reported the line, so deep review got
+    // it for that reason alone.
+    const deep = path.join(prepared.task, "bundles/deep");
+    const reasons = fs
+      .readdirSync(deep)
+      .flatMap(
+        (name) => JSON.parse(fs.readFileSync(path.join(deep, name))).items,
+      )
+      .filter((item) => item.translation === drifted.translation)
+      .map((item) => item.deep_reasons.join());
+    if (reasons.join() !== "voice-suspect")
+      throw new Error(`Deep review read the line for: ${reasons.join("; ")}`);
+    const { report } = await helper(page, state, "qa", "--report");
+    const finding = JSON.parse(fs.readFileSync(report)).findings.find(
+      (row) => row.correction === drifted.correction,
+    );
+    if (finding?.category !== "voice")
+      throw new Error("Text QA made no voice finding of the reported line.");
+    const map = path.join(
+      contentFolder(state.variants, state.game),
+      "data/Map001.json",
+    );
+    const shows = (line) => fs.readFileSync(map, "utf8").includes(line);
+    const expect = (step, corrected) => {
+      if (
+        shows(drifted.correction) !== corrected ||
+        shows(drifted.translation) === corrected
+      )
+        throw new Error(`After ${step}, the game holds the wrong line.`);
+    };
+    expect("apply", true);
+    await helper(page, state, "qa", "--undo", finding.id);
+    await page.idle();
+    expect("undo", false);
+    await helper(page, state, "qa", "--apply-again", finding.id);
+    await page.idle();
+    expect("apply again", true);
+    console.log(`  ${finding.id} applied, undone and applied again`);
+  },
+];
+
 const plugins = [
   "Translate and apply Plugin files as an assistant does",
   async ({ page, state }) => {
@@ -2493,6 +2583,12 @@ export const scenarios = {
     description:
       "Translated and applied, then Text QA reviewed by a scripted assistant, one correction applied.",
     steps: () => [open, ...setup, ...translateAll, qa],
+  },
+  "qa-voice": {
+    description:
+      "Translated and applied on the voice-drift game, whose princess turns from lordly to casual between her two events: Text QA's task names her under its voice items, a scripted reviewer reports her casual line from that item alone, and its correction is applied, undone and applied again through the project helper.",
+    game: "voice-drift",
+    steps: () => [open, ...setup, ...translateAll, voiceQa],
   },
   "plugins-applied": {
     description:
