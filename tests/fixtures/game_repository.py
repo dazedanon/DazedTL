@@ -126,8 +126,18 @@ published = game("published")
 (published / "gameupdate").mkdir()
 (published / "gameupdate/patch.ps1").write_text("# GameUpdate fixture\n")
 engine = TranslationEngine(temporary / "profile")
-# Set up scopes the patch to its runtime manifest before the baseline.
-engine.audit_scope(published, {"files": {"data/System.json": {}}})
+# Set up scopes the patch to its runtime manifest before the baseline, with
+# a mod loader the patch adds declared before it exists.
+loader = published / "BepInEx/core/Mod Loader.dll"
+engine.audit_scope(
+    published,
+    {
+        "files": {
+            "data/System.json": {},
+            "BepInEx/core/Mod Loader.dll": {"original_sha256": None},
+        }
+    },
+)
 save(published)
 config = published / updater.CONFIG
 state = updater.reconcile(published, defaults)
@@ -324,6 +334,14 @@ with engine.context():
     assert ".dazedtl/skills/notes/style.md" not in tracked, tracked
     assert "!/gameupdate/patch-config.txt" in ignore.read_text()
     assert not git(published, "status", "--porcelain"), git(published, "status")
+    # The declared mod loader is still the patch's once installed: letting
+    # the config in once rebuilt the rules from tracked files alone, so Git
+    # ignored the loader until a write named it.
+    loader.parent.mkdir(parents=True)
+    loader.write_bytes(b"MZ")
+    untracked = git(published, "status", "-z", "--untracked-files=all")
+    assert untracked == "?? BepInEx/core/Mod Loader.dll\0", untracked
+    shutil.rmtree(published / "BepInEx")
     # Players never download them: a forge's archive, which GameUpdate
     # applies, and the local ZIP both leave them out.
     archived = temporary / "archive.zip"
