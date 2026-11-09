@@ -64,6 +64,7 @@ export function ProgressPanel({
   resume,
   qa,
   finalCheck,
+  checksOnly,
   openQa,
 }: {
   state: TranslationState;
@@ -77,6 +78,8 @@ export function ProgressPanel({
   qa: QaState | null;
   /** For MV/MZ, the final check's playtest has yet to settle after QA. */
   finalCheck: boolean;
+  /** Options turn Text QA's review off, so QA is its checks only. */
+  checksOnly: boolean;
   openQa: () => void;
 }) {
   const now = useMinute();
@@ -186,6 +189,7 @@ export function ProgressPanel({
             options.include_images,
             qa,
             finalCheck,
+            checksOnly,
           )}
         />
         {!!(

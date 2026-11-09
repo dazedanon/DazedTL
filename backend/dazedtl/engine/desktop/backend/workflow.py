@@ -280,9 +280,12 @@ class Workflows:
             from util.skills import RPGMAKER_QA_FOCUSES
             if project["engine"] != "MVMZ":
                 raise ValueError("The release playtest plays RPG Maker MV and MZ games.")
+            # No focus: an Assistant-led project whose Text QA review is off,
+            # which takes none of the play's findings.
             focus = options.get("focus", "release")
             selected = {"stops": read_stops(options.get("stops")),
-                        "focus": focus if focus in dict(RPGMAKER_QA_FOCUSES) else "release"}
+                        "focus": focus if focus is None or focus in dict(RPGMAKER_QA_FOCUSES)
+                        else "release"}
             if action == "playtest_fix":
                 # The fixes as they were when checked; the play refuses others.
                 fixes = options.get("fixes")

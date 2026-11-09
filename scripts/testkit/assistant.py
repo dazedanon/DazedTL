@@ -692,6 +692,34 @@ class Assistant:
             node = node[int(part)] if isinstance(node, list) else node[part]
         return document, node, int(parts[-1]) if isinstance(node, list) else parts[-1]
 
+    def checks_only(self):
+        """Follows the QA step with Text QA's review off in Options: qa
+        --prepare refuses, qa --check checks the RPG Maker game's
+        translations and each hit it lists is answered, the game is played
+        and, once that settles, the qa phase is reported complete; returns
+        the refusal, both checks and the play."""
+        try:
+            self.helper("qa", "--prepare")
+        except SystemExit as refused:
+            refusal = str(refused)
+        else:
+            raise SystemExit("qa --prepare ran with Text QA's review off.")
+        first = self.helper("qa", "--check")
+        report = json.loads((self.game / first["report"]).read_text(encoding="utf-8"))
+        answers = self.work / "qa-answers.json"
+        answers.write_text(
+            json.dumps({hit["id"]: "The stand-in's reply." for hit in report["hits"]}),
+            encoding="utf-8",
+        )
+        second = self.helper("qa", "--check", "--answers", str(answers))
+        if second["open"]:
+            raise SystemExit(f"qa --check left hits open: {second}")
+        status = self.play()
+        if not status["settled"]:
+            raise SystemExit(f"The final check did not settle: {status['next']}")
+        self.finished(next_action="Checks done; package the patch.")
+        return {"refused": refusal, "first": first, "second": second, "play": status}
+
     def qa_applied(self):
         """Reports the qa phase complete once Text QA's apply saved its work,
         as qa's next step then says; for MV/MZ, DazedTL keeps the phase open
@@ -1135,6 +1163,7 @@ def main() -> None:
             "play",
             "untranslated",
             "check",
+            "checks-only",
             "qa-applied",
             "final-check",
             "package",
@@ -1162,7 +1191,7 @@ def main() -> None:
         print(json.dumps(assistant.translate(args.requests), ensure_ascii=False))
     elif args.step == "organize":
         assistant.organize(args.complete, args.miss)
-    elif args.step in {"play", "untranslated", "check", "final-check"}:
+    elif args.step in {"play", "untranslated", "check", "checks-only", "final-check"}:
         result = getattr(assistant, args.step.replace("-", "_"))()
         print(json.dumps(result, ensure_ascii=False))
     else:

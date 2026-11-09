@@ -2233,6 +2233,10 @@ class TranslationTests(unittest.TestCase):
         # which tools a game gets changes no saved run.
         self.assertTrue(value["options"]["install_gameupdate"])
         self.assertFalse(value["options"]["install_tl_inspector"])
+        # They keep Text QA's full review, as before the choice existed.
+        self.assertEqual(value["options"]["text_qa"], "release")
+        with self.assertRaises(ValueError):
+            project.save(value["revision"], {**value["options"], "text_qa": "all"})
         # Runs planned then resume with the options they were planned with.
         planned = TranslationEngine.__new__(TranslationEngine).project(self.game, older)
         self.assertTrue(planned.install_gameupdate)
@@ -2246,6 +2250,7 @@ class TranslationTests(unittest.TestCase):
                     "thorough_investigation": True,
                     "install_gameupdate": False,
                     "install_tl_inspector": True,
+                    "text_qa": "checks",
                 }
             ),
             bound,

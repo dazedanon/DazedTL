@@ -52,6 +52,7 @@ import { ReleaseTab } from "./ReleaseTab";
 import { jobTime } from "../guided/workspace/model";
 import { playtestActions } from "../guided/playtestView";
 import { finalCheckOpen } from "../guided/qaView";
+import { qaChecksOnly, qaReviews } from "../guided/qaUsage";
 import { assistantRunState } from "./assistantPhases";
 import { runnableMode } from "./runnableMode";
 
@@ -147,6 +148,9 @@ function Workspace({
       : null;
   const questions = qa?.questions.filter((row) => !row.choice).length || 0;
   const finalCheck = !!own && finalCheckOpen(own);
+  // The assistant follows the saved choice.
+  const checksOnly =
+    state.options.text_qa === qaChecksOnly[0] && qaReviews(project.engine);
   // The plays, oldest first: a playtest, or one with the assistant's fixes in
   // place. The release playtest shows once the assistant has run one.
   const plays = (own?.operations || [])
@@ -367,6 +371,7 @@ function Workspace({
                 resume={copyControl("default", "resume")}
                 qa={qa}
                 finalCheck={finalCheck}
+                checksOnly={checksOnly}
                 openQa={() => void show("qa")}
               />
             </PageBody>

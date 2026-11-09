@@ -129,4 +129,21 @@ test("only the assistant's reported phase reads as current, and Images shows onl
   );
   assert.equal(assistantRunState(finished, true, true), "waiting");
   assert.equal(assistantRunState(finished, true, false), "done");
+  // With Text QA's review off in Options, QA never reads as reviewed: done,
+  // it is the checks only, and its final check still holds it.
+  const checksOnly = (value: never, open = false) =>
+    phaseStates(value, true, false, null, open, true).find(
+      (step) => step.id === "qa",
+    );
+  assert.deepEqual(checksOnly(finished), {
+    id: "qa",
+    label: "QA",
+    state: "done",
+    detail: "Checks only",
+  });
+  assert.equal(
+    checksOnly(report("qa", { qa: "active" }))?.detail,
+    "Checks only",
+  );
+  assert.equal(checksOnly(finished, true)?.detail, "Final check");
 });

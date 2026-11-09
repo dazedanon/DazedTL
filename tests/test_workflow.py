@@ -51,6 +51,7 @@ from dazedtl.translation.requests import (
     plan_input,
     provider_view,
 )
+from dazedtl.translation.result_checks import CHECK_STEP
 from dazedtl.translation.results import EXPORT, Results, review_digest
 from dazedtl.translation.run_compiler import (
     CENSUS_UNCOVERED,
@@ -2084,6 +2085,24 @@ class WorkflowTests(unittest.TestCase):
                 },
             ),
         )
+
+    def test_starting_prompt_runs_text_qa_review_as_options_choose(self):
+        # Projects keep Text QA's full review unless Options turn it off.
+        handoff = self.service.prepare(self.identity)["handoff"]
+        self.assertIn("run qa --prepare and follow the README", handoff)
+        selected = self.project.read()
+        self.service.save(
+            self.identity,
+            selected["revision"],
+            {**selected["options"], "text_qa": "checks"},
+        )
+        handoff = self.service.prepare(self.identity)["handoff"]
+        self.assertIn("turn Text QA's review off, so never run qa --prepare", handoff)
+        self.assertNotIn("run qa --prepare and follow", handoff)
+        self.assertEqual(
+            handoff.split("never run qa --prepare")[1].count(CHECK_STEP), 1
+        )
+        self.assertEqual(handoff.count(CHECK_STEP), 1)
 
     def test_conflict_recovery_is_a_real_prerequisite(self):
         state = lifecycle(self.profile, self.identity)

@@ -167,7 +167,7 @@ Your assistant translates the whole game from one starting prompt.
    - **API Batch** (recommended): your API key, usually at half the Live price.
    - **Live API**: your API key at the full price.
    - **Assistant only**: no API key, but your assistant translates every line itself, which uses far more of its plan.
-2. Check the game's **Languages**, whether to translate **Text in images**, the tools your assistant installs in the game, such as **GameUpdate**, and any instructions for your assistant.
+2. Check the game's **Languages**, **Text in images**, the tools your assistant installs, such as **GameUpdate**, how much **Text QA** reviews, and any instructions for your assistant.
    Changing a tool later takes effect the next time your assistant prepares the game.
 3. Click **Copy starting prompt** and paste it into your assistant.
    It needs access to the game folder and the DazedTL folder.

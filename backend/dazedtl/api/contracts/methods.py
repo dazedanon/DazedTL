@@ -38,6 +38,7 @@ from dazedtl.api.contracts.guided import (
     PlaytestStatus,
     Preview,
     QaReport,
+    QaSize,
     ReferenceFolder,
     ReleaseDestination,
     SkillText,
@@ -1008,6 +1009,7 @@ METHODS: dict[str, Method] = {
         TranslationQaCheckRequest, TextQaCheck, refresh=False
     ),
     "guided_qa_report": Method(ProjectRequest, QaReport, refresh=False),
+    "guided_qa_size": Method(ProjectRequest, QaSize, refresh=False),
     "guided_qa_start_over": Method(QaStartOverRequest, TextQaStatus),
     "translation_playtest": Method(TranslationPlaytestRequest, PlaytestStatus),
     "guided_playtest_capture": Method(

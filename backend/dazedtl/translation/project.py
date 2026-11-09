@@ -24,13 +24,19 @@ DEFAULTS = {
     "install_gameupdate": True,
     "install_tl_inspector": False,
     "thorough_investigation": False,
+    "text_qa": "release",
 }
 # Options added after workflow.json shipped, which older files and drafts lack.
 ADDED = {
     "install_gameupdate": True,
     "install_tl_inspector": False,
     "thorough_investigation": False,
+    "text_qa": "release",
 }
+# What Text QA reviews after injection: a focus of Guided's Check task, or
+# only the mechanical checks (CHECKS). Only engines Text QA reads offer it.
+TEXT_QA = ("release", "database", "dialogue", "risky-codes")
+CHECKS = "checks"
 # How the assistant works or what it installs rather than what it translates,
 # so changing one keeps saved runs and their quotes current.
 METHOD = {
@@ -38,7 +44,14 @@ METHOD = {
     "install_gameupdate",
     "install_tl_inspector",
     "thorough_investigation",
+    "text_qa",
 }
+
+
+def review_focus(selected):
+    """The focus Text QA's review takes under the project's *selected*
+    options, or None when it runs only the mechanical checks."""
+    return None if selected["text_qa"] == CHECKS else selected["text_qa"]
 
 
 def options(value):
@@ -65,6 +78,8 @@ def options(value):
         )
     ):
         raise ValueError("Project scope choices must be enabled or disabled.")
+    if value["text_qa"] not in (*TEXT_QA, CHECKS):
+        raise ValueError("Choose a Text QA focus or the checks only.")
     return dict(value)
 
 

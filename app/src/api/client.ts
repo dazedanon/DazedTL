@@ -462,6 +462,8 @@ export const api = {
     ) => request("translation_qa", { project_id, step, ...details }),
     qaReport: (project_id: string) =>
       request("guided_qa_report", { project_id }),
+    /** About how much Text QA's review reads in the game, for its usage note. */
+    qaSize: (project_id: string) => request("guided_qa_size", { project_id }),
     /** Starts text QA over, with the playtest's results when asked. */
     qaStartOver: (project_id: string, playtest: boolean) =>
       request("guided_qa_start_over", { project_id, playtest }),

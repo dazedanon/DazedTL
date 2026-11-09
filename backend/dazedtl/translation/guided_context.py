@@ -230,7 +230,7 @@ class GuidedContext:
         from dazedtl.compatibility.text import qa_handoff
 
         qa = self.guided.backend.guided_text_state(
-            native, self.guided.saved_form(project_id)["text"]["focus"]
+            native, self.guided.qa_focus(project_id)
         )["qa"]
         if not qa.get("task"):
             raise ValueError("Prepare the text QA task first.")

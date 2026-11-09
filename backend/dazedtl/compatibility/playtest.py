@@ -516,11 +516,14 @@ class Review:
 
 
 def reviewing(folder, focus):
-    """The focus's QA task as the playtest's problems read it, or None."""
+    """The focus's QA task as the playtest's problems read it, or None; a
+    focus of None is a review that is off."""
     from util import rpgmaker_qa as qa
 
     from .text import adopt_answers
 
+    if not focus:
+        return None
     pointer = Path(folder) / ("text-qa-" + focus + ".json")
     if not pointer.exists():
         return None
@@ -595,13 +598,17 @@ def _seen(value):
     return {key: value[key] for key in ("stop", "scene", "capture") if value.get(key)}
 
 
-def _problem(row, review):
+def _problem(row, review, off=False):
+    """What the app shows of a problem; with Text QA's review *off*, a
+    problem in translated text waits for no QA round."""
     from util.playtest.run import observation
 
     problem = {key: row[key] for key in PROBLEM_KEYS if key in row}
     if observed := observation(row):
         problem["review"] = (
-            review.state(observed["identity"], observed["note"])
+            "off"
+            if off
+            else review.state(observed["identity"], observed["note"])
             if review
             else "waiting"
         )
@@ -622,7 +629,8 @@ def _problem(row, review):
 
 def playtest_state(folder, guard, focus="release"):
     """The latest report, as the playtest's panel shows it, with where text
-    QA stands on each problem it corrects."""
+    QA stands on each problem it corrects; a focus of None is a review that
+    is off."""
     try:
         found = latest(folder)
     except (ValueError, OSError, KeyError, TypeError) as exc:
@@ -653,7 +661,7 @@ def playtest_state(folder, guard, focus="release"):
         "seconds": report.get("seconds", 0),
         "played": bool(report.get("played")),
         "complete": bool(report.get("complete")),
-        "problems": [_problem(row, review) for row in report["problems"]],
+        "problems": [_problem(row, review, not focus) for row in report["problems"]],
         **({"since": report["since"]} if report.get("since") else {}),
         "gaps": list(report.get("gaps") or []),
         "coverage": {

@@ -65,10 +65,39 @@ class PlaytestTests(unittest.TestCase):
                 text["playtest"] = described(report("reviewing"), False)
                 self.assertTrue(helper.status("p", {})["settled"], method)
 
+    def test_text_problems_with_the_review_off_are_the_assistants_to_correct(self):
+        text = {"qa": {"status": {}}, "playtest": described(report("off"), False)}
+        helper = Playtest(
+            SimpleNamespace(
+                backend=SimpleNamespace(guided_text_state=lambda *_: text),
+                projects=SimpleNamespace(get=lambda _id: {"method": "len"}),
+            ),
+            SimpleNamespace(focus=lambda _id: None),
+        )
+        with (
+            mock.patch.object(helper, "operation", return_value=None),
+            mock.patch.object(
+                helper, "fixes", return_value={"file": "f", "in_game": False}
+            ),
+            mock.patch.object(helper, "layout", return_value=None),
+            mock.patch.object(helper, "stops", return_value=[]),
+        ):
+            status = helper.status("p", {})
+            self.assertEqual((status["waiting"], status["settled"]), (0, True))
+            self.assertIn("yourself with correction receipts", status["next"])
+            self.assertNotIn("qa --prepare", status["next"])
+            # A report that could not play the game still lists them.
+            text["playtest"] = described(report("off", played=False), False)
+            status = helper.status("p", {})
+            self.assertTrue(status["settled"])
+            self.assertIn("yourself with correction receipts", status["next"])
+
     def test_the_final_check_settles_only_on_a_current_quiet_play(self):
         crash = {"kind": "crash", "fix": "game"}
         cases = {
             "nothing waits": (report("reviewing"), False, True),
+            # No QA round takes text problems while Text QA's review is off.
+            "the review is off": (report("off"), False, True),
             "a play runs": (report("reviewing"), True, False),
             "text waits for QA": (report(), False, False),
             "the game changed": (report(current=False), False, False),

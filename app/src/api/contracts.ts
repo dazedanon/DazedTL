@@ -838,6 +838,22 @@ export type QaReport = {
   interface_error?: string;
 };
 
+/** About how much one focus of Text QA's review reads in the game. */
+export type QaFocusSize = {
+  lines: number;
+  /** Event command lists holding the dialogue it reads. */
+  scenes: number;
+};
+
+/** How much Text QA's review reads in the game, for the usage note shown
+before it starts (translation/qa_size). */
+export type QaSize = {
+  /** A big game is still being counted. */
+  counting: boolean;
+  /** Each focus's size by its key; None before the game has text to count. */
+  focuses: Record<string, QaFocusSize> | null;
+};
+
 export type TextQaOperation = {
   kind: "prepare" | "apply" | "undo" | "reapply" | "checkpoint";
   id: string;
@@ -966,8 +982,8 @@ export type PlaytestProblem = {
   seen?: PlaytestSeen;
   /** The previous playtest did not find it. */
   new?: boolean;
-  /** Where text QA stands on a problem it corrects: in its review now, reviewed, waiting for QA to run again, or outside the lines its focus holds. */
-  review?: "reviewing" | "reviewed" | "waiting" | "outside";
+  /** Where text QA stands on a problem it corrects: in its review now, reviewed, waiting for QA to run again, outside the lines its focus holds, or off: an Assistant-led project whose Options turn the review off. */
+  review?: "reviewing" | "reviewed" | "waiting" | "outside" | "off";
 };
 
 export type PlaytestStop = {
@@ -1489,6 +1505,7 @@ export type TranslationOptions = {
   install_gameupdate: boolean;
   install_tl_inspector: boolean;
   thorough_investigation: boolean;
+  text_qa: "release" | "database" | "dialogue" | "risky-codes" | "checks";
 };
 
 export type ProjectOptions = {
@@ -4095,6 +4112,7 @@ export type RpcContract = {
     response: TextQaCheck;
   };
   guided_qa_report: { request: ProjectRequest; response: QaReport };
+  guided_qa_size: { request: ProjectRequest; response: QaSize };
   guided_qa_start_over: { request: QaStartOverRequest; response: TextQaStatus };
   translation_playtest: {
     request: TranslationPlaytestRequest;
