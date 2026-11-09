@@ -136,8 +136,9 @@ export default function ProjectPage({
           // Each action sits beside what it changes: the method, and the
           // folder the path names.
           <span className="path-line">
+            <span>{engineLabel(project.engine_label || project.engine)}</span>
+            <span>·</span>
             <span>
-              {engineLabel(project.engine_label || project.engine)} ·{" "}
               {project.method
                 ? methodLabels[project.method]
                 : "No method chosen"}
@@ -147,14 +148,13 @@ export default function ProjectPage({
             {project.method && (
               <Button
                 variant="link"
-                className="project-method-link"
                 disabled={busy || !available}
                 onClick={chooseMethod}
               >
                 Change method
               </Button>
             )}
-            <span aria-hidden="true">·</span>
+            <span>·</span>
             {available ? (
               <Button
                 variant="link"

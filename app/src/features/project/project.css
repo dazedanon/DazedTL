@@ -1,13 +1,21 @@
 /* The Project page: the game's status, history, checkpoints and translation
    file. */
-.project-page .page-header p {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+/* The facts line holds links: its path shortens itself, so the line clips
+   nothing and a focused link's ring shows whole. The header keeps room
+   below the line for that ring and takes it back from its margin. */
+.project-page > .page-header {
+  padding-bottom: var(--space-1);
+  margin-bottom: var(--space-4);
 }
-/* Change method keeps some room from the facts on either side. */
-.project-method-link {
-  margin-inline: var(--space-2);
+@media (max-height: 720px) {
+  .project-page > .page-header {
+    margin-bottom: var(--space-2);
+  }
+}
+/* Every fact, link and dot sits the same distance apart, with room for a
+   focus ring between them. */
+.project-page .page-header .path-line {
+  gap: var(--space-2);
 }
 .project-next-stage {
   display: block;
