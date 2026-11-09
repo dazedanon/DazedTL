@@ -106,7 +106,12 @@ export function installHooks(folder) {
       rest.unshift(path.basename(at));
       at = path.dirname(at);
     }
-    return path.join(real(at), ...rest);
+    // A root that is missing too, such as an unmapped drive on Windows.
+    try {
+      return path.join(real(at), ...rest);
+    } catch {
+      return path.resolve(folder, place);
+    }
   };
   // These hooks, by a relative path or the absolute one of this checkout or
   // of the main checkout that its worktrees share.
