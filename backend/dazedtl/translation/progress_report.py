@@ -168,7 +168,11 @@ def reopen(workspace, project_id, engine, source, options, phase):
         report["phase"] = reopened[0]
         phases[reopened[0]] = "active"
         report["blocker"] = ""
-        report["next_action"] = REOPENED.format(PHASES[reopened[0]].lower())
+        # A phase named by its initials, such as QA, keeps its capitals.
+        label = PHASES[reopened[0]]
+        report["next_action"] = REOPENED.format(
+            label if label.isupper() else label.lower()
+        )
 
     return update(workspace, project_id, engine, source, options, change)
 

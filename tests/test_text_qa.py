@@ -277,6 +277,10 @@ class TextQATests(unittest.TestCase):
             self.assertEqual(published, [report])
             self.assertEqual(report["phase"], "qa")
             self.assertEqual(
+                report["next_action"],
+                "Check the game's files again, then continue from QA.",
+            )
+            self.assertEqual(
                 report["phases"],
                 {
                     "translation": "complete",
