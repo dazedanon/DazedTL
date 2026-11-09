@@ -206,7 +206,7 @@ In Guided steps the translations go into your working copies, so apply them in T
 1. Choose **Lines**. The first column is your current model; **Add model** adds others.
 2. Click a column's settings under its name to try another thinking effort, glossary or instruction.
 3. **Estimate cost**, then **Translate** for the price shown; a column translated before with the same settings is reused free.
-4. With several columns, click the best translation of each line; **Mark differences** marks each column's changes from the first.
+4. With several columns, click each line's best translation; **Mark differences** marks changes from each line's first translation.
 
 **Use most picked**, or **Use this model** in a column's menu, makes that model and its settings the game's.
 
