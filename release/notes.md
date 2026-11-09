@@ -2,4 +2,4 @@
 
 ### Changed
 
-- **Project page:** **Export…** and **Import…** for translation files move from a box on **Status** to their own **Export/Import** tab, where each result shows beside its button; **Change method** now sits after the method's name, and clicking the game's folder path opens it in place of the **Open folder** button.
+- **Project page:** Export and Import have their own Export/Import tab, Change method follows the method's name, and clicking the game's path opens its folder.
