@@ -67,12 +67,14 @@ On Linux it needs a display: CI runs it under `xvfb-run`, and on a desktop `node
 - **Run what CI runs locally** with `node scripts/release-check.mjs`, in about three minutes on Linux, outside a sandbox.
   A check that fails runs once more, and one that passes then is reported as a flake.
 
-Reproduce a Windows problem first on a disposable Windows machine with the [Windows run](../.github/workflows/windows-run.yml) workflow, from a ref pushed to GitHub:
+Reproduce a Windows problem first on a disposable Windows machine with the [Windows run](../.github/workflows/windows-run.yml) workflow, from a `run/` branch on GitHub:
 
 ```sh
-gh workflow run windows-run.yml -f ref=my-branch -f command='node scripts/scenario.mjs translated --work "$WORK"'
+git push git@github.com:dazedanon/DazedTL.git HEAD:refs/heads/run/my-fix
+gh workflow run windows-run.yml -f ref=run/my-fix -f command='node scripts/scenario.mjs translated --work "$WORK"'
 gh run watch "$(gh run list --workflow windows-run.yml --limit 1 --json databaseId -q '.[0].databaseId')"
 gh run download <run id> -n logs
+git push git@github.com:dazedanon/DazedTL.git --delete run/my-fix
 ```
 
 GitHub's Windows images include the Visual C++ runtime and other tools a fresh Windows lacks, so keep the Windows VM for a fresh Windows, Defender and real games.
@@ -157,6 +159,7 @@ Test updater changes with both `patch.ps1` on Windows and `patch.sh` on Linux.
 ## Branches and releases
 
 Work on `dev`; `main` always holds the latest stable release, so a ZIP of `main` from any mirror is a release.
+[branches.mjs](../scripts/branches.mjs) keeps every other branch off the mirrors but short-lived `land/` and `run/` ones.
 
 ### Contributing a change
 

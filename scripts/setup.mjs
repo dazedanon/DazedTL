@@ -19,6 +19,7 @@ import {
   bundledGit,
   pinnedVersion,
 } from "./dependencies.mjs";
+import { installHooks } from "./branches.mjs";
 import { replaceFolder, settle } from "./files.mjs";
 import { extract } from "./tar.mjs";
 import { extract as unzip } from "./zip.mjs";
@@ -486,6 +487,11 @@ export async function ensureSetup({ mode }) {
         ? "DazedTL needs Git. Run xcode-select --install in Terminal, then start DazedTL again."
         : "DazedTL needs Git. Install the git package with your system's package manager, then start DazedTL again.",
     );
+  // Keeps a development checkout's pushes to the branches the mirrors are for.
+  if (mode === "dev") {
+    const off = installHooks(root);
+    if (off) console.log(off);
+  }
   state.mode = mode;
   writeState(state);
   if (state.venv === "managed" && !process.env.DAZEDTL_PYTHON)

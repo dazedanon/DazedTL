@@ -1,6 +1,7 @@
 // Lands a finished branch on dev from its worktree, one landing at a time:
 // formats it, merges dev in, runs the tests and build, fast-forwards the main
-// checkout's dev and pushes it to every mirror. A branch that changes a path
+// checkout's dev and pushes it to every mirror, deleting there the branches
+// branches.mjs says the mirrors no longer need. A branch that changes a path
 // land-lock.mjs's platformPaths marks first passes CI on GitHub on Windows and
 // Linux, without holding the lock; every other branch lands without waiting
 // for CI, which then runs on dev, and the session that cuts the next release
@@ -53,6 +54,7 @@ import {
   withOneRerun,
   workflow,
 } from "./ci-wait.mjs";
+import { prune } from "./branches.mjs";
 import { NOTES } from "./changelog.mjs";
 import { generated } from "./contracts.mjs";
 import {
@@ -1431,13 +1433,14 @@ function moveDev(atMain, main, head) {
 
 /**
  * Pushes the main checkout's dev to each target, once more after a minute
- * when a push fails. Resolves the mirrors it did not reach.
+ * when a push fails, then deletes there the branches branches.mjs's prune
+ * says it no longer needs. Resolves the mirrors it did not reach.
  * @param {Deps} deps
  * @param {string} main
  * @param {{ name: string, url: string }[]} targets
  * @param {string[]} [options] Git options for each push
  */
-async function pushDev({ run, log, wait }, main, targets, options = []) {
+async function pushDev({ run, log, wait, now }, main, targets, options = []) {
   /** @type {string[]} */
   const unpushed = [];
   for (const target of targets) {
@@ -1455,6 +1458,7 @@ async function pushDev({ run, log, wait }, main, targets, options = []) {
       unpushed.push(
         `${target.name} (${target.url}):\n${tail(pushed.output, 5)}`,
       );
+    else await prune({ run, log, now }, main, target, options);
   }
   return unpushed;
 }

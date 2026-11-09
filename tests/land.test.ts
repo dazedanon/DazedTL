@@ -880,6 +880,8 @@ test("a sandboxed worker hands off a checked branch without writing the main che
   assert.equal(refs(), before);
   assert.equal(pushed(), "");
 
+  // A branch a session left on a mirror goes once dev has its commits.
+  atMain(["push", "-q", mirror, `${base}:refs/heads/claude/stray`]);
   logged.length = 0;
   assert.equal(await finish(), 0, logged.join("\n"));
   assert.ok(
@@ -887,6 +889,16 @@ test("a sandboxed worker hands off a checked branch without writing the main che
   );
   assert.equal(fs.readFileSync(path.join(main, "work.txt"), "utf8"), "work\n");
   assert.equal(rev(gitIn(mirror), "dev"), head);
+  assert.equal(
+    gitIn(mirror)(["for-each-ref", "--format=%(refname)"]).stdout,
+    "refs/heads/dev\n",
+  );
+  assert.ok(
+    logged.includes(
+      "Deleted from Mirror the branches dev has or a Windows run left: claude/stray.",
+    ),
+    logged.join("\n"),
+  );
   const entries = fs
     .readFileSync(path.join(main, ".git", "dazedtl-reviews.jsonl"), "utf8")
     .trim()
