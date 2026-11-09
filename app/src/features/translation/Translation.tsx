@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { FolderOpen } from "lucide-react";
 import { api } from "../../api/client";
 import type {
@@ -218,8 +218,16 @@ function Workspace({
       : []),
     ...(state.release ? [{ id: "release" as const, label: "Release" }] : []),
   ];
-  // A tab that goes, such as Text QA once it starts over, leaves Progress.
-  const view = tabs.some((tab) => tab.id === selected) ? selected : "progress";
+  // A tab that goes, such as Text QA once it starts over, leaves Progress,
+  // which stays when the tab comes back. One not here yet, such as Text QA
+  // before the game's QA state arrives, is shown once it is.
+  const present = tabs.some((tab) => tab.id === selected);
+  const presentBefore = useRef(present);
+  useEffect(() => {
+    if (presentBefore.current && !present) setView("progress");
+    presentBefore.current = present;
+  }, [present]);
+  const view = present ? selected : "progress";
   const disabled = state.active || action.busy || draft.committing;
   const edit = <K extends keyof TranslationOptions>(
     key: K,

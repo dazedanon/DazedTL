@@ -1,4 +1,10 @@
-import { createContext, useContext, useRef, type ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useRef,
+  type ReactNode,
+} from "react";
 export interface Tab<T extends string> {
   id: T;
   label: ReactNode;
@@ -28,6 +34,15 @@ export function Tabs<T extends string>({
   const focusable =
     items.find((item) => item.id === value && !item.disabled) ||
     items.find((item) => !item.disabled);
+  // A selected tab that goes, such as Text QA once it starts over, takes
+  // the focus with its panel; it moves to the tab shown in its place.
+  const shown = useRef(value);
+  useEffect(() => {
+    const gone = !items.some((item) => item.id === shown.current);
+    shown.current = value;
+    if (gone && document.activeElement === document.body)
+      buttons.current.get(value)?.focus({ preventScroll: true });
+  });
   return (
     <div
       role="tablist"
