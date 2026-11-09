@@ -150,11 +150,9 @@ def translate(
     unit's translation, the cost and the requests with their replies."""
     from dazedtl.settings.execution import worker_secret
     from dazedtl.translation.organize import DELIVERED
-    from dazedtl.translation.repricing import route_of
-    from dazedtl.translation.results import QUOTES, Results
+    from dazedtl.translation.results import QUOTES
     from dazedtl.translation.runner import Runner
 
-    from .estimate_prices import usage_cost
     from .translation import TranslationProvider
 
     cfg = candidate["configuration"]
@@ -184,7 +182,7 @@ def translate(
         if stopped():
             raise InterruptedError("Stopped.")
 
-    from .compare import KEPT_REQUESTS, STOPPED, _message
+    from .compare import STOPPED, _message
 
     runner = Runner(store, job["id"], provider, current)
     failure = None
@@ -194,23 +192,66 @@ def translate(
         failure = STOPPED
     except (OSError, RuntimeError, ValueError) as error:
         failure = _message(error)
-    # What came back before a stop or a failure is kept, with its cost.
+    # What came back before a stop or a failure is kept, with its cost,
+    # each read on its own, so one file that can't be read loses only itself.
+    lines, missing = _lines(game, requests)
+    value = {"lines": lines, **_spent(engine, cfg, store, job["id"], runner, requests)}
+    # A rejected request leaves lines untranslated, so the model failed,
+    # whatever lines its other requests brought back.
+    error = failure or value.pop("rejected", "") or missing or value.get("error")
+    if error:
+        value["error"] = error
+    return value
+
+
+def _lines(game, requests):
+    """Each unit's translation the requests brought back, and why some
+    can't be read, when one can't."""
+    from dazedtl.translation.results import Results
+
     results = Results(game)
-    lines = {}
+    lines, missing = {}, ""
     for request in requests:
-        value = results.get(request) or {}
+        try:
+            value = results.get(request) or {}
+        except (OSError, ValueError) as error:
+            missing = missing or f"Some of its lines can't be read: {error}"
+            continue
         for unit, text in (value.get("translations") or {}).items():
             lines[unit] = {"speaker": "", "text": text}
-    record = store.record(job["id"])
-    usage = record.get("usage") or {}
-    cost = usage_cost(
-        usage, cfg, route_of(engine, cfg), (record.get("request_usage") or {}).values()
-    )
+    return lines, missing
+
+
+def _spent(engine, cfg, store, identity, runner, requests):
+    """What a model's API run paid for and sent, however it ended: its cost,
+    the first KEPT_REQUESTS requests with their replies, up to one whose
+    reply can't be read, as a Guided model's result keeps them, and the
+    message of a request it rejected. A run record that can't be read
+    leaves out the cost, saying why."""
+    from dazedtl.translation.repricing import route_of
+
+    from .compare import KEPT_REQUESTS, unread
+    from .estimate_prices import usage_cost
+
+    value: dict[str, object] = {"requestCount": len(requests)}
+    try:
+        record = store.record(identity)
+        cost = usage_cost(
+            record.get("usage") or {},
+            cfg,
+            route_of(engine, cfg),
+            (record.get("request_usage") or {}).values(),
+        )
+    except (OSError, ValueError) as error:
+        return {**value, "error": unread(error)}
+    value["cost"] = round(float(cost or 0), 6)
     shown = []
-    # The first ones, as a Guided model's result keeps them.
     for index, request in enumerate(requests[:KEPT_REQUESTS]):
         path = runner.response_path(request["id"])
-        response = read_json(path) if path.is_file() else {}
+        try:
+            response = read_json(path) if path.is_file() else {}
+        except OSError, ValueError:
+            break
         params = request["params"]
         shown.append(
             {
@@ -239,17 +280,12 @@ def translate(
                 },
             }
         )
-    failed = [
+    value["requests"] = shown
+    rejected = [
         row["message"]
         for row in record["states"].values()
         if row["state"] != "accepted" and row.get("message")
     ]
-    return {
-        "lines": lines,
-        "cost": round(float(cost or 0), 6),
-        "requests": shown,
-        "requestCount": len(requests),
-        # A rejected request leaves lines untranslated, so the model failed,
-        # whatever lines its other requests brought back.
-        **({"error": failure or failed[0]} if failure or failed else {}),
-    }
+    if rejected:
+        value["rejected"] = rejected[0]
+    return value

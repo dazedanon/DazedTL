@@ -13,6 +13,7 @@ wrote, its cost, time and requests come back.
 """
 
 import json
+import sqlite3
 import subprocess
 import sys
 import threading
@@ -435,9 +436,8 @@ def problems(name, found, lines, glossary, pair):
     return result
 
 
-def result(directory, name, phase, markers, seconds, original, found, pair):
-    """What a finished run returns: each line it wrote, what its checks
-    found, its cost and time, and the requests it sent."""
+def result(directory, name, phase, markers, original, found, pair):
+    """The lines a finished run wrote and what its checks found."""
     path = directory / "translated" / name
     if not path.is_file():
         raise ValueError(f"{name} came back without a translation.")
@@ -448,30 +448,48 @@ def result(directory, name, phase, markers, seconds, original, found, pair):
         "problems": problems(
             name, found, lines, glossary_text((directory / GLOSSARY).parents[1]), pair
         ),
-        "seconds": round(seconds, 1),
-        **_sent(directory),
     }
 
 
-def _sent(directory):
-    """What a Guided model's run paid for and the requests it sent, the
-    first KEPT_REQUESTS kept for Show request, up to one whose saved body
-    can't be read, which costs the model neither its cost nor its lines."""
+def unread(error):
+    """A model's error when what it spent can't be read."""
+    return f"What it spent can't be read: {error}"
+
+
+def ended(index, spent, finished=None, error=None):
+    """A model's result however its translation ended: the lines it
+    finished, what it spent and sent, which its method's reader gives
+    without failing, and its error, the run's own before the reader's."""
+    value = {"index": index, **(finished or {}), **spent}
+    if error:
+        value["error"] = error
+    return value
+
+
+def _spent(directory, started):
+    """What a Guided model's run took, paid for and sent, however it ended:
+    its time, cost and the first KEPT_REQUESTS requests, up to one whose
+    saved body can't be read. A requests file that can't be read leaves out
+    the cost, saying why, and never the model's lines."""
     from .process_view import ledger_payload, ledger_records, paid_receipts
 
-    paid = paid_receipts(directory)
-    value = {
-        "cost": round(sum(float(item.get("cost") or 0) for item in paid.values()), 6)
-    }
+    value = {"seconds": round(time.monotonic() - started, 1)}
+    try:
+        paid = paid_receipts(directory)
+    except (OSError, ValueError, sqlite3.Error) as error:
+        return {**value, "error": unread(error)}
+    value["cost"] = round(
+        sum(float(item.get("cost") or 0) for item in paid.values()), 6
+    )
     try:
         records = ledger_records(directory) or []
-    except OSError, ValueError:
+    except OSError, ValueError, sqlite3.Error:
         return value
     kept = []
     for index in range(min(len(records), KEPT_REQUESTS)):
         try:
             kept.append(ledger_payload(directory, records, index, len(records)))
-        except OSError, ValueError:
+        except OSError, ValueError, sqlite3.Error:
             break
     return {**value, "requests": kept, "requestCount": len(records)}
 
@@ -519,6 +537,7 @@ def run(plan, log):
             report(f"{label} · preparing", index, "preparing")
             workspace = folder.parent.parent
             started = time.monotonic()
+            finished, error = None, None
             try:
                 _, native = stage_run(
                     directory,
@@ -552,39 +571,38 @@ def run(plan, log):
                     report,
                     index,
                 )
-                value = result(
-                    directory,
-                    name,
-                    phase,
-                    markers,
-                    time.monotonic() - started,
-                    found,
-                    shown,
-                    options["pair"],
+                finished = result(
+                    directory, name, phase, markers, found, shown, options["pair"]
                 )
-                report(f"{label} · translated", index, "done")
-                return {"index": index, **value}
             except InterruptedError:
                 if action == ESTIMATE:
                     raise
-                report(f"{label} · stopped", index, "failed")
-                return {"index": index, "error": STOPPED, **_spent(directory, started)}
+                error = STOPPED
             except (
                 OSError,
                 RuntimeError,
                 ValueError,
                 subprocess.SubprocessError,
-            ) as error:
+            ) as caught:
                 if action == ESTIMATE:
                     # Another model's estimate still prices it.
                     report(f"{label} · could not be estimated", index, "failed")
-                    return {"index": index, "error": _message(error)}
-                report(f"{label} · failed", index, "failed")
-                return {
-                    "index": index,
-                    "error": _message(error),
-                    **_spent(directory, started),
-                }
+                    return {"index": index, "error": _message(caught)}
+                error = _message(caught)
+            value = ended(index, _spent(directory, started), finished, error)
+            report(
+                f"{label} · "
+                + (
+                    "stopped"
+                    if error == STOPPED
+                    else "failed"
+                    if "error" in value
+                    else "translated"
+                ),
+                index,
+                "failed" if "error" in value else "done",
+            )
+            return value
 
         with ThreadPoolExecutor(max_workers=len(candidates) or 1) as pool:
             values = list(pool.map(one, candidates))
@@ -667,8 +685,9 @@ def run_units(plan, log):
                     "estimate": compare_units.estimate(engine, candidate, requests),
                 }
             started = time.monotonic()
+            finished, error = {}, None
             try:
-                result = compare_units.translate(
+                finished = compare_units.translate(
                     engine,
                     workspace,
                     options,
@@ -681,28 +700,31 @@ def run_units(plan, log):
                 )
             except InterruptedError:
                 # Stopped before it sent anything.
-                return {"index": index, "error": STOPPED}
-            except (OSError, RuntimeError, ValueError) as error:
-                # Failed before it sent anything; one that failed sending
-                # comes back with what it spent (compare_units.translate).
-                report(f"{label} · failed", index, "failed")
-                return {"index": index, "error": _message(error)}
-            result.update(
-                seconds=round(time.monotonic() - started, 1),
-                problems=problems(
+                error = STOPPED
+            except (OSError, RuntimeError, ValueError) as caught:
+                # Failed before it sent anything; once it sends, what came
+                # back and what it spent return (compare_units.translate).
+                error = _message(caught)
+            if "lines" in finished:
+                finished["problems"] = problems(
                     options.get("file") or "",
                     shown,
-                    result["lines"],
+                    finished["lines"],
                     glossary_text(game),
                     options["pair"],
-                ),
+                )
+            value = ended(
+                index,
+                {"seconds": round(time.monotonic() - started, 1)},
+                finished,
+                error,
             )
             report(
-                f"{label} · {'failed' if result.get('error') else 'translated'}",
+                f"{label} · {'failed' if 'error' in value else 'translated'}",
                 index,
-                "failed" if result.get("error") else "done",
+                "failed" if "error" in value else "done",
             )
-            return {"index": index, **result}
+            return value
 
         with ThreadPoolExecutor(max_workers=len(candidates) or 1) as pool:
             values = list(pool.map(one, candidates))
@@ -721,14 +743,3 @@ def _ended(action, log, value):
 
 def _message(error):
     return str(error) if isinstance(error, ValueError) else type(error).__name__
-
-
-def _spent(directory, started):
-    """What a Guided model's run that stopped or failed sent, paid for and
-    took, which its column still shows. Its lines come only with the file
-    it finishes."""
-    value = {"seconds": round(time.monotonic() - started, 1)}
-    try:
-        return {**value, **_sent(directory)}
-    except OSError, ValueError:
-        return value

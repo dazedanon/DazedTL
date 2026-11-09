@@ -217,6 +217,47 @@ class StopTests(unittest.TestCase):
         self.assertEqual(spent["requests"], [{"index": 0}])
         self.assertEqual(spent["requestCount"], 3)
 
+    def test_a_damaged_requests_file_costs_only_its_model_the_cost(self):
+        # A model whose requests file wasn't a database failed the whole
+        # comparison, and one whose file was a link lost its lines.
+        line = {"/1": {"speaker": "", "text": "Hi"}}
+
+        def translate(directory, _env, label, _log, _index):
+            (directory / "translated").mkdir(parents=True)
+            (directory / "translated/Map001.json").write_text("{}", "utf-8")
+            ledger = directory / "log/dazedtl-process.sqlite3"
+            ledger.parent.mkdir(parents=True)
+            if label == "a":
+                ledger.write_bytes(b"not a database")
+            elif label == "b":
+                (directory / "elsewhere.sqlite3").write_bytes(b"")
+                ledger.symlink_to(directory / "elsewhere.sqlite3")
+
+        for damaged in (0, 1):
+            with self.subTest(damaged=damaged), TemporaryDirectory() as temporary:
+                folder = Path(temporary)
+                with (
+                    patch("desktop.backend.workflow_actions.validate_plan"),
+                    patch("desktop.backend.manual.worker_environment"),
+                    patch.object(compare_run, "stage", return_value=({}, [])),
+                    patch.object(compare_run, "stage_run", return_value=(None, {})),
+                    patch.object(compare_run, "engine_configuration"),
+                    patch.object(compare_run, "translate", side_effect=translate),
+                    patch.object(compare_run, "rows", return_value=line),
+                    patch.object(compare_run, "problems", return_value={}),
+                ):
+                    models = ["a", "c"] if damaged == 0 else ["b", "c"]
+                    value = compare_run.run(
+                        self.guided_plan(folder, models), Mock(stopped=lambda: False)
+                    )
+                damaged_model, finished = value["models"]
+                self.assertEqual(damaged_model["lines"], line)
+                self.assertNotIn("cost", damaged_model)
+                self.assertRegex(damaged_model["error"], "spent can't be read")
+                self.assertEqual(finished["lines"], line)
+                self.assertEqual(finished["cost"], 0)
+                self.assertNotIn("error", finished)
+
     def test_a_stopped_translation_keeps_what_each_model_finished_and_spent(self):
         # A stop dropped every model's lines and the cost of what was sent,
         # while translating again was refused.
@@ -230,7 +271,8 @@ class StopTests(unittest.TestCase):
         with TemporaryDirectory() as temporary:
             folder = Path(temporary)
             log = Mock(stopped=stopped.is_set)
-            finished = {"lines": {"/1": {"speaker": "", "text": "Hi"}}, "cost": 0.5}
+            finished = {"lines": {"/1": {"speaker": "", "text": "Hi"}}}
+            spent = {"seconds": 1.5, "cost": 0.0, "requests": [{}], "requestCount": 3}
             with (
                 patch("desktop.backend.workflow_actions.validate_plan"),
                 patch("desktop.backend.manual.worker_environment"),
@@ -241,27 +283,14 @@ class StopTests(unittest.TestCase):
                 patch.object(compare_run, "result", return_value=finished),
                 # A stopped Guided model kept no cost below a cent, no
                 # requests and no time.
-                patch.object(
-                    compare_run,
-                    "_sent",
-                    return_value={"cost": 0.0, "requests": [{}], "requestCount": 3},
-                ),
+                patch.object(compare_run, "_spent", return_value=spent),
             ):
                 value = compare_run.run(self.guided_plan(folder, ["a", "b"]), log)
         self.assertTrue(value["stopped"])
         self.assertEqual(value["message"], stopped_note(compare_run.TRANSLATE))
-        self.assertEqual(value["models"][0], {"index": 0, **finished})
-        stopped_model = dict(value["models"][1])
-        self.assertIsInstance(stopped_model.pop("seconds"), float)
+        self.assertEqual(value["models"][0], {"index": 0, **finished, **spent})
         self.assertEqual(
-            stopped_model,
-            {
-                "index": 1,
-                "error": compare_run.STOPPED,
-                "cost": 0.0,
-                "requests": [{}],
-                "requestCount": 3,
-            },
+            value["models"][1], {"index": 1, "error": compare_run.STOPPED, **spent}
         )
         self.assertEqual(outcome(value), "stopped")
         # The page shows the stopped model's cost beside its error.
@@ -462,6 +491,71 @@ class StopTests(unittest.TestCase):
             {},
         )["candidates"][0]
         self.assertEqual((shown["requests"], shown["keptRequests"]), (25, 20))
+
+    def test_a_damaged_reply_costs_an_assistant_led_model_none_of_its_lines(self):
+        # One reply file that wasn't JSON made a finished Assistant-led
+        # model fail "before it sent anything", without its lines or cost.
+        temporary = TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        replies = Path(temporary.name)
+        write_json(replies / "r0", {"text": "Hi"})
+        (replies / "r1").write_bytes(b"\x00 not JSON")
+        record = {
+            "usage": {},
+            "request_usage": {},
+            "states": {r: {"state": "accepted"} for r in ("r0", "r1", "r2")},
+        }
+        store = Mock(
+            create=Mock(return_value={"id": "j1"}), record=Mock(return_value=record)
+        )
+
+        class Runner:
+            def __init__(self, *_args):
+                pass
+
+            def step(self, recover):
+                pass
+
+            def response_path(self, identity):
+                return replies / identity
+
+        class Results:
+            def __init__(self, _game):
+                pass
+
+            def get(self, request):
+                return {"translations": {f"u{request['id']}": "Hi"}}
+
+        with (
+            patch.object(compare_units, "run_store", return_value=store),
+            patch("dazedtl.translation.runner.Runner", Runner),
+            patch("dazedtl.translation.results.Results", Results),
+            patch("dazedtl.settings.execution.worker_secret"),
+            patch("dazedtl.translation.repricing.route_of"),
+            patch("dazedtl.compatibility.translation.TranslationProvider"),
+            patch("dazedtl.compatibility.estimate_prices.usage_cost", return_value=0.3),
+        ):
+            value = compare_units.translate(
+                None,
+                Path("/workspace"),
+                {
+                    "selected": {},
+                    "inputPath": "u.json",
+                    "quotes": True,
+                    "projectId": "p",
+                },
+                {"configuration": {}},
+                [{"id": r, "sources": [], "params": {}} for r in ("r0", "r1", "r2")],
+                {},
+                Path("/game"),
+                Path("/runs"),
+                lambda: False,
+            )
+        self.assertEqual(len(value["lines"]), 3)
+        self.assertEqual(value["cost"], 0.3)
+        # Show request keeps the requests up to the one it can't read.
+        self.assertEqual([item["index"] for item in value["requests"]], [0])
+        self.assertNotIn("error", value)
 
 
 class ViewTests(unittest.TestCase):
