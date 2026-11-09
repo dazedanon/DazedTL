@@ -434,7 +434,9 @@ const moved = [
       const before = await projectView(page, state.game);
       const game = path.join(path.dirname(state.game), "Renamed");
       await page.click("Compare");
+      // The page, then its workspace of columns.
       await page.waitText("Compare models");
+      await page.waitText("Add model");
       moveGame(state, game);
       // Compare models says the game is gone, as the other pages do.
       await page.waitText("Game folder unavailable");
