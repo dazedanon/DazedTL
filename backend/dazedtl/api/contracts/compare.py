@@ -57,6 +57,9 @@ class CompareModel(TypedDict):
     finished: NotRequired[
         Annotated[bool, "It translated every line, so it can be used."]
     ]
+    stopped: NotRequired[
+        Annotated[bool, "The user stopped its translation before it finished."]
+    ]
     reused: NotRequired[
         Annotated[
             bool,

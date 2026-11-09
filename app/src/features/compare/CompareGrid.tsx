@@ -2,7 +2,7 @@ import { useMemo, type ReactNode } from "react";
 import { Check } from "lucide-react";
 import type { CompareRow, Comparison } from "../../api/contracts";
 import { useLanguages } from "../../app/LanguagesProvider";
-import { changedWords } from "../../ui/changedWords";
+import { changesAgainst } from "../../ui/changedWords";
 import { StatusIcon } from "../../ui/StatusIcon";
 
 /** A model's column, in the order the grid shows them. */
@@ -42,29 +42,26 @@ export function CompareFlag({
   );
 }
 
-/** How a line's text differs from another run's: on the earlier run's side
- * the words the later one dropped are marked, on the later run's side the
- * words it brought. */
-export type Difference = { other: string; side: "before" | "after" };
+/** The line a column's line is marked against, as Mark differences shows
+ * it. */
+export type Difference = { other: string };
 
-function Changed({
-  text,
-  difference,
-}: {
-  text: string;
-  difference: Difference;
-}) {
-  const { other, side } = difference;
-  const runs = useMemo(
-    () =>
-      side === "after"
-        ? changedWords(other, text).after
-        : changedWords(text, other).before,
-    [other, text, side],
-  );
-  const Mark = side === "after" ? "ins" : "del";
+function Changed({ text, other }: { text: string; other: string }) {
+  const runs = useMemo(() => changesAgainst(other, text), [other, text]);
   return runs.map((run, index) =>
-    run.changed ? <Mark key={index}>{run.text}</Mark> : run.text,
+    run.removed ? (
+      <span
+        key={index}
+        className="compare-removed"
+        role="img"
+        aria-label={`Removed: ${run.removed}`}
+        title={`Removed: ${run.removed}`}
+      />
+    ) : run.changed ? (
+      <ins key={index}>{run.text}</ins>
+    ) : (
+      run.text
+    ),
   );
 }
 
@@ -189,7 +186,10 @@ export function CompareGrid({
                       lang={languages.targetTag ?? undefined}
                     >
                       {differs ? (
-                        <Changed text={translation.text} difference={differs} />
+                        <Changed
+                          text={translation.text}
+                          other={differs.other}
+                        />
                       ) : (
                         translation.text
                       )}

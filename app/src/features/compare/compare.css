@@ -161,6 +161,9 @@
   text-align: left;
   overflow-wrap: anywhere;
 }
+.ui-button.compare-column-model > svg {
+  flex-shrink: 0;
+}
 .ui-button.compare-column-menu {
   flex-shrink: 0;
   min-height: 0;
@@ -256,18 +259,24 @@
   line-height: 1.5;
   white-space: pre-wrap;
 }
-.compare-text :is(ins, del) {
+.compare-text ins {
   padding: 0 var(--space-half);
   border-radius: var(--control-radius);
   text-decoration: none;
   box-decoration-break: clone;
 }
+/* Where a column dropped words the first column has, named on hover. */
+.compare-text .compare-removed {
+  display: inline-block;
+  width: var(--space-half);
+  height: 1.1em;
+  margin-inline: var(--space-half);
+  vertical-align: text-bottom;
+  border-radius: var(--control-radius);
+  background: var(--color-error-text);
+}
 .compare-text ins {
   background: var(--color-success-surface);
-  color: var(--color-text);
-}
-.compare-text del {
-  background: var(--color-error-surface);
   color: var(--color-text);
 }
 .compare-grid > tbody td.compare-grid-empty {

@@ -175,9 +175,11 @@ export function Workspace({ context }: { context: CompareContext }) {
       return {
         position,
         title: `Model ${place + 1}`,
-        ...(model && leftOut(model)
-          ? { warning: columnError(model, true) }
-          : { error: model && columnError(model, true) }),
+        ...(model?.stopped
+          ? { detail: "Stopped before it finished" }
+          : model && leftOut(model)
+            ? { warning: columnError(model, true) }
+            : { error: model && columnError(model, true) }),
       };
     const wins =
       translated && model && !model.error && score && score.picked > 0
@@ -189,7 +191,7 @@ export function Workspace({ context }: { context: CompareContext }) {
         <Button
           variant="link"
           className="compare-column-model"
-          aria-label={`${column.model} on ${column.connection}. Choose another model`}
+          aria-label={`Column ${place + 1}: ${column.model} on ${column.connection}. Choose another model`}
           disabled={busy}
           onClick={() => setOpen({ kind: "model", column: position })}
         >
@@ -201,8 +203,8 @@ export function Workspace({ context }: { context: CompareContext }) {
         <Menu
           variant="quiet"
           className="compare-column-menu"
-          label={`${column.model} column`}
-          aria-label={`More for ${column.model}`}
+          label={`Column ${place + 1}, ${column.model}`}
+          aria-label={`More for column ${place + 1}, ${column.model}`}
           title="More"
           disabled={busy}
           trigger={<MoreHorizontal size={16} aria-hidden="true" />}
@@ -265,10 +267,18 @@ export function Workspace({ context }: { context: CompareContext }) {
       ),
       detail:
         model &&
-        [wins, modelDetail(model, !!translationId)].filter(Boolean).join(" · "),
-      ...(model && leftOut(model)
-        ? { warning: model.error }
-        : { error: model?.error }),
+        [
+          wins,
+          (several || translationId) && modelDetail(model, !!translationId),
+          model.stopped && "stopped before it finished",
+        ]
+          .filter(Boolean)
+          .join(" · "),
+      ...(model?.stopped
+        ? {}
+        : model && leftOut(model)
+          ? { warning: model.error }
+          : { error: model?.error }),
     };
   });
   const pick = (row: CompareRow, model: number | null) => {
@@ -279,15 +289,17 @@ export function Workspace({ context }: { context: CompareContext }) {
     else marks[row.id] = model;
     save(translationId, { ...latest, marks });
   };
-  // Mark differences: the words each column changed from the first shown.
+  // Mark differences: the words each column changed from the first shown
+  // column that has the line, as one left out or failed has none.
   const difference = (
     row: CompareRow,
     position: number,
   ): Difference | undefined => {
-    const first = row.translations[order[0]];
-    const mine = row.translations[position];
-    if (position === order[0] || !first || !mine) return undefined;
-    return { other: first.text, side: "after" };
+    const first = order.find((place) => row.translations[place]);
+    const other = first === undefined ? null : row.translations[first];
+    if (position === first || !other || !row.translations[position])
+      return undefined;
+    return { other: other.text };
   };
   const tied =
     score && !hidden && score.tied.length && shown

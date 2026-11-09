@@ -2976,6 +2976,8 @@ export type CompareModel = {
   keptRequests?: number;
   /** It translated every line, so it can be used. */
   finished?: boolean;
+  /** The user stopped its translation before it finished. */
+  stopped?: boolean;
   /** An earlier translation of the same lines, inputs and settings finished, so this one sends nothing and shows that one's lines. */
   reused?: boolean;
 };

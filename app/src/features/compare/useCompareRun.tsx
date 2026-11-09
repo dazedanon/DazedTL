@@ -121,7 +121,11 @@ export function useCompareRun(
         <RunningStatus
           projectId={context.projectId}
           operation={running.operation}
-          text={runningStatus(running.operation.action, own)}
+          text={runningStatus(
+            running.operation.action,
+            own,
+            !!own && namesHidden(own),
+          )}
         />
       );
     if (step.step === "translate")
@@ -140,7 +144,12 @@ export function useCompareRun(
           )}
           <ActionControl
             variant="primary"
-            label={`Translate · about ${formatCost(step.cost)}`}
+            label={
+              step.sent
+                ? `Translate · about ${formatCost(step.cost)}`
+                : // Every model is reused: nothing is sent or paid.
+                  "Show the earlier lines"
+            }
             inline
             pending={translating.pending || estimating.pending}
             pendingText={
@@ -198,10 +207,13 @@ export function useCompareRun(
     );
   };
   /** What the grid says while it has no lines: where they come, while the
-   * footer says what runs, or `idle`. */
+   * footer says what runs, when the running comparison is another's, or
+   * `idle`. */
   const empty = (idle: string) =>
-    latest && working(latest.status)
-      ? "These lines show here once they are read."
-      : idle;
+    running && !own
+      ? "Estimate these lines once the running comparison ends."
+      : latest && working(latest.status)
+        ? "These lines show here once they are read."
+        : idle;
   return { latest, shown, footer, action, empty, running: !!running };
 }

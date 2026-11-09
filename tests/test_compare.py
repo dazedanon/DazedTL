@@ -966,6 +966,34 @@ class ApprovalTests(unittest.TestCase):
             ["tune"],
         )
 
+    def test_a_model_the_user_stopped_reads_as_stopped(self):
+        # A stop the user asked for read as a failure in red.
+        estimate = {
+            "id": "e",
+            "created": "1",
+            "status": "complete",
+            "result": {"models": [{"index": 0, "estimate": {"live_cost": 0.01}}]},
+        }
+        options = {
+            "kind": "single",
+            "file": "Map001",
+            "lines": 0,
+            "candidates": [
+                {"index": 0, "connection": "C", "connection_id": "c1", "model": "a"}
+            ],
+        }
+
+        def model(error):
+            translated = {
+                "id": "t",
+                "status": "stopped",
+                "result": {"models": [{"index": 0, "cost": 0.01, "error": error}]},
+            }
+            return view(estimate, options, translated, {})["candidates"][0]
+
+        self.assertTrue(model(compare_run.STOPPED).get("stopped"))
+        self.assertNotIn("stopped", model("Failed."))
+
     def test_reused_models_send_nothing_and_estimate_free(self):
         report = Mock()
         row = {

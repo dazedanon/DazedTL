@@ -146,7 +146,7 @@ export function runStep(
   latest: Comparison | undefined,
   shown: Comparison | undefined,
 ):
-  | { step: "translate"; cost: number; left: string[] }
+  | { step: "translate"; cost: number; sent: number; left: string[] }
   | { step: "translating"; cost: number }
   | { step: "estimate"; again: boolean; reason: string } {
   const total = latest && estimateTotal(latest);
@@ -157,6 +157,7 @@ export function runStep(
       return {
         step: "translate",
         cost: total!.cost,
+        sent: total!.sent,
         left: total!.left.map((model) => model.model),
       };
     return {
@@ -425,6 +426,9 @@ const plural = (count: number, word: string) =>
 export function runningStatus(
   action: CompareOperation["action"],
   own: Comparison | undefined,
+  /** Whether its names are hidden: then how many models it sends would
+   * tell which columns it reuses. */
+  hidden = false,
 ) {
   const doing = action === "compare_translate" ? "Translating" : "Estimating";
   if (!own) return `${doing} an earlier set of models…`;
@@ -435,6 +439,7 @@ export function runningStatus(
           .length
       : own.candidates.length;
   const lines = own.rows.length ? plural(own.rows.length, "line") : "the lines";
+  if (hidden) return `${doing} ${lines}…`;
   if (!models) return "Bringing back the earlier lines…";
   return `${doing} ${lines} with ${plural(models, "model")}…`;
 }
@@ -450,10 +455,12 @@ export const compareOffered = (
   !!runningComparison(compareOperations(snapshot, project.id));
 
 /** Whether the footer reports its latest comparison's run beside Estimate:
- * once it ended unfinished, failed or stopped; while one runs, the footer's
- * status line says so instead. */
+ * once it failed; a stop shows once, in the columns of the models it
+ * stopped, and while one runs the footer's status line says so instead. */
 export const reportsRun = (latest: Comparison | undefined) =>
-  !!latest && latest.status !== "complete" && !working(latest.status);
+  !!latest &&
+  !["complete", "stopped"].includes(latest.status) &&
+  !working(latest.status);
 
 export type RunningComparison = NonNullable<
   ReturnType<typeof runningComparison>

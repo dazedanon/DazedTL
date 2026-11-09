@@ -43,6 +43,30 @@ export function changedWords(before: string, after: string) {
   return { before: side(edits, "removed"), after: side(edits, "added") };
 }
 
+/** A stretch of a later line beside an earlier one: words it added are
+ * marked, and `removed` holds words it dropped right there, with no text. */
+export type ChangeRun = WordRun & { removed?: string };
+
+/**
+ * A later version of a line as it reads beside an earlier one: the words it
+ * added marked, and where it only dropped words, a run naming them, so a
+ * line that lost words still shows its change. A replacement shows only
+ * its new words, and a line that changed mostly comes back unmarked.
+ */
+export function changesAgainst(before: string, after: string): ChangeRun[] {
+  const edits = lineEdits(before, after);
+  if (mostlyChanged(edits)) return [{ text: after, changed: false }];
+  return edits.flatMap((edit, index): ChangeRun[] => {
+    if (edit.kind !== "removed")
+      return [{ text: edit.text, changed: edit.kind === "added" }];
+    const replaced = edits[index + 1]?.kind === "added";
+    const dropped = edit.text.trim();
+    return replaced || !dropped
+      ? []
+      : [{ text: "", changed: false, removed: dropped }];
+  });
+}
+
 function tokens(text: string) {
   return text.match(tokenPattern) || [];
 }

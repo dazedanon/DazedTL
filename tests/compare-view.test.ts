@@ -34,6 +34,7 @@ import {
   shownKey,
   shownOperation,
 } from "../app/src/features/compare/compareView.ts";
+import { changesAgainst } from "../app/src/ui/changedWords.ts";
 
 const model = (index: number, extra: Partial<CompareModel> = {}) =>
   ({
@@ -307,6 +308,7 @@ test("the footer offers Translate for an unused priced estimate and Estimate aga
   assert.deepEqual(runStep(priced, priced), {
     step: "translate",
     cost: 0.01,
+    sent: 1,
     left: ["model-1"],
   });
   // No model priced: estimating again is the way on, with why.
@@ -422,12 +424,13 @@ test("the comparison running for the game shows whatever the tab, until it ends"
     compareOffered({ ...missing, id: "q" }, snapshot([operation("running")])),
     false,
   );
-  // A run that ended unfinished shows beside Estimate again; while one
-  // runs, the footer's status line says so instead.
-  const stopped = comparison({ stage: "translation", status: "stopped" });
-  assert.equal(reportsRun(stopped), true);
-  assert.equal(reportsRun({ ...stopped, status: "running" }), false);
-  assert.equal(reportsRun({ ...stopped, status: "complete" }), false);
+  // A failed run shows beside Estimate again; a stop shows once, in the
+  // columns it stopped, and while one runs the status line says so.
+  const ended = comparison({ stage: "translation", status: "failed" });
+  assert.equal(reportsRun(ended), true);
+  assert.equal(reportsRun({ ...ended, status: "stopped" }), false);
+  assert.equal(reportsRun({ ...ended, status: "running" }), false);
+  assert.equal(reportsRun({ ...ended, status: "complete" }), false);
 });
 
 test("the footer's run status keeps hidden names hidden and a stop short", () => {
@@ -552,6 +555,11 @@ test("a running comparison shows as one status line saying what it does, without
     "Bringing back the earlier lines…",
   );
   assert.doesNotMatch(runningStatus("compare_translate", estimated), /model-/);
+  // Names hidden: how many it sends would tell which columns it reuses.
+  assert.equal(
+    runningStatus("compare_translate", estimated, true),
+    "Translating 3 lines…",
+  );
 });
 
 test("after a translation the one primary is Use, once there is a model to use", () => {
@@ -628,6 +636,36 @@ test("a reused model goes along at no cost and says so", () => {
     modelDetail(model(1, { reused: true, cost: 0.019, seconds: 6.2 }), true),
     "$0.019 · 6.2 s · reused",
   );
+});
+
+test("a column marks the words it added and where it only dropped some", () => {
+  const marks = (before: string, after: string) =>
+    changesAgainst(before, after)
+      .map((run) =>
+        run.removed
+          ? `[-${run.removed}]`
+          : run.changed
+            ? `[+${run.text}]`
+            : run.text,
+      )
+      .join("");
+  // Dropping words showed no change at all.
+  assert.equal(
+    marks(
+      "I am counting on you, brave little one.",
+      "I am counting on you, brave one.",
+    ),
+    "I am counting on you, brave [-little]one.",
+  );
+  // A replacement shows only its new words.
+  assert.equal(
+    marks(
+      "They say a staff lies sleeping there.",
+      "They say a staff slumbers there.",
+    ),
+    "They say a staff [+slumbers] there.",
+  );
+  assert.equal(marks("Yes", "Yes"), "Yes");
 });
 
 test("a column's settings read as the game's or what changed", () => {

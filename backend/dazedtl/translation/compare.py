@@ -24,7 +24,7 @@ from util.guidance_documents import GAME_CONTEXT, GLOSSARY
 
 from dazedtl import system
 from dazedtl.actions import label
-from dazedtl.compatibility.compare import ACTIONS, ESTIMATE, TRANSLATE, UNITS
+from dazedtl.compatibility.compare import ACTIONS, ESTIMATE, STOPPED, TRANSLATE, UNITS
 from dazedtl.compatibility.compare_units import GUIDANCE
 from dazedtl.projects.store import working_method
 from dazedtl.settings import providers
@@ -870,6 +870,7 @@ def view(estimate, options, translated, marks, documents=None):
                 **({"error": error} if error else {}),
                 **({"finished": True} if _finished(translated, done) else {}),
                 **({"reused": True} if "reuse" in row else {}),
+                **({"stopped": True} if done.get("error") == STOPPED else {}),
                 # What it spent shows even when it failed or was stopped.
                 **({"cost": done["cost"]} if "cost" in done else {}),
                 **({"seconds": done["seconds"]} if "seconds" in done else {}),
