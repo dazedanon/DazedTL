@@ -3,6 +3,12 @@
 Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 [release.mjs](scripts/release.mjs) writes each entry from [release/notes.md](release/notes.md).
 
+## [2.68.4] - 2026-11-08
+
+### Fixed
+
+- **Translate:** translating a message again with **Skip already translated text** off no longer sends its speech's English as its text, or the speech as a name, where Assistant-led or a translation file wrote it over its rows, such as a name on a row of its own and its speech, and collecting speaker names no longer takes that speech for a name either: each is sent with its own Japanese, as the translation file lists it; runs estimated before this version send what they were approved with.
+
 ## [2.68.3] - 2026-11-08
 
 ### Fixed
@@ -1745,6 +1751,7 @@ Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachan
 - The first release of DazedTL as a desktop app, installed from a ZIP with a START launcher and updated from inside the app.
 - **Guided steps** for RPG Maker MV, MZ and VX Ace games, and **Assistant-led** for any game.
 
+[2.68.4]: https://github.com/dazedanon/DazedTL/compare/v2.68.3...v2.68.4
 [2.68.3]: https://github.com/dazedanon/DazedTL/compare/v2.68.2...v2.68.3
 [2.68.2]: https://github.com/dazedanon/DazedTL/compare/v2.68.1...v2.68.2
 [2.68.1]: https://github.com/dazedanon/DazedTL/compare/v2.68.0...v2.68.1
