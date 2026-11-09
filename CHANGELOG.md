@@ -3,6 +3,19 @@
 Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 [release.mjs](scripts/release.mjs) writes each entry from [release/notes.md](release/notes.md).
 
+## [2.71.0] - 2026-11-09
+
+### Changed
+
+- **Compare:** while names are hidden, each line shows its translations in a new order, so you can't tell a model by its side.
+
+### Fixed
+
+- **Glossary:** a glossary saved with Windows line ends or as UTF-16 no longer shows the base glossary among your own entries or stops a run.
+- **Glossary:** a glossary saved before this fix may list a copy of the base glossary among your own entries, which you can delete.
+- **Context:** game context, style and quirks and custom skills saved as UTF-16 no longer stop a run, Plugin files or Text QA reading them.
+- **Glossary:** saving the glossary of an English game no longer adds the Japanese base glossary, and translations no longer send its terms.
+
 ## [2.70.0] - 2026-11-09
 
 ### Added
@@ -1773,6 +1786,7 @@ Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachan
 - The first release of DazedTL as a desktop app, installed from a ZIP with a START launcher and updated from inside the app.
 - **Guided steps** for RPG Maker MV, MZ and VX Ace games, and **Assistant-led** for any game.
 
+[2.71.0]: https://github.com/dazedanon/DazedTL/compare/v2.70.0...v2.71.0
 [2.70.0]: https://github.com/dazedanon/DazedTL/compare/v2.69.0...v2.70.0
 [2.69.0]: https://github.com/dazedanon/DazedTL/compare/v2.68.4...v2.69.0
 [2.68.4]: https://github.com/dazedanon/DazedTL/compare/v2.68.3...v2.68.4
