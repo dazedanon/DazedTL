@@ -134,7 +134,7 @@ const reviews = {
   reviewed: "Text QA reviewed it",
   waiting: "Text QA corrects it when QA runs again",
   outside: "Not in QA's review",
-  off: "Text QA's review is off in Options",
+  off: "Your assistant corrects it, as Text QA's review is off",
 };
 
 /**

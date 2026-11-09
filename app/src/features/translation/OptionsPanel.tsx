@@ -362,7 +362,15 @@ function TextQaField({
 }) {
   const usage = useQaUsageNote(projectId, value, true);
   return (
-    <FieldRow id="translation-text-qa" label="Text QA" help={usage}>
+    <FieldRow
+      id="translation-text-qa"
+      label="Text QA"
+      help={
+        value === qaChecksOnly[0]
+          ? usage
+          : `${usage} Checks only skips the review and runs the quick mechanical checks.`
+      }
+    >
       {(props) => (
         <select
           {...props}

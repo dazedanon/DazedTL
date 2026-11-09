@@ -140,7 +140,9 @@ def string_leaves(value: Any, path: tuple[object, ...] = ()):
             yield from string_leaves(value[key], path + (key,))
 
 
-def _classification(filename: str, code: int | None) -> str:
+def classification_of(filename: str, code: int | None) -> str:
+    """The QA focus class of a line in *filename* with event *code*:
+    dialogue, risky-codes, database or other."""
     event_file = filename in {"CommonEvents.json", "Troops.json"} or bool(
         re.fullmatch(r"Map\d+\.json", filename)
     )
@@ -368,7 +370,7 @@ def file_inventory(
             code = blocks.code(value)
             original = value.get("_original")
             if original is not None:
-                classification = _classification(path.name, code)
+                classification = classification_of(path.name, code)
                 include = focus == "release" or focus == classification
                 if include:
                     leaves = list(string_leaves(original))

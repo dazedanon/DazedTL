@@ -83,9 +83,14 @@ class PlaytestTests(unittest.TestCase):
             mock.patch.object(helper, "stops", return_value=[]),
         ):
             status = helper.status("p", {})
-        self.assertEqual((status["waiting"], status["settled"]), (0, True))
-        self.assertIn("yourself with correction receipts", status["next"])
-        self.assertNotIn("qa --prepare", status["next"])
+            self.assertEqual((status["waiting"], status["settled"]), (0, True))
+            self.assertIn("yourself with correction receipts", status["next"])
+            self.assertNotIn("qa --prepare", status["next"])
+            # A report that could not play the game still lists them.
+            text["playtest"] = described(report("off", played=False), False)
+            status = helper.status("p", {})
+            self.assertTrue(status["settled"])
+            self.assertIn("yourself with correction receipts", status["next"])
 
     def test_the_final_check_settles_only_on_a_current_quiet_play(self):
         crash = {"kind": "crash", "fix": "game"}

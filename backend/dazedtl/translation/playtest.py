@@ -371,6 +371,13 @@ class Playtest:
     def status(self, project_id, native, report=False):
         focus = self.text_qa.focus(project_id)
         text = self.guided.backend.guided_text_state(native, focus)
+        # With Text QA's review off, no QA round takes the report's problems
+        # in translated text: the assistant corrects them itself.
+        correct = (
+            "correct the lines it lists for text QA yourself with correction "
+            "receipts and write them into the game again, as Text QA's review "
+            "is off, "
+        )
         state = text["playtest"]
         operation = self.operation(project_id)
         problems = state["problems"]
@@ -418,8 +425,15 @@ class Playtest:
                 "The playtest could not play the game, and its report names no "
                 "crash for you to fix"
                 + (f" ({state['gaps'][0].rstrip('.')})" if state["gaps"] else "")
-                + ", so it ends without a play: handle the report's other "
-                "problems, then report why it could not play."
+                + ", so it ends without a play: "
+                + (
+                    correct
+                    if not focus
+                    and any(problem["fix"] == "text-qa" for problem in problems)
+                    else ""
+                )
+                + "handle the report's other problems, then report why it could "
+                "not play."
             )
         elif problems or state["gaps"]:
             following = (
@@ -431,13 +445,7 @@ class Playtest:
                     if assistant
                     else "send plugin text to Plugin files, "
                 )
-                + (
-                    "let text QA correct its lines, "
-                    if focus
-                    else "correct the lines it lists for text QA yourself with "
-                    "correction receipts and write them into the game again, as "
-                    "Text QA's review is off, "
-                )
+                + ("let text QA correct its lines, " if focus else correct)
                 + "and add stops for what the tour could not reach with playtest "
                 "--run --stops FILE."
             )

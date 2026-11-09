@@ -28,6 +28,8 @@ export const qaChecksOnly = ["checks", "Checks only"] as const;
 // being counted, and slowly otherwise, as when a census is saved meanwhile.
 const COUNTING_MS = 2000;
 const IDLE_MS = 15000;
+// Below this many lines a review reads too little to say it takes a lot.
+const SMALL_REVIEW = 1000;
 
 /** The note's sentence for `focus`, from the game's count when there is one. */
 export function qaUsageText(focus: string, size: QaSize | null) {
@@ -36,12 +38,13 @@ export function qaUsageText(focus: string, size: QaSize | null) {
   if (size?.counting) return "Counting the lines this review reads…";
   const counted = size?.focuses?.[focus];
   if (!counted)
-    return "Your assistant reads every line this review takes, which on a large game uses a lot of its plan's usage. The estimate shows here once DazedTL has counted the game's text.";
+    return "Your assistant reads every line this review takes, which on a large game takes a lot of its plan's usage. The estimate shows here once DazedTL has counted the game's text.";
   if (!counted.lines) return "This game holds no lines this focus reviews.";
   const scenes = counted.scenes
     ? ` in ${counted.scenes.toLocaleString()} ${counted.scenes === 1 ? "scene" : "scenes"}`
     : "";
-  return `Your assistant reads about ${counted.lines.toLocaleString()} ${counted.lines === 1 ? "line" : "lines"}${scenes} of this game to review them, which uses a lot of its plan's usage. An estimate from the game's text.`;
+  const usage = counted.lines < SMALL_REVIEW ? "some" : "a lot";
+  return `Your assistant reads about ${counted.lines.toLocaleString()} ${counted.lines === 1 ? "line" : "lines"}${scenes} of this game to review them, which takes ${usage} of its plan's usage. An estimate from the game's text.`;
 }
 
 /** The usage note for the project's review of `focus`, read while `shown`. */

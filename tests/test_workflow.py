@@ -2099,7 +2099,10 @@ class WorkflowTests(unittest.TestCase):
         handoff = self.service.prepare(self.identity)["handoff"]
         self.assertIn("turn Text QA's review off, so never run qa --prepare", handoff)
         self.assertNotIn("run qa --prepare and follow", handoff)
-        self.assertIn(CHECK_STEP, handoff.split("never run qa --prepare")[1])
+        self.assertEqual(
+            handoff.split("never run qa --prepare")[1].count(CHECK_STEP), 1
+        )
+        self.assertEqual(handoff.count(CHECK_STEP), 1)
 
     def test_conflict_recovery_is_a_real_prerequisite(self):
         state = lifecycle(self.profile, self.identity)

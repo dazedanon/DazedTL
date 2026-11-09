@@ -314,6 +314,10 @@ def _scene_position(record: dict[str, Any]) -> tuple[str, int] | None:
     return f"{record['file']}#{list_pointer}", command_index
 
 
+# Public for translation/qa_size, which counts scenes by the same rule.
+scene_position = _scene_position
+
+
 def _scene_records(manifest: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
     """Each command list's dialogue records in command order: the scenes
     screening reads, and the lines a scene correction numbers."""

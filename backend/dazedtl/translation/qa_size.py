@@ -101,7 +101,7 @@ def count(rows: Iterable[tuple[str, str | None]]) -> dict[str, Any] | None:
 def census_rows(census) -> list[tuple[str, str | None]]:
     """The rows of a census's RPG Maker data lines, which Text QA reads; its
     scripts and plugins it does not."""
-    from util.rpgmaker_qa_manifest import _classification
+    from util.rpgmaker_qa_manifest import classification_of
 
     rows = []
     for entry in census.get("entries") or []:
@@ -111,7 +111,7 @@ def census_rows(census) -> list[tuple[str, str | None]]:
         code = _CODE.search(str(entry.get("field") or ""))
         # VX Ace's Map001.rvdata2 holds what its JSON form Map001.json does.
         name = PurePosixPath(str(entry["file"])).stem + ".json"
-        classification = _classification(name, int(code[1]) if code else None)
+        classification = classification_of(name, int(code[1]) if code else None)
         parts = str(entry.get("location") or "").split("/")
         listed = [index for index, part in enumerate(parts) if part == "list"]
         scene = (
@@ -124,12 +124,12 @@ def census_rows(census) -> list[tuple[str, str | None]]:
 
 
 def _inventory_rows(root: Path) -> list[tuple[str, str | None]]:
-    from util.qa.selection import _scene_position
+    from util.qa.selection import scene_position
     from util.rpgmaker_qa_manifest import build_manifest
 
     rows = []
     for record in build_manifest(root, "release")["records"]:
-        position = _scene_position(record)
+        position = scene_position(record)
         rows.append((record["classification"], position[0] if position else None))
     return rows
 
