@@ -1183,7 +1183,7 @@ class ApprovalTests(unittest.TestCase):
         )
 
     def test_a_model_that_did_not_translate_every_line_is_not_used(self):
-        # Model vs model offered to use a model that failed or was stopped.
+        # Compare offered to use a model that failed or was stopped.
         estimate = self.estimated()
         translation = self.compare.translate("p1", estimate)
         translation.update(
