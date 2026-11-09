@@ -3610,7 +3610,14 @@ CODE_NAMEPLATES = False
 # run left untranslated after it, which is sent as a text of its own; from
 # level 2 also after a message's rows its source has lines for. From level 3
 # each text it writes records the rows it laid it over (rpgmaker_blocks
-# `record_rows`), by which later readers read the translation's rows.
+# `record_rows`), by which later readers read the translation's rows. From
+# level 4 a translation whose rows open texts of their own, such as one
+# opening with \SE[1], is sent a text each with its own source, as the
+# export lists them (`_keep_sent_sources`), and a text joins every row it
+# was written over, one opening with a code included (`_written`). From
+# level 5 so is a translation laid over any texts the export lists apart,
+# such as a name on a row of its own and its speech, and a short row before
+# speech is read as its speaker only from one row (`_message_speakers`).
 # Frozen per run (settings/preferences LEFT_ROWS_LEVELS): older runs send
 # that first row's source alone and write its translation over those rows
 # too, and record none.
@@ -3626,11 +3633,15 @@ def _standalone_speaker(name):
 def _message_speakers(line, following):
     """The speakers a message's or scrolling text's row names, read as the
     run's settings and frozen policy read them (util/speakers
-    `message_speakers`)."""
+    `message_speakers`). From LEFT_ROWS level 5 a short row before speech
+    names its speaker only where *line* is one row, as the export reads the
+    game's rows (util/rpgmaker_blocks `texts`): a translation's source of
+    several lines is one text there, whose lines are no names because the
+    next row, one of its own in English, opens like speech."""
     return message_speakers(
         line,
         following,
-        first_line=FIRSTLINESPEAKERS is True,
+        first_line=FIRSTLINESPEAKERS is True and (LEFT_ROWS < 5 or "\n" not in line),
         inline=INLINE401SPEAKERS,
         code_nameplates=CODE_NAMEPLATES,
         standalone=_standalone_speaker if SPEAKER_CONTEXT else None,
@@ -3680,6 +3691,38 @@ def _records() -> bool:
     """Whether the run records the rows of each text it writes: from
     LEFT_ROWS level 3."""
     return LEFT_ROWS >= 3
+
+
+def _written():
+    """From LEFT_ROWS level 4, the reading by which the run reads the texts
+    of a translation as the export lists them, joining each over every row
+    it was written over (util/rpgmaker_blocks `text_end`): the run's speaker
+    and skip settings, as a Guided project's export reads them
+    (`Reading.of`); None before."""
+    if LEFT_ROWS < 4:
+        return None
+    return rpgmaker_blocks.Reading.of(
+        {
+            "FIRSTLINESPEAKERS": FIRSTLINESPEAKERS is True,
+            "INLINE401SPEAKERS": INLINE401SPEAKERS,
+            "IGNORETLTEXT": IGNORETLTEXT,
+        }
+    )
+
+
+def _keep_sent_sources(commands, anchor) -> None:
+    """From LEFT_ROWS level 4, before the run reads the text it sends from
+    the row at *anchor*, keep each text of the translation there its own
+    source, as the export lists them (util/rpgmaker_blocks
+    `keep_sent_sources`) and a translation file import keeps them, so each
+    is sent with its own Japanese, a name alone to the speaker step, and
+    written over its own rows: at level 4 only where its rows open texts of
+    their own, such as with \\SE[1]."""
+    reading = _written()
+    if reading is not None:
+        rpgmaker_blocks.keep_sent_sources(
+            commands, anchor, reading, opened_only=LEFT_ROWS < 5
+        )
 
 
 def _record_rows(command, rows: int) -> None:
@@ -4074,6 +4117,7 @@ def _searchCodes(page, pbar, jobList, filename):
                                 )
                         i = previewEnd + 1
                         continue
+                    _keep_sent_sources(codeList, i)
                     jaString = codeList[i]["parameters"][0]
                     oldjaString = _param_text(codeList[i], 0)
                     speakerWork = oldjaString
@@ -4107,6 +4151,7 @@ def _searchCodes(page, pbar, jobList, filename):
                     _own_source(codeList) if SPEAKER_CONTEXT else None,
                     left=LEFT_ROWS >= 1,
                     by_lines=LEFT_ROWS >= 2,
+                    reading=_written(),
                 )
                 speakerMatch = sentText.speakers
                 speakerList = list(speakerMatch.names) if speakerMatch else []

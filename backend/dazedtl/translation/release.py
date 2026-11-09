@@ -433,20 +433,32 @@ def applied_images(source):
     return found
 
 
+def unshipped(source, names):
+    """Among the game-relative `names`, those no ZIP holds though the
+    translation branch tracks them: DazedTL's own files and the images
+    decoded from the game's archives, which reach players only inside the
+    archive packed again."""
+    from util.paths import decoded_image_files, is_game_tool_file
+
+    names = set(names)
+    return set(filter(is_game_tool_file, names)) | decoded_image_files(source, names)
+
+
 def applied_assets(source):
-    """The applied images a Guided patch carries, each a player image under
-    its engine's image folders and as it was applied."""
+    """The applied images a Guided patch carries, wherever the game keeps
+    them and as they were applied: each but those no ZIP may hold."""
     root = Path(source)
+    applied = applied_images(root)
+    kept = set(applied) - unshipped(root, applied)
     paths = []
-    for name, applied in applied_images(root).items():
-        relative = runtime_asset(root, name)
-        if evidence(root, [relative])[relative] != applied:
+    for name in sorted(filter(_shipped, kept)):
+        if evidence(root, [name])[name] != applied[name]:
             raise ValueError(
                 "An applied image changed. Review or restore it in Images before packaging: "
-                + relative
+                + name
             )
-        paths.append(relative)
-    return sorted(set(paths))
+        paths.append(name)
+    return paths
 
 
 def packing_paths(native):

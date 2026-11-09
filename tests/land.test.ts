@@ -6,14 +6,14 @@ import test from "node:test";
 import {
   acquireLock,
   changedPaths,
+  evaluationCommand,
+  evaluationDue,
   gitIn,
-  lensDue,
   LockBusy,
   lockRef,
   platformSensitive,
   releaseLock,
-  repeatReviewDue,
-  screensCommand,
+  riskPaths,
 } from "../scripts/land-lock.mjs";
 import { spawnSync } from "node:child_process";
 import {
@@ -26,6 +26,7 @@ import {
   readReview,
   reviewedHead,
   timer,
+  unevaluated,
   untrailedFixes,
   waitForApp,
   onWindows,
@@ -256,11 +257,10 @@ test("a landing commits what the formatter changed, and only that", async (t) =>
   assert.equal(git(["rev-list", "--count", "HEAD"]).stdout, "2\n");
 });
 
-test("a landing's review record comes from an independent reviewer and accounts for every finding", () => {
+test("a landing's review record holds its evaluation, or the criteria its author checked where none is due", () => {
   const record = (value: unknown) => readReview(JSON.stringify(value));
   assert.deepEqual(
     record({
-      level: "high",
       reviewer: "independent",
       reviews: 2,
       head: "abc1234",
@@ -268,54 +268,46 @@ test("a landing's review record comes from an independent reviewer and accounts 
       findings: [
         {
           summary: "Off by one",
-          kind: "bug",
+          severity: "blocking",
           outcome: "fixed",
           reason: "",
           review: 1,
         },
-        {
-          summary: "Typo",
-          kind: "quality",
-          outcome: "fixed",
-          behavior: false,
-          review: 2,
-        },
+        { summary: "Typo", severity: "minor", outcome: "fixed", review: 2 },
         {
           summary: "Slow loop",
-          kind: "risk",
-          outcome: "dismissed",
-          reason: "Runs once",
+          severity: "minor",
+          outcome: "overruled",
+          reason: "The user keeps it",
           review: 2,
         },
       ],
     }),
     {
-      level: "high",
       reviewer: "independent",
       reviews: 2,
       head: "abc1234",
       e2e: ["translated --game choice-help+playable", "live"],
       findings: [
-        { summary: "Off by one", kind: "bug", outcome: "fixed", review: 1 },
         {
-          summary: "Typo",
-          kind: "quality",
+          summary: "Off by one",
+          severity: "blocking",
           outcome: "fixed",
-          behavior: false,
-          review: 2,
+          review: 1,
         },
+        { summary: "Typo", severity: "minor", outcome: "fixed", review: 2 },
         {
           summary: "Slow loop",
-          kind: "risk",
-          outcome: "dismissed",
-          reason: "Runs once",
+          severity: "minor",
+          outcome: "overruled",
+          reason: "The user keeps it",
           review: 2,
         },
       ],
     },
   );
-  // The author's own review, or none, no longer lands a branch.
-  const reviewed = { reviewer: "independent", head: "abc1234", e2e: [] };
+  // The author's own review no longer lands a branch.
+  const evaluated = { reviewer: "independent", head: "abc1234", e2e: [] };
   for (const unreviewed of [
     { level: "high", head: "abc1234", findings: [] },
     { level: "high", reviewer: "author", head: "abc1234", findings: [] },
@@ -323,111 +315,202 @@ test("a landing's review record comes from an independent reviewer and accounts 
     null,
   ])
     assert.throws(() => record(unreviewed), /"reviewer": "independent"/);
-  assert.throws(
-    () => record({ ...reviewed, level: "medium", findings: [] }),
-    /level of high/,
-  );
-  // A name such as HEAD would follow the branch past what was reviewed.
+  // A name such as HEAD would follow the branch past what was checked.
   for (const head of [undefined, "HEAD", "work"])
     assert.throws(
-      () => record({ ...reviewed, head, level: "high", findings: [] }),
+      () => record({ ...evaluated, head, findings: [] }),
       /hash of the head commit/,
     );
-  assert.throws(
-    () =>
-      record({
-        ...reviewed,
-        level: "high",
-        findings: [
-          { summary: "Slow loop", kind: "risk", outcome: "dismissed" },
-        ],
-      }),
-    /Finding 1 .* without a reason/,
-  );
-  // A landing runs at most three reviews, and each finding names one of them.
-  for (const reviews of [0, 4, null])
-    assert.throws(
-      () => record({ ...reviewed, level: "high", reviews, findings: [] }),
-      /needs "reviews"/,
-    );
-  for (const [outcome, review] of [
-    ["fixed", 0],
-    ["fixed", 1.5],
-    ["dismissed", "2"],
-    ["dismissed", null],
-    ["fixed", 3],
-    ["fixed", undefined],
-  ])
+  // Every finding is fixed unless the user overrules it, with their reason.
+  for (const outcome of ["dismissed", "overruled"])
     assert.throws(
       () =>
         record({
-          ...reviewed,
-          level: "high",
+          ...evaluated,
+          findings: [{ summary: "Slow loop", severity: "minor", outcome }],
+        }),
+      outcome === "dismissed"
+        ? /Finding 1 .* needs an outcome of fixed, or overruled/
+        : /Finding 1 .* overruled without a reason/,
+    );
+  // Each finding names the evaluation that reported it; more than three ran
+  // only when the user let a landing go on after its third FAIL, as the
+  // Discord intake's record of a landing saved mid-loop before evaluations
+  // also shows, with the kinds of the time.
+  for (const reviews of [0, 1.5, null])
+    assert.throws(
+      () => record({ ...evaluated, reviews, findings: [] }),
+      /needs "reviews", how many evaluations ran, a whole number from 1/,
+    );
+  assert.equal(
+    readReview(
+      JSON.stringify({
+        reviewer: "independent",
+        reviews: 4,
+        head: "abc1234",
+        findings: [
+          { summary: "A", kind: "risk", outcome: "fixed", review: 1 },
+          { summary: "B", severity: "minor", outcome: "fixed", review: 4 },
+        ],
+      }),
+      { intake: true },
+    ).reviews,
+    4,
+  );
+  for (const review of [0, 1.5, "2", null, 3, undefined])
+    assert.throws(
+      () =>
+        record({
+          ...evaluated,
           reviews: 2,
           findings: [
             {
               summary: "Off by one",
-              kind: "bug",
-              outcome,
-              reason: "Kept",
+              severity: "minor",
+              outcome: "fixed",
               review,
             },
           ],
         }),
       /Finding 1 .* needs a review number from 1 to 2/,
     );
+  for (const finding of [
+    { summary: "Off by one", outcome: "fixed" },
+    { summary: "Off by one", severity: "nit", outcome: "fixed" },
+    { summary: "Off by one", kind: "nit", outcome: "fixed" },
+  ])
+    assert.throws(
+      () => record({ ...evaluated, findings: [finding] }),
+      /Finding 1 .* needs a severity of blocking or minor/,
+    );
+  // A FAIL's fixes land only once a fresh evaluator re-checked them; after
+  // the third, only the user's overrule lands it.
+  const blocking = (review: number, outcome = "fixed") => ({
+    summary: "Breaks Undo",
+    severity: "blocking",
+    outcome,
+    reason: "The user keeps it",
+    review,
+  });
   assert.throws(
-    () =>
-      record({
-        ...reviewed,
-        level: "high",
-        findings: [{ summary: "Off by one", kind: "nit", outcome: "fixed" }],
-      }),
-    /Finding 1 .* needs a kind of bug, risk, quality/,
+    () => record({ ...evaluated, findings: [blocking(1)] }),
+    /Evaluation 1 failed: a fresh evaluator re-checks its blocking findings/,
   );
-  // Every record gives each finding's kind, the Discord intake's too; a
-  // --review landing names its E2E runs, while the intake's worker names them
-  // in the hand-off. It counts as one review.
+  assert.throws(
+    () => record({ ...evaluated, reviews: 3, findings: [blocking(3)] }),
+    /Evaluation 3 failed, and a landing runs 3 before it stops: report to the user/,
+  );
+  for (const findings of [
+    [blocking(1)],
+    [blocking(1), { ...blocking(2), severity: "minor" }],
+    [blocking(1), blocking(2, "overruled")],
+  ])
+    assert.equal(
+      record({ ...evaluated, reviews: 2, findings }).findings.length,
+      findings.length,
+    );
+  assert.equal(
+    record({ ...evaluated, reviews: 3, findings: [blocking(3, "overruled")] })
+      .reviews,
+    3,
+  );
+  // The intake's records are held to the same rule, and carry no E2E runs,
+  // which its worker names in the hand-off.
   const intakeRecord = {
     reviewer: "independent",
     head: "abc1234",
-    level: "high",
-    findings: [{ summary: "Off by one", kind: "bug", outcome: "fixed" }],
+    findings: [{ summary: "Typo", severity: "minor", outcome: "fixed" }],
   };
-  for (const intake of [false, true])
-    assert.throws(
-      () =>
-        readReview(
-          JSON.stringify({
-            ...intakeRecord,
-            e2e: [],
-            findings: [{ summary: "Off by one", outcome: "fixed" }],
-          }),
-          { intake },
-        ),
-      /Finding 1 .* needs a kind/,
-    );
   assert.deepEqual(readReview(JSON.stringify(intakeRecord), { intake: true }), {
     ...intakeRecord,
     reviews: 1,
     findings: [
-      { summary: "Off by one", kind: "bug", outcome: "fixed", review: 1 },
+      { summary: "Typo", severity: "minor", outcome: "fixed", review: 1 },
     ],
   });
+  assert.throws(
+    () =>
+      readReview(JSON.stringify({ ...intakeRecord, findings: [blocking(1)] }), {
+        intake: true,
+      }),
+    /Evaluation 1 failed/,
+  );
   assert.throws(
     () => record(intakeRecord),
     /names the scenarios and live test its author ran as "e2e"/,
   );
+  // Where no evaluation is due, the record holds the criteria its author
+  // checked, and no findings.
+  const unevaluatedRecord = {
+    reviewer: "none",
+    head: "abc1234",
+    criteria: [" Docs say the new rule "],
+    whyNoE2e: "Docs only",
+  };
+  assert.deepEqual(record(unevaluatedRecord), {
+    reviewer: "none",
+    reviews: 0,
+    head: "abc1234",
+    criteria: ["Docs say the new rule"],
+    e2e: [],
+    whyNoE2e: "Docs only",
+    findings: [],
+  });
+  for (const criteria of [undefined, [], [" "], "Docs"])
+    assert.throws(
+      () => record({ ...unevaluatedRecord, criteria }),
+      /needs "criteria", each acceptance criterion its author checked/,
+    );
+  assert.throws(
+    () => record({ ...unevaluatedRecord, findings: [blocking(1)] }),
+    /no evaluation has no findings/,
+  );
+  // Older records still read: a code-review level, kinds with dismissals,
+  // marks and lenses, and up to three reviews.
+  assert.deepEqual(
+    record({
+      ...evaluated,
+      level: "high",
+      reviews: 3,
+      lenses: ["places-and-chains", "live-check"],
+      findings: [
+        {
+          summary: "Off by one",
+          kind: "bug",
+          outcome: "fixed",
+          userFacing: true,
+          review: 1,
+        },
+        {
+          summary: "Typo",
+          kind: "quality",
+          outcome: "dismissed",
+          reason: "Fine",
+          behavior: false,
+          review: 3,
+        },
+      ],
+    }),
+    {
+      ...evaluated,
+      reviews: 3,
+      findings: [
+        { summary: "Off by one", kind: "bug", outcome: "fixed", review: 1 },
+        {
+          summary: "Typo",
+          kind: "quality",
+          outcome: "dismissed",
+          reason: "Fine",
+          review: 3,
+        },
+      ],
+    },
+  );
   // E2E runs are scenario.mjs's own arguments, with names it knows, or a
   // reason none ran.
   assert.deepEqual(
-    record({
-      ...reviewed,
-      level: "high",
-      e2e: undefined,
-      whyNoE2e: " Docs ",
-      findings: [],
-    }).whyNoE2e,
+    record({ ...evaluated, e2e: undefined, whyNoE2e: " Docs ", findings: [] })
+      .whyNoE2e,
     "Docs",
   );
   for (const [e2e, problem] of [
@@ -443,197 +526,29 @@ test("a landing's review record comes from an independent reviewer and accounts 
     [[""], /a run is no text/],
     ["live", /names the scenarios/],
   ] as const)
-    assert.throws(
-      () => record({ ...reviewed, level: "high", e2e, findings: [] }),
-      problem,
-    );
+    assert.throws(() => record({ ...evaluated, e2e, findings: [] }), problem);
   assert.throws(
     () =>
-      record({
-        ...reviewed,
-        level: "high",
-        e2e: ["live"],
-        whyNoE2e: "Docs",
-        findings: [],
-      }),
+      record({ ...evaluated, e2e: ["live"], whyNoE2e: "Docs", findings: [] }),
     /keep one/,
   );
   assert.throws(
-    () => record({ ...reviewed, level: "high", whyNoE2e: " ", findings: [] }),
+    () => record({ ...evaluated, whyNoE2e: " ", findings: [] }),
     /"whyNoE2e" is empty/,
   );
-  // Three findings of the last review fixed in behavior send the branch to a
-  // fresh reviewer, until the most reviews ran; a fix to wording alone, or
-  // one the reviewer dismissed, does not count.
-  const fixes = (review: number, ...more: object[]) => [
-    { summary: "A", kind: "bug", outcome: "fixed", review },
-    { summary: "B", kind: "risk", outcome: "fixed", review },
-    ...more,
-  ];
-  const due =
-    /Review 1 had 3 or more findings that a user can hit fixed in behavior/;
-  assert.throws(
-    () =>
-      record({
-        ...reviewed,
-        level: "high",
-        findings: fixes(1, { summary: "C", kind: "quality", outcome: "fixed" }),
-      }),
-    due,
-  );
-  for (const third of [
-    { summary: "C", kind: "quality", outcome: "fixed", behavior: false },
-    { summary: "C", kind: "bug", outcome: "dismissed", reason: "Not so" },
-  ])
-    assert.equal(
-      record({ ...reviewed, level: "high", findings: fixes(1, third) }).findings
-        .length,
-      3,
-    );
-  const thirdFix = { summary: "C", kind: "bug", outcome: "fixed", review: 1 };
-  assert.equal(
-    record({
-      ...reviewed,
-      level: "high",
-      reviews: 2,
-      findings: fixes(1, thirdFix),
-    }).reviews,
-    2,
-  );
-  assert.equal(
-    record({
-      ...reviewed,
-      level: "high",
-      reviews: 3,
-      findings: fixes(3, { ...thirdFix, review: 3 }),
-    }).reviews,
-    3,
-  );
-  // The intake's record is held to the same trigger.
-  assert.throws(
-    () =>
-      readReview(
-        JSON.stringify({ ...intakeRecord, findings: fixes(1, thirdFix) }),
-        { intake: true },
-      ),
-    due,
-  );
-  // The intake's own findings, numbered by its review, count the same way.
-  assert.equal(
-    repeatReviewDue(
-      [
-        { review: 2, outcome: "fixed" },
-        { review: 2, outcome: "fixed", behavior: true },
-        { review: 2, outcome: "fixed" },
-      ],
-      2,
-    ),
-    true,
-  );
-  // Only fixes a user can hit count: three marked so send the branch to a
-  // fresh reviewer, while one no user can hit, such as a bug in a report
-  // like review-stats, does not count. The mark stays on the record, so
-  // review-stats can tell why a repeat review started.
-  const userFacing = fixes(1, thirdFix).map((finding) => ({
-    ...finding,
-    userFacing: true,
-  }));
-  assert.throws(
-    () => record({ ...reviewed, level: "high", findings: userFacing }),
-    /Review 1 had 3 or more findings that a user can hit fixed in behavior/,
-  );
-  const report = [
-    ...userFacing.slice(0, 2),
-    { ...thirdFix, userFacing: false },
-    {
-      summary: "D",
-      kind: "bug",
-      outcome: "dismissed",
-      reason: "No",
-      userFacing: true,
-    },
-  ];
-  assert.deepEqual(
-    record({ ...reviewed, level: "high", findings: report }).findings.map(
-      (finding) => finding.userFacing,
-    ),
-    [true, true, false, true],
-  );
-  assert.equal(
-    repeatReviewDue(
-      [
-        { review: 1, outcome: "fixed", userFacing: false },
-        { review: 1, outcome: "fixed", userFacing: false },
-        { review: 1, outcome: "fixed", userFacing: false },
-      ],
-      1,
-    ),
-    false,
-  );
-  for (const outcome of ["fixed", "dismissed"])
-    assert.throws(
-      () =>
-        record({
-          ...reviewed,
-          level: "high",
-          findings: [{ ...thirdFix, outcome, reason: "No", userFacing: "yes" }],
-        }),
-      /"userFacing" true or false/,
-    );
-  assert.throws(
-    () =>
-      record({
-        ...reviewed,
-        level: "high",
-        findings: [{ ...thirdFix, behavior: "no" }],
-      }),
-    /"behavior" true or false/,
-  );
-  assert.throws(
-    () =>
-      record({
-        ...reviewed,
-        level: "high",
-        findings: [
-          { ...thirdFix, outcome: "dismissed", reason: "No", behavior: "no" },
-        ],
-      }),
-    /"behavior" true or false/,
-  );
-  // The lenses every review ran, so review-stats can compare escapes by lens.
-  assert.deepEqual(
-    record({
-      ...reviewed,
-      level: "high",
-      lenses: ["live-check", "places-and-chains", "places-and-chains"],
-      findings: [],
-    }),
-    {
-      ...reviewed,
-      level: "high",
-      reviews: 1,
-      lenses: ["places-and-chains", "live-check"],
-      findings: [],
-    },
-  );
-  // The intake lists every lens unasked, so its live check is left out.
-  assert.deepEqual(
-    readReview(
-      JSON.stringify({
-        ...intakeRecord,
-        lenses: ["places-and-chains", "live-check"],
-      }),
-      { intake: true },
-    ).lenses,
-    ["places-and-chains"],
-  );
-  for (const lenses of ["places-and-chains", ["places"], ["live"], null])
-    assert.throws(
-      () => record({ ...reviewed, level: "high", lenses, findings: [] }),
-      /"lenses" lists the lenses every review ran/,
-    );
-  assert.throws(() => record({ ...reviewed, level: "high" }), /findings list/);
+  assert.throws(() => record(evaluated), /findings list/);
   assert.throws(() => readReview("level: high"), /not JSON/);
+  // A record saying none was due holds only where the rule marks nothing.
+  const none = record(unevaluatedRecord);
+  assert.equal(unevaluated(none, ["docs/development.md"]), null);
+  assert.equal(
+    unevaluated(record({ ...evaluated, findings: [] }), ["scripts/land.mjs"]),
+    null,
+  );
+  assert.match(
+    unevaluated(none, ["docs/development.md", "app/src/ui/Row.tsx"]) ?? "",
+    /marks this branch \(UI: app\/src\/ui\/Row\.tsx\)/,
+  );
 });
 
 test("a landing's review covers every commit of the branch but merges of dev and the formatter's", async (t) => {
@@ -740,6 +655,30 @@ test("a landing refuses a fix of its own without the trailers saying where its b
   // A note may follow a value, and a commit of the branch's own may be named.
   reword("Introduced-by: unknown, before the history", "Found-by: Discord");
   assert.equal(untrailedFixes(git, "dev"), null);
+  // A record saying no evaluation was due lands no branch the evaluation
+  // rule marks.
+  if (!onWindows(() => {})) {
+    fs.mkdirSync(path.join(dir, "scripts"));
+    fs.writeFileSync(path.join(dir, "scripts", "land.mjs"), "x\n");
+    git(["add", "-A"]);
+    git(["commit", "-qm", "feat: tooling"]);
+    fs.writeFileSync(
+      reviewFile,
+      JSON.stringify({
+        reviewer: "none",
+        head: git(["rev-parse", "HEAD"]).stdout.trim(),
+        criteria: ["The tooling works"],
+        e2e: [],
+      }),
+    );
+    logged.length = 0;
+    assert.equal(await land(dir, deps, reviewFile), 1);
+    assert.match(
+      logged.join("\n"),
+      /evaluation rule marks this branch \(shared infrastructure: scripts\/land\.mjs\), so it lands only once an evaluator checked it/,
+    );
+    git(["reset", "-q", "--hard", "HEAD~1"]);
+  }
   reword(`Introduced-by: ${work.slice(0, 8)}`, "Found-by: review");
   assert.equal(untrailedFixes(git, "dev"), null);
   // A commit named beside none says two things at once.
@@ -871,6 +810,7 @@ test("a sandboxed worker hands off a checked branch without writing the main che
   // dev moved after the worker branched, so the hand-off merges it in.
   const work = commit(clone, "work.txt", "work\n");
   commit(clone, "scripts/setup.mjs", "setup\n");
+  commit(clone, "scripts/land.mjs", "land\n");
   const base = commit(main, "dev.txt", "dev\n");
   const before = refs();
   spawnSync("chmod", ["-R", "a-w", main]);
@@ -909,6 +849,19 @@ test("a sandboxed worker hands off a checked branch without writing the main che
   // branch, which may add a scenario dev lacks.
   const named = { ...handoff, e2e: [...ran.e2e, "added-by-the-branch"] };
   fs.writeFileSync(handoffFile, JSON.stringify(named));
+  // A record saying no evaluation was due lands no hand-off the evaluation
+  // rule marks, and starts no CI.
+  fs.writeFileSync(
+    reviewFile,
+    JSON.stringify({ reviewer: "none", head, criteria: ["Works"] }),
+  );
+  logged.length = 0;
+  assert.equal(await finish(), 1);
+  assert.match(
+    logged.join("\n"),
+    /evaluation rule marks this branch \(shared infrastructure: scripts\/land\.mjs\)/,
+  );
+  assert.deepEqual(stand.writes, []);
   review(head);
   // The hand-off changes a platform-sensitive path, so it lands once CI on
   // GitHub passes: --finish starts it and is run again later.
@@ -984,6 +937,17 @@ test("a sandboxed worker hands off a checked branch without writing the main che
   assert.match(logged.join("\n"), /its hand-off names each scenario/);
   assert.equal(stand.writes.length, dispatched);
   fs.writeFileSync(handoffFile, JSON.stringify(reasoned));
+  // This one changes no path the evaluation rule marks, a platform path
+  // alone, so a record of the criteria its worker checked lands it, once its
+  // CI passes.
+  fs.writeFileSync(
+    reviewFile,
+    JSON.stringify({
+      reviewer: "none",
+      head: reasoned.head,
+      criteria: ["Setup still runs"],
+    }),
+  );
   commit(main, "later.txt", "later\n");
   assert.equal(await finish(), 5);
   logged.length = 0;
@@ -1056,8 +1020,8 @@ test("the platform rule marks every file a fix for Windows alone changed since 2
   assert.deepEqual(platformSensitive([...elsewhere, ...changed]), changed);
 });
 
-test("the Live check is due on a branch that changes a screen or flow, which the screens command lists", (t) => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dazedtl-screens-"));
+test("a branch gets an evaluation for each risk its paths or its author mark, which the evaluation command lists", (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dazedtl-evaluation-"));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const git = gitIn(dir);
   git(["init", "-q", "-b", "dev"]);
@@ -1071,47 +1035,76 @@ test("the Live check is due on a branch that changes a screen or flow, which the
     git(["add", file]);
     git(["commit", "-q", "-m", `feat: ${file}`]);
   };
-  write("backend/dazedtl/actions.py");
+  write("backend/dazedtl/engine/modules/rpgmakermvmz.py");
   write("tests/app.test.ts");
   // A backend API change writes the generated contracts again.
   write("app/src/api/contracts.ts");
   write("docs/architecture.md");
   write("app/tsconfig.json");
-  // Every lens but the Live check is due on any branch.
-  assert.deepEqual(screensCommand(git, ["screens", "dev", "work"]), {
+  const none =
+    "This branch changes no path the evaluation rule marks: unless you mark it a multi-area rework or over about an hour of building, its checks and your checked criteria land it.";
+  assert.deepEqual(evaluationCommand(git, ["evaluation", "dev", "work"]), {
     code: 0,
     lines: [
-      "This branch changes none of the renderer, app build or window paths that screenPaths marks; the Live check is not due.",
+      none,
+      "It changes no screen or user flow, so the Live check is not due.",
     ],
   });
-  assert.equal(lensDue("live-check", changedPaths(git, "dev", "work")), false);
-  assert.equal(lensDue("places-and-chains", []), true);
+  // What no path shows, its author marks.
+  assert.deepEqual(
+    evaluationDue(changedPaths(git, "dev", "work"), {
+      marked: ["multi-area rework"],
+    }),
+    [{ risk: "multi-area rework", files: [] }],
+  );
+  write("backend/dazedtl/projects/store.py");
+  write("backend/dazedtl/compatibility/batch_control.py");
+  write("backend/dazedtl/translation/ownership.py");
+  write("backend/dazedtl/settings/store.py");
   write("app/src/ui/Row.tsx");
-  write("app/electron/main.cjs");
-  write("app/index.html");
-  write("app/package.json");
-  assert.deepEqual(screensCommand(git, ["screens", "dev", "work"]), {
+  write("scripts/land.mjs");
+  assert.deepEqual(evaluationCommand(git, ["evaluation", "dev", "work"]), {
     code: 0,
     lines: [
-      "This branch changes a screen or user flow, so its review runs the Live check:",
-      "  app/electron/main.cjs",
-      "  app/index.html",
-      "  app/package.json",
-      "  app/src/ui/Row.tsx",
+      "This branch gets an evaluation before it lands, for these risks:",
+      "  saved data:",
+      "    backend/dazedtl/projects/store.py",
+      "  paid work:",
+      "    backend/dazedtl/compatibility/batch_control.py",
+      "  run ownership:",
+      "    backend/dazedtl/translation/ownership.py",
+      "  credentials:",
+      "    backend/dazedtl/settings/store.py",
+      "  UI:",
+      "    app/src/ui/Row.tsx",
+      "  shared infrastructure:",
+      "    scripts/land.mjs",
+      "It changes a screen or user flow, so its evaluation runs the Live check.",
     ],
   });
-  assert.equal(lensDue("live-check", changedPaths(git, "dev", "work")), true);
-  // A ref Git can't find never reads as a branch with no screen.
-  assert.equal(screensCommand(git, ["screens", "dev", "nope"]).code, 2);
-  assert.equal(screensCommand(git, ["screens", "dev"]).code, 2);
+  // A ref Git can't find never reads as a branch with nothing to evaluate.
+  assert.equal(evaluationCommand(git, ["evaluation", "dev", "nope"]).code, 2);
+  assert.equal(evaluationCommand(git, ["evaluation", "dev"]).code, 2);
+  assert.equal(evaluationCommand(git, ["screens", "dev", "work"]).code, 2);
   // Nor do refs Git can't compare, such as an orphan branch's.
   git(["switch", "-q", "--orphan", "orphan"]);
   write("app/src/ui/Orphan.tsx");
-  assert.deepEqual(screensCommand(git, ["screens", "dev", "orphan"]).code, 2);
+  assert.equal(evaluationCommand(git, ["evaluation", "dev", "orphan"]).code, 2);
   assert.throws(
     () => changedPaths(git, "dev", "orphan"),
     /Git can't list what orphan changes since dev/,
   );
+  // Each risk's paths name files the repository has, so a rename never
+  // leaves a risk quietly unwatched.
+  const tracked = gitIn(path.join(import.meta.dirname, ".."))(["ls-files"])
+    .stdout.split("\n")
+    .filter(Boolean);
+  for (const { risk, paths } of riskPaths)
+    for (const pattern of paths)
+      assert.ok(
+        tracked.some((file) => pattern.test(file)),
+        `${risk}: ${pattern} matches no tracked file`,
+      );
 });
 
 /**

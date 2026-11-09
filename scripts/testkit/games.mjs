@@ -477,8 +477,19 @@ export async function makeGame(names, game, change) {
     return {};
   }
   if (base === "ace") {
-    if (rest.some((name) => name !== "encrypted"))
-      throw new Error("Only the encrypted variant applies to the Ace game.");
+    // Besides encrypted, only a variant that adds images applies: the
+    // others edit the MZ game's database and plugins.
+    const added = rest.filter((name) => name !== "encrypted");
+    if (
+      added.some((name) =>
+        Object.keys(readJson(path.join(overlays, name, "variant.json"))).some(
+          (key) => !["description", "images"].includes(key),
+        ),
+      )
+    )
+      throw new Error(
+        "Only the encrypted variant and those adding images apply to the Ace game.",
+      );
     // The fixture's other folders are the conversion tests' expected output.
     fs.cpSync(path.join(fixtures, "ace/Data"), path.join(game, "Data"), {
       recursive: true,
@@ -499,6 +510,7 @@ export async function makeGame(names, game, change) {
       aceGame("pack", game);
     }
     if (rest.includes("encrypted")) aceGame("encrypt", game);
+    for (const name of added) addVariant(game, name);
     return {};
   }
   if (rest.includes("encrypted"))

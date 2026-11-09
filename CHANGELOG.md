@@ -3,6 +3,25 @@
 Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 [release.mjs](scripts/release.mjs) writes each entry from [release/notes.md](release/notes.md).
 
+## [2.68.4] - 2026-11-08
+
+### Fixed
+
+- **Translate:** translating a message again with **Skip already translated text** off no longer sends its speech's English as its text, or the speech as a name, where Assistant-led or a translation file wrote it over its rows, such as a name on a row of its own and its speech, and collecting speaker names no longer takes that speech for a name either: each is sent with its own Japanese, as the translation file lists it; runs estimated before this version send what they were approved with.
+
+## [2.68.3] - 2026-11-08
+
+### Fixed
+
+- **Release:** building a patch ZIP no longer stops with "Add exact player image or font paths under img/, Graphics/ or fonts/" after **Images** applied a picture kept in another folder, such as a VX Ace game's images folder; the patch now carries it.
+- **Translate:** translating a message again with **Skip already translated text** off no longer shows part of it twice where one of its rows opens with a code such as `\SE[1]`, as in messages Assistant-led wrote: each part is sent with its own Japanese, as a translation file lists it, and written once; runs estimated before this version send what they were approved with.
+
+## [2.68.2] - 2026-11-05
+
+### Fixed
+
+- **Images:** copying a translation task or opening **Edit text…** no longer keeps stopping with "Unrecognized preserved image files exist" after an image changed while its images were made ready, or after DazedTL closed partway; images an earlier version left stuck this way recover unless they changed since.
+
 ## [2.68.1] - 2026-11-05
 
 ### Fixed
@@ -1732,6 +1751,9 @@ Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachan
 - The first release of DazedTL as a desktop app, installed from a ZIP with a START launcher and updated from inside the app.
 - **Guided steps** for RPG Maker MV, MZ and VX Ace games, and **Assistant-led** for any game.
 
+[2.68.4]: https://github.com/dazedanon/DazedTL/compare/v2.68.3...v2.68.4
+[2.68.3]: https://github.com/dazedanon/DazedTL/compare/v2.68.2...v2.68.3
+[2.68.2]: https://github.com/dazedanon/DazedTL/compare/v2.68.1...v2.68.2
 [2.68.1]: https://github.com/dazedanon/DazedTL/compare/v2.68.0...v2.68.1
 [2.68.0]: https://github.com/dazedanon/DazedTL/compare/v2.67.0...v2.68.0
 [2.67.0]: https://github.com/dazedanon/DazedTL/compare/v2.66.0...v2.67.0

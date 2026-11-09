@@ -2062,6 +2062,8 @@ const revisionNotes = {
   "img/pictures/text_0000.png": "Make the title twice as big.",
   "img/pictures/text_0001.png": "Translate the sign's lettering too.",
 };
+/** The loose-images game's lettered picture, outside img/ and Graphics/. */
+const loosePicture = `images/${lettered[0]}`;
 const notesField = 'dialog textarea[aria-label="Image revision notes"]';
 
 /** Opens `filename` in Compare images from every image's view. */
@@ -2484,6 +2486,45 @@ export const scenarios = {
       "A Guided project on the lettered-images game: one lettered image the investigation excluded, ticked, translated by a scripted assistant and applied, revision notes written on it and on the other in Compare images, kept through leaving Images and a restart and sent in one revision task from the footer; the assistant revises the applied image and fails the other, whose note waits, and Apply to game puts the revised image back.",
     game: "lettered-images",
     steps: () => [open, setup[0], ...imagesRevised()],
+  },
+  "images-released": {
+    description:
+      "A Guided project on a VX Ace game whose lettered title picture sits in an images folder outside Graphics, which Images suggests: the game's text translated, the picture translated by a scripted assistant and applied, and a patch ZIP built in Release that holds the applied picture.",
+    game: "ace+loose-images",
+    steps: () => [
+      open,
+      ...setup,
+      ...translateAll,
+      [
+        "Translate the lettered picture in the suggested images folder and apply it",
+        async ({ page, state }) => {
+          await page.click(/^Images\b/);
+          await page.waitText(lettered[0]);
+          await tickImage(page, lettered[0]);
+          const request = editImages(
+            state,
+            await copyTask(page, state, "Copy translation task (1)"),
+          );
+          await applyImages(page, 1);
+          await until(
+            "the picture to read Applied",
+            async () =>
+              (await imageRow(page, loosePicture))?.state === "applied",
+          );
+          state.loosePicture = editedCopy(state, request, loosePicture);
+        },
+      ],
+      [
+        "Build a patch ZIP that holds the applied picture",
+        async ({ page, state }) => {
+          const files = await buildPatch(page);
+          if (!files.get(loosePicture)?.equals(state.loosePicture))
+            throw new Error(
+              `The patch ZIP lacks the applied ${loosePicture}: ${[...files.keys()].join(", ")}.`,
+            );
+        },
+      ],
+    ],
   },
   "images-archived": {
     description:
