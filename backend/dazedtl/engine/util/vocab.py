@@ -26,10 +26,11 @@ from util.paths import (
     GLOSSARY_BASE_SEPARATOR,
     active_glossary_path,
     ensure_game_glossary,
-    glossary_base_path,
+    glossary_base_text,
     read_active_glossary,
     read_game_glossary,
     read_guidance_file,
+    sent_glossary,
     split_glossary,
 )
 from util import system
@@ -63,8 +64,10 @@ def batch_glossary_phase() -> str:
 
 def freeze_batch_glossary(*, game_root=None) -> Path:
     """Snapshot the live glossary for the current batch collect/consume cycle."""
-    text = read_active_glossary() if game_root is None else read_guidance_file(
-        _path(game_root)
+    text = (
+        read_active_glossary()
+        if game_root is None
+        else sent_glossary(read_guidance_file(_path(game_root)))
     )
     return write_batch_glossary_freeze(text)
 
@@ -159,15 +162,13 @@ def read_game_vocab(game_root=None, *, create: bool = True) -> str:
 
 
 def write_game_vocab(game_text: str, game_root=None) -> None:
-    """Write the game-specific glossary and re-append the shipped base."""
+    """Write the game-specific glossary and re-append the shipped base, which
+    a game of another source than Japanese has none of."""
     game_text = (game_text or "").rstrip("\n")
-    base_path = glossary_base_path()
-    base_text = (
-        base_path.read_text(encoding="utf-8") if base_path.is_file() else ""
-    )
     with _VOCAB_LOCK:
         _replace_glossary(
-            _path(game_root), game_text + "\n\n" + BASE_SEPARATOR + base_text
+            _path(game_root),
+            game_text + "\n\n" + BASE_SEPARATOR + glossary_base_text(),
         )
 
 

@@ -898,6 +898,18 @@ def split_glossary(text: str) -> tuple[str, str]:
     return (game, separator + base) if separator else (text, "")
 
 
+def sent_glossary(text: str) -> str:
+    """A game's whole glossary, as :func:`read_guidance_file` reads it, as
+    a run sends it: as saved for a Japanese source, with the shipped base it
+    was saved with, and with the base left out for another source, since its
+    terms are Japanese (:func:`glossary_base_text`), though saves up to
+    2.70.0 wrote it in."""
+    if active_source() == JAPANESE:
+        return text
+    game, base = split_glossary(text)
+    return game + GLOSSARY_BASE_SEPARATOR if base else text
+
+
 def read_game_glossary(game_root: str | Path, *, create: bool = True) -> str:
     """Read one game's glossary, optionally previewing its seed without writing."""
     if create:
@@ -941,5 +953,5 @@ def read_active_glossary() -> str:
                 return custom + ("\n" if custom else "")
             prefix = custom + "\n\n" if custom else ""
             return prefix + GLOSSARY_BASE_SEPARATOR + base
-        return text
+        return sent_glossary(text)
     return glossary_base_text()

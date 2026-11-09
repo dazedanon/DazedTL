@@ -50,6 +50,7 @@ from util.paths import (
     read_active_glossary,
     read_game_glossary,
     replace_with_retry,
+    sent_glossary,
     staging_folder,
 )
 from util.provider_costs import cache_read_multiplier, cache_write_multiplier
@@ -1296,7 +1297,7 @@ def build_manifest(files_dir: str | Path, *, target_segments: int = DEFAULT_SEGM
         target,
     )
     active_glossary = (
-        read_game_glossary(context_root)
+        sent_glossary(read_game_glossary(context_root))
         if glossary is None and context_root is not None
         else read_active_glossary()
         if glossary is None

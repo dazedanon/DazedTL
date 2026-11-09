@@ -212,6 +212,58 @@ class GuidanceDocumentTests(unittest.TestCase):
                     self.assertEqual(path.read_bytes(), saved.encode())
                     self.assertEqual(read_active_glossary(), saved)
 
+    def test_a_game_of_another_source_saves_and_sends_no_japanese_base(self):
+        # A Context save wrote the shipped base, Japanese honorifics and
+        # interface words, into an English game's glossary, and its runs then
+        # sent each base row an English word matched, such as "Demon".
+        from util import vocab
+        from util.languages import SOURCE_ENV
+        from util.len_translation import request_glossary
+        from util.paths import glossary_base_path
+        from util.translation import buildMatchedVocabText, parseVocabWithCategories
+
+        japanese = glossary_base_path().read_text(encoding="utf-8")
+        self.assertIn("(Demon)", japanese)
+        own = "Duke (Duc)"
+        line = "The Duke fights the Demon with Fire."
+        path = self.file(GLOSSARY)
+        freeze = self.root / "freeze.txt"
+        with (
+            patch.dict(
+                os.environ,
+                {
+                    SOURCE_ENV: "English",
+                    "DAZED_GAME_ROOT": str(self.root),
+                    GLOSSARY_OVERRIDE_ENV: "",
+                },
+            ),
+            patch.object(vocab, "BATCH_GLOSSARY_FREEZE_FILE", freeze),
+        ):
+            documents_save(self.root, {GLOSSARY: {"revision": "", "text": own}})
+            self.assertEqual(
+                path.read_bytes(), (own + "\n\n" + GLOSSARY_BASE_SEPARATOR).encode()
+            )
+            # A file a save wrote before, which keeps the copy until edited.
+            path.write_text(
+                own + "\n\n" + GLOSSARY_BASE_SEPARATOR + japanese, encoding="utf-8"
+            )
+            self.assertEqual(read(self.root)[GLOSSARY]["text"], own)
+            sent = {
+                "a run": read_active_glossary(),
+                "a Batch": vocab.freeze_batch_glossary().read_text(encoding="utf-8"),
+                "a Batch of a named game": vocab.freeze_batch_glossary(
+                    game_root=self.root
+                ).read_text(encoding="utf-8"),
+                "Assistant-led": request_glossary(read_game_glossary(self.root)),
+            }
+            for reader, text in sent.items():
+                with self.subTest(reader=reader):
+                    matched = buildMatchedVocabText(
+                        parseVocabWithCategories(text), line
+                    )
+                    self.assertIn(own, matched)
+                    self.assertNotIn("Demon", matched)
+
     def test_skills_saved_on_windows_build_the_prompt_a_run_sends(self):
         # Context showed a UTF-16 skill as saved while the run building its
         # system prompt failed reading it, and a byte order mark reached the
