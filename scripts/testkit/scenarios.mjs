@@ -129,6 +129,37 @@ const translateAll = [
   ],
 ];
 
+const plamoRequests = [
+  "Check LM Studio got only requests PLaMo's template takes, each answered",
+  ({ state }) => {
+    const chats = recordedRequests(path.join(state.work, "provider")).filter(
+      (item) =>
+        item.method === "POST" &&
+        item.route === "/chat/completions" &&
+        /plamo-3-translate/.test(item.body?.model ?? ""),
+    );
+    if (!chats.length) throw new Error("No PLaMo request reached LM Studio.");
+    const refused = chats.find((item) => item.status !== 200);
+    if (refused)
+      throw new Error(
+        `PLaMo's template refused a request: ${JSON.stringify(refused.body).slice(0, 600)}`,
+      );
+    // One line a call: no JSON payload for it to translate as text.
+    const json = chats.find((item) =>
+      /"Line\d+"/.test(item.body.messages.at(-1).content),
+    );
+    if (json)
+      throw new Error(
+        `A call carried a JSON payload: ${json.body.messages.at(-1).content}`,
+      );
+    const actor = gameJson(state, "Actors.json")[1];
+    if (!translated(actor.name) || !translated(actor.profile))
+      throw new Error(
+        `The database wasn't translated: ${actor.name}, ${actor.profile}`,
+      );
+  },
+];
+
 const narrowWidths = [
   "Narrow the Line widths and check the long message pages whole",
   async ({ page, state }) => {
@@ -403,7 +434,8 @@ const moved = [
       const before = await projectView(page, state.game);
       const game = path.join(path.dirname(state.game), "Renamed");
       await page.click("Compare");
-      // The workspace shows once Compare models has read the game's lines.
+      // The page, then its workspace of columns.
+      await page.waitText("Compare models");
       await page.waitText("Add model");
       moveGame(state, game);
       // Compare models says the game is gone, as the other pages do.
@@ -2416,6 +2448,20 @@ export const scenarios = {
     description:
       "Database, maps and events translated live by the stand-in and applied.",
     steps: () => [open, ...setup, ...translateAll],
+  },
+  "lmstudio-plamo": {
+    description:
+      "translated through the LM Studio preset with PLaMo 3 Translate, which the stand-in answers as LM Studio does with that model's chat template, refusing any request the template can't render: one line a call, with its glossary and earlier lines, and no instructions or JSON.",
+    steps: () => [
+      open,
+      setup[0],
+      [
+        "Connect LM Studio with PLaMo 3 Translate",
+        ({ page }) => connect(page, "", "lmstudio", "plamo-3-translate-8b"),
+      ],
+      ...translateAll,
+      plamoRequests,
+    ],
   },
   "update-stopped": {
     description:

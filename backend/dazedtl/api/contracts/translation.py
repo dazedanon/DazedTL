@@ -287,6 +287,8 @@ class Lifecycle(typing_extensions.TypedDict, extra_items=object):
 class ConnectionSummary(TypedDict):
     name: str
     model: str
+    # Whether its server bills nothing, as LM Studio's doesn't.
+    free: bool
 
 
 class ScopeRuleCount(TypedDict):

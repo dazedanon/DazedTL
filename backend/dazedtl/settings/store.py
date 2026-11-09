@@ -501,6 +501,7 @@ class Settings:
                     "connectionName": providers.connection_name(name),
                     "protocol": definition["protocol"],
                     "defaultEndpoint": definition["endpoint"],
+                    "keyless": definition.get("keyless", False),
                 }
                 for name, definition in providers.PROVIDERS.items()
             ],
@@ -647,6 +648,18 @@ class Settings:
                     effort.record(active, model),
                     effort.kept(active),
                 ),
+            }
+        if active and providers.free(active["provider"]):
+            # A server that bills nothing (LM Studio) prices every model at
+            # 0, with no lookup, so estimates never ask for its rates.
+            return {
+                "model": model,
+                "inputRate": 0,
+                "outputRate": 0,
+                "source": "free",
+                "updatedAt": None,
+                "stale": False,
+                "thinkingEffort": self._effort(active, model),
             }
         if active and active["provider"] in providers.OPENCODE:
             return {
@@ -1206,7 +1219,8 @@ class Settings:
         if provider != "custom":
             protocol = providers.PROVIDERS[provider]["protocol"]
             endpoint = ""
-            keyless = False
+            # A preset's server takes a key unless it declares none (LM Studio).
+            keyless = providers.PROVIDERS[provider].get("keyless", False)
         elif not endpoint or protocol == "anthropic":
             raise ValueError(
                 "Enter an OpenAI-compatible server URL. Use the Anthropic provider for its native API."

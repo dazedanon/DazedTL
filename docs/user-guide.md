@@ -310,7 +310,7 @@ For OpenAI, raise **Batch token allowance** to your account's limit from [OpenAI
 - **OpenRouter:** enter the full model ID, such as `anthropic/claude-sonnet-4.5`; **Host** pins one hosting provider.
   Its Batches can take up to 24 hours and can't be cancelled once sent.
 - **Kimi:** Batch works with Kimi K2.6 and K2.7 Code, at 40% off; Kimi K3 translates Live only.
-- **DeepSeek** and **OpenCode** translate Live only; DeepSeek costs half [off-peak](https://api-docs.deepseek.com/quick_start/pricing), on Go too.
+- **DeepSeek**, **OpenCode** and **LM Studio** translate Live only; DeepSeek costs half [off-peak](https://api-docs.deepseek.com/quick_start/pricing), on Go too.
 - **OpenCode:** **Plan** picks what pays.
   **Go subscription** bills your plan's allowance; a used-up limit fails requests until it resets, unless Extra Usage is on.
   Go's DeepSeek needs **Global** under Regions in the workspace's Privacy settings, and Muse Spark needs **Allow paid endpoints that train on request data** turned on.

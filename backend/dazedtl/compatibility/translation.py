@@ -18,10 +18,16 @@ from dazedtl.translation.git_status_cache import (
     file_signature,
     metadata_signature,
 )
-from dazedtl.translation.requests import output_schema, provider_view
+from dazedtl.translation.requests import (
+    output_schema,
+    provider_sources,
+    provider_view,
+    source_language,
+    target_language,
+)
 from dazedtl.translation.skill_users import for_batch
 
-from . import git_blobs, request_parameters
+from . import git_blobs, plamo, request_parameters
 from .git_blobs import git as _git
 from .openrouter_batch import ResultsUnavailable
 
@@ -1524,6 +1530,27 @@ def request_payload(request, configuration):
             "This run's structured-output policy is invalid or unsupported."
         )
     context = request["context"]
+    if configuration.get("requestFormat") is not None:
+        # PLaMo 3 Translate reads only its lines, by the keys the reply
+        # comes back under, with the scene before them and the matched
+        # glossary; Live sends them one at a time (compatibility/plamo).
+        if (
+            configuration["requestFormat"] != plamo.POLICY
+            or configuration["protocol"] != "openai"
+            or configuration["mode"] == "batch"
+        ):
+            raise ValueError(
+                "This run's saved request format is invalid or unsupported."
+            )
+        return plamo.document(
+            provider_sources(request, configuration),
+            model=configuration["model"],
+            source=source_language(context),
+            target=target_language(context),
+            vocab_text=context["glossary"] + "\n" + context["sfx_reference"],
+            context=context["preceding_japanese_source_context"],
+            allowance=configuration.get("maxOutputTokens"),
+        )
     # Lines go by short keys under the run's line-key policy; see
     # requests.provider_view.
     view = provider_view(request, configuration)
@@ -1663,6 +1690,9 @@ class TranslationProvider:
 
         from dazedtl.translation.refusals import refusal_reason, refused
 
+        if plamo.is_document(params):
+            # One call a line; PLaMo answers no refusals.
+            return plamo.send(params, self.client.chat.completions.create)
         responses = []
 
         def capture(create):

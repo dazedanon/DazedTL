@@ -88,7 +88,7 @@ It drives the app as a user does, in a private display, and most scenarios build
 - `--app` leaves the app running for `drive --work <dir>`, which reads, clicks, sizes and screenshots it (scripts import the same driver from [cdp.mjs](../scripts/testkit/cdp.mjs)); `clean --work <dir>` stops it and removes the folder.
 - The stand-in's replies aren't real translations: it answers most lines with `Tested <letters>`.
   `provider --work <dir> '<mode JSON>'` changes how it answers, such as `'{"hold":false}'` to release a held Batch; [its header](../scripts/testkit/provider.mjs) lists the modes, and it records each request in `provider/requests.jsonl`.
-- Scenarios never reach a real provider: the OpenAI, Anthropic, OpenRouter and both OpenCode presets follow `DAZEDTL_TEST_*_ENDPOINT` variables to the stand-in ([providers.py](../backend/dazedtl/settings/providers.py)), and phone notifications follow `DAZEDTL_TEST_NTFY_SERVER`.
+- Scenarios never reach a real provider: every preset follows a `DAZEDTL_TEST_*_ENDPOINT` variable to the stand-in ([TEST_ENDPOINTS](../backend/dazedtl/settings/providers.py)), and phone notifications follow `DAZEDTL_TEST_NTFY_SERVER`.
   A new provider path needs such a variable too.
 
 To add a scenario, add its steps to [scenarios.mjs](../scripts/testkit/scenarios.mjs), reusing those there and in [journey.mjs](../scripts/testkit/journey.mjs), and add it to the scenario matrix in [CI's workflow](../.github/workflows/ci.yml); the behavior tests fail while CI leaves one out.

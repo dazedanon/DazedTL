@@ -50,6 +50,10 @@ export function TranslationCost({
   mode: string;
 }) {
   const batch = mode === "batch";
+  // A server that bills nothing (LM Studio) prices every request at 0, so
+  // actual usage can't change the cost.
+  const free =
+    (value.rates as { source?: unknown } | undefined)?.source === "free";
   const most = value.batch_max_cost ?? value.batch_nocache_cost;
   const caching =
     batch &&
@@ -71,7 +75,7 @@ export function TranslationCost({
           {value.approximate_input === true && `${approximateClaudeInput} `}
           {value.unestimated_thinking_tokens === true &&
             `${unestimatedThinking} `}
-          Final cost depends on actual usage.
+          {!free && "Final cost depends on actual usage."}
         </small>
       </div>
       <dl className="translation-cost-tokens">

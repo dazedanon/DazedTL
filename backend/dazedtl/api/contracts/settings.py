@@ -82,7 +82,7 @@ class ModelDefaults(TypedDict):
     model: str
     inputRate: float | None
     outputRate: float | None
-    source: Literal["catalog", "engine_default", "unavailable"]
+    source: Literal["catalog", "engine_default", "unavailable", "free"]
     updatedAt: str | None
     stale: bool
     maxOutputTokens: NotRequired[int | None]
@@ -104,6 +104,7 @@ class SettingsProvider(TypedDict):
     connectionName: str
     protocol: ProviderProtocol
     defaultEndpoint: str
+    keyless: bool
 
 
 class SettingsDraft(TypedDict):
@@ -148,6 +149,7 @@ type Provider = Literal[
     "deepseek",
     "opencode-go",
     "opencode",
+    "lmstudio",
     "custom",
 ]
 

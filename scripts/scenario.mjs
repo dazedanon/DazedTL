@@ -146,6 +146,8 @@ async function openApp(state) {
       DAZEDTL_TEST_OPENROUTER_ENDPOINT: `${state.provider.url.replace(/\/v1$/, "")}/openrouter.ai/api/v1`,
       DAZEDTL_TEST_OPENCODE_GO_ENDPOINT: `${state.provider.url.replace(/\/v1$/, "")}/opencode.ai/inference/go/openai/v1`,
       DAZEDTL_TEST_OPENCODE_ENDPOINT: `${state.provider.url.replace(/\/v1$/, "")}/opencode.ai/inference/openai/v1`,
+      // The LM Studio preset reaches it as LM Studio's local server.
+      DAZEDTL_TEST_LMSTUDIO_ENDPOINT: `${state.provider.url.replace(/\/v1$/, "")}/lmstudio/v1`,
       ...state.env,
     },
   });

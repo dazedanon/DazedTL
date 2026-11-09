@@ -46,9 +46,9 @@ function PriceCheck({
 
 /**
  * Chooses models from Settings' connections: the connection first, then its
- * models, searched or typed as an ID the list lacks. Add model adds several
- * columns, up to what fits beside each other; a column's model menu chooses
- * one.
+ * models, searched or typed as an ID the list lacks. Adding columns ("many")
+ * takes several, up to what fits beside each other; changing a column's
+ * model ("one") takes one.
  */
 export function AddModels({
   mode,
