@@ -130,9 +130,10 @@ def delivered_note(source=None, target=None) -> str:
 
 
 def delivered_block(lines, source=None, target=None) -> str:
-    """The block a later Live request of a split scene sends after its
-    preceding source lines, holding the translation already delivered for
-    them, one line after another; both methods send it."""
+    """The block a Live request sends after its preceding source lines,
+    such as a later part of a split scene's, holding the translation
+    already delivered for them, one line after another; both methods send
+    it."""
     return delivered_note(source, target) + "\n```\n" + "\n".join(lines) + "\n```"
 
 

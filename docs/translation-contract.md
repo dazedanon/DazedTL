@@ -63,8 +63,8 @@ The file is an object with `version` 1 and `units`, a list in play order:
 `organize --input <units file>` packs whole scenes of one group and field into requests, compiles and prices them, and replies with counts only; add `--complete` once the units cover the [census](#census-and-scope).
 
 - A request holds at most the model's entries per request and 8,000 source characters in the API modes, or 250 lines and 12,000 characters in Assistant only.
-  In the API modes a scene over 10 lines gets its own request; a larger one splits.
-- Each request carries the 8 lines before it in its group as context, across scenes except field tables.
+  In API modes a scene over 10 lines gets its own request; a larger one splits.
+- Each request carries up to 8 lines before it in its group as context, across scenes except field tables.
 - A unit without source letters, such as 「……」 or ！？, joins no request: DazedTL writes it in its English form (`unsent_line` in [results](../backend/dazedtl/translation/results.py)).
 - organize refuses units that split most multi-line RPG Maker messages line by line.
 

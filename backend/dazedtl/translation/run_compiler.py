@@ -384,9 +384,9 @@ def compile_run(
     left out of the plan with an earlier translation (unit_results.record),
     which the run's results and export read back, and ``converted`` those
     it writes itself (organize.unsent), which its export writes, and
-    ``preceding`` the earlier lines each later part of a split scene quotes
-    (organize.layout), whose delivered translation its Live run sends with
-    it (organize.DELIVERED)."""
+    ``preceding`` the earlier lines each request quotes (organize.layout),
+    whose delivered translation its Live run sends with it
+    (organize.DELIVERED)."""
     project_id, root, selected = (
         job["project_id"],
         Path(plan["source"]),
