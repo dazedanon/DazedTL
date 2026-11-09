@@ -739,6 +739,7 @@ const manualLed = [
       const file = path.join(state.work, "edited.json");
       fs.writeFileSync(file, JSON.stringify(exported));
       await page.click("Project");
+      await page.click("Export/Import");
       await chooseFile({ root: state.root, inspect: state.app.inspect }, file);
       await page.click("Import…");
       await page.waitText("Import translations?");
@@ -814,10 +815,11 @@ const nameplateSpeech =
 
 const sharedFile = [
   [
-    "Export the translated game's translation file on the Project page",
+    "Export the translated game's translation file from the Project page's Export/Import tab",
     async ({ page, state }) => {
       state.shared = path.join(state.work, "shared.json");
       await page.click("Project");
+      await page.click("Export/Import");
       await chooseFile(
         { root: state.root, inspect: state.app.inspect },
         state.shared,
@@ -876,6 +878,7 @@ const sharedFile = [
     "Import the file on the Project page, then apply it in Translate: the copy shows the same text",
     async ({ page, state }) => {
       await page.click("Project");
+      await page.click("Export/Import");
       await chooseFile(
         { root: state.root, inspect: state.app.inspect },
         state.shared,

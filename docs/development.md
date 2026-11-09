@@ -218,8 +218,8 @@ The [updater](architecture.md#distribution-and-updates) accepts only releases si
 ### Release notes
 
 Every stable release needs notes for users in [release/notes.md](../release/notes.md), and `release.mjs` stops until they're there.
-Each landing users would notice adds or updates its line there, in its own `docs(release): note ...` commit, since a release can run with no session to write them, such as from the Discord intake.
-Put each line under the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) headings `### Added`, `Changed`, `Deprecated`, `Removed`, `Fixed` and `Security`, one `- ` line per change:
+Each landing users would notice adds or updates its line there, in its own `docs(release): note ...` commit, since a release can run with no session to write them.
+Put each line under a [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) heading, one `- ` line per change:
 
 ```markdown
 ### Fixed
@@ -227,10 +227,10 @@ Put each line under the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 - **Set up:** saving the game's first version no longer stops with "Bundled GameUpdate .gitignore is unavailable".
 ```
 
-- Start with where it happens, in bold, such as **Set up**, **Progress** or **Settings**.
-- Say what the user sees, in the app's own words, never internal names such as census, helper or baseline.
-- For a fix, name the old symptom so people recognize it, and quote an error only if users saw it.
-- Fold a change into the pending line it extends, and add none for changes nobody would notice.
+- Start with where it happens in bold, such as **Set up**, and bold nothing else.
+- Give the main change in one sentence of at most 25 words, which [docs.mjs](../scripts/docs.mjs) checks: what users see, or for a fix the symptom they saw, in the app's words, never internal names, causes, conditions or edge cases.
+- Add a step only when users must take it, such as exporting a file again.
+- When a change extends a pending line, rewrite it rather than add to it; skip changes nobody would notice.
 
 The release moves the notes into [CHANGELOG.md](../CHANGELOG.md) under the version, which [changelog.mjs](../scripts/changelog.mjs) writes, so never edit it by hand.
 A prerelease leaves them pending, and the app shows a beta's pending notes as that version's.

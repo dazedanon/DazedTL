@@ -126,6 +126,9 @@
   --change-label-width: 5.5rem;
   --field-column-gap: var(--space-4);
   --action-column-width: 19rem;
+  /* Bordered action buttons share this width, so a row or section of them
+     lines up. */
+  --action-button-width: 8rem;
   /* Compare models: Tune settings' column, the Add models dialog's height
      and the test glossary's editor. */
   --compare-add-width: 8.5rem;

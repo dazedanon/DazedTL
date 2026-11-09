@@ -195,7 +195,7 @@ After the game changes, load a new extraction: lines whose ID and source stay th
 
 ## Translation files
 
-Under **Translation file** on the Project page, **Export…** saves every line with its translation as JSON, with the glossary, or as CSV for a spreadsheet.
+On the Project page's **Export/Import** tab, **Export…** saves every line with its translation as JSON, with the glossary, or as CSV for a spreadsheet.
 **Import…** shows what a file changes, then takes its translations for the lines whose ID and source text match; the glossary only gains the terms it lacks.
 In Guided steps the translations go into your working copies, so apply them in Translate.
 
