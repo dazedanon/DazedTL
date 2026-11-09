@@ -48,6 +48,20 @@ SETTINGS = SimpleNamespace(
 )
 
 
+def wait_until(finished, failure):
+    """Polls `finished` until it is true, failing with `failure` after
+    SCAN_SECONDS. The polls back off to 50 ms: each read of the Image
+    Manager's state costs a Windows runner tens of milliseconds, so a tight
+    loop spent the CPU and the lock the scan it waited on needed."""
+    deadline = time.monotonic() + SCAN_SECONDS
+    delay = 0.001
+    while not finished():
+        if time.monotonic() > deadline:
+            raise AssertionError(failure)
+        time.sleep(delay)
+        delay = min(delay * 2, 0.05)
+
+
 def png(color=(0, 0, 0, 0), size=(8, 8)):
     stream = BytesIO()
     Image.new("RGBA", size, color).save(stream, format="PNG")
@@ -170,11 +184,10 @@ class ImageTests(unittest.TestCase):
 
     def scan(self):
         self.service.action(self.identity, "scan")
-        deadline = time.monotonic() + SCAN_SECONDS
-        while self.service.state(self.identity)["job"]["status"] == "running":
-            if time.monotonic() > deadline:
-                self.fail("Fixture scan did not finish.")
-            time.sleep(0.001)
+        wait_until(
+            lambda: self.service.state(self.identity)["job"]["status"] != "running",
+            "Fixture scan did not finish.",
+        )
         self.assertEqual(self.service.state(self.identity)["job"]["status"], "complete")
 
     def choose(self, identities):
@@ -611,14 +624,14 @@ class ImageTests(unittest.TestCase):
         write_bytes(self.game / "img/C.png", png((9, 9, 9, 255)))
         # The scan runs on; status names the next step once it finishes.
         self.service.assistant(self.identity, "scan")
-        deadline = time.monotonic() + SCAN_SECONDS
-        while (step := self.service.assistant(self.identity, "status"))[
-            "next"
-        ] == "scan":
-            if time.monotonic() > deadline:
-                self.fail("The scan did not finish.")
-            time.sleep(0.001)
-        self.assertEqual(step["next"], "investigate")
+        steps = []
+
+        def scanned():
+            steps.append(self.service.assistant(self.identity, "status"))
+            return steps[-1]["next"] != "scan"
+
+        wait_until(scanned, "The scan did not finish.")
+        self.assertEqual(steps[-1]["next"], "investigate")
         self.assertEqual(
             self.service.progress_units(self.identity),
             {"complete": False, "units": []},
@@ -1386,11 +1399,10 @@ class ImageFolderTests(unittest.TestCase):
 
             def scan(folder):
                 service.assistant(identity, "scan", folder)
-                deadline = time.monotonic() + SCAN_SECONDS
-                while service.state(identity)["job"]["status"] == "running":
-                    if time.monotonic() > deadline:
-                        self.fail("Fixture scan did not finish.")
-                    time.sleep(0.001)
+                wait_until(
+                    lambda: service.state(identity)["job"]["status"] != "running",
+                    "Fixture scan did not finish.",
+                )
 
             scan("Graphics")
             state = service.state(identity)
