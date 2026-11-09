@@ -4,11 +4,10 @@ import type { CompareRow, Comparison } from "../../api/contracts";
 import { useLanguages } from "../../app/LanguagesProvider";
 import { changesAgainst } from "../../ui/changedWords";
 import { StatusIcon } from "../../ui/StatusIcon";
+import { hiddenNotes, lineOrder } from "./compareView";
 
-/** A model's column, in the order the grid shows them. */
-export type CompareColumn = {
-  /** The model's place in the comparison's candidates and rows. */
-  position: number;
+/** What a header over translations says. */
+type Header = {
   title: ReactNode;
   /** Controls at the end of the title's row, such as the column's menu. */
   actions?: ReactNode;
@@ -18,11 +17,17 @@ export type CompareColumn = {
   subtitle?: ReactNode;
   /** A muted line under that, such as the price. */
   detail?: ReactNode;
-  /** Why the model has no lines, as failed under its header. */
+  /** Why a model has no lines, as failed. */
   error?: string;
-  /** Why the model was left out before anything was sent, as a warning
-   * that names the fix. */
+  /** Why a model was left out before anything was sent, as a warning that
+   * names the fix. */
   warning?: string;
+};
+
+/** A model's column, in the order the grid shows them. */
+export type CompareColumn = Header & {
+  /** The model's place in the comparison's candidates and rows. */
+  position: number;
 };
 
 /** A note under a model or a line: a model that failed, or what the checks
@@ -41,10 +46,6 @@ export function CompareFlag({
     </span>
   );
 }
-
-/** The line a column's line is marked against, as Mark differences shows
- * it. */
-export type Difference = { other: string };
 
 function Changed({ text, other }: { text: string; other: string }) {
   const runs = useMemo(() => changesAgainst(other, text), [other, text]);
@@ -65,24 +66,60 @@ function Changed({ text, other }: { text: string; other: string }) {
   );
 }
 
+/** A header's title row, then its lines and notes under it. */
+function HeaderContent({ header }: { header: Header }) {
+  return (
+    <>
+      <div className="compare-grid-title">
+        <strong>
+          {header.title}
+          {header.badge}
+        </strong>
+        {header.actions}
+      </div>
+      {header.subtitle && (
+        <span className="compare-grid-detail">{header.subtitle}</span>
+      )}
+      {header.detail && (
+        <span className="compare-grid-detail">{header.detail}</span>
+      )}
+      {header.error && (
+        <CompareFlag status="failed">{header.error}</CompareFlag>
+      )}
+      {header.warning && (
+        <CompareFlag status="warning">{header.warning}</CompareFlag>
+      )}
+    </>
+  );
+}
+
 /**
  * The comparison's lines: the source with its speaker, then each model's
  * translation, with what the checks found under it. Picking marks one
- * translation per line as the best; Mark differences marks the words a
- * column changed from the first.
+ * translation per line as the best; Mark differences marks the words each
+ * translation changed from the first on its line.
+ *
+ * While names are hidden, one header spans the translations, saying what
+ * it can of models without lines without telling which, and each line
+ * shows its translations in its own order, so no side belongs to a model.
  */
 export function CompareGrid({
   comparison,
   columns,
+  hidden = false,
   add,
   empty,
   marks,
   pick,
-  difference,
+  differences = false,
   label,
 }: {
   comparison: Comparison | undefined;
+  /** Each model's column, in the order they show, while names show. */
   columns: readonly CompareColumn[];
+  /** Whether names are hidden: one header then spans the translations in
+   * place of the columns'. */
+  hidden?: boolean;
   /** The header of the place the next column goes, such as Add model. */
   add?: ReactNode;
   /** Says why there are no lines yet. */
@@ -90,24 +127,26 @@ export function CompareGrid({
   marks?: Record<string, number>;
   /** Marks a translation as its line's best, or clears the mark. */
   pick?: (row: CompareRow, model: number | null) => void;
-  /** How a column's line differs from another column's, as Mark
-   * differences shows it. */
-  difference?: (row: CompareRow, position: number) => Difference | undefined;
+  /** Whether Mark differences is on. */
+  differences?: boolean;
   label: string;
 }) {
   const languages = useLanguages();
+  const blind = hidden && comparison ? comparison : null;
   const rows = comparison?.rows ?? [];
+  const count = blind ? blind.candidates.length : columns.length;
+  const positions = columns.map((column) => column.position);
   return (
     <table
       className="compare-grid"
-      data-columns={columns.length}
+      data-columns={count}
       data-add={add ? "" : undefined}
       aria-label={label}
     >
       <colgroup>
         <col className="compare-grid-source" />
-        {columns.map((column) => (
-          <col key={column.position} />
+        {Array.from({ length: count }, (_, place) => (
+          <col key={place} />
         ))}
         {add && <col className="compare-grid-add" />}
       </colgroup>
@@ -116,112 +155,111 @@ export function CompareGrid({
           <th scope="col">
             <strong>{languages.source}</strong>
           </th>
-          {columns.map((column) => (
-            <th scope="col" key={column.position}>
-              <div className="compare-grid-title">
-                <strong>
-                  {column.title}
-                  {column.badge}
-                </strong>
-                {column.actions}
-              </div>
-              {column.subtitle && (
-                <span className="compare-grid-detail">{column.subtitle}</span>
-              )}
-              {column.detail && (
-                <span className="compare-grid-detail">{column.detail}</span>
-              )}
-              {column.error && (
-                <CompareFlag status="failed">{column.error}</CompareFlag>
-              )}
-              {column.warning && (
-                <CompareFlag status="warning">{column.warning}</CompareFlag>
-              )}
+          {blind ? (
+            <th scope="col" colSpan={count}>
+              <HeaderContent
+                header={{
+                  title: languages.target,
+                  subtitle: "In a new order on every line",
+                  ...hiddenNotes(blind),
+                }}
+              />
             </th>
-          ))}
+          ) : (
+            columns.map((column) => (
+              <th scope="col" key={column.position}>
+                <HeaderContent header={column} />
+              </th>
+            ))
+          )}
           {add && <th scope="col">{add}</th>}
         </tr>
       </thead>
       <tbody>
         {!rows.length ? (
           <tr>
-            <td
-              className="compare-grid-empty"
-              colSpan={columns.length + (add ? 2 : 1)}
-            >
+            <td className="compare-grid-empty" colSpan={count + (add ? 2 : 1)}>
               {empty}
             </td>
           </tr>
         ) : (
-          rows.map((row) => (
-            <tr key={row.id}>
-              <th scope="row" lang={languages.sourceTag ?? undefined}>
-                <span className="compare-speaker">{row.speaker}</span>
-                <span className="compare-text">{row.source}</span>
-              </th>
-              {columns.map((column) => {
-                const model =
-                  comparison!.candidates[column.position]?.index ??
-                  column.position;
-                const translation = row.translations[column.position];
-                const problems = row.problems[column.position] ?? [];
-                const best = !!marks && marks[row.id] === model;
-                const differs =
-                  translation && difference?.(row, column.position);
-                const content = translation && (
-                  <>
-                    <span className="compare-cell-top">
-                      <span className="compare-speaker">
-                        {translation.speaker}
-                      </span>
-                      {best && (
-                        <span className="compare-best">
-                          <Check size={13} aria-hidden="true" />
-                          Best
+          rows.map((row) => {
+            // The models' places in the line's cells, left to right.
+            const places = blind ? lineOrder(blind, row) : positions;
+            // Mark differences marks each against the first shown.
+            const first = places.find((place) => row.translations[place]);
+            const other =
+              differences && first !== undefined
+                ? row.translations[first]
+                : null;
+            return (
+              <tr key={row.id}>
+                <th scope="row" lang={languages.sourceTag ?? undefined}>
+                  <span className="compare-speaker">{row.speaker}</span>
+                  <span className="compare-text">{row.source}</span>
+                </th>
+                {places.map((position) => {
+                  const model =
+                    comparison!.candidates[position]?.index ?? position;
+                  const translation = row.translations[position];
+                  const problems = row.problems[position] ?? [];
+                  const best = !!marks && marks[row.id] === model;
+                  const differs = position !== first && other;
+                  const content = translation && (
+                    <>
+                      <span className="compare-cell-top">
+                        <span className="compare-speaker">
+                          {translation.speaker}
                         </span>
-                      )}
-                    </span>
-                    <span
-                      className="compare-text"
-                      lang={languages.targetTag ?? undefined}
-                    >
-                      {differs ? (
-                        <Changed
-                          text={translation.text}
-                          other={differs.other}
-                        />
-                      ) : (
-                        translation.text
-                      )}
-                    </span>
-                    {problems.map((problem) => (
-                      <CompareFlag status="warning" key={problem}>
-                        {problem}
-                      </CompareFlag>
-                    ))}
-                  </>
-                );
-                return (
-                  <td key={column.position} data-best={best || undefined}>
-                    {pick && translation ? (
-                      <button
-                        type="button"
-                        className="compare-pick"
-                        aria-pressed={best}
-                        title={best ? "Picked as best" : "Pick as best"}
-                        onClick={() => pick(row, best ? null : model)}
+                        {best && (
+                          <span className="compare-best">
+                            <Check size={13} aria-hidden="true" />
+                            Best
+                          </span>
+                        )}
+                      </span>
+                      <span
+                        className="compare-text"
+                        lang={languages.targetTag ?? undefined}
                       >
-                        {content}
-                      </button>
-                    ) : (
-                      <div className="compare-cell">{content}</div>
-                    )}
-                  </td>
-                );
-              })}
-              {add && <td />}
-            </tr>
-          ))
+                        {differs ? (
+                          <Changed
+                            text={translation.text}
+                            other={differs.text}
+                          />
+                        ) : (
+                          translation.text
+                        )}
+                      </span>
+                      {problems.map((problem) => (
+                        <CompareFlag status="warning" key={problem}>
+                          {problem}
+                        </CompareFlag>
+                      ))}
+                    </>
+                  );
+                  return (
+                    <td key={position} data-best={best || undefined}>
+                      {pick && translation ? (
+                        <button
+                          type="button"
+                          className="compare-pick"
+                          aria-pressed={best}
+                          title={best ? "Picked as best" : "Pick as best"}
+                          onClick={() => pick(row, best ? null : model)}
+                        >
+                          {content}
+                        </button>
+                      ) : (
+                        <div className="compare-cell">{content}</div>
+                      )}
+                    </td>
+                  );
+                })}
+                {add && <td />}
+              </tr>
+            );
+          })
         )}
       </tbody>
     </table>

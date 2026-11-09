@@ -8,8 +8,6 @@ import type {
 import {
   actionFeedback,
   actionKey,
-  blindOrder,
-  columnError,
   columnSummary,
   compareInputs,
   compareOffered,
@@ -17,9 +15,11 @@ import {
   current,
   estimateTotal,
   glossaryChanges,
+  hiddenNotes,
   isComparison,
   keptRequests,
   leftOut,
+  lineOrder,
   modelDetail,
   namesHidden,
   nextStep,
@@ -172,11 +172,50 @@ test("Translate's price leaves out the models an estimate couldn't price", () =>
   );
 });
 
-test("a blind order is shuffled once per comparison and stays the same", () => {
-  const orders = ["a", "b", "c", "d", "e", "f"].map((id) => blindOrder(id, 4));
-  for (const order of orders) assert.deepEqual([...order].sort(), [0, 1, 2, 3]);
-  assert.deepEqual(blindOrder("a", 4), orders[0]);
-  assert.ok(orders.some((order) => order.join() !== "0,1,2,3"));
+test("a hidden line's order is its own, the same every time, with its empty places last", () => {
+  // Shuffled once per comparison, a model kept its side on every line, so
+  // a user could tell after a few lines which side it was on.
+  const line = (id: number, models: number, missing = -1) => ({
+    id: `Map001.json:${id}`,
+    speaker: "",
+    source: "よく来たな",
+    translations: Array.from({ length: models }, (_, index) =>
+      index === missing ? null : { speaker: "", text: `Line ${index}` },
+    ),
+    problems: Array.from({ length: models }, () => []),
+  });
+  for (const models of [2, 4]) {
+    const value = comparison({
+      candidates: Array.from({ length: models }, (_, index) => model(index)),
+    });
+    const lines = Array.from({ length: 40 }, (_, id) => line(id, models));
+    const orders = lines.map((row) => lineOrder(value, row));
+    const all = Array.from({ length: models }, (_, index) => index);
+    for (const order of orders) assert.deepEqual([...order].sort(), all);
+    // Every model leads some lines and none leads all.
+    const led = all.map(
+      (index) => orders.filter((order) => order[0] === index).length,
+    );
+    assert.ok(Math.min(...led) > 0 && Math.max(...led) < 40, `${led}`);
+    // Stable across renders, revisits and restarts; another comparison of
+    // the same lines has its own.
+    assert.deepEqual(
+      lines.map((row) => lineOrder(value, row)),
+      orders,
+    );
+    const other = { ...value, id: "estimate-2" };
+    assert.notDeepEqual(
+      lines.map((row) => lineOrder(other, row)),
+      orders,
+    );
+  }
+  // A model without the line goes last, the others keep their order.
+  const three = comparison({ candidates: [model(0), model(1), model(2)] });
+  for (let id = 0; id < 10; id++) {
+    const whole = lineOrder(three, line(id, 3));
+    const order = lineOrder(three, line(id, 3, 1));
+    assert.deepEqual(order, [...whole.filter((index) => index !== 1), 1]);
+  }
 });
 
 test("picks count only translated rows, and a tie names no winner", () => {
@@ -508,11 +547,34 @@ test("Reveal now and unticking Blind act on a translation that is still running"
   assert.equal(recordedMarks(comparison({}), {}), null);
 });
 
-test("a hidden model's error leaves out its words, which may name it", () => {
-  const failed = model(0, { error: "Error from provider for GPT-4o mini" });
-  assert.doesNotMatch(columnError(failed, true) ?? "", /GPT/);
-  assert.equal(columnError(failed, false), failed.error);
-  assert.equal(columnError(model(0), true), undefined);
+test("hidden names count the models without lines, never saying which or why", () => {
+  const failed = model(0, {
+    error: "Error from provider for GPT-4o mini",
+    cost: 0.01,
+  });
+  const notes = (...candidates: CompareModel[]) =>
+    hiddenNotes(comparison({ candidates }));
+  assert.deepEqual(notes(model(0), model(1)), {
+    detail: undefined,
+    warning: undefined,
+    error: undefined,
+  });
+  const one = notes(failed, model(1, { cost: 0.01 }));
+  assert.equal(
+    one.error,
+    "A model didn’t finish. Why shows once the names are revealed.",
+  );
+  assert.doesNotMatch(JSON.stringify(one), /GPT|model-/);
+  // Each kind once, counted; a stop is a muted line, not a failure.
+  const many = notes(
+    failed,
+    model(1, { error: "Failed.", cost: 0 }),
+    model(2, { error: "No price is available for this model." }),
+    model(3, { error: "Stopped.", stopped: true, cost: 0 }),
+  );
+  assert.match(many.error ?? "", /^2 models didn’t finish\./);
+  assert.match(many.warning ?? "", /^A model was left out/);
+  assert.equal(many.detail, "A model stopped before it finished");
 });
 
 test("a running comparison shows as one status line saying what it does, without names", () => {
@@ -603,7 +665,10 @@ test("after a translation the one primary is Use, once there is a model to use",
 test("a model left out before anything was sent reads as left out, a warning", () => {
   const left = model(0, { error: "No price is available for this model." });
   assert.equal(leftOut(left), true);
-  assert.match(columnError(left, true) ?? "", /^Left out/);
+  assert.match(
+    hiddenNotes(comparison({ candidates: [left, model(1)] })).warning ?? "",
+    /left out/,
+  );
   assert.equal(leftOut(model(1, { error: "Failed.", cost: 0.01 })), false);
   assert.equal(
     leftOut(model(2, { error: "x", estimate: { cost: 0.01, requests: 1 } })),

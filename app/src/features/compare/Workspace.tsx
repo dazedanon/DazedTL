@@ -17,16 +17,10 @@ import { settingsSaved } from "../settings/settingsChanges";
 import { AddModels } from "./AddModels";
 import { ColumnSettings, GlossaryChoiceDialog } from "./ColumnSettings";
 import type { CompareContext } from "./Compare";
-import {
-  CompareGrid,
-  type CompareColumn,
-  type Difference,
-} from "./CompareGrid";
+import { CompareGrid, type CompareColumn } from "./CompareGrid";
 import { CompareRequest } from "./CompareRequest";
 import {
-  blindOrder,
   choiceKey,
-  columnError,
   columnSummary,
   leftOut,
   modelDetail,
@@ -53,8 +47,9 @@ type Open =
  * Compare models' one workspace: the lines in rows and one column per
  * model, each with its own settings. One column shows one model's
  * translation; two to four side by side take a pick of the best of each
- * line, with the names hidden until every line is picked while Blind is on;
- * the same model twice with a changed setting shows that setting's effect.
+ * line, with the names hidden, and each line in its own order, until every
+ * line is picked while Blind is on; the same model twice with a changed
+ * setting shows that setting's effect.
  */
 export function Workspace({ context }: { context: CompareContext }) {
   const application = useApplication();
@@ -133,10 +128,6 @@ export function Workspace({ context }: { context: CompareContext }) {
   const finished = !!score && score.total > 0 && score.picked === score.total;
   // Names stay hidden while the lines come in too.
   const hidden = several && namesHidden(shown, recorded ?? undefined, finished);
-  const order =
-    shown && several && (recorded?.blind ?? hidden)
-      ? blindOrder(shown.id, shown.candidates.length)
-      : chosen.map((_, index) => index);
   const next = translated && shown ? nextStep(shown, score) : null;
   const winner = several && !hidden ? next?.use?.model : undefined;
   const busy = run.action.busy;
@@ -168,19 +159,8 @@ export function Workspace({ context }: { context: CompareContext }) {
       settingsSaved();
     }, `Settings now translates with ${model.model}.`);
   };
-  const columnsShown: CompareColumn[] = order.map((position, place) => {
+  const columnsShown: CompareColumn[] = chosen.map((column, position) => {
     const model = shown?.candidates[position];
-    const column = chosen[position];
-    if (hidden)
-      return {
-        position,
-        title: `Model ${place + 1}`,
-        ...(model?.stopped
-          ? { detail: "Stopped before it finished" }
-          : model && leftOut(model)
-            ? { warning: columnError(model, true) }
-            : { error: model && columnError(model, true) }),
-      };
     const wins =
       translated && model && !model.error && score && score.picked > 0
         ? `won ${score.won[position]}`
@@ -191,7 +171,7 @@ export function Workspace({ context }: { context: CompareContext }) {
         <Button
           variant="link"
           className="compare-column-model"
-          aria-label={`Column ${place + 1}: ${column.model} on ${column.connection}. Choose another model`}
+          aria-label={`Column ${position + 1}: ${column.model} on ${column.connection}. Choose another model`}
           disabled={busy}
           onClick={() => setOpen({ kind: "model", column: position })}
         >
@@ -203,8 +183,8 @@ export function Workspace({ context }: { context: CompareContext }) {
         <Menu
           variant="quiet"
           className="compare-column-menu"
-          label={`Column ${place + 1}, ${column.model}`}
-          aria-label={`More for column ${place + 1}, ${column.model}`}
+          label={`Column ${position + 1}, ${column.model}`}
+          aria-label={`More for column ${position + 1}, ${column.model}`}
           title="More"
           disabled={busy}
           trigger={<MoreHorizontal size={16} aria-hidden="true" />}
@@ -289,18 +269,6 @@ export function Workspace({ context }: { context: CompareContext }) {
     else marks[row.id] = model;
     save(translationId, { ...latest, marks });
   };
-  // Mark differences: the words each column changed from the first shown
-  // column that has the line, as one left out or failed has none.
-  const difference = (
-    row: CompareRow,
-    position: number,
-  ): Difference | undefined => {
-    const first = order.find((place) => row.translations[place]);
-    const other = first === undefined ? null : row.translations[first];
-    if (position === first || !other || !row.translations[position])
-      return undefined;
-    return { other: other.text };
-  };
   const tied =
     score && !hidden && score.tied.length && shown
       ? score.tied.map((position) => shown.candidates[position].model)
@@ -372,6 +340,7 @@ export function Workspace({ context }: { context: CompareContext }) {
           label="Translations by model"
           comparison={shown}
           columns={columnsShown}
+          hidden={hidden}
           add={
             chosen.length < versusModels && (
               <span className="compare-grid-add-header">
@@ -391,7 +360,7 @@ export function Workspace({ context }: { context: CompareContext }) {
           }
           marks={mark?.marks}
           pick={several && translated ? pick : undefined}
-          difference={several && translated && marking ? difference : undefined}
+          differences={several && translated && marking}
           empty={run.empty(
             several
               ? "Estimate the cost to see these lines side by side."

@@ -2,6 +2,7 @@ import type {
   CompareChoice,
   CompareKind,
   CompareModel,
+  CompareRow,
   CompareScene,
   CompareOperation,
   Comparison,
@@ -200,7 +201,7 @@ export class Rereads {
   }
 }
 
-/** A string's FNV-1a hash, the seed of a comparison's column order. */
+/** A string's FNV-1a hash, the seed of a line's order. */
 function hash(text: string) {
   let value = 0x811c9dc5;
   for (let index = 0; index < text.length; index++) {
@@ -211,12 +212,15 @@ function hash(text: string) {
 }
 
 /**
- * The models' column order while names are hidden: shuffled once per
- * comparison, seeded by its ID, so it stays the same across renders,
- * revisits and restarts.
+ * The order a line shows its models' translations in while names are
+ * hidden: shuffled for each line on its own, so a model's side on one line
+ * tells nothing of its side on the next, and seeded by the comparison and
+ * the line, so it stays the same across renders, revisits and restarts.
+ * Models without a translation of the line come last, so its empty places
+ * sit at its end.
  */
-export function blindOrder(id: string, count: number) {
-  let seed = hash(id);
+export function lineOrder(comparison: Comparison, row: CompareRow) {
+  let seed = hash(`${comparison.id}\n${row.id}`);
   // mulberry32: a small generator whose sequence the seed alone decides.
   const next = () => {
     seed = (seed + 0x6d2b79f5) | 0;
@@ -224,12 +228,13 @@ export function blindOrder(id: string, count: number) {
     value ^= value + Math.imul(value ^ (value >>> 7), 61 | value);
     return ((value ^ (value >>> 14)) >>> 0) / 4294967296;
   };
-  const order = Array.from({ length: count }, (_, index) => index);
-  for (let index = count - 1; index > 0; index--) {
+  const order = comparison.candidates.map((_, index) => index);
+  for (let index = order.length - 1; index > 0; index--) {
     const other = Math.floor(next() * (index + 1));
     [order[index], order[other]] = [order[other], order[index]];
   }
-  return order;
+  const has = (position: number) => !!row.translations[position];
+  return [...order.filter(has), ...order.filter((place) => !has(place))];
 }
 
 /**
@@ -311,14 +316,39 @@ export function recordedMarks(
 export const leftOut = (model: CompareModel) =>
   !!model.error && !model.estimate && !model.reused && model.cost === undefined;
 
-/** A model's error as its column shows it: while names are hidden, without
- * its words, which may name the model in any spelling. */
-export const columnError = (model: CompareModel, hidden: boolean) =>
-  model.error && hidden
-    ? leftOut(model)
-      ? "Left out: it couldn’t be estimated. Why shows once the names are revealed."
-      : "This model didn’t finish. Why shows once the names are revealed."
-    : model.error;
+const counted = (count: number, one: string, many: string) =>
+  count === 1 ? `A model ${one}` : `${count} models ${many}`;
+
+/**
+ * What the one header over hidden names says of the models without lines,
+ * counted, so it never tells which: those stopped, those left out before
+ * anything was sent, as a warning, and those that failed, without their
+ * error's words, which may name the model in any spelling.
+ */
+export function hiddenNotes(comparison: Comparison) {
+  const stopped = comparison.candidates.filter((model) => model.stopped);
+  const rest = comparison.candidates.filter(
+    (model) => model.error && !model.stopped,
+  );
+  const left = rest.filter(leftOut).length;
+  const failed = rest.length - left;
+  const why = "Why shows once the names are revealed.";
+  return {
+    detail: stopped.length
+      ? counted(
+          stopped.length,
+          "stopped before it finished",
+          "stopped before they finished",
+        )
+      : undefined,
+    warning: left
+      ? `${counted(left, "was left out: it couldn’t be estimated.", "were left out: they couldn’t be estimated.")} ${why}`
+      : undefined,
+    error: failed
+      ? `${counted(failed, "didn’t finish.", "didn’t finish.")} ${why}`
+      : undefined,
+  };
+}
 
 /** The glossary's entries: its lines, leaving out headings and blanks. */
 export function glossaryEntries(text: string) {
