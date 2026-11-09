@@ -49,8 +49,10 @@ jobs:
       - run: node scripts/test.mjs
         env:
           # The runners are several times slower than a development machine,
-          # Windows most of all; about twice their measured runtimes.
-          DAZEDTL_TEST_BUDGET: ${{ runner.os == 'Windows' && 180 || 30 }}
+          # Windows most of all. Linux gets about twice its runtime; Windows,
+          # whose 2-core runner is CPU-bound and took 127-172 s with one
+          # commit ranging 141-168 s (2026-11-09), gets 240 s.
+          DAZEDTL_TEST_BUDGET: ${{ runner.os == 'Windows' && 240 || 30 }}
 
   qa-upgrade:
     name: Previous-release QA check (${{ matrix.os }})
