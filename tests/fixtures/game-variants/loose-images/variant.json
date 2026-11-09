@@ -1,0 +1,12 @@
+{
+  "description": "A lettered title picture in an images folder at the game's root, outside img/ and Graphics/, which Images suggests before Graphics on a VX Ace game; the images-released scenario translates it and releases it in a patch.",
+  "images": [
+    {
+      "folder": "images",
+      "name": "text",
+      "count": 1,
+      "width": 320,
+      "height": 120
+    }
+  ]
+}

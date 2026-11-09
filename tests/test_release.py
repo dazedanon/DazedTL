@@ -213,9 +213,30 @@ class ReleaseTests(unittest.TestCase):
             for name in (
                 ".dazedtl/image_manager/guided/inventory.sqlite3",
                 "www/fonts/../fonts/Translation.woff2",
+                "images/title.png",
             ):
                 with self.assertRaises(ValueError):
                     runtime_asset(root, name)
+            # An applied image ships wherever the game keeps it, which only a
+            # typed path must name a player image folder for. One in a folder
+            # decoded from the game's archives, or where no ZIP may hold a
+            # file, never ships loose.
+            (root / ".gitattributes").write_text(
+                "/decoded export-ignore dazedtl-decoded-images\n", encoding="utf-8"
+            )
+            for name in ("images/title.png", "decoded/title.png", "save/title.png"):
+                (root / name).parent.mkdir()
+                (root / name).write_bytes(b"translated " + name.encode())
+                row = {
+                    "runtime": name,
+                    "applied": {"runtimeHash": digest((root / name).read_bytes())},
+                }
+                with closing(sqlite3.connect(index)) as db:
+                    db.execute("INSERT INTO assets VALUES (?)", (json.dumps(row),))
+                    db.commit()
+            self.assertEqual(
+                applied_assets(root), ["images/title.png", "www/img/pictures/Menu.png"]
+            )
             image.write_bytes(b"later image edit")
             with self.assertRaisesRegex(ValueError, "applied image changed"):
                 applied_assets(root)
