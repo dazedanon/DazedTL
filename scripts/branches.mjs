@@ -94,12 +94,26 @@ export function installHooks(folder) {
     folder,
     git("rev-parse", "--git-common-dir").stdout.trim(),
   );
+  /**
+   * `place` with links and Windows short names resolved as far as it
+   * exists, since the hooks folder may not yet.
+   */
+  const canonical = (/** @type {string} */ place) => {
+    /** @type {string[]} */
+    const rest = [];
+    let at = path.resolve(folder, place);
+    while (!fs.existsSync(at) && path.dirname(at) !== at) {
+      rest.unshift(path.basename(at));
+      at = path.dirname(at);
+    }
+    return path.join(real(at), ...rest);
+  };
   // These hooks, by a relative path or the absolute one of this checkout or
   // of the main checkout that its worktrees share.
   const ours = [folder, path.dirname(common)].map((checkout) =>
-    path.join(real(checkout), hooksPath),
+    canonical(path.join(checkout, hooksPath)),
   );
-  if (set && ours.includes(path.resolve(real(folder), set))) return null;
+  if (set && ours.includes(canonical(set))) return null;
   const own = path.join(common, "hooks");
   const active = fs.existsSync(own)
     ? fs.readdirSync(own).filter((name) => !name.endsWith(".sample"))

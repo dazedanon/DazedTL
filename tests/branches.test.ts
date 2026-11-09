@@ -181,6 +181,15 @@ test("setup points a development checkout at the tracked hooks, and leaves the u
   const absolute = path.join(fresh, "scripts", "hooks");
   gitIn(fresh)(["config", "core.hooksPath", absolute]);
   assert.equal(installHooks(fresh), null);
+  // Or by another spelling of the same folder, through a link as through a
+  // Windows short name such as RUNNER~1.
+  const alias = path.join(dir, "alias");
+  fs.symlinkSync(dir, alias, "junction");
+  const linkedPath = path.join(alias, "fresh", "scripts", "hooks");
+  gitIn(fresh)(["config", "core.hooksPath", linkedPath]);
+  assert.equal(installHooks(fresh), null);
+  assert.equal(hooksPath(fresh), linkedPath);
+  gitIn(fresh)(["config", "core.hooksPath", absolute]);
   gitIn(fresh)(["commit", "-q", "--allow-empty", "-m", "base"]);
   const linked = path.join(dir, "linked");
   gitIn(fresh)(["worktree", "add", "-q", linked]);
