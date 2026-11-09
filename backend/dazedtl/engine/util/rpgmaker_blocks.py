@@ -1295,11 +1295,15 @@ def message_lead(text: str) -> int:
 
 
 _SENTENCE_GAP = re.compile(r"([!?])([A-Z])")
-# A run of pause codes (\. \! \| \^) and what comes right before it: a
-# code, such as \C[2] or \{, or a character that is neither a space nor a
-# backslash.
+# A run of pause codes (\. \! \| \^), which may hold spaces between its
+# codes, the spaces right before it, and what comes before those: an
+# escaped backslash, a code, such as \C[2] or \{, or a character that is
+# neither a space nor a backslash. An escaped backslash with no run after it
+# is matched alone, so the scan never reads its second backslash, or the
+# dot of a pause code, as the start of a code or a word.
 _PAUSE_RUN = re.compile(
-    r"(\\(?:[A-Za-z]+(?:\[[^\]\n]*\]|<[^>\n]*>)?|[{}<>$])|[^\s\\])((?:\\[.!|^])+)"
+    r"(?P<before>\\\\|\\(?:[A-Za-z]+(?:\[[^\]\n]*\]|<[^>\n]*>)?|[{}<>$])|[^\s\\])?"
+    r"(?P<gap> *)(?P<run>\\[.!|^](?: *\\[.!|^])*)|\\\\"
 )
 # The codes that show a word or an icon: actor, variable and party member
 # names, icons and the currency unit.
@@ -1307,12 +1311,24 @@ _SHOWN_CODE = re.compile(r"\\(?:[NnVvPpIi]\[|[Gg]$)")
 
 
 def _pause_spacing(found: re.Match) -> str:
-    """One space before a pause run after a word or a code that shows one,
-    none after a code that shows nothing, such as a colour."""
-    before, run = found.groups()
-    if before.startswith("\\") and not _SHOWN_CODE.match(before):
+    """A pause run closed up, with one space before it after a word, an
+    escaped backslash or a code that shows one, none after a code that shows
+    nothing, such as a colour. Spaces already before the run are kept, and a
+    space between its codes, which earlier writes left, moves before it, so
+    the game shows the same text, or drops where nothing comes before the
+    run, where it would open the text on a space."""
+    if found.group("run") is None:
         return found.group(0)
-    return f"{before} {run}"
+    before, gap, run = found.group("before", "gap", "run")
+    closed = run.replace(" ", "")
+    if before is None:
+        return gap + closed
+    hidden = before.startswith("\\") and not (
+        before == "\\\\" or _SHOWN_CODE.match(before)
+    )
+    if not gap and (not hidden or closed != run):
+        gap = " "
+    return before + gap + closed
 
 
 def written_message(text: str, language) -> str:

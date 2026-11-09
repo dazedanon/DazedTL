@@ -261,6 +261,27 @@ class LanguageTests(unittest.TestCase):
             blocks.written_rows(["\\C[2]\\.Hello", "Hi \\N[1]\\.\\C[0]\\!"], "English"),
             ["\\C[2]\\.Hello", "Hi \\N[1] \\.\\C[0]\\!"],
         )
+        # The dot of a pause code read as a word set a space inside a run,
+        # and every write set another; a space earlier writes left there
+        # moves before the run, or drops where it opened the row.
+        runs = {
+            "\\.\\.\\. Hi": "\\.\\.\\. Hi",
+            "\\. \\. \\. Hi": "\\.\\.\\. Hi",
+            "Wait \\. \\.\\. Hi": "Wait \\.\\.\\. Hi",
+            "Hi\\|\\. there": "Hi \\|\\. there",
+            "\\N[1]\\.\\. ok": "\\N[1] \\.\\. ok",
+            "\\.\\.\\.\\^": "\\.\\.\\.\\^",
+            "Hi\\C[2]\\. \\.there": "Hi\\C[2] \\.\\.there",
+            # An escaped backslash shows one, and is never half of a code.
+            "a\\\\\\.b": "a\\\\ \\.b",
+            "\\\\C[2]\\.x": "\\\\C[2] \\.x",
+        }
+        for text, expected in runs.items():
+            written = blocks.written_message(text, "English")
+            self.assertEqual(
+                (written, blocks.written_message(written, "English")),
+                (expected, expected),
+            )
 
     def test_small_kana_stranded_in_a_moan_are_written_as_latin_letters(self):
         # A moan's small kana failed the residue check, so Guided Live paid a
