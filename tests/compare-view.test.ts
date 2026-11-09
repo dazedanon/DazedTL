@@ -11,6 +11,7 @@ import {
   blindOrder,
   columnError,
   compareInputs,
+  compareOffered,
   current,
   estimateTotal,
   glossaryChanges,
@@ -19,6 +20,7 @@ import {
   namesHidden,
   picks,
   recordedMarks,
+  reportsRun,
   runName,
   runPlace,
   Rereads,
@@ -389,6 +391,31 @@ test("the comparison running for the game shows whatever the tab, until it ends"
   assert.doesNotMatch(running!.waits, /this game/);
   assert.match(running!.blocked, /stop it/);
   assert.equal(runningComparison([operation("stopped")]), null);
+  // A game whose folder went missing keeps Compare, where alone it stops,
+  // while its comparison runs.
+  const snapshot = (operations: unknown[]) =>
+    ({
+      application: { project: { id: "p" } },
+      compareOperations: operations,
+    }) as unknown as WorkspaceSnapshot;
+  const missing = { id: "p", available: false };
+  assert.equal(compareOffered(missing, snapshot([operation("running")])), true);
+  assert.equal(
+    compareOffered(missing, snapshot([operation("stopped")])),
+    false,
+  );
+  assert.equal(
+    compareOffered({ ...missing, id: "q" }, snapshot([operation("running")])),
+    false,
+  );
+  // A tab whose last run stopped says why its Estimate waits, not that.
+  const stopped = comparison({ stage: "translation", status: "stopped" });
+  assert.equal(reportsRun(stopped, ""), true);
+  assert.equal(reportsRun(stopped, running!.blocked), false);
+  assert.equal(
+    reportsRun({ ...stopped, status: "running" }, running!.blocked),
+    true,
+  );
 });
 
 test("the footer's run status keeps hidden names hidden and a stop short", () => {

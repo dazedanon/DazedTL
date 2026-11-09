@@ -12,6 +12,7 @@ import {
   actionKey,
   current,
   formatCost,
+  reportsRun,
   runPlace,
   runStatus,
   runStep,
@@ -185,7 +186,7 @@ export function useCompareRun(
             (step.again ? "" : "Estimating is free and sends nothing.")
           }
           job={
-            latest && latest.status !== "complete"
+            latest && reportsRun(latest, waiting)
               ? operation(
                   latest.stage === "translation" ? "Translation" : "Estimate",
                 )

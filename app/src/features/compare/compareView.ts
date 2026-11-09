@@ -5,6 +5,7 @@ import type {
   CompareScene,
   CompareOperation,
   Comparison,
+  Project,
   WorkspaceSnapshot,
 } from "../../api/contracts.ts";
 import { formatDuration } from "../../ui/workTime.ts";
@@ -378,6 +379,21 @@ export function formatCost(value: number) {
   return `$${value.toFixed(3).replace(/0$/, "")}`;
 }
 
+const actions = ["compare_estimate", "compare_translate"];
+
+/** The open game's comparison operations, as the observed state follows
+ * them. */
+export function compareOperations(
+  snapshot: WorkspaceSnapshot | null | undefined,
+  projectId: string,
+) {
+  return (
+    snapshot?.application.project?.id === projectId
+      ? (snapshot.compareOperations ?? [])
+      : []
+  ).filter((job) => actions.includes(job.action || ""));
+}
+
 /**
  * The comparison running for the game, whichever tab or choices it was
  * started from, and what the page says of it: what it does, that other work
@@ -395,11 +411,28 @@ export function runningComparison(operations: readonly CompareOperation[]) {
       operation.action === "compare_translate"
         ? "Translating a comparison"
         : "Estimating a comparison",
-    waits: "Other work waits until it ends.",
+    waits: "Most other work waits until it ends.",
     /** Why Estimate, Translate and Use wait on the page meanwhile. */
     blocked: "Wait for the running comparison to end, or stop it.",
   };
 }
+
+/** Whether the sidebar offers Compare for the open game: while its folder
+ * is there, or while its comparison runs, which only Compare stops. */
+export const compareOffered = (
+  project: Pick<Project, "id" | "available">,
+  snapshot: WorkspaceSnapshot | null | undefined,
+) =>
+  !!project.available ||
+  !!runningComparison(compareOperations(snapshot, project.id));
+
+/** Whether a footer reports its latest comparison's run beside Estimate:
+ * while it runs, or once it ended unfinished, unless another comparison
+ * runs, whose wait the footer says instead. */
+export const reportsRun = (latest: Comparison | undefined, waiting: string) =>
+  !!latest &&
+  latest.status !== "complete" &&
+  (working(latest.status) || !waiting);
 
 export type RunningComparison = NonNullable<
   ReturnType<typeof runningComparison>

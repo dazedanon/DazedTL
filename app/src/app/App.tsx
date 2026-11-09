@@ -41,6 +41,7 @@ import Translation, {
 } from "../features/translation/Translation";
 import ManualTranslation from "../features/translation/ManualTranslation";
 import Compare from "../features/compare/Compare";
+import { compareOffered } from "../features/compare/compareView";
 import { Menu, MenuItem, MenuSeparator } from "../ui/Menu";
 import { RecentProjectName } from "../features/project/RecentProject";
 import { Button } from "../ui/Button";
@@ -379,7 +380,12 @@ export default function App() {
                   aria-current={
                     state?.screen === "compare" ? "page" : undefined
                   }
-                  disabled={action.busy || !project.available}
+                  // A game whose folder is missing keeps Compare while its
+                  // comparison runs, as only Compare stops it.
+                  disabled={
+                    action.busy ||
+                    !compareOffered(project, application.snapshot)
+                  }
                   onClick={() => navigate("compare")}
                 >
                   <Columns2 size={18} />

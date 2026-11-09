@@ -26,6 +26,7 @@ import { configured } from "./AddModels";
 import { RunningNotice } from "./StopComparison";
 import {
   compareInputs,
+  compareOperations,
   Rereads,
   runningComparison,
   shownKey,
@@ -42,8 +43,6 @@ const tabs = [
   { id: "tune", label: "Tune settings" },
 ] as const;
 export type CompareTab = (typeof tabs)[number]["id"];
-
-const actions = ["compare_estimate", "compare_translate"];
 
 /** What every tab reads: the game's comparisons and the model it uses. */
 export type CompareContext = {
@@ -88,11 +87,7 @@ export default function Compare({
 }) {
   const application = useApplication();
   const [tab, setTab] = useState<CompareTab>("versus");
-  const operations = (
-    application.snapshot?.application.project?.id === project.id
-      ? (application.snapshot.compareOperations ?? [])
-      : []
-  ).filter((job) => actions.includes(job.action || ""));
+  const operations = compareOperations(application.snapshot, project.id);
   // Each start and end of an operation reads the comparisons again; their
   // progress in between comes from the observed operations.
   const ended = operations
@@ -183,6 +178,10 @@ export default function Compare({
         // As the other pages say it; Find game folder is on the Project page.
         <PageMessages>
           <Message message={unavailableReason(project)} />
+          {/* Its comparison runs on a copy, so it still stops here. */}
+          {running && (
+            <RunningNotice projectId={project.id} running={running} />
+          )}
         </PageMessages>
       ) : context && !state?.available ? (
         <PageBody>
