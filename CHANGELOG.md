@@ -3,6 +3,17 @@
 Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 [release.mjs](scripts/release.mjs) writes each entry from [release/notes.md](release/notes.md).
 
+## [2.70.0] - 2026-11-09
+
+### Added
+
+- **Settings:** an **LM Studio** connection translates for free with no key, and PLaMo 3 Translate models, such as `plamo-3-translate-8b`, work in Guided and Assistant-led.
+
+### Changed
+
+- **Project page:** Export and Import have their own Export/Import tab, Change method follows the method's name, and clicking the game's path opens its folder.
+- **Compare:** one workspace replaces the three tabs: each column is a model with its own settings, and unchanged columns are reused, not paid again.
+
 ## [2.69.0] - 2026-11-08
 
 ### Added
@@ -1762,6 +1773,7 @@ Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachan
 - The first release of DazedTL as a desktop app, installed from a ZIP with a START launcher and updated from inside the app.
 - **Guided steps** for RPG Maker MV, MZ and VX Ace games, and **Assistant-led** for any game.
 
+[2.70.0]: https://github.com/dazedanon/DazedTL/compare/v2.69.0...v2.70.0
 [2.69.0]: https://github.com/dazedanon/DazedTL/compare/v2.68.4...v2.69.0
 [2.68.4]: https://github.com/dazedanon/DazedTL/compare/v2.68.3...v2.68.4
 [2.68.3]: https://github.com/dazedanon/DazedTL/compare/v2.68.2...v2.68.3
