@@ -317,6 +317,32 @@ class CensusTests(unittest.TestCase):
             report["rules"],
         )
 
+    def test_glossary_rows_with_a_note_cover_their_nameplates(self):
+        # Project Setup writes `source (translation) - note` rows; a note
+        # with or without parentheses of its own still covers the source.
+        from dazedtl.compatibility.translation import TranslationEngine
+
+        with TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root / ".dazedtl").mkdir()
+            (root / ".dazedtl/glossary.txt").write_text(
+                "# Speakers (話者)\n"
+                "村長 (Village Chief) - Gruff old man\n"
+                "リリ, リリー (Lili) - Calls the hero (you) lad\n"
+                "森 (Forest)\n"
+                "空 ()\n",
+                encoding="utf-8",
+            )
+            terms = TranslationEngine(root / "profile").glossary_terms(root)
+        self.assertEqual(terms, ["村長", "リリ", "リリー", "森"])
+        result = scan(GAME)
+        sources = ["よく来たな。\n森へ行け。", "看板の文字", "誰にも言うな。"]
+        _report, uncovered = census.coverage(result, sources, terms, [])
+        self.assertNotIn(
+            "parameters/4",
+            json.dumps(census.summary(uncovered), ensure_ascii=False),
+        )
+
     def test_punctuation_only_text_is_listed_apart_from_coverage(self):
         # Lines with Japanese punctuation but no letters, which Guided writes
         # without a request, shipped in Japanese form when no unit held them.

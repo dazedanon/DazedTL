@@ -641,10 +641,10 @@ class TranslationEngine:
 
     def glossary_terms(self, source):
         """Source terms of the game's own glossary entries, which cover the
-        names and nameplates Len translates through the glossary."""
-        import re
-
+        names and nameplates Len translates through the glossary: each
+        `source (translation)` row's source, with a note after it or not."""
         from util.paths import read_guidance_file, split_glossary
+        from util.vocab import split_glossary_row
 
         path = Path(source) / ".dazedtl/glossary.txt"
         if not path.is_file():
@@ -652,11 +652,10 @@ class TranslationEngine:
         game = split_glossary(read_guidance_file(path))[0]
         terms = []
         for line in game.splitlines():
-            match = re.match(r"^([^#].*?)\s+\((.+)\)\s*$", line.strip())
-            if match:
-                terms += [
-                    term.strip() for term in match.group(1).split(",") if term.strip()
-                ]
+            text = line.strip()
+            row = None if text.startswith("#") else split_glossary_row(text)
+            if row and row[1]:
+                terms += [term.strip() for term in row[0].split(",") if term.strip()]
         return terms
 
     def census_decoders(self, root, workdir):
