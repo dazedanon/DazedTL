@@ -193,6 +193,7 @@ that `prior_review`, and your review replaces it.
   A 〇 among kanji numerals is a zero, and a lone ● starting a row is a bullet, not a mask.
 - A `voice-suspect` or `voice-needs-context` deep reason means the reviewer of the speaker's `voice` item, who read the character's lines from across the game, found this line out of the character's voice; its evidence starts with `voice review of` and the speaker.
   Judge the line against the speaker's glossary line, which the bundle's glossary prints, and its Japanese: correct it, category `voice`, to the choice the note fixes, changing only the words that carry the voice, or review it `clean` with `evidence` naming what in the Japanese or the scene calls for the difference.
+  A voice changes a request at a time, and the item may hold only some of the speaker's lines, so read the speaker's other lines in the scene: correct those with the same slip together in a `scene_correction`, or report them as observations.
   Give one speaker's voice corrections one `family_key`, such as `voice:char`, and a `sweep` rule only for wording that recurs word for word.
 - An `interface-fit` check means the game drew this text with too little room on a screen
   DazedTL captured while running a copy of the game: squeezed narrower than it needs, or cut off
