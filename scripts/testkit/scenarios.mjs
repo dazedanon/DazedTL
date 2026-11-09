@@ -2698,6 +2698,117 @@ export const scenarios = {
       ],
     ],
   },
+  "assistant-checks-only": {
+    description:
+      "An Assistant-led project whose Options turn Text QA's review off: Options show the review's size from the census beside the choice, the assistant translates and writes the game, qa --prepare refuses, qa --check checks the RPG Maker game and its hits are answered, the game is played, Progress reads QA as Checks only with no Text QA tab, and the patch packages.",
+    steps: () => [
+      [
+        "Open the game Assistant-led, the assistant translating, without image text",
+        async (context) => {
+          await assistantLed[0][1](context);
+          const { page } = context;
+          const project_id = (await page.call("workspace_snapshot")).application
+            .project.id;
+          const current = await page.call("translation_state", { project_id });
+          if (current.options.text_qa !== "release")
+            throw new Error(
+              `A new project reviews ${current.options.text_qa}.`,
+            );
+          await page.call("translation_save", {
+            project_id,
+            revision: current.revision,
+            values: { ...current.options, include_images: false },
+          });
+        },
+      ],
+      assistantLed[1],
+      [
+        "The assistant translates all the text and writes it",
+        async ({ page, state }) => {
+          await assistant(page, state, "organize", "--complete");
+          const run = JSON.parse(await assistant(page, state, "translate"));
+          if (run.status !== "complete")
+            throw new Error(
+              `Run ${run.id}: ${run.status}, ${run.message || ""}`,
+            );
+          await assistant(page, state, "write");
+        },
+      ],
+      [
+        "Options show the full review's size from the census, and Checks only turns the review off",
+        async ({ page, state }) => {
+          await page.click("Options");
+          const select = "#translation-text-qa";
+          const note = () =>
+            page.evaluate(
+              `document.querySelector("#translation-text-qa-help")?.textContent || ""`,
+            );
+          await until("the usage note to count the review", async () =>
+            /reads about [\d,]+ lines in [\d,]+ scenes/.test(await note()),
+          );
+          console.log(`\n  Full game text: ${await note()}`);
+          await page.evaluate(
+            `document.querySelector("${select}").scrollIntoView({ block: "center" })`,
+          );
+          await page.shot(path.join(state.work, "logs", "options-full.png"));
+          // A native select's list doesn't open under CDP; this is the
+          // change choosing Checks only there makes.
+          await page.evaluate(`(() => {
+            const field = document.querySelector("${select}");
+            Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")
+              .set.call(field, "checks");
+            field.dispatchEvent(new Event("change", { bubbles: true }));
+          })()`);
+          await until("the note to describe the checks only", async () =>
+            (await note()).startsWith("Skips the review."),
+          );
+          await page.shot(path.join(state.work, "logs", "options-checks.png"));
+          await page.click("Save project options");
+          await until("the choice to be saved", async () => {
+            const project_id = (await page.call("workspace_snapshot"))
+              .application.project.id;
+            return (
+              (await page.call("translation_state", { project_id })).options
+                .text_qa === "checks"
+            );
+          });
+        },
+      ],
+      [
+        "The assistant runs only the mechanical checks and plays the game; Progress reads QA as Checks only",
+        async ({ page, state }) => {
+          const { refused, first, play } = JSON.parse(
+            await assistant(page, state, "checks-only"),
+          );
+          console.log(`\n  qa --prepare: ${refused}`);
+          console.log(
+            `  qa --check: ${first.hits} hit(s) in ${first.lines} lines`,
+          );
+          console.log(`  Playtest: ${play.next}`);
+          if (!refused.includes("review is off"))
+            throw new Error(`qa --prepare refused otherwise: ${refused}`);
+          await progressShowsQa(
+            page,
+            state,
+            { state: "done", detail: "Checks only" },
+            "qa-checks-only.png",
+          );
+          if ((await page.text()).includes("Text QA\n"))
+            throw new Error("A Text QA tab shows with the review off.");
+        },
+      ],
+      [
+        "The assistant packages the patch, which Progress shows",
+        async ({ page, state }) => {
+          console.log(
+            `\n  ${(await assistant(page, state, "package")).trim()}`,
+          );
+          await page.waitText("Patch ZIP\nDone");
+          await page.shot(path.join(state.work, "logs", "patch.png"));
+        },
+      ],
+    ],
+  },
   "assistant-released": {
     description:
       "An Assistant-led project the assistant translated and wrote, but for one line its extractor missed, then played, that line translated through its extraction and injection once Text QA counted it never translated, reviewed with Text QA through the project helper, one correction applied, and played again before packaging; Progress holds QA at Final check until that playtest settles, the Playtest tab then reads Skipped for the game it could not play, its Patch phase shows the patch ZIP, and Release builds a clean game ZIP and saves the patch ZIP, with QA's correction and that line, where it suggests.",
