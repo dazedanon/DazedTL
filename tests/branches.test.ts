@@ -97,6 +97,15 @@ test("Git runs the guard on a real push, which refuses a stray branch and lets t
   const push = (...args: string[]) => git(["push", "-q", url, ...args]);
   const heads = () => gitIn(bare)(["for-each-ref", "--format=%(refname)"]);
 
+  // Git for Windows checks text out with CRLF by default, which sh can't run.
+  assert.equal(
+    gitIn(path.join(hooks, "..", ".."))([
+      "check-attr",
+      "eol",
+      "scripts/hooks/pre-push",
+    ]).stdout.trim(),
+    "scripts/hooks/pre-push: eol: lf",
+  );
   const refused = push("HEAD:refs/heads/claude/x");
   assert.notEqual(refused.status, 0);
   assert.match(refused.stderr, /Refused to push claude\/x/);
@@ -168,6 +177,15 @@ test("setup points a development checkout at the tracked hooks, and leaves the u
   assert.equal(installHooks(fresh), null);
   assert.equal(hooksPath(fresh), "scripts/hooks");
   assert.equal(installHooks(fresh), null);
+  // The same hooks by an absolute path, from the checkout or a worktree of it.
+  const absolute = path.join(fresh, "scripts", "hooks");
+  gitIn(fresh)(["config", "core.hooksPath", absolute]);
+  assert.equal(installHooks(fresh), null);
+  gitIn(fresh)(["commit", "-q", "--allow-empty", "-m", "base"]);
+  const linked = path.join(dir, "linked");
+  gitIn(fresh)(["worktree", "add", "-q", linked]);
+  assert.equal(installHooks(linked), null);
+  assert.equal(hooksPath(linked), absolute);
 
   // DazedTL unpacked inside some other repository, such as a home folder.
   const inner = path.join(fresh, "DazedTL");
@@ -181,7 +199,7 @@ test("setup points a development checkout at the tracked hooks, and leaves the u
   repo(chosen)(["config", "core.hooksPath", ".githooks"]);
   assert.match(
     installHooks(chosen) ?? "",
-    /hooks in \.githooks, so DazedTL's push guard in scripts\/hooks is off/,
+    /hooks in \.githooks, so DazedTL's push guard is off; to keep it, run scripts\/hooks\/pre-push from your own pre-push hook/,
   );
   assert.equal(hooksPath(chosen), ".githooks");
 
@@ -192,7 +210,7 @@ test("setup points a development checkout at the tracked hooks, and leaves the u
     path.join(own, ".git", "hooks", "pre-commit"),
     "#!/bin/sh\n",
   );
-  assert.match(installHooks(own) ?? "", /push guard in scripts\/hooks is off/);
+  assert.match(installHooks(own) ?? "", /push guard is off/);
   assert.equal(hooksPath(own), "");
 });
 
@@ -232,15 +250,35 @@ test("a landing deletes from a mirror the branches dev has and stale run/ branch
   const stale = commit(main, "stale.txt", old);
   git(["switch", "-qc", "run-new", base]);
   const recent = commit(main, "recent.txt");
+  // Work dev lacks inside a merge, whose other commits dev picks; git cherry
+  // passes over merges.
+  git(["switch", "-qc", "evil", base]);
+  const feature = commit(main, "feature.txt");
+  git(["merge", "-q", "--no-ff", "--no-commit", merged]);
+  fs.writeFileSync(path.join(main, "only-in-merge.txt"), "more\n");
+  git(["add", "only-in-merge.txt"]);
+  git(["commit", "-qm", "merge with more"]);
+  const evil = git(["rev-parse", "HEAD"]).stdout.trim();
   for (const [tipOf, branch] of [
     [merged, "claude/merged"],
     [picked, "worktree-agent-1"],
     [work, "fix/work"],
     [stale, "run/old"],
     [recent, "run/new"],
+    // A Windows run of what landed may still be going.
+    [merged, "run/landed"],
     [work, "land/claude/work"],
+    [evil, "claude/evil"],
+    [base, "claude/locked"],
   ])
     toMirror(main, tipOf, branch);
+  // A mirror that refuses to delete one branch.
+  const receive = path.join(bare, "hooks", "pre-receive");
+  fs.writeFileSync(
+    receive,
+    '#!/bin/sh\nwhile read old new ref; do\n  [ "$ref" = refs/heads/claude/locked ] && exit 1\ndone\nexit 0\n',
+  );
+  fs.chmodSync(receive, 0o755);
   // A branch pushed from another clone, whose commit this checkout never saw
   // until dev picked the same change.
   gitIn(dir)(["clone", "-q", bare, other]);
@@ -253,6 +291,7 @@ test("a landing deletes from a mirror the branches dev has and stale run/ branch
   git(["switch", "-q", "dev"]);
   git(["merge", "-q", "--ff-only", merged]);
   git(["cherry-pick", picked]);
+  git(["cherry-pick", feature]);
   fs.writeFileSync(path.join(main, "away.txt"), "away.txt\n");
   git(["add", "away.txt"]);
   git(["commit", "-qm", "away again"]);
@@ -266,21 +305,40 @@ test("a landing deletes from a mirror the branches dev has and stale run/ branch
     },
     log: (line: string) => logged.push(line),
   };
+  const branches = () =>
+    gitIn(bare)(["for-each-ref", "--format=%(refname:short)"]).stdout;
+  const lacking =
+    "Mirror also holds claude/evil, fix/work, which dev lacks; delete each there once nothing needs it.";
   await prune(deps, main, { name: "Mirror", url: bare });
   assert.equal(
-    gitIn(bare)(["for-each-ref", "--format=%(refname:short)"]).stdout,
-    ["dev", "fix/work", "land/claude/work", "main", "run/new", ""].join("\n"),
+    branches(),
+    [
+      "claude/evil",
+      "claude/locked",
+      "dev",
+      "fix/work",
+      "land/claude/work",
+      "main",
+      "run/landed",
+      "run/new",
+      "",
+    ].join("\n"),
   );
-  assert.deepEqual(logged, [
+  assert.equal(logged.length, 3, logged.join("\n"));
+  assert.match(logged[0], /^Could not delete claude\/locked from Mirror:\n/);
+  assert.deepEqual(logged.slice(1), [
     "Deleted from Mirror the branches dev has or a Windows run left: claude/away, claude/merged, run/old, worktree-agent-1.",
-    "Mirror also holds fix/work, which dev lacks; delete each there once nothing needs it.",
+    lacking,
   ]);
-  // Nothing left to delete: only the branch dev lacks is named again.
+  // Once the mirror lets it go, only that branch is deleted.
+  fs.rmSync(receive);
   logged.length = 0;
   await prune(deps, main, { name: "Mirror", url: bare });
   assert.deepEqual(logged, [
-    "Mirror also holds fix/work, which dev lacks; delete each there once nothing needs it.",
+    "Deleted from Mirror the branches dev has or a Windows run left: claude/locked.",
+    lacking,
   ]);
+  assert.doesNotMatch(branches(), /claude\/locked/);
   // A mirror it cannot reach is reported, never thrown.
   logged.length = 0;
   await prune(deps, main, {

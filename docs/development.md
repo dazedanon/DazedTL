@@ -13,6 +13,7 @@ node scripts/start.mjs
 
 - `setup.mjs` installs the pinned Python, the locked packages (with the format, lint and type-check tools) and Electron into `.runtime`, `.venv` and `app/node_modules`.
   On Windows it also installs portable Git; other systems need their own `git`.
+  It also installs the mirrors' [pre-push hook](#branches-and-releases).
 - `start.mjs` keeps the app attached to the terminal, and `--offline` disables provider calls.
   Like the `START` launchers, it repeats a setup step only when its inputs change.
 - The pinned versions are in [python-version](../scripts/python-version), [node-version](../scripts/node-version) and [mingit-version](../scripts/mingit-version); after changing one, run `node scripts/runtimes.mjs`.
@@ -67,7 +68,7 @@ On Linux it needs a display: CI runs it under `xvfb-run`, and on a desktop `node
 - **Run what CI runs locally** with `node scripts/release-check.mjs`, in about three minutes on Linux, outside a sandbox.
   A check that fails runs once more, and one that passes then is reported as a flake.
 
-Reproduce a Windows problem first on a disposable Windows machine with the [Windows run](../.github/workflows/windows-run.yml) workflow, from a `run/` branch on GitHub:
+Reproduce a Windows problem first on a disposable Windows machine with the [Windows run](../.github/workflows/windows-run.yml) workflow, from `dev`, a tag or a `run/` branch on GitHub:
 
 ```sh
 git push git@github.com:dazedanon/DazedTL.git HEAD:refs/heads/run/my-fix
@@ -159,7 +160,7 @@ Test updater changes with both `patch.ps1` on Windows and `patch.sh` on Linux.
 ## Branches and releases
 
 Work on `dev`; `main` always holds the latest stable release, so a ZIP of `main` from any mirror is a release.
-[branches.mjs](../scripts/branches.mjs) keeps every other branch off the mirrors but short-lived `land/` and `run/` ones.
+The mirrors keep only these and short-lived `land/` and `run/` branches: a pre-push hook refuses others, and landings delete merged ones and week-old `run/` ones ([branches.mjs](../scripts/branches.mjs)).
 
 ### Contributing a change
 

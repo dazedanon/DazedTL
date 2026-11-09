@@ -4,8 +4,8 @@
 // to the mirrors and left them there by the dozen, so two checks share this
 // rule: the pre-push hook in scripts/hooks, which setup.mjs installs, refuses
 // any other branch pushed to a mirror, and land.mjs, after pushing dev to a
-// mirror, deletes there each branch dev already has and each run/ branch a
-// week old. See "Branches and releases" in docs/development.md.
+// mirror, deletes there each run/ branch a week old and each other branch dev
+// already has. See "Branches and releases" in docs/development.md.
 //
 //   node scripts/branches.mjs pre-push <remote> <url>
 //
@@ -72,8 +72,9 @@ export function refusal(url, updates, folder) {
 /**
  * Points the Git checkout at `folder` at the hooks in scripts/hooks, so its
  * pre-push hook guards the mirrors. Leaves Git alone outside a checkout of
- * its own, such as a release ZIP, and where the user set core.hooksPath or
- * keeps hooks of their own; it then returns a line saying the guard is off.
+ * its own, such as a release ZIP, and where the user set core.hooksPath
+ * elsewhere or keeps hooks of their own; it then returns a line saying the
+ * guard is off and how to keep it.
  * @param {string} folder
  * @returns {string | null}
  */
@@ -84,25 +85,27 @@ export function installHooks(folder) {
       encoding: "utf8",
       windowsHide: true,
     });
+  const real = (/** @type {string} */ place) => fs.realpathSync.native(place);
   const top = git("rev-parse", "--show-toplevel");
   // A folder inside some other repository, such as a home folder kept in Git.
-  if (
-    top.status !== 0 ||
-    fs.realpathSync.native(top.stdout.trim()) !== fs.realpathSync.native(folder)
-  )
-    return null;
+  if (top.status !== 0 || real(top.stdout.trim()) !== real(folder)) return null;
   const set = git("config", "--get", "core.hooksPath").stdout.trim();
-  if (set === hooksPath) return null;
-  const own = path.resolve(
+  const common = path.resolve(
     folder,
     git("rev-parse", "--git-common-dir").stdout.trim(),
-    "hooks",
   );
+  // These hooks, by a relative path or the absolute one of this checkout or
+  // of the main checkout that its worktrees share.
+  const ours = [folder, path.dirname(common)].map((checkout) =>
+    path.join(real(checkout), hooksPath),
+  );
+  if (set && ours.includes(path.resolve(real(folder), set))) return null;
+  const own = path.join(common, "hooks");
   const active = fs.existsSync(own)
     ? fs.readdirSync(own).filter((name) => !name.endsWith(".sample"))
     : [];
   if (set || active.length)
-    return `Git runs the hooks in ${set || own}, so DazedTL's push guard in ${hooksPath} is off; see "Branches and releases" in docs/development.md.`;
+    return `Git runs the hooks in ${set || own}, so DazedTL's push guard is off; to keep it, run ${hooksPath}/pre-push from your own pre-push hook with the same arguments and input.`;
   git("config", "core.hooksPath", hooksPath);
   return null;
 }
@@ -116,10 +119,10 @@ export function installHooks(folder) {
  */
 
 /**
- * Deletes from the mirror `target` each branch but dev and main whose commits
- * the dev of the checkout at `main` already has, and each run/ branch whose
- * newest commit is older than scratchAge, then logs any other branch it holds
- * that dev lacks. Run right after pushing dev there. Git runs with `options`
+ * Deletes from the mirror `target` each run/ branch whose newest commit is
+ * older than scratchAge, since a Windows run may use a younger one, and each
+ * other branch but dev and main whose commits the dev of the checkout at
+ * `main` already has, then logs any other branch it holds that dev lacks. Run right after pushing dev there. Git runs with `options`
  * before each command. Never throws: a mirror it cannot read or change is
  * logged and left.
  * @param {PruneDeps} deps
@@ -165,10 +168,16 @@ export async function prune(
       target.url,
       ...fetch,
     ]);
-  /** Whether dev has each of the commits at `tip`, merged or picked. */
+  /**
+   * Whether dev has each of the commits at `tip`: merged, or picked one by
+   * one from a branch with no merge of its own, since git cherry passes over
+   * merges and whatever was resolved or added in them.
+   */
   const inDev = async (/** @type {string} */ tip) => {
     if ((await git(["merge-base", "--is-ancestor", tip, "dev"])).status === 0)
       return true;
+    const merges = await git(["rev-list", "--merges", `dev..${tip}`]);
+    if (merges.status !== 0 || merges.output.trim()) return false;
     const picked = await git(["cherry", "dev", tip]);
     return picked.status === 0 && !/^\+/m.test(picked.output);
   };
@@ -182,28 +191,34 @@ export async function prune(
   /** @type {string[]} */
   const left = [];
   for (const { tip, branch } of heads) {
-    if (!(await known(tip))) left.push(branch);
-    else if (
-      (await inDev(tip)) ||
-      (branch.startsWith("run/") && (await stale(tip)))
-    )
-      drop.push(branch);
+    if (!(await known(tip))) {
+      if (!mirrorBranch(branch)) left.push(branch);
+    } else if (branch.startsWith("run/")) {
+      if (await stale(tip)) drop.push(branch);
+    } else if (await inDev(tip)) drop.push(branch);
     else if (!mirrorBranch(branch)) left.push(branch);
   }
-  if (drop.length) {
-    const dropped = await git([
+  // One branch a push, so a refused one names only itself.
+  /** @type {string[]} */
+  const dropped = [];
+  for (const branch of drop) {
+    const deleted = await git([
       "push",
       "--quiet",
       target.url,
       "--delete",
-      ...drop.map((branch) => `refs/heads/${branch}`),
+      `refs/heads/${branch}`,
     ]);
-    log(
-      dropped.status === 0
-        ? `Deleted from ${target.name} the branches dev has or a Windows run left: ${drop.join(", ")}.`
-        : `Could not delete ${drop.join(", ")} from ${target.name}:\n${tail(dropped.output)}`,
-    );
+    if (deleted.status === 0) dropped.push(branch);
+    else
+      log(
+        `Could not delete ${branch} from ${target.name}:\n${tail(deleted.output)}`,
+      );
   }
+  if (dropped.length)
+    log(
+      `Deleted from ${target.name} the branches dev has or a Windows run left: ${dropped.join(", ")}.`,
+    );
   if (left.length)
     log(
       `${target.name} also holds ${left.join(", ")}, which dev lacks; delete each there once nothing needs it.`,
