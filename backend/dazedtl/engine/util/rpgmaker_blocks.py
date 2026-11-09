@@ -1166,12 +1166,19 @@ def keep_sources(
     rows it covers (ROWS), as :func:`sent_texts` reads them, where a writer
     kept one source over it and others: so a text written after keeps the
     texts around it apart. A text whose first row keeps its Japanese already
-    is left as its writer kept it."""
+    is left as its writer kept it. A text of blank rows, such as a blank
+    first row before a row opening with \\SE[1], keeps no source: its rows
+    are the game's own, which hold nothing to translate, and an empty source
+    is one Text QA can't read."""
     for each in sent_texts(commands, block, reading):
         if part is not None and each.rows[0] not in part.rows:
             continue
         first = commands[each.rows[0]]
         if each.kept is None or first.get("_original") == each.kept:
+            continue
+        if not each.kept.strip():
+            for note in NOTES:
+                first.pop(note, None)
             continue
         first["_original"] = each.kept
         record_rows(first, len(each.rows))

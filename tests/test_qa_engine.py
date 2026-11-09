@@ -309,12 +309,25 @@ class QAEngineTests(unittest.TestCase):
                 [(rows[0], [pointer(1)]), (speech, [pointer(2), pointer(3)])],
             )
             self.assertEqual(lines(inventory(written, 5)), lines(inventory(laid, 5)))
-            # So the game's text a task of the earlier version reviewed still
-            # reads as it was, and the task stays current.
-            self.assertEqual(
-                prepare.game_text(data, "release", rules=4),
-                prepare.text_digest(inventory(laid, 4)),
-            )
+            # A blank first row before a row opening with \SE[1] is the
+            # game's own, so no record holds an empty source QA can't read,
+            # laid or written.
+            blank = ["", "\\SE[1]またね。"]
+            for document in (
+                preserve_originals(
+                    game(blank), game(["", "\\SE[1]Bye."]), filename="Map001.json"
+                ),
+                preserve_texts(
+                    game(blank), game(["", "\\SE[1]Bye."]), filename="Map001.json"
+                ),
+            ):
+                self.assertEqual(
+                    lines(inventory(document, 5)), [(blank[1], [pointer(2)])]
+                )
+            # The game's text a task of the earlier version reviewed still
+            # reads as it was, so the task stays current.
+            reviewed = prepare.text_digest(inventory(laid, 4))
+            self.assertEqual(prepare.game_text(data, "release", rules=4), reviewed)
             # A correction of each is fitted apart: the speech wraps in its
             # own rows and the name keeps its row. The game then keeps each
             # text's source.
