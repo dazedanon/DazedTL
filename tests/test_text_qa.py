@@ -10,7 +10,7 @@ from types import SimpleNamespace
 
 from dazedtl.api.contracts.guided import TextQaCheck, TextQaStatus
 from dazedtl.api.contracts.validation import _close_contracts
-from dazedtl.translation import census
+from dazedtl.translation import census, progress_report
 from dazedtl.translation.operations import census_path
 from dazedtl.translation.project import WORK
 from dazedtl.translation.result_checks import CHECK_FILE, CHECK_STEP, CHECK_VERSION
@@ -50,7 +50,7 @@ def fake_guided(folder, qa, method="guided"):
         translation=SimpleNamespace(
             project=lambda _id: (
                 {"method": method},
-                SimpleNamespace(root=Path(folder)),
+                SimpleNamespace(root=Path(folder), read=lambda: {"options": {}}),
             ),
             run=lambda _id, job: {"status": jobs[job]["status"], "message": ""},
             workspace=Path(folder) / "workspace",
@@ -231,6 +231,60 @@ class TextQATests(unittest.TestCase):
             self.assertTrue(stops.exists())
             with self.assertRaisesRegex(ValueError, "No QA task"):
                 service.start_over("project")
+
+    def test_assistant_led_start_over_reopens_the_assistants_qa(self):
+        # After a start over, Progress kept the assistant's report of QA as
+        # done, and a resumed assistant could go on to Patch unreviewed.
+        with TemporaryDirectory() as folder:
+            root = Path(folder)
+            qa = {
+                "current": False,
+                "applied": False,
+                "status": {},
+                "findings": [],
+                "questions": [],
+                "message": "No QA task prepared for this focus.",
+            }
+            guided, _calls = fake_guided(folder, qa, method="len")
+            published = []
+            guided.translation.engine = SimpleNamespace(
+                progress=lambda _source, _options, report: published.append(report)
+            )
+            guided.backend.operations.lock = threading.Lock()
+            guided.backend.operations.running = lambda: False
+            task = root / "text-qa/project/release" / ("a" * 16)
+            task.mkdir(parents=True)
+            (root / "text-qa-release.json").write_text(
+                json.dumps({"task": str(task)}), encoding="utf-8"
+            )
+            phases = ("translation", "injection", "qa", "patch")
+            kept = progress_report.kept(guided.translation.workspace, "project")
+            kept.parent.mkdir(parents=True)
+            kept.write_text(
+                json.dumps(
+                    {
+                        "version": progress_report.VERSION,
+                        "report": {
+                            "phase": "patch",
+                            "phases": dict.fromkeys(phases, "complete"),
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            TextQA(guided).start_over("project")  # type: ignore[arg-type]
+            report = json.loads(kept.read_text(encoding="utf-8"))["report"]
+            self.assertEqual(published, [report])
+            self.assertEqual(report["phase"], "qa")
+            self.assertEqual(
+                report["phases"],
+                {
+                    "translation": "complete",
+                    "injection": "complete",
+                    "qa": "active",
+                    "patch": "pending",
+                },
+            )
 
     def test_assistant_led_status_lists_labels_qa_cannot_correct(self):
         # Once the Text QA page stopped listing them, nothing told an

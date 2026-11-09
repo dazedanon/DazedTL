@@ -518,9 +518,13 @@ class TextQA:
         """Starts the game's text QA over, as only the user does: its task
         and review notes go aside (qa_start_over), and with *playtest* the
         playtest's results too, so QA reads as not started and its next task
-        reviews every line. Corrections already applied stay in the game."""
+        reviews every line. Corrections already applied stay in the game.
+        An Assistant-led assistant's report reopens at QA, so Progress and
+        the assistant's next session no longer read QA as done."""
         from dazedtl.compatibility.playtest import clear
         from dazedtl.compatibility.text import qa_start_over
+
+        from . import progress_report
 
         native = self.native(project_id)
         folder = self.folder(native)
@@ -543,6 +547,17 @@ class TextQA:
             )
             if playtest:
                 clear(folder)
+        translation = self.guided.translation
+        record, project = translation.project(project_id)
+        if record.get("method") == "len":
+            progress_report.reopen(
+                translation.workspace,
+                project_id,
+                translation.engine,
+                project.root,
+                project.read()["options"],
+                "qa",
+            )
         return self.status(project_id, native)
 
     def started(self, project_id, kind, job):
