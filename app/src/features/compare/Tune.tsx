@@ -547,8 +547,9 @@ export function Tune({ context }: { context: CompareContext }) {
             label="Use these settings"
             title="Make this model and its thinking effort what Settings translates with, for every game, and save the glossary and instruction as this game's."
             disabled={!current || !!run.waiting}
+            // The run control beside it says why it waits.
             disabledReason={
-              run.waiting || "Translate with these settings first."
+              run.waiting ? "" : "Translate with these settings first."
             }
             pending={adopt.busy}
             pendingText="Saving the settings…"

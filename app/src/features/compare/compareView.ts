@@ -289,13 +289,15 @@ export function namesHidden(
   return blind && !revealed && !finished;
 }
 
-/** A translation's picks and Blind, from the moment it starts: those saved
- * here ahead of the next read, keyed by translation, or those read. */
+/** A translation's picks and whether its names are hidden. */
 export type CompareMarks = {
   marks: Record<string, number>;
   blind: boolean;
   revealed: boolean;
 };
+
+/** A translation's picks and Blind, from the moment it starts: those saved
+ * here ahead of the next read, keyed by translation, or those read. */
 export function recordedMarks(
   comparison: Comparison | undefined,
   saved: Readonly<Record<string, CompareMarks>>,
@@ -381,6 +383,29 @@ export function formatCost(value: number) {
 
 const actions = ["compare_estimate", "compare_translate"];
 
+/** Whether an operation is a comparison's, which Compare shows. */
+export const isComparison = (action: string | null | undefined) =>
+  actions.includes(action || "");
+
+/** An operation as another page's operation row shows it: a comparison
+ * reads "Running a comparison on Compare models", never with its message,
+ * which names the model it is at, so a blind comparison's stay hidden. */
+export const shownOperation = <
+  T extends { action?: string | null; message: string },
+>(
+  job: T,
+): T =>
+  isComparison(job.action)
+    ? { ...job, message: "a comparison on Compare models" }
+    : job;
+
+/** What a running comparison does, without its message, which names the
+ * model it is at, so a blind comparison's names stay hidden on every page. */
+export const comparisonText = (action: string | null | undefined) =>
+  action === "compare_translate"
+    ? "Translating a comparison"
+    : "Estimating a comparison";
+
 /** The open game's comparison operations, as the observed state follows
  * them. */
 export function compareOperations(
@@ -391,7 +416,7 @@ export function compareOperations(
     snapshot?.application.project?.id === projectId
       ? (snapshot.compareOperations ?? [])
       : []
-  ).filter((job) => actions.includes(job.action || ""));
+  ).filter((job) => isComparison(job.action));
 }
 
 /**
@@ -405,20 +430,17 @@ export function runningComparison(operations: readonly CompareOperation[]) {
   if (!operation) return null;
   return {
     operation,
-    /** What it does, without its message, which names the model it is at,
-     * so a blind comparison's names stay hidden on every tab. */
-    text:
-      operation.action === "compare_translate"
-        ? "Translating a comparison"
-        : "Estimating a comparison",
+    text: comparisonText(operation.action),
     waits: "Most other work waits until it ends.",
-    /** Why Estimate, Translate and Use wait on the page meanwhile. */
+    /** Why Estimate, Translate and Use wait on the page meanwhile, which
+     * the footer's run control says once for the whole footer. */
     blocked: "Wait for the running comparison to end, or stop it.",
   };
 }
 
 /** Whether the sidebar offers Compare for the open game: while its folder
- * is there, or while its comparison runs, which only Compare stops. */
+ * is there, or while its comparison runs, which with the folder missing
+ * only Compare can stop. */
 export const compareOffered = (
   project: Pick<Project, "id" | "available">,
   snapshot: WorkspaceSnapshot | null | undefined,

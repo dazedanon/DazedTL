@@ -92,8 +92,8 @@ export function Single({ context }: { context: CompareContext }) {
           <ActionControl
             label="Use this model"
             title="Make it the connection and model Settings translates with, for every game."
+            // The run control beside it says why it waits.
             disabled={!!run.waiting}
-            disabledReason={run.waiting}
             pending={adopt.busy}
             pendingText="Switching model…"
             error={adopt.error}

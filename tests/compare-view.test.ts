@@ -12,9 +12,11 @@ import {
   columnError,
   compareInputs,
   compareOffered,
+  comparisonText,
   current,
   estimateTotal,
   glossaryChanges,
+  isComparison,
   keptRequests,
   modelDetail,
   namesHidden,
@@ -28,6 +30,7 @@ import {
   runStatus,
   runStep,
   shownKey,
+  shownOperation,
 } from "../app/src/features/compare/compareView.ts";
 
 const model = (index: number, extra: Partial<CompareModel> = {}) =>
@@ -385,8 +388,18 @@ test("the comparison running for the game shows whatever the tab, until it ends"
     operation("running"),
   ]);
   assert.equal(running?.operation.status, "running");
-  // Its message names the model it is at, which a blind comparison hides.
+  // Its message names the model it is at, which a blind comparison hides,
+  // so every page that shows it, the Guided operation row too, says this.
   assert.equal(running!.text, "Translating a comparison");
+  assert.equal(comparisonText("compare_estimate"), "Estimating a comparison");
+  assert.equal(isComparison("translate"), false);
+  // The Guided operation row read "Running stand-in-b · preparing".
+  assert.equal(
+    shownOperation(operation("running")).message,
+    "a comparison on Compare models",
+  );
+  const other = { action: "translate", message: "Map001 · 2 of 6" };
+  assert.equal(shownOperation(other), other);
   // The app runs one at a time, so every game's work waits, not this one's.
   assert.doesNotMatch(running!.waits, /this game/);
   assert.match(running!.blocked, /stop it/);

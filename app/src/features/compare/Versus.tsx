@@ -228,9 +228,11 @@ export function Versus({ context }: { context: CompareContext }) {
             label={`Use ${winner.model}`}
             title="Make it the connection and model Settings translates with, for every game."
             disabled={!winner.finished || !!run.waiting}
+            // The run control beside it says why it waits.
             disabledReason={
-              run.waiting ||
-              "It didn’t translate every line, so translate them again to use it."
+              run.waiting
+                ? ""
+                : "It didn’t translate every line, so translate them again to use it."
             }
             pending={adopt.busy}
             pendingText="Switching model…"
