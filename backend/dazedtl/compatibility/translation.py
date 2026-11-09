@@ -1245,18 +1245,14 @@ class TranslationEngine:
         version it stamps otherwise (release.public_version); without
         `stamped`, the translation's files whatever the patch would stamp."""
         from util.gameupdate_config import CONFIG
-        from util.paths import decoded_image_files, is_game_tool_file
 
-        from dazedtl.translation.release import public_version
+        from dazedtl.translation.release import public_version, unshipped
 
         tracked = _tracked(source)
         # DazedTL's own files, such as the game's glossary and a VX Ace
         # game's ace_json, are committed but never reach players, whatever
-        # an older .gitattributes says; images decoded from the game's
-        # archives reach them only inside the archive packed again.
-        own = set(filter(is_game_tool_file, tracked)) | decoded_image_files(
-            source, tracked
-        )
+        # an older .gitattributes says.
+        own = unshipped(source, tracked)
         if not stamped:
             return tracked, own, set(), None
         stamp = public_version(source) if CONFIG in tracked else None
