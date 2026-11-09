@@ -3,6 +3,8 @@
 import json
 import unittest
 
+from util import rpgmaker_blocks as blocks
+
 from tests.engine import engine_module
 
 json_merge = engine_module("util/version_update/json_merge.py")
@@ -65,6 +67,56 @@ class JsonMergeTests(unittest.TestCase):
         self.assertEqual(
             merged([help_line], [translated], [official]), [{**translated, "indent": 1}]
         )
+
+    def test_each_text_keeps_its_own_rows_through_a_release_that_changes_one(self):
+        # Assistant-led's writer laid one source over a name and its speech,
+        # so a release changing the name dropped the speech's source too, and
+        # its English read as the game's own. Each text keeps its own source
+        # and rows now (rpgmaker_blocks keep_texts) and carries over alone.
+        head = {"code": 101, "indent": 0, "parameters": ["", 0, 0, 2, ""]}
+        rows = ["新米警察官", "「すいません‼", "入り込みまして…‼」", "\\SE[1]またね。"]
+        base = [head, *(line(row) for row in rows)]
+        laid = [
+            head,
+            {**line("Rookie Officer", "\n".join(rows)), "_rows": 4},
+            line("\"I'm sorry!"),
+            line('They slipped in!"'),
+            line("\\SE[1]See you."),
+        ]
+        translated = json.loads(json.dumps(laid))
+        blocks.keep_texts(translated, blocks.EVERY_SPEAKER)
+        self.assertEqual(
+            [(row.get("_original"), row.get("_rows")) for row in translated[1:]],
+            [
+                (rows[0], 1),
+                ("\n".join(rows[1:3]), 2),
+                (None, None),
+                (rows[3], 1),
+            ],
+        )
+
+        def texts(commands):
+            (block,) = blocks.blocks(commands)
+            return [
+                (text.rows, text.source)
+                for text in blocks.sent_texts(commands, block, blocks.EVERY_SPEAKER)
+            ]
+
+        # A release that leaves the message keeps each text with its rows.
+        after = line("おしまい。")
+        self.assertEqual(
+            merged([*base, after], [*translated, after], [after, *base, after])[1:6],
+            translated,
+        )
+        # One that changes the name brings it back untranslated, and the
+        # speech and the \SE[1] text keep their translation, source and rows.
+        official = [head, line("警察官"), *base[2:]]
+        renamed = merged(base, translated, official)
+        self.assertEqual(renamed[:2], official[:2])
+        self.assertEqual(renamed[2:], translated[2:])
+        self.assertEqual(texts(renamed), [((1,), None), *texts(translated)[1:]])
+        # Laid under one source, the same release dropped the speech's.
+        self.assertEqual(texts(merged(base, laid, official))[1], ((2, 3), None))
 
     def test_a_record_keeps_the_fields_whose_translation_carries_over(self):
         # Field-keyed notes follow their fields; the release's other changes,

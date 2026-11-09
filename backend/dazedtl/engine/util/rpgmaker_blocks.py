@@ -26,8 +26,10 @@ included, on the comment (108) itself.
 
 The engine sends a message's or scrolling text's rows in texts (see
 :func:`texts`), and translation writes each text over its rows, keeping its
-source on its first: every copy of a game names its lines by the texts of the
-game's own rows (:func:`sent_texts`). A row after a message's translation
+source on its first, and so does every writer that lays one source over
+several texts (:func:`keep_texts`); data an earlier writer laid so keeps its
+shape until written again. Every copy of a game names its lines by the texts
+of the game's own rows (:func:`sent_texts`). A row after a message's translation
 holding Japanese its source doesn't is the game's own, left untranslated,
 wherever it stands (:func:`uncovered`), and so is a row past those its source
 has lines for, or past those its writer recorded: the translation's part
@@ -934,9 +936,10 @@ class Reading:
         return bool(value.strip()) and (not self.skip_translated or holds_source(value))
 
 
-# The reading of text no engine settings read, such as Assistant-led's: a
-# speaker in any form the engine reads, a short row before speech that reads
-# as a name included, is a text of its own, as the game's rows lay it out.
+# The reading of text no engine settings read, such as Assistant-led's and
+# Text QA's: a speaker in any form the engine reads, a short row before speech
+# that reads as a name included, is a text of its own, as the game's rows lay
+# it out.
 EVERY_SPEAKER = Reading(first_line=True, inline=True, named=True)
 
 
@@ -1089,8 +1092,8 @@ def sent_texts(commands: list, block: Block, reading: Reading) -> tuple[SentText
     text a part each (see :func:`_written_over`), or by a writer that kept
     one source over several texts and laid the text over their rows one by
     one, such as Assistant-led's or a translation file import before each
-    text kept its own, which splits where its source's texts part while the
-    rows line up (:func:`_lined_up`)."""
+    text kept its own (:func:`keep_texts`), which splits where its source's
+    texts part while the rows line up (:func:`_lined_up`)."""
     # Each part's rows, and the Japanese of the rows its text was written
     # over, None for rows never translated, which are their own.
     segments: list[tuple[tuple[int, ...], list[str] | None]] = []
@@ -1174,13 +1177,34 @@ def keep_sources(
         record_rows(first, len(each.rows))
 
 
+def keep_texts(commands: list, reading: Reading, rows: Iterable[int] | None = None) -> None:
+    """Keep each translated text of every message and scrolling text in an
+    event command list its own source (:func:`keep_sources`), as
+    :func:`sent_texts` reads them by *reading*, or only of the blocks holding
+    a row of *rows*: Assistant-led's writer leaves no source laid over
+    several texts, and Text QA reads each text as a record of its own."""
+    wanted = None if rows is None else frozenset(rows)
+    for block in list(blocks(commands)):
+        if block.kind not in (MESSAGE, SCROLL):
+            continue
+        if wanted is None or not wanted.isdisjoint(block.rows):
+            keep_sources(commands, block, reading)
+
+
+def keep_document_texts(document: Any, reading: Reading) -> None:
+    """:func:`keep_texts` over every event command list in a data file, in
+    place."""
+    for _path, commands in command_lists(document):
+        keep_texts(commands, reading)
+
+
 def keep_sent_sources(
     commands: list, anchor: int, reading: Reading, *, opened_only: bool = False
 ) -> None:
     """Keep each text of the message's or scrolling text's translation
     anchored at *anchor* its own Japanese, as :func:`sent_texts` reads them
     by *reading* (:func:`keep_sources`): a writer laying one source over a
-    message's rows one by one, as Assistant-led's does, keeps it over every
+    message's rows one by one, as Assistant-led's did, keeps it over every
     text there, such as a name on a row of its own and its speech, or a row
     opening a text of its own with a code such as \\SE[1] (:func:`opens_text`).
     A run reading the text from the anchor would read that whole source as

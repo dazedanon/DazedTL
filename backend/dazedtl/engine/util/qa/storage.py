@@ -22,10 +22,12 @@ from util.qa.schema import (
 )
 
 
-def _rules_version(task: dict[str, Any]) -> int:
-    """The QA rules version a task was prepared under. Tasks from before
-    versions were kept name a hash of QA's code files instead and count as
-    the first."""
+def task_rules(task: dict[str, Any]) -> int:
+    """The QA rules version a task was prepared under, which it reads the
+    game's text by (util/qa/schema `read_texts`), so a finished task's text
+    reads as it did, applies and stays current through an update of QA's
+    rules. Tasks from before versions were kept name a hash of QA's code
+    files instead and count as the first."""
     return int(task.get("rules_version", 1))
 
 
@@ -223,7 +225,7 @@ def rules_changed(task: dict[str, Any], checkpoint: dict[str, Any]) -> bool:
 
 def _rules_moved(task: dict[str, Any]) -> bool:
     """Whether QA's rules changed since this task was prepared."""
-    return compare(Basis(_rules_version(task), {}), Basis(QA_RULES_VERSION, {})) is not None
+    return compare(Basis(task_rules(task), {}), Basis(QA_RULES_VERSION, {})) is not None
 
 
 def _load_task(task_dir: str | Path) -> tuple[Path, dict, dict]:

@@ -28,6 +28,12 @@ _SYSTEM_FIELDS = _FIELDS | {
 # rpgmaker_blocks.run, and owned for a message's or scrolling text's) and a
 # script's lines.
 _RUNS = {**blocks.ROW_CODES, 355: 655}
+# How Assistant-led's writer reads the texts of the messages and scrolling
+# text it writes, which no engine settings read: a speaker in any form the
+# engine reads is a text of its own, as the game's rows lay it out
+# (rpgmaker_blocks EVERY_SPEAKER). Each text keeps its own source by it
+# (preserve_texts) and is fitted on its own by it (fit_written).
+READING = blocks.EVERY_SPEAKER
 
 
 def _merge(kept, added):
@@ -85,6 +91,8 @@ def _align(before, after, path=""):
 
 def _inherit(before, after):
     """Restore missing metadata and reject edits to authoritative originals."""
+    if blocks.is_command_list(before):
+        _resplit(before, after)
     if isinstance(before, dict):
         if "_original" in after and after["_original"] != before.get("_original"):
             raise ValueError("Staged _original differs from the trusted source. Keep source metadata unchanged.")
@@ -96,6 +104,30 @@ def _inherit(before, after):
     elif isinstance(before, list):
         for old, new in zip(before, after):
             _inherit(old, new)
+
+
+def _resplit(before: list, after: list) -> None:
+    """Leave out the sources *after*, a staged copy, keeps on a message's or
+    scrolling text's rows where the trusted list *before* keeps the same
+    Japanese split otherwise into the texts it holds, which a write since
+    kept apart (preserve_texts), such as a copy staged from a game written
+    while one source covered several texts: _inherit restores the trusted
+    ones, and Japanese changed in them is still refused."""
+    for block in blocks.blocks(before):
+        if block.kind not in (blocks.MESSAGE, blocks.SCROLL):
+            continue
+        theirs, staged = (
+            [commands[at]["_original"] for at in block.rows if "_original" in commands[at]]
+            for commands in (before, after)
+        )
+        if (
+            theirs != staged
+            and all(isinstance(value, str) for value in theirs + staged)
+            and "\n".join(theirs) == "\n".join(staged)
+        ):
+            for at in block.rows:
+                for note in blocks.NOTES:
+                    after[at].pop(note, None)
 
 
 def _remember(owner, original):
@@ -198,6 +230,21 @@ def _walk(before, after, *, system=False):
         raise ValueError("Unsupported translated string array; use an explicit source adapter.")
 
 
+def preserve_texts(source, translated, *, filename: str, language=None):
+    """preserve_originals, with each text of every message and scrolling text
+    keeping its own source, as Assistant-led's writer writes them: one source
+    laid over several texts, such as a name on a row of its own and its
+    speech, is split into the texts the writer reads (READING), as a
+    translation file import and a run keep them (rpgmaker_blocks
+    `keep_texts`). Data written before keeps its shape until written again,
+    and every reader still reads its texts (rpgmaker_blocks `sent_texts`)."""
+    result = preserve_originals(
+        source, translated, filename=filename, language=language
+    )
+    blocks.keep_document_texts(result, READING)
+    return result
+
+
 def preserve_originals(source, translated, *, filename: str, language=None):
     """Return an annotated copy; neither input is mutated, even on refusal.
 
@@ -220,32 +267,30 @@ def write_messages(source, document, language) -> None:
     """Writes the full stops and spacing of each message and scrolling text
     *document* translates over *source* as Guided writes them for *language*,
     or the run's target when None (rpgmaker_rewrap.Layout), by
-    rpgmaker_blocks.written_rows, in place. Rows left as the source has them
-    stay as they are."""
+    rpgmaker_blocks.written_rows, in place: each part of *document*'s blocks
+    on its own, the codes in front of its first row kept, as Guided writes
+    each text it sends. Rows left as the source has them stay as they
+    are."""
     from util.languages import active_target
 
     language = language or active_target()
-    for path, commands in blocks.command_lists(source):
-        written = document
+    for path, commands in blocks.command_lists(document):
+        theirs = source
         for key in path:
-            written = written[key]
-        index = 0
-        while index < len(commands):
-            row_code = blocks.code(commands[index])
-            if row_code not in blocks.MESSAGE_ROWS:
-                index += 1
+            theirs = theirs[key]
+        for block in blocks.blocks(commands):
+            if block.kind not in (blocks.MESSAGE, blocks.SCROLL):
                 continue
-            rows = blocks.owned(commands, index)
-            index = rows[-1] + 1
-            old = [blocks.text(commands[at]) for at in rows]
-            new = [blocks.text(written[at]) for at in rows]
-            if old == new:
-                continue
-            for at, before, after, text in zip(
-                rows, old, new, blocks.written_rows(new, language), strict=True
-            ):
-                if after != before:
-                    written[at]["parameters"][0] = text
+            for part in block.parts:
+                old = [blocks.text(theirs[at]) for at in part.rows]
+                new = [blocks.text(commands[at]) for at in part.rows]
+                if old == new:
+                    continue
+                for at, before, after, text in zip(
+                    part.rows, old, new, blocks.written_rows(new, language), strict=True
+                ):
+                    if after != before:
+                        commands[at]["parameters"][0] = text
 
 
 # The text a write lists that still does not fit its window.
@@ -258,15 +303,12 @@ def fit_written(document, filename: str, layout) -> dict:
     never added or removed, so later writes still line up with the source.
     Its text may have been fitted to other widths, such as a staged copy
     taken before the widths changed, so it is fitted as resized (see
-    util.rpgmaker_rewrap.fit_document). A message keeps one source over its
-    rows (preserve_originals), so each text the game's rows lay out apart,
-    such as a nameplate and its speech, is fitted on its own
-    (rpgmaker_blocks EVERY_SPEAKER)."""
+    util.rpgmaker_rewrap.fit_document). Each text the writer reads
+    (READING), such as a nameplate and its speech, is fitted on its own,
+    including in a message written before each text kept its own source."""
     from util.rpgmaker_rewrap import fit_document
 
-    report = fit_document(
-        document, filename, layout, resized=True, reading=blocks.EVERY_SPEAKER
-    )
+    report = fit_document(document, filename, layout, resized=True, reading=READING)
     return {
         "fitted": len(report.changes),
         "misfits": report.misfits[:LISTED_MISFITS],
@@ -277,7 +319,8 @@ def fit_written(document, filename: str, layout) -> dict:
 def write_rpgmaker_json(source: Path, translated: Path, output: Path, layout=None) -> dict:
     """Validate staged text and atomically write one file with preserved sources.
 
-    Messages and scrolling text get the full stops and spacing Guided writes
+    Each text of a message or scrolling text keeps its own source
+    (preserve_texts) and gets the full stops and spacing Guided writes
     (write_messages), and System.json the locale Guided's Apply writes
     (preserve_originals), for the language *layout* names. With *layout*, the
     game's Line widths (util.rpgmaker_rewrap.Layout), the text is fitted to
@@ -305,7 +348,7 @@ def write_rpgmaker_json(source: Path, translated: Path, output: Path, layout=Non
         # from a clean Japanese baseline rather than the previous translated file.
         _inherit(previous, source_doc)
     language = layout.target if layout is not None else None
-    result = preserve_originals(
+    result = preserve_texts(
         source_doc, staged_doc, filename=output.name, language=language
     )
     write_messages(source_doc, result, language)

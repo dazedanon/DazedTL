@@ -79,10 +79,10 @@ from util.qa.storage import (
     _decisions,
     _observation_key,
     _read_json,
-    _rules_version,
     _safe_task_root,
     _task_lock,
     game_tasks,
+    task_rules,
 )
 from util.qa.validation import _read_observations
 from util.rpgmaker_qa_manifest import (
@@ -112,7 +112,7 @@ CURRENT_FILE = "current.json"
 _FILE_TEXT = Digests()
 # The game's text digest by data folder and focus, with the stat signatures of
 # the files it was read from, so a status of an unchanged game reads no file.
-_GAME_TEXT: dict[tuple[str, str], tuple[tuple, str]] = {}
+_GAME_TEXT: dict[tuple[str, str, int], tuple[tuple, str]] = {}
 
 
 def replaced_by(task_dir: str | Path) -> Path | None:
@@ -612,10 +612,10 @@ def inventory_matches(task_dir: str | Path, manifest: dict[str, Any]) -> bool:
     claimed = inventory.pop("content_sha256", None)
     return claimed == _sha256(_canonical_bytes(inventory)) and not compare(
         Basis(
-            _rules_version(task),
+            task_rules(task),
             {"inventory": task.get("manifest_sha256"), "text": text_digest(inventory)},
         ),
-        Basis(_rules_version(task), {"inventory": claimed, "text": text_digest(manifest)}),
+        Basis(task_rules(task), {"inventory": claimed, "text": text_digest(manifest)}),
     )
 
 
@@ -625,13 +625,17 @@ def text_digest(manifest: dict[str, Any]) -> str:
 
 
 def game_text(
-    data_root: str | Path, focus: str, replaced: Mapping[str, Path] | None = None
+    data_root: str | Path,
+    focus: str,
+    replaced: Mapping[str, Path] | None = None,
+    rules: int = QA_RULES_VERSION,
 ) -> str:
     """The text_digest of an inventory of *focus* built from the game's data
-    folder now, without building one: each file's part is read again only
-    once the file changed, and the digest only once one did. *replaced* reads
-    some of the folder's files, by their name in it, from elsewhere, such as
-    corrections not yet written."""
+    folder now under QA's *rules* version, a task's own (task_rules), without
+    building one: each file's part is read again only once the file changed,
+    and the digest only once one did. *replaced* reads some of the folder's
+    files, by their name in it, from elsewhere, such as corrections not yet
+    written."""
     root = inventory_root(data_root, focus)
     sources = []
     for path in data_files(root):
@@ -639,7 +643,7 @@ def game_text(
         source = Path((replaced or {}).get(name, path))
         sources.append((name, source, source.stat()))
     stamps = tuple((name, signature(info)) for name, _path, info in sources)
-    key = (str(root), focus)
+    key = (str(root), focus, rules)
     saved = _GAME_TEXT.get(key)
     if saved and saved[0] == stamps:
         return saved[1]
@@ -648,12 +652,12 @@ def game_text(
     for name, source, info in sources:
 
         def read(source: Path = source, name: str = name) -> tuple[list, list]:
-            _row, found, missing = file_inventory(source, name, focus)
+            _row, found, missing = file_inventory(source, name, focus, rules)
             return [_record_text(record) for record in found], [
                 (unresolved_order(entry), _unresolved_text(entry)) for entry in missing
             ]
 
-        found, missing = _FILE_TEXT.remember((focus, str(source)), info, read)
+        found, missing = _FILE_TEXT.remember((focus, str(source), rules), info, read)
         records += found
         unresolved += missing
     records.sort(key=record_order)

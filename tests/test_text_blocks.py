@@ -607,6 +607,81 @@ class TextBlockTests(unittest.TestCase):
         fit_written(twice, "Map001.json", narrow)
         self.assertEqual(twice, once)
 
+    def test_assistant_led_keeps_each_text_its_own_source(self):
+        # Assistant-led's writer laid one source over a message's texts, a
+        # name on its own row, its speech and a row opening with \SE[1], and
+        # each reader rebuilt their texts from it on its own. It keeps each
+        # text's source on its first row now, as a translation file import
+        # does, and every reader reads the texts it read before.
+        from util.len_originals import preserve_originals, write_rpgmaker_json
+
+        rows = ["新米警察官", "「すいません‼", "　入り込みまして…‼", "\\SE[1]またね。"]
+        english = ["Rookie Officer", "\"I'm sorry!", 'They slipped in!"', "\\SE[1]Bye."]
+
+        def page(values):
+            return {
+                "list": [
+                    command(101, ["", 0, 0, 2, ""]),
+                    *(command(401, [value]) for value in values),
+                    command(0, []),
+                ]
+            }
+
+        def texts(listed, reading):
+            (block,) = blocks.blocks(listed)
+            return [
+                (text.rows, text.source, text.name)
+                for text in blocks.sent_texts(listed, block, reading)
+            ]
+
+        laid = preserve_originals(page(rows), page(english), filename="Map001.json")
+        with tempfile.TemporaryDirectory() as folder:
+            files = {
+                name: Path(folder, name + ".json")
+                for name in ("source", "staged", "laid")
+            }
+            for name, document in (
+                ("source", page(rows)),
+                ("staged", page(english)),
+                ("laid", laid),
+            ):
+                files[name].write_text(
+                    json.dumps(document, ensure_ascii=False), "utf-8"
+                )
+            game = Path(folder, "Map001.json")
+            write_rpgmaker_json(files["source"], files["staged"], game)
+            written = json.loads(game.read_bytes())["list"]
+            self.assertEqual(
+                [(row.get("_original"), row.get(blocks.ROWS)) for row in written[1:5]],
+                [
+                    (rows[0], 1),
+                    ("\n".join(rows[1:3]), 2),
+                    (None, None),
+                    (rows[3], 1),
+                ],
+            )
+            # The texts every reader lists, under any speaker settings that
+            # read the name as one, are those of the message laid as before.
+            for reading in (
+                blocks.EVERY_SPEAKER,
+                blocks.Reading.of({"FIRSTLINESPEAKERS": True}),
+                blocks.Reading.of({"FIRSTLINESPEAKERS": True, "IGNORETLTEXT": False}),
+            ):
+                self.assertEqual(
+                    texts(written, reading), texts(laid["list"], reading), reading
+                )
+            # A copy staged from the game while it was laid writes again, and
+            # the game keeps each text's source; changed Japanese is refused.
+            before = game.read_bytes()
+            write_rpgmaker_json(files["source"], files["laid"], game)
+            self.assertEqual(game.read_bytes(), before)
+            laid["list"][1]["_original"] = laid["list"][1]["_original"].replace(
+                "‼", "!"
+            )
+            files["laid"].write_text(json.dumps(laid, ensure_ascii=False), "utf-8")
+            with self.assertRaisesRegex(ValueError, "Staged _original differs"):
+                write_rpgmaker_json(files["source"], files["laid"], game)
+
     def test_an_earlier_imports_rows_split_into_texts_only_where_they_follow_them(self):
         # An import before each text kept its own source laid a message's
         # translation over its rows without the source's blank row, so each

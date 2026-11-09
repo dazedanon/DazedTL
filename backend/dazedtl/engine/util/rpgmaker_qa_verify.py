@@ -4,7 +4,8 @@ The verifier intentionally does not import the inventory builder.  It rescans
 the JSON corpus, rediscovers preserved-source leaves, resolves every recorded
 pointer, and recomputes identities, speakers, clusters, ordering, and hashes.
 Mechanical evidence is a rule rather than a record, so it reads the builder's
-one definition (util/qa/mechanical.py).
+one definition (util/qa/mechanical.py), and so is how a rules version reads a
+message's texts (util/qa/schema `read_texts`).
 """
 
 from __future__ import annotations
@@ -18,6 +19,7 @@ from typing import Any
 
 from util import rpgmaker_blocks as blocks
 from util.qa import mechanical
+from util.qa.schema import QA_RULES_VERSION, read_texts
 
 SCHEMA = "rpgmaker-qa-manifest-v1"
 DIALOGUE = {101, 102, 401, 405}
@@ -282,7 +284,12 @@ def _speaker_from_document(document: Any, source_pointer: str, code: int) -> dic
     }
 
 
-def verify_manifest(data_root: str | Path, manifest: dict[str, Any]) -> dict[str, Any]:
+def verify_manifest(
+    data_root: str | Path, manifest: dict[str, Any], rules: int = QA_RULES_VERSION
+) -> dict[str, Any]:
+    """Whether *manifest* is the inventory of the data folder *data_root* as
+    QA's *rules* version reads it (util/qa/schema `read_texts`), with the
+    errors that say why not."""
     errors: list[str] = []
     if manifest.get("schema") != SCHEMA:
         errors.append(f"unsupported schema: {manifest.get('schema')!r}")
@@ -322,7 +329,7 @@ def verify_manifest(data_root: str | Path, manifest: dict[str, Any]) -> dict[str
         raw = path.read_bytes()
         actual_files.append({"path": filename, "sha256": _hash(raw)})
         try:
-            document = json.loads(raw.decode("utf-8-sig"))
+            document = read_texts(json.loads(raw.decode("utf-8-sig")), rules)
         except (UnicodeDecodeError, json.JSONDecodeError):
             parse_error_files.add(filename)
             continue

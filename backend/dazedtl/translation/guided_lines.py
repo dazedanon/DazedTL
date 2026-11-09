@@ -13,7 +13,12 @@ later parts. A message's or scrolling text's parts are the texts the engine
 sends of the game's own rows, read by the project's speaker settings
 (rpgmaker_blocks `sent_texts`): a row opening with a code such as \\SE[1]
 starts one, and a nameplate on a row of its own is one and names the speaker
-of the speech after it. A choice is its label, as the engine sends it,
+of the speech after it. Each text a writer keeps its own source keeps that
+split: Assistant-led's writer keeps a name on a row of its own apart from its
+speech (util/len_originals `READING`), so with First-line names off such a
+message lists two lines where the same message laid under one source listed
+one, and an older file's line for both no longer matches its source. A
+choice is its label, as the engine sends it,
 without the plugin condition clauses around it (rpgmaker_blocks
 `split_choice`), which an import puts back. A command the original doesn't
 hold at a place, such as one a game update added, keeps its pointer into the

@@ -181,6 +181,164 @@ class QAEngineTests(unittest.TestCase):
         (record,) = built["records"]
         self.assertIn("changed-rule", record["mechanical"]["flags"])
 
+    def test_a_laid_name_and_its_speech_are_reviewed_and_corrected_apart(self):
+        # Assistant-led's writer laid one source over a name on its own row
+        # and its speech, which QA read as one record, so a correction was
+        # fitted as one text and the name wrapped into the speech. From rules
+        # version 5 each text is a record of its own, as the writer now keeps
+        # them; a task of an earlier version reads and applies as it did.
+        from util import rpgmaker_blocks as blocks
+        from util.game_settings import normalize_wrap_widths
+        from util.len_originals import preserve_originals, preserve_texts
+        from util.qa import apply, fitting, prepare
+        from util.qa.schema import CORRECTION_MAP_SCHEMA, _canonical_bytes, _sha256
+
+        rows = [
+            "新米警察官",
+            "「すいません‼ちょっと目を離したすきに",
+            "　入り込みまして…‼",
+        ]
+        english = [
+            "Rookie Officer",
+            "\"I'm sorry! They slipped in",
+            'when I looked away...!"',
+        ]
+
+        def game(values):
+            return {
+                "events": [
+                    None,
+                    {
+                        "id": 1,
+                        "pages": [
+                            {
+                                "list": [
+                                    {"code": 101, "parameters": ["", 0, 0, 2, ""]},
+                                    *(
+                                        {"code": 401, "parameters": [row]}
+                                        for row in values
+                                    ),
+                                    {"code": 0, "parameters": []},
+                                ]
+                            }
+                        ],
+                    },
+                ]
+            }
+
+        laid = preserve_originals(game(rows), game(english), filename="Map001.json")
+        written = preserve_texts(game(rows), game(english), filename="Map001.json")
+        layout = {"widths": normalize_wrap_widths({"width": 30, "faceWidth": 30})}
+        with tempfile.TemporaryDirectory() as folder:
+            data = Path(folder, "data")
+            data.mkdir()
+            path = data / "Map001.json"
+
+            def inventory(document, rules):
+                path.write_text(json.dumps(document, ensure_ascii=False), "utf-8")
+                built = manifest.build_manifest(data, "release", rules)
+                verified = verify.verify_manifest(data, built, rules)
+                self.assertTrue(verified["valid"], verified["errors"])
+                return built
+
+            def lines(built):
+                return [
+                    (record["source"], record["live_pointers"])
+                    for record in built["records"]
+                ]
+
+            def corrected(built, rules, replacements):
+                task = {
+                    "data_root": str(data),
+                    "focus": "release",
+                    "manifest_sha256": built["content_sha256"],
+                    "rules_version": rules,
+                }
+                operations = []
+                for record in built["records"]:
+                    if record["source"] not in replacements:
+                        continue
+                    pointers = record["live_pointers"]
+                    operations.append(
+                        {
+                            "finding_id": f"QA-{len(operations) + 1:04d}",
+                            "identity": record["identity"],
+                            "file": record["file"],
+                            "live_pointers": pointers,
+                            "live_transform": record["live_transform"],
+                            "expected": record["live"],
+                            "replacement": fitting._written(
+                                record, replacements[record["source"]], layout
+                            ),
+                            "allowed_flags": [],
+                            "message": len(pointers) > 1,
+                        }
+                    )
+                document = {
+                    "schema": CORRECTION_MAP_SCHEMA,
+                    "manifest_sha256": built["content_sha256"],
+                    "operations": operations,
+                }
+                document["content_sha256"] = _sha256(_canonical_bytes(document))
+                Path(folder, "inventory.json").write_text(json.dumps(built), "utf-8")
+                regression = apply.apply_loaded_correction_map(
+                    Path(folder),
+                    task,
+                    document,
+                    built,
+                    dry_run_name="dry-run.json",
+                    regression_name="regression.json",
+                )
+                self.assertTrue(regression["valid"], regression["errors"])
+                commands = json.loads(path.read_text("utf-8"))["events"][1]["pages"][0]
+                return [
+                    (blocks.text(row), row.get("_original"))
+                    for row in commands["list"][1:4]
+                ]
+
+            pointer = "/events/1/pages/0/list/{}/parameters/0".format
+            speech = "\n".join(rows[1:])
+            # The task of an earlier version reads the message as one line.
+            self.assertEqual(
+                lines(inventory(laid, 4)),
+                [("\n".join(rows), [pointer(1), pointer(2), pointer(3)])],
+            )
+            # Now each text is a line, as the writer keeps them.
+            self.assertEqual(
+                lines(inventory(laid, 5)),
+                [(rows[0], [pointer(1)]), (speech, [pointer(2), pointer(3)])],
+            )
+            self.assertEqual(lines(inventory(written, 5)), lines(inventory(laid, 5)))
+            # So the game's text a task of the earlier version reviewed still
+            # reads as it was, and the task stays current.
+            self.assertEqual(
+                prepare.game_text(data, "release", rules=4),
+                prepare.text_digest(inventory(laid, 4)),
+            )
+            # A correction of each is fitted apart: the speech wraps in its
+            # own rows and the name keeps its row. The game then keeps each
+            # text's source.
+            sorry = '"I\'m so sorry! They slipped in while I looked away!"'
+            self.assertEqual(
+                corrected(
+                    inventory(laid, 5), 5, {rows[0]: "New Officer", speech: sorry}
+                ),
+                [
+                    ("New Officer", rows[0]),
+                    ("\"I'm so sorry! They slipped", speech),
+                    ('in while I looked away!"', None),
+                ],
+            )
+            # A correction an earlier version's task made over the message
+            # still applies to it as one text, leaving it laid.
+            whole = "\n".join(rows)
+            self.assertEqual(
+                corrected(inventory(laid, 4), 4, {whole: f"New Officer\n{sorry}"})[0][
+                    1
+                ],
+                whole,
+            )
+
     def test_censor_masks_keep_their_presence(self):
         # Len measured 7 of 11 masked lines of a finished game wrong: masks
         # dropped, as レイ〇 spelled out, or added where the source had none.
