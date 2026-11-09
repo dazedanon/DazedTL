@@ -3,6 +3,12 @@
 Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 [release.mjs](scripts/release.mjs) writes each entry from [release/notes.md](release/notes.md).
 
+## [2.72.0] - 2026-11-09
+
+### Added
+
+- **Check:** Text QA's new Start over sets a QA task aside, even mid-run, so your assistant reviews every line again from scratch.
+
 ## [2.71.1] - 2026-11-09
 
 ### Fixed
@@ -1792,6 +1798,7 @@ Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachan
 - The first release of DazedTL as a desktop app, installed from a ZIP with a START launcher and updated from inside the app.
 - **Guided steps** for RPG Maker MV, MZ and VX Ace games, and **Assistant-led** for any game.
 
+[2.72.0]: https://github.com/dazedanon/DazedTL/compare/v2.71.1...v2.72.0
 [2.71.1]: https://github.com/dazedanon/DazedTL/compare/v2.71.0...v2.71.1
 [2.71.0]: https://github.com/dazedanon/DazedTL/compare/v2.70.0...v2.71.0
 [2.70.0]: https://github.com/dazedanon/DazedTL/compare/v2.69.0...v2.70.0
