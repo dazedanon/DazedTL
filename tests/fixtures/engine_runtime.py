@@ -1631,6 +1631,166 @@ try:
                     with patch.object(parser, "IGNORETLTEXT", False):
                         parse(blank)
                     assert calls == [([body], "")] and names == asked, (calls, names)
+            # A v5 run still read a laid translation's speakers from its whole
+            # kept source, where a row's pattern reaches past a line: with Skip
+            # already translated text off, a quest notice after a blank line
+            # sent the quest name to the speaker step and dropped it from the
+            # text, and a name before \m[1]\z[2] or a last line ending in ：
+            # did so by the next row's English. Under left-rows v6 a run reads
+            # each text's rows, source and speakers as the export lists them,
+            # a row at a time, with First-line names on or off; with Skip
+            # already translated text on it sends none and leaves them.
+            v5 = {**letters, "leftRows": "event-left-rows-v5"}
+            for source, rows, body, asked in (
+                (
+                    "\n【柚月の心残り】の\nクエスト内容が更新されました！",
+                    ["", "The quest", "was updated!"],
+                    "[Hana]: の\nクエスト内容が更新されました！",
+                    "柚月の心残り",
+                ),
+                (
+                    "ああ\nアリス\\m[1]\\z[2]こんにちは",
+                    ["Ah.", "Alice: hello."],
+                    "[Hana]: Alice: hello.",
+                    "アリス",
+                ),
+                (
+                    "ああ、それは\n村長：",
+                    ["Ah, that is", "the chief:"],
+                    "[Hana]: the chief:",
+                    "村長",
+                ),
+            ):
+                laid = [
+                    name(""),
+                    command(401, rows[:1], _original=source, _rows=len(rows)),
+                    *(command(401, [row]) for row in rows[1:]),
+                ]
+                (block,) = blocks.blocks(laid)
+                for first in (False, True):
+                    listed = blocks.sent_texts(
+                        laid,
+                        block,
+                        blocks.Reading(first_line=first, skip_translated=False),
+                    )
+                    assert [(text.source, text.name) for text in listed] == [
+                        (source, "")
+                    ]
+                    with patch.object(parser, "FIRSTLINESPEAKERS", first):
+                        for generation, sent, named in (
+                            (v5, body, [asked] * 2),
+                            (newer, source, []),
+                        ):
+                            configure_states({"engine": "MVMZ"}, temporary, generation)
+                            with patch.object(parser, "IGNORETLTEXT", False):
+                                result = parse(laid)
+                            assert calls == [([sent], "")] and names == named, (
+                                calls,
+                                names,
+                            )
+                        assert [
+                            (c["parameters"][0], c.get("_original"), c.get("_rows"))
+                            for c in result[1:-1]
+                        ] == [("Hello.", source, 1)], result
+                        assert parse(laid)[:-1] == laid and calls == [], calls
+            # A v5 run read a translated name before speech as its speaker by
+            # the next row's English, so speech whose English doesn't open
+            # like speech left the name a text of its own, while the export
+            # reads the speech's Japanese: under v6 the name goes to the
+            # speaker step alone, with Skip already translated text on or off.
+            source = (
+                "アルロ\n（いや・・・何の不思議も無いか。\n『彼女』の力を考えれば・・・"
+            )
+            spoken = [
+                name(""),
+                command(401, ["Arlo"], _original=source, _rows=3),
+                command(401, ["No... no wonder."]),
+                command(401, ['"Her" powers...']),
+            ]
+            (block,) = blocks.blocks(spoken)
+            speech = source.split("\n", 1)[1]
+            assert [
+                (text.source, text.name)
+                for text in blocks.sent_texts(
+                    spoken,
+                    block,
+                    blocks.Reading(first_line=True, skip_translated=False),
+                )
+            ] == [("アルロ", "アルロ"), (speech, "")]
+            with patch.object(parser, "FIRSTLINESPEAKERS", True):
+                for generation, sent, named, kept in (
+                    (
+                        v5,
+                        [
+                            "アルロ",
+                            '（いや・・・何の不思議も無いか。\n"彼女"の力を考えれば・・・',
+                        ],
+                        [],
+                        [("Hello.", "アルロ", 1), ("Hello.", speech, 1)],
+                    ),
+                    (
+                        newer,
+                        [
+                            '[Hana]: （いや・・・何の不思議も無いか。\n"彼女"の力を考えれば・・・'
+                        ],
+                        ["アルロ"] * 2,
+                        [("Arlo", "アルロ", 1), ("Hello.", speech, 1)],
+                    ),
+                ):
+                    configure_states({"engine": "MVMZ"}, temporary, generation)
+                    with patch.object(parser, "IGNORETLTEXT", False):
+                        result = parse(spoken)
+                    assert calls == [(sent, "")] and names == named, (calls, names)
+                    assert [
+                        (c["parameters"][0], c.get("_original"), c.get("_rows"))
+                        for c in result[1:-1]
+                    ] == kept, result
+                assert parse(spoken)[:-1] == spoken and calls == [], calls
+            # Its skip check read a laid translation's first row alone, unlike
+            # the texts a run sends: where that row is blank, it skipped it,
+            # and with Skip already translated text off the run sent the next
+            # row, opening a text of its own with \SE[1], by its English as the
+            # game's own and kept that English as its source. Under v6 the
+            # check reads the texts the run sends, and the row is sent with
+            # its own Japanese.
+            notice = "\\SE[1]冒険ガイドに新しい項目が追加された！"
+            guide = [
+                name(""),
+                command(401, [""], _original="\n" + notice, _rows=2),
+                command(401, ["\\SE[1]A new guide entry was added!"]),
+            ]
+            (block,) = blocks.blocks(guide)
+            assert [
+                (text.rows, text.source, text.sent)
+                for text in blocks.sent_texts(
+                    guide, block, blocks.Reading(skip_translated=False)
+                )
+            ] == [((1,), "", False), ((2,), notice, True)]
+            for first in (False, True):
+                with patch.object(parser, "FIRSTLINESPEAKERS", first):
+                    for generation, sent, kept in (
+                        (v5, "A new guide entry was added!", guide[2]["parameters"][0]),
+                        (newer, notice.removeprefix("\\SE[1]"), notice),
+                    ):
+                        configure_states({"engine": "MVMZ"}, temporary, generation)
+                        with patch.object(parser, "IGNORETLTEXT", False):
+                            result = parse(guide)
+                        assert calls == [([sent], "")], calls
+                        assert result[2]["_original"] == kept, result
+                    assert parse(guide)[:-1] == guide and calls == [], calls
+            # The split reads a row's speakers as the run's own speaker step
+            # does, by its frozen reading of nameplates, such as a message
+            # opening with \m[N]\z[N] read as an empty one before
+            # event-code-nameplates-v1.
+            codes = [
+                name(""),
+                command(401, [r"\m[2]\z[1454]あら。"]),
+                command(401, ["ね。"]),
+            ]
+            configure_states({"engine": "MVMZ"}, temporary, newer)
+            with patch.object(parser, "CODE_NAMEPLATES", False):
+                parse(codes)
+            assert calls == [(["[Hana]: ね。"], "")], calls
             # A text that is a name window alone gets its name written in its
             # row, which records it too.
             result = parse([name(""), command(401, ["\\n<アリス>"])])

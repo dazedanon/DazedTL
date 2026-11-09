@@ -12,6 +12,7 @@ import time
 import traceback
 import copy
 from contextlib import contextmanager
+from typing import NamedTuple
 from pathlib import Path
 from colorama import Fore
 from dotenv import load_dotenv
@@ -3618,6 +3619,13 @@ CODE_NAMEPLATES = False
 # level 5 so is a translation laid over any texts the export lists apart,
 # such as a name on a row of its own and its speech, and a short row before
 # speech is read as its speaker only from one row (`_message_speakers`).
+# From level 6 the run reads every text of a message or scrolling text, its
+# rows, source and speakers, the skip check's included, from the one split
+# the translation file export lists (`_block_sends`, util/rpgmaker_blocks
+# `sent_texts`), by its own speaker reading (`_reading`), and before writing
+# one keeps each text a writer laid one source over its own
+# (`_keep_block_sources`); below it the run reads them as each level above
+# says, its bugs included.
 # Frozen per run (settings/preferences LEFT_ROWS_LEVELS): older runs send
 # that first row's source alone and write its translation over those rows
 # too, and record none.
@@ -3731,6 +3739,117 @@ def _record_rows(command, rows: int) -> None:
     records them (`_records`)."""
     if _records():
         rpgmaker_blocks.record_rows(command, rows)
+
+
+def _reading():
+    """The reading by which a run from LEFT_ROWS level 6 reads a message's
+    and scrolling text's texts (util/rpgmaker_blocks `Reading`): its speaker
+    and skip settings with the nameplate reading of its frozen policy, as
+    `_message_speakers` reads a row."""
+    return rpgmaker_blocks.Reading(
+        first_line=FIRSTLINESPEAKERS is True,
+        inline=bool(INLINE401SPEAKERS),
+        skip_translated=bool(IGNORETLTEXT),
+        code_nameplates=bool(CODE_NAMEPLATES),
+        standalone=_standalone_speaker if SPEAKER_CONTEXT else None,
+    )
+
+
+class _Send(NamedTuple):
+    """A text a run from LEFT_ROWS level 6 sends (`_block_sends`): the
+    nameplate on a row of its own before it, which goes to the speaker step
+    alone, or None, and the text."""
+
+    name: rpgmaker_blocks.SentText | None
+    text: rpgmaker_blocks.SentText
+
+    @property
+    def first(self) -> rpgmaker_blocks.SentText:
+        """The text whose first row the run reads speakers on: the
+        nameplate, else the text."""
+        return self.text if self.name is None else self.name
+
+
+def _text_block(commands, index):
+    """The message or scrolling text holding the row at *index*
+    (util/rpgmaker_blocks `block_at`), or None."""
+    block = rpgmaker_blocks.block_at(commands, index)
+    if block is None or block.kind not in (rpgmaker_blocks.MESSAGE, rpgmaker_blocks.SCROLL):
+        return None
+    return block
+
+
+def _block_sends(commands, index):
+    """From LEFT_ROWS level 6, the rows of the message or scrolling text
+    holding the row at *index*, and the texts the run sends of it by the row
+    each starts at (`_Send`), with their rows, sources and speakers, as the
+    translation file export lists them (util/rpgmaker_blocks `sent_texts`)
+    by the run's reading (`_reading`), a text each where a writer laid one
+    source over several. Each pass reads the block before it writes any of
+    it, and pass 1 writes none of it, so both send the same texts."""
+    block = _text_block(commands, index)
+    if block is None:
+        return range(index, index + 1), {}
+    listed = rpgmaker_blocks.sent_texts(commands, block, _reading())
+    sends = {}
+    at = 0
+    while at < len(listed):
+        each = listed[at]
+        if each.nameplate and at + 1 < len(listed):
+            sends[each.rows[0]] = _Send(each, listed[at + 1])
+            at += 2
+        else:
+            # A nameplate names a speaker only for the text after it.
+            sends[each.rows[0]] = _Send(
+                None, each._replace(speakers=None) if each.nameplate else each
+            )
+            at += 1
+    return range(block.start, block.end), sends
+
+
+def _sent_line(commands, text) -> str:
+    """The row a run from LEFT_ROWS level 6 reads *text*'s speakers on, as
+    util/rpgmaker_blocks `texts` reads it: its source's first line, or its
+    first row's text for rows never translated."""
+    if text.source is not None:
+        return text.source.split("\n", 1)[0]
+    return rpgmaker_blocks.text(commands[text.rows[0]])
+
+
+def _sent_preview(commands, text) -> str:
+    """The source the skip check of a run from LEFT_ROWS level 6 reads
+    *text* by: the one the split gives it, or its rows' text for rows never
+    translated (`_group_text`)."""
+    if text.source is not None:
+        return text.source
+    return _group_text(commands, text.rows[0], text.rows[-1])
+
+
+def _sends_text(commands, text) -> bool:
+    """Whether a run from LEFT_ROWS level 6 sends *text* under its skip
+    setting: one the engine reads at all (util/rpgmaker_blocks `Text`),
+    whose rows' live text needs translation, read against the source the
+    split gives it, as a speaker scan reads its source."""
+    if not text.sent:
+        return False
+    if SPEAKER_PARSE_MODE:
+        return _text_needs_translation(_sent_preview(commands, text))
+    return _text_needs_translation(
+        _group_current(commands, text.rows[0], text.rows[-1]), text.source
+    )
+
+
+def _keep_block_sources(commands, index) -> None:
+    """From LEFT_ROWS level 6, before the run writes a text of the message
+    or scrolling text holding the row at *index*, as pass 2 does (and pass 1
+    for a name window alone), keep each text its writer laid one source over
+    its own (util/rpgmaker_blocks `keep_sources`), as a translation file
+    import does, so each text written keeps its own Japanese and the texts
+    around it stay apart, as the export lists them. The texts it lists are
+    as before, so the run's reading of the block holds."""
+    block = _text_block(commands, index)
+    if block is not None:
+        rpgmaker_blocks.keep_sources(commands, block, _reading())
 
 
 # Runs whose frozen policy collects menu choices once translate them on the
@@ -4016,6 +4135,10 @@ def _searchCodes(page, pbar, jobList, filename):
     scriptHeader = ""
     speaker = ""
     speakerID = None
+    # From LEFT_ROWS level 6, the rows of the message or scrolling text the
+    # walk is in and the texts it sends of it (`_block_sends`).
+    blockRows = range(0)
+    blockSends = {}
     syncIndex = 0
     maxHistory = MAXHISTORY
     VNameValue = None
@@ -4094,22 +4217,46 @@ def _searchCodes(page, pbar, jobList, filename):
 
                 # Grab String
                 if len(codeList[i]["parameters"]) > 0:
-                    previewEnd = (_message_end if SPEAKER_CONTEXT else _text_group_end)(
-                        codeList, i, _GROUP_CODES
-                    )
-                    # Speaker parse must inspect source/_original even when live
-                    # parameters are already English, or the unresolved count
-                    # drifts as translation progress lands in files/.
-                    previewTexts = _preview_texts(codeList, i, previewEnd)
-                    if not any(
-                        _text_needs_translation(preview_text)
-                        if SPEAKER_PARSE_MODE
-                        else _text_needs_translation(
-                            _group_current(codeList, first, last),
-                            _group_recorded(codeList, first, last, preview_text),
+                    # From LEFT_ROWS level 6 the texts the run sends from this
+                    # row, as the export lists them (`_block_sends`), and
+                    # whether the engine reads each at all; below it the
+                    # preview reads the rows as its level does.
+                    textSend = None
+                    if LEFT_ROWS >= 6:
+                        if i not in blockRows:
+                            blockRows, blockSends = _block_sends(codeList, i)
+                        textSend = blockSends.get(i)
+                        if textSend is None:
+                            # No text the run sends starts at this row.
+                            i += 1
+                            continue
+                        previewSends = [each for each in textSend if each is not None]
+                        previewTexts = [
+                            (each.rows[0], each.rows[-1], _sent_preview(codeList, each))
+                            for each in previewSends
+                        ]
+                        previewEnd = textSend.text.rows[-1]
+                        previewNeeded = any(
+                            _sends_text(codeList, each) for each in previewSends
                         )
-                        for first, last, preview_text in previewTexts
-                    ):
+                    else:
+                        previewEnd = (_message_end if SPEAKER_CONTEXT else _text_group_end)(
+                            codeList, i, _GROUP_CODES
+                        )
+                        # Speaker parse must inspect source/_original even when live
+                        # parameters are already English, or the unresolved count
+                        # drifts as translation progress lands in files/.
+                        previewTexts = _preview_texts(codeList, i, previewEnd)
+                        previewNeeded = any(
+                            _text_needs_translation(preview_text)
+                            if SPEAKER_PARSE_MODE
+                            else _text_needs_translation(
+                                _group_current(codeList, first, last),
+                                _group_recorded(codeList, first, last, preview_text),
+                            )
+                            for first, last, preview_text in previewTexts
+                        )
+                    if not previewNeeded:
                         if not setData:
                             for first, last, preview_text in previewTexts:
                                 _write_unsent_rows(
@@ -4117,10 +4264,17 @@ def _searchCodes(page, pbar, jobList, filename):
                                 )
                         i = previewEnd + 1
                         continue
-                    _keep_sent_sources(codeList, i)
+                    if textSend is None:
+                        _keep_sent_sources(codeList, i)
+                    elif not setData:
+                        _keep_block_sources(codeList, i)
                     jaString = codeList[i]["parameters"][0]
                     oldjaString = _param_text(codeList[i], 0)
-                    speakerWork = oldjaString
+                    speakerWork = (
+                        oldjaString
+                        if textSend is None
+                        else _sent_line(codeList, textSend.first)
+                    )
                 else:
                     codeList[i]["code"] = -1
                     i += 1
@@ -4142,17 +4296,31 @@ def _searchCodes(page, pbar, jobList, filename):
                 #         jaString = re.sub(retardRegex, '富士見', jaString)
 
                 # Speaker Check and the rows sent as one
-                # (util/rpgmaker_blocks.next_text)
-                sentText = rpgmaker_blocks.next_text(
-                    codeList,
-                    i,
-                    speakerWork,
-                    _message_speakers,
-                    _own_source(codeList) if SPEAKER_CONTEXT else None,
-                    left=LEFT_ROWS >= 1,
-                    by_lines=LEFT_ROWS >= 2,
-                    reading=_written(),
-                )
+                # (util/rpgmaker_blocks.next_text); from LEFT_ROWS level 6 the
+                # text's speakers, rows and source as the export lists them,
+                # and the rows its nameplate holds.
+                sentSource = None
+                nameRows = 1
+                if textSend is None:
+                    sentText = rpgmaker_blocks.next_text(
+                        codeList,
+                        i,
+                        speakerWork,
+                        _message_speakers,
+                        _own_source(codeList) if SPEAKER_CONTEXT else None,
+                        left=LEFT_ROWS >= 1,
+                        by_lines=LEFT_ROWS >= 2,
+                        reading=_written(),
+                    )
+                else:
+                    sentText = rpgmaker_blocks.NextText(
+                        textSend.first.speakers,
+                        None if textSend.name is None else textSend.name.rows[0],
+                        textSend.text.rows,
+                    )
+                    sentSource = textSend.text.source
+                    if textSend.name is not None:
+                        nameRows = len(textSend.name.rows)
                 speakerMatch = sentText.speakers
                 speakerList = list(speakerMatch.names) if speakerMatch else []
                 inlineSpeakerMatch = speakerMatch.inline if speakerMatch else None
@@ -4230,7 +4398,7 @@ def _searchCodes(page, pbar, jobList, filename):
                         if not setData and len(speakerList) > 1:
                             codeList[i]["parameters"][0] = nametag + jaStringUpdated
                             _apply_original(codeList[i], oldjaString)
-                            _record_rows(codeList[i], 1)
+                            _record_rows(codeList[i], nameRows)
                         elif not setData and len(speakerList) == 1:
                             paramStr = codeList[i]["parameters"][0]
                             if code_locked[0]:
@@ -4241,7 +4409,7 @@ def _searchCodes(page, pbar, jobList, filename):
                                     paramStr, speakerList[0], speaker
                                 )
                             _apply_original(codeList[i], oldjaString)
-                            _record_rows(codeList[i], 1)
+                            _record_rows(codeList[i], nameRows)
                         nametag = ""
 
                         # Iterate to next string
@@ -4261,15 +4429,22 @@ def _searchCodes(page, pbar, jobList, filename):
 
                 # Format String
                 if len(currentGroup) > 0:
-                    rawSource = _group_raw_text(codeList, sentText.rows)
+                    rawSource = (
+                        _group_raw_text(codeList, sentText.rows)
+                        if sentSource is None
+                        else sentSource
+                    )
                     currentSource = rpgmaker_blocks.text_source(
                         [_param_current(codeList[at], 0) for at in sentText.rows]
                     )
                     # Skip status is based on the live text, read against its
-                    # preserved Japanese source.
+                    # preserved Japanese source: from LEFT_ROWS level 6 the one
+                    # the split gives the text, whichever row keeps it.
                     if not rawSource.strip() or not _text_needs_translation(
                         currentSource,
-                        _group_recorded(codeList, groupStart, i, rawSource),
+                        _group_recorded(codeList, groupStart, i, rawSource)
+                        if textSend is None
+                        else sentSource,
                     ):
                         if not setData:
                             _write_unsent_rows(codeList, groupStart, i, rawSource)
@@ -4362,6 +4537,9 @@ def _searchCodes(page, pbar, jobList, filename):
                     # Check if Empty
                     if finalJAString == "":
                         if nametag and match:
+                            if textSend is not None and setData:
+                                # Written on pass 1 too (`_keep_block_sources`).
+                                _keep_block_sources(codeList, groupStart)
                             codeList[groupStart]["parameters"][0] = codeList[groupStart]["parameters"][0].replace(match.group(2), tledSpeaker)
                             _apply_original(codeList[groupStart], oldjaString)
                             # Its name written, the text's rows hold it.
@@ -4405,7 +4583,11 @@ def _searchCodes(page, pbar, jobList, filename):
                             endtag = ""
                             list401.pop(0)
                         elif len(list401) > 0:
-                            rawSource = _group_raw_text(codeList, sentText.rows)
+                            rawSource = (
+                                _group_raw_text(codeList, sentText.rows)
+                                if sentSource is None
+                                else sentSource
+                            )
                             translatedText = list401[0]
 
                             # Remove the speaker label it was sent with

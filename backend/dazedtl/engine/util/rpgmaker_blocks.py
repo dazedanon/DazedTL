@@ -880,15 +880,20 @@ class Reading:
     """How the engine reads a game's messages: a short row before speech as
     its speaker (*first_line*, FIRSTLINESPEAKERS), a name in front of the
     speech (*inline*, INLINE401SPEAKERS), and whether it skips text holding
-    no source text (*skip_translated*, IGNORETLTEXT), with the run policy's
-    newest reading of nameplates (CODE_NAMEPLATES and SPEAKER_CONTEXT).
-    *named* reads a short row before speech as its speaker only when it
-    reads as a name (util/speakers `plausible_speaker`)."""
+    no source text (*skip_translated*, IGNORETLTEXT), with a run policy's
+    reading of nameplates (util/speakers `message_speakers`): by default the
+    newest, which a run's frozen CODE_NAMEPLATES and SPEAKER_CONTEXT set
+    (*code_nameplates*, and *standalone* deciding which [Name] rows name a
+    speaker, or None for every one). *named* reads a short row before speech
+    as its speaker only when it reads as a name (util/speakers
+    `plausible_speaker`)."""
 
     first_line: bool = False
     inline: bool = False
     skip_translated: bool = True
     named: bool = False
+    code_nameplates: bool = True
+    standalone: Callable[[str], bool] | None = standalone_speaker
 
     @classmethod
     def of(cls, options: dict | None) -> Reading:
@@ -910,8 +915,8 @@ class Reading:
                 following,
                 first_line=first_line,
                 inline=self.inline,
-                code_nameplates=True,
-                standalone=standalone_speaker,
+                code_nameplates=self.code_nameplates,
+                standalone=self.standalone,
             )
 
         if not self.named:
@@ -938,13 +943,25 @@ EVERY_SPEAKER = Reading(first_line=True, inline=True, named=True)
 class Text(NamedTuple):
     """A text the engine sends of some rows (:func:`texts`): their indexes;
     for a nameplate on a row of its own, sent apart from the speech after
-    it, the speaker it names, "" for any other text; and whether the engine
+    it, the speaker it names, "" for any other text; whether the engine
     reads it at all, False for rows it skips as holding nothing it sends,
-    which leave a speaker named before them to the text after them."""
+    which leave a speaker named before them to the text after them; and the
+    speakers the engine reads on its first row (util/speakers
+    `message_speakers`), or None: a nameplate's (`own_line`), or a name
+    sharing that row with the text, never for the speech after a
+    nameplate."""
 
     rows: tuple[int, ...]
     name: str = ""
     sent: bool = True
+    speakers: MessageSpeakers | None = None
+
+    @property
+    def nameplate(self) -> bool:
+        """Whether it is a nameplate on a row of its own, sent apart from the
+        speech after it, its name "" too where the row names none, such as
+        【】."""
+        return self.speakers is not None and self.speakers.own_line
 
 
 def texts(rows: Sequence[str], reading: Reading, starts: Iterable[int] = ()) -> tuple[Text, ...]:
@@ -972,8 +989,12 @@ def texts(rows: Sequence[str], reading: Reading, starts: Iterable[int] = ()) -> 
             continue
         sent = next_text(commands, at, rows[at], reading.speakers, apart)
         if sent.name is not None:
-            found.append(Text((sent.name,), display_name(sent.speakers.names[0])))
-        found.append(Text(sent.rows))
+            found.append(
+                Text((sent.name,), display_name(sent.speakers.names[0]), speakers=sent.speakers)
+            )
+            found.append(Text(sent.rows))
+        else:
+            found.append(Text(sent.rows, speakers=sent.speakers))
         at = sent.rows[-1] + 1
     return tuple(found)
 
@@ -992,14 +1013,23 @@ class SentText(NamedTuple):
     the game (:func:`sent_texts`): the rows holding it, the Japanese
     translation keeps for it as the engine sends it (:func:`text_source`),
     None for rows never translated, the speaker a nameplate names and
-    whether the engine reads it (see :class:`Text`), and the lines of the
-    Japanese the copy keeps that are its own, as its writer kept them."""
+    whether the engine reads it (see :class:`Text`), the lines of the
+    Japanese the copy keeps that are its own, as its writer kept them, and
+    the speakers the engine reads on its first line (see :class:`Text`)."""
 
     rows: tuple[int, ...]
     source: str | None
     name: str = ""
     sent: bool = True
     kept: str | None = None
+    speakers: MessageSpeakers | None = None
+
+    @property
+    def nameplate(self) -> bool:
+        """Whether it is a nameplate on a row of its own (see
+        :attr:`Text.nameplate`), which the engine sends to its speaker step
+        apart from the text after it."""
+        return self.speakers is not None and self.speakers.own_line
 
 
 def _written_over(commands: list, part: Part, lines: list[str], reading: Reading) -> int:
@@ -1087,7 +1117,7 @@ def sent_texts(commands: list, block: Block, reading: Reading) -> tuple[SentText
     read: list[list[Text]] = [[] for _segment in segments]
     for each in texts(original, reading, starts):
         number = owners[each.rows[0]][0]
-        read[number].append(Text(tuple(owners[at][1] for at in each.rows), each.name, each.sent))
+        read[number].append(each._replace(rows=tuple(owners[at][1] for at in each.rows)))
     found: list[SentText] = []
     for (rows, lines), mine in zip(segments, read):
         if lines is None or (len(mine) > 1 and _lined_up(commands, rows, lines, mine)):
@@ -1100,12 +1130,27 @@ def sent_texts(commands: list, block: Block, reading: Reading) -> tuple[SentText
                         each.name,
                         each.sent,
                         None if own is None else "\n".join(own),
+                        each.speakers,
                     )
                 )
         else:
-            (only,) = mine if len(mine) == 1 else (Text(rows),)
+            # One text: a nameplate written with its speech names no speaker
+            # on a row of its own there, while a name sharing the first line
+            # with the text still names one.
+            if len(mine) == 1:
+                (only,) = mine
+            else:
+                first = mine[0] if mine else Text(rows)
+                only = Text(rows, speakers=None if first.nameplate else first.speakers)
             found.append(
-                SentText(rows, text_source(lines), only.name, only.sent, "\n".join(lines))
+                SentText(
+                    rows,
+                    text_source(lines),
+                    only.name,
+                    only.sent,
+                    "\n".join(lines),
+                    only.speakers,
+                )
             )
     return tuple(found)
 
@@ -1143,7 +1188,10 @@ def keep_sent_sources(
     after it apart, the speech's English as its text, or the whole source
     for the rows before a code row and that row's own text after. With
     *opened_only*, as runs frozen at event-left-rows-v4 do, only where a row
-    of it after the first opens a text of its own."""
+    of it after the first opens a text of its own. Runs frozen at v4 and v5
+    keep sources so; later runs read every text from :func:`sent_texts` and
+    keep the whole block's sources before writing (rpgmakermvmz
+    `_keep_block_sources`)."""
     block = block_at(commands, anchor)
     part = block.part(anchor) if block is not None else None
     if (
