@@ -403,7 +403,8 @@ const moved = [
       const before = await projectView(page, state.game);
       const game = path.join(path.dirname(state.game), "Renamed");
       await page.click("Compare");
-      await page.waitText("Single model");
+      // The workspace shows once Compare models has read the game's lines.
+      await page.waitText("Add model");
       moveGame(state, game);
       // Compare models says the game is gone, as the other pages do.
       await page.waitText("Game folder unavailable");

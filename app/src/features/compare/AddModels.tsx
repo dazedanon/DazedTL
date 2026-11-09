@@ -46,9 +46,9 @@ function PriceCheck({
 
 /**
  * Chooses models from Settings' connections: the connection first, then its
- * models, searched or typed as an ID the list lacks. Model vs model adds
- * several, up to what fits beside each other; Single model and Tune settings
- * choose one.
+ * models, searched or typed as an ID the list lacks. Add model adds several
+ * columns, up to what fits beside each other; a column's model menu chooses
+ * one.
  */
 export function AddModels({
   mode,

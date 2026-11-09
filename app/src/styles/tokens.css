@@ -129,8 +129,8 @@
   /* Bordered action buttons share this width, so a row or section of them
      lines up. */
   --action-button-width: 8rem;
-  /* Compare models: Tune settings' column, the Add models dialog's height
-     and the test glossary's editor. */
+  /* Compare models: the Add model column, the Add models dialog's height
+     and a column's test glossary editor. */
   --compare-add-width: 8.5rem;
   --compare-dialog-height: 40rem;
   --compare-glossary-height: 16rem;

@@ -268,7 +268,7 @@ export function picks(comparison: Comparison, marks: Record<string, number>) {
 }
 
 /**
- * Whether Model vs model hides a translation's model names: from the moment
+ * Whether a comparison of several models hides their names: from the moment
  * it starts, while it is blind and not revealed, until every line has a
  * pick. `saved` holds the picks saved here ahead of the next read.
  */
