@@ -2,13 +2,16 @@
 
 from typing import Literal, NotRequired, TypedDict
 
+from dazedtl.api.contracts.compare import CompareOperation
 from dazedtl.api.contracts.guided import GuidedState
 from dazedtl.api.contracts.images import ImageForeignWork, ImageManagerState
 from dazedtl.api.contracts.plugins import PluginForeignWork, PluginState
 from dazedtl.api.contracts.settings import SourceLanguage
 from dazedtl.api.contracts.translation import TranslationState
 
-type Screen = Literal["project", "translation", "guided", "manual", "settings", "guide"]
+type Screen = Literal[
+    "project", "translation", "guided", "manual", "compare", "settings", "guide"
+]
 type TranslationMethod = Literal["guided", "len", "manual"]
 
 
@@ -122,3 +125,5 @@ class WorkspaceSnapshot(TypedDict):
     plugins: NotRequired[PluginState | None]
     pluginsError: NotRequired[str]
     pluginsForeign: NotRequired[PluginForeignWork]
+    # The open game's model comparisons, in every method (translation/compare).
+    compareOperations: NotRequired[list[CompareOperation]]

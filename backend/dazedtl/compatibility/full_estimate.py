@@ -156,31 +156,49 @@ def stage(target, folder, project, files):
     }
 
 
-def estimate_task(directory, folder, plan, inventory, task, log):
+def stage_run(
+    directory,
+    folder,
+    source,
+    inventory,
+    files,
+    mode,
+    workflow,
+    policy,
+    stopped,
+    *,
+    configuration=None,
+    context=None,
+):
+    """Readies *directory* as an engine run of *files* from a staged
+    *inventory*, as a Translate run of the game at *source* would start:
+    its frozen plan in *mode*, the game's guidance, its workflow's variables
+    and options and the request *policy*. *configuration* stands for the
+    engine settings a run reads from Settings (desktop.backend.manual
+    run_plan), and *context* changes the guidance it froze before the plan
+    binds it. Returns the workspace and the plan."""
     from desktop.backend.manual import (
         prepare_inputs,
         run_plan,
         seed_variables,
         snapshot_context,
-        worker_environment,
     )
 
     workspace = folder.parent.parent
-    label = LABELS[task["phase"]]
-    phase = task["phase"]
-    log(f"{label} · preparing", phase, state="starting")
     directory.mkdir()
     native = run_plan(
         workspace,
         inventory,
-        task["files"],
-        "estimate",
-        plan["project"]["source"],
-        workflow=task["workflow"],
+        files,
+        mode,
+        source,
+        workflow=workflow,
+        configuration=configuration,
     )
     snapshot_context(directory, native, workspace)
+    if context is not None:
+        context(directory, native)
     seed_variables(directory, native, folder)
-    policy = plan["options"]["policy"]
     if policy is not None:
         if policy["model"] != native["settings"]["model"]:
             raise ValueError("The selected model changed. Estimate again.")
@@ -189,31 +207,73 @@ def estimate_task(directory, folder, plan, inventory, task, log):
     stage_originals(directory, native, policy)
     write_json(directory / "plan.json", native)
     # The staged copy is this operation's own, so every task shares its files.
-    prepare_inputs(directory, native, log.stopped, link=True)
+    prepare_inputs(directory, native, stopped, link=True)
     write_json(
         directory / "attempt.json",
-        {"files": task["files"], "resume": False, "batch_resume_state": None},
+        {"files": files, "resume": False, "batch_resume_state": None},
     )
+    return workspace, native
+
+
+def engine_configuration(workspace, engine):
+    """The engine settings a run reads (desktop.backend.manual run_plan)
+    for another saved connection and model than Settings' active ones:
+    *engine*'s ``values`` over the saved ones, and its connection's
+    ``key_name``."""
+    from desktop.backend.settings import SettingsStore
+
+    described = SettingsStore(workspace).describe()
+    described["values"] = {**described["values"], **engine["values"]}
+    described["active_key"] = engine["key_name"]
+    return described
+
+
+def estimate_task(directory, folder, plan, inventory, task, log):
+    label = LABELS[task["phase"]]
+    phase = task["phase"]
+    log(f"{label} · preparing", phase, state="starting")
+    workspace, native = stage_run(
+        directory,
+        folder,
+        plan["project"]["source"],
+        inventory,
+        task["files"],
+        "estimate",
+        task["workflow"],
+        plan["options"]["policy"],
+        log.stopped,
+    )
+    return counted(
+        directory,
+        workspace,
+        native,
+        plan["options"]["claudeCount"],
+        lambda env: launch(directory, env, label, phase, log),
+        lambda: log(f"{label} · counting Claude tokens", phase, state="counting"),
+        log.stopped,
+    )
+
+
+def counted(directory, workspace, native, claude, estimate, counting, stopped):
+    """The estimate *estimate* makes in the staged run, given its worker's
+    environment, with Claude's own free token count when *claude* allows
+    it, as a Batch review prices it; *counting* reports that count."""
+    from desktop.backend.manual import worker_environment
+
     # Claude's count starts with the estimate, so its startup overlaps it.
-    counting = (
-        start(directory, workspace, native) if plan["options"]["claudeCount"] else None
-    )
+    process = start(directory, workspace, native) if claude else None
     try:
-        estimate = launch(
-            directory, worker_environment(workspace, native), label, phase, log
-        )
+        value = estimate(worker_environment(workspace, native))
         if (
-            counting is not None
-            and estimate.get("provider") == "anthropic"
-            and estimate.get("approximate_input")
+            process is not None
+            and value.get("provider") == "anthropic"
+            and value.get("approximate_input")
         ):
-            log(f"{label} · counting Claude tokens", phase, state="counting")
-            estimate = count(
-                directory, workspace, native, estimate, log.stopped, process=counting
-            )
+            counting()
+            value = count(directory, workspace, native, value, stopped, process=process)
     finally:
-        stop(counting)
-    return estimate
+        stop(process)
+    return value
 
 
 def launch(directory, env, label, phase, log):

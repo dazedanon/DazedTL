@@ -10,6 +10,7 @@ import { Tabs, TabPanel } from "../../ui/Tabs";
 import { ExpandableText } from "../../ui/ExpandableText";
 import { RequestText } from "./RequestSource";
 import { RequestContext } from "./RequestContext";
+import { RequestPager } from "./RequestPager";
 import { useOnChange } from "../../state/useOnChange";
 import { useRead } from "../../state/useRead";
 
@@ -70,31 +71,12 @@ export function PreparedRequestPreview({
             value={tab}
             onChange={setTab}
           />
-          <div className="request-navigation">
-            <span>
-              {total
-                ? `Request ${(index + 1).toLocaleString()} of ${total.toLocaleString()}`
-                : "Prepared request"}
-            </span>
-            {total > 1 && (
-              <div className="actions">
-                <Button
-                  variant="quiet"
-                  disabled={index === 0}
-                  onClick={() => setIndex((value) => value - 1)}
-                >
-                  Previous
-                </Button>
-                <Button
-                  variant="quiet"
-                  disabled={index >= total - 1}
-                  onClick={() => setIndex((value) => value + 1)}
-                >
-                  Next
-                </Button>
-              </div>
-            )}
-          </div>
+          <RequestPager
+            index={index}
+            total={total}
+            empty="Prepared request"
+            change={setIndex}
+          />
         </div>
         {tabs.map((item) => (
           <div

@@ -319,8 +319,11 @@ class Translation:
                 "Pause this project's active operation before changing its inputs."
             )
         if self.settings.adapter.running():
+            from dazedtl.compatibility.compare import running
+
             raise ValueError(
-                "Finish or pause the existing phased run before changing project inputs."
+                running(self.settings.adapter.operations, self.projects)
+                or "Finish or pause the existing phased run before changing project inputs."
             )
 
     def draft_path(self, identity):
@@ -1146,16 +1149,20 @@ Additional project instructions:
         )
         return self.jobs.start(job["id"], project_id)
 
-    def api_configuration(self, mode, root, *, cached_only=False, unpriced=False):
+    def api_configuration(
+        self, mode, root, *, cached_only=False, unpriced=False, choice=None
+    ):
         """The settings a run on the game at *root* compiled now would
         freeze, with the Batch route that prices it
-        (compatibility/estimate_prices)."""
+        (compatibility/estimate_prices); *choice* reads another connection
+        and model than Settings' active ones (execution.Choice)."""
         cfg = configuration(
             self.settings,
             mode,
             cached_only=cached_only,
             unpriced=unpriced,
             pair=language_pair.pair(self.settings, root),
+            choice=choice,
         )
         # A skill's battle messages name its users; earlier runs keep their
         # requests without (translation/skill_users).

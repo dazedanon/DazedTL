@@ -24,6 +24,7 @@ MODULES = (
     "settings",
     "images",
     "plugins",
+    "compare",
     "workspace",
     "methods",
 )

@@ -129,6 +129,11 @@
   /* Bordered action buttons share this width, so a row or section of them
      lines up. */
   --action-button-width: 8rem;
+  /* Compare models: Tune settings' column, the Add models dialog's height
+     and the test glossary's editor. */
+  --compare-settings-width: 26rem;
+  --compare-dialog-height: 40rem;
+  --compare-glossary-height: 24rem;
   /* Image Manager's preview column beside the task and grid; narrow
      windows give the grid more of the row. */
   --image-viewer-width: 45%;

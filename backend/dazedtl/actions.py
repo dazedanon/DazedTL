@@ -92,6 +92,11 @@ FIT_STOPPED = (
     "Text already fitted stays as it is. Saving the line widths fits the text again."
 )
 ESTIMATE_STOPPED = "No new estimate was saved. Estimating again starts over."
+COMPARE_STOPPED = (
+    "Models that finished before it stopped keep their lines, and each "
+    "model's cost shows what it sent. Translating these lines again needs a "
+    "new estimate."
+)
 RELEASE_STOPPED = (
     "No new ZIP was saved, and any earlier ZIP is unchanged. Building again "
     "starts over."
@@ -480,6 +485,24 @@ ROWS = (
         stage="Context",
         handler="dazedtl.compatibility.full_estimate:run",
         stopped=ESTIMATE_STOPPED,
+    ),
+    # Compare models: the same lines of one file translated by each model,
+    # in runs of the operation's own that never reach the game.
+    ActionSpec(
+        "compare_estimate",
+        "Estimate a model comparison",
+        "background",
+        stage="Translate",
+        handler="dazedtl.compatibility.compare:run",
+        stopped=ESTIMATE_STOPPED,
+    ),
+    ActionSpec(
+        "compare_translate",
+        "Compare models",
+        "background",
+        stage="Translate",
+        handler="dazedtl.compatibility.compare:run",
+        stopped=COMPARE_STOPPED,
     ),
     ActionSpec(
         "speaker_scan",

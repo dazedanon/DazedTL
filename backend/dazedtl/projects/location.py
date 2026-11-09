@@ -247,15 +247,17 @@ class RecentFolders:
 class Locations:
     """Opens game folders as projects and moves projects to where their game
     went. `detect` names a folder's engine, `has_work` tells whether a
-    project holds saved work, `busy` whether a run's worker is executing, and
+    project holds saved work, `busy` whether a run's worker is executing,
+    `waits` why, when a comparison runs (compatibility/compare.running), and
     `relocate` publishes a move, given the moved project and its folder
     before, to the stores that keep its game in memory."""
 
-    def __init__(self, projects, *, detect, has_work, busy, relocate):
+    def __init__(self, projects, *, detect, has_work, busy, relocate, waits=None):
         self.projects = projects
         self.detect = detect
         self.has_work = has_work
         self.busy = busy
+        self.waits = waits or (lambda: "")
         self.relocate = relocate
 
     @property
@@ -335,7 +337,7 @@ class Locations:
         if project["source"] == detected["source"]:
             return self.projects.open(detected, identity=project["id"])
         if self.busy():
-            raise ValueError(BUSY)
+            raise ValueError(self.waits() or BUSY)
         before = project["source"]
         replaced = (
             here["id"] if here is not None and here["id"] != project["id"] else None

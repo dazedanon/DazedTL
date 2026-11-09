@@ -164,6 +164,16 @@ def _read(root, path):
         raise Unreadable("it isn't saved as UTF-8 or UTF-16 text", "Save it as UTF-8, or delete it") from None
 
 
+def whole(root, path):
+    """A guidance file's whole text as `read` decodes it, a glossary's
+    shipped base included, or "" for one missing or unreadable."""
+    path = Path(path)
+    try:
+        return _read(Path(root), path) if path.is_file() else ""
+    except Unreadable:
+        return ""
+
+
 def stored(name, text):
     """`text` as `read` reads it back from a file that holds it: a glossary
     file also keeps the shipped base, which is not part of it."""

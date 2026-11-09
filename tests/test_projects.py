@@ -161,6 +161,7 @@ class LocationTests(unittest.TestCase):
         self.root = Path(temporary.name)
         self.projects = Projects(self.root / "profile")
         self.worked, self.moves, self.running = set(), [], False
+        self.waits = ""
         self.locations = Locations(
             self.projects,
             detect=lambda root: (
@@ -168,6 +169,7 @@ class LocationTests(unittest.TestCase):
             ),
             has_work=lambda project: project["id"] in self.worked,
             busy=lambda: self.running,
+            waits=lambda: self.waits,
             relocate=lambda project, before: self.moves.append(
                 (project["id"], before, project["source"])
             ),
@@ -326,6 +328,10 @@ class LocationTests(unittest.TestCase):
             self.locations.find(project["id"], self.root / "drive")
         self.running = True
         with self.assertRaisesRegex(ValueError, "running work"):
+            self.locations.find(project["id"], new)
+        # A running comparison is named, as every other wait names it.
+        self.waits = "A comparison of Other is running."
+        with self.assertRaisesRegex(ValueError, "comparison of Other"):
             self.locations.find(project["id"], new)
         self.assertEqual(self.projects.current["id"], stranger["id"])
         self.running = False

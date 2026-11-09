@@ -354,6 +354,124 @@ class SettingsTests(unittest.TestCase):
                     else:
                         Settings(temporary, adapter).prepare_engine(resume=resume)
 
+    def test_a_price_lookup_keeps_to_the_active_connection_unless_a_comparison_names_one(
+        self,
+    ):
+        # Lookups found their connection by ID for every caller, so one for
+        # the active connection kept going after a switch and its action
+        # failed later with no price, instead of asking to try again.
+        metadata = {
+            "values": {
+                "language": "English",
+                "model": "fixture-model",
+                "api": "",
+                "API_PROVIDER": "openai",
+            }
+        }
+        adapter = SimpleNamespace(
+            settings_metadata=lambda: metadata,
+            allow_providers=True,
+            validate_route=lambda values: ExistingBackend.validate_route(
+                ExistingBackend, values
+            ),
+            engine_route=ExistingBackend.engine_route,
+            provider_defaults=lambda _: {"batch_supported": False},
+            manual=SimpleNamespace(request_policy=None),
+            install_settings=Mock(),
+        )
+        state = {
+            "version": 2,
+            "revision": 0,
+            "values": {"language": "English", "model": "fixture-model"},
+            "legacy": {"values": metadata["values"], "engines": {}, "draft": None},
+            "model_options": {},
+            "active": "",
+            "draft": None,
+            "connections": [],
+        }
+        with TemporaryDirectory() as temporary:
+            write_json(Path(temporary) / "settings/settings.json", state)
+            settings = Settings(temporary, adapter)
+            with patch.object(providers, "check"):
+                view = settings.save_connection(0, "openrouter", secret="first-key")
+                first = view["activeConnectionId"]
+                view = settings.save_connection(
+                    view["revision"], "openrouter", secret="second-key"
+                )
+            second = view["activeConnectionId"]
+            self.assertNotEqual(second, first)
+            # Settings' own lookup for its active connection's model.
+            active = settings.pricing_lookup(
+                connection_id=second, model="fixture-model", explicit=True
+            )
+            compared = settings.pricing_lookup(
+                connection_id=first,
+                model="fixture-model",
+                explicit=True,
+                any_connection=True,
+            )
+            assert active is not None and compared is not None
+            settings.select(view["revision"], first)
+            with self.assertRaisesRegex(ValueError, "Try again"):
+                settings.pricing_selection(active)
+            self.assertEqual(settings.pricing_selection(compared)["id"], first)
+
+    def test_using_a_model_switches_connection_and_model_in_one_checked_write(self):
+        # Compare's Use these settings selected the connection, then a save
+        # refused the model, leaving it half switched.
+        adapter = SimpleNamespace(
+            settings_metadata=lambda: {
+                "values": {
+                    "language": "English",
+                    "model": "fixture-model",
+                    "api": "",
+                    "API_PROVIDER": "openai",
+                }
+            },
+            allow_providers=True,
+            manual=SimpleNamespace(request_policy=None, jobs={}),
+            install_settings=Mock(),
+        )
+        state = {
+            "version": 2,
+            "revision": 0,
+            "values": {"language": "English", "model": "fixture-model"},
+            "legacy": {"values": {}, "engines": {}, "draft": None},
+            "model_options": {},
+            "active": "",
+            "draft": None,
+            "connections": [],
+        }
+        with TemporaryDirectory() as temporary:
+            write_json(Path(temporary) / "settings/settings.json", state)
+            settings = Settings(temporary, adapter)
+            view = settings.save_connection(0, "openrouter", secret="router-key")
+            router = view["activeConnectionId"]
+            view = settings.save_connection(view["revision"], "openai", secret="key")
+            revision = view["revision"]
+            with self.assertRaisesRegex(ValueError, "base OpenRouter"):
+                settings.use_model(revision, router, "vendor/model:batch")
+            settings.use_model(revision, router, "vendor/model", check=True)
+            self.assertEqual(settings.describe(), view)
+            # The check refuses what the write would, such as settings too
+            # large to save, before Tune saves the game's guidance.
+            with (
+                patch(
+                    "dazedtl.settings.store.json",
+                    SimpleNamespace(dumps=lambda _value: "x" * 8_000_001),
+                ),
+                self.assertRaisesRegex(ValueError, "too large"),
+            ):
+                settings.use_model(revision, router, "vendor/model", check=True)
+            used = settings.use_model(
+                revision, router, "vendor/model", {"thinkingEffort": None}
+            )
+            self.assertEqual(
+                (used["activeConnectionId"], used["values"]["model"], used["revision"]),
+                (router, "vendor/model", revision + 1),
+            )
+            self.assertIsNone(used["modelOptions"]["vendor/model"]["thinkingEffort"])
+
     def test_removing_a_connection_forgets_its_key_and_respects_saved_runs(self):
         # Removal must not strand a run silently or leave the removed key in the engine's derived key cache.
         metadata = {

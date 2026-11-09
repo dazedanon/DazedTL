@@ -3,7 +3,7 @@
 import json
 import os
 import tempfile
-from contextlib import contextmanager, redirect_stdout
+from contextlib import contextmanager, nullcontext, redirect_stdout
 from dataclasses import asdict
 from functools import wraps
 from pathlib import Path
@@ -223,6 +223,12 @@ class TranslationEngine:
     def document_save(self, source, name, revision, text):
         """Saves one guidance document as its own checkpoint; returns the
         names it wrote."""
+        return self.documents_save(source, {name: {"revision": revision, "text": text}})
+
+    def documents_save(self, source, changes):
+        """Saves a set of guidance documents, {name: {revision, text}}, as
+        one checkpoint, writing none when one is refused; returns the names
+        it wrote."""
         from desktop.backend.guidance import documents_save, written
         from util.guidance_documents import save_summary
 
@@ -232,11 +238,11 @@ class TranslationEngine:
         with write_game(
             source,
             pack=False,
-            paths=written(source, [name]),
-            summary=save_summary([name]),
+            paths=written(source, list(changes)),
+            summary=save_summary(list(changes)),
             stage="Context",
         ):
-            return documents_save(source, {name: {"revision": revision, "text": text}})
+            return documents_save(source, changes)
 
     def glossary_add(self, source, sections, summary):
         """Adds *sections*' rows to the game glossary as append_vocab_rows
@@ -336,14 +342,24 @@ class TranslationEngine:
         check_progress(self.project(source, options), report)
 
     def compile(
-        self, source, options, plan, language, skill_users=None, actor_variables=None
+        self,
+        source,
+        options,
+        plan,
+        language,
+        skill_users=None,
+        actor_variables=None,
+        *,
+        staged=False,
     ):
         """The context of each batch's request. ``skill_users`` holds the
         note on who uses the skill of each unit holding a battle message, with
         the names whose glossary entries join its request
         (translation/skill_users). ``actor_variables``, None unless the run
         shows actors' names for name codes, maps each variable a code-122
-        script sets to an actor's name to that actor (translation/name_codes)."""
+        script sets to an actor's name to that actor (translation/name_codes).
+        A *staged* source is a private copy of a game's guidance, such as a
+        model comparison's, which no game write guards."""
         from util.len_translation import request_contexts
         from util.skills import ctx
 
@@ -376,11 +392,15 @@ class TranslationEngine:
                     f"{batch['instruction_key']}. Use a section.key from data/translation_contexts.json."
                 ) from None
         # The requests' shared context moves legacy guidance into .dazedtl.
-        with write_game(
-            source,
-            pack=False,
-            summary="Prepare translation requests",
-            stage="Translate",
+        with (
+            nullcontext()
+            if staged
+            else write_game(
+                source,
+                pack=False,
+                summary="Prepare translation requests",
+                stage="Translate",
+            )
         ):
             compiled = request_contexts(
                 self.project(source, options),

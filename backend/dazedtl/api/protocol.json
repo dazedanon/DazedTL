@@ -1,5 +1,5 @@
 {
-  "version": "dfaf0759ff555cb3",
+  "version": "ed0f13eb39fbb41e",
   "methods": {
     "workspace_snapshot": {
       "refresh": false,
@@ -191,6 +191,38 @@
     },
     "guided_provider_details": {
       "refresh": false,
+      "duringClose": false
+    },
+    "compare_state": {
+      "refresh": false,
+      "duringClose": false
+    },
+    "compare_estimate": {
+      "refresh": true,
+      "duringClose": false
+    },
+    "compare_translate": {
+      "refresh": true,
+      "duringClose": false
+    },
+    "compare_marks": {
+      "refresh": true,
+      "duringClose": false
+    },
+    "compare_request": {
+      "refresh": false,
+      "duringClose": false
+    },
+    "compare_model": {
+      "refresh": false,
+      "duringClose": false
+    },
+    "compare_use": {
+      "refresh": true,
+      "duringClose": false
+    },
+    "compare_stop": {
+      "refresh": true,
       "duringClose": false
     },
     "guided_batch_cancel_preview": {

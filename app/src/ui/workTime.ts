@@ -59,8 +59,10 @@ export function addSample(
   return kept.slice(start);
 }
 
-/** "12 s", "4 min 5 s", "1 h 20 min": how long a finished step took. */
-export function formatDuration(seconds: number) {
+/** "12 s", "4 min 5 s", "1 h 20 min": how long a finished step took;
+ * `tenths` keeps "0.4 s" under 10 s, for work as short as a few requests. */
+export function formatDuration(seconds: number, tenths = false) {
+  if (tenths && seconds < 9.95) return `${Math.max(0, seconds).toFixed(1)} s`;
   const whole = Math.max(0, Math.round(seconds));
   if (whole < 60) return `${whole} s`;
   const minutes = Math.floor(whole / 60);

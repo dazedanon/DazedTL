@@ -6,6 +6,7 @@ from pathlib import Path
 
 from dazedtl.api.contracts import ContractViolation
 from dazedtl.api.contracts.runs import RunEstimate
+from dazedtl.compatibility.compare import ACTIONS as COMPARE_ACTIONS
 from dazedtl.compatibility.original_record import RecordPending
 from dazedtl.projects.store import CHOSEN
 
@@ -135,6 +136,24 @@ def job(value):
     return result
 
 
+def operation(value):
+    """An operation as a snapshot lists it. A comparison's result, its lines
+    and requests, is read through its own page (compare_state) alone."""
+    shown = job(value)
+    if shown is not None and value.get("action") in COMPARE_ACTIONS:
+        shown.pop("result", None)
+    return shown
+
+
+def compare_operation(value):
+    """A comparison operation as the Compare page follows it: where it
+    stands and whether a stop was asked for."""
+    return {
+        **pick(value, ("id", "action", "label", "status", "message")),
+        "stopping": bool(value.get("stopping")),
+    }
+
+
 def guided(value, project_id):
     native = value["project"]
     return {
@@ -166,7 +185,7 @@ def guided(value, project_id):
         "selection": native["selected"],
         "importedFiles": native["imported"],
         "collectionError": native.get("collection_error", ""),
-        "operations": [job(item) for item in value["jobs"]],
+        "operations": [operation(item) for item in value["jobs"]],
         "run": job(value["manual_job"]),
         "runs": [job(item) for item in value["runs"]],
         "activeJobId": value["active"] or None,

@@ -11,11 +11,11 @@ import { root } from "./dependencies.mjs";
 const limits = {
   "AGENTS.md": 1000,
   "README.md": 1200,
-  "docs/architecture.md": 9800,
+  "docs/architecture.md": 9950,
   "docs/development.md": 3000,
   "docs/text-qa-redesign.md": 4000,
   "docs/translation-contract.md": 3200,
-  "docs/user-guide.md": 3860,
+  "docs/user-guide.md": 3980,
 };
 
 const problems = [];

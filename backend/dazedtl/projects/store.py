@@ -12,7 +12,7 @@ from dazedtl.translation.files import read_json
 METHODS = {"guided", "len", "manual", "translation"}
 # The methods a user chooses: Guided steps, Assistant-led and Manual.
 CHOSEN = METHODS - {"translation"}
-SCREENS = {"project", "translation", "guided", "manual", "settings", "guide"}
+SCREENS = {"project", "translation", "guided", "manual", "compare", "settings", "guide"}
 SCHEMA_VERSION = 6
 # What the engine detection names a folder it recognizes no game in
 # (TranslationEngine.detect).
@@ -275,7 +275,10 @@ class Projects:
     def navigate(self, screen):
         if screen not in SCREENS:
             raise ValueError("That page is not available.")
-        if screen in {"translation", "guided", "manual"} and not self.current:
+        if (
+            screen in {"translation", "guided", "manual", "compare"}
+            and not self.current
+        ):
             raise ValueError("Open a game project first.")
         data = deepcopy(self.data)
         data["screen"] = screen

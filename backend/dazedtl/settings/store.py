@@ -208,13 +208,15 @@ class Settings:
             self._validate,
         )
 
-    def _write(self, value, bump=True):
+    def _write(self, value, bump=True, check=False):
+        """Saves *value*, or with `check` only refuses what saving would."""
         self._validate(value)
         if bump:
             value["revision"] += 1
         if len(json.dumps(value).encode()) > 8_000_000:
             raise ValueError("Saved settings are too large.")
-        write_json(self.path, value)
+        if not check:
+            write_json(self.path, value)
 
     @staticmethod
     def _connection(value, identity=None):
@@ -609,7 +611,7 @@ class Settings:
         if connection_id != state["active"]:
             raise ValueError("The active connection changed. Reopen Settings.")
         active = self._connection(state)
-        value = self._model_defaults(
+        value = self.connection_defaults(
             active, model, cached_only=cached_only, batch_endpoints=batch_endpoints
         )
         if active and value:
@@ -620,7 +622,11 @@ class Settings:
                 value = {**value, "rateNote": note}
         return value
 
-    def _model_defaults(self, active, model, *, cached_only, batch_endpoints):
+    def connection_defaults(
+        self, active, model, *, cached_only=False, batch_endpoints=None
+    ):
+        """The rates, output allowance and efforts of *model* on the saved
+        connection *active*, which needn't be the active one."""
         if active and active["provider"] == "openrouter":
             if batch_endpoints is not None:
                 active = {**active, "batch_endpoints": batch_endpoints}
@@ -890,10 +896,14 @@ class Settings:
             self._write(state, bump=False)
         return endpoints
 
-    def pricing_lookup(self, *, connection_id=None, model=None, explicit=False):
-        """Choose an optional public read while the caller holds the app lock."""
+    def pricing_lookup(
+        self, *, connection_id=None, model=None, explicit=False, any_connection=False
+    ):
+        """Choose an optional public read while the caller holds the app lock.
+        With *any_connection*, *connection_id* names a saved connection that
+        needn't be the active one, as a model comparison adds models."""
         state = self._read()
-        active = self._connection(state)
+        active = self._connection(state, connection_id if any_connection else None)
         if (
             not active
             or active["provider"] != "openrouter"
@@ -912,7 +922,7 @@ class Settings:
         options = active["model_options"].get(model, preferences.DEFAULT_OPTIONS)
         if not explicit and options["pricing"] == "custom":
             return None
-        known = self.model_defaults(active["id"], model)
+        known = self.connection_defaults(active, model)
         if (
             known["inputRate"] is not None
             and known["outputRate"] is not None
@@ -933,11 +943,16 @@ class Settings:
             },
             "model": model,
             "host": active.get("openrouter_host", ""),
+            "anyConnection": any_connection,
         }
 
     def pricing_selection(self, lookup):
+        """The connection a lookup read prices for, refusing one that changed
+        since; only a model comparison's may be other than the active one."""
         state = self._read()
-        active = self._connection(state)
+        active = self._connection(
+            state, lookup["connection"]["id"] if lookup["anyConnection"] else None
+        )
         if not active or any(
             active.get(key, "") != value for key, value in lookup["connection"].items()
         ):
@@ -980,6 +995,40 @@ class Settings:
             raise ValueError(
                 "The active connection changed. Review its preferences before saving."
             )
+        self._set_preferences(state, values, model_options)
+        self._clear_draft(state, connection_id)
+        self._write(state)
+        return self.describe()
+
+    def use_model(self, revision, connection_id, model, options=None, check=False):
+        """Makes a saved connection the active one and `model` its model,
+        with `options` changing that model's options, checked as save checks
+        them and written at once, so a refusal switches nothing; `check`
+        only checks, so that only a failing disk can refuse the write after."""
+        state = self._read()
+        self._revision(state, revision)
+        if self._pending(state):
+            raise ValueError(
+                "Save or discard your Settings changes before switching models."
+            )
+        if not self._configured(self._connection(state, connection_id)):
+            raise ValueError("That connection is no longer set up in Settings.")
+        state["active"] = connection_id
+        saved = self._preferences(state)
+        model_options = saved["modelOptions"]
+        if options:
+            model_options[model] = {
+                **(model_options.get(model) or deepcopy(preferences.DEFAULT_OPTIONS)),
+                **options,
+            }
+        self._set_preferences(state, {**saved["values"], "model": model}, model_options)
+        self._clear_draft(state, connection_id)
+        self._write(state, check=check)
+        return None if check else self.describe()
+
+    def _set_preferences(self, state, values, model_options):
+        """Sets the active connection's preferences in `state`, refusing
+        what Settings can't save."""
         connection = self._connection(state)
         normalized, source = preferences.chosen(
             values, connection=connection is not None
@@ -1008,9 +1057,6 @@ class Settings:
         else:
             state["values"]["model"] = normalized["model"]
             state["model_options"] = configured
-        self._clear_draft(state, connection_id)
-        self._write(state)
-        return self.describe()
 
     def draft(self, revision, connection_id, values, model_options):
         state = self._read()

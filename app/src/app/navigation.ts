@@ -166,13 +166,14 @@ export class Navigation {
         "translation",
         "guided",
         "manual",
+        "compare",
         "settings",
         "guide",
       ].includes(screen)
     )
       throw new Error("Choose an available screen.");
     if (
-      ["translation", "guided", "manual"].includes(screen) &&
+      ["translation", "guided", "manual", "compare"].includes(screen) &&
       !snapshot.application.project
     )
       throw new Error("Open a game project first.");

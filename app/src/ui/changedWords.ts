@@ -12,6 +12,21 @@ const tokenPattern =
 /** Token pairs the comparison may weigh; a longer rewrite is one change. */
 export const comparisonLimit = 250_000;
 
+/** The edits between two versions of a line, with a short stretch between
+ * two changes joined into them, as a readable diff does. */
+function lineEdits(before: string, after: string) {
+  return joinShortSames(normalize(compare(tokens(before), tokens(after))));
+}
+
+/** Whether a line changed mostly, so marks would cover nearly all of it. */
+function mostlyChanged(edits: Edit[]) {
+  const length = (kind: Edit["kind"]) =>
+    edits
+      .filter((edit) => edit.kind === kind)
+      .reduce((total, edit) => total + edit.text.replace(/\s/gu, "").length, 0);
+  return length("same") * 2 < Math.max(length("removed"), length("added"));
+}
+
 /**
  * The words that differ between two versions of a line, so a correction can
  * mark what it changed. A short stretch between two changes joins them, as
@@ -19,14 +34,8 @@ export const comparisonLimit = 250_000;
  * since marks would cover nearly all of it.
  */
 export function changedWords(before: string, after: string) {
-  const edits = joinShortSames(
-    normalize(compare(tokens(before), tokens(after))),
-  );
-  const length = (kind: Edit["kind"]) =>
-    edits
-      .filter((edit) => edit.kind === kind)
-      .reduce((total, edit) => total + edit.text.replace(/\s/gu, "").length, 0);
-  if (length("same") * 2 < Math.max(length("removed"), length("added")))
+  const edits = lineEdits(before, after);
+  if (mostlyChanged(edits))
     return {
       before: [{ text: before, changed: false }],
       after: [{ text: after, changed: false }],

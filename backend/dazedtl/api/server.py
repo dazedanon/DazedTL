@@ -17,6 +17,7 @@ from dazedtl import system
 from dazedtl.api.contracts.methods import METHODS
 from dazedtl.api.local import LocalAPI
 from dazedtl.compatibility import game_write, original_files, original_record
+from dazedtl.compatibility.compare import running as compare_running
 from dazedtl.compatibility.dazedmtl import ExistingBackend
 from dazedtl.compatibility.runtime import ENGINE_ROOT
 from dazedtl.compatibility.translation import TranslationEngine
@@ -133,6 +134,7 @@ class Application:
             detect=self.translation.engine.detect,
             has_work=self.has_work,
             busy=lambda: self.backend.running() or self.translation.jobs.running(),
+            waits=lambda: compare_running(self.backend.operations, self.projects),
             relocate=self.relocate,
         )
         self.languages = ProjectLanguages(
@@ -531,9 +533,16 @@ class Application:
                 assistant_tasks = self.assistant_tasks.view(project["id"])
             except ValueError, OSError, RuntimeError, subprocess.SubprocessError:
                 assistant_tasks = []
+        compare = []
+        if project:
+            compare = [
+                views.compare_operation(job)
+                for job in self.guided.compare.operations(project["id"])[:40]
+            ]
         return {
             "application": views.application(state),
             "assistantTasks": assistant_tasks,
+            "compareOperations": compare,
             "translation": current,
             "translationError": error,
             "guided": legacy,
@@ -734,7 +743,8 @@ class Application:
         self.guided.idle()
         if self.backend.running() or self.translation.jobs.running():
             raise ValueError(
-                "Wait for the current operation to finish before changing the languages."
+                compare_running(self.backend.operations, self.projects)
+                or "Wait for the current operation to finish before changing the languages."
             )
         self.languages.change(project_id, source, target)
         return self.state()
@@ -832,7 +842,7 @@ class Application:
 
     def prepare_model_pricing(self, name, params):
         """Only explicit price/estimate actions may perform public price reads."""
-        explicit = name == "settings_model_defaults"
+        explicit = name in {"settings_model_defaults", "compare_model"}
         prepares = (
             name == "guided_preview"
             and params.get("action") == "start"
@@ -860,6 +870,7 @@ class Application:
                 connection_id=params.get("connection_id") if explicit else None,
                 model=params.get("model") if explicit else None,
                 explicit=explicit,
+                any_connection=name == "compare_model",
             )
         if lookup is None:
             return
@@ -870,7 +881,7 @@ class Application:
         except ValueError:
             with self.backend.lock:
                 active = self.settings.pricing_selection(lookup)
-                cached = self.settings.model_defaults(active["id"], lookup["model"])
+                cached = self.settings.connection_defaults(active, lookup["model"])
                 if cached["inputRate"] is not None and cached["outputRate"] is not None:
                     return  # Retain the labeled stale quote when its route still matches.
             raise
@@ -1005,6 +1016,23 @@ def routes(app):
         "guided_provider_details": (
             app.guided.provider_details,
             lambda value, _params: value,
+        ),
+        "compare_state": (app.guided.compare.state, lambda value, _params: value),
+        "compare_estimate": (
+            app.guided.compare.estimate,
+            lambda value, _params: views.job(value),
+        ),
+        "compare_translate": (
+            app.guided.compare.translate,
+            lambda value, _params: views.job(value),
+        ),
+        "compare_marks": (app.guided.compare.marks, lambda value, _params: value),
+        "compare_request": (app.guided.compare.request, lambda value, _params: value),
+        "compare_model": (app.guided.compare.model, lambda value, _params: value),
+        "compare_use": (app.guided.compare.use, lambda value, _params: value),
+        "compare_stop": (
+            app.guided.compare.stop,
+            lambda value, _params: views.job(value),
         ),
         "guided_batch_cancel_preview": (
             app.guided.batch_cancel_preview,
@@ -1232,7 +1260,12 @@ def dispatcher(app, check=False):
                     "The app is closing. Reopen it to resume saved project work."
                 )
             value = present(handler(**params), params)
-        if name in {"settings_save", "connection_save", "connection_select"}:
+        if name in {
+            "settings_save",
+            "connection_save",
+            "connection_select",
+            "compare_use",
+        }:
             app.resolve_batch_support(persist=True)
         return value
 

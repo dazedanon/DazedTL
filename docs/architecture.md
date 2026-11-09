@@ -213,7 +213,7 @@ Use the flat, compact [Settings](../app/src/features/settings/Settings.tsx) and 
 
 #### Places and surfaces
 
-The sidebar has three places: the Project page holds everything about the game, Translation holds the work, and Settings holds the app.
+The sidebar has four places: the Project page holds everything about the game, Translation holds the work, Compare tries models on a few of its lines, and Settings holds the app.
 Beside them, the [Guide](../app/src/features/guide/Guide.tsx) shows the user guide from the install, through the main process so it opens while Python is busy or down; help that a guide section covers links to it with Learn more ([guideSections](../app/src/ui/guideSections.ts)).
 It draws the guide with marked's lexer and its own React components, so no HTML from the file reaches the page, and anchors come from github-slugger, so they match the forge's.
 Each game has one translation method, chosen in [MethodDialog](../app/src/features/project/MethodDialog.tsx); changing it keeps the other methods' work, and the Project page's Status, History, Checkpoints and Export/Import tabs serve all three.
@@ -292,6 +292,13 @@ Resync archives a file's working copy, staged outputs and cache, and advances it
 - [Manual](../app/src/features/translation/ManualTranslation.tsx) runs on Assistant-led's machinery: its loaded file becomes the units organize packs, the API run panel's button is the only approval, and History lists its runs; the [translation contract](translation-contract.md#translation-files) says what its runs leave out.
 - Each method's pages show only its current runs (`own` in `job_views`): not another method's, one an import superseded, or a finished Manual run of an earlier file.
 - A [translation file](../backend/dazedtl/translation/exchange.py) exports and imports a project's lines in every method through one line set per method; an import never writes the game, only accepted results or Guided's working copies, which Apply publishes.
+
+#### Compare models
+
+- [Compare](../backend/dazedtl/translation/compare.py) translates the same lines with up to four models, or one with changed settings, built as the game's method builds them: Guided as an engine run of the recorded original of one file, cut after a page or entry ([compare](../backend/dazedtl/compatibility/compare.py)); Assistant-led and Manual as their API run of a group's units, compiled against a copy of the game's guidance and sent by the run's Live runner from a store of its own ([compare_units](../backend/dazedtl/compatibility/compare_units.py)).
+- A model is any saved connection's, frozen through `Choice` in [execution](../backend/dazedtl/settings/execution.py).
+- An estimate operation prices the requests; the click on its price starts one translate operation, refused once used or when its inputs changed, and no reply reaches the game, its results, cache or runs.
+- Only the current method's comparisons show, as methods build different requests.
 
 #### Publication
 

@@ -100,6 +100,9 @@ class Guided:
         self.event_text = EventText(self)
         self.text_fit = TextFit(self)
         self.full_estimate = FullEstimate(self)
+        from .compare import Compare
+
+        self.compare = Compare(self)
         from .batch_monitor import BatchMonitor
 
         self.batch_monitor = BatchMonitor(self)
@@ -187,8 +190,11 @@ class Guided:
             else self.backend.running()
         )
         if busy or self.translation.jobs.running():
+            from dazedtl.compatibility.compare import running
+
             raise ValueError(
-                "Finish or stop the current run before starting another action."
+                running(self.backend.operations, self.projects)
+                or "Finish or stop the current run before starting another action."
             )
 
     def record(self, project_id):
