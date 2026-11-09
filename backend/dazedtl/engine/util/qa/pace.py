@@ -262,6 +262,8 @@ def status(task_dir: str | Path) -> dict[str, Any]:
                 "accepted": int(screen.get("motif_accepted", 0)),
                 "total": int(screen.get("motif_total", 0)),
             },
+            # Main speakers read across scenes, and the lines those items hold.
+            "voice": screen.get("voice") or {"items": 0, "lines": 0},
             "lint": {
                 "accepted": int(screen.get("lint_accepted", 0)),
                 "total": int(screen.get("lint_total", 0)),

@@ -18,6 +18,7 @@ from util.freshness import (
     signature_settled,
 )
 from util.original_values import Originals
+from util.qa import voice
 from util.paths import new_folder
 from util.qa.advance import _screen_targets
 from util.qa.briefs import _task_instructions, write_instructions
@@ -542,8 +543,17 @@ def prepare_task(
                 manifest, layout, _lint_game(staging, manifest), reviewed
             )
             items, screen_index = _screen_items(
-                manifest, context, data, lint_fixes, reviewed
+                manifest, context, data, lint_fixes, reviewed,
+                screen_char_budget, screen_item_limit,
             )
+            if screen_groups is not None:
+                # A screen packed as another task's holds the voice items
+                # that task's did, so one from before them carries over.
+                kept_items = {name for group in screen_groups for name in group}
+                items = [
+                    item for item in items
+                    if item["kind"] != voice.KIND or item["id"] in kept_items
+                ]
             screen_index_document = {
                 "schema": "rpgmaker-qa-screen-index-v1",
                 "targets": screen_index,
@@ -580,7 +590,8 @@ def prepare_task(
                 bundles = _regrouped(bundles, screen_groups)
             items += lint_items
             _atomic_write_json(
-                staging / "screen-targets.json", _screen_targets(items, bundles)
+                staging / "screen-targets.json",
+                _screen_targets(items, bundles, screen_index),
             )
             bundle_summaries = _write_bundles(
                 staging, bundles, recorded_root=task_dir
@@ -642,6 +653,18 @@ def prepare_task(
                         item.get("kind") == "motif-family" for item in items
                     ),
                     "motif_accepted": 0,
+                    # Each main speaker's lines read across scenes, which
+                    # total_items counts with the scenes' own targets.
+                    **(
+                        {"voice": {
+                            "items": len(voices),
+                            "lines": sum(item["target_count"] for item in voices),
+                        }}
+                        if (voices := [
+                            item for item in items if item.get("kind") == voice.KIND
+                        ])
+                        else {}
+                    ),
                     "lint_total": sum(
                         item["target_count"] for item in lint_items
                     ),

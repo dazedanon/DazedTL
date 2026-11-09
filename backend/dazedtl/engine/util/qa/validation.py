@@ -25,6 +25,7 @@ from util.qa.fitting import (
     nameplate_problems,
 )
 from util.qa.records import (
+    LINE_TARGETS,
     _changes,
     _decode_pointer,
     _record_maps,
@@ -375,7 +376,7 @@ def _own_lines(
     observation cannot name."""
     own: set[str] = set()
     for item in bundle["items"]:
-        if stage == "screen" and item.get("kind") == "scene":
+        if stage == "screen" and item.get("kind") in LINE_TARGETS:
             own |= {
                 _target_entry(screen_index, bundle, line["id"])["representative_identity"]
                 for line in item["lines"] if "id" in line

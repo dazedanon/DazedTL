@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from util.qa.fitting import correction_problems
-from util.qa.records import _bundle_row, _helper_of, _item_targets
+from util.qa.records import LINE_TARGETS, _bundle_row, _helper_of, _item_targets
 from util.qa.schema import (
     BUNDLE_SCHEMA,
     DECLINE_REASON_LIMIT,
@@ -172,7 +172,7 @@ def _make_bundle(
 ) -> dict:
     ordinals = []
     for item in group:
-        if item.get("kind") == "scene":
+        if item.get("kind") in LINE_TARGETS:
             ordinals.extend(
                 line["ordinal"] for line in item["lines"] if "id" in line
             )
@@ -494,7 +494,8 @@ def _split_declined(
 
 def _checkable(bundle: dict[str, Any], declined: Iterable[str]) -> list[dict[str, Any]]:
     """The scenes and lines a screen result reviewed, which a check repeats;
-    lint and motif families are group reviews and are not repeated."""
+    lint and motif families and voice items are reviews of a group, whose
+    lines their scenes' checks cover, and are not repeated."""
     declined = set(declined)
     return [
         item for item in bundle["items"]
@@ -663,9 +664,9 @@ def _screen_target_map(
 ) -> dict[str, dict[str, Any]]:
     targets: dict[str, dict[str, Any]] = {}
     for item in bundle["items"]:
-        if item.get("kind") == "scene":
+        if item.get("kind") in LINE_TARGETS:
             candidates = [
-                {**line, "id": line.get("id") or line["context_id"]}
+                {**line, "id": line.get("id") or line["context_id"], "of": item["kind"]}
                 for line in item["lines"]
                 if "id" in line or "context_id" in line
             ]

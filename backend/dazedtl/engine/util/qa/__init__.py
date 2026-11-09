@@ -8,8 +8,8 @@ result shape; this package never calls a model provider.
 The modules form layers, each importing only from the ones before it, so an
 import cycle fails at once:
 
-mechanical, pronouns, schema, storage, records, fitting, selection, interface, ledger,
-bundles, scope, validation, pace, advance, reopen, findings, editorial,
+mechanical, pronouns, schema, voice, storage, records, fitting, selection, interface,
+ledger, bundles, scope, validation, pace, advance, reopen, findings, editorial,
 acceptance, briefs, claims, apply, prepare, rebuild.
 
 A name used only in a lower layer's type hints is imported under

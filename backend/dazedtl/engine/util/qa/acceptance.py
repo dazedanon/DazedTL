@@ -10,6 +10,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from util.qa import voice
 from util.qa.bundles import (
     _checkable,
     _declined_items,
@@ -154,10 +155,12 @@ def _accept(task_dir: str | Path, result: dict[str, Any]) -> dict[str, Any]:
                 cluster_id = target.get("cluster_id") or review_id
                 if not check:
                     exception_ids.append(review_id)
+                # A voice item's exception names the review it came from.
+                review = voice.KIND if target.get("of") == voice.KIND else "screen"
                 _merge_candidate(
                     candidate_reasons,
                     cluster_id,
-                    [f"screen-{exception['verdict']}"],
+                    [f"{review}-{exception['verdict']}"],
                     [target.get("representative_identity", "")],
                 )
             motifs = _screen_motif_map(bundle)
