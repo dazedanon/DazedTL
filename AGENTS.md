@@ -7,11 +7,11 @@
 - Land one feature or fix at a time: merge it into `dev` and verify it there before starting the next.
   Run sessions in parallel only for areas that share no files, and never collect several feature branches to merge together at release time.
 - Put problems you notice outside the task under New in the bug list (`~/DazedTranslations/DazedTL-bugs.md`) instead of fixing them; the `dazedtl-triage` skill works through it.
-- Run every session and subagent you start or propose on Opus 5.5 (`claude-opus-5-5`, Agent model `opus`), never Sonnet or Haiku, and pass its effort explicitly by how hard the task is: `xhigh` for highly complex tasks and the queue coordinator; `high` for most tasks; `medium` for easier ones, such as a known one-area fix, a merge or a push; `low` for trivial mechanical ones.
+- Run every session and subagent you start or propose on Fable 5.2 or Opus 5.5 as the `scope` skill picks, never Sonnet or Haiku, and pass its effort explicitly by how hard the task is: `xhigh` for highly complex tasks and the queue coordinator; `high` for most tasks; `medium` for easier ones, such as a known one-area fix, a merge or a push; `low` for trivial mechanical ones.
   Keep at most two delegated sessions or subagents running at once, and start a follow-up without asking only when it is mandatory: a real bug a user can hit that gives wrong output or text, costs money, loses or corrupts saved data, leaks a credential, or fails a run.
   Put every other follow-up under New in the bug list for triage instead of queuing it.
-  A landing's evaluator (dazedtl-land skill, Evaluate step) takes its author's place in the two-agent count while the author waits on it, and counts as one when its author is not itself a delegated session or subagent.
-  A session that starts others runs at the highest effort it hands out, since `start_session` cannot start one above its starter's.
+  A landing's evaluator (dazedtl-land skill, Evaluate step) takes its author's place in the two-agent count while its author waits, and counts as one when its author is not delegated.
+  A session that starts others runs at the highest effort and model it hands out, since `start_session` cannot start one above its starter's.
 - Before fixing a bug, read the git history of the code involved.
   At a behavior's third fix, propose a rework only if a study shows it does more good than harm (`dazedtl-triage` skill); patch the bug meanwhile, even while a rework is held.
   End each fix commit with an `Introduced-by:` trailer naming the commit that brought the bug in and a `Found-by:` trailer, as [fix-trailers](scripts/fix-trailers.mjs) defines; land.mjs refuses a fix without them, and [review-stats](scripts/review-stats.mjs) reports which landings let bugs through.
