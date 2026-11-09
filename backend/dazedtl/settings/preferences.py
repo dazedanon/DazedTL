@@ -63,8 +63,19 @@ CODE_NAMEPLATES = "event-code-nameplates-v1"
 # was refused. Those rows are sent and written as texts of their own. A run
 # frozen without it sends the first row's source alone for them and writes
 # its translation over them all, emptying them, as it did when approved.
-LEFT_ROWS = "event-left-rows-v5"
+LEFT_ROWS = "event-left-rows-v6"
 # Each left-rows policy a saved run may hold, by the engine level it enables:
+# v6 reads every text of a message or scrolling text, its rows, its source,
+# its speakers and whether it is sent, its skip check's included, from the
+# one split a translation file lists them by (engine util/rpgmaker_blocks
+# `sent_texts`), and keeps each text a writer laid one source over its own
+# before writing it, so a run with Skip already translated text off reads a
+# translation's speakers a row at a time, never sending a quest name on its
+# second line, such as "\n【柚月の心残り】の\n…", to the speaker step and
+# dropping it from the text, reads a translated name before speech by the
+# speech's Japanese, and no longer sends the English of a row after a blank
+# first row, such as one opening with \SE[1], as its text and keeps it as its
+# source;
 # v5 sends such a translation a text each wherever a translation file lists
 # its texts apart, such as a name on a row of its own and its speech with
 # First-line names on, and reads a short row before speech as its speaker
@@ -96,7 +107,8 @@ LEFT_ROWS_LEVELS = {
     "event-left-rows-v2": 2,
     "event-left-rows-v3": 3,
     "event-left-rows-v4": 4,
-    LEFT_ROWS: 5,
+    "event-left-rows-v5": 5,
+    LEFT_ROWS: 6,
 }
 # Small RPG Maker event pages of one file share a request, each page labelled,
 # because each request otherwise repeats the full system prompt: a 970-map
