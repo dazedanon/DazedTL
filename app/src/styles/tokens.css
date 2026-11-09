@@ -126,6 +126,9 @@
   --change-label-width: 5.5rem;
   --field-column-gap: var(--space-4);
   --action-column-width: 19rem;
+  /* Bordered action buttons share this width, so a row or section of them
+     lines up. */
+  --action-button-width: 8rem;
   /* Image Manager's preview column beside the task and grid; narrow
      windows give the grid more of the row. */
   --image-viewer-width: 45%;

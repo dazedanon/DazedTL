@@ -1360,7 +1360,7 @@ pre {
 .action-row-actions
   > :is(.ui-button, .action-control > .ui-button):not(.link-button, .quiet),
 .action-row-actions > .action-control > .ui-button:not(.link-button, .quiet) {
-  min-width: 8rem;
+  min-width: var(--action-button-width);
 }
 .action-row-actions > .action-control:not(.action-control--inline) {
   display: contents;
@@ -2005,6 +2005,15 @@ pre {
 .path-line > :not(.path-text) {
   flex: none;
   white-space: nowrap;
+}
+/* A path that opens its folder gives way as the path itself does, keeping
+   its icon whole. */
+.path-line > :has(> .path-text) {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+.path-line > :has(> .path-text) > svg {
+  flex: none;
 }
 /* A line and its other versions, labelled in a column; the side a change
    added reads in the success color, the side it removed in the error one.

@@ -1,8 +1,13 @@
-/* The Project page: the game's status, history and checkpoints. */
+/* The Project page: the game's status, history, checkpoints and translation
+   file. */
 .project-page .page-header p {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+/* Change method keeps some room from the facts on either side. */
+.project-method-link {
+  margin-inline: var(--space-2);
 }
 .project-next-stage {
   display: block;
@@ -97,6 +102,16 @@
 }
 .project-stages .link-button[aria-current="step"] {
   color: var(--color-accent);
+}
+/* Export/Import: each section says what its action does, and the result
+   sits beside the button, so a section keeps its height. */
+.project-exchange .ui-section > p {
+  margin: 0 0 var(--space-3);
+  color: var(--color-muted);
+  font-size: var(--font-control);
+}
+.project-exchange .action-control > .ui-button {
+  min-width: var(--action-button-width);
 }
 .project-activity {
   margin: var(--space-5) 0 0;

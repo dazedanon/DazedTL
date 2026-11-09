@@ -23,7 +23,7 @@ import { PageBody, PageHeader, PageLayout } from "../../ui/PageLayout";
 import { PathText } from "../../ui/PathText";
 import { Section } from "../../ui/Section";
 import { StatusIcon } from "../../ui/StatusIcon";
-import { TabPanel, Tabs } from "../../ui/Tabs";
+import { TabPanel, Tabs, type Tab } from "../../ui/Tabs";
 import { displayLabels, displayMarks } from "../../ui/displayStatus";
 import { useRefocus } from "../../ui/useRefocus";
 import { engineLabel, selectionNames, sentence } from "../../ui/displayText";
@@ -42,17 +42,17 @@ import { VersionsPanel } from "../translation/VersionsPanel";
 import type { SettingsSection } from "../settings/Settings";
 import { CheckpointsPanel } from "./CheckpointsPanel";
 import { methodLabels } from "./MethodDialog";
-import { TranslationFile } from "./TranslationFile";
+import { ExportImport } from "./TranslationFile";
 
-export type ProjectTab = "status" | "history" | "checkpoints";
+export type ProjectTab = "status" | "history" | "checkpoints" | "exchange";
 /** What removing a game from the recent list does, wherever it is offered. */
 export const removeHint =
   "Remove from list. Opening the game again brings it back with its work.";
 type Amounts = ReturnType<typeof projectAmounts>;
 
 /**
- * The game's own page: where it stands, its history and its checkpoints.
- * Both translation methods share these tools here.
+ * The game's own page: where it stands, its history, its checkpoints and its
+ * translation file. Every translation method shares these tools here.
  */
 export default function ProjectPage({
   state,
@@ -112,60 +112,77 @@ export default function ProjectPage({
       />
     );
   const available = !!project.available;
+  const tabs: Tab<ProjectTab>[] = [
+    { id: "status", label: "Status" },
+    { id: "history", label: "History", disabled: !available },
+    { id: "checkpoints", label: "Checkpoints", disabled: !available },
+    // A file's lines belong to a method's work.
+    {
+      id: "exchange",
+      label: "Export/Import",
+      disabled: !available || !project.method,
+    },
+  ];
+  // The panel is the tab the strip shows: a tab that became unavailable,
+  // such as after the game moved, gives way to Status.
+  const shown = tabs.find((item) => item.id === tab && !item.disabled)
+    ? tab
+    : "status";
   return (
     <PageLayout variant="editor" className="project-page" aria-label="Project">
       <PageHeader
         title={project.name}
         description={
+          // Each action sits beside what it changes: the method, and the
+          // folder the path names.
           <span className="path-line">
             <span>
               {engineLabel(project.engine_label || project.engine)} ·{" "}
               {project.method
                 ? methodLabels[project.method]
-                : "No method chosen"}{" "}
-              ·
+                : "No method chosen"}
             </span>
-            <PathText path={project.source} />
-          </span>
-        }
-        actions={
-          <div className="actions">
             {/* Every game has another method to switch to: Assistant-led
                 and Manual take any engine. */}
             {project.method && (
               <Button
-                variant="quiet"
+                variant="link"
+                className="project-method-link"
                 disabled={busy || !available}
                 onClick={chooseMethod}
               >
                 Change method
               </Button>
             )}
-            <Button
-              disabled={!available}
-              onClick={() => window.dazedtl.openFolder("project").catch(report)}
-            >
-              <FolderOpen size={16} aria-hidden="true" />
-              Open folder
-            </Button>
-          </div>
+            <span aria-hidden="true">·</span>
+            {available ? (
+              <Button
+                variant="link"
+                aria-label="Open folder"
+                onClick={() =>
+                  window.dazedtl.openFolder("project").catch(report)
+                }
+              >
+                <FolderOpen size={14} aria-hidden="true" />
+                <PathText path={project.source} />
+              </Button>
+            ) : (
+              <PathText path={project.source} />
+            )}
+          </span>
         }
       />
       <div className="frame-row">
         <Tabs
           id="project"
           label="Project sections"
-          value={tab}
+          value={shown}
           onChange={onTab}
-          items={[
-            { id: "status", label: "Status" },
-            { id: "history", label: "History", disabled: !available },
-            { id: "checkpoints", label: "Checkpoints", disabled: !available },
-          ]}
+          items={tabs}
         />
       </div>
-      <TabPanel id="project" value={tab}>
-        {tab === "status" && (
+      <TabPanel id="project" value={shown}>
+        {shown === "status" && (
           <ProjectStatus
             state={state}
             project={project}
@@ -178,7 +195,7 @@ export default function ProjectPage({
             settings={settings}
           />
         )}
-        {tab === "history" && (
+        {shown === "history" && (
           <ProjectHistory
             key={historyQuery}
             project={project}
@@ -188,12 +205,15 @@ export default function ProjectPage({
             openGuided={openGuided}
           />
         )}
-        {tab === "checkpoints" && (
+        {shown === "checkpoints" && (
           <ProjectCheckpoints
             project={project}
             openTask={openTask}
             openGuided={openGuided}
           />
+        )}
+        {shown === "exchange" && (
+          <ExportImport project={project} disabled={busy} />
         )}
       </TabPanel>
     </PageLayout>
@@ -432,9 +452,6 @@ function ProjectStatus({
         {/* A Manual game has no assistant; another method's tasks return
             with it. */}
         {project.method === "len" && assistantList}
-        {project.available && project.method && (
-          <TranslationFile project={project} disabled={busy} />
-        )}
         {beside && !active && (
           <p className="project-activity">
             Last activity: {beside.label}

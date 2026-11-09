@@ -5,11 +5,12 @@ import { useApplication } from "../../app/ApplicationProvider";
 import { useAction } from "../../state/useAction";
 import { ActionBar } from "../../ui/ActionBar";
 import { ActionControl } from "../../ui/ActionControl";
-import { ActionList, ActionRow } from "../../ui/ActionList";
 import { Button } from "../../ui/Button";
 import { DialogBody, DialogHeader } from "../../ui/Dialog";
 import { Modal } from "../../ui/Modal";
+import { PageBody } from "../../ui/PageLayout";
 import { PathText } from "../../ui/PathText";
+import { Section } from "../../ui/Section";
 import { StatusIcon } from "../../ui/StatusIcon";
 import { plural } from "../../ui/displayText";
 
@@ -26,17 +27,23 @@ export async function exportTranslation(project: Project) {
   if (!path) return "";
   const saved = await api.translation.exportFile(project.id, path);
   const csv = saved.path.toLowerCase().endsWith(".csv");
-  return `Saved ${plural(saved.lines, "line")} as ${csv ? "CSV" : "JSON"}, ${saved.translated.toLocaleString()} translated${
+  const translated =
+    saved.lines && saved.translated === saved.lines
+      ? "all"
+      : saved.translated.toLocaleString();
+  return `Saved ${plural(saved.lines, "line")} as ${csv ? "CSV" : "JSON"}, ${translated} translated${
     saved.glossary ? `, with ${plural(saved.glossary, "glossary term")}` : ""
   }.`;
 }
 
 /**
- * The project's translation file: every line with its translation, exported
- * to edit or share, and a file's translations imported back onto the same
- * lines once the user has reviewed what the import changes.
+ * The Project page's Export/Import tab: the project's translation file, every
+ * line with its translation, exported to edit or share, and a file's
+ * translations imported back onto the same lines once the user has reviewed
+ * what the import changes. Each result sits beside its button, so it never
+ * changes a section's height.
  */
-export function TranslationFile({
+export function ExportImport({
   project,
   disabled,
 }: {
@@ -64,12 +71,14 @@ export function TranslationFile({
     );
   return (
     <>
-      <ActionList>
-        <ActionRow
-          title="Translation file"
-          description="Every line with its translation, as JSON or CSV, to edit or share. Import one to take its translations."
-        >
+      <PageBody className="project-exchange">
+        <Section title="Export">
+          <p>
+            Every line with its translation, and the game's glossary, as JSON or
+            CSV to edit in your own tools or share.
+          </p>
           <ActionControl
+            inline
             label="Export…"
             disabled={disabled || action.busy}
             pending={action.busy && action.key === "export"}
@@ -85,7 +94,14 @@ export function TranslationFile({
               if (done.ok && done.value) action.succeed(done.value, "export");
             }}
           />
+        </Section>
+        <Section title="Import">
+          <p>
+            Take a JSON or CSV file's translations onto the same lines. You
+            review what changes before anything is saved.
+          </p>
           <ActionControl
+            inline
             label="Import…"
             disabled={disabled || action.busy}
             pending={action.busy && action.key === "import"}
@@ -94,8 +110,9 @@ export function TranslationFile({
             notice={action.key === "import" ? action.notice : ""}
             onClick={() => void choose()}
           />
-        </ActionRow>
-      </ActionList>
+        </Section>
+      </PageBody>
+      <ActionBar feedback={null}>{null}</ActionBar>
       {preview && (
         <ImportReview
           project={project}
