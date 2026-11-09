@@ -10,6 +10,7 @@ import {
   actionKey,
   blindOrder,
   columnError,
+  columnSummary,
   compareInputs,
   compareOffered,
   comparisonText,
@@ -18,15 +19,16 @@ import {
   glossaryChanges,
   isComparison,
   keptRequests,
+  leftOut,
   modelDetail,
   namesHidden,
+  nextStep,
   picks,
   recordedMarks,
   reportsRun,
-  runName,
-  runPlace,
   Rereads,
   runningComparison,
+  runningStatus,
   runStatus,
   runStep,
   shownKey,
@@ -402,7 +404,6 @@ test("the comparison running for the game shows whatever the tab, until it ends"
   assert.equal(shownOperation(other), other);
   // The app runs one at a time, so every game's work waits, not this one's.
   assert.doesNotMatch(running!.waits, /this game/);
-  assert.match(running!.blocked, /stop it/);
   assert.equal(runningComparison([operation("stopped")]), null);
   // A game whose folder went missing keeps Compare, where alone it stops,
   // while its comparison runs.
@@ -421,14 +422,12 @@ test("the comparison running for the game shows whatever the tab, until it ends"
     compareOffered({ ...missing, id: "q" }, snapshot([operation("running")])),
     false,
   );
-  // A tab whose last run stopped says why its Estimate waits, not that.
+  // A run that ended unfinished shows beside Estimate again; while one
+  // runs, the footer's status line says so instead.
   const stopped = comparison({ stage: "translation", status: "stopped" });
-  assert.equal(reportsRun(stopped, ""), true);
-  assert.equal(reportsRun(stopped, running!.blocked), false);
-  assert.equal(
-    reportsRun({ ...stopped, status: "running" }, running!.blocked),
-    true,
-  );
+  assert.equal(reportsRun(stopped), true);
+  assert.equal(reportsRun({ ...stopped, status: "running" }), false);
+  assert.equal(reportsRun({ ...stopped, status: "complete" }), false);
 });
 
 test("the footer's run status keeps hidden names hidden and a stop short", () => {
@@ -513,27 +512,134 @@ test("a hidden model's error leaves out its words, which may name it", () => {
   assert.equal(columnError(model(0), true), undefined);
 });
 
-test("a Tune test estimated but not translated yet is no numbered run", () => {
-  // Its column read "Run 0".
-  const run = comparison({ id: "a", stage: "translation" });
-  const estimated = comparison({ id: "b" });
-  assert.equal(runName([run], run), "Run 1");
-  assert.equal(runName([run], estimated), "This test");
+test("a running comparison shows as one status line saying what it does, without names", () => {
+  // The footer showed Stop, a "Running" spinner and a disabled Estimate
+  // cost with its own spinner, all for one run.
+  const rows = [1, 2, 3].map((id) => ({
+    id: String(id),
+    speaker: "",
+    source: "はい",
+    translations: [],
+    problems: [],
+  }));
+  const priced = { estimate: { cost: 0.01, requests: 1 } };
+  const estimated = comparison({
+    rows,
+    candidates: [
+      model(0, priced),
+      model(1, { reused: true }),
+      model(2, { error: "No price" }),
+    ],
+  });
+  // A translation sends only what it neither reuses nor left out.
+  assert.equal(
+    runningStatus("compare_translate", estimated),
+    "Translating 3 lines with 1 model…",
+  );
+  assert.equal(
+    runningStatus("compare_estimate", comparison({ rows: [] })),
+    "Estimating the lines with 2 models…",
+  );
+  assert.equal(
+    runningStatus("compare_translate", undefined),
+    "Translating an earlier set of models…",
+  );
+  assert.equal(
+    runningStatus(
+      "compare_translate",
+      comparison({ rows, candidates: [model(0, { reused: true })] }),
+    ),
+    "Bringing back the earlier lines…",
+  );
+  assert.doesNotMatch(runningStatus("compare_translate", estimated), /model-/);
 });
 
-test("a running comparison shows once: in the footer of the tab that started it, from the start, else as a notice", () => {
-  // Right after Translate the page showed its notice with Stop beside the
-  // footer's own, as the tab's latest comparison named no translation yet.
-  const running = { id: "t1" };
-  const estimate = comparison({ id: "e1" });
-  assert.equal(runPlace(running, estimate, "t1"), "footer");
-  assert.equal(runPlace(running, estimate, null), "notice");
+test("after a translation the one primary is Use, once there is a model to use", () => {
+  const done = (models: CompareModel[], status = "complete") =>
+    comparison({
+      stage: "translation",
+      translationId: "t",
+      status,
+      candidates: models,
+    });
+  const finished = { finished: true, cost: 0.01 };
+  // One column: Use this model once it finished.
+  const one = done([model(0, finished)]);
+  assert.equal(nextStep(one, null).use?.label, "Use this model");
+  assert.equal(nextStep(one, null).again, false);
+  // Several: nothing while picking, Use most picked once every line is
+  // picked and one leads, nothing on a tie.
+  const two = done([model(0, finished), model(1, finished)]);
+  const score = (picked: number, winner: number | null) => ({
+    won: [1, 0],
+    picked,
+    total: 2,
+    winner,
+    tied: winner === null ? [0, 1] : [],
+  });
+  assert.equal(nextStep(two, score(1, 0)).use, null);
+  assert.equal(nextStep(two, score(2, 0)).use?.label, "Use most picked");
+  assert.equal(nextStep(two, score(2, null)).use, null);
+  // A model that failed or stopped offers Estimate again, which reuses the
+  // rest; one left out for no price doesn't.
+  const failed = done([
+    model(0, finished),
+    model(1, { error: "Failed.", cost: 0 }),
+  ]);
+  assert.equal(nextStep(failed, score(2, 0)).again, true);
+  const left = done([model(0, finished), model(1, { error: "No price" })]);
+  assert.equal(nextStep(left, null).again, false);
+  assert.equal(nextStep(done([model(0, finished)], "running"), null).use, null);
+});
+
+test("a model left out before anything was sent reads as left out, a warning", () => {
+  const left = model(0, { error: "No price is available for this model." });
+  assert.equal(leftOut(left), true);
+  assert.match(columnError(left, true) ?? "", /^Left out/);
+  assert.equal(leftOut(model(1, { error: "Failed.", cost: 0.01 })), false);
   assert.equal(
-    runPlace(running, { ...estimate, translationId: "t1" }, null),
-    "footer",
+    leftOut(model(2, { error: "x", estimate: { cost: 0.01, requests: 1 } })),
+    false,
   );
-  // A running estimate is its own comparison.
-  assert.equal(runPlace({ id: "e1" }, estimate, null), "footer");
-  assert.equal(runPlace(running, undefined, null), "notice");
-  assert.equal(runPlace(null, estimate, "t1"), null);
+});
+
+test("a reused model goes along at no cost and says so", () => {
+  const estimated = comparison({
+    candidates: [
+      model(0, { estimate: { cost: 0.02, requests: 1 } }),
+      model(1, { reused: true }),
+    ],
+  });
+  const { cost, priced, sent, left } = estimateTotal(estimated);
+  assert.deepEqual(
+    { cost, priced, sent, left },
+    {
+      cost: 0.02,
+      priced: 2,
+      sent: 1,
+      left: [],
+    },
+  );
+  assert.equal(
+    modelDetail(model(1, { reused: true }), false),
+    "Reused, no new cost",
+  );
+  assert.equal(
+    modelDetail(model(1, { reused: true, cost: 0.019, seconds: 6.2 }), true),
+    "$0.019 · 6.2 s · reused",
+  );
+});
+
+test("a column's settings read as the game's or what changed", () => {
+  const choice = { connection_id: "c", model: "m" };
+  assert.equal(columnSummary(choice), "Game’s settings");
+  assert.equal(
+    columnSummary({ ...choice, effort: "high", instruction: "Be old." }),
+    "High effort · instruction",
+  );
+  assert.equal(
+    columnSummary({ ...choice, glossary: "a", glossary_revision: "r" }),
+    "Test glossary",
+  );
+  assert.equal(columnSummary({ ...choice, effort: null }), "Default effort");
 });

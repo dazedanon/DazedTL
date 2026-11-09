@@ -1,5 +1,9 @@
-/* Compare models: a setup row over a grid of the source and each model's
-   translation, the editor page template's body and footer per tab. */
+/* Compare models: a setup row over a grid of the source and one column per
+   model, in the editor page template's body and footer. */
+/* With no tabs, the setup row sits where another editor page's tabs do. */
+.compare-body {
+  padding-top: 0;
+}
 .compare-setup {
   display: flex;
   flex-direction: column;
@@ -11,9 +15,25 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  justify-content: space-between;
   gap: var(--space-2) var(--space-6);
   min-height: var(--control-height);
   font-size: var(--font-control);
+}
+/* What applies to every column, at the row's end: Blind with its Reveal
+   now, and Mark differences. */
+.compare-setup-options,
+.compare-setup-option {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-6);
+}
+.compare-setup-option {
+  gap: var(--space-2) var(--space-4);
+}
+.compare-setup-options .check-field {
+  margin: 0;
 }
 .compare-setup-field {
   display: inline-flex;
@@ -25,38 +45,9 @@
 .compare-setup-label {
   color: var(--color-muted);
 }
-/* A chosen model: its ID, its connection muted, and its remove button. */
-.compare-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-1) var(--space-1) var(--space-1) var(--space-2);
-  border-radius: var(--control-radius);
-  background: var(--color-badge);
-}
-.compare-chip-model {
-  overflow-wrap: anywhere;
-}
-.compare-connection {
-  color: var(--color-muted);
-  font-size: var(--font-small);
-}
-.ui-button.compare-chip-remove {
-  min-height: 0;
-  padding: var(--space-half);
-  color: var(--color-muted);
-}
-.ui-button.compare-chip-remove:hover:not(:disabled) {
-  background: var(--color-control-hover);
-  color: var(--color-text);
-}
-.compare-model-link,
 .compare-lines {
   gap: var(--space-2);
   text-align: left;
-}
-.compare-model-link > .compare-connection {
-  color: var(--color-label);
 }
 .compare-scene-item {
   gap: var(--space-5);
@@ -105,6 +96,24 @@
 .compare-grid[data-columns="4"] .compare-grid-source {
   width: 19%;
 }
+.compare-grid[data-add][data-columns="1"] .compare-grid-source {
+  width: 40%;
+}
+.compare-grid[data-add][data-columns="2"] .compare-grid-source {
+  width: 28%;
+}
+.compare-grid[data-add][data-columns="3"] .compare-grid-source {
+  width: 22%;
+}
+/* Where the next model's column goes: only its Add model. */
+.compare-grid-add {
+  width: var(--compare-add-width);
+}
+.compare-grid-add-header {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
 .compare-grid :is(th, td) {
   border-bottom: 1px solid var(--color-border);
   text-align: left;
@@ -130,12 +139,50 @@
   font-weight: var(--weight-semibold);
   color: var(--color-text);
 }
+/* A column's title row: its model, which opens the model list, and its
+   menu at the end. */
+.compare-grid-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.compare-grid-title > strong {
+  min-width: 0;
+}
+.ui-button.compare-column-model {
+  gap: var(--space-1);
+  min-height: 0;
+  padding: 0;
+  color: var(--color-text);
+  font-size: inherit;
+  font-weight: inherit;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.ui-button.compare-column-menu {
+  flex-shrink: 0;
+  min-height: 0;
+  padding: var(--space-half);
+  color: var(--color-muted);
+}
+.ui-button.compare-column-menu:hover:not(:disabled) {
+  background: var(--color-control-hover);
+  color: var(--color-text);
+}
 .compare-grid-detail {
   display: block;
   margin-top: var(--space-half);
 }
 .compare-grid-detail .link-button {
   vertical-align: baseline;
+}
+.ui-button.compare-column-settings {
+  min-height: 0;
+  padding: 0;
+  font-size: inherit;
+  font-weight: var(--weight-regular);
 }
 .compare-most {
   font-size: var(--font-small);
@@ -229,44 +276,17 @@
   color: var(--color-muted);
 }
 
-/* Tune settings: the test's settings beside its lines. */
-.compare-tune {
-  display: grid;
-  grid-template-columns: minmax(0, var(--compare-settings-width)) minmax(0, 1fr);
-  gap: var(--space-8);
-  align-items: start;
-}
-.compare-tune-settings {
-  padding-top: var(--space-4);
-}
-/* A page form: each label above its control, marked once the test
-   changes it. */
-.compare-tune-settings .field-label {
+/* Column settings: each label marked once the column changes it. */
+.compare-setting-label {
   display: flex;
   align-items: center;
   gap: var(--space-2);
 }
-.compare-tune-settings .field-control > textarea {
-  font-size: var(--font-control);
-  line-height: 1.5;
-}
-.compare-tune-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: var(--space-4);
-  margin-bottom: var(--space-3);
-  font-size: var(--font-control);
-}
-/* A value read as text sits on the label's line. */
-.compare-tune-value,
-.compare-tune-settings .compare-setup-field {
-  min-height: var(--control-height);
-  font-size: var(--font-control);
-}
-.compare-tune-value {
+.compare-setting-value {
   display: inline-flex;
   align-items: center;
+  min-height: var(--control-height);
+  font-size: var(--font-control);
 }
 .compare-changed {
   width: var(--space-2);
@@ -275,17 +295,14 @@
   background: var(--color-accent);
   flex-shrink: 0;
 }
+.ui-button.compare-settings-reset {
+  font-size: var(--font-control);
+}
 .compare-glossary-editor {
   height: var(--compare-glossary-height);
   margin: 0;
   font-size: var(--font-control);
   white-space: pre;
-}
-@media (max-width: 1250px) {
-  .compare-tune {
-    grid-template-columns: minmax(0, 1fr);
-    gap: var(--space-4);
-  }
 }
 
 /* Add models: the connection and search stay above the list, which the
@@ -335,9 +352,24 @@
   margin: 0 0 var(--space-2);
 }
 
-/* The comparison running for the game: its mark beside what it does, which
-   wraps before its Stop does, and Stop right after it, as a notice's action
-   follows its text. */
+/* The footer's one status line while a comparison runs, just before its
+   Stop. */
+.compare-run-status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  font-size: var(--font-control);
+  color: var(--color-text);
+}
+.compare-run-status > .status-icon {
+  flex-shrink: 0;
+  color: var(--color-accent);
+}
+
+/* The comparison running for the game where the page has no footer: its
+   mark beside what it does, which wraps before its Stop does, and Stop
+   right after it, as a notice's action follows its text. */
 .notice:has(> .compare-running) {
   flex-wrap: nowrap;
   align-items: center;

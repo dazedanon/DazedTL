@@ -20,7 +20,6 @@ import {
   PageLayout,
   PageMessages,
 } from "../../ui/PageLayout";
-import { StackedTabPanels, Tabs } from "../../ui/Tabs";
 import { onSettingsSaved } from "../settings/settingsChanges";
 import { configured } from "./AddModels";
 import { RunningNotice } from "./StopComparison";
@@ -33,18 +32,9 @@ import {
   type RunningComparison,
 } from "./compareView";
 import type { ChosenModel } from "./ModelChoice";
-import { Single } from "./Single";
-import { Tune } from "./Tune";
-import { Versus } from "./Versus";
+import { Workspace } from "./Workspace";
 
-const tabs = [
-  { id: "single", label: "Single model" },
-  { id: "versus", label: "Model vs model" },
-  { id: "tune", label: "Tune settings" },
-] as const;
-export type CompareTab = (typeof tabs)[number]["id"];
-
-/** What every tab reads: the game's comparisons and the model it uses. */
+/** What the workspace reads: the game's comparisons and the model it uses. */
 export type CompareContext = {
   projectId: string;
   state: CompareState;
@@ -52,10 +42,11 @@ export type CompareContext = {
   comparisons: Comparison[];
   /** The connection and model Settings translates with. */
   base: ChosenModel | null;
-  /** The thinking effort Settings sends that model. */
-  baseEffort: EffortLevel | null;
-  /** The comparison running for the game, from any tab, which each tab
-   * shows in its footer or as a notice (runPlace). */
+  /** The thinking effort Settings sends a model, which a column follows
+   * until its own settings change it. */
+  gameEffort: (model: string) => EffortLevel | null;
+  /** The comparison running for the game, whatever choices started it,
+   * which the footer shows with its Stop. */
   running: RunningComparison | null;
   /** Reads the comparisons again, once shown, ending once they are read. */
   reload: () => Promise<void>;
@@ -73,9 +64,9 @@ function useShownKey(shown: boolean, key: string) {
 }
 
 /**
- * Compare models: a few of this game's lines translated by several models,
- * by one, or by one with changed settings, to choose a model and its
- * settings before translating the game.
+ * Compare models: a few of this game's lines translated by one to four
+ * models, each with its own settings, to choose a model and its settings
+ * before translating the game.
  */
 export default function Compare({
   project,
@@ -86,7 +77,6 @@ export default function Compare({
   visible: boolean;
 }) {
   const application = useApplication();
-  const [tab, setTab] = useState<CompareTab>("versus");
   const operations = compareOperations(application.snapshot, project.id);
   // Each start and end of an operation reads the comparisons again; their
   // progress in between comes from the observed operations.
@@ -142,8 +132,9 @@ export default function Compare({
           connection: active.name,
         }
       : null;
-  const baseEffort =
-    (base && settings.value?.modelOptions[base.model]?.thinkingEffort) ?? null;
+  const options = settings.value?.modelOptions;
+  const gameEffort = (model: string) =>
+    options?.[model]?.thinkingEffort ?? null;
   const comparisons = (state?.comparisons ?? []).map((item) => {
     const job = operations.find(
       (operation) => operation.id === (item.translationId ?? item.id),
@@ -157,7 +148,7 @@ export default function Compare({
         state,
         comparisons,
         base,
-        baseEffort,
+        gameEffort,
         running,
         reload,
         observer: { mark: () => 0, settle: reload },
@@ -189,18 +180,9 @@ export default function Compare({
         </PageBody>
       ) : (
         <>
-          <div className="frame-row">
-            <Tabs
-              id="compare"
-              label="Compare"
-              items={tabs}
-              value={tab}
-              onChange={setTab}
-            />
-          </div>
           <PageMessages>
             {error && !state && <Notice tone="warning">{error}</Notice>}
-            {/* Each tab shows it once it has read the lines. */}
+            {/* The footer shows it once the lines are read. */}
             {running && !context && (
               <RunningNotice projectId={project.id} running={running} />
             )}
@@ -212,15 +194,7 @@ export default function Compare({
               </p>
             </PageBody>
           ) : (
-            <StackedTabPanels
-              id="compare"
-              value={tab}
-              panels={{
-                single: <Single context={context} />,
-                versus: <Versus context={context} />,
-                tune: <Tune context={context} />,
-              }}
-            />
+            <Workspace context={context} />
           )}
         </>
       )}

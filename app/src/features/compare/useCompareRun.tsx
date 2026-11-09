@@ -1,19 +1,19 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { api } from "../../api/client";
 import type { Comparison, Job } from "../../api/contracts";
 import { useAction } from "../../state/useAction";
 import { useOnChange } from "../../state/useOnChange";
 import { ActionControl } from "../../ui/ActionControl";
-import type { CompareContext } from "./Compare";
 import { Button } from "../../ui/Button";
-import { RunningNotice, StopComparison } from "./StopComparison";
+import type { CompareContext } from "./Compare";
+import { RunningStatus } from "./StopComparison";
 import {
   actionFeedback,
   actionKey,
   current,
   formatCost,
   reportsRun,
-  runPlace,
+  runningStatus,
   runStatus,
   runStep,
   working,
@@ -21,11 +21,13 @@ import {
 } from "./compareView";
 
 /**
- * One tab's comparison of its choices now, and its footer's run control:
- * Estimate cost, then Translate at the price the estimate found, whose click
- * approves sending those requests once, then Estimate again. Each action
- * stays busy until the page has read the comparisons it changed, so a
- * second click acts on what the first one started.
+ * The page's comparison of its choices now, and its footer's run control,
+ * by one rule: while any comparison of the game runs, one status line and
+ * Stop; otherwise Estimate cost, then Translate at the price the estimate
+ * found, whose click approves sending those requests once, then the next
+ * step the page gives (`next`). Each action stays busy until the page has
+ * read the comparisons it changed, so a second click acts on what the first
+ * one started.
  */
 export function useCompareRun(
   context: CompareContext,
@@ -47,28 +49,17 @@ export function useCompareRun(
   const action = useAction({ observer: context.observer });
   const { latest, shown } = current(context.comparisons, choices);
   const step = runStep(latest, shown);
-  // The run this tab just started, which its latest comparison names only
+  // The run the page just started, which its latest comparison names only
   // once the page has read the comparisons again; other choices, or the
   // started one read as the latest, leave it.
   const [begun, setBegun] = useState<string | null>(null);
   useOnChange(latest?.id, () => setBegun(null));
   const { running } = context;
-  // The tab alone says where the game's running comparison shows.
-  const place = runPlace(running?.operation, latest, begun);
-  const stop =
-    running && place === "footer" ? (
-      <StopComparison
-        projectId={context.projectId}
-        operation={running.operation}
-      />
-    ) : null;
-  const notice =
-    running && place === "notice" ? (
-      <RunningNotice projectId={context.projectId} running={running} />
-    ) : null;
-  /** Why the page's own actions wait: a comparison runs. */
-  const waiting = running?.blocked ?? "";
-  const reason = blocked || waiting;
+  const own =
+    running &&
+    [latest?.id, latest?.translationId, begun].includes(running.operation.id)
+      ? latest
+      : undefined;
   const estimate = () =>
     action.run(
       async () => {
@@ -83,8 +74,7 @@ export function useCompareRun(
           setBegun(job.id);
           return job;
         } catch (error) {
-          // A refusal for changed guidance shows the game's as it is now,
-          // which Reset starts a test from.
+          // A refusal for changed guidance shows the game's as it is now.
           await context.reload();
           throw error;
         }
@@ -112,26 +102,37 @@ export function useCompareRun(
     );
   const estimating = actionFeedback(action, "estimate", choices);
   const translating = actionFeedback(action, "translate", choices);
-  const operation = (label: string) =>
-    latest && runStatus(latest, label, namesHidden(latest));
-  /** Whether the control gives way to a primary of the tab's own, which
-   * only Estimate again does. */
-  const yields = step.step === "estimate" && step.again && !step.reason;
+  /** The choices' lines are translated and nothing runs: the page's own
+   * next step takes the footer. */
+  const done =
+    latest?.stage === "translation" &&
+    !working(latest.status) &&
+    step.step === "estimate" &&
+    !step.reason;
   /**
-   * The footer's run control; `secondary` makes Estimate again a secondary
-   * button beside the tab's own primary, such as Use the most picked model.
+   * The footer's actions: the running comparison's status and Stop, or the
+   * run control, then the page's next step. `next.use` is the page's Use,
+   * the one primary once the lines are translated; `next.again` offers
+   * Estimate again beside it, as when a model failed or stopped.
    */
-  const control = (secondary = false) => {
+  const footer = (next: { use: ReactNode; again: boolean }) => {
+    if (running)
+      return (
+        <RunningStatus
+          projectId={context.projectId}
+          operation={running.operation}
+          text={runningStatus(running.operation.action, own)}
+        />
+      );
     if (step.step === "translate")
       return (
         <>
-          {stop}
           {translating.error && (
             // A refusal may need a new estimate, such as after the game
             // changed; the reason beside Translate says which.
             <Button
-              disabled={action.busy || !!reason}
-              title={reason || undefined}
+              disabled={action.busy || !!blocked}
+              title={blocked || undefined}
               onClick={() => void estimate()}
             >
               Estimate again
@@ -140,60 +141,59 @@ export function useCompareRun(
           <ActionControl
             variant="primary"
             label={`Translate · about ${formatCost(step.cost)}`}
+            inline
             pending={translating.pending || estimating.pending}
             pendingText={
-              estimating.pending
-                ? "Starting the estimate…"
-                : "Starting the translation…"
+              estimating.pending ? "Estimating…" : "Starting the translation…"
             }
             error={translating.error || estimating.error}
-            disabled={!!reason}
-            disabledReason={reason}
-            note={
-              step.left.length
-                ? `Leaves out ${step.left.join(" and ")}, which couldn’t be estimated.`
-                : ""
-            }
+            disabled={!!blocked}
+            disabledReason={blocked}
             onClick={() => latest && void translate(latest.id)}
           />
         </>
       );
     if (step.step === "translating")
+      // The run ended a moment before the page read it again.
       return (
-        <>
-          {stop}
-          <ActionControl
-            variant="primary"
-            label={`Translate · about ${formatCost(step.cost)}`}
-            pendingText="Translating…"
-            job={operation("Translation")}
-          />
-        </>
+        <ActionControl
+          variant="primary"
+          label={`Translate · about ${formatCost(step.cost)}`}
+          inline
+          pending
+          pendingText="Translating…"
+        />
       );
+    if (done && !next.again && !estimating.pending && !estimating.error)
+      return next.use;
     return (
       <>
-        {stop}
         <ActionControl
-          variant={secondary && yields ? undefined : "primary"}
+          // The one primary is Use when there is a model to use.
+          variant={done && next.use ? undefined : "primary"}
           label={step.again ? "Estimate again" : "Estimate cost"}
+          inline
           pending={estimating.pending}
-          pendingText="Starting the estimate…"
+          pendingText="Estimating…"
           error={estimating.error}
-          disabled={!!reason}
-          disabledReason={reason}
+          disabled={!!blocked}
+          disabledReason={blocked}
           note={
             step.reason ||
             (step.again ? "" : "Estimating is free and sends nothing.")
           }
           job={
-            latest && reportsRun(latest, waiting)
-              ? operation(
+            reportsRun(latest)
+              ? runStatus(
+                  latest,
                   latest.stage === "translation" ? "Translation" : "Estimate",
+                  namesHidden(latest),
                 )
               : undefined
           }
           onClick={() => void estimate()}
         />
+        {done && next.use}
       </>
     );
   };
@@ -203,5 +203,5 @@ export function useCompareRun(
     latest && working(latest.status)
       ? "These lines show here once they are read."
       : idle;
-  return { latest, shown, control, yields, action, empty, notice, waiting };
+  return { latest, shown, footer, action, empty, running: !!running };
 }

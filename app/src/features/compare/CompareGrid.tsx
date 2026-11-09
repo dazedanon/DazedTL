@@ -10,12 +10,19 @@ export type CompareColumn = {
   /** The model's place in the comparison's candidates and rows. */
   position: number;
   title: ReactNode;
+  /** Controls at the end of the title's row, such as the column's menu. */
+  actions?: ReactNode;
   /** A mark after the title, such as Most picked. */
   badge?: ReactNode;
-  /** A muted line under the title, such as the price. */
+  /** A muted line under the title, such as the connection and settings. */
+  subtitle?: ReactNode;
+  /** A muted line under that, such as the price. */
   detail?: ReactNode;
   /** Why the model has no lines, as failed under its header. */
   error?: string;
+  /** Why the model was left out before anything was sent, as a warning
+   * that names the fix. */
+  warning?: string;
 };
 
 /** A note under a model or a line: a model that failed, or what the checks
@@ -64,12 +71,13 @@ function Changed({
 /**
  * The comparison's lines: the source with its speaker, then each model's
  * translation, with what the checks found under it. Picking marks one
- * translation per line as the best; Tune settings marks what changed
- * between two runs instead.
+ * translation per line as the best; Mark differences marks the words a
+ * column changed from the first.
  */
 export function CompareGrid({
   comparison,
   columns,
+  add,
   empty,
   marks,
   pick,
@@ -78,12 +86,15 @@ export function CompareGrid({
 }: {
   comparison: Comparison | undefined;
   columns: readonly CompareColumn[];
+  /** The header of the place the next column goes, such as Add model. */
+  add?: ReactNode;
   /** Says why there are no lines yet. */
   empty: ReactNode;
   marks?: Record<string, number>;
   /** Marks a translation as its line's best, or clears the mark. */
   pick?: (row: CompareRow, model: number | null) => void;
-  /** How a column's line differs from the other run's, in Tune settings. */
+  /** How a column's line differs from another column's, as Mark
+   * differences shows it. */
   difference?: (row: CompareRow, position: number) => Difference | undefined;
   label: string;
 }) {
@@ -93,6 +104,7 @@ export function CompareGrid({
     <table
       className="compare-grid"
       data-columns={columns.length}
+      data-add={add ? "" : undefined}
       aria-label={label}
     >
       <colgroup>
@@ -100,6 +112,7 @@ export function CompareGrid({
         {columns.map((column) => (
           <col key={column.position} />
         ))}
+        {add && <col className="compare-grid-add" />}
       </colgroup>
       <thead>
         <tr>
@@ -108,24 +121,37 @@ export function CompareGrid({
           </th>
           {columns.map((column) => (
             <th scope="col" key={column.position}>
-              <strong>
-                {column.title}
-                {column.badge}
-              </strong>
+              <div className="compare-grid-title">
+                <strong>
+                  {column.title}
+                  {column.badge}
+                </strong>
+                {column.actions}
+              </div>
+              {column.subtitle && (
+                <span className="compare-grid-detail">{column.subtitle}</span>
+              )}
               {column.detail && (
                 <span className="compare-grid-detail">{column.detail}</span>
               )}
               {column.error && (
                 <CompareFlag status="failed">{column.error}</CompareFlag>
               )}
+              {column.warning && (
+                <CompareFlag status="warning">{column.warning}</CompareFlag>
+              )}
             </th>
           ))}
+          {add && <th scope="col">{add}</th>}
         </tr>
       </thead>
       <tbody>
         {!rows.length ? (
           <tr>
-            <td className="compare-grid-empty" colSpan={columns.length + 1}>
+            <td
+              className="compare-grid-empty"
+              colSpan={columns.length + (add ? 2 : 1)}
+            >
               {empty}
             </td>
           </tr>
@@ -193,6 +219,7 @@ export function CompareGrid({
                   </td>
                 );
               })}
+              {add && <td />}
             </tr>
           ))
         )}

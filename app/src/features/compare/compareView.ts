@@ -13,7 +13,8 @@ import { formatDuration } from "../../ui/workTime.ts";
 /** What fits side by side on a laptop screen, as the backend allows. */
 export const versusModels = 4;
 
-/** What one tab compares now: its kind, the file's first lines and models. */
+/** What the page compares now: its kind, the file's first lines and its
+ * columns' models with their settings. */
 export type CompareChoices = {
   kind: CompareKind;
   file: string;
@@ -112,39 +113,30 @@ export function current(
 }
 
 /**
- * Where a tab shows the comparison running for the game, with its Stop: in
- * its footer when it is the run of the tab's latest comparison, or the one
- * the tab just started, which reads as its latest only once the page has
- * read the comparisons again; otherwise as a notice above the tab.
- */
-export function runPlace(
-  running: { id: string } | null | undefined,
-  latest: Comparison | undefined,
-  started: string | null,
-) {
-  if (!running) return null;
-  return [latest?.id, latest?.translationId, started].includes(running.id)
-    ? "footer"
-    : "notice";
-}
-
-/**
  * What translating a comparison's estimate costs, Live: the sum of the
- * models it priced, and those it leaves out for an error.
+ * models it priced, and those it leaves out for an error. A reused model
+ * goes along at no cost.
  */
 export function estimateTotal(comparison: Comparison) {
   const priced = comparison.candidates.filter(
     (model) => model.estimate && !model.error,
   );
+  const reused = comparison.candidates.filter(
+    (model) => model.reused && !model.error,
+  );
   return {
     cost: priced.reduce((sum, model) => sum + model.estimate!.cost, 0),
-    priced: priced.length,
-    left: comparison.candidates.filter((model) => !priced.includes(model)),
+    priced: priced.length + reused.length,
+    /** The models it sends requests for. */
+    sent: priced.length,
+    left: comparison.candidates.filter(
+      (model) => !priced.includes(model) && !reused.includes(model),
+    ),
   };
 }
 
 /**
- * What a tab's footer offers for its choices' newest comparison: Translate
+ * What the footer offers for the choices' newest comparison: Translate
  * at the price an unused estimate found, the translation running, or an
  * estimate, again once these choices were translated or when the newest
  * estimate priced no model, with why. Whether an estimate was used comes
@@ -312,34 +304,20 @@ export function recordedMarks(
   );
 }
 
+/** Whether a model was left out of a comparison before anything was sent,
+ * such as for having no price, which its column says as a warning with the
+ * fix rather than as a failure. */
+export const leftOut = (model: CompareModel) =>
+  !!model.error && !model.estimate && !model.reused && model.cost === undefined;
+
 /** A model's error as its column shows it: while names are hidden, without
  * its words, which may name the model in any spelling. */
 export const columnError = (model: CompareModel, hidden: boolean) =>
   model.error && hidden
-    ? "This model didn’t finish. Why shows once the names are revealed."
+    ? leftOut(model)
+      ? "Left out: it couldn’t be estimated. Why shows once the names are revealed."
+      : "This model didn’t finish. Why shows once the names are revealed."
     : model.error;
-
-/** A Tune settings run's name by its place among `runs`; a test estimated
- * but not translated yet is no run. */
-export const runName = (runs: readonly Comparison[], item: Comparison) =>
-  runs.includes(item) ? `Run ${runs.indexOf(item) + 1}` : "This test";
-
-/** The Tune settings runs of one file's lines, oldest first, translated. */
-export function tuneRuns(
-  comparisons: readonly Comparison[],
-  file: string,
-  lines: number,
-) {
-  return comparisons
-    .filter(
-      (item) =>
-        item.kind === "tune" &&
-        item.file === file &&
-        item.lines === lines &&
-        item.stage === "translation",
-    )
-    .reverse();
-}
 
 /** The glossary's entries: its lines, leaving out headings and blanks. */
 export function glossaryEntries(text: string) {
@@ -420,10 +398,9 @@ export function compareOperations(
 }
 
 /**
- * The comparison running for the game, whichever tab or choices it was
- * started from, and what the page says of it: what it does, that other work
- * waits for it, as the app runs one at a time, and why the page's own
- * actions wait.
+ * The comparison running for the game, whichever choices it was started
+ * from, and what a page that can't show its own status says of it: what it
+ * does, and that other work waits for it, as the app runs one at a time.
  */
 export function runningComparison(operations: readonly CompareOperation[]) {
   const operation = operations.find((item) => working(item.status));
@@ -432,10 +409,34 @@ export function runningComparison(operations: readonly CompareOperation[]) {
     operation,
     text: comparisonText(operation.action),
     waits: "Most other work waits until it ends.",
-    /** Why Estimate, Translate and Use wait on the page meanwhile, which
-     * the footer's run control says once for the whole footer. */
-    blocked: "Wait for the running comparison to end, or stop it.",
   };
+}
+
+const plural = (count: number, word: string) =>
+  `${count.toLocaleString()} ${word}${count === 1 ? "" : "s"}`;
+
+/**
+ * The footer's one status line while a comparison runs, which takes the
+ * place of Estimate and Translate beside its Stop: what it does with the
+ * choices on screen when it is theirs (`own`), the comparison it runs from
+ * a page whose choices changed since otherwise. It never names a model, so
+ * a blind comparison's names stay hidden.
+ */
+export function runningStatus(
+  action: CompareOperation["action"],
+  own: Comparison | undefined,
+) {
+  const doing = action === "compare_translate" ? "Translating" : "Estimating";
+  if (!own) return `${doing} an earlier set of models…`;
+  // A translation sends only the models it neither reuses nor left out.
+  const models =
+    action === "compare_translate"
+      ? own.candidates.filter((model) => !model.reused && !leftOut(model))
+          .length
+      : own.candidates.length;
+  const lines = own.rows.length ? plural(own.rows.length, "line") : "the lines";
+  if (!models) return "Bringing back the earlier lines…";
+  return `${doing} ${lines} with ${plural(models, "model")}…`;
 }
 
 /** Whether the sidebar offers Compare for the open game: while its folder
@@ -448,13 +449,11 @@ export const compareOffered = (
   !!project.available ||
   !!runningComparison(compareOperations(snapshot, project.id));
 
-/** Whether a footer reports its latest comparison's run beside Estimate:
- * while it runs, or once it ended unfinished, unless another comparison
- * runs, whose wait the footer says instead. */
-export const reportsRun = (latest: Comparison | undefined, waiting: string) =>
-  !!latest &&
-  latest.status !== "complete" &&
-  (working(latest.status) || !waiting);
+/** Whether the footer reports its latest comparison's run beside Estimate:
+ * once it ended unfinished, failed or stopped; while one runs, the footer's
+ * status line says so instead. */
+export const reportsRun = (latest: Comparison | undefined) =>
+  !!latest && latest.status !== "complete" && !working(latest.status);
 
 export type RunningComparison = NonNullable<
   ReturnType<typeof runningComparison>
@@ -495,16 +494,67 @@ export function keptRequests(model: CompareModel) {
 }
 
 /** A model's price under its name: the estimate's before it translates,
- * then what it cost and how long it took. */
+ * then what it cost and how long it took; a reused one says so, since an
+ * earlier run paid for its lines. */
 export function modelDetail(model: CompareModel, translated: boolean) {
   if (translated && model.cost !== undefined)
     return [
       formatCost(model.cost),
       model.seconds !== undefined && formatDuration(model.seconds, true),
+      model.reused && "reused",
     ]
       .filter(Boolean)
       .join(" · ");
+  if (model.reused) return "Reused, no new cost";
   return model.estimate ? `about ${formatCost(model.estimate.cost)}` : "";
+}
+
+/** What a column sends besides its model, in a few words: the game's
+ * settings, or what it changed. */
+export function columnSummary(choice: CompareChoice) {
+  const changed = [
+    choice.effort !== undefined &&
+      `${choice.effort ? choice.effort[0].toUpperCase() + choice.effort.slice(1) : "Default"} effort`,
+    choice.glossary !== undefined && "test glossary",
+    choice.instruction && "instruction",
+  ].filter(Boolean) as string[];
+  if (!changed.length) return "Game’s settings";
+  const text = changed.join(" · ");
+  return text[0].toUpperCase() + text.slice(1);
+}
+
+/**
+ * What the footer offers once the choices' lines are translated: Use, as
+ * the one primary, for one column that finished, or for several once every
+ * line has a pick and one model leads; nothing while picking or tied. A
+ * model that failed or stopped offers Estimate again, which reuses the
+ * finished ones.
+ */
+export function nextStep(
+  comparison: Comparison,
+  score: ReturnType<typeof picks> | null,
+) {
+  const models = comparison.candidates;
+  const winner =
+    models.length === 1
+      ? models[0]
+      : score && score.total > 0 && score.picked === score.total
+        ? score.winner === null
+          ? undefined
+          : models[score.winner]
+        : undefined;
+  return {
+    use:
+      winner?.finished && !working(comparison.status)
+        ? {
+            model: winner,
+            label: models.length === 1 ? "Use this model" : "Use most picked",
+          }
+        : null,
+    again:
+      !working(comparison.status) &&
+      models.some((model) => !model.finished && !leftOut(model)),
+  };
 }
 
 /**
