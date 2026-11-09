@@ -146,7 +146,17 @@ export default function ConnectionEditor({
                 : "Choose a provider and add your API key."}
           </p>
           <fieldset disabled={disabled}>
-            <FieldRow id="connection-provider" label="Provider">
+            <FieldRow
+              id="connection-provider"
+              label="Provider"
+              help={
+                // A preset whose server takes no key (LM Studio) says where
+                // it connects, as there is no address field to read.
+                !custom && definition?.keyless
+                  ? `Connects to ${definition.defaultEndpoint} with no key. Start the server and load your model there first.`
+                  : undefined
+              }
+            >
               {(control) => (
                 <select
                   {...control}
@@ -190,12 +200,6 @@ export default function ConnectionEditor({
                   </select>
                 )}
               </FieldRow>
-            )}
-            {!custom && definition?.keyless && (
-              <p className="settings-note">
-                Connects to {definition.defaultEndpoint} with no key. Start the
-                server and load your model there first.
-              </p>
             )}
             {value.provider === "openrouter" && (
               <OpenRouterHost
