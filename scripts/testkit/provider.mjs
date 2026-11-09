@@ -44,6 +44,16 @@
 //   a slow route; listBytes: every model list is padded with spaces to
 //   that many bytes.
 //
+// A request naming a PLaMo 3 Translate model, such as plamo-3-translate-8b,
+// is answered as LM Studio answers one with that model's chat template: HTTP
+// 400 for what the template refuses (tools, an unknown setting in its
+// [plamo-translate] block, messages that don't alternate user and assistant
+// ending with a user message, blank text or its <|plamo: tokens), and also
+// for a response_format, which LM Studio would take but DazedTL must not
+// send it; otherwise the last user message's translation into the block's
+// target_lang, as plain text. The `reply` and `delay` modes apply to it.
+// Its model list stands in for the LM Studio preset's under /lmstudio.
+//
 // Every request is recorded in <folder>/requests.jsonl as its time, method,
 // route, status, its User-Agent and OpenCode session header, and for a JSON
 // body that body, so a check can confirm a field such as `reasoning_effort`
@@ -324,6 +334,73 @@ export const translated = (value) =>
     value.startsWith("テスト") ||
     value.startsWith("测试"));
 
+/** Whether a model ID names PLaMo 3 Translate, as DazedTL decides it. */
+const plamo = (id) => /(^|\/)plamo-3-translate([-_.@:]|$)/i.test(String(id));
+
+/**
+ * What PLaMo 3 Translate's chat template refuses in `params`, as LM Studio
+ * renders it, or null; and the target language its settings block names.
+ */
+function plamoRequest(params) {
+  if (params.tools)
+    return { error: "Tool calls and documents are not supported." };
+  if (params.response_format)
+    return { error: "PLaMo 3 Translate takes no response_format." };
+  const messages = params.messages || [];
+  const text = (message) =>
+    typeof message.content === "string" ? message.content : null;
+  let target = "en";
+  let first = 0;
+  if (messages[0]?.role === "system") {
+    const lines = String(text(messages[0]) ?? "").split("\n");
+    first = 1;
+    if (lines[0].trim().toLowerCase().startsWith("[plamo-translate")) {
+      if (lines[0].trim() !== "[plamo-translate]")
+        return { error: "Put the settings below [plamo-translate]." };
+      for (const line of lines.slice(1)) {
+        if (line.trim() === "---") break;
+        if (!line.trim()) continue;
+        const [key, ...rest] = line.split("=");
+        const value = rest.join("=").trim();
+        if (key.trim() === "glossary") {
+          if (value.split("=>").length !== 2)
+            return {
+              error: `Each glossary line must be glossary=source => target: ${line}`,
+            };
+        } else if (
+          !["target_lang", "source_lang", "form"].includes(key.trim()) ||
+          !value
+        )
+          return {
+            error: `Each line of the [plamo-translate] block must be key=value: ${line}`,
+          };
+        if (key.trim() === "target_lang") target = value.toLowerCase();
+      }
+    }
+  }
+  const rest = messages.slice(first);
+  if (!rest.length || rest.length % 2 !== 1)
+    return {
+      error: "Provide source/translation pairs followed by one user message.",
+    };
+  for (const [index, message] of rest.entries()) {
+    if (message.role !== (index % 2 ? "assistant" : "user"))
+      return {
+        error:
+          "Alternate user source text and assistant translation; end with user.",
+      };
+    const content = text(message);
+    if (content === null || !content.trim())
+      return { error: "message content must not be empty." };
+    if (content.includes("<|plamo:"))
+      return {
+        error:
+          "message content must not contain reserved PFML tokens (<|plamo:...).",
+      };
+  }
+  return { target, source: text(rest.at(-1)) };
+}
+
 /** The request's text, all messages joined. */
 function requestText(params) {
   return (params.messages || [])
@@ -474,6 +551,30 @@ export async function startProvider({ folder, port = 0 }) {
   /** A chat completion for `params`, or an HTTP error. */
   function complete(params) {
     const settings = mode();
+    if (plamo(params.model)) {
+      const found = plamoRequest(params);
+      if (found.error)
+        return {
+          status: 400,
+          value: {
+            error: {
+              message: `Error rendering prompt with jinja template: ${found.error}`,
+            },
+          },
+        };
+      const reply = Object.entries(settings.reply || {}).find(([item]) =>
+        found.source.includes(item),
+      );
+      const target = found.target.startsWith("ja")
+        ? "Japanese"
+        : found.target.startsWith("zh")
+          ? "Chinese"
+          : undefined;
+      return completion(
+        params,
+        reply ? reply[1] : translate(found.source, target),
+      );
+    }
     // A server that refuses the effort field, or takes it and reports the
     // reasoning tokens it spent; by default it ignores it.
     const level = params.reasoning_effort;
@@ -730,6 +831,19 @@ export async function startProvider({ folder, port = 0 }) {
                   data: { id: "z-ai/glm-6:batch", endpoints: batchEndpoints },
                 })
               : reply(404, { error: { message: "Not in the stand-in." } });
+        if (request.method === "GET" && url.includes("/lmstudio/"))
+          return route === "/models"
+            ? reply(200, {
+                object: "list",
+                data: [
+                  { id: "plamo-3-translate-8b", object: "model" },
+                  {
+                    id: "text-embedding-nomic-embed-text-v1.5",
+                    object: "model",
+                  },
+                ],
+              })
+            : reply(404, { error: { message: "Not in the stand-in." } });
         if (request.method === "GET" && route === "/models")
           return reply(200, {
             object: "list",

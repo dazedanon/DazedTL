@@ -2,16 +2,23 @@
 
 from typing import NamedTuple
 
+from dazedtl.compatibility import plamo
 from dazedtl.translation.files import read_json
-from dazedtl.translation.refusals import POLICY as REFUSAL_POLICY
 
 from . import effort, language_pair, opencode, openrouter, preferences, providers
 
 
 def connection_summary(settings):
-    """Expose only the saved selection; drafts and credentials stay private."""
+    """Expose only the saved selection, and whether its server bills
+    nothing; drafts and credentials stay private."""
     connection = settings._connection(settings._read())
-    return {key: connection[key] for key in ("name", "model")} if connection else None
+    if not connection:
+        return None
+    return {
+        "name": connection["name"],
+        "model": connection["model"],
+        "free": providers.free(connection["provider"]),
+    }
 
 
 def batch_reasons(settings):
@@ -225,7 +232,10 @@ def configuration(
         "generationParameters": preferences.GENERATION_PARAMETERS,
         "maxOutputTokens": read.max_output,
         **read.effort,
-        "refusalRetry": REFUSAL_POLICY,
+        # PLaMo 3 Translate's request format, or the refusal retry.
+        **plamo.policies(
+            connection["protocol"], choice.model if choice else connection["model"]
+        ),
         "entries_per_request": read.entries,
         "rates": rates,
         **read.requests,
@@ -243,7 +253,11 @@ def request_policy(settings, mode, choice=None):
         "generationParameters": preferences.GENERATION_PARAMETERS,
         "maxOutputTokens": read.max_output,
         **read.effort,
-        "refusalRetry": REFUSAL_POLICY,
+        # PLaMo 3 Translate's request format, or the refusal retry.
+        **plamo.policies(
+            read.connection["protocol"],
+            choice.model if choice else read.connection["model"],
+        ),
         "stateGrouping": "compatible-states-v1",
         **preferences.FROZEN_POLICIES,
         **preferences.REPLY_POLICIES,

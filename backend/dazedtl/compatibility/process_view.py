@@ -531,6 +531,14 @@ def clean_message(value, secret="", *, limit: int | None = 2000):
 
 
 def source_values(params):
+    """The lines a request translates by reply key, read from its JSON
+    payload, or a PLaMo document's own (compatibility/plamo); None when it
+    holds none."""
+    from .plamo import sources
+
+    lines = sources(params)
+    if lines is not None:
+        return lines
     for message in reversed(params.get("messages", [])):
         content = message.get("content", "")
         if isinstance(content, list):

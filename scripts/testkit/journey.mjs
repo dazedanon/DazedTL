@@ -63,14 +63,23 @@ export async function setUp(page, version = "1.0") {
 
 /**
  * Saves a connection to the stand-in provider at `url` with free rates and
- * checks it, as Settings does. With provider "openai", it saves the OpenAI
- * preset, which offers Batch; the app must run with
- * DAZEDTL_TEST_OPENAI_ENDPOINT naming the stand-in, as scenario apps do.
+ * checks it, as Settings does, choosing the model `chosen`. With provider
+ * "openai", it saves the OpenAI preset, which offers Batch; the app must run
+ * with DAZEDTL_TEST_OPENAI_ENDPOINT naming the stand-in, as scenario apps do.
+ * With "lmstudio", it saves the keyless LM Studio preset, which
+ * DAZEDTL_TEST_LMSTUDIO_ENDPOINT points at the stand-in.
  * @param {Page} page
  */
-export async function connect(page, url, provider = "custom") {
+export async function connect(page, url, provider = "custom", chosen = model) {
   const saved = await page.call("settings_get");
-  const name = provider === "custom" ? "Stand-in" : "Stand-in OpenAI";
+  // LM Studio's preset takes no key and prices every model at 0 itself.
+  const keyless = provider === "lmstudio";
+  const name =
+    provider === "custom"
+      ? "Stand-in"
+      : keyless
+        ? "Stand-in LM Studio"
+        : "Stand-in OpenAI";
   // A profile that has one already, such as after an update, keeps it.
   const earlier = saved.connections.find((item) => item.name === name);
   let settings = await page.call("connection_save", {
@@ -78,11 +87,11 @@ export async function connect(page, url, provider = "custom") {
     ...(earlier && { connection_id: earlier.id }),
     provider,
     name,
-    secret: "stand-in-key",
+    secret: keyless ? "" : "stand-in-key",
     endpoint: url,
     protocol: "openai",
     organization: "",
-    keyless: false,
+    keyless,
     reuse_secret: false,
   });
   const connection = settings.activeConnectionId;
@@ -90,15 +99,17 @@ export async function connect(page, url, provider = "custom") {
     revision: settings.revision,
     connection_id: connection,
     // The values this version keeps, so --from builds an older one too.
-    values: { ...settings.values, language: "English", model },
-    model_options: {
-      [model]: {
-        entriesPerRequest: null,
-        pricing: "custom",
-        inputRate: 0,
-        outputRate: 0,
-      },
-    },
+    values: { ...settings.values, language: "English", model: chosen },
+    model_options: keyless
+      ? {}
+      : {
+          [chosen]: {
+            entriesPerRequest: null,
+            pricing: "custom",
+            inputRate: 0,
+            outputRate: 0,
+          },
+        },
   });
   settings = await page.call("connection_check", {
     revision: settings.revision,

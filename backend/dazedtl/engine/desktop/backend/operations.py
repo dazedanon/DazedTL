@@ -13,7 +13,7 @@ from .project import atomic_json, digest
 from .manual import system_environment, timestamp
 from util import extensions, system
 
-from dazedtl.settings.providers import STAND_INS
+from dazedtl.settings.providers import TEST_ENDPOINTS
 
 
 @extensions.point
@@ -76,9 +76,9 @@ class Operations:
                 # Text QA and the release playtest run the game in the app's
                 # Electron.
                 "DAZEDTL_ELECTRON",
-                # A test scenario's presets name its stand-in, which counts
-                # as their own APIs (settings/providers.own_api).
-                *STAND_INS.values(),
+                # A test scenario's stand-ins for the presets
+                # (settings/providers.TEST_ENDPOINTS).
+                *TEST_ENDPOINTS,
             )
             environment.update(DAZEDTL_DESKTOP_WORKSPACE=str(self.root.parent), PYTHONUTF8="1", PYTHONIOENCODING="utf-8", PYTHONNOUSERSITE="1", PYTHON_DOTENV_DISABLED="1")
             if os.getenv('DAZEDTL_TEST_OFFLINE') == '1':

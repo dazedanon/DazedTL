@@ -1718,6 +1718,7 @@ export type Lifecycle = {
 export type ConnectionSummary = {
   name: string;
   model: string;
+  free: boolean;
 };
 
 export type ScopeRuleCount = {
@@ -2154,7 +2155,7 @@ export type ModelDefaults = {
   model: string;
   inputRate: number | null;
   outputRate: number | null;
-  source: "catalog" | "engine_default" | "unavailable";
+  source: "catalog" | "engine_default" | "unavailable" | "free";
   updatedAt: string | null;
   stale: boolean;
   maxOutputTokens?: number | null;
@@ -2173,6 +2174,7 @@ export type SettingsProvider = {
   connectionName: string;
   protocol: ProviderProtocol;
   defaultEndpoint: string;
+  keyless: boolean;
 };
 
 export type SettingsDraft = {
@@ -2215,6 +2217,7 @@ export type Provider =
   | "deepseek"
   | "opencode-go"
   | "opencode"
+  | "lmstudio"
   | "custom";
 
 export type ProviderProtocol = "openai" | "anthropic" | "gemini" | "mistral";

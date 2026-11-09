@@ -76,12 +76,13 @@ Which comments players read comes from the plugins the game loads ([rpgmaker_mar
 
 Each new API run freezes its request policies before estimating.
 A policy joins the estimate's identity and applies to Live and Batch alike, and a run frozen without it keeps its original requests.
-The policies are constants in [preferences.py](../backend/dazedtl/settings/preferences.py), each documented there, except the clarification retry and state calls, which define their `POLICY` beside their code.
+The policies are constants in [preferences.py](../backend/dazedtl/settings/preferences.py), each documented there, except the clarification retry, state calls and PLaMo format, which define their `POLICY` beside their code.
 Among them:
 
 | Policy | Rule |
 | --- | --- |
 | [Clarification retry](../backend/dazedtl/translation/refusals.py) | A refused request is sent once more, naming the fictional source; refused again, its lines stay untranslated. |
+| [PLaMo format](../backend/dazedtl/compatibility/plamo.py) | A PLaMo 3 Translate run sends each line alone, with its languages, glossary terms and earlier pairs, Live only and with no clarification retry; both methods' replies come back as their usual JSON. |
 | Page packing ([request_packing](../backend/dazedtl/engine/util/request_packing.py)) | Small scenes share a request, since each request repeats the whole system prompt; Assistant-led's organize packs by the same rule. |
 | [Run stop](../backend/dazedtl/compatibility/run_stops.py) | A provider error that every later request would get too ends the run, and its request isn't sent again. |
 | [Resend](../backend/dazedtl/compatibility/resends.py) | A failed Live request is sent again only when no try of it may have been billed and another may pass (`resendable` in [transmission](../backend/dazedtl/compatibility/transmission.py)). |
@@ -291,7 +292,7 @@ Drafts and actions:
 - Saved secrets never enter renderer responses or recovery drafts, and model drafts bind to connection IDs.
   A preferences draft counts as unsaved only while it differs from the saved values ([store](../backend/dazedtl/settings/store.py)), since a draft Settings can't save or revert must not block switching models.
 - The public preference schema is [preferences.py](../backend/dazedtl/settings/preferences.py); legacy engine values are kept privately and materialized only before engine actions.
-- Provider presets declare their transport protocol apart from their identity; existing connections and frozen runs keep their identity and route, and runs find credentials by the connection's name, so removing a connection strands its unfinished runs.
+- Provider presets declare their transport protocol apart from their identity, and whether their server takes a key and bills, as LM Studio's needs neither; existing connections and frozen runs keep their identity and route, and runs find credentials by the connection's name, so removing a connection strands its unfinished runs.
 - A request to OpenCode's gateway names a session, one per stream of requests sent one after another so each keeps its prompt prefix cached, and DazedTL as its User-Agent, by one rule (`gateway_headers` in [providers](../backend/dazedtl/settings/providers.py)); every sender puts them on its client, never in a request's params, which Batch files, saved plans and Inspect keep.
 - Settings' own requests to a provider, such as the connection check, OpenRouter's hosts and prices and the effort check, share one bound (`bounded_request` in [providers](../backend/dazedtl/settings/providers.py)): connecting tries a host's addresses staggered as browsers do and has its own time, and the reply has its own, so a slow address or route doesn't fail a working server and a stalled one still ends.
 - Settings that change requests, such as an OpenRouter host, token budgets, thinking effort ([effort](../backend/dazedtl/settings/effort.py)) and rates, freeze into each new plan through the [request adapter](../backend/dazedtl/compatibility/request_parameters.py) and [worker adapter](../backend/dazedtl/compatibility/worker_policy.py), so a settings change can't redirect or reprice a resumed run.

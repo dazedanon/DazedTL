@@ -243,7 +243,9 @@ export default function ModelOptionsEditor({
   const source =
     resolved?.source === "catalog"
       ? `${openrouter && connection?.openrouter_host ? "Selected host" : "Model catalog"}${resolved.stale ? " (outdated cache)" : ""}${catalogDate ? ` · ${catalogDate}` : ""}`
-      : "Built-in engine rates";
+      : resolved?.source === "free"
+        ? "Free on this server"
+        : "Built-in engine rates";
   return (
     <>
       <p className="settings-note model-options-scope">

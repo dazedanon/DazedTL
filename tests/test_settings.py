@@ -2702,6 +2702,87 @@ class SettingsTests(unittest.TestCase):
             reloaded = Settings(temporary, adapter)._read()["connections"][0]
             self.assertEqual(reloaded["efforts"]["claude-opus-4-5"]["levels"], ["high"])
 
+    def test_an_lm_studio_connection_takes_no_key_and_runs_free_and_live(self):
+        # LM Studio's server takes no key and bills nothing: the preset saves
+        # keyless, prices every model at 0 without a lookup, can't run Batch,
+        # and a PLaMo 3 Translate model on it freezes PLaMo's format.
+        sent = []
+
+        def respond(request):
+            sent.append(request)
+            body = json.dumps({"data": [{"id": "plamo-3-translate-8b"}]}).encode()
+            return httpx.Response(200, stream=httpx.ByteStream(body))
+
+        engine = ExistingBackend.__new__(ExistingBackend)
+        engine.allow_providers = True
+        adapter = SimpleNamespace(
+            settings_metadata=lambda: {
+                "values": {
+                    "language": "English",
+                    "model": "",
+                    "api": "",
+                    "API_PROVIDER": "openai",
+                }
+            },
+            allow_providers=True,
+            lock=threading.RLock(),
+            validate_route=lambda _: None,
+            provider_defaults=engine.provider_defaults,
+            model_defaults=SimpleNamespace(
+                cached=lambda _model: {}, describe=Mock(side_effect=AssertionError)
+            ),
+            manual=SimpleNamespace(request_policy=None),
+            install_settings=Mock(),
+        )
+        client = httpx.Client
+        with (
+            TemporaryDirectory() as temporary,
+            patch.object(
+                providers.httpx,
+                "Client",
+                side_effect=lambda **kwargs: client(
+                    transport=httpx.MockTransport(respond), **kwargs
+                ),
+            ),
+        ):
+            write_json(
+                Path(temporary) / "settings/settings.json",
+                {
+                    "version": 3,
+                    "revision": 0,
+                    "sourceLanguage": "Japanese",
+                    "values": {"language": "English", "model": "plamo-3-translate-8b"},
+                    "legacy": {"values": {}, "engines": {}, "draft": None},
+                    "model_options": {},
+                    "active": "",
+                    "draft": None,
+                    "connections": [],
+                },
+            )
+            settings = Settings(temporary, adapter)
+            view = settings.save_connection(settings.describe()["revision"], "lmstudio")
+            connection = view["connections"][0]
+            self.assertTrue(connection["keyless"])
+            self.assertEqual(connection["endpoint"], "")
+            view = settings.check_connection(view["revision"], connection["id"])
+            self.assertEqual(str(sent[0].url), "http://localhost:1234/v1/models")
+            self.assertNotIn("Authorization", sent[0].headers)
+            self.assertEqual(view["connections"][0]["check"]["status"], "reachable")
+            values = {**view["values"], "model": "plamo-3-translate-8b"}
+            settings.save(view["revision"], connection["id"], values, {})
+            defaults = settings.model_defaults(connection["id"], "plamo-3-translate-8b")
+            self.assertEqual(
+                (defaults["inputRate"], defaults["outputRate"], defaults["source"]),
+                (0, 0, "free"),
+            )
+            frozen = configuration(settings, "live")
+            self.assertEqual(frozen["requestFormat"], "plamo-translate-v1")
+            self.assertNotIn("refusalRetry", frozen)
+            self.assertEqual(frozen["rates"]["input"], 0)
+            self.assertEqual(runnable_mode(settings, "batch", "live"), "live")
+            # So the Live card says the server costs nothing.
+            self.assertTrue(settings.connection_summary()["free"])
+
     def test_a_server_effort_is_offered_only_once_a_check_passed_it(self):
         # A custom or local server may take, refuse or ignore an effort, and
         # a refused level fails a paid run, so a model nothing describes

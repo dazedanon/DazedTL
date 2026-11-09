@@ -7,6 +7,8 @@ from dazedtl.settings import effort
 from dazedtl.settings.preferences import GENERATION_PARAMETERS, output_tokens
 from dazedtl.settings.providers import openrouter_host as validate_host
 
+from . import plamo
+
 
 def provider_defaults(params, policy):
     if policy is None:
@@ -138,12 +140,15 @@ def configure_builders(
     thinking_effort=None,
     thinking_listed=None,
     thinking_refusals=None,
+    request_format=None,
 ):
     """Layers the run's frozen request policy over the engine's builders.
     *provider* is the connection's identity (settings/providers), which
     decides how *thinking_effort* is written, with the model list's record
     the run froze, *thinking_listed* (settings/effort profile), and the
-    rule a refusal of it is read by, *thinking_refusals*."""
+    rule a refusal of it is read by, *thinking_refusals*. A run frozen with
+    PLaMo's *request_format* (compatibility/plamo) builds its OpenAI
+    requests as documents, which only Live sends."""
     output_tokens(max_output_tokens)
     effort.checked(thinking_effort)
     if thinking_listed is not None:
@@ -189,12 +194,22 @@ def configure_builders(
             and max_output_tokens is None
             and not structured_outputs
             and thinking_effort is None
+            and request_format is None
         ):
             builder.remove(LAYER)
             continue
         call_signature = signature(builder)
 
         def defaulted(native, *args, _name=name, _signature=call_signature, **kwargs):
+            if _name == "buildOpenAIRequest" and request_format is not None:
+                if translation.get_batch_phase() is not None:
+                    raise ValueError("PLaMo 3 Translate runs Live only.")
+                params = plamo.guided_request(
+                    _signature.bind(*args, **kwargs).arguments, max_output_tokens
+                )
+                if record is not None:
+                    record(params)
+                return params
             params = provider_defaults(native(*args, **kwargs), policy)
             params = completion_budget(params, max_output_tokens)
             if thinking_effort is not None:

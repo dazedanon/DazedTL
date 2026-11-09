@@ -863,6 +863,8 @@ class CompatibilityContracts(unittest.TestCase):
             "estimateBatchCost",
             "translateAI",
             "translateText",
+            "sendChatCompletion",
+            "requestTokens",
             "unestimatedThinking",
             "batch_usage_cost",
         ):

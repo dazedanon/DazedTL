@@ -192,6 +192,8 @@ class BatchValidationTests(unittest.TestCase):
             "estimateBatchCost",
             "unestimatedThinking",
             "translateText",
+            "sendChatCompletion",
+            "requestTokens",
             "buildOpenAIRequest",
             "buildClaudeRequest",
             "_translation_completion_limit",

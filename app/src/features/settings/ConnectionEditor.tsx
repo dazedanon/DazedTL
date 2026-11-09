@@ -87,18 +87,19 @@ export default function ConnectionEditor({
   );
   function chooseProvider(provider: string) {
     setRevealed(false);
+    const chosen = providers.find((item) => item.id === provider);
     setValue((current) => ({
       ...current,
       provider,
-      protocol:
-        providers.find((item) => item.id === provider)?.protocol || "openai",
+      protocol: chosen?.protocol || "openai",
       endpoint:
         provider === "custom" && connection?.needsSetup
           ? connection.endpoint
           : "",
       secret: "",
       reuse_secret: false,
-      keyless: false,
+      // A preset whose server takes no key (LM Studio) saves keyless.
+      keyless: chosen?.keyless ?? false,
       organization: "",
       openrouter_host: "",
     }));
@@ -189,6 +190,12 @@ export default function ConnectionEditor({
                   </select>
                 )}
               </FieldRow>
+            )}
+            {!custom && definition?.keyless && (
+              <p className="settings-note">
+                Connects to {definition.defaultEndpoint} with no key. Start the
+                server and load your model there first.
+              </p>
             )}
             {value.provider === "openrouter" && (
               <OpenRouterHost

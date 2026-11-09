@@ -36,7 +36,7 @@ from dazedtl.settings.providers import infer_provider, openrouter_host
 from dazedtl.storage import write_json
 from dazedtl.translation.refusals import POLICY as REFUSAL_POLICY
 
-from . import resends, run_stops, state_requests
+from . import plamo, resends, run_stops, state_requests
 from .request_parameters import configure_builders
 from .run_evidence import Evidence
 
@@ -235,6 +235,7 @@ def install(*, coordinator=False):
             configure_batch_allowance(translation, None)
             configure_prices(translation, None)
             configure_builders(translation, None)
+            plamo.configure(translation, None)
             translation.STRICT_STRUCTURED_OUTPUTS = False
             configure_short_outputs(translation, None)
             configure_small_kana(translation, None)
@@ -251,6 +252,11 @@ def install(*, coordinator=False):
             or policy.get("model") != plan["settings"]["model"]
             or policy.get("generationParameters") not in (None, GENERATION_PARAMETERS)
             or policy.get("refusalRetry") not in (None, REFUSAL_POLICY)
+            or policy.get("requestFormat") not in (None, plamo.POLICY)
+            or (
+                policy.get("requestFormat") is not None
+                and plan["settings"].get("API_PROVIDER") != "openai"
+            )
             or policy.get("stateGrouping") not in (None, state_requests.POLICY)
             or policy.get("choiceCollection") not in (None, CHOICE_COLLECTION)
             or policy.get("galgeChoices") not in (None, GALGE_CHOICES)
@@ -364,7 +370,9 @@ def install(*, coordinator=False):
             thinking_effort=thinking_effort,
             thinking_listed=thinking_listed,
             thinking_refusals=policy.get("thinkingEffortRefusals"),
+            request_format=policy.get("requestFormat"),
         )
+        plamo.configure(translation, policy.get("requestFormat"))
         run_stops.configure(translation, policy, root, coordinator=coordinator)
         resends.configure(translation, policy)
         configure_states(plan, grouping_root, policy)

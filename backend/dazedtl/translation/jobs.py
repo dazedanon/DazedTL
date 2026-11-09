@@ -20,7 +20,7 @@ from typing import Any
 from dazedtl import system
 from dazedtl.diagnostics import FOLDER
 from dazedtl.projects import location
-from dazedtl.settings.providers import STAND_INS
+from dazedtl.settings.providers import TEST_ENDPOINTS
 from dazedtl.storage import WorkspaceError, WorkspaceLock, write_bytes, write_json
 
 from . import plan_file
@@ -859,9 +859,9 @@ class Jobs:
                 "GIT_CONFIG_GLOBAL",
                 "GIT_CONFIG_NOSYSTEM",
                 "GIT_ATTR_NOSYSTEM",
-                # A test scenario's presets name its stand-in, which counts
-                # as their own APIs (settings/providers.own_api).
-                *STAND_INS.values(),
+                # A test scenario's stand-ins for the presets
+                # (settings/providers.TEST_ENDPOINTS).
+                *TEST_ENDPOINTS,
                 FOLDER,
             }
         }

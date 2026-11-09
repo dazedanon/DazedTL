@@ -5401,6 +5401,14 @@ def _check_message_content(messages):
 
 
 @extensions.point
+def sendChatCompletion(params):
+    """Send an OpenAI-compatible chat request through the module client. A
+    host may layer a request format of its own over it, such as one that
+    sends a request's lines one call at a time."""
+    return openai.chat.completions.create(**params)
+
+
+@extensions.point
 def translateText(system, user, history, penalty, formatType, model, numLines=None,
                   vocab_text="", context_kind=CONTEXT_SOURCE,
                   request_instructions=None, delivered_context=None):
@@ -5504,7 +5512,7 @@ def translateText(system, user, history, penalty, formatType, model, numLines=No
 
     # Call API (reaches here only for non-Claude providers)
     try:
-        response = openai.chat.completions.create(**params)
+        response = sendChatCompletion(params)
     except openai.APIStatusError as e:
         # Strict structured runs keep the provider error for the evidence and
         # retry guards instead of retrying with a weaker output format.
@@ -5997,6 +6005,16 @@ def calculateCost(inputTokens, outputTokens, model):
         inputCost = (inputTokens / 1_000_000) * pricing["inputAPICost"]
     outputCost = (outputTokens / 1_000_000) * pricing["outputAPICost"]
     return inputCost + outputCost
+
+
+@extensions.point
+def requestTokens(system, vocab_text, user, history, instructions):
+    """The ``[input, output]`` tokens an estimate counts for one request: its
+    system prompt and matched glossary, its text, and its instructions and
+    preceding source. A host may count a request format of its own."""
+    return countTokens(
+        system + vocab_text, user, instructions + _context_items(history)
+    )
 
 
 def countTokens(system, user, history):
@@ -6613,9 +6631,9 @@ def translateAI(text, history, config, filename=None, pbar=None, lock=None,
 
         # Calculate estimate if in estimate mode
         if config.estimateMode:
-            token_context = persistent_instructions + _context_items(request_history)
-            estimate = countTokens(
-                static_system + vocab_text, user, token_context
+            estimate = requestTokens(
+                static_system, vocab_text, user, request_history,
+                persistent_instructions,
             )
             totalTokens[0] += estimate[0]
             totalTokens[1] += estimate[1]

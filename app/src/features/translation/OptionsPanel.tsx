@@ -157,8 +157,9 @@ export function TranslationModeField({
       value: "live",
       title: modeLabels.live,
       badge: recommended === "live" ? "Recommended" : undefined,
-      description:
-        "Your API key sends one request at a time at the full price. Translations save as each reply arrives, and you can pause between requests.",
+      description: state.connection?.free
+        ? "Your server translates one request at a time, at no cost. Translations save as each reply arrives, and you can pause between requests."
+        : "Your API key sends one request at a time at the full price. Translations save as each reply arrives, and you can pause between requests.",
     },
     ...(agent
       ? [

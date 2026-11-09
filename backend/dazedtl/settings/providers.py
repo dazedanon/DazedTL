@@ -115,6 +115,17 @@ PROVIDERS = {
         "endpoint": os.environ.get("DAZEDTL_TEST_OPENCODE_ENDPOINT")
         or OWN_APIS["opencode"],
     },
+    # LM Studio's local server at its default address: it takes no key and
+    # bills nothing, so the preset needs neither (store.save_connection,
+    # store.model_defaults). LM Studio elsewhere uses Custom / local.
+    "lmstudio": {
+        "label": "LM Studio",
+        "protocol": "openai",
+        "endpoint": os.environ.get("DAZEDTL_TEST_LMSTUDIO_ENDPOINT")
+        or "http://localhost:1234/v1",
+        "keyless": True,
+        "free": True,
+    },
     "custom": {"label": "Custom / local", "protocol": "openai", "endpoint": ""},
 }
 PROTOCOLS = {"openai", "anthropic", "gemini", "mistral"}
@@ -127,6 +138,12 @@ def connection_name(name):
     preset = PROVIDERS[name]
     plan = preset.get("plan")
     return f"{preset['label']} ({plan})" if plan else preset["label"]
+
+
+def free(provider):
+    """Whether the preset *provider* names a server that bills nothing (LM
+    Studio), whose models every estimate and run price at 0."""
+    return bool(PROVIDERS.get(provider or "", {}).get("free"))
 
 
 def endpoint(value):
@@ -247,6 +264,11 @@ STAND_INS = {
     "opencode-go": "DAZEDTL_TEST_OPENCODE_GO_ENDPOINT",
     "opencode": "DAZEDTL_TEST_OPENCODE_ENDPOINT",
 }
+# The variables naming a test scenario's stand-ins for every preset, which
+# each worker environment passes on, so a worker reads a preset's address as
+# the app saved it: the own APIs' above, and LM Studio's, a local server
+# whose errors read as any server's.
+TEST_ENDPOINTS = (*STAND_INS.values(), "DAZEDTL_TEST_LMSTUDIO_ENDPOINT")
 
 
 def own_api(identity, endpoint):
@@ -953,7 +975,10 @@ def check(connection):
             return value
         return result(
             "reachable",
-            "Server reached. This check does not prove that a custom server enforces API-key authentication.",
+            # A server that takes no key, such as LM Studio's, has none to check.
+            "Server reached."
+            if connection["keyless"]
+            else "Server reached. This check does not prove that a custom server enforces API-key authentication.",
             models,
         )
     except TooLarge:

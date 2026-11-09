@@ -372,6 +372,11 @@ def delivered_params(params, lines, context):
     (util/prompt_pair delivered_block)."""
     from util.prompt_pair import delivered_block
 
+    from dazedtl.compatibility import plamo
+
+    if plamo.is_document(params):
+        # Those lines close the scene before the request, so they go as pairs.
+        return plamo.with_delivered(params, lines)
     *before, own = params["messages"]
     block = delivered_block(lines, source_language(context), target_language(context))
     return {**params, "messages": [*before, {"role": "user", "content": block}, own]}
@@ -665,7 +670,12 @@ def logical_request(batch, context):
 def sent_text(params):
     """The text a request's input tokens count: the system blocks and
     messages as the model reads them, without the request body's JSON
-    escaping and keys or its response schema."""
+    escaping and keys or its response schema; for a PLaMo document, the
+    text of each call it sends."""
+    from dazedtl.compatibility import plamo
+
+    if plamo.is_document(params):
+        return plamo.sent_text(params)
 
     def text(content):
         if isinstance(content, str):

@@ -2056,7 +2056,7 @@ class WorkflowTests(unittest.TestCase):
         }
         self.assertEqual(
             connection_summary(self.settings),
-            {"name": "Local provider", "model": "fixture-model"},
+            {"name": "Local provider", "model": "fixture-model", "free": False},
         )
         self.settings_data["connections"].append(
             {
@@ -2069,7 +2069,7 @@ class WorkflowTests(unittest.TestCase):
         self.settings_data["active"] = "second"
         self.assertEqual(
             connection_summary(self.settings),
-            {"name": "Another provider", "model": "next-model"},
+            {"name": "Another provider", "model": "next-model", "free": False},
         )
         self.assertEqual(plan["configuration"]["connection_id"], "connection")
         self.settings_data["active"] = ""
