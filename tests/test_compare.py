@@ -865,7 +865,8 @@ class ApprovalTests(unittest.TestCase):
         # Tune read only .dazedtl/glossary.txt as UTF-8, so these games showed
         # an empty glossary, which Use these settings then saved over theirs.
         held = "村長 (Village Chief)\n\n" + GLOSSARY_BASE_SEPARATOR + "魔法 (Magic)\n"
-        (self.game / "glossary.txt").write_text(held, encoding="utf-8")
+        # As bytes, so Windows writes the same lines as Linux.
+        (self.game / "glossary.txt").write_bytes(held.encode("utf-8"))
         self.assertEqual(self.compare.state("p1")["glossary"], "村長 (Village Chief)")
         (self.game / "glossary.txt").unlink()
         (self.game / ".dazedtl/glossary.txt").write_bytes(held.encode("utf-16"))
