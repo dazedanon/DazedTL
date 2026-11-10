@@ -951,6 +951,24 @@ class UnitsTextQATests(unittest.TestCase):
             self.qa.run(self.identity, "undo", findings=[finding])
         self.assertEqual(self.english()["b/1"], "Sleep well.")
         self.assertFalse(self.service.state(self.identity)["textQa"]["current"])
+        # Organized again, the run keeps every line from the requests that
+        # translated them, and a new review's correction goes back through
+        # the request it keeps the line from.
+        self.prepared(
+            self.service.organize(self.identity, WORK + "/work/source-units.json")
+        )
+        with self.assertRaisesRegex(ValueError, "--since reads earlier text"):
+            self.qa.run(self.identity, "prepare", since="1.0")
+        task = Path(self.step("prepare")["task"])
+        review(task, {"Sleep well.": "Good night."})
+        self.assertTrue(self.step("apply")["applied"])
+        self.assertEqual(self.english()["b/1"], "Good night.")
+        self.assertEqual(
+            Results(self.game).get(request)["translations"]["b/1"], "Good night."
+        )
+        # Starting QA over sets the task aside, so QA reads as not started.
+        self.assertEqual(self.qa.start_over(self.identity)["next"], "Run qa --prepare.")
+        self.assertNotIn("task", self.service.state(self.identity)["textQa"])
         # The text-only checks still run there, with or without the review,
         # and the usage note counts the units.
         self.assertEqual(self.qa.check(self.identity)["lines"], 3)

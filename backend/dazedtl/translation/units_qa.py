@@ -29,7 +29,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
-from dazedtl.freshness import signature
+from dazedtl.freshness import signature, signature_settled
 from dazedtl.storage import write_json
 
 from . import exchange
@@ -39,9 +39,11 @@ from .results import EXPORT, exported_translations
 
 # The record of the task's applies and undos, beside its pointer.
 APPLIED = "text-qa-units-applied.json"
-# Each project's units and English as the task reads them, while the files
-# they come from are unchanged: a state poll reads them every few seconds.
+# Each project's units and English as the task reads them, and the text
+# digest of each focus's inventory of them, while the files they come from
+# are unchanged: a state poll reads them every few seconds.
 _LINES: dict[str, tuple[Any, list[dict[str, Any]]]] = {}
+_TEXTS: dict[tuple[str, str], tuple[Any, str]] = {}
 
 
 def reads(root) -> bool:
@@ -81,7 +83,7 @@ def plan(workspace, project_id, root, focus) -> dict[str, Any]:
     }
 
 
-def _export_signature(root) -> tuple:
+def _export_stamps(root) -> tuple:
     """The stat signatures of the run's export, whose parts hold the English."""
     index = project_path(root, EXPORT, exists=False)
     try:
@@ -95,6 +97,28 @@ def _export_signature(root) -> tuple:
         return ()
 
 
+def _key(store, project_id, root, jobs) -> tuple | None:
+    """What the game's lines are read from now: the newest organized run,
+    its units file and the export's files, by their stat signatures; None
+    before a run organize compiled."""
+    found = exchange.assistant_run(store, project_id, jobs)
+    if found is None:
+        return None
+    job, relative = found
+    try:
+        stamp = signature(project_path(root, relative).stat())
+    except OSError, ValueError:
+        return None
+    return (job["id"], job["plan_sha256"], relative, stamp, *_export_stamps(root))
+
+
+def _kept(key) -> bool:
+    """Whether a value read from the files *key* names may be kept: each
+    file is older than one clock tick, so a change since gives it a new
+    signature (freshness.signature_settled)."""
+    return all(signature_settled(stamp) for stamp in key[3:])
+
+
 def lines(store, project_id, root, jobs: Iterable[dict] | None = None) -> list[dict]:
     """The units the assistant last organized, in play order, each with the
     English the game gets as the run's export holds it (results
@@ -103,19 +127,13 @@ def lines(store, project_id, root, jobs: Iterable[dict] | None = None) -> list[d
     (organize.unsent), has no request to correct. *jobs*, the project's runs
     newest first, spares listing them again. Read again only once the units
     file or the export changed."""
-    found = exchange.assistant_run(store, project_id, jobs)
-    if found is None:
+    key = _key(store, project_id, root, jobs)
+    if key is None:
         return []
-    job, relative = found
-    try:
-        units_path = project_path(root, relative)
-        key = (job["id"], job["plan_sha256"], relative, signature(units_path.stat()))
-    except OSError, ValueError:
-        return []
-    key += _export_signature(root)
     saved = _LINES.get(project_id)
     if saved and saved[0] == key:
         return saved[1]
+    relative = key[2]
     units = exchange.units_file(root, relative)
     english = {
         row["source_id"]: row
@@ -137,7 +155,8 @@ def lines(store, project_id, root, jobs: Iterable[dict] | None = None) -> list[d
         }
         for unit in units
     ]
-    _LINES[project_id] = (key, value)
+    if _kept(key):
+        _LINES[project_id] = (key, value)
     return value
 
 
@@ -152,10 +171,26 @@ def text(store, project_id, root, focus, jobs=None) -> str:
     """The text digest of the units and English the game holds now, which a
     task is current with while it is the one it reviewed (qa.text_digest),
     whatever QA rules version made the task, since every one reads units
-    alike."""
+    alike. Made again only once the files it is read from changed, since an
+    inventory of a big game takes most of a second."""
     from util import rpgmaker_qa as qa
 
-    return qa.text_digest(inventory(store, project_id, root, focus, jobs))
+    key = _key(store, project_id, root, jobs)
+    saved = _TEXTS.get((project_id, focus))
+    if key is not None and saved and saved[0] == key:
+        return saved[1]
+    value = qa.text_digest(inventory(store, project_id, root, focus, jobs))
+    if key is not None and _kept(key):
+        _TEXTS[(project_id, focus)] = (key, value)
+    return value
+
+
+def _forget(project_id) -> None:
+    """Reads the project's lines again next time, as after its receipts
+    changed within one clock tick of an earlier read."""
+    _LINES.pop(project_id, None)
+    for key in [key for key in _TEXTS if key[0] == project_id]:
+        _TEXTS.pop(key, None)
 
 
 def prepare(workspace, project_id, root, focus, everything, progress) -> dict[str, Any]:
@@ -171,6 +206,13 @@ def prepare(workspace, project_id, root, focus, everything, progress) -> dict[st
     store = RunStore(workspace)
     manifest = inventory(store, project_id, root, focus)
     if not manifest["records"]:
+        if any(
+            line["translation"] is not None for line in lines(store, project_id, root)
+        ):
+            raise ValueError(
+                "Text QA's choice in this project's Options reads none of this "
+                "game's lines; the user chooses another there."
+            )
         raise ValueError(
             "No translated line to review yet: organize the units, translate "
             "them and get the run's results, then run qa --prepare."
@@ -271,7 +313,7 @@ def correct(translation, project_id, root, focus, action, options) -> None:
     named = set(chosen + proposals)
     record_batch(workspace, project_id, action, current["task"], sorted(named))
     # The receipts changed the export; its stamps may not have yet.
-    _LINES.pop(project_id, None)
+    _forget(project_id)
     if current["current"]:
         # The units' English with this batch in it is the task's own, so its
         # apply or undo leaves the task current.
