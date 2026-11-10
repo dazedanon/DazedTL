@@ -1905,6 +1905,12 @@ export type ManualLoad = TranslationFileImport & {
   loaded: ManualFile;
 };
 
+/** The tool feedback the assistant saved (translation/tool_feedback). */
+export type ToolFeedback = {
+  text: string;
+  savedAt: string;
+};
+
 export type TranslationState = ProjectOptions & {
   engine: string;
   legacyRun: LegacyRun | null;
@@ -1926,6 +1932,7 @@ export type TranslationState = ProjectOptions & {
   warnings: string[];
   checkoutIssue: string;
   statusText: string;
+  toolFeedback: ToolFeedback | null;
   providerEnabled: boolean;
   connection: ConnectionSummary | null;
   batchUnavailable: string;
@@ -3407,6 +3414,20 @@ export type InputPathRequest = {
   input_path: string;
 };
 
+export type ToolFeedbackRequest = {
+  project_id: string;
+  input_path?: string;
+};
+
+/** The helper's `feedback`: the instruction and the saved feedback's
+text, or where the given feedback was saved. */
+export type ToolFeedbackReply = {
+  instructions?: string;
+  saved?: string | null;
+  path?: string;
+  characters?: number;
+};
+
 export type TranslationFileRequest = {
   project_id: string;
   path: string;
@@ -4036,6 +4057,10 @@ export type RpcContract = {
   translation_progress: {
     request: InputPathRequest;
     response: TranslationProgress;
+  };
+  translation_feedback: {
+    request: ToolFeedbackRequest;
+    response: ToolFeedbackReply;
   };
   translation_operation: {
     request: TranslationOperationRequest;

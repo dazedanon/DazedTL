@@ -531,6 +531,11 @@ def main():
             child.add_argument("--provider-job", required=True)
     progress = commands.add_parser("progress")
     progress.add_argument("--input", required=True)
+    feedback = commands.add_parser(
+        "feedback",
+        help="The tool feedback instruction, or with --input, the feedback saved",
+    )
+    feedback.add_argument("--input")
     args = parser.parse_args()
     try:
         if args.command == "units-format":
@@ -641,6 +646,8 @@ def main():
             if isinstance(getattr(args, "run", None), str):
                 params["run_id"] = args.run
             if args.command in {"compile", "organize", "progress", "accept"}:
+                params["input_path"] = args.input
+            if args.command == "feedback" and args.input is not None:
                 params["input_path"] = args.input
             if args.command == "organize":
                 params["complete"] = args.complete

@@ -26,6 +26,7 @@ from dazedtl.translation import (
     organize,
     progress_report,
     publication,
+    tool_feedback,
 )
 from dazedtl.translation.assistant_release import PackageRefusal
 from dazedtl.translation.compilation import compile_requests
@@ -2104,6 +2105,76 @@ class WorkflowTests(unittest.TestCase):
         )
         self.assertEqual(handoff.count(CHECK_STEP), 1)
 
+    def test_starting_prompt_ends_with_tool_feedback_after_packaging(self):
+        # Whether Text QA's review runs or not, tool feedback is the last
+        # numbered step, after packaging, with the project's own helper.
+        feedback = helper_command(self.service.workspace, self.identity) + " feedback"
+        selected = self.project.read()
+        for text_qa in ("release", "checks"):
+            self.service.save(
+                self.identity,
+                selected["revision"],
+                {**selected["options"], "text_qa": text_qa},
+            )
+            selected = self.project.read()
+            handoff = self.service.prepare(self.identity)["handoff"]
+            steps = handoff.split("\n\nFor official updates,")[0]
+            last = steps.rsplit("\n", 1)[1]
+            self.assertRegex(
+                last, r"^1[01]\. Tool feedback is the translation's last step"
+            )
+            self.assertIn(f"run {feedback} and follow what it prints", last)
+            self.assertIn("Use operation package", steps.rsplit("\n", 2)[1])
+
+    def test_tool_feedback_saves_only_what_it_can_tell_is_shareable(self):
+        # The helper's feedback prints the one instruction with the limit its
+        # save enforces; refused feedback saves nothing and keeps the draft,
+        # and saved feedback reaches the state the app shows.
+        shown = self.service.feedback(self.identity)
+        check_response("translation_feedback", shown)
+        command = helper_command(self.service.workspace, self.identity) + " feedback"
+        self.assertIn(
+            f"at most {tool_feedback.LIMIT:,} characters", shown["instructions"]
+        )
+        self.assertIn(
+            f"run `{command} --input {tool_feedback.DRAFT}`", shown["instructions"]
+        )
+        self.assertNotIn("{{", shown["instructions"])
+        self.assertIsNone(shown["saved"])
+        self.assertIsNone(self.service.state(self.identity)["toolFeedback"])
+        good = (
+            "**How it went:** All lines translated and packaged.\n"
+            "**Problems:**\n- extraction (RPG Maker MZ): census counted plugin"
+            " fields nobody sees; a list of shown fields would have helped.\n"
+            "**Missing engine support:** None\n**Ideas:**\n- None"
+        )
+        home = str(Path.home())
+        for name, text, fix in (
+            ("order", good.replace("**Ideas:**", "Ideas:"), "in this order"),
+            ("length", good + "x" * tool_feedback.LIMIT, "Shorten it"),
+            ("home", good + f" See {home}/game/www.", "home folder"),
+            ("token", good + " Key sk-proj-a1B2c3D4e5F6g7H8i9J0k1L2", "keys, tokens"),
+            ("e-mail", good + " Mail me@example.com.", "e-mail"),
+            ("game text", good + " 「" + "魔法少女の冒険" * 5 + "」", "game text"),
+        ):
+            with self.subTest(name):
+                (self.game / tool_feedback.DRAFT).write_text(text, encoding="utf-8")
+                with self.assertRaisesRegex(ValueError, fix):
+                    self.service.feedback(self.identity, tool_feedback.DRAFT)
+                self.assertTrue((self.game / tool_feedback.DRAFT).is_file())
+                self.assertFalse((self.game / tool_feedback.PATH).exists())
+        with self.assertRaisesRegex(ValueError, "not to"):
+            self.service.feedback(self.identity, tool_feedback.PATH)
+        (self.game / tool_feedback.DRAFT).write_text(good + "\r\n", encoding="utf-8")
+        saved = self.service.feedback(self.identity, tool_feedback.DRAFT)
+        check_response("translation_feedback", saved)
+        self.assertEqual(saved, {"path": tool_feedback.PATH, "characters": len(good)})
+        self.assertFalse((self.game / tool_feedback.DRAFT).exists())
+        self.assertEqual(self.service.feedback(self.identity)["saved"], good)
+        state = self.service.state(self.identity)["toolFeedback"]
+        self.assertEqual(state["text"], good)
+        self.assertTrue(state["savedAt"])
+
     def test_conflict_recovery_is_a_real_prerequisite(self):
         state = lifecycle(self.profile, self.identity)
         self.engine.pending = ["CHERRY_PICK_HEAD"]
@@ -2530,6 +2601,10 @@ class WorkflowTests(unittest.TestCase):
         )
         agents = self.game / "AGENTS.md"
         agents.write_bytes(b"\x80 not text")
+        # Tool feedback, which the user shares by hand, stays out of the
+        # game's Git, so no checkpoint, patch or published branch holds it.
+        feedback = self.game / tool_feedback.PATH
+        feedback.write_text("**How it went:** Fine.", encoding="utf-8")
         self.assertEqual(read(self.game)["notes"]["state"], "unreadable")
         engine = TranslationEngine(self.profile)
         glossary = documents(self.game)["glossary"]
@@ -2550,6 +2625,13 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(
             _git(self.game, "show", "HEAD:AGENTS.md").stdout,
             "Repack Data.wolf after injection.",
+        )
+        self.assertEqual(
+            _git(self.game, "check-ignore", tool_feedback.PATH).stdout.strip(),
+            tool_feedback.PATH,
+        )
+        self.assertEqual(
+            _git(self.game, "ls-files", "--", tool_feedback.PATH).stdout, ""
         )
         # The forges' downloads GameUpdate applies leave out what the
         # committed rules export-ignore; a patch ZIP leaves out the same.
@@ -2755,6 +2837,7 @@ class WorkflowTests(unittest.TestCase):
             "organize --complete",
             "Progress tab, as step 7 says",
             "API Batch",
+            "package the patch and give tool feedback, as steps 9 to 11 say",
         ):
             self.assertIn(step, task["prompt"])
         self.assertEqual(

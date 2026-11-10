@@ -289,6 +289,8 @@ Drafts and actions:
 - Diagnostics record only fixed metadata and code locations, never messages, payloads or raw stderr; a [watchdog](../backend/dazedtl/watchdog.py) records hangs, workers report through the [diagnostics](../backend/dazedtl/diagnostics.py) hooks, and the report names the checkout revision.
   **Report a problem** copies a Discord-sized summary of the same records with the open game's name, engine and mode, which the renderer passes in.
   **Share a fix** copies a [task](../backend/dazedtl/engine/data/skills/share_fix.md) for the user's assistant that opens with the same facts and asks for a report on a fix the assistant made in the game, with no secrets or long game text.
+  Tool feedback is each method's last assistant step: Assistant-led's starting prompt after packaging, Guided's copied Text QA task at its end, and nothing for Manual.
+  [tool_feedback](../backend/dazedtl/translation/tool_feedback.py) owns its [instruction](../backend/dazedtl/engine/data/skills/tool_feedback.md), which the helper's `feedback` prints, the checks its save runs and `.dazedtl/tool-feedback.md`, which Git ignores and no patch or ZIP carries; its row copies or saves it with the same facts.
 - Connections and preferences share one atomic record, the workspace's `settings/settings.json`, with the languages new games start in.
   A game records its pair in `.dazedtl/settings.json` at Set up, and every run freezes it ([language_pair](../backend/dazedtl/settings/language_pair.py)); a pair whose languages share a script is refused, since letters couldn't tell translated text from text left.
 - A Japanese source names no source in frozen settings, the translation cache, Batch keys or the census, so work saved before languages became a setting stays current.
