@@ -28,6 +28,7 @@ from dazedtl.settings.execution import (
     connection_summary,
     entries_per_request,
     runnable_mode,
+    saved_secrets,
 )
 from dazedtl.settings.preferences import BATTLE_MESSAGE_USERS
 from dazedtl.storage import write_bytes, write_json
@@ -52,7 +53,13 @@ from .census import HELP_SEGMENT
 from .compilation import verify_compilation
 from .files import digest, evidence, project_path, read_json, verify_evidence
 from .game_update import GameUpdate
-from .helper_command import LOOPBACK_NOTE, helper_command, task_opening, windows_note
+from .helper_command import (
+    CONNECTION,
+    LOOPBACK_NOTE,
+    helper_command,
+    task_opening,
+    windows_note,
+)
 from .jobs import Jobs, declined_message, finished_message, now
 from .operations import (
     census_stale,
@@ -2000,7 +2007,18 @@ If you won't translate a request, skip it and go on; it stays declined. Use the 
             return tool_feedback.show(
                 project.root, helper_command(self.workspace, project_id, "feedback")
             )
-        return tool_feedback.save(project.root, input_path)
+        return tool_feedback.save(project.root, input_path, self.secrets())
+
+    def secrets(self):
+        """What DazedTL holds that must never leave this computer: the saved
+        connections' keys and the project helper's connection token."""
+        found = saved_secrets(self.settings)
+        try:
+            token = read_json(self.workspace / CONNECTION)["token"]
+            found += [token] if isinstance(token, str) else []
+        except ValueError, OSError, KeyError, TypeError:
+            pass
+        return found
 
     def operation(self, project_id, action, arguments):
         if action not in OPERATIONS:

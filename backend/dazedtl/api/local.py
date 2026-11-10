@@ -11,6 +11,7 @@ from pathlib import Path
 from dazedtl import system
 from dazedtl.api import views
 from dazedtl.storage import write_json
+from dazedtl.translation.helper_command import CONNECTION
 
 # The selected project's operations an external assistant may call: every
 # translation operation, and the image, plugin and Guided requests that its
@@ -40,7 +41,7 @@ class LocalAPI:
         failure=lambda *_args: None,
         explain=lambda exc, _params: views.error(exc),
     ):
-        self.path = Path(workspace) / "agent-connection.json"
+        self.path = Path(workspace) / CONNECTION
         if self.path.is_symlink():
             raise ValueError("The agent connection must be a regular workspace file.")
         token = secrets.token_urlsafe(32)

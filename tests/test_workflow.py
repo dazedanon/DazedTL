@@ -1,5 +1,6 @@
 """A small project goes from source-bound plans to reusable accepted work."""
 
+import getpass
 import json
 import os
 import shutil
@@ -2149,11 +2150,16 @@ class WorkflowTests(unittest.TestCase):
             "**Missing engine support:** None\n**Ideas:**\n- None"
         )
         home = str(Path.home())
+        user = getpass.getuser()
         for name, text, fix in (
             ("order", good.replace("**Ideas:**", "Ideas:"), "in this order"),
             ("length", good + "x" * tool_feedback.LIMIT, "Shorten it"),
             ("home", good + f" See {home}/game/www.", "home folder"),
-            ("token", good + " Key sk-proj-a1B2c3D4e5F6g7H8i9J0k1L2", "keys, tokens"),
+            ("user name", good + f" See D:/{user}/games.", "user name on line 6"),
+            # A saved key of any shape, such as the connection's.
+            ("saved key", good + " Key fixture-private-value.", "saved API key"),
+            ("token", good + " Key sk-proj-a1B2c3D4e5F6g7H8i9J0k1L2", "line 6"),
+            ("hash", good + " Run 87660c1d2b154a3e980dc6ac8a018f38.", "keys, tokens"),
             ("e-mail", good + " Mail me@example.com.", "e-mail"),
             ("game text", good + " 「" + "魔法少女の冒険" * 5 + "」", "game text"),
         ):
@@ -2163,8 +2169,13 @@ class WorkflowTests(unittest.TestCase):
                     self.service.feedback(self.identity, tool_feedback.DRAFT)
                 self.assertTrue((self.game / tool_feedback.DRAFT).is_file())
                 self.assertFalse((self.game / tool_feedback.PATH).exists())
-        with self.assertRaisesRegex(ValueError, "not to"):
-            self.service.feedback(self.identity, tool_feedback.PATH)
+        # A plugin's name is no key, even with digits in it.
+        good = good.replace(
+            "- None",
+            "- Name js/plugins/VisuMZ_1_ElementStatusCore.js and"
+            " VisuMZ_3_VisualStateEffects in the census.",
+            1,
+        )
         (self.game / tool_feedback.DRAFT).write_text(good + "\r\n", encoding="utf-8")
         saved = self.service.feedback(self.identity, tool_feedback.DRAFT)
         check_response("translation_feedback", saved)
@@ -2174,6 +2185,14 @@ class WorkflowTests(unittest.TestCase):
         state = self.service.state(self.identity)["toolFeedback"]
         self.assertEqual(state["text"], good)
         self.assertTrue(state["savedAt"])
+        # The saved file is never a draft, however its path is spelled.
+        for spelling in (tool_feedback.PATH, "./" + tool_feedback.PATH):
+            with self.assertRaisesRegex(ValueError, "not to"):
+                self.service.feedback(self.identity, spelling)
+        self.assertEqual(self.service.feedback(self.identity)["saved"], good)
+        # A saved file DazedTL can't read shows as none.
+        (self.game / tool_feedback.PATH).write_bytes(b"\x80 not text")
+        self.assertIsNone(self.service.state(self.identity)["toolFeedback"])
 
     def test_conflict_recovery_is_a_real_prerequisite(self):
         state = lifecycle(self.profile, self.identity)
@@ -2495,6 +2514,10 @@ class WorkflowTests(unittest.TestCase):
         self.engine.read_documents = lambda source, drafted=(): read(source, drafted)
         records = self.profile / "translation/projects" / self.identity
         write_json(records / "assistant.json", {"seen_at": "2026-10-08T00:00:00"})
+        # The attempt's tool feedback, which the next attempt must not show.
+        (self.game / tool_feedback.PATH).write_text(
+            "**How it went:** Fine.", encoding="utf-8"
+        )
 
         def start_over(keep_context):
             execute(
@@ -2540,6 +2563,8 @@ class WorkflowTests(unittest.TestCase):
         self.assertTrue((archive / "len-method/progress.json").is_file())
         self.assertFalse((self.game / ".dazedtl/playtest").exists())
         self.assertTrue((archive / "playtest/DazedTL_Fixes.js").is_file())
+        self.assertFalse((self.game / tool_feedback.PATH).exists())
+        self.assertTrue((archive / "tool-feedback.md").is_file())
         self.assertTrue(self.project.path.is_file())
         self.assertEqual(glossary.read_text(encoding="utf-8"), "Lili (リリ)")
         for path, text in portable.items():

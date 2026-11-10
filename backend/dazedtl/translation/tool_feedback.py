@@ -38,12 +38,11 @@ PARTS = (
 )
 # Japanese, Chinese and Korean letters: more than a few words of them is
 # game text, whichever side of the translation it is on.
-CJK = re.compile(r"[぀-ヿ㐀-䶿一-鿿가-힯ｦ-ﾟ]")
+CJK = re.compile("[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af\uff66-\uff9f]")
 CJK_ALLOWED = 30
-# A key, token, ID or hash: a long run of letters and digits together.
-TOKEN = re.compile(
-    r"(?<![\w-])(?=[\w-]*\d)(?=[\w-]*[A-Za-z])[A-Za-z0-9_-]{24,}(?![\w-])", re.ASCII
-)
+# A run long enough to be a key, token, ID or hash; a file's name, such as a
+# plugin's, ends in its extension, so it is no such run.
+RUN = re.compile(r"(?<![\w.-])[A-Za-z0-9_-]{24,}(?![\w-])(?!\.[A-Za-z])", re.ASCII)
 EMAIL = re.compile(r"[\w.+-]+@[\w-]+\.[A-Za-z]{2,}")
 
 
@@ -72,21 +71,22 @@ def show(root, command):
     return {"instructions": text, "saved": saved["text"] if saved else None}
 
 
-def save(root, relative):
+def save(root, relative, secrets=()):
     """Saves the feedback the assistant wrote at *relative* in the game
-    folder at *root* as PATH, once it passes `problems`, and removes the
-    draft; refused feedback changes nothing."""
-    if relative.strip("/").casefold() == PATH.casefold():
-        raise ValueError(f"Write the feedback to {DRAFT}, not to {PATH} itself.")
+    folder at *root* as PATH, once it passes `problems` with the *secrets*
+    DazedTL holds, and removes the draft; refused feedback changes nothing."""
     source = project_path(root, relative)
+    saved = project_path(root, PATH, exists=False)
+    if saved.exists() and source.samefile(saved):
+        raise ValueError(f"Write the feedback to {DRAFT}, not to {PATH} itself.")
     try:
         text = source.read_text(encoding="utf-8").replace("\r\n", "\n").strip()
     except UnicodeDecodeError:
         raise ValueError("Write the tool feedback in UTF-8.") from None
-    found = problems(text)
+    found = problems(text, secrets)
     if found:
         raise ValueError("Tool feedback not saved: " + " ".join(found))
-    write_bytes(project_path(root, PATH, exists=False), (text + "\n").encode())
+    write_bytes(saved, (text + "\n").encode())
     # The feedback is saved, so a draft that can't go yet stays.
     system.unlink(source, ignore_errors=True)
     return {"path": PATH, "characters": len(text)}
@@ -106,10 +106,11 @@ def read(root):
     return {"text": text, "savedAt": saved} if text else None
 
 
-def problems(text):
+def problems(text, secrets=()):
     """What keeps *text* from being saved as tool feedback, each with its
-    fix: its structure and length, and what a program can tell is private.
-    The instruction rules out the rest, such as game text in Latin letters."""
+    fix: its structure and length, the *secrets* DazedTL holds, such as
+    saved API keys, and what a program can tell is private. The instruction
+    rules out the rest, such as game text in Latin letters."""
     found = []
     lines = [line.strip() for line in text.splitlines()]
     # A missing part reads as after the end.
@@ -126,20 +127,36 @@ def problems(text):
         found.append(
             f"Shorten it to at most {LIMIT:,} characters; it has {len(text):,}."
         )
+
+    def line(index):
+        return text.count("\n", 0, index) + 1
+
+    held = [text.find(secret) for secret in secrets if len(secret) >= 8]
+    if any(index >= 0 for index in held):
+        found.append(
+            "Leave out the saved API key or connection token on line"
+            f" {line(min(index for index in held if index >= 0))}."
+        )
     folded = text.casefold().replace("\\", "/")
     if any(home in folded for home in _homes()):
         found.append(
             "Leave out the home folder: write paths inside the game folder relative to it."
         )
     user = _user()
-    if user and re.search(rf"(?<!\w){re.escape(user)}(?!\w)", text, re.IGNORECASE):
-        found.append("Leave out the user name.")
-    token = TOKEN.search(text)
-    if token:
-        line = text.count("\n", 0, token.start()) + 1
+    named = user and re.search(
+        rf"[/\\]{re.escape(user)}(?:[/\\]|$)", text, re.IGNORECASE | re.MULTILINE
+    )
+    if named:
         found.append(
-            f"Leave out keys, tokens, IDs and hashes, such as the one on line {line};"
-            " they are secret or mean nothing outside this computer."
+            f"Leave out the path with the user name on line {line(named.start())}:"
+            " write paths inside the game folder relative to it."
+        )
+    token = next((run for run in RUN.finditer(text) if _random(run.group())), None)
+    if token:
+        found.append(
+            f"Leave out keys, tokens, IDs and hashes, such as the one on line"
+            f" {line(token.start())}; they are secret or mean nothing outside this"
+            " computer."
         )
     if EMAIL.search(text):
         found.append("Leave out e-mail addresses.")
@@ -149,6 +166,18 @@ def problems(text):
             " or plugin instead."
         )
     return found
+
+
+def _random(run):
+    """Whether a long run of letters and digits reads as a key, token, ID or
+    hash: hex digits or digits alone, or letters with digits scattered
+    through them, as random keys have; a name such as a plugin's,
+    VisuMZ_1_ElementStatusCore, holds a short group or two."""
+    if not re.search(r"\d", run):
+        return False
+    return bool(re.fullmatch(r"[0-9A-Fa-f-]+", run)) or (
+        len(re.findall(r"\d+", run)) >= 3 and bool(re.search(r"[A-Za-z]", run))
+    )
 
 
 def _homes():
@@ -164,9 +193,10 @@ def _homes():
 
 
 def _user():
-    """The user's account name, when it is long enough to tell from words."""
+    """The user's account name, which paths outside the home folder can
+    hold too, such as on another drive."""
     try:
         name = getpass.getuser()
     except OSError, KeyError, ImportError:
         return ""
-    return name if len(name) >= 3 else ""
+    return name

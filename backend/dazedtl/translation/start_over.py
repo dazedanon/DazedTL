@@ -9,8 +9,8 @@ game's Git history and the record of its original files stays too; the next
 starting prompt begins again from preparation, which finds Git set up. Files
 outside the patch go back to the original recorded before setup
 ([originals](originals.py)), and what Git does not keep moves aside under a
-dated folder: the assistant's work, the playtest's fixes, and files the
-original lacks. Nothing is deleted. Save games, the project's options,
+dated folder: the assistant's work, the playtest's fixes, its tool feedback
+and files the original lacks. Nothing is deleted. Save games, the project's options,
 settings, the assistant notes (AGENTS.md) and Image Manager work stay, and
 the glossary and the other guidance documents stay unless the user lets them
 go.
@@ -29,7 +29,7 @@ from util.paths import is_project_file
 from dazedtl import system
 from dazedtl.foreign_work import ARCHIVE
 
-from . import originals
+from . import originals, tool_feedback
 from .files import project_path
 from .project import WORK
 
@@ -197,6 +197,11 @@ def run(
         fixes = project_path(root, PLAYTEST, exists=False)
         if fixes.is_dir():
             _move(fixes, archive / "playtest")
+        # The tool feedback was about this attempt; the archive keeps it.
+        for name in (tool_feedback.PATH, tool_feedback.DRAFT):
+            feedback = project_path(root, name, exists=False)
+            if feedback.is_file():
+                _move(feedback, archive / Path(name).name)
     # Every checkpoint is taken out, so the records of what each feature
     # applied follow, as an undo's do, and nothing reads as in the game.
     checkpoint = game.checkpoint if game is not None else None
