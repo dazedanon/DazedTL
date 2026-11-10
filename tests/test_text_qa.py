@@ -972,6 +972,16 @@ class UnitsTextQATests(unittest.TestCase):
         # The text-only checks still run there, with or without the review,
         # and the usage note counts the units.
         self.assertEqual(self.qa.check(self.identity)["lines"], 3)
+        selected = self.project.read()
+        self.service.save(
+            self.identity,
+            selected["revision"],
+            {**selected["options"], "text_qa": "checks"},
+        )
+        with self.assertRaises(ValueError) as off:
+            self.qa.run(self.identity, "prepare")
+        self.assertEqual(str(off.exception), REVIEW_OFF)
+        self.assertEqual(self.qa.check(self.identity)["lines"], 3)
         lines = units_qa.lines(self.service.jobs.store, self.identity, self.game)
         self.assertEqual(
             qa_size.of_units(lines)["focuses"]["release"], {"lines": 3, "scenes": 2}
