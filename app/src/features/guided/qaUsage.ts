@@ -16,13 +16,11 @@ export const qaFocuses = [
   ["risky-codes", "Risky event codes"],
 ] as const;
 
-/** Text QA's review choices for a game of `engine`: on every engine but
- * RPG Maker MV/MZ and VX Ace, whose data Text QA reads itself, it reads
- * Assistant-led's units, which hold no event codes. */
-export const qaFocusesFor = (engine: string) =>
-  engine === "MVMZ" || engine === "ACE"
-    ? qaFocuses
-    : qaFocuses.filter(([key]) => key !== "risky-codes");
+/** Text QA's review choices for a game: one it reads `byUnits`, as on
+ * every engine but RPG Maker MV/MZ and VX Ace, whose data it reads itself,
+ * reads Assistant-led's units, which hold no event codes. */
+export const qaFocusesFor = (byUnits: boolean) =>
+  byUnits ? qaFocuses.filter(([key]) => key !== "risky-codes") : qaFocuses;
 
 /** Assistant-led's choice that skips the review, keeping its checks. */
 export const qaChecksOnly = ["checks", "Checks only"] as const;

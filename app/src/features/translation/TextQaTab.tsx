@@ -17,11 +17,13 @@ import { TextQaWork } from "../guided/TextQa";
 import { qaPhase } from "../guided/qaView";
 import { ActionBar } from "../../ui/ActionBar";
 import { ActionControl } from "../../ui/ActionControl";
+import { Notice } from "../../ui/Notice";
 import { PageBody } from "../../ui/PageLayout";
 
 export function TextQaTab({
   projectId,
   qa,
+  byUnits,
   playtest,
   action,
   disabled,
@@ -30,6 +32,9 @@ export function TextQaTab({
 }: {
   projectId: string;
   qa: QaState;
+  /** QA reviews the assistant's units, whose corrections the assistant
+   * writes into the game itself. */
+  byUnits: boolean;
   /** The playtest's results, which starting QA over can clear. */
   playtest: PlaytestState | null;
   action: ReturnType<typeof useAction>;
@@ -60,6 +65,12 @@ export function TextQaTab({
   return (
     <>
       <PageBody>
+        {byUnits && (
+          <Notice>
+            A correction, undo or apply again here reaches the game once your
+            assistant writes its translation in again.
+          </Notice>
+        )}
         <TextQaWork
           projectId={projectId}
           qa={qa}

@@ -287,6 +287,9 @@ function AppliedControl({
   undo: (id: string) => void;
   reapply: (id: string) => void;
 }) {
+  // The row's state says a step worked; a notice kept from an earlier
+  // step would contradict it once another path, such as the assistant's
+  // helper, changed it back.
   if (row.state === "applied")
     return (
       <ActionControl
@@ -294,6 +297,7 @@ function AppliedControl({
         variant="link"
         disabled={disabled}
         {...feedback("qa-undo:" + row.id, "Undoing…")}
+        notice=""
         onClick={() => undo(row.id)}
       />
     );
@@ -305,6 +309,7 @@ function AppliedControl({
         variant="link"
         disabled={disabled}
         {...feedback("qa-reapply:" + row.id, "Applying…")}
+        notice=""
         onClick={() => reapply(row.id)}
       />
     </>

@@ -332,7 +332,7 @@ export function OptionsPanel({
       </CheckGroup>
       <TextQaField
         projectId={project.id}
-        engine={project.engine}
+        byUnits={state.qaByUnits}
         value={options.text_qa}
         onChange={(value) => edit("text_qa", value)}
       />
@@ -346,13 +346,13 @@ export function OptionsPanel({
  */
 function TextQaField({
   projectId,
-  engine,
+  byUnits,
   value,
   onChange,
 }: {
   projectId: string;
-  /** The game's engine, whose choices the select offers. */
-  engine: string;
+  /** Whether Text QA reads the game by its units, without event codes. */
+  byUnits: boolean;
   value: TranslationOptions["text_qa"];
   onChange: (value: TranslationOptions["text_qa"]) => void;
 }) {
@@ -375,7 +375,7 @@ function TextQaField({
             onChange(event.target.value as TranslationOptions["text_qa"])
           }
         >
-          {[...qaFocusesFor(engine), qaChecksOnly].map(([key, label]) => (
+          {[...qaFocusesFor(byUnits), qaChecksOnly].map(([key, label]) => (
             <option key={key} value={key}>
               {label}
             </option>
