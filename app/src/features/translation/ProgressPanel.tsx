@@ -66,6 +66,7 @@ export function ProgressPanel({
   finalCheck,
   checksOnly,
   openQa,
+  feedback,
 }: {
   state: TranslationState;
   options: TranslationOptions;
@@ -81,6 +82,8 @@ export function ProgressPanel({
   /** Options turn Text QA's review off, so QA is its checks only. */
   checksOnly: boolean;
   openQa: () => void;
+  /** The assistant's tool feedback row, once it saved some. */
+  feedback: ReactNode;
 }) {
   const now = useMinute();
   const languages = useLanguages();
@@ -227,25 +230,28 @@ export function ProgressPanel({
             )}
           </p>
         )}
-        {patch && (
+        {(patch || feedback) && (
           <ActionList>
-            <ReleaseArtifactRow
-              title="Patch ZIP"
-              artifact={patch}
-              // A patch that can't be compared keeps the row's own note.
-              outdatedNote={
-                patch.current === false
-                  ? patchWaiting(state) || "Build it again on Release."
-                  : undefined
-              }
-              open={
-                <OpenReleaseFolder
-                  artifact={patch}
-                  action={action}
-                  feedbackKey="patch-open"
-                />
-              }
-            />
+            {patch && (
+              <ReleaseArtifactRow
+                title="Patch ZIP"
+                artifact={patch}
+                // A patch that can't be compared keeps the row's own note.
+                outdatedNote={
+                  patch.current === false
+                    ? patchWaiting(state) || "Build it again on Release."
+                    : undefined
+                }
+                open={
+                  <OpenReleaseFolder
+                    artifact={patch}
+                    action={action}
+                    feedbackKey="patch-open"
+                  />
+                }
+              />
+            )}
+            {feedback}
           </ActionList>
         )}
         {operation && <JobStatus job={operation} />}

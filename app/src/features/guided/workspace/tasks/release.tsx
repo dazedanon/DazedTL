@@ -13,6 +13,7 @@ import type { TaskView } from "./view";
 import { StatusHeading } from "../../../../ui/StatusMark";
 import { sinceLabel } from "../../../assistant/assistantTasks";
 import { GameUpdatePanel } from "../../../project/GameUpdatePanel";
+import { ToolFeedbackRow } from "../../../assistant/ToolFeedback";
 import { savedTranslations } from "../../translationView";
 
 export function packageView(w: GuidedWorkspace): TaskView {
@@ -153,28 +154,36 @@ export function packageView(w: GuidedWorkspace): TaskView {
           ) : undefined
         }
         extras={
-          <ActionRow
-            label={
-              <>
-                {writing.waiting ? (
-                  <StatusHeading state="waiting" title="Player walkthrough" />
-                ) : writing.saved ? (
-                  <StatusHeading state="done" title="Player walkthrough" />
-                ) : (
-                  <strong>Player walkthrough</strong>
-                )}
-                <small>
-                  {writing.waiting
-                    ? `${writing.detail || "Expecting WALKTHROUGH.html in the game folder"} · ${sinceLabel(writing.since)}`
-                    : writing.saved
-                      ? "Saved as WALKTHROUGH.html in the game folder."
-                      : "Optional. Your coding assistant writes a portable walkthrough for players."}
-                </small>
-              </>
-            }
-          >
-            {copyTask("walkthrough", "Copy walkthrough task")}
-          </ActionRow>
+          <>
+            <ActionRow
+              label={
+                <>
+                  {writing.waiting ? (
+                    <StatusHeading state="waiting" title="Player walkthrough" />
+                  ) : writing.saved ? (
+                    <StatusHeading state="done" title="Player walkthrough" />
+                  ) : (
+                    <strong>Player walkthrough</strong>
+                  )}
+                  <small>
+                    {writing.waiting
+                      ? `${writing.detail || "Expecting WALKTHROUGH.html in the game folder"} · ${sinceLabel(writing.since)}`
+                      : writing.saved
+                        ? "Saved as WALKTHROUGH.html in the game folder."
+                        : "Optional. Your coding assistant writes a portable walkthrough for players."}
+                  </small>
+                </>
+              }
+            >
+              {copyTask("walkthrough", "Copy walkthrough task")}
+            </ActionRow>
+            {translation.toolFeedback && (
+              <ToolFeedbackRow
+                project={project}
+                feedback={translation.toolFeedback}
+              />
+            )}
+          </>
         }
       />
       <GameUpdatePanel

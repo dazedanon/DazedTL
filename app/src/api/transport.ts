@@ -77,6 +77,10 @@ declare global {
       copyProblemReport(context: ReportContext): Promise<void>;
       /** Copies Share a fix's task for the user's assistant, with the same facts. */
       copyFixTask(context: ReportContext): Promise<void>;
+      /** The assistant's tool feedback as the user shares it, with the same facts. */
+      toolFeedback(context: ReportContext, feedback: string): Promise<string>;
+      /** Asks where to save *text*, suggesting *name*; the path, or null when cancelled. */
+      saveToolFeedback(name: string, text: string): Promise<string | null>;
       reportRendererError(failure: RendererFailure): Promise<void>;
       reloadInterface(): Promise<void>;
       copyText(text: string): Promise<void>;

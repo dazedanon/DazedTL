@@ -8,6 +8,15 @@ import { engineLabel } from "../ui/displayText";
 import { FadingNote } from "../ui/FadingNote";
 import { GuideLink } from "../ui/GuideLink";
 
+/** The open game's facts a shared report names: its name, engine and method. */
+export const reportContext = (project?: Project | null): ReportContext => ({
+  game: project?.name,
+  engine: project
+    ? engineLabel(project.engine_label || project.engine)
+    : undefined,
+  mode: project?.method ? methodLabels[project.method] : undefined,
+});
+
 /**
  * The sidebar's copies for Discord, both naming the open game: Report a
  * problem copies a bug report, and Share a fix a task for the user's
@@ -25,13 +34,7 @@ export function ShareActions({
   opened: boolean;
 }) {
   const action = useAction();
-  const context: ReportContext = {
-    game: project?.name,
-    engine: project
-      ? engineLabel(project.engine_label || project.engine)
-      : undefined,
-    mode: project?.method ? methodLabels[project.method] : undefined,
-  };
+  const context = reportContext(project);
   const copy = (
     key: "report" | "fix",
     write: (context: ReportContext) => Promise<void>,

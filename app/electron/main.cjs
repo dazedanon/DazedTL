@@ -394,6 +394,39 @@ app
         throw new Error("The task could not be copied. Try again.");
       }
     });
+    ipcMain.handle(
+      "dazedtl:tool-feedback",
+      async (event, context, feedback) => {
+        trusted(event);
+        if (typeof feedback !== "string" || feedback.length > 64_000)
+          throw new Error("Choose saved tool feedback to share.");
+        return diagnostics.toolFeedback(
+          context && typeof context === "object" ? context : {},
+          feedback,
+        );
+      },
+    );
+    ipcMain.handle("dazedtl:save-tool-feedback", async (event, name, text) => {
+      trusted(event);
+      if (typeof text !== "string" || text.length > 64_000)
+        throw new Error("Choose saved tool feedback to save.");
+      const selected = await dialog.showSaveDialog(window, {
+        title: "Save the tool feedback",
+        defaultPath: path.join(
+          app.getPath("documents"),
+          String(name || "tool-feedback.md").replace(/[\\/:*?"<>|]/g, "_"),
+        ),
+        filters: [{ name: "Markdown", extensions: ["md"] }],
+        properties: ["showOverwriteConfirmation"],
+      });
+      if (selected.canceled || !selected.filePath) return null;
+      try {
+        await fs.promises.writeFile(selected.filePath, text + "\n", "utf8");
+      } catch {
+        throw new Error("The file could not be saved. Choose another folder.");
+      }
+      return selected.filePath;
+    });
     ipcMain.handle("dazedtl:renderer-error", (event, failure) => {
       trusted(event);
       if (!["render", "error", "unhandledrejection"].includes(failure?.reason))
