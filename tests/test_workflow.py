@@ -2133,7 +2133,7 @@ class WorkflowTests(unittest.TestCase):
         # and saved feedback reaches the state the app shows.
         shown = self.service.feedback(self.identity)
         check_response("translation_feedback", shown)
-        command = helper_command(self.service.workspace, self.identity) + " feedback"
+        command = helper_command(self.service.workspace, self.identity, "feedback")
         self.assertIn(
             f"at most {tool_feedback.LIMIT:,} characters", shown["instructions"]
         )

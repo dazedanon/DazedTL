@@ -2091,7 +2091,10 @@ async function copyTask(page, state, name) {
  * caller opens the screen first; `mode` is the method's name as it reads.
  */
 async function toolFeedbackShown(page, state, mode) {
-  const saved = (await assistant(page, state, "feedback")).trim();
+  // Windows prints the assistant's lines with CRLF endings.
+  const saved = (await assistant(page, state, "feedback"))
+    .replace(/\r\n/g, "\n")
+    .trim();
   await page.waitText("Tool feedback");
   const copied = await copyTask(page, state, "Copy for Discord");
   const game = (await page.call("workspace_snapshot")).application.project.name;
