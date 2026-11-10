@@ -461,25 +461,52 @@ class UnitsTextQATests(unittest.TestCase):
 
     def test_a_correction_applied_with_the_mark_undoes(self):
         # A release before wrote a reviewer's ⏎ into the game as the glyph;
-        # undo must still find it there, and apply again writes the break.
+        # undo must still find it there, and apply again writes the break,
+        # for a finding and for a proposal the user chose alike.
         self.translate(
-            [{"id": "b/1", "scene": "b", "source": "おやすみなさい。"}],
-            {"b/1": "Good mornin."},
+            [
+                {"id": "a/1", "scene": "a", "source": "宿代は百ゴールドだよ。"},
+                {"id": "b/1", "scene": "b", "source": "おやすみなさい。"},
+            ],
+            {"a/1": "The inn is a hundred gold, yeah.", "b/1": "Good mornin."},
         )
         task = Path(self.step("prepare")["task"])
-        review(task, {"Good mornin.": "Good⏎night."})
+        review(
+            task,
+            {
+                "The inn is a hundred gold, yeah.": lambda _item: {
+                    "disposition": "uncertain-playtest",
+                    "severity": None,
+                    "category": "",
+                    "correction": "The inn is⏎a hundred gold.",
+                },
+                "Good mornin.": "Good⏎night.",
+            },
+        )
         saved = json.loads((task / "findings.json").read_text(encoding="utf-8"))
-        for row in saved["findings"]:
+        for row in saved["findings"] + saved["uncertain_playtests"]:
             row["correction"] = row["correction"].replace("\n", "⏎")
         write_json(task / "findings.json", saved)
+        shown = self.service.state(self.identity)["textQa"]
+        (question,) = shown["questions"]
+        self.step("choose", question=question["id"], choice="use")
         with mock.patch("util.qa.apply.typed_findings", lambda document: document):
             self.assertTrue(self.step("apply")["applied"])
-        self.assertEqual(self.english()["b/1"], "Good⏎night.")
-        (finding,) = self.service.state(self.identity)["textQa"]["findings"]
-        self.step("undo", findings=[finding["id"]])
-        self.assertEqual(self.english()["b/1"], "Good mornin.")
-        self.step("reapply", findings=[finding["id"]])
-        self.assertEqual(self.english()["b/1"], "Good\nnight.")
+        glyphs = {"a/1": "The inn is⏎a hundred gold.", "b/1": "Good⏎night."}
+        self.assertEqual(self.english(), glyphs)
+        corrected = [shown["findings"][0]["id"], question["id"]]
+        for identity in corrected:
+            self.step("undo", findings=[identity])
+        self.assertEqual(
+            self.english(),
+            {"a/1": "The inn is a hundred gold, yeah.", "b/1": "Good mornin."},
+        )
+        for identity in corrected:
+            self.step("reapply", findings=[identity])
+        self.assertEqual(
+            self.english(),
+            {"a/1": "The inn is\na hundred gold.", "b/1": "Good\nnight."},
+        )
 
     def test_a_correction_reads_and_undoes_as_the_game_gets_it(self):
         # The export writes a reviewer's curly apostrophe and dash in its own

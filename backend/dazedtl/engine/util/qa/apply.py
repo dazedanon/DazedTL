@@ -147,6 +147,13 @@ def correction_map(
             "source": question["source"],
             "current": question["current"],
             "correction": question["correction"],
+            # What an apply before ⏎ read as a line break wrote
+            # (records.typed_findings), which its undo also finds.
+            **(
+                {"saved_correction": question["saved_correction"]}
+                if "saved_correction" in question
+                else {}
+            ),
             "target_identities": [
                 identity for identity in cluster["identities"]
                 if identity not in {
