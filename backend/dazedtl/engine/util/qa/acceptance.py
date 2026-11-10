@@ -32,7 +32,7 @@ from util.qa.schema import (
     QAResultError,
     _sha256,
     _utc_now,
-    typed_text,
+    read_breaks,
 )
 from util.qa.storage import (
     JUDGED_BEFORE,
@@ -63,7 +63,7 @@ def accept_result(task_dir: str | Path, result_path: str | Path) -> dict[str, An
 
 def _as_typed(stage: str, bundle: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
     """A deep or editorial result with the text its reviewer wrote for game
-    lines as the game gets it (schema.typed_text): each line break they
+    lines as the game gets it (schema.read_breaks): each line break they
     wrote as the bundle shows one, ⏎, is a line break. Each is read against
     the line it is written for; what validation refuses is left as it is."""
     reviews = result.get("reviews")
@@ -82,7 +82,11 @@ def _as_typed(stage: str, bundle: dict[str, Any], result: dict[str, Any]) -> dic
 
     typed = []
     for review in reviews:
-        item = items.get(review.get("id")) if isinstance(review, dict) else None
+        item = (
+            items.get(review.get("id"))
+            if isinstance(review, dict) and isinstance(review.get("id"), str)
+            else None
+        )
         if item is None:
             typed.append(review)
             continue
@@ -90,14 +94,18 @@ def _as_typed(stage: str, bundle: dict[str, Any], result: dict[str, Any]) -> dic
         if stage == "deep":
             held = (item.get("source"), item.get("translation"))
             if "correction" in review:
-                review["correction"] = typed_text(review["correction"], *held)
+                review["correction"] = read_breaks(review["correction"], *held)
             if isinstance(review.get("sweep"), dict):
                 review["sweep"] = {
-                    key: typed_text(value, *held) if key != "source_has" else value
+                    key: read_breaks(value, *held) if key != "source_has" else value
                     for key, value in review["sweep"].items()
                 }
             scene = review.get("scene_correction")
-            if isinstance(scene, dict) and isinstance(scene.get("lines"), list):
+            if (
+                isinstance(scene, dict)
+                and isinstance(scene.get("scene"), str)
+                and isinstance(scene.get("lines"), list)
+            ):
                 shown = (bundle.get("scenes") or {}).get(scene.get("scene")) or {}
                 review["scene_correction"] = {
                     **scene,
@@ -105,7 +113,7 @@ def _as_typed(stage: str, bundle: dict[str, Any], result: dict[str, Any]) -> dic
                         {
                             **entry,
                             **{
-                                key: typed_text(
+                                key: read_breaks(
                                     entry.get(key),
                                     *scene_line(shown.get("lines"), entry.get("command")),
                                 )
@@ -121,7 +129,7 @@ def _as_typed(stage: str, bundle: dict[str, Any], result: dict[str, Any]) -> dic
         else:
             finding = item.get("finding") or {}
             if "replacement" in review:
-                review["replacement"] = typed_text(
+                review["replacement"] = read_breaks(
                     review["replacement"], finding.get("source"), finding.get("current")
                 )
             if isinstance(review.get("replacements"), list):
@@ -129,7 +137,7 @@ def _as_typed(stage: str, bundle: dict[str, Any], result: dict[str, Any]) -> dic
                     {
                         **entry,
                         **{
-                            key: typed_text(
+                            key: read_breaks(
                                 entry.get(key),
                                 *scene_line(finding.get("lines"), entry.get("command")),
                             )
@@ -197,7 +205,8 @@ def _accept(task_dir: str | Path, result: dict[str, Any]) -> dict[str, Any]:
             )
         canonical_path = root / "results" / stage / f"{bundle_id}.json"
         if row["status"] == "accepted" and canonical_path.is_file():
-            if _read_json(canonical_path) != result:
+            # One saved before results read a ⏎ as a line break reads so too.
+            if _as_typed(stage, bundle, _read_json(canonical_path)) != result:
                 raise QAResultError("An accepted bundle result cannot be replaced")
             return status(root)
         if row["status"] == "set-aside":

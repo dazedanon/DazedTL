@@ -32,7 +32,7 @@ from util.qa.schema import (
     SUMMARY_LIMIT,
     SWEEP_RESULT_SCHEMA,
     _utc_now,
-    shown_text,
+    show_breaks,
 )
 from util.qa.scope import _assigned_scenes, _declined_scope
 from util.qa.selection import _command_number, _glossary_entries
@@ -245,7 +245,7 @@ _CONTEXT_TEXT_CODES = frozenset({
 
 
 def _context_text(value: Any) -> str:
-    return "∅" if value is None else shown_text(value)
+    return "∅" if value is None else show_breaks(value)
 
 
 def context_view(

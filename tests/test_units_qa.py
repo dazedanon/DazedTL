@@ -424,6 +424,63 @@ class UnitsTextQATests(unittest.TestCase):
             },
         )
 
+    def test_a_scene_correction_reads_the_mark_in_its_lines(self):
+        # A scene correction names each line by its text as the bundle shows
+        # it, so a line with a break matched none.
+        self.translate(
+            [
+                {"id": "a/1", "scene": "a", "source": "宿代は百ゴールドだよ。"},
+                {"id": "a/2", "scene": "a", "source": "おやすみなさい。"},
+            ],
+            {"a/1": "The inn is\na hundred gold, yeah.", "a/2": "Good mornin."},
+        )
+        task = Path(self.step("prepare")["task"])
+
+        def scene(item):
+            lines = [
+                (0, "The inn is⏎a hundred gold, yeah.", "The inn is⏎a hundred gold."),
+                (1, "Good mornin.", "Good⏎night."),
+            ]
+            return {
+                "correction": None,
+                "scene_correction": {
+                    "scene": item["scenes"][0],
+                    "lines": [
+                        {"command": command, "current": current, "correction": fix}
+                        for command, current, fix in lines
+                    ],
+                },
+            }
+
+        review(task, {"The inn is\na hundred gold, yeah.": scene})
+        self.assertTrue(self.step("apply")["applied"])
+        self.assertEqual(
+            self.english(),
+            {"a/1": "The inn is\na hundred gold.", "a/2": "Good\nnight."},
+        )
+
+    def test_a_correction_applied_with_the_mark_undoes(self):
+        # A release before wrote a reviewer's ⏎ into the game as the glyph;
+        # undo must still find it there, and apply again writes the break.
+        self.translate(
+            [{"id": "b/1", "scene": "b", "source": "おやすみなさい。"}],
+            {"b/1": "Good mornin."},
+        )
+        task = Path(self.step("prepare")["task"])
+        review(task, {"Good mornin.": "Good⏎night."})
+        saved = json.loads((task / "findings.json").read_text(encoding="utf-8"))
+        for row in saved["findings"]:
+            row["correction"] = row["correction"].replace("\n", "⏎")
+        write_json(task / "findings.json", saved)
+        with mock.patch("util.qa.apply.typed_findings", lambda document: document):
+            self.assertTrue(self.step("apply")["applied"])
+        self.assertEqual(self.english()["b/1"], "Good⏎night.")
+        (finding,) = self.service.state(self.identity)["textQa"]["findings"]
+        self.step("undo", findings=[finding["id"]])
+        self.assertEqual(self.english()["b/1"], "Good mornin.")
+        self.step("reapply", findings=[finding["id"]])
+        self.assertEqual(self.english()["b/1"], "Good\nnight.")
+
     def test_a_correction_reads_and_undoes_as_the_game_gets_it(self):
         # The export writes a reviewer's curly apostrophe and dash in its own
         # form, so undo read the line as changed and refused, and the tab
@@ -448,7 +505,8 @@ class UnitsTextQATests(unittest.TestCase):
 def review(task, fixes):
     """Plays Text QA's reviewers through the engine: screening reports each
     line whose English *fixes* corrects, deep review corrects it, and the
-    editor accepts every finding."""
+    editor accepts every finding. A fix may instead give a deep item's
+    review fields, from the item, such as a scene correction."""
 
     def accept(row, result):
         path = Path(task).parent / f"{row['id']}.result.json"
@@ -513,7 +571,11 @@ def review(task, fixes):
                         "category": "meaning",
                         "summary": "It wishes a good morning at bedtime.",
                         "evidence": "おやすみなさい is good night.",
-                        "correction": fixes[item["translation"]],
+                        **(
+                            fixes[item["translation"]](item)
+                            if callable(fixes[item["translation"]])
+                            else {"correction": fixes[item["translation"]]}
+                        ),
                     }
                     if item["translation"] in fixes
                     else {**clean, "id": item["id"]}

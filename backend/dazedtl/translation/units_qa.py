@@ -351,6 +351,7 @@ def correct(translation, project_id, root, focus, action, options) -> None:
     rest saved (Translation `correct_lines`); the record keeps each one left
     out with why, which the task's state reports."""
     from util import rpgmaker_qa as qa
+    from util.qa.schema import NEWLINE_MARK
 
     from dazedtl.compatibility.text import _bind, _in_game, qa_selection
 
@@ -375,11 +376,25 @@ def correct(translation, project_id, root, focus, action, options) -> None:
     selected = qa.correction_map(
         current["task"], chosen, proposals, undo=action == "qa_undo"
     )
+    # The English the game holds, for an undo of a correction an apply wrote
+    # before QA read a reviewer's ⏎ as a line break: it holds the mark.
+    held = (
+        {line["id"]: line["translation"] for line in lines(store, project_id, root)}
+        if any(row.get("also_expected") for row in selected["operations"])
+        else {}
+    )
     # A finding's lines, such as a scene correction's, go in together.
     changes: dict[str, dict[str, tuple[str, str]]] = {}
     for row in selected["operations"]:
+        expected = row["expected"]
+        game = held.get(row["identity"])
+        for other in row.get("also_expected") or ():
+            if isinstance(game, str) and (NEWLINE_MARK in game) == (
+                NEWLINE_MARK in other
+            ) != (NEWLINE_MARK in expected):
+                expected = other
         changes.setdefault(row["finding_id"], {})[row["identity"]] = (
-            row["expected"],
+            expected,
             row["replacement"],
         )
     try:

@@ -630,6 +630,14 @@ def keep_corrected_texts(document: Any, operations: Iterable[dict], rules: int) 
             blocks.keep_texts(commands, TEXT_READING, rows)
 
 
+def _expected(operation: dict) -> list[Any]:
+    """The values an operation may find where it writes: the one it was
+    approved against, and for an undo of a correction an apply wrote before
+    QA read a reviewer's ⏎ as a line break, what that apply wrote
+    (apply.correction_map)."""
+    return [operation["expected"], *operation.get("also_expected", ())]
+
+
 def _operation_writes(document: Any, operation: dict) -> list[tuple[str, Any]]:
     """The pointers one operation writes, after checking it still finds the
     value it was approved against."""
@@ -647,7 +655,7 @@ def _operation_writes(document: Any, operation: dict) -> list[tuple[str, Any]]:
     if operation["live_transform"] in QUOTED_TRANSFORMS:
         match = _QUOTED_VALUE_RE.search(current)
         current = match.group(2) if match else current
-    if current != operation["expected"]:
+    if current not in _expected(operation):
         raise ValueError(
             f"Expected value changed for {operation['identity']}; rebuild QA"
         )
@@ -681,7 +689,7 @@ def _help_rows(document: Any, operation: dict) -> list[tuple[str, Any]] | None:
     ):
         return None
     rows = blocks.owned(commands, anchor)
-    if "\n".join(blocks.text(commands[at]) for at in rows) != operation["expected"]:
+    if "\n".join(blocks.text(commands[at]) for at in rows) not in _expected(operation):
         raise ValueError(
             f"Expected value changed for {operation['identity']}; rebuild QA"
         )

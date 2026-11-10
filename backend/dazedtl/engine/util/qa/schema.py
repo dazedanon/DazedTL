@@ -118,20 +118,20 @@ def read_texts(document: Any, rules: int = QA_RULES_VERSION) -> Any:
 
 
 # How a reviewer's text shows a line break: bundles, briefs and the context
-# view write each as this mark (shown_text), and the text a reviewer writes
-# back reads each as a line break (typed_text), so a correction copied from
+# view write each as this mark (show_breaks), and the text a reviewer writes
+# back reads each as a line break (read_breaks), so a correction copied from
 # what they read keeps its breaks.
 NEWLINE_MARK = "⏎"
 
 
-def shown_text(value: Any) -> str:
+def show_breaks(value: Any) -> str:
     """*value* as a reviewer reads it, each line break as NEWLINE_MARK."""
     return str(value).replace("\n", NEWLINE_MARK)
 
 
-def typed_text(value: Any, *held: Any) -> Any:
+def read_breaks(value: Any, *held: Any) -> Any:
     """Text a reviewer wrote, such as a correction, as the game gets it: each
-    NEWLINE_MARK a line break, the inverse of shown_text. When the line's own
+    NEWLINE_MARK a line break, the inverse of show_breaks. When the line's own
     text, *held* (its source or current text), holds the mark itself, the
     reviewer read it there as text, so it stays as written."""
     if not isinstance(value, str) or any(

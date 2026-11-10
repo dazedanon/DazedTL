@@ -191,6 +191,13 @@ def correction_map(
                 # The replacement reads as it will once written, so undoing
                 # it finds it there.
                 replacement = _written(record, change["correction"], recorded_layout(task))
+                # What an apply before ⏎ read as a line break wrote
+                # (records.typed_findings), which its undo also finds.
+                saved = (
+                    _written(record, change["saved_correction"], recorded_layout(task))
+                    if "saved_correction" in change
+                    else None
+                )
                 message = len(record["live_pointers"]) > 1 and _message_record(record)
                 operations.append({
                     "finding_id": finding["id"],
@@ -202,6 +209,7 @@ def correction_map(
                     "replacement": replacement,
                     "allowed_flags": list(finding.get("allowed_flags") or []),
                     **({"message": True} if message else {}),
+                    **({"saved": saved} if saved not in {None, replacement} else {}),
                 })
     if undo:
         # Each operation puts back the text it replaced.
@@ -210,6 +218,10 @@ def correction_map(
                 operation["replacement"], operation["expected"]
             )
             operation["allowed_flags"] = []
+            if "saved" in operation:
+                operation["also_expected"] = [operation.pop("saved")]
+    for operation in operations:
+        operation.pop("saved", None)
     document = {
         "schema": CORRECTION_MAP_SCHEMA,
         "created_at": _utc_now(),

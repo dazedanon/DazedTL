@@ -31,7 +31,7 @@ from typing import Any
 from util import system
 from util.dazedwrap import cells
 from util.project_scanner import find_data_folder
-from util.qa.records import _changes, _record_maps
+from util.qa.records import _changes, _record_maps, typed_findings
 from util.qa.selection import _scene_records
 from util.qa.storage import _read_json, answers, read_task, task_rules
 from util.rpgmaker_qa_manifest import file_inventory
@@ -285,7 +285,7 @@ def _read_task(origin: Origin) -> tuple[list[dict[str, Any]], set[tuple[str, str
     """A finished task's corrected places, the lines its inventory lists and
     how it was read."""
     root, task, _checkpoint = read_task(origin.path)
-    report = _read_json(root / "findings.json")
+    report = typed_findings(_read_json(root / "findings.json"))
     manifest = _read_json(root / "inventory.json")
     records, clusters = _record_maps(manifest)
     positions = _positions(manifest["records"])

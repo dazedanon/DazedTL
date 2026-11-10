@@ -15,7 +15,7 @@ from util.qa.schema import (
     REVIEW_STAGES,
     QAResultError,
     _utc_now,
-    typed_text,
+    read_breaks,
 )
 from util.qa.storage import _read_json
 
@@ -168,24 +168,38 @@ def _changes(finding: dict[str, Any]) -> list[dict[str, Any]]:
         "current": finding["current"],
         "correction": finding["correction"],
         "identities": finding["target_identities"],
+        **(
+            {"saved_correction": finding["saved_correction"]}
+            if "saved_correction" in finding
+            else {}
+        ),
     }]
 
 
 def typed_findings(document: dict[str, Any]) -> dict[str, Any]:
     """A findings document with each correction and proposal as the game
-    gets it (schema.typed_text): a ⏎ a reviewer wrote is a line break, as
+    gets it (schema.read_breaks): a ⏎ a reviewer wrote is a line break, as
     their result now reads at accept, so a task finished before then applies
-    and shows its corrections so too."""
+    and shows its corrections so too. A correction it reads otherwise keeps
+    what was saved as `saved_correction`, which an apply before then wrote
+    into the game, so its undo finds either."""
 
     def typed(change: dict[str, Any]) -> dict[str, Any]:
-        if not isinstance(change.get("correction"), str):
+        saved = change.get("correction")
+        if not isinstance(saved, str):
             return change
-        return {
-            **change,
-            "correction": typed_text(
-                change["correction"], change.get("source"), change.get("current")
-            ),
-        }
+        held = (change.get("source"), change.get("current"))
+        correction = read_breaks(saved, *held)
+        if correction == saved:
+            return change
+        change = {**change, "correction": correction, "saved_correction": saved}
+        shown = change.get("shown")
+        if isinstance(shown, dict) and isinstance(shown.get("correction"), str):
+            change["shown"] = {
+                **shown,
+                "correction": read_breaks(shown["correction"], *held),
+            }
+        return change
 
     findings = []
     for finding in document.get("findings") or []:

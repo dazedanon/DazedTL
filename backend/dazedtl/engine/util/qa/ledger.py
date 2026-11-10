@@ -14,7 +14,7 @@ from util import rpgmaker_qa_glossary as glossary_rules
 from util import system
 from util.paths import GAME_GLOSSARY_RELATIVE, GAME_QUIRKS_RELATIVE, guidance_text
 from util.qa.fitting import _written
-from util.qa.records import _changes, _record_maps, _result_declines
+from util.qa.records import _changes, _record_maps, _result_declines, typed_findings
 from util.qa.schema import (
     _JAPANESE_ANCHOR_RE,
     FINDINGS_SCHEMA,
@@ -141,7 +141,7 @@ def _layout_key(layout: Any) -> str:
 def _derive_ledger(
     root: Path, task: dict[str, Any], checkpoint: dict[str, Any]
 ) -> dict[str, Any]:
-    report = _read_json(root / "findings.json")
+    report = typed_findings(_read_json(root / "findings.json"))
     if (
         report.get("schema") != FINDINGS_SCHEMA
         or report.get("task_sha256") != checkpoint["task_sha256"]
