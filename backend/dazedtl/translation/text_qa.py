@@ -380,6 +380,11 @@ class TextQA:
             return None
         project = self.guided.projects.get(project_id)
         if not project.get("backend_id"):
+            if not _reads(project["source"]):
+                raise ValueError(
+                    "Text QA reads an RPG Maker MV/MZ or VX Ace game, and the units "
+                    "of an Assistant-led game on another engine."
+                )
             self.guided.open(project_id)
         return self.guided.record(project_id)[1]
 

@@ -14,6 +14,7 @@ the glossary lacks.
 """
 
 from pathlib import Path
+from typing import Any
 
 from dazedtl.projects.store import working_method
 from dazedtl.settings import language_pair
@@ -21,6 +22,7 @@ from dazedtl.settings import language_pair
 from . import organize, translation_file, unit_results
 from .files import project_path, read_json
 from .project import MANUAL_UNITS
+from .results import run_quotes
 
 
 class UnitLines:
@@ -84,16 +86,19 @@ def units_file(root, relative):
     return organize.units_input(read_json(project_path(root, relative)))
 
 
-# The units file of each run organize compiled, by its record's ID and plan:
-# a plan of a large game takes long to read, and a state poll asks often.
-_ORGANIZED: dict[tuple[str, str], str | None] = {}
+# What each run organize compiled reads its lines from and writes them as,
+# by its record's ID and plan: a plan of a large game takes long to read, and
+# a state poll asks often.
+_ORGANIZED: dict[tuple[str, str], dict[str, Any] | None] = {}
 
 
 def assistant_run(store, project_id, jobs=None):
-    """The newest run the assistant's organize compiled and the game-relative
-    path of the units file it was laid out from, or None before one or when
-    that file can't be named. *jobs*, the project's runs newest first, spares
-    listing them again."""
+    """The newest run the assistant's organize compiled, and what it was laid
+    out from and writes: the game-relative path of its units file (`units`),
+    its target language (`target`) and whether it writes corner brackets as
+    quotes (`quotes`, results.run_quotes); None before one or when that file
+    can't be named. *jobs*, the project's runs newest first, spares listing
+    them again."""
     for job in store.list(project_id) if jobs is None else jobs:
         if job["kind"] != "translation":
             continue
@@ -109,11 +114,15 @@ def assistant_run(store, project_id, jobs=None):
             else:
                 try:
                     inputs = read_json(project_path(plan["source"], relative))["inputs"]
-                    _ORGANIZED[key] = str(inputs[0])
+                    _ORGANIZED[key] = {
+                        "units": str(inputs[0]),
+                        "target": plan["configuration"]["language"],
+                        "quotes": run_quotes(plan),
+                    }
                 except OSError, ValueError, KeyError, IndexError, TypeError:
                     return None
-        if _ORGANIZED[key] is not None:
-            return job, _ORGANIZED[key]
+        if (organized := _ORGANIZED[key]) is not None:
+            return job, organized
     return None
 
 
@@ -124,7 +133,7 @@ def assistant_units(store, project_id, root):
     if found is None:
         return None
     try:
-        return units_file(root, found[1])
+        return units_file(root, found[1]["units"])
     except OSError, ValueError, KeyError, IndexError, TypeError:
         return None
 

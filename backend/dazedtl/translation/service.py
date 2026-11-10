@@ -626,6 +626,7 @@ class Translation:
                 record.get("method"), record.get("backend_id"), project.root
             )
             else None,
+            "qaByUnits": units_qa.reads(project.root),
         }
 
     def prepare(self, project_id):
@@ -1801,7 +1802,12 @@ Additional project instructions:
         constraints organize kept it by (correct_reused). Every receipt is
         checked before any is saved, and a line whose English is no longer
         the one given raises LookupError naming it."""
-        from .results import _within, exported_translations, translated
+        from .results import (
+            _within,
+            exported_line,
+            exported_translations,
+            translated,
+        )
 
         self.idle(project_id)
         _record, project = self.project(project_id)
@@ -1871,7 +1877,13 @@ Additional project instructions:
             shown = exported(request, value, quotes)
             translations = dict(value["translations"])
             for identity, (expected, text) in lines.items():
-                if shown.get(identity) != expected:
+                # The English given is the export's, or a correction saved
+                # before, which the export writes in its own form, such as
+                # straight quotes for a reviewer's curly ones.
+                if shown.get(identity) not in {
+                    expected,
+                    exported_line(request, identity, expected, quotes),
+                }:
                     raise LookupError(identity)
                 translations[identity] = text
             # Checked as Results.correct checks it, before anything is saved.

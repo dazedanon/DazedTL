@@ -1933,6 +1933,7 @@ export type TranslationState = ProjectOptions & {
   legacyAvailable: boolean;
   manual: ManualState | null;
   textQa: QaState | null;
+  qaByUnits: boolean;
 };
 
 export type UpdateTask = {

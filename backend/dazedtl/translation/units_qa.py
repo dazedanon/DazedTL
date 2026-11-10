@@ -104,12 +104,18 @@ def _key(store, project_id, root, jobs) -> tuple | None:
     found = exchange.assistant_run(store, project_id, jobs)
     if found is None:
         return None
-    job, relative = found
+    job, organized = found
     try:
-        stamp = signature(project_path(root, relative).stat())
+        stamp = signature(project_path(root, organized["units"]).stat())
     except OSError, ValueError:
         return None
-    return (job["id"], job["plan_sha256"], relative, stamp, *_export_stamps(root))
+    return (
+        job["id"],
+        job["plan_sha256"],
+        organized["units"],
+        stamp,
+        *_export_stamps(root),
+    )
 
 
 def _kept(key) -> bool:
@@ -149,6 +155,7 @@ def lines(store, project_id, root, jobs: Iterable[dict] | None = None) -> list[d
             "speaker": unit["speaker"],
             "field": unit["field"],
             "source": unit["source"],
+            "constraints": unit["constraints"],
             "translation": row["translation"]
             if (row := english.get(unit["id"])) and row["source"] == unit["source"]
             else None,
@@ -196,7 +203,10 @@ def _forget(project_id) -> None:
 def prepare(workspace, project_id, root, focus, everything, progress) -> dict[str, Any]:
     """Prepares or resumes the task of *focus* over the game's units, in an
     operation worker, and saves the pointer its state is read by; returns the
-    task's folder."""
+    task's folder. A task whose corrections are applied, and whose text the
+    game still holds with them, is the one QA goes on with, unless
+    *everything* reviews every line again: no playtest brings it lines to
+    look at again, and a new round would hide its corrections' undo."""
     from util import rpgmaker_qa as qa
 
     from dazedtl.compatibility.text import qa_prepared
@@ -204,6 +214,11 @@ def prepare(workspace, project_id, root, focus, everything, progress) -> dict[st
     from .jobs import RunStore
 
     store = RunStore(workspace)
+    if not everything:
+        held = state(store, workspace, project_id, root, focus)
+        if held.get("task") and held["applied"] and held["current"]:
+            progress("Text QA's corrections are applied and current")
+            return {"task": held["task"]}
     manifest = inventory(store, project_id, root, focus)
     if not manifest["records"]:
         if any(
@@ -254,13 +269,76 @@ def state(store, workspace, project_id, root, focus, jobs=None) -> dict[str, Any
     if not focus or not (Path(record["folder"]) / f"text-qa-{focus}.json").is_file():
         return none
     try:
-        return qa_state(
-            record,
-            text=lambda _rules: text(store, project_id, root, focus, jobs),
-            history=history(workspace, project_id),
-        )
+        return qa_state(record, Lines(store, workspace, project_id, root, focus, jobs))
     except (ValueError, OSError, KeyError, TypeError) as error:
         return qa_unreadable(record, error)
+
+
+class Lines:
+    """What the shared QA state (compatibility/text `qa_state`) reads of a
+    task of the game's units, in place of the game's data and publications:
+    the text the game holds now, the task's applies and undos, and its
+    findings' corrections as the game gets them."""
+
+    def __init__(self, store, workspace, project_id, root, focus, jobs=None):
+        self.store, self.workspace, self.project_id = store, workspace, project_id
+        self.root, self.focus, self.jobs = root, focus, jobs
+
+    def text(self, _rules) -> str:
+        """The text_digest of the game's units now, which every QA rules
+        version reads alike."""
+        return text(self.store, self.project_id, self.root, self.focus, self.jobs)
+
+    def history(self) -> list[dict[str, Any]]:
+        return history(self.workspace, self.project_id)
+
+    def written(self, document: dict[str, Any]) -> dict[str, Any]:
+        """A findings document with each correction and proposal as the run's
+        export writes it for its line (results.exported_line), as its apply
+        saves it, so the page shows what the game gets: a reviewer's curly
+        apostrophe reads as the export writes it."""
+        from .results import exported_line
+
+        found = exchange.assistant_run(self.store, self.project_id, self.jobs)
+        if found is None:
+            return document
+        organized = found[1]
+        by_id = {
+            line["id"]: line
+            for line in lines(self.store, self.project_id, self.root, self.jobs)
+        }
+
+        def game(identities, value):
+            line = next((by_id[item] for item in identities if item in by_id), None)
+            if line is None or not isinstance(value, str):
+                return value
+            request = {
+                "sources": {line["id"]: line["source"]},
+                "constraints": {line["id"]: line["constraints"]},
+                "context": {"target_language": organized["target"]},
+            }
+            return exported_line(request, line["id"], value, organized["quotes"])
+
+        document = {**document}
+        findings = []
+        for row in document.get("findings", []):
+            row = {**row}
+            if row.get("kind") == "scene":
+                row["lines"] = [
+                    {**line, "correction": game(line["identities"], line["correction"])}
+                    for line in row["lines"]
+                ]
+            elif row.get("kind") != "show-text":
+                row["correction"] = game(row["target_identities"], row["correction"])
+            findings.append(row)
+        document["findings"] = findings
+        document["uncertain_playtests"] = [
+            {**row, "correction": game([row["id"]], row.get("correction"))}
+            if row.get("correction")
+            else row
+            for row in document.get("uncertain_playtests", [])
+        ]
+        return document
 
 
 def correct(translation, project_id, root, focus, action, options) -> None:

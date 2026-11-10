@@ -987,6 +987,26 @@ class UnitsTextQATests(unittest.TestCase):
             qa_size.of_units(lines)["focuses"]["release"], {"lines": 3, "scenes": 2}
         )
 
+    def test_a_correction_reads_and_undoes_as_the_game_gets_it(self):
+        # The export writes a reviewer's curly apostrophe and dash in its own
+        # form, so undo read the line as changed and refused, and the tab
+        # showed text the game never got.
+        self.translate(
+            [{"id": "b/1", "scene": "b", "source": "おやすみなさい。"}],
+            {"b/1": "Good mornin."},
+        )
+        task = Path(self.step("prepare")["task"])
+        review(task, {"Good mornin.": "It’s late—good night."})
+        self.assertTrue(self.step("apply")["applied"])
+        written = self.english()["b/1"]
+        self.assertNotEqual(written, "It’s late—good night.")
+        (finding,) = self.service.state(self.identity)["textQa"]["findings"]
+        self.assertEqual(finding["correction"], written)
+        # Preparing again goes on with the applied task, whose undo stays.
+        self.assertEqual(self.step("prepare")["task"], str(task))
+        self.step("undo", findings=[finding["id"]])
+        self.assertEqual(self.english()["b/1"], "Good mornin.")
+
 
 def review(task, fixes):
     """Plays Text QA's reviewers through the engine: screening reports each

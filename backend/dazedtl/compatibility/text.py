@@ -373,12 +373,13 @@ def qa_start_over(plan):
         system.unlink(pointer)
 
 
-def qa_state(plan, text=None, history=None):
+def qa_state(plan, reader=None):
     """The focus's prepared task as the Text QA page and the helper read it.
-    For a task of an Assistant-led game's units (translation/units_qa),
-    *text* gives, by the task's rules version, the text_digest of the text
-    the game holds now, and *history* its applies and undos, in place of the
-    game's data folder and its publications."""
+    For a task of an Assistant-led game's units, *reader* (translation/units_qa
+    `Lines`) gives, by the task's rules version, the text_digest of the text
+    the game holds now (`text`), its applies and undos (`history`) and its
+    findings as the game gets them (`written`), in place of the game's data
+    folder and its publications."""
     from util import rpgmaker_qa as qa
 
     from dazedtl.plugins.service import kept_settings
@@ -394,6 +395,8 @@ def qa_state(plan, text=None, history=None):
         }
     adopt_answers(plan["folder"])
     saved, root, task, checkpoint, document = _prepared(plan)
+    if reader is not None:
+        document = reader.written(document)
     # A finished task stays current through any update.
     rules_changed = qa.rules_changed(task, checkpoint)
     engine_status = qa.status(root)
@@ -404,7 +407,9 @@ def qa_state(plan, text=None, history=None):
     prepared = datetime.fromisoformat(task["created_at"]).timestamp()
     rows = [
         row
-        for row in (publication.history(plan["folder"]) if history is None else history)
+        for row in (
+            publication.history(plan["folder"]) if reader is None else reader.history()
+        )
         if row["kind"] in {"qa_apply", "qa_undo"}
         and row["state"] == "complete"
         and (row["task"] == str(root) if "task" in row else row["created"] >= prepared)
@@ -499,12 +504,12 @@ def qa_state(plan, text=None, history=None):
                 "text": qa.game_text(
                     plan["project"]["data"], _focus(plan), rules=qa.task_rules(task)
                 )
-                if text is None
-                else text(qa.task_rules(task))
+                if reader is None
+                else reader.text(qa.task_rules(task))
             },
         ),
     )
-    if current and text is None:
+    if current and reader is None:
         # Plugin files decides what it keeps in Japanese without changing the
         # game's files; the never-translated report follows its decisions.
         qa.refresh_kept(root, kept_settings(plan["project"]["source"]))

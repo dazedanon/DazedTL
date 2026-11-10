@@ -533,6 +533,9 @@ class TranslationState(ProjectOptions):
     # engine other than RPG Maker; None for another, whose task the Guided
     # workspace's readiness holds.
     textQa: QaState | None
+    # Whether Text QA reads this game by its units, as on every engine but
+    # RPG Maker MV/MZ and VX Ace, whose event codes it reads itself.
+    qaByUnits: bool
 
 
 class UpdateTask(TypedDict):
