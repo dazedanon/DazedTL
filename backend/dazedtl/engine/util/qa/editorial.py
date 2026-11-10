@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, NamedTuple
 
 from util import rpgmaker_qa_lint as lint
+from util.qa import units
 from util.qa.advance import _advance_unlocked, _settle_declined
 from util.qa.bundles import _bundle_items, _declined_items, _write_bundles
 from util.qa.findings import _draft_document, _number_findings
@@ -144,7 +145,8 @@ def _editorial_items(
                         if (record.get("speaker") or {}).get("display_name") else {}
                     ),
                     **(
-                        {"event_code": record.get("event_code")}
+                        units.scene_line(record) if units.held(record)
+                        else {"event_code": record.get("event_code")}
                         if record.get("event_code") != 401 else {}
                     ),
                 } for record in scenes[finding["scene_id"]]],
@@ -176,6 +178,7 @@ def _editorial_items(
                 data_root,
                 targets[0] if targets else records[finding["line_identity"]],
                 cache,
+                manifest,
             ),
             **({"conflicts": conflicts[finding["id"]]} if finding["id"] in conflicts else {}),
             **corrected,

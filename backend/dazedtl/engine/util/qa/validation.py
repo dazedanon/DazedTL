@@ -339,6 +339,10 @@ def _line_names(manifest: dict[str, Any]) -> dict[str, set[str]]:
     names: dict[str, set[str]] = defaultdict(set)
     for record in manifest["records"]:
         identity, prefix = record["identity"], record["file"] + "#"
+        if not record["source_pointer"]:
+            # A unit's line points into no file; its identity, its unit's
+            # ID, names it (util/qa/units).
+            continue
         names[prefix + record["source_pointer"]].add(identity)
         parts = _decode_pointer(record["source_pointer"])
         if "_original" in parts:

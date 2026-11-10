@@ -26,7 +26,7 @@ from util.paths import (
     from_game,
     in_game,
 )
-from util.qa import mechanical, pronouns, voice
+from util.qa import mechanical, pronouns, units, voice
 from util.qa.fitting import _record_problems
 from util.qa.records import LINE_TARGETS, _decode_pointer, _record_maps, _resolve_parts
 from util.qa.schema import (
@@ -301,7 +301,10 @@ def _cluster_by_identity(manifest: dict[str, Any]) -> dict[str, str]:
 
 
 def _scene_position(record: dict[str, Any]) -> tuple[str, int] | None:
-    """Return the owning command-list ID and command index for a dialogue record."""
+    """Return the owning command-list ID and command index for a dialogue
+    record; a unit's are its scene and its place there (util/qa/units)."""
+    if units.held(record):
+        return str(record["scene"]), int(record["position"])
     parts = _decode_pointer(str(record.get("source_pointer") or ""))
     list_positions = [index for index, part in enumerate(parts[:-1]) if part == "list"]
     if not list_positions:
@@ -453,7 +456,9 @@ def _scene_item(
         speaker = str((record.get("speaker") or {}).get("display_name") or "")
         if speaker:
             line["speaker"] = speaker
-        if record.get("event_code") != 401:
+        if units.held(record):
+            line.update(units.scene_line(record))
+        elif record.get("event_code") != 401:
             line["event_code"] = record.get("event_code")
         if cluster_id in lint_fixes:
             line["lint"] = lint_fixes[cluster_id]
@@ -643,7 +648,7 @@ def _motif_items(
                 "speakers": item["speakers"],
                 "risk": item["risk"],
                 "nearby_commands": _nearby_commands(
-                    data_root, representative, document_cache
+                    data_root, representative, document_cache, manifest
                 ),
             } | (
                 {"reference_translations": item["reference_translations"]}
@@ -688,7 +693,14 @@ def _speeches(records: list[dict[str, Any]]) -> list[tuple[dict[str, Any], str]]
     its speech, as the engine reads them (util/qa/schema TEXT_READING). A
     nameplate on a row names every text of the message after it, where each
     row keeps a source of its own; its own row is no message, and a message
-    nobody names is left out."""
+    nobody names is left out. A unit names its speaker itself, by the
+    engine's evidence its extractor read."""
+    if records and units.held(records[0]):
+        return [
+            (record, speaker)
+            for record in records
+            if (speaker := str((record.get("speaker") or {}).get("display_name") or ""))
+        ]
     # Each message with the number of the event command that holds it.
     messages = [
         (record, place[1])
@@ -746,7 +758,10 @@ def _voice_items(
             "source": record["source"],
             "translation": record["live"],
             "scene": scene_id,
-            "order": (_play_order(scene_id), position),
+            # A unit's place in play order is its own, which its scene's name
+            # needn't tell.
+            "order": record["order"] if units.held(record)
+            else (_play_order(scene_id), position),
         }
         for scene_id, records in _scene_records(manifest).items()
         for position, (record, speaker) in enumerate(_speeches(records))
@@ -1144,7 +1159,35 @@ def _entry_numbers(data_root: Path, record: dict, cache: dict[str, Any]) -> set[
     return _number_values(_resolve_parts(cache[filename], parts[: parts.index("_original")]))
 
 
-def _nearby_commands(data_root: Path, record: dict, cache: dict[str, Any]) -> list[dict]:
+def _nearby_commands(
+    data_root: Path,
+    record: dict,
+    cache: dict[str, Any],
+    manifest: dict[str, Any] | None = None,
+) -> list[dict]:
+    """The event commands around a record's line, as a reviewer reads them;
+    for a unit, the lines around it in its scene, from the task's inventory
+    *manifest*."""
+    if units.held(record):
+        if manifest is None:
+            return []
+        # Keyed apart from the game's file names the cache also holds.
+        scenes = cache.get("\0units")
+        if scenes is None:
+            scenes = cache["\0units"] = defaultdict(list)
+            for other in manifest["records"]:
+                scenes[other["scene"]].append(other)
+        position = record["position"]
+        return [
+            {
+                "index": other["position"],
+                "unit": other["identity"],
+                "original": other["source"],
+                "parameters": [other["live"]],
+            }
+            for other in sorted(scenes[record["scene"]], key=lambda row: row["position"])
+            if abs(other["position"] - position) <= 3
+        ]
     parts = _decode_pointer(record["source_pointer"])
     list_positions = [index for index, part in enumerate(parts[:-1]) if part == "list"]
     if not list_positions:

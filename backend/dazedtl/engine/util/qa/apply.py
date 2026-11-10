@@ -175,7 +175,11 @@ def correction_map(
         for change in _changes(finding):
             for identity in change["identities"]:
                 record = records[identity]
-                target = (record["file"], tuple(record["live_pointers"]))
+                # A unit's English lives in its own result, by its ID.
+                target = (
+                    record["file"],
+                    tuple(record["live_pointers"]) or (identity,),
+                )
                 previous = targets.get(target)
                 if previous is not None and previous != change["correction"]:
                     raise ValueError(

@@ -7,7 +7,7 @@ scene-affine-screen sampled-screen-checks lint-group-review glossary-lint declin
 helper-scoped-declines unit-declines coordinator-declines evidence-preserving-deep
 scene-correction family-sweep decision-log consistency-check editorial-stage regression-simulation
 app-publication-apply checkpoint-commit no-provider-api interface-captures text-fit
-gender-pronoun censor-mask voice-review
+gender-pronoun censor-mask voice-review units-inventory
 bundle-glossary worker-guidance accept-next earlier-reviews since-scope
 -->
 
@@ -385,3 +385,10 @@ recurring humor and wordplay.
 Full release focus: the inventory holds every translated line, and the task is complete only
 when every bundle of every stage is accepted or reported as not reviewed.
 <!-- /qa-focus:release -->
+
+<!-- qa-lines:units -->
+Units: this game's engine is one DazedTL doesn't read itself, so the inventory holds the units its Assistant-led assistant's extractor saved, with the English the game gets.
+A `scene` item is one of the extractor's scenes in play order: each line is numbered by its place in the scene, which a scene correction names it by, and shows its unit's ID in parentheses, which an observation and `context --at` name it by.
+Its lines have no Show Text headers, database entries or event commands, so give no `source_fix`, and the rules for `\ac`, Show Text, battle messages and boxes don't apply; keep every control code and tag the English holds as it holds them.
+Apply saves the findings as corrections of the assistant's translation, which the assistant writes into the game with its own injector, as the project helper's `qa` says next.
+<!-- /qa-lines:units -->

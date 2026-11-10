@@ -7,6 +7,7 @@ from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
 
+from util.qa import units
 from util.qa.advance import _not_reviewed
 from util.qa.bundles import _screen_motif_map
 from util.qa.pace import _not_translated_report
@@ -57,7 +58,8 @@ def _draft_document(
     manifest = _read_json(root / "inventory.json")
     records, clusters = _record_maps(manifest)
     declined = _declined_scope(root, checkpoint, manifest)
-    faces = _face_names(Path(task["data_root"]))
+    # Units point into no game file, so no Show Text fix names a face.
+    faces = set() if units.of_task(task) else _face_names(Path(task["data_root"]))
     findings = []
     uncertain = []
     not_corrected = []

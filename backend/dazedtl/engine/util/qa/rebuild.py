@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from util import system
+from util.qa import units
 from util.qa.acceptance import _accept
 from util.qa.advance import _advance_unlocked, advance
 from util.qa.bundles import _next_number, _screen_digest
@@ -136,6 +137,10 @@ def rebuild_deep_from_screen(
         # longer or shorter.
         screen_groups=groups,
         storage_key=storage_key,
+        # A task of units reviews the units it holds.
+        inventory=_read_json(source / "inventory.json")
+        if units.of_task(source_task)
+        else None,
     )
     if rebuilt == source:
         raise ValueError("The source task already uses the current QA rules")

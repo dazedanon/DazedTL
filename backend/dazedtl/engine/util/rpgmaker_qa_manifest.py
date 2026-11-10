@@ -515,26 +515,12 @@ def file_inventory(
     return row, records, unresolved
 
 
-def build_manifest(
-    data_root: str | Path, focus: str, rules: int = QA_RULES_VERSION
-) -> dict[str, Any]:
-    """Return a deterministic, side-effect-free QA inventory manifest, read
-    as QA's *rules* version reads the game (util/qa/schema `read_texts`)."""
-    root = inventory_root(data_root, focus)
-
-    files: list[dict[str, str]] = []
-    records: list[dict[str, Any]] = []
-    unresolved: list[dict[str, Any]] = []
-    for path in data_files(root):
-        row, found, missing = file_inventory(
-            path, path.relative_to(root).as_posix(), focus, rules
-        )
-        files.append(row)
-        records += found
-        unresolved += missing
-
-    records.sort(key=record_order)
-    unresolved.sort(key=unresolved_order)
+def clustered(
+    records: list[dict[str, Any]], focus: str
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """An inventory's clusters, its records of one source and translation
+    together under the first identity, and the order its review takes them
+    in, whichever lines its records hold (util/qa/units for Assistant-led's)."""
     grouped: dict[tuple[str, str], list[str]] = {}
     for record in records:
         grouped.setdefault((record["source"], record["live"]), []).append(record["identity"])
@@ -556,6 +542,30 @@ def build_manifest(
             "rpgmaker-qa-focus-v1\0" + focus + "\0" + identity
         ),
     )
+    return clusters, review_sequence
+
+
+def build_manifest(
+    data_root: str | Path, focus: str, rules: int = QA_RULES_VERSION
+) -> dict[str, Any]:
+    """Return a deterministic, side-effect-free QA inventory manifest, read
+    as QA's *rules* version reads the game (util/qa/schema `read_texts`)."""
+    root = inventory_root(data_root, focus)
+
+    files: list[dict[str, str]] = []
+    records: list[dict[str, Any]] = []
+    unresolved: list[dict[str, Any]] = []
+    for path in data_files(root):
+        row, found, missing = file_inventory(
+            path, path.relative_to(root).as_posix(), focus, rules
+        )
+        files.append(row)
+        records += found
+        unresolved += missing
+
+    records.sort(key=record_order)
+    unresolved.sort(key=unresolved_order)
+    clusters, review_sequence = clustered(records, focus)
     manifest: dict[str, Any] = {
         "schema": SCHEMA,
         "extractor": EXTRACTOR,

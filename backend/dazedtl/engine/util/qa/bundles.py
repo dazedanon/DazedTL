@@ -259,7 +259,7 @@ def _compact_scene(scene: dict[str, Any], marks: dict[str, list[str]]) -> dict:
     lines = []
     for line in scene["lines"]:
         compact = {"source": line["source"], "translation": line["translation"]}
-        for key in ("speaker", "event_code", "command"):
+        for key in ("speaker", "event_code", "command", "unit"):
             if key in line:
                 compact[key] = line[key]
         named = marks.get(line.get("id") or line.get("context_id") or "")

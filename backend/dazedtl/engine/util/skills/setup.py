@@ -228,18 +228,28 @@ def rpgmaker_qa_skill_file() -> Path:
     return runtime_data_file(SKILLS_DIR / _RPGMAKER_QA_FILENAME)
 
 
-def rpgmaker_qa_skill_parts(focus: str) -> tuple[str, str]:
-    """The shared RPG Maker QA policy and one focus's section, separately."""
+# The QA policy's section for a task of an Assistant-led game's units (engine
+# util/qa/units), which its focus's section ends with.
+_QA_UNITS_SECTION = "qa-lines:units"
+
+
+def rpgmaker_qa_skill_parts(focus: str, units: bool = False) -> tuple[str, str]:
+    """The shared RPG Maker QA policy and one focus's section, separately;
+    with *units*, the focus's section ends with what a task of an
+    Assistant-led game's units reads otherwise."""
     valid_focuses = {key for key, _label in RPGMAKER_QA_FOCUSES}
     if focus not in valid_focuses:
         raise ValueError(f"Unknown RPG Maker QA focus: {focus!r}")
 
     text = _read_skill_file(_RPGMAKER_QA_FILENAME)
-    selected = ""
+    bodies: dict[str, str] = {}
     sections: list[tuple[int, int]] = []
-    for key, _label in RPGMAKER_QA_FOCUSES:
-        start_marker = f"<!-- qa-focus:{key} -->"
-        end_marker = f"<!-- /qa-focus:{key} -->"
+    for name in [
+        *(f"qa-focus:{key}" for key, _label in RPGMAKER_QA_FOCUSES),
+        _QA_UNITS_SECTION,
+    ]:
+        start_marker = f"<!-- {name} -->"
+        end_marker = f"<!-- /{name} -->"
         start = text.find(start_marker)
         if start == -1:
             raise ValueError(f"QA skill is missing focus marker: {start_marker}")
@@ -248,10 +258,11 @@ def rpgmaker_qa_skill_parts(focus: str) -> tuple[str, str]:
             raise ValueError(f"QA skill is missing focus marker: {end_marker}")
         if text.find(start_marker, start + len(start_marker)) != -1:
             raise ValueError(f"QA skill has duplicate focus marker: {start_marker}")
-        body = text[start + len(start_marker) : end]
-        if key == focus:
-            selected = body.strip()
+        bodies[name] = text[start + len(start_marker) : end].strip()
         sections.append((start, end + len(end_marker)))
+    selected = bodies[f"qa-focus:{focus}"]
+    if selected and units:
+        selected += "\n\n" + bodies[_QA_UNITS_SECTION]
 
     common_parts: list[str] = []
     pos = 0

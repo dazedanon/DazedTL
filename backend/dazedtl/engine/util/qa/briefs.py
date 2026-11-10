@@ -13,7 +13,7 @@ from util import rpgmaker_qa_glossary as glossary_rules
 from util import system
 from util.game_settings import load_language_pair
 from util.prompt_pair import pair_note
-from util.qa import voice
+from util.qa import units, voice
 from util.qa.bundles import _load_screen_index
 from util.qa.interface import _place_text
 from util.qa.records import (
@@ -71,9 +71,11 @@ QA_ROLES = tuple(_BRIEF_SECTIONS)
 _SKILL_SECTION_RE = re.compile(r"^## (.+)$", re.MULTILINE)
 
 
-def _skill_sections(focus: str) -> tuple[str, dict[str, str], str]:
-    """The QA policy's introduction, its sections by title, and the focus."""
-    common, selected = rpgmaker_qa_skill_parts(focus)
+def _skill_sections(task: dict[str, Any]) -> tuple[str, dict[str, str], str]:
+    """The QA policy's introduction, its sections by title, and the task's
+    focus, with what a task of an Assistant-led game's units reads
+    otherwise."""
+    common, selected = rpgmaker_qa_skill_parts(task["focus"], units.of_task(task))
     starts = list(_SKILL_SECTION_RE.finditer(common))
     intro = common[: starts[0].start()].strip() if starts else common
     sections = {
@@ -127,7 +129,7 @@ def _languages(task: dict[str, Any]) -> str:
 
 def _task_instructions(task_dir: Path, task: dict[str, Any]) -> str:
     """The task README: the QA policy with every role's brief, for this task."""
-    intro, sections, focus = _skill_sections(task["focus"])
+    intro, sections, focus = _skill_sections(task)
     body = "\n\n".join(
         f"## {title}\n\n{text}" for title, text in sections.items() if title != "Handoff"
     )
@@ -168,7 +170,7 @@ def brief(task_dir: str | Path, role: str, worker: str = "") -> str:
             checkpoint["workers"][worker]["run_started"] = _utc_now()
             _atomic_write_json(root / "checkpoint.json", checkpoint)
     root, task, _checkpoint = _load_task(task_dir)
-    _intro, sections, focus = _skill_sections(task["focus"])
+    _intro, sections, focus = _skill_sections(task)
     # A worker starts from its brief alone, so it carries the shell note too.
     parts = ["{{SHELL_NOTE}}" + _languages(task) + focus] + [
         f"## {name}\n\n{sections[name]}"
@@ -219,7 +221,7 @@ def handoff_text(task_dir: str | Path, helper: str) -> str:
     root, task, _checkpoint = _load_task(task_dir)
     with _task_lock(root):
         write_instructions(root)
-    _intro, sections, _focus = _skill_sections(task["focus"])
+    _intro, sections, _focus = _skill_sections(task)
     return _fill(
         sections["Handoff"],
         {
@@ -254,6 +256,8 @@ def context_view(
     except for the worker whose assigned bundle prints them.
     """
     root, task, checkpoint = _load_task(task_dir)
+    if units.of_task(task):
+        return _units_context(root, checkpoint, locator, radius, worker)
     data_root = Path(task["data_root"]).resolve()
     filename, _, pointer = locator.split("@", 1)[0].partition("#")
     path = (data_root / filename).resolve()
@@ -314,6 +318,50 @@ def context_view(
     return "\n".join(lines)
 
 
+def _units_context(
+    root: Path, checkpoint: dict[str, Any], locator: str, radius: int, worker: str
+) -> str:
+    """The context view of a task of an Assistant-led game's units: the lines
+    of a unit's scene around it, or of a whole scene, each numbered by its
+    place there with its unit's ID, its Japanese and its English."""
+    manifest = _read_json(root / "inventory.json")
+    records = {record["identity"]: record for record in manifest["records"]}
+    scenes: dict[str, list[dict[str, Any]]] = {}
+    for record in manifest["records"]:
+        scenes.setdefault(record["scene"], []).append(record)
+    if locator in records:
+        scene, center = records[locator]["scene"], records[locator]["position"]
+    elif locator in scenes:
+        scene, center = locator, None
+    else:
+        raise ValueError(f"No unit or scene of this task is {locator!r}")
+    declined = _declined_scope(root, checkpoint, manifest, waiting=True)
+    if scene in declined["context_scenes"] and scene not in _assigned_scenes(
+        checkpoint, worker
+    ):
+        raise ValueError(
+            "A reviewer declined this scene, so context shows it only to the worker "
+            "whose assigned bundle prints it, with --worker <name>."
+        )
+    lines = sorted(scenes[scene], key=lambda record: record["position"])
+    if center is not None:
+        lines = [
+            record for record in lines if abs(record["position"] - center) <= radius
+        ]
+    out = [f"{scene} lines {lines[0]['position']}-{lines[-1]['position']}"]
+    for record in lines:
+        mark = ">>" if record["position"] == center else "  "
+        speaker = record["speaker"]["display_name"]
+        out.append(
+            f"{mark}#{record['position']} ({record['identity']}) JP="
+            + (f"<{speaker}> " if speaker else "")
+            + _context_text(record["source"])
+            + " EN="
+            + _context_text(record["live"])
+        )
+    return "\n".join(out)
+
+
 # Event commands whose text a rendered context shows; others print as data.
 _RENDERED_TEXT_CODES = frozenset({
     101, 102, 108, 122, 320, 324, 355, 357, 401, 402, 405, 408, 655,
@@ -324,6 +372,14 @@ def _render_commands(commands: list[dict] | None, indent: str) -> list[str]:
     out = []
     for command in commands or []:
         if not isinstance(command, dict):
+            continue
+        if "unit" in command:
+            # A line of a unit's scene (selection._nearby_commands).
+            out.append(
+                f"{indent}#{command['index']} ({command['unit']}): JP="
+                + _context_text(command["original"])
+                + " EN=" + _context_text(command["parameters"][0])
+            )
             continue
         code = blocks.code(command)
         if code in _CONTEXT_QUIET_CODES:
@@ -371,8 +427,10 @@ def _render_line(line: dict, mark: str) -> list[str]:
     number = f"#{line['command']}" if line.get("command") is not None else ""
     speaker = f"<{line['speaker']}> " if line.get("speaker") else ""
     code = f" c{line['event_code']}" if line.get("event_code") else ""
+    # A unit's line names its unit, which an observation gives as its line.
+    unit = f" ({line['unit']})" if line.get("unit") else ""
     out = [
-        f"{number:>5} {mark}{code} JP: {speaker}{_context_text(line['source'])}",
+        f"{number:>5} {mark}{code}{unit} JP: {speaker}{_context_text(line['source'])}",
         f"{'':>5}   EN: {_context_text(line['translation'])}",
     ]
     if line.get("risk"):
@@ -400,10 +458,11 @@ def _render_screen_item(
         for line in item["lines"]:
             mark = f"[T {line['id']}]" if "id" in line else "[ctx]"
             entry = screen_index[line.get("id") or line["context_id"]]
-            out += _render_line(
-                {**line, "command": _command_number(entry["representative_identity"])},
-                mark,
+            # A unit's line carries its number (util/qa/units).
+            command = line["command"] if "command" in line else _command_number(
+                entry["representative_identity"]
             )
+            out += _render_line({**line, "command": command}, mark)
         return out
     if kind == "cluster":
         meta = [f"occ={item.get('occurrences', 1)}"]

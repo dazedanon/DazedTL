@@ -19,6 +19,7 @@ interface = Probe("qa_interface.py")
 glossary = Probe("qa_glossary.py")
 reviewed = Probe("qa_reviewed.py")
 voices = Probe("qa_voice.py")
+unit_lines = Probe("qa_units.py")
 manifest = engine_module("util/rpgmaker_qa_manifest.py")
 verify = engine_module("util/rpgmaker_qa_verify.py")
 preflight = engine_module("util/rpgmaker_qa_preflight.py")
@@ -155,6 +156,13 @@ class QAEngineTests(unittest.TestCase):
 
     def test_a_speakers_lines_are_read_across_scenes_and_corrected(self):
         returncode, output = voices.result()
+        self.assertEqual(returncode, 0, output)
+
+    def test_an_assistant_led_games_units_are_reviewed_as_a_game_is(self):
+        # Text QA read RPG Maker data alone, so an Assistant-led game on any
+        # other engine got only the text-only checks, and Char's voice drift
+        # in Labyrinth City Asylum stayed until a separate review.
+        returncode, output = unit_lines.result()
         self.assertEqual(returncode, 0, output)
 
     def test_the_inventory_and_its_verifier_read_one_mechanical_rule(self):

@@ -168,11 +168,13 @@ def _deep_items(
                     if record.get("classification") == "database" else {}
                 ),
             } for record in member_records],
-            "nearby_commands": _nearby_commands(data_root, representative, document_cache),
+            "nearby_commands": _nearby_commands(
+                data_root, representative, document_cache, manifest
+            ),
             "suspect_contexts": [{
                 "identity": context_identity,
                 "nearby_commands": _nearby_commands(
-                    data_root, records[context_identity], document_cache
+                    data_root, records[context_identity], document_cache, manifest
                 ),
             } for context_identity in context_identities[:4]],
             "same_source_alternatives": alternatives[:20],

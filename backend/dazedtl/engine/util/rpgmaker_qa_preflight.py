@@ -393,6 +393,12 @@ def preflight(
     )
 
 
+def empty_report() -> dict[str, Any]:
+    """A report of no Japanese left, for a task whose game QA doesn't read,
+    such as an Assistant-led game's units (util/qa/units)."""
+    return _report({}, [], {"reach": {}, "settings": []}, ())
+
+
 def with_kept(
     document: dict[str, Any], kept: Iterable[dict[str, Any]]
 ) -> dict[str, Any] | None:

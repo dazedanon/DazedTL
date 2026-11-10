@@ -19,7 +19,7 @@ from util.freshness import (
 )
 from util.original_values import Originals
 from util.paths import new_folder
-from util.qa import voice
+from util.qa import units, voice
 from util.qa.advance import _screen_targets
 from util.qa.briefs import _task_instructions, write_instructions
 from util.qa.bundles import (
@@ -98,7 +98,7 @@ from util.rpgmaker_qa_manifest import (
     unresolved_order,
     write_manifest,
 )
-from util.rpgmaker_qa_preflight import preflight
+from util.rpgmaker_qa_preflight import empty_report, preflight
 from util.rpgmaker_qa_verify import verify_manifest
 
 # A task's folder is named by its key; the app sets aside a task it can't
@@ -313,8 +313,15 @@ def prepare_task(
     screen_groups: list[list[str]] | None = None,
     storage_key: str | None = None,
     originals: Originals | None = None,
+    inventory: dict[str, Any] | None = None,
 ) -> tuple[Path, dict[str, Any]]:
     """Create or reuse one immutable QA task and its exhaustive screen bundles.
+
+    *inventory*, an Assistant-led game's units as Text QA's records
+    (util/qa/units), is the task's text in place of the game's RPG Maker data
+    in *data_root*, which it then never reads: no never-translated report,
+    Show Text header check or interface capture, and no `since` baseline,
+    which reads earlier text from the game's Git.
 
     The game's tasks and baselines are kept in *output_root*'s folder
     *storage_key*,
@@ -371,13 +378,32 @@ def prepare_task(
         raise ValueError("The QA data folder must be inside the selected game folder")
     storage = _safe_task_root(output_root, game)
     layout = task_layout(game, fit)
-    manifest = build_manifest(data, focus)
-    validation = verify_manifest(data, manifest)
+    if inventory is not None:
+        manifest = inventory
+        validation = units.verify(manifest)
+        if focus != manifest.get("focus"):
+            raise ValueError("The QA inventory was made for another focus")
+        if since or interface or observations:
+            raise ValueError(
+                "QA of an Assistant-led game's units reads no earlier version, "
+                "screens or playtest"
+            )
+    else:
+        manifest = build_manifest(data, focus)
+        validation = verify_manifest(data, manifest)
     if not validation["valid"]:
         raise ValueError("QA inventory validation failed: " + "; ".join(validation["errors"]))
     context = _context_pack(
         game, (str(record.get("source") or "") for record in manifest["records"])
     )
+
+    def report() -> dict[str, Any]:
+        """The never-translated report: none for units, whose census and
+        organize count what was never translated."""
+        if inventory is not None:
+            return empty_report()
+        return preflight(data, manifest, kept, originals)
+
     screen_configuration = {
         "char_budget": int(screen_char_budget),
         "item_limit": int(screen_item_limit),
@@ -455,9 +481,8 @@ def prepare_task(
             task = _read_json(existing)
             if task.get("schema") != TASK_SCHEMA:
                 raise ValueError(f"Existing QA task has an unsupported schema: {task_dir}")
-            report = preflight(data, manifest, kept, originals)
             with _task_lock(task_dir):
-                _write_report(task_dir, report)
+                _write_report(task_dir, report())
                 # The README names the game's folder, which may have moved.
                 write_instructions(task_dir)
             if interface:
@@ -474,7 +499,7 @@ def prepare_task(
             write_manifest(manifest, staging / "inventory.json")
             _atomic_write_json(staging / "inventory-validation.json", validation)
             # Japanese never translated is reported, never silently skipped.
-            _atomic_write_json(staging / "preflight.json", preflight(data, manifest, kept, originals))
+            _atomic_write_json(staging / "preflight.json", report())
             _atomic_write_json(staging / "context.json", context)
             reviewed = (
                 _earlier_reviews(games, context, layout, origins)
@@ -521,8 +546,10 @@ def prepare_task(
                     _merge_candidate(forced_candidates, cluster_id, ["interface-fit"])
             # A likely slip in a line's Show Text header goes to deep review,
             # where a reviewer fixes the header or says why it is right.
-            headers = _header_flags(data, manifest)
-            _atomic_write_json(staging / "header-check.json", headers)
+            headers: dict[str, Any] = {"flags": []}
+            if inventory is None:
+                headers = _header_flags(data, manifest)
+                _atomic_write_json(staging / "header-check.json", headers)
             clusters = _cluster_by_identity(manifest)
             for flag in headers["flags"]:
                 if flag["identity"] and not settled(
@@ -620,6 +647,7 @@ def prepare_task(
                 "context_sha256": context["content_sha256"],
                 "screen_index_sha256": screen_index_document["content_sha256"],
                 "counts": manifest["counts"],
+                **({"inventory": units.SCHEMA} if inventory is not None else {}),
             }
             if reviewed:
                 # Lines as the task counts them: every place a text shows. A
@@ -805,14 +833,25 @@ def _inventory_text(manifest: dict[str, Any]) -> dict[str, Any]:
 
 
 def _record_text(record: dict[str, Any]) -> dict[str, Any]:
-    """One inventory record's part of _inventory_text."""
-    return {
+    """One inventory record's part of _inventory_text. A unit's identity is
+    its ID alone, which holds no checksum of its source as a game file's
+    does, so its source and its place in its scene join it."""
+    text = {
         "identity": record["identity"],
         "live": record["live"],
         "live_pointers": record["live_pointers"],
         "event_code": record.get("event_code"),
         "quoted": record["live_transform"] in QUOTED_TRANSFORMS,
     }
+    if units.held(record):
+        text.update(
+            source=record["source"],
+            scene=record["scene"],
+            position=record["position"],
+            speaker=record["speaker"]["display_name"],
+            field=record.get("field"),
+        )
+    return text
 
 
 def _unresolved_text(entry: dict[str, Any]) -> tuple[Any, Any]:

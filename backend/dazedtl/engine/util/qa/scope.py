@@ -92,7 +92,9 @@ def _deep_basis(
                 "lines": [
                     {
                         **line,
-                        "command": _command_number(
+                        # A unit's line carries its number (util/qa/units).
+                        "command": line["command"] if "command" in line
+                        else _command_number(
                             _target_entry(
                                 screen_index, bundle, line.get("id") or line["context_id"]
                             )["representative_identity"]
