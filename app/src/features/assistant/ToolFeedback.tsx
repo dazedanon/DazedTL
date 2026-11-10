@@ -51,19 +51,23 @@ export function ToolFeedbackRow({
     if (result.ok && result.value)
       action.succeed(`Saved to ${result.value}.`, "feedback-save");
   };
-  // The outcome of the actions in the row, or in the dialog while it shows.
+  // The outcome of the actions in the row, or in the dialog while it shows:
+  // a failure, which stays, or a note that fades away.
   const outcome = (keys: string[]) =>
-    !keys.includes(action.key) || action.busy ? null : action.error ? (
-      <Feedback error={action.error} />
-    ) : (
-      action.notice && (
-        // A new copy clears the notice first, so its note mounts afresh.
-        <FadingNote className="feedback" onGone={action.clear}>
-          <Check size={15} className="feedback-mark" />
-          {action.notice}
-        </FadingNote>
-      )
-    );
+    keys.includes(action.key) && !action.busy
+      ? {
+          error: action.error && <Feedback error={action.error} />,
+          note: action.notice && (
+            // A new copy clears the notice first, so its note mounts afresh.
+            <FadingNote className="feedback" onGone={action.clear}>
+              <Check size={15} className="feedback-mark" />
+              {action.notice}
+            </FadingNote>
+          ),
+        }
+      : { error: null, note: null };
+  const row = outcome(shown === null ? ["feedback-view", "feedback-copy"] : []);
+  const dialog = outcome(["feedback-save", "feedback-dialog-copy"]);
   const button = (key: string, label: string, onClick: () => void) => (
     <Button
       disabled={action.busy}
@@ -80,12 +84,15 @@ export function ToolFeedbackRow({
         label={
           <>
             <strong>Tool feedback</strong>
-            <small>
-              What your assistant thinks DazedTL could do better, to share on
-              DazedTL&apos;s Discord · Saved{" "}
-              {new Date(feedback.savedAt).toLocaleString()}
-            </small>
-            {shown === null && outcome(["feedback-view", "feedback-copy"])}
+            <span className="tool-feedback-detail">
+              <small data-covered={row.note ? true : undefined}>
+                What your assistant thinks DazedTL could do better, to share on
+                DazedTL&apos;s Discord · Saved{" "}
+                {new Date(feedback.savedAt).toLocaleString()}
+              </small>
+              {row.note}
+            </span>
+            {row.error}
           </>
         }
       >
@@ -119,9 +126,7 @@ export function ToolFeedbackRow({
           <DialogBody>
             <pre className="translation-report">{shown}</pre>
           </DialogBody>
-          <ActionBar
-            feedback={outcome(["feedback-save", "feedback-dialog-copy"])}
-          >
+          <ActionBar feedback={dialog.error || dialog.note}>
             {button("feedback-save", "Save file", () => void save())}
             <Button
               variant="primary"

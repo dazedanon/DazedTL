@@ -379,3 +379,24 @@
   overflow-wrap: anywhere;
   text-align: start;
 }
+/* The tool feedback row's detail and the note confirming a copy or save share
+   one place, so the note never changes the row's height or moves its
+   buttons; the detail returns once the note fades. */
+.tool-feedback-detail {
+  display: grid;
+  margin-top: var(--space-1);
+}
+.tool-feedback-detail > * {
+  grid-area: 1 / 1;
+  min-width: 0;
+}
+.tool-feedback-detail > small {
+  font-size: var(--font-control);
+  line-height: 1.5;
+}
+.tool-feedback-detail > small[data-covered] {
+  visibility: hidden;
+}
+.tool-feedback-detail .feedback {
+  margin: 0;
+}
