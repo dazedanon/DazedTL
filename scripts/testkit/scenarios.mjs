@@ -2992,6 +2992,13 @@ export const scenarios = {
           );
           if (!patch.get("data/Actors.json")?.equals(written))
             throw new Error("The patch ZIP lacks the translated Actors.json.");
+          // Nor does the patch hold DazedTL's files, the tool feedback the
+          // assistant saved before it was built among them.
+          const tools = [...patch.keys()].filter((entry) =>
+            entry.startsWith(".dazedtl/"),
+          );
+          if (tools.length)
+            throw new Error(`The patch ZIP holds ${tools.join(", ")}.`);
           const corrected = [...patch].filter(
             ([entry, data]) =>
               entry.endsWith(".json") && data.includes(qaCorrection),
