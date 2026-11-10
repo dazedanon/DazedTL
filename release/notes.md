@@ -3,6 +3,7 @@
 ### Added
 
 - **Text QA:** Assistant-led's Options can narrow its review or skip it, and both methods say how much of your assistant's plan a review takes.
+- **Tool feedback:** your assistant ends each translation with a short note on what DazedTL could do better, to copy or save and post on Discord.
 
 ### Changed
 
