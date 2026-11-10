@@ -26,7 +26,7 @@ from util.qa.fitting import (
     show_text_allowance,
 )
 from util.qa.ledger import REVIEWED_FILE
-from util.qa.records import _changes, _set_pointer
+from util.qa.records import _changes, _set_pointer, typed_findings
 from util.qa.schema import (
     CORRECTION_MAP_SCHEMA,
     REGRESSION_SCHEMA,
@@ -125,7 +125,7 @@ def correction_map(
     root, task, checkpoint = read_task(task_dir)
     if checkpoint["stage"] != "complete":
         raise ValueError("QA review must be complete before its findings are applied")
-    findings_doc = _read_json(root / "findings.json")
+    findings_doc = typed_findings(_read_json(root / "findings.json"))
     approved = set(approved_finding_ids)
     selected = [item for item in findings_doc["findings"] if item["id"] in approved]
     if {item["id"] for item in selected} != approved:

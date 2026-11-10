@@ -27,10 +27,12 @@ from util.qa.schema import (
     DEEP_RESULT_SCHEMA,
     EDITORIAL_RESULT_SCHEMA,
     FINDING_CATEGORIES,
+    NEWLINE_MARK,
     SCREEN_RESULT_SCHEMA,
     SUMMARY_LIMIT,
     SWEEP_RESULT_SCHEMA,
     _utc_now,
+    shown_text,
 )
 from util.qa.scope import _assigned_scenes, _declined_scope
 from util.qa.selection import _command_number, _glossary_entries
@@ -243,7 +245,7 @@ _CONTEXT_TEXT_CODES = frozenset({
 
 
 def _context_text(value: Any) -> str:
-    return "∅" if value is None else str(value).replace("\n", "⏎")
+    return "∅" if value is None else shown_text(value)
 
 
 def context_view(
@@ -719,7 +721,8 @@ def render_bundle(task_dir: str | Path, bundle_id: str) -> str:
     )
     out = [(
         f"BUNDLE {bundle_id} ({stage}, {bundle['item_count']} targets, "
-        f"sha256 {bundle['content_sha256']}). Newlines show as ⏎."
+        f"sha256 {bundle['content_sha256']}). Newlines show as {NEWLINE_MARK}, "
+        f"and a {NEWLINE_MARK} you write in a correction is a newline."
     )]
     if stage == "deep":
         out += _render_deep(bundle)

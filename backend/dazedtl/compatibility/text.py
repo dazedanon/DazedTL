@@ -395,6 +395,11 @@ def qa_state(plan, reader=None):
         }
     adopt_answers(plan["folder"])
     saved, root, task, checkpoint, document = _prepared(plan)
+    if document:
+        from util.qa.records import typed_findings
+
+        # Each correction as apply writes it.
+        document = typed_findings(document)
     if reader is not None:
         document = reader.written(document)
     # A finished task stays current through any update.

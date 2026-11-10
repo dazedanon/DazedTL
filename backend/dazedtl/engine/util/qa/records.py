@@ -10,7 +10,13 @@ from pathlib import Path
 from typing import Any
 
 from util import rpgmaker_blocks as blocks
-from util.qa.schema import DEFAULT_HELPER, REVIEW_STAGES, QAResultError, _utc_now
+from util.qa.schema import (
+    DEFAULT_HELPER,
+    REVIEW_STAGES,
+    QAResultError,
+    _utc_now,
+    typed_text,
+)
 from util.qa.storage import _read_json
 
 
@@ -163,6 +169,37 @@ def _changes(finding: dict[str, Any]) -> list[dict[str, Any]]:
         "correction": finding["correction"],
         "identities": finding["target_identities"],
     }]
+
+
+def typed_findings(document: dict[str, Any]) -> dict[str, Any]:
+    """A findings document with each correction and proposal as the game
+    gets it (schema.typed_text): a ⏎ a reviewer wrote is a line break, as
+    their result now reads at accept, so a task finished before then applies
+    and shows its corrections so too."""
+
+    def typed(change: dict[str, Any]) -> dict[str, Any]:
+        if not isinstance(change.get("correction"), str):
+            return change
+        return {
+            **change,
+            "correction": typed_text(
+                change["correction"], change.get("source"), change.get("current")
+            ),
+        }
+
+    findings = []
+    for finding in document.get("findings") or []:
+        if finding.get("kind") == "scene":
+            finding = {**finding, "lines": [typed(line) for line in finding["lines"]]}
+        elif finding.get("kind") != "show-text":
+            finding = typed(finding)
+        findings.append(finding)
+    typed_document = {**document, "findings": findings}
+    if "uncertain_playtests" in document:
+        typed_document["uncertain_playtests"] = [
+            typed(row) for row in document["uncertain_playtests"] or []
+        ]
+    return typed_document
 
 
 def _finding_families(findings: list[dict[str, Any]]) -> list[dict[str, Any]]:

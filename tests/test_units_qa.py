@@ -377,6 +377,53 @@ class UnitsTextQATests(unittest.TestCase):
         state = self.step("status")
         self.assertEqual((state["stage"], state["findings"]), ("complete", 0))
 
+    def test_a_newline_written_as_bundles_show_it_is_a_newline(self):
+        # Bundles show a line break as ⏎, and a reviewer's ⏎ was saved and
+        # applied as that glyph, so it would have shipped in game text.
+        self.translate(
+            [
+                {"id": "a/1", "scene": "a", "source": "宿代は百ゴールドだよ。"},
+                {"id": "b/1", "scene": "b", "source": "おやすみなさい。"},
+                {"id": "c/1", "scene": "c", "source": "⏎キーで次へ。"},
+            ],
+            {
+                "a/1": "The inn is a hundred gold, yeah.",
+                "b/1": "Good mornin.",
+                "c/1": "Press ⏎ for next.",
+            },
+        )
+        task = Path(self.step("prepare")["task"])
+        review(
+            task,
+            {
+                "The inn is a hundred gold, yeah.": "The inn is⏎a hundred gold.",
+                "Good mornin.": "Good⏎night.",
+                # Its line holds the mark as text, which stays.
+                "Press ⏎ for next.": "Press ⏎ to go on.",
+            },
+        )
+        # A task accepted before then holds the mark itself.
+        saved = json.loads((task / "findings.json").read_text(encoding="utf-8"))
+        corrections = {row["current"]: row["correction"] for row in saved["findings"]}
+        self.assertEqual(corrections["Good mornin."], "Good\nnight.")
+        for row in saved["findings"]:
+            row["correction"] = row["correction"].replace("\n", "⏎")
+        write_json(task / "findings.json", saved)
+        shown = self.service.state(self.identity)["textQa"]
+        self.assertEqual(
+            sorted(row["correction"] for row in shown["findings"]),
+            ["Good\nnight.", "Press ⏎ to go on.", "The inn is\na hundred gold."],
+        )
+        self.assertTrue(self.step("apply")["applied"])
+        self.assertEqual(
+            self.english(),
+            {
+                "a/1": "The inn is\na hundred gold.",
+                "b/1": "Good\nnight.",
+                "c/1": "Press ⏎ to go on.",
+            },
+        )
+
     def test_a_correction_reads_and_undoes_as_the_game_gets_it(self):
         # The export writes a reviewer's curly apostrophe and dash in its own
         # form, so undo read the line as changed and refused, and the tab

@@ -27,7 +27,13 @@ from util.qa.ledger import _pair_key, _task_ledger
 from util.qa.pace import status
 from util.qa.records import _bundle_row, _record_maps, _split_notice
 from util.qa.reopen import _issue_new_evidence, _note_observations
-from util.qa.schema import _QUOTED_VALUE_RE, QAResultError, _sha256, _utc_now
+from util.qa.schema import (
+    _QUOTED_VALUE_RE,
+    QAResultError,
+    _sha256,
+    _utc_now,
+    typed_text,
+)
 from util.qa.storage import (
     JUDGED_BEFORE,
     _atomic_write_json,
@@ -55,6 +61,90 @@ def accept_result(task_dir: str | Path, result_path: str | Path) -> dict[str, An
     return _accept(task_dir, _read_json(Path(result_path).expanduser().resolve()))
 
 
+def _as_typed(stage: str, bundle: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
+    """A deep or editorial result with the text its reviewer wrote for game
+    lines as the game gets it (schema.typed_text): each line break they
+    wrote as the bundle shows one, ⏎, is a line break. Each is read against
+    the line it is written for; what validation refuses is left as it is."""
+    reviews = result.get("reviews")
+    if stage not in {"deep", "editorial"} or not isinstance(reviews, list):
+        return result
+    items = {
+        item["id"]: item for item in bundle.get("items") or [] if isinstance(item, dict)
+    }
+
+    def scene_line(lines: Any, command: Any) -> tuple[Any, Any]:
+        """The source and current text of the line *command* names."""
+        line = next(
+            (line for line in lines or [] if line.get("command") == command), {}
+        )
+        return line.get("source"), line.get("translation", line.get("current"))
+
+    typed = []
+    for review in reviews:
+        item = items.get(review.get("id")) if isinstance(review, dict) else None
+        if item is None:
+            typed.append(review)
+            continue
+        review = dict(review)
+        if stage == "deep":
+            held = (item.get("source"), item.get("translation"))
+            if "correction" in review:
+                review["correction"] = typed_text(review["correction"], *held)
+            if isinstance(review.get("sweep"), dict):
+                review["sweep"] = {
+                    key: typed_text(value, *held) if key != "source_has" else value
+                    for key, value in review["sweep"].items()
+                }
+            scene = review.get("scene_correction")
+            if isinstance(scene, dict) and isinstance(scene.get("lines"), list):
+                shown = (bundle.get("scenes") or {}).get(scene.get("scene")) or {}
+                review["scene_correction"] = {
+                    **scene,
+                    "lines": [
+                        {
+                            **entry,
+                            **{
+                                key: typed_text(
+                                    entry.get(key),
+                                    *scene_line(shown.get("lines"), entry.get("command")),
+                                )
+                                for key in ("current", "correction")
+                                if key in entry
+                            },
+                        }
+                        if isinstance(entry, dict)
+                        else entry
+                        for entry in scene["lines"]
+                    ],
+                }
+        else:
+            finding = item.get("finding") or {}
+            if "replacement" in review:
+                review["replacement"] = typed_text(
+                    review["replacement"], finding.get("source"), finding.get("current")
+                )
+            if isinstance(review.get("replacements"), list):
+                review["replacements"] = [
+                    {
+                        **entry,
+                        **{
+                            key: typed_text(
+                                entry.get(key),
+                                *scene_line(finding.get("lines"), entry.get("command")),
+                            )
+                            for key in ("current", "replacement")
+                            if key in entry
+                        },
+                    }
+                    if isinstance(entry, dict)
+                    else entry
+                    for entry in review["replacements"]
+                ]
+        typed.append(review)
+    return {**result, "reviews": typed}
+
+
 def _accept(task_dir: str | Path, result: dict[str, Any]) -> dict[str, Any]:
     root = Path(task_dir).expanduser().resolve()
     with _task_lock(root):
@@ -66,6 +156,7 @@ def _accept(task_dir: str | Path, result: dict[str, Any]) -> dict[str, Any]:
         bundle = _read_json(Path(row["path"]))
         if result.get("bundle_sha256") != row["sha256"]:
             raise QAResultError("Result does not match the immutable bundle checksum")
+        result = _as_typed(stage, bundle, result)
         if stage == "screen":
             _validate_screen_result(bundle, result)
         elif stage == "sweep":
