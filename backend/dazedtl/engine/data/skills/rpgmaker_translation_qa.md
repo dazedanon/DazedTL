@@ -1,13 +1,13 @@
 # RPG Maker text QA
 
-<!-- qa-contract:rpgmaker-qa-v21
+<!-- qa-contract:rpgmaker-qa-v22
 single-policy role-briefs parallel-workers worker-brief app-owned-inventory immutable-review-bundles database-checks
 battler-name-source-fix
 scene-affine-screen sampled-screen-checks lint-group-review glossary-lint declined-disposition
 helper-scoped-declines unit-declines coordinator-declines evidence-preserving-deep
 scene-correction family-sweep decision-log consistency-check editorial-stage regression-simulation
 app-publication-apply checkpoint-commit no-provider-api interface-captures text-fit
-gender-pronoun censor-mask
+gender-pronoun censor-mask voice-review
 bundle-glossary worker-guidance accept-next earlier-reviews since-scope
 -->
 
@@ -156,6 +156,13 @@ Review a check bundle like any other, without reading the result it repeats.
   the translation quirks. Review it once: name one recognizable English joke mechanism and check
   that every nonliteral variant still reads as its callback before calling it `preserved`;
   otherwise name the affected variants in `suspect_ids`. Sharing a name is not a callback.
+- A `voice` item is one main character's lines from across the game in play order, under the character's glossary line and grouped by scene; when the character has more lines than a bundle holds, they are spread evenly from the first to the last.
+  Requests translated apart can't see each other's English, so a voice can change between scenes that each read well alone.
+  Read the lines in order as one voice, and judge each line's English against the voice note in the glossary line and against its Japanese: the choices the note fixes, such as a first-person or second-person form, a sentence ending, a laugh or a verbal tic, and the register the character's other lines keep.
+  Report as an exception, category `voice`, each line whose English breaks from the note, or from the other lines where the Japanese keeps the same form, and name the form and what it should be, such as "Plain 'you' for そなた, which her note fixes as thou."
+  Where the note leaves a choice open, as an older note's "sparingly" or "sometimes" does, the rendering most of the lines give that Japanese form is the choice.
+  A line whose Japanese itself changes register, such as formal speech to a superior or words the character quotes, is clean, and so is a difference of preference alone.
+  These lines are targets of their own, apart from the same lines in their scenes, so report any other defect you notice in one as an exception too.
 - An exception's verdict is `suspect` or `needs-context`, with categories and a short concrete
   note.
 
@@ -184,6 +191,10 @@ that `prior_review`, and your review replaces it.
 - A `censor-mask-mismatch` deep reason means the source masks a word with 〇 or ● and the English spells it out, or the English masks a word the source does not.
   Masks are the author's choice: mask the same word, with the mask in its place where the word allows (レイ〇 is "r〇pe", ま〇こ is "pu〇sy", ●●● stays ●●●), and write out a word the source does not mask.
   A 〇 among kanji numerals is a zero, and a lone ● starting a row is a bullet, not a mask.
+- A `voice-suspect` or `voice-needs-context` deep reason means the reviewer of the speaker's `voice` item, who read the character's lines from across the game, found this line out of the character's voice; its evidence starts with `voice review of` and the speaker.
+  Judge the line against the speaker's glossary line, which the bundle's glossary prints, and its Japanese: correct it, category `voice`, to the choice the note fixes, changing only the words that carry the voice, or review it `clean` with `evidence` naming what in the Japanese or the scene calls for the difference.
+  A voice changes a request at a time, and the item may hold only some of the speaker's lines, so read the speaker's other lines in the scene: correct those with the same slip together in a `scene_correction`, or report them as observations.
+  Give one speaker's voice corrections one `family_key`, such as `voice:char`, and a `sweep` rule only for wording that recurs word for word.
 - An `interface-fit` check means the game drew this text with too little room on a screen
   DazedTL captured while running a copy of the game: squeezed narrower than it needs, or cut off
   at its window's edge. Open every capture the check names and look at the text there. When it is

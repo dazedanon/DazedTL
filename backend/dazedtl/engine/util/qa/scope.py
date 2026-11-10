@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from util import rpgmaker_qa_lint as lint
+from util.qa import voice
 from util.qa.bundles import (
     _bundle_items,
     _load_screen_index,
@@ -61,6 +62,19 @@ def _deep_basis(
     # with the cluster of each of its lines.
     screened: dict[str, dict[str, Any]] = {}
     line_clusters: dict[str, str] = {}
+    # Voice items' exceptions, each with the place its scene shows the line.
+    voiced: list[tuple[dict[str, Any], str, str]] = []
+
+    def shown(identity: str, cluster_id: str) -> tuple[dict[str, Any] | None, str]:
+        """The screened scene that holds a line, and the line's ID there."""
+        position = _scene_position(records[identity])
+        scene = screened.get(position[0]) if position else None
+        return scene, next((
+            line_id
+            for line in (scene or {}).get("lines") or []
+            if (line_id := line.get("id") or line.get("context_id"))
+            and line_clusters.get(line_id) == cluster_id
+        ), "")
 
     for row in checkpoint["screen"]["bundles"]:
         if row.get("status") != "accepted" or not row.get("result_path"):
@@ -98,16 +112,25 @@ def _deep_basis(
                         or ""
                     )
 
+        speakers = {
+            line["id"]: item["speaker"]
+            for item in bundle["items"] if item.get("kind") == voice.KIND
+            for line in item["lines"]
+        }
         for exception in result["exceptions"]:
             target_id = exception["id"]
             target = _target_entry(screen_index, bundle, target_id)
             cluster_id = target.get("cluster_id") or target_id
-            evidence[cluster_id].append({
+            row = {
                 "target_id": target_id,
                 "verdict": exception["verdict"],
                 "categories": list(exception["categories"]),
                 "note": exception["note"],
-            })
+            }
+            evidence[cluster_id].append(row)
+            if target_id in speakers:
+                row["voice"] = speakers[target_id]
+                voiced.append((row, cluster_id, target["representative_identity"]))
             scene = target_scenes.get(target_id)
             if scene:
                 scenes[cluster_id][scene["scene_id"]] = scene
@@ -133,20 +156,21 @@ def _deep_basis(
             for variant in variants:
                 motifs[variant["id"]].append(context)
 
+    # A voice item shows its lines out of their scenes, so deep review reads
+    # each reported line in the scene that targets it, marked there.
+    for row, cluster_id, identity in voiced:
+        scene, target_id = shown(identity, cluster_id)
+        if scene and target_id:
+            row["target_id"] = target_id
+            scenes[cluster_id][scene["scene_id"]] = scene
+
     for observation in checkpoint.get("observations") or []:
         identity, cluster_id = observation["identity"], observation["cluster_id"]
         if identity in declined["identities"]:
             continue
         _merge_candidate(candidates, cluster_id, ["observation"], [identity])
-        position = _scene_position(records[identity])
-        scene = screened.get(position[0]) if position else None
         # The scene line the observation names, which its deep item marks.
-        target_id = next((
-            line_id
-            for line in (scene or {}).get("lines") or []
-            if (line_id := line.get("id") or line.get("context_id"))
-            and line_clusters.get(line_id) == cluster_id
-        ), "")
+        scene, target_id = shown(identity, cluster_id)
         evidence[cluster_id].append({
             "target_id": target_id or identity,
             "verdict": "observation",

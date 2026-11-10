@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from util import rpgmaker_qa_lint as lint
+from util.qa import voice
 from util.qa.bundles import (
     _bundle_deep,
     _bundle_items,
@@ -210,8 +211,14 @@ def _deep_items(
     return items
 
 
-def _screen_targets(items: list[dict[str, Any]], bundles: list[dict]) -> dict:
-    """Which screen bundle targets each cluster, and which review its motifs."""
+def _screen_targets(
+    items: list[dict[str, Any]],
+    bundles: list[dict],
+    screen_index: dict[str, dict[str, str]],
+) -> dict:
+    """Which screen bundle targets each cluster, and under `motifs` which
+    review it in a group: its motif families and its speaker's voice item,
+    whose reviews its deep item waits for."""
     targets: dict[str, str] = {}
     motifs: dict[str, list[str]] = defaultdict(list)
     for bundle in bundles:
@@ -225,6 +232,11 @@ def _screen_targets(items: list[dict[str, Any]], bundles: list[dict]) -> dict:
             elif item.get("kind") == "motif-family":
                 for variant in item["variants"]:
                     motifs[variant["id"]].append(bundle["bundle_id"])
+            elif item.get("kind") == voice.KIND:
+                for line in item["lines"]:
+                    motifs[screen_index[line["id"]]["cluster_id"]].append(
+                        bundle["bundle_id"]
+                    )
     return {"targets": targets, "motifs": dict(motifs)}
 
 

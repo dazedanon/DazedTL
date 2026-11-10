@@ -13,6 +13,7 @@ from util import rpgmaker_qa_glossary as glossary_rules
 from util import system
 from util.game_settings import load_language_pair
 from util.prompt_pair import pair_note
+from util.qa import voice
 from util.qa.bundles import _load_screen_index
 from util.qa.interface import _place_text
 from util.qa.records import (
@@ -438,6 +439,27 @@ def _render_screen_item(
                 for variant in item["reviewed_variants"]
             ]
         return out
+    if kind == voice.KIND:
+        held, total = item["line_count"], item["speaker_lines"]
+        out = [
+            f"### VOICE {item['id']} {item['speaker']} ("
+            + (
+                f"{held} of the speaker's {total} lines, spread from the first to the last"
+                if held < total else f"the speaker's {total} lines"
+            )
+            + ", in play order)",
+            "  glossary: " + _context_text(item["note"]),
+        ]
+        scene = None
+        for line in item["lines"]:
+            if line["scene"] != scene:
+                scene = line["scene"]
+                out.append(f"  -- {scene}")
+            out += [
+                f"  [T {line['id']}] JP: " + _context_text(line["source"]),
+                "    EN: " + _context_text(line["translation"]),
+            ]
+        return out
     if kind == "lint-family":
         out = [f"### LINT {item['id']} {item['family']}: {item['description']}"]
         for proposal in item["proposals"]:
@@ -501,6 +523,8 @@ def _render_deep(bundle: dict) -> list[str]:
             source = (
                 "observed at " + evidence["identity"].split("@", 1)[0]
                 if evidence["verdict"] == "observation"
+                else f"voice review of {evidence['voice']} [{evidence['verdict']}]"
+                if evidence.get("voice")
                 else f"screen [{evidence['verdict']}]"
             )
             out.append(
