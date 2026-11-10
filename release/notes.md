@@ -3,6 +3,7 @@
 ### Added
 
 - **Text QA:** Assistant-led's Options can narrow its review or skip it, and both methods say how much of your assistant's plan a review takes.
+- **Assistant-led:** a game translated before requests carried the lines before them can translate again the lines sent without them, keeping your corrections.
 
 ### Changed
 
