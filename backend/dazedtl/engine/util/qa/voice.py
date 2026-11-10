@@ -50,7 +50,8 @@ def voice_items(
 
     A line is a mapping with `id` (what a correction of it names: one text,
     wherever it repeats), `speaker` (a name the glossary lists, Japanese or
-    English), `source`, `translation`, `scene` (the scene or group that holds
+    English; the item names the speaker by the glossary's first English
+    name), `source`, `translation`, `scene` (the scene or group that holds
     it, shown beside it) and `order` (its place in play order: lines sort by
     it, so every line's must compare with every other's); any other key is
     the caller's own. Give only the lines to review.
@@ -68,17 +69,16 @@ def voice_items(
     """
     notes = character_notes(glossary_text)
     # A character is its glossary line, whichever of its names a line gives:
-    # each one's lines by ID, under the name its first line gives.
-    spoken: dict[str, tuple[str, dict[str, Mapping[str, Any]]]] = {}
+    # each one's lines by ID, under the line's first English name.
+    spoken: dict[tuple[str, str], dict[str, Mapping[str, Any]]] = {}
     for line in sorted(lines, key=lambda line: line["order"]):
-        speaker = str(line.get("speaker") or "").strip()
-        note = notes.get(speaker.casefold())
-        if note is not None:
-            spoken.setdefault(note, (speaker, {}))[1].setdefault(str(line["id"]), line)
+        character = notes.get(str(line.get("speaker") or "").strip().casefold())
+        if character is not None:
+            spoken.setdefault(character, {}).setdefault(str(line["id"]), line)
     main = sorted(
         (
             (speaker, note, list(held.values()))
-            for note, (speaker, held) in spoken.items()
+            for (speaker, note), held in spoken.items()
             if len(held) >= MIN_LINES
             and len({line["scene"] for line in held.values()}) >= MIN_SCENES
         ),

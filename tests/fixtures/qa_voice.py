@@ -17,7 +17,7 @@ root, temporary = map(Path, sys.argv[1:])
 sys.path.insert(0, str(root / "backend/dazedtl/engine"))
 
 from util import rpgmaker_qa as qa
-from util.qa import selection, voice
+from util.qa import prepare, selection, storage, voice
 
 CHAR = (
     "シャル (Char) - Female. Lordly, old-fashioned speech: そなた → thou, "
@@ -25,6 +25,7 @@ CHAR = (
 )
 GLOSSARY = (
     f"# Game Characters\n{CHAR}\nイリス (Iris) - Female\n商人 (Merchant) - Polite.\n"
+    "少年 (Boy) - Unverified nameplate, translated without its story.\n"
 )
 
 # Lines no RPG Maker file holds: units of a script engine, their speaker
@@ -44,15 +45,18 @@ units = [
 ]
 units += [
     {**units[3], "order": 100},
-    # Speakers the glossary gives no note, or too few lines, get no item.
+    # Speakers the glossary gives no note, or too few lines, get no item,
+    # nor does a nameplate nobody has confirmed.
     *({**unit, "id": "iris/" + unit["id"], "speaker": "イリス"} for unit in units),
+    *({**unit, "id": "boy/" + unit["id"], "speaker": "少年"} for unit in units),
     *(
         {**unit, "id": "shop/" + unit["id"], "speaker": "Merchant"}
         for unit in units[:11]
     ),
 ]
 (item,), targets = voice.voice_items(reversed(units), GLOSSARY, line_limit=16)
-assert (item["kind"], item["speaker"], item["note"]) == ("voice", "シャル", CHAR), item
+# The item names her as the glossary does, whichever name the lines give.
+assert (item["kind"], item["speaker"], item["note"]) == ("voice", "Char", CHAR), item
 assert (item["speaker_lines"], item["target_count"]) == (40, 16), item
 held = [targets[line["id"]]["unit"] for line in item["lines"]]
 # Spread from the first line to the last, in play order.
@@ -92,6 +96,9 @@ CASUAL = [
     ("そなたを信じておる。", "I believe in you."),
     ("では行くぞ。", "Okay, let's go."),
 ]
+# A later row of her last message that keeps a source of its own.
+MORE = ("遅れるでないぞ。", "Do not fall behind.")
+SPOKEN = [source for source, _english in [*LORDLY, *CASUAL, MORE]]
 FIXES = {"You're late.": "Thou art late.", "Show me your sword.": "Show me thy sword."}
 
 
@@ -114,16 +121,20 @@ def named(lines):
     ]
 
 
-def first_row(lines):
-    """Messages whose first row is their speaker's nameplate."""
+def first_row(lines, more):
+    """Messages whose first row is their speaker's nameplate, the last with
+    the row *more* after its speech."""
     return [
-        entry
-        for source, english in lines
-        for entry in (
-            command(101, ["", 0, 0, 2]),
-            command(401, ["【Char】"], "【シャル】"),
-            command(401, [english], source),
-        )
+        *(
+            entry
+            for source, english in lines
+            for entry in (
+                command(101, ["", 0, 0, 2]),
+                command(401, ["【Char】"], "【シャル】"),
+                command(401, [english], source),
+            )
+        ),
+        command(401, [more[1]], more[0]),
     ]
 
 
@@ -137,7 +148,7 @@ def page(commands):
             "events": [
                 None,
                 {"id": 1, "pages": [page(named(LORDLY))]},
-                {"id": 2, "pages": [page(first_row(CASUAL))]},
+                {"id": 2, "pages": [page(first_row(CASUAL, MORE))]},
             ]
         },
         ensure_ascii=False,
@@ -325,7 +336,7 @@ task, state = qa.prepare_task(
     game, data, "release", temporary / "storage", earlier=False
 )
 assert task != before, task
-assert state["screen"]["voice"] == {"items": 1, "lines": 12, "speakers": ["Char"]}, (
+assert state["screen"]["voice"] == {"items": 1, "lines": 13, "speakers": ["Char"]}, (
     state
 )
 checkpoint = json.loads((task / "checkpoint.json").read_text(encoding="utf-8"))
@@ -335,14 +346,12 @@ checkpoint = json.loads((task / "checkpoint.json").read_text(encoding="utf-8"))
     if bundle_of(row)["items"][0]["kind"] == "voice"
 ]
 (item,) = bundle_of(row)["items"]
-assert [line["source"] for line in item["lines"]] == [
-    source for source, _english in LORDLY + CASUAL
-], item["lines"]
-assert (item["speaker"], item["note"], item["speaker_lines"]) == ("Char", CHAR, 12), (
+assert [line["source"] for line in item["lines"]] == SPOKEN, item["lines"]
+assert (item["speaker"], item["note"], item["speaker_lines"]) == ("Char", CHAR, 13), (
     item
 )
 shown = qa.render_bundle(task, row["id"])
-assert f"### VOICE {item['id']} Char (the speaker's 12 lines, in play order)" in shown
+assert f"### VOICE {item['id']} Char (the speaker's 13 lines, in play order)" in shown
 assert f"glossary: {CHAR}" in shown and shown.count("  -- Map001.json#/events/") == 2
 assert f"[T {item['lines'][6]['id']}] JP: そなたは遅いのう。" in shown, shown
 # Only the voice item's reviewer reports the casual lines; deep review reads
@@ -358,4 +367,17 @@ assert "voice review of Char [suspect] (voice): Plain 'you'" in shown, shown
 assert ">>ITEM" in shown and CHAR in shown, shown
 findings = apply_and_undo()
 assert {finding["category"] for finding in findings["findings"]} == {"voice"}
+
+# Once QA's rules change, the finished screen of the task from before voice
+# items carries over to a task under the new rules, made again as it was:
+# without her item, whose lines would number the others' anew.
+with (
+    mock.patch.object(prepare, "QA_RULES_VERSION", 6),
+    mock.patch.object(storage, "QA_RULES_VERSION", 6),
+):
+    rebuilt, state = qa.rebuild_deep_from_screen(before)
+assert rebuilt != before and state["stage"] != "screen", state
+assert state["screen"]["voice"]["items"] == 0, state
+index = json.loads((rebuilt / "screen-index.json").read_text(encoding="utf-8"))
+assert not [name for name in index["targets"] if name.startswith("voice-")], index
 print("ok")

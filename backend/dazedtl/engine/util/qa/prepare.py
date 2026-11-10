@@ -545,15 +545,11 @@ def prepare_task(
             items, screen_index = _screen_items(
                 manifest, context, data, lint_fixes, reviewed,
                 screen_char_budget, screen_item_limit,
-            )
-            if screen_groups is not None:
                 # A screen packed as another task's holds the voice items
                 # that task's did, so one from before them carries over.
-                kept_items = {name for group in screen_groups for name in group}
-                items = [
-                    item for item in items
-                    if item["kind"] != voice.KIND or item["id"] in kept_items
-                ]
+                None if screen_groups is None
+                else {name for group in screen_groups for name in group},
+            )
             screen_index_document = {
                 "schema": "rpgmaker-qa-screen-index-v1",
                 "targets": screen_index,

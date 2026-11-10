@@ -227,23 +227,33 @@ def _english_names(pairs: tuple[tuple[str, str], ...]) -> list[str]:
     ]
 
 
-def character_notes(text: str | None) -> dict[str, str]:
-    """The game's glossary line of each character it describes, by each name
-    the line lists, Japanese and English, casefolded: a line with a note
-    after its names that says more than a gender, an actor ID or that it is
-    a nameplate, as a voice note does. Base rows name none of the game's
+def character_notes(text: str | None) -> dict[str, tuple[str, str]]:
+    """Each character the game's glossary describes, as its first English
+    name and its whole line, by each name the line lists, Japanese and
+    English, casefolded: a line with a note after its names that says more
+    than a gender, an actor ID or that it is a nameplate, as a voice note
+    does. A nameplate translated apart from its story and not yet confirmed
+    (vocab UNVERIFIED_NAMEPLATE) has none, base rows name none of the game's
     characters, and a name two lines list keeps the first."""
-    found: dict[str, str] = {}
+    from util.vocab import UNVERIFIED_NAMEPLATE
+
+    found: dict[str, tuple[str, str]] = {}
     for pairs, line, _section, is_base in glossary_lines(text):
         end = _names_end(pairs, line)
-        if is_base or end < 0 or not _NOT_A_NOTE.sub("", line[end:]):
+        if (
+            is_base
+            or end < 0
+            or line[end:].lstrip(" -").startswith(UNVERIFIED_NAMEPLATE)
+            or not _NOT_A_NOTE.sub("", line[end:])
+        ):
             continue
+        english = _english_names(pairs)
         names = [
             *(alias for source, _english in pairs for alias in aliases(source)),
-            *_english_names(pairs),
+            *english,
         ]
         for name in names:
-            found.setdefault(name.casefold(), line)
+            found.setdefault(name.casefold(), ((english or [pairs[0][1]])[0], line))
     return found
 
 

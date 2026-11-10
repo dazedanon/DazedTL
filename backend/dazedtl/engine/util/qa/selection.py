@@ -686,8 +686,9 @@ def _speeches(records: list[dict[str, Any]]) -> list[tuple[dict[str, Any], str]]
     """A scene's messages with who says each: the name its Show Text header
     shows, else the nameplate on the row before it or the name in front of
     its speech, as the engine reads them (util/qa/schema TEXT_READING). A
-    nameplate's own row is no message, and a message nobody names is left
-    out."""
+    nameplate on a row names every text of the message after it, where each
+    row keeps a source of its own; its own row is no message, and a message
+    nobody names is left out."""
     # Each message with the number of the event command that holds it.
     messages = [
         (record, place[1])
@@ -713,7 +714,9 @@ def _speeches(records: list[dict[str, Any]]) -> list[tuple[dict[str, Any], str]]
             plate = (display_name(named.names[0]), number + 1)
             continue
         if plate[1] == number:
+            # The message goes on past this text's rows.
             speaker = plate[0]
+            plate = (speaker, number + len(record["live_pointers"]))
         elif named is not None:
             speaker = display_name(named.names[0])
         if speaker:
@@ -881,9 +884,12 @@ def _screen_items(
     reviewed: _Reviewed | None = None,
     char_budget: int = DEFAULT_SCREEN_CHAR_BUDGET,
     item_limit: int = DEFAULT_SCREEN_ITEM_LIMIT,
+    held: set[str] | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, dict[str, str]]]:
     """A task's screen items and the index of their lines' clusters; a voice
-    item is sized to one bundle of *char_budget* and *item_limit*."""
+    item is sized to one bundle of *char_budget* and *item_limit*. *held*,
+    the items of another task's screen, leaves out a voice item that screen
+    lacked, so a screen from before voice items is made again as it was."""
     compact_items = _compact_items(manifest, context)
     compact = {item["id"]: item for item in compact_items}
     items: list[dict[str, Any]] = []
@@ -930,8 +936,13 @@ def _screen_items(
                 if target.startswith("scene-target-")
             },
         )
+        if held is not None:
+            voices = [item for item in voices if item["id"] in held]
         items.extend(voices)
-        screen_index.update(voice_index)
+        kept = {line["id"] for item in voices for line in item["lines"]}
+        screen_index.update({
+            target: entry for target, entry in voice_index.items() if target in kept
+        })
 
     # Preserve deterministic load balancing while assigning exact coverage ordinals.
     items.sort(key=lambda item: _sha256("rpgmaker-qa-screen-v3\0" + item["id"]))
