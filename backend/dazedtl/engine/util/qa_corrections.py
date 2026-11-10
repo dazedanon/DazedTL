@@ -32,6 +32,7 @@ from util import system
 from util.dazedwrap import cells
 from util.project_scanner import find_data_folder
 from util.qa.records import _changes, _record_maps, typed_findings
+from util.qa.schema import show_breaks
 from util.qa.selection import _scene_records
 from util.qa.storage import _read_json, answers, read_task, task_rules
 from util.rpgmaker_qa_manifest import file_inventory
@@ -193,12 +194,14 @@ def _spaced(text: str | None) -> str:
 
 def _applied(live: str | None, before: str | None, after: str | None) -> bool | None:
     """Whether a line's text *live* is the correction, the text before it, or
-    neither (None); fitting may move the correction's line breaks."""
+    neither (None); fitting may move the correction's line breaks. A release
+    before wrote a reviewer's line break as they typed it, ⏎ (schema.show_breaks)."""
     if live is None:
         return None
+    afters = [] if after is None else [after, show_breaks(after)]
     for exact in (True, False):
         same = (lambda a, b: a == b) if exact else (lambda a, b: _spaced(a) == _spaced(b))
-        if after is not None and same(live, after):
+        if any(same(live, text) for text in afters):
             return True
         if before is not None and same(live, before):
             return False
