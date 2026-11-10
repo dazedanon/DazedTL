@@ -416,13 +416,22 @@ def qa_state(plan, reader=None):
     ]
     every = [row["id"] for row in document.get("findings", [])]
     applied_ids, undone_ids = set(), set()
+    # What the last step that chose a correction left as it was, and why: a
+    # units task's correction the receipt check refuses (units_qa.correct).
+    left: dict[str, tuple[str, str]] = {}
     for row in sorted(rows, key=lambda row: row["created"]):
-        named = set(row.get("findings") or every)
+        # A batch saved before batches named their findings applied them all;
+        # one that left out every correction it chose names none.
+        named = set(row.get("findings") or ([] if row.get("left_out") else every))
         if row["kind"] == "qa_apply":
             applied_ids |= named
             undone_ids -= named
         else:
             undone_ids |= named
+        for identity in named:
+            left.pop(identity, None)
+        for entry in row.get("left_out") or []:
+            left[entry["id"]] = (row["kind"], entry["reason"])
 
     def finding_state(identity):
         return (
@@ -430,8 +439,22 @@ def qa_state(plan, reader=None):
             if identity in undone_ids
             else "applied"
             if identity in applied_ids
+            else "left-out"
+            if identity in left
             else ""
         )
+
+    def finding_reason(row):
+        """A finding's reason, after why its last step left it as it was."""
+        if row["id"] not in left:
+            return reason(row)
+        kind, why = left[row["id"]]
+        step = (
+            "Apply left this correction out"
+            if kind == "qa_apply"
+            else ("Undo left this correction in the game")
+        )
+        return f"{step}: {why} {reason(row)}"
 
     def shown(row, key):
         """A finding's text as the page shows it: a text variable's as it
@@ -465,7 +488,7 @@ def qa_state(plan, reader=None):
                 "kind": _finding_kind(row),
                 "places": max(1, len(targets)),
                 "files": files,
-                "reason": reason(row),
+                "reason": finding_reason(row),
                 **({"lines": lines} if lines else {}),
                 **(
                     {"state": finding_state(row["id"])}
@@ -480,7 +503,7 @@ def qa_state(plan, reader=None):
             "id": row["id"],
             "source": shown(row, "source"),
             "current": shown(row, "current"),
-            "reason": reason(row),
+            "reason": finding_reason(row),
             "places": int(row.get("places") or 1),
             "proposal": shown(row, "correction"),
             **({"choice": choices[row["id"]]} if row["id"] in choices else {}),
@@ -565,6 +588,17 @@ def qa_state(plan, reader=None):
         "status": engine_status,
         "findings": findings,
         "questions": questions,
+        **(
+            {
+                "left_out": [
+                    {"id": row["id"], "reason": left[row["id"]][1]}
+                    for row in sorted(findings + questions, key=lambda row: row["id"])
+                    if row["id"] in left
+                ]
+            }
+            if left.keys() & {row["id"] for row in findings + questions}
+            else {}
+        ),
         **(
             {
                 "coverage": {

@@ -81,6 +81,16 @@ UNITS_APPLIED = (
     "them into the game with your injector and a checkpoint, then report the "
     "qa phase complete."
 )
+# What an Assistant-led assistant does about the corrections of such a task
+# the last apply left out, since the receipt check refuses them
+# (units_qa.correct).
+LEFT_OUT_STEP = (
+    "Apply left out the corrections listed under left_out, each with the line "
+    "the receipt check refused and why; the others are saved. Read each such "
+    "line in its scene: if its translation still needs the fix, correct it "
+    "with a receipt of your own that accept takes, before you get the run's "
+    "results again."
+)
 
 
 def untranslated(
@@ -748,6 +758,8 @@ class TextQA:
                 if native is None
                 else "Findings are applied; report the qa phase complete."
             )
+            if qa.get("left_out"):
+                following = LEFT_OUT_STEP + " " + following
         elif qa.get("rules_changed") and stage not in {"", "screen", "complete"}:
             # Its finished screening may carry over to a task under the new
             # rules; a complete task's review does anyway, as later tasks
@@ -822,6 +834,7 @@ class TextQA:
             "progress": qa["status"],
             **({"labels": labels} if labels else {}),
             **({"untranslated": len(missed)} if missed else {}),
+            **({"left_out": qa["left_out"]} if qa.get("left_out") else {}),
             **({"operation": operation} if operation else {}),
         }
         if report and qa.get("task"):

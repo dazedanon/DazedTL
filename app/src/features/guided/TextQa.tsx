@@ -281,12 +281,15 @@ function AppliedControl({
   undo,
   reapply,
 }: {
-  row: { id: string; state?: "applied" | "undone" };
+  row: { id: string; state?: QaFinding["state"] };
   disabled: boolean;
   feedback: Feedback;
   undo: (id: string) => void;
   reapply: (id: string) => void;
 }) {
+  // Apply left it out, and its reason says why; applying it again would
+  // leave it out again.
+  if (row.state === "left-out") return null;
   // The row's state says a step worked; a notice kept from an earlier
   // step would contradict it once another path, such as the assistant's
   // helper, changed it back.

@@ -86,12 +86,15 @@ test("the QA strip marks one current stage and the activity line reads the engin
         { stage: "complete", reviewed_before: { lines: 790 } },
         {
           applied: true,
-          findings: [{ id: "QA-0001", state: "applied" }],
+          findings: [
+            { id: "QA-0001", state: "applied" },
+            { id: "QA-0002", state: "left-out" },
+          ],
           coverage: { lines: 816, not_reviewed: 6 },
         },
       ),
     ),
-    "1 correction applied · 20 lines checked · 790 unchanged since earlier QA",
+    "1 correction applied · 1 left out · 20 lines checked · 790 unchanged since earlier QA",
   );
 });
 

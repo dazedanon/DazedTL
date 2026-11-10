@@ -1802,20 +1802,27 @@ Additional project instructions:
             all(row["state"] == "accepted" for row in job["states"].values()),
         )
 
-    def correct_lines(self, project_id, changes, provenance):
-        """Saves corrections of lines by unit ID, each a pair of the English
-        the game gets now and its correction, as correction receipts of the
-        requests the run's export reads them from, through the run organize
-        compiled last, as accept saves an assistant's: Text QA's findings on
-        a game it reads by its units (units_qa). A line organize kept from an
-        earlier request is corrected through that request within the
-        constraints organize kept it by (correct_reused). Every receipt is
-        checked before any is saved, and a line whose English is no longer
-        the one given raises LookupError naming it."""
+    def correct_lines(self, project_id, corrections, provenance):
+        """Saves corrections of lines by unit ID as correction receipts of
+        the requests the run's export reads them from, through the run
+        organize compiled last, as accept saves an assistant's: Text QA's
+        findings on a game it reads by its units (units_qa). *corrections*
+        maps a label, such as a finding's ID, to its lines, each unit ID to a
+        pair of the English the game gets now and its correction; a line
+        organize kept from an earlier request is corrected through that
+        request within the constraints organize kept it by (correct_reused).
+
+        Each correction applies whole or not at all: one with a line the
+        receipt check refuses by itself (results `line_problems`) is left
+        out, and the rest are checked as accept checks a receipt before any
+        is saved. Returns why each one left out was, by its label. A line
+        whose English is no longer the one given raises LookupError naming
+        it."""
         from .results import (
             _within,
             exported_line,
             exported_translations,
+            line_problems,
             translated,
         )
 
@@ -1834,11 +1841,14 @@ Additional project instructions:
             if not row.get("converted")
         }
         grouped: dict[str, dict[str, tuple[str, str]]] = {}
-        for identity, change in changes.items():
-            row = rows.get(identity)
-            if row is None or "request_sha256" not in row:
-                raise LookupError(identity)
-            grouped.setdefault(row["request_sha256"], {})[identity] = change
+        labels: dict[str, list[str]] = {}
+        for label, lines in corrections.items():
+            for identity, change in lines.items():
+                row = rows.get(identity)
+                if row is None or "request_sha256" not in row:
+                    raise LookupError(identity)
+                grouped.setdefault(row["request_sha256"], {})[identity] = change
+                labels.setdefault(identity, []).append(label)
         own = {
             request["fingerprint"]: index
             for index, request in enumerate(plan["requests"])
@@ -1847,7 +1857,8 @@ Additional project instructions:
         results = Results(project.root)
         quotes = run_quotes(plan)
         units = None
-        writes = []
+        read = []
+        left_out: dict[str, str] = {}
         for fingerprint, lines in grouped.items():
             if fingerprint in own:
                 index = own[fingerprint]
@@ -1885,8 +1896,7 @@ Additional project instructions:
             if not value:
                 raise LookupError(next(iter(lines)))
             shown = exported(request, value, quotes)
-            translations = dict(value["translations"])
-            for identity, (expected, text) in lines.items():
+            for identity, (expected, _text) in lines.items():
                 # The English given is the export's, or a correction saved
                 # before, which the export writes in its own form, such as
                 # straight quotes for a reviewer's curly ones.
@@ -1895,7 +1905,30 @@ Additional project instructions:
                     exported_line(request, identity, expected, quotes),
                 }:
                     raise LookupError(identity)
-                translations[identity] = text
+            # A line kept from an earlier request is checked under the
+            # constraints organize kept it by, as _within checks it.
+            checked = (
+                request
+                if kept is None
+                else {**request, "constraints": {**request["constraints"], **kept}}
+            )
+            problems = line_problems(
+                checked, {identity: text for identity, (_, text) in lines.items()}
+            )
+            for identity, problem in problems.items():
+                for label in labels[identity]:
+                    left_out.setdefault(label, f"{identity}: {problem}")
+            read.append((request, kept, value, lines))
+        writes = []
+        for request, kept, value, lines in read:
+            translations = dict(value["translations"])
+            changed = False
+            for identity, (_expected, text) in lines.items():
+                if not set(labels[identity]) & set(left_out):
+                    translations[identity] = text
+                    changed = True
+            if not changed:
+                continue
             # Checked as Results.correct checks it, before anything is saved.
             if kept is None:
                 translated(request, translations)
@@ -1913,11 +1946,13 @@ Additional project instructions:
                 {"run_id": job["id"], "mode": mode, "correction": True, **provenance},
                 lines=kept,
             )
-        self.receipt_saved(
-            project_id,
-            plan,
-            all(row["state"] == "accepted" for row in job["states"].values()),
-        )
+        if writes:
+            self.receipt_saved(
+                project_id,
+                plan,
+                all(row["state"] == "accepted" for row in job["states"].values()),
+            )
+        return left_out
 
     def reused_request(self, project_id, plan, fingerprint, batch_id=None):
         """The earlier request of fingerprint whose lines organize kept for

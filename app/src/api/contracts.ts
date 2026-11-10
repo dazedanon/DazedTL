@@ -708,6 +708,13 @@ export type QaLineChange = {
   correction: string;
 };
 
+/** A correction the last step that chose it left as it was. */
+export type QaLeftOut = {
+  id: string;
+  /** The line the receipt check refused, and why. */
+  reason: string;
+};
+
 export type QaFinding = {
   id: string;
   source: string;
@@ -726,7 +733,7 @@ export type QaFinding = {
   reason: string;
   /** A scene correction's lines, which apply and undo together; source, current and correction join them. */
   lines?: QaLineChange[];
-  state?: "applied" | "undone";
+  state?: "applied" | "undone" | "left-out";
 };
 
 /** A playtest or context question no evidence settled; the user keeps the
@@ -740,7 +747,7 @@ export type QaQuestion = {
   places: number;
   proposal: string;
   choice?: "keep" | "use";
-  state?: "applied" | "undone";
+  state?: "applied" | "undone" | "left-out";
 };
 
 export type QaCoverage = {
@@ -895,6 +902,8 @@ export type TextQaStatus = {
   labels?: QaLabel[];
   /** Assistant-led only: never-translated text players can reach in the census's scope, which the assistant translates before apply. */
   untranslated?: number;
+  /** Corrections the last apply, undo or apply again that chose them left as they were. */
+  left_out?: QaLeftOut[];
   operation?: TextQaOperation;
   /** The saved findings file. */
   report?: string;
@@ -926,6 +935,7 @@ export type QaState = {
   message: string;
   findings: QaFinding[];
   questions: QaQuestion[];
+  left_out?: QaLeftOut[];
   coverage?: QaCoverage;
   activity?: QaActivity;
   rules_changed?: boolean;

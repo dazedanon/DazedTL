@@ -346,7 +346,10 @@ def correct(translation, project_id, root, focus, action, options) -> None:
     correction receipts of the requests that answer their lines, and records
     the batch. As an RPG Maker task's apply checks its game, this checks each
     line against the English QA reviewed or corrected it to, and an apply
-    needs the task current, except an apply again of undone corrections."""
+    needs the task current, except an apply again of undone corrections.
+    A correction with a line the receipt check refuses is left out and the
+    rest saved (Translation `correct_lines`); the record keeps each one left
+    out with why, which the task's state reports."""
     from util import rpgmaker_qa as qa
 
     from dazedtl.compatibility.text import _bind, _in_game, qa_selection
@@ -372,12 +375,15 @@ def correct(translation, project_id, root, focus, action, options) -> None:
     selected = qa.correction_map(
         current["task"], chosen, proposals, undo=action == "qa_undo"
     )
-    changes = {
-        row["identity"]: (row["expected"], row["replacement"])
-        for row in selected["operations"]
-    }
+    # A finding's lines, such as a scene correction's, go in together.
+    changes: dict[str, dict[str, tuple[str, str]]] = {}
+    for row in selected["operations"]:
+        changes.setdefault(row["finding_id"], {})[row["identity"]] = (
+            row["expected"],
+            row["replacement"],
+        )
     try:
-        translation.correct_lines(
+        left_out = translation.correct_lines(
             project_id, changes, {"text_qa": Path(current["task"]).name}
         )
     except LookupError as error:
@@ -388,8 +394,10 @@ def correct(translation, project_id, root, focus, action, options) -> None:
             else "A line changed since QA reviewed it, so the correction can't be "
             "applied. Run qa --prepare to review it again."
         ) from error
-    named = set(chosen + proposals)
-    record_batch(workspace, project_id, action, current["task"], sorted(named))
+    named = set(chosen + proposals) - set(left_out)
+    record_batch(
+        workspace, project_id, action, current["task"], sorted(named), left_out
+    )
     # The receipts changed the export; its stamps may not have yet.
     _forget(project_id)
     if current["current"]:
@@ -415,9 +423,10 @@ def history(workspace, project_id) -> list[dict[str, Any]]:
     return rows if isinstance(rows, list) else []
 
 
-def record_batch(workspace, project_id, kind, task, findings) -> None:
+def record_batch(workspace, project_id, kind, task, findings, left_out) -> None:
     """Records one apply or undo of a task's corrections, which the state
-    reads each correction's own state from."""
+    reads each correction's own state from, with why each one it left out
+    was (*left_out*, by finding ID)."""
     rows = history(workspace, project_id)
     rows.append(
         {
@@ -426,6 +435,15 @@ def record_batch(workspace, project_id, kind, task, findings) -> None:
             "state": "complete",
             "task": str(task),
             "findings": list(findings),
+            **(
+                {
+                    "left_out": [
+                        {"id": key, "reason": left_out[key]} for key in sorted(left_out)
+                    ]
+                }
+                if left_out
+                else {}
+            ),
             "created": time.time(),
         }
     )

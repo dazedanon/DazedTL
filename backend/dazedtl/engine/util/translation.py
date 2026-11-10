@@ -713,6 +713,36 @@ def validate_translation_content(
     return is_valid, invalid_indices, reasons
 
 
+def content_problems(sources, translations, language, target, protected=None):
+    """Why each of *translations* of *sources* fails the content check
+    (validate_translation_content), by its index, as accept checks an
+    assistant's receipt (dazedtl/translation/results) and Text QA a
+    correction (util/qa/fitting): read in the source *language* into
+    *target*, each with the kana Guided's reply cleanup writes otherwise
+    (util/target_text `kana_written`), as Guided checks a reply once it is
+    cleaned, so a small kana that cleanup repairs or leaves out fails no
+    line. *protected* lists each one's literal protected tokens."""
+    from util.languages import reading
+    from util.target_text import kana_written
+
+    protected = protected or [()] * len(sources)
+    with reading(language, target):
+        _valid, invalid, reasons = validate_translation_content(
+            list(sources),
+            [
+                kana_written(text, target, tokens)
+                for text, tokens in zip(translations, protected, strict=True)
+            ],
+            source_pattern(language=language),
+            target,
+            protected=list(protected),
+        )
+    return {
+        index: reason.split(": ", 1)[-1]
+        for index, reason in zip(invalid, reasons, strict=True)
+    }
+
+
 def _is_map_name_batch(request_instructions) -> bool:
     """Return True when this request appears to be map-location name translation."""
     if not request_instructions:

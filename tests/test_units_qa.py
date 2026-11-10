@@ -6,6 +6,7 @@ import json
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest import mock
 
 from dazedtl.api.contracts.guided import QaState, TextQaStatus
 from dazedtl.api.contracts.validation import _close_contracts
@@ -14,9 +15,16 @@ from dazedtl.translation import qa_size, units_qa
 from dazedtl.translation.operations import execute
 from dazedtl.translation.project import WORK, review_focus
 from dazedtl.translation.results import Results, exported_translations
-from dazedtl.translation.text_qa import REVIEW_OFF, UNITS_APPLIED, TextQA
+from dazedtl.translation.text_qa import (
+    LEFT_OUT_STEP,
+    REVIEW_OFF,
+    UNITS_APPLIED,
+    TextQA,
+)
 from pydantic import TypeAdapter
 from util import rpgmaker_qa
+from util.qa import fitting
+from util.qa.schema import QAResultError
 
 from tests import test_workflow
 
@@ -243,6 +251,89 @@ class UnitsTextQATests(unittest.TestCase):
         self.assertEqual(
             qa_size.of_units(lines)["focuses"]["release"], {"lines": 3, "scenes": 2}
         )
+
+    def test_apply_leaves_out_a_correction_the_receipt_check_refuses(self):
+        # A task saved with one correction the receipt check refuses, such
+        # as a line collapsed to ".", failed its whole apply, so none of its
+        # good corrections reached the game, and apply again was refused
+        # before a first apply.
+        self.translate(
+            [
+                {"id": "a/1", "scene": "a", "source": "宿代は百ゴールドだよ。"},
+                {"id": "b/1", "scene": "b", "source": "おやすみなさい。"},
+            ],
+            {"a/1": "The inn is a hundred gold, yeah.", "b/1": "Good mornin."},
+        )
+        task = Path(self.step("prepare")["task"])
+        review(
+            task,
+            {
+                "The inn is a hundred gold, yeah.": "The inn is a hundred gold.",
+                "Good mornin.": "Good night.",
+            },
+        )
+        # QA accepted it before it checked corrections by the receipt rule.
+        saved = json.loads((task / "findings.json").read_text(encoding="utf-8"))
+        (short,) = [
+            row
+            for row in saved["findings"]
+            if row["current"] == "The inn is a hundred gold, yeah."
+        ]
+        short["correction"] = "."
+        write_json(task / "findings.json", saved)
+        state = self.step("apply")
+        self.assertEqual(
+            (state["applied"], state["next"]),
+            (True, LEFT_OUT_STEP + " " + UNITS_APPLIED),
+        )
+        self.assertEqual(
+            self.english(),
+            {"a/1": "The inn is a hundred gold, yeah.", "b/1": "Good night."},
+        )
+        (left,) = state["left_out"]
+        self.assertEqual(left["id"], short["id"])
+        self.assertIn("a/1: Translation unusually short ('.')", left["reason"])
+        # The page reads it as left out, with why, and the task as applied.
+        shown = self.service.state(self.identity)["textQa"]
+        TypeAdapter(QaState).validate_json(json.dumps(shown), strict=True)
+        rows = {row["id"]: row for row in shown["findings"]}
+        self.assertEqual(rows[short["id"]]["state"], "left-out")
+        self.assertIn("unusually short", rows[short["id"]]["reason"])
+        (good,) = [key for key, row in rows.items() if row["state"] == "applied"]
+        self.assertTrue(shown["applied"] and shown["current"])
+        with self.assertRaisesRegex(ValueError, "already applied"):
+            self.qa.run(self.identity, "apply")
+        # Undo and apply again keep working, and applying the left-out one
+        # again leaves it out again rather than failing.
+        self.step("undo", findings=[good])
+        self.assertEqual(self.english()["b/1"], "Good mornin.")
+        self.step("reapply", findings=[good])
+        self.assertEqual(self.english()["b/1"], "Good night.")
+        state = self.step("reapply", findings=[short["id"]])
+        self.assertEqual([row["id"] for row in state["left_out"]], [short["id"]])
+        self.assertTrue(state["applied"])
+        self.assertEqual(self.english()["a/1"], "The inn is a hundred gold, yeah.")
+
+    def test_qa_refuses_a_correction_the_receipt_check_refuses(self):
+        # QA accepted a correction that accept refuses in a receipt, so the
+        # task's apply failed on it.
+        self.translate(
+            [{"id": "b/1", "scene": "b", "source": "おやすみなさい。"}],
+            {"b/1": "Good mornin."},
+        )
+        task = Path(self.step("prepare")["task"])
+        refused = (
+            r"would block apply: translation unusually short \('\.'\).* "
+            "give this line English of its own"
+        )
+        with self.assertRaisesRegex(QAResultError, refused):
+            review(task, {"Good mornin.": "."})
+        # Deep review took it before QA checked so; its editor can't accept it.
+        with (
+            mock.patch.object(fitting, "_content_problems", return_value=[]),
+            self.assertRaisesRegex(QAResultError, refused + ".*Revise it"),
+        ):
+            review(task, {"Good mornin.": "."})
 
     def test_a_correction_reads_and_undoes_as_the_game_gets_it(self):
         # The export writes a reviewer's curly apostrophe and dash in its own

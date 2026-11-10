@@ -15,6 +15,7 @@ from util.qa.bundles import _bundle_items, _declined_items, _write_bundles
 from util.qa.findings import _draft_document, _number_findings
 from util.qa.fitting import (
     _box,
+    _content_problems,
     _fit_corrections,
     _record_problems,
     correction_problems,
@@ -305,6 +306,21 @@ def _validate_scene_revision(review: dict[str, Any], item: dict[str, Any]) -> No
                 )
 
 
+def _accepted_problems(item: dict[str, Any]) -> list[str]:
+    """Why translation's content check refuses a correction an editorial
+    item proposes, line by line for a scene correction; a Show Text fix
+    changes no text."""
+    finding = item["finding"]
+    if finding.get("kind") == "show-text":
+        return []
+    lines = finding["lines"] if finding.get("kind") == "scene" else [finding]
+    return [
+        (f"line #{line['command']}: " if "command" in line else "") + problem
+        for line in lines
+        for problem in _content_problems(line["source"], line["correction"])
+    ]
+
+
 def _validate_editorial_result(bundle: dict, result: dict, worker: str) -> None:
     if result.get("schema") != EDITORIAL_RESULT_SCHEMA:
         raise QAResultError("Editorial result has the wrong schema")
@@ -337,6 +353,14 @@ def _validate_editorial_result(bundle: dict, result: dict, worker: str) -> None:
         if verdict != "revise":
             if replacement is not None or review.get("replacements") is not None:
                 raise QAResultError(f"Only a revision has a replacement: {identity}")
+            if verdict == "accept" and (problems := _accepted_problems(item)):
+                # A deep result accepted before Text QA checked corrections
+                # by translation's content check.
+                raise QAResultError(
+                    f"The correction of {identity} would block apply: "
+                    + "; ".join(problems)
+                    + ". Revise it, or withdraw it when no correction passes"
+                )
             continue
         finding = item["finding"]
         if finding.get("kind") == "show-text":

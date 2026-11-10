@@ -339,6 +339,7 @@ def correction_problems(
         problems.append(
             "reads as a refusal or a note about the task, not as game text"
         )
+    problems += _content_problems(source, correction)
     lines = correction.split("\n")
     if live_transform in _SCRIPT_QUOTES and _BREAK_BEFORE_CODE.search(correction):
         # Written as "\n", the break would start a code such as \n[1] instead.
@@ -385,6 +386,27 @@ def correction_problems(
         )
     problems += _blocking_problems(source, live, written, event_code, allowed)
     return problems
+
+
+def _content_problems(source: str, correction: str) -> list[str]:
+    """Why translation's content check, which accept also runs on every
+    receipt, refuses *correction* as a translation of *source*, read in the
+    active languages (util/translation `content_problems`), for a reviewer:
+    a units task's apply saves it as a receipt, and Guided's own translation
+    of the line passes the same check."""
+    from util.languages import active_source, active_target
+    from util.translation import content_problems
+
+    if correction == source:
+        return []
+    return [
+        f"{reason[:1].lower()}{reason[1:]}, which translation's content check "
+        "refuses; give this line English of its own, even when its sentence "
+        "starts on an earlier line"
+        for reason in content_problems(
+            [source], [correction], active_source(), active_target()
+        ).values()
+    ]
 
 
 def nameplate_problems(

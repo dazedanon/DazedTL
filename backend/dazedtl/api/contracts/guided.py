@@ -369,6 +369,19 @@ class QaLineChange(TypedDict):
     correction: str
 
 
+# A correction in the game, undone since, or left out by the apply that chose
+# it, as a units task's correction the receipt check refuses, its reason
+# saying why.
+QaCorrectionState = Literal["applied", "undone", "left-out"]
+
+
+class QaLeftOut(TypedDict):
+    """A correction the last step that chose it left as it was."""
+
+    id: str
+    reason: Annotated[str, "The line the receipt check refused, and why."]
+
+
 class QaFinding(TypedDict):
     id: str
     source: str
@@ -393,7 +406,7 @@ class QaFinding(TypedDict):
             "A scene correction's lines, which apply and undo together; source, current and correction join them.",
         ]
     ]
-    state: NotRequired[Literal["applied", "undone"]]
+    state: NotRequired[QaCorrectionState]
 
 
 class QaQuestion(TypedDict):
@@ -407,7 +420,7 @@ class QaQuestion(TypedDict):
     places: int
     proposal: str
     choice: NotRequired[Literal["keep", "use"]]
-    state: NotRequired[Literal["applied", "undone"]]
+    state: NotRequired[QaCorrectionState]
 
 
 class QaCoverage(TypedDict):
@@ -571,6 +584,12 @@ class TextQaStatus(TypedDict):
             "Assistant-led only: never-translated text players can reach in the census's scope, which the assistant translates before apply.",
         ]
     ]
+    left_out: NotRequired[
+        Annotated[
+            list[QaLeftOut],
+            "Corrections the last apply, undo or apply again that chose them left as they were.",
+        ]
+    ]
     operation: NotRequired[TextQaOperation]
     report: NotRequired[Annotated[str, "The saved findings file."]]
 
@@ -598,6 +617,8 @@ class QaState(TypedDict):
     message: str
     findings: list[QaFinding]
     questions: list[QaQuestion]
+    # Corrections the last step that chose them left as they were, with why.
+    left_out: NotRequired[list[QaLeftOut]]
     coverage: NotRequired[QaCoverage]
     activity: NotRequired[QaActivity]
     # An update changed QA's rules while this task was in review: it is

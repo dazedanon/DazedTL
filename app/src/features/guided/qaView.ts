@@ -178,6 +178,7 @@ export function qaCorrections(qa: QaState) {
     total: rows.length,
     applied: count("applied"),
     undone: count("undone"),
+    leftOut: count("left-out"),
   };
 }
 
@@ -210,7 +211,7 @@ export function qaReviewedBefore(qa: QaState) {
 
 /** The summary line once QA is done: corrections and what it covered. */
 export function qaSummary(qa: QaState) {
-  const { total, applied, undone } = qaCorrections(qa);
+  const { total, applied, undone, leftOut } = qaCorrections(qa);
   const lines = qa.coverage?.lines || 0;
   const missing = qa.coverage?.not_reviewed || 0;
   const earlier = qaReviewedBefore(qa);
@@ -227,6 +228,7 @@ export function qaSummary(qa: QaState) {
         ? `${corrections(total)} to apply`
         : "No corrections needed",
     qa.applied && applied && undone && `${undone.toLocaleString()} undone`,
+    qa.applied && leftOut && `${leftOut.toLocaleString()} left out`,
     lines && `${plural(checked, "line")} checked`,
     earlier && `${earlier.toLocaleString()} unchanged since earlier QA`,
   ]
