@@ -397,6 +397,12 @@
 .tool-feedback-detail > small[data-covered] {
   visibility: hidden;
 }
+/* The note reads on the detail's first line, in the detail's size. */
+.tool-feedback-detail > .fading-note {
+  align-self: start;
+}
 .tool-feedback-detail .feedback {
   margin: 0;
+  font-size: var(--font-control);
+  line-height: 1.5;
 }
