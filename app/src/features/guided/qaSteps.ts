@@ -9,7 +9,9 @@ export type OperationEnd = (
   id: string,
 ) => Promise<{ status: string; message: string }>;
 
-/** Runs one QA step; an apply, undo or reapply is its own checkpoint. */
+/** Runs one QA step; an apply, undo or reapply is its own checkpoint, or on
+ * a game Text QA reads by its units, correction receipts saved before the
+ * step replies. */
 export async function runQaStep(
   projectId: string,
   name: QaStepName,
@@ -17,7 +19,12 @@ export async function runQaStep(
   finished: OperationEnd,
 ) {
   const started = await api.guided.qa(projectId, name, details);
-  if (name === "choose" || !started.operation) return;
+  if (
+    name === "choose" ||
+    !started.operation ||
+    started.operation.status === "complete"
+  )
+    return;
   const ended = await finished(started.operation.id);
   if (ended.status !== "complete")
     throw new Error(ended.message || "QA did not finish this step.");

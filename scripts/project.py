@@ -226,9 +226,10 @@ def main():
     )
     qa = commands.add_parser(
         "qa",
-        help="Text QA for RPG Maker games: where it stands, preparing its task, and "
-        "applying finished findings through DazedTL, each its own checkpoint; for "
-        "other engines, --check runs its text-only rules over your translations",
+        help="Text QA: where it stands, preparing its task and applying finished "
+        "findings through DazedTL, on RPG Maker each its own checkpoint and on other "
+        "engines, whose units it reads, as correction receipts; --check runs its "
+        "text-only rules over your translations",
     )
     qa_step = qa.add_mutually_exclusive_group()
     for step, text in (
@@ -239,7 +240,8 @@ def main():
             "apply",
             (
                 "Apply every finished finding and each proposal the user chose as "
-                "one reviewed text batch"
+                "one reviewed text batch, or on an engine whose units Text QA reads, "
+                "as correction receipts"
             ),
         ),
         (
@@ -256,9 +258,9 @@ def main():
     qa_step.add_argument(
         "--check",
         action="store_true",
-        help="For engines other than RPG Maker MV/MZ and VX Ace: check the exported "
-        "translations with Text QA's text-only rules, list each hit in the work "
-        "folder and print the counts",
+        help="For engines other than RPG Maker MV/MZ and VX Ace, or with the review "
+        "off in Options: check the exported translations with Text QA's text-only "
+        "rules, list each hit in the work folder and print the counts",
     )
     qa_step.add_argument(
         "--undo",
@@ -295,9 +297,9 @@ def main():
         "--since",
         metavar="VERSION",
         help=(
-            "With --prepare: the text was checked before as of this version's update "
-            "(or Git revision), so QA reviews only text changed since; it stays in "
-            "effect for later QA of this game"
+            "With --prepare, for RPG Maker: the text was checked before as of this "
+            "version's update (or Git revision), so QA reviews only text changed "
+            "since; it stays in effect for later QA of this game"
         ),
     )
     qa.add_argument(

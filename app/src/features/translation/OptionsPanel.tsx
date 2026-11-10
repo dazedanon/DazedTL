@@ -10,12 +10,7 @@ import { OptionCards, type OptionCard } from "../../ui/OptionCards";
 import { GameLanguagesRow } from "../project/GameLanguages";
 import { GameUpdatePanel } from "../project/GameUpdatePanel";
 import { ModelMenu } from "../settings/ModelMenu";
-import {
-  qaChecksOnly,
-  qaFocuses,
-  qaReviews,
-  useQaUsageNote,
-} from "../guided/qaUsage";
+import { qaChecksOnly, qaFocusesFor, useQaUsageNote } from "../guided/qaUsage";
 import type { SettingsSection } from "../settings/Settings";
 
 export type Mode = TranslationOptions["mode"];
@@ -335,14 +330,12 @@ export function OptionsPanel({
           onChange={(checked) => edit("thorough_investigation", checked)}
         />
       </CheckGroup>
-      {/* Text QA's review reads RPG Maker MV/MZ and VX Ace games. */}
-      {qaReviews(project.engine) && (
-        <TextQaField
-          projectId={project.id}
-          value={options.text_qa}
-          onChange={(value) => edit("text_qa", value)}
-        />
-      )}
+      <TextQaField
+        projectId={project.id}
+        engine={project.engine}
+        value={options.text_qa}
+        onChange={(value) => edit("text_qa", value)}
+      />
     </fieldset>
   );
 }
@@ -353,10 +346,13 @@ export function OptionsPanel({
  */
 function TextQaField({
   projectId,
+  engine,
   value,
   onChange,
 }: {
   projectId: string;
+  /** The game's engine, whose choices the select offers. */
+  engine: string;
   value: TranslationOptions["text_qa"];
   onChange: (value: TranslationOptions["text_qa"]) => void;
 }) {
@@ -379,7 +375,7 @@ function TextQaField({
             onChange(event.target.value as TranslationOptions["text_qa"])
           }
         >
-          {[...qaFocuses, qaChecksOnly].map(([key, label]) => (
+          {[...qaFocusesFor(engine), qaChecksOnly].map(([key, label]) => (
             <option key={key} value={key}>
               {label}
             </option>

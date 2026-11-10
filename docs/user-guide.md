@@ -177,7 +177,7 @@ Your assistant translates the whole game from one starting prompt.
    If your assistant stops, for example at a usage limit, paste the prompt into a new session and it picks up the saved work.
 5. Use **Release** to build a clean game ZIP or save the patch, even before your assistant finishes: the patch's review lists what's left.
 
-For RPG Maker games your assistant also fits the text to the game's windows and runs [Text QA](#4-check), with the playtest for MV and MZ games; the **Text QA** and **Playtest** tabs show the results.
+Your assistant also runs [Text QA](#4-check), and for RPG Maker games fits the text to the game's windows, with the playtest for MV and MZ games; the **Text QA** and **Playtest** tabs show the results.
 To try again from scratch, stop your assistant and choose **Start over…** on **Progress**; the old attempt stays under Checkpoints.
 
 Your assistant uses its own plan in every mode, so on a limited plan pick a smaller model or lower reasoning effort.

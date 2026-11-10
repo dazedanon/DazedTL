@@ -52,7 +52,7 @@ import { ReleaseTab } from "./ReleaseTab";
 import { jobTime } from "../guided/workspace/model";
 import { playtestActions } from "../guided/playtestView";
 import { finalCheckOpen } from "../guided/qaView";
-import { qaChecksOnly, qaReviews } from "../guided/qaUsage";
+import { qaChecksOnly } from "../guided/qaUsage";
 import { assistantRunState } from "./assistantPhases";
 import { runnableMode } from "./runnableMode";
 
@@ -139,18 +139,16 @@ function Workspace({
   );
   const [editorAssets, setEditorAssets] = useState<string[] | null>(null);
   const [imageFooter, setImageFooter] = useState<HTMLDivElement | null>(null);
-  // Text QA runs in the Guided game workspace its first use opens.
+  // An RPG Maker game's Text QA runs in the Guided game workspace its
+  // first use opens; another engine's reads the assistant's units.
   const guided = application.snapshot?.guided;
   const own = guided?.projectId === project.id ? guided : null;
-  const qa =
-    own?.readiness.qa.task || own?.readiness.qa.unreadable
-      ? own.readiness.qa
-      : null;
+  const prepared = own ? own.readiness.qa : state.textQa;
+  const qa = prepared?.task || prepared?.unreadable ? prepared : null;
   const questions = qa?.questions.filter((row) => !row.choice).length || 0;
   const finalCheck = !!own && finalCheckOpen(own);
   // The assistant follows the saved choice.
-  const checksOnly =
-    state.options.text_qa === qaChecksOnly[0] && qaReviews(project.engine);
+  const checksOnly = state.options.text_qa === qaChecksOnly[0];
   // The plays, oldest first: a playtest, or one with the assistant's fixes in
   // place. The release playtest shows once the assistant has run one.
   const plays = (own?.operations || [])

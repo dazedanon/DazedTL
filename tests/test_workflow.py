@@ -2255,6 +2255,10 @@ class WorkflowTests(unittest.TestCase):
         # Projects keep Text QA's full review unless Options turn it off.
         handoff = self.service.prepare(self.identity)["handoff"]
         self.assertIn("run qa --prepare and follow the README", handoff)
+        # On every engine: one Text QA doesn't read is reviewed by its units,
+        # its findings saved as receipts the assistant writes into the game.
+        self.assertIn("Text QA's review reads the units you organized", handoff)
+        self.assertIn("saves the findings as correction receipts", handoff)
         selected = self.project.read()
         self.service.save(
             self.identity,
@@ -2264,6 +2268,7 @@ class WorkflowTests(unittest.TestCase):
         handoff = self.service.prepare(self.identity)["handoff"]
         self.assertIn("turn Text QA's review off, so never run qa --prepare", handoff)
         self.assertNotIn("run qa --prepare and follow", handoff)
+        self.assertNotIn("correction receipts of your translation", handoff)
         self.assertEqual(
             handoff.split("never run qa --prepare")[1].count(CHECK_STEP), 1
         )
