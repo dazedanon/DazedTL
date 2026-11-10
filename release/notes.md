@@ -5,6 +5,7 @@
 - **Text QA:** Assistant-led's Options can narrow its review or skip it, and both methods say how much of your assistant's plan a review takes.
 - **Text QA:** each main character's lines are now also read together across scenes against their glossary voice note, so drifting voices get corrected.
 - **Assistant-led:** a game translated before requests carried the lines before them can translate again the lines sent without them, keeping your corrections.
+- **Text QA:** Assistant-led games on engines other than RPG Maker now get the same review, its corrections saved for your assistant to write in.
 
 ### Changed
 
