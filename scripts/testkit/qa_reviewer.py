@@ -13,7 +13,8 @@ for the user with a proposal. With --corrections, FILE's corrections replace
 the first item's: a JSON list of {translation, correction, category,
 summary}, each line whose translation is `translation` sent from the screen to
 deep review and corrected there, with the editorial_basis a subjective
-category such as fluency needs.
+category such as fluency needs. A correction with `item`, such as "voice",
+is reported only from screen items of that kind.
 """
 
 import argparse
@@ -43,8 +44,12 @@ def clean(item):
 
 def screen(bundle, _corrected, corrections=None):
     items = bundle["items"]
-    # A scene lists its lines; another item is its own line.
-    lines = [line for item in items for line in item.get("lines") or [item]]
+    # A scene or voice item lists its lines; another item is its own line.
+    lines = [
+        (item.get("kind"), line)
+        for item in items
+        for line in item.get("lines") or [item]
+    ]
     return {
         "schema": qa.SCREEN_RESULT_SCHEMA,
         "reviewed_all": True,
@@ -55,10 +60,11 @@ def screen(bundle, _corrected, corrections=None):
                 "categories": [fix["category"]],
                 "note": fix["summary"],
             }
-            for line in lines
+            for kind, line in lines
             if "id" in line
             for fix in corrections or []
             if fix["translation"] == line.get("translation")
+            and fix.get("item", kind) == kind
         ],
         "motif_reviews": [
             {

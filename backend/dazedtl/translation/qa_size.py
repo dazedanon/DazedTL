@@ -10,7 +10,9 @@ QA's own inventory of the game's translated text. An Assistant-led project
 counts its census of the original game's text instead, which its assistant
 saves before translating, so its Options can show the count before the game
 holds any translation. The assistant's usage itself is not measured, so the
-note calls the count an estimate.
+note calls the count an estimate. It leaves out what a review of dialogue
+reads a second time: its voice items (engine util/qa/voice), at most six of
+one screen bundle each, 960 lines, whatever the game's size.
 
 Counting a big game takes seconds, which no request may wait for: a look at
 one that large counts it in a thread and reads as counting until it ends.

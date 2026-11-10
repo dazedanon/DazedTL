@@ -92,6 +92,12 @@ _ALTERNATIVES = re.compile(r"\s*[/;]\s*")
 # The gender a character's line gives right after its names, as in
 # "ミナ (Mina) - Female - The hero's sister."
 _GENDER = re.compile(r"\s*-\s*(female|male)\b", re.IGNORECASE)
+# What a character's line may hold after its names that says nothing of how
+# the character speaks: a gender, the actor ID Assistant-led reads
+# (util/actor_names) and the marker of a nameplate's row.
+_NOT_A_NOTE = re.compile(
+    r"\b(?:female|male)\b|\bactor\s+id\s*\d+|\(speaker\)|[\W_]+", re.IGNORECASE
+)
 # The qualifier, alternatives and name and title parts of a rendering written
 # without spaces, in full-width forms too, as in 爱丽丝（女仆） or 雪莉，盗贼首领.
 _UNSPACED_QUALIFIER = re.compile(r"\s*[(（][^()（）]*[)）]\s*$")
@@ -188,23 +194,67 @@ def genders(text: str | None) -> dict[str, str]:
     has none."""
     found: dict[str, tuple[str, set[str]]] = {}
     for pairs, line, _section, is_base in glossary_lines(text):
-        last = f"({pairs[-1][1]})"
-        end = line.rfind(last)
-        gender = None if is_base or end < 0 else _GENDER.match(line, end + len(last))
+        end = _names_end(pairs, line)
+        gender = None if is_base or end < 0 else _GENDER.match(line, end)
         if gender is None:
             continue
-        for _source, english in pairs:
-            for name in _ALTERNATIVES.split(_undecorated(english)):
-                name = _QUALIFIER.sub("", name).strip()
-                if len(name) >= TERM_MIN:
-                    found.setdefault(name.casefold(), (name, set()))[1].add(
-                        gender.group(1).capitalize()
-                    )
+        for name in _english_names(pairs):
+            found.setdefault(name.casefold(), (name, set()))[1].add(
+                gender.group(1).capitalize()
+            )
     return {
         name: next(iter(given))
         for name, given in found.values()
         if len(given) == 1
     }
+
+
+def _names_end(pairs: tuple[tuple[str, str], ...], line: str) -> int:
+    """Where a glossary line's notes start, after its last name, or -1."""
+    last = f"({pairs[-1][1]})"
+    end = line.rfind(last)
+    return end if end < 0 else end + len(last)
+
+
+def _english_names(pairs: tuple[tuple[str, str], ...]) -> list[str]:
+    """Each English name a glossary line lists, an alternative apart and
+    without its qualifier, as "Mina / Mina-chan" gives two."""
+    return [
+        name
+        for _source, english in pairs
+        for part in _ALTERNATIVES.split(_undecorated(english))
+        if len(name := _QUALIFIER.sub("", part).strip()) >= TERM_MIN
+    ]
+
+
+def character_notes(text: str | None) -> dict[str, tuple[str, str]]:
+    """Each character the game's glossary describes, as its first English
+    name and its whole line, by each name the line lists, Japanese and
+    English, casefolded: a line with a note after its names that says more
+    than a gender, an actor ID or that it is a nameplate, as a voice note
+    does. A nameplate translated apart from its story and not yet confirmed
+    (vocab UNVERIFIED_NAMEPLATE) has none, base rows name none of the game's
+    characters, and a name two lines list keeps the first."""
+    from util.vocab import UNVERIFIED_NAMEPLATE
+
+    found: dict[str, tuple[str, str]] = {}
+    for pairs, line, _section, is_base in glossary_lines(text):
+        end = _names_end(pairs, line)
+        if (
+            is_base
+            or end < 0
+            or line[end:].lstrip(" -").startswith(UNVERIFIED_NAMEPLATE)
+            or not _NOT_A_NOTE.sub("", line[end:])
+        ):
+            continue
+        english = _english_names(pairs)
+        names = [
+            *(alias for source, _english in pairs for alias in aliases(source)),
+            *english,
+        ]
+        for name in names:
+            found.setdefault(name.casefold(), ((english or [pairs[0][1]])[0], line))
+    return found
 
 
 def glossary_rows(text: str) -> list[tuple[str, str, str, bool]]:

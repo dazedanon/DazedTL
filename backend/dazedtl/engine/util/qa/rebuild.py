@@ -149,12 +149,18 @@ def rebuild_deep_from_screen(
             declines,
             rebuilt,
         )
-    except ValueError:
+    except ValueError as error:
         # A task this rebuild made but could not fill is no task to go on with.
         if rebuilt.name not in before:
             with _task_lock(tasks):
                 system.remove_tree(rebuilt, ignore_errors=True)
-        raise
+            raise
+        # One prepared before keeps its own screen, which may hold other
+        # items than this source's, such as a voice item the source lacks.
+        raise ValueError(
+            f"{error}: a task under the current rules is prepared already, so go "
+            f"on with {rebuilt}"
+        ) from error
     # Declined items the source reported as not reviewed are set aside again.
     skipped = any(row.get("skipped") for row in source_rows)
     if _stage_finished(read_task(rebuilt)[2], ["screen"], skipped):

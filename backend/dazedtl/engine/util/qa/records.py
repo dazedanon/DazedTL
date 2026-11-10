@@ -67,9 +67,14 @@ def _bundle_row(checkpoint: dict, bundle_id: str) -> tuple[str, dict]:
     raise QAResultError(f"Unknown bundle id {bundle_id!r}")
 
 
+# Screen items whose lines are review targets of their own: a scene's, and
+# one speaker's lines from across the game (util/qa/voice).
+LINE_TARGETS = frozenset({"scene", "voice"})
+
+
 def _item_targets(item: dict[str, Any]) -> set[str]:
     """The screen target and context IDs one bundle item holds."""
-    if item.get("kind") == "scene":
+    if item.get("kind") in LINE_TARGETS:
         return {
             line.get("id") or line["context_id"]
             for line in item["lines"]

@@ -26,17 +26,21 @@ from util.paths import (
     from_game,
     in_game,
 )
-from util.qa import mechanical, pronouns
+from util.qa import mechanical, pronouns, voice
 from util.qa.fitting import _record_problems
-from util.qa.records import _decode_pointer, _record_maps, _resolve_parts
+from util.qa.records import LINE_TARGETS, _decode_pointer, _record_maps, _resolve_parts
 from util.qa.schema import (
     _JAPANESE_ANCHOR_RE,
+    DEFAULT_SCREEN_CHAR_BUDGET,
+    DEFAULT_SCREEN_ITEM_LIMIT,
     LINT_ITEM_LIMIT,
+    TEXT_READING,
     _canonical_bytes,
     _sha256,
 )
 from util.qa.storage import _decisions, _read_json, _read_optional
 from util.reference_games import reference_context
+from util.speakers import display_name
 
 if TYPE_CHECKING:
     from util.qa.ledger import _Reviewed
@@ -666,6 +670,105 @@ def _motif_items(
     return items
 
 
+_NUMBER = re.compile(r"(\d+)")
+
+
+def _play_order(scene_id: str) -> list[Any]:
+    """Where a scene comes in play order, as far as its name tells: files
+    and their events by number, so Map2 comes before Map10."""
+    return [
+        int(part) if position % 2 else part
+        for position, part in enumerate(_NUMBER.split(scene_id))
+    ]
+
+
+def _speeches(records: list[dict[str, Any]]) -> list[tuple[dict[str, Any], str]]:
+    """A scene's messages with who says each: the name its Show Text header
+    shows, else the nameplate on the row before it or the name in front of
+    its speech, as the engine reads them (util/qa/schema TEXT_READING). A
+    nameplate on a row names every text of the message after it, where each
+    row keeps a source of its own; its own row is no message, and a message
+    nobody names is left out."""
+    # Each message with the number of the event command that holds it.
+    messages = [
+        (record, place[1])
+        for record in records
+        if record.get("event_code") == 401 and (place := _scene_position(record))
+    ]
+    found = []
+    plate = ("", -1)
+    for position, (record, number) in enumerate(messages):
+        speaker = str((record.get("speaker") or {}).get("display_name") or "")
+        if speaker:
+            found.append((record, speaker))
+            continue
+        rows = str(record["source"]).split("\n")
+        following = rows[1] if len(rows) > 1 else None
+        if following is None and position + 1 < len(messages):
+            # The next row of the same message, where it is a text of its own.
+            after, after_number = messages[position + 1]
+            if after_number == number + 1:
+                following = str(after["source"]).split("\n")[0]
+        named = TEXT_READING.speakers(rows[0], following)
+        if named is not None and named.own_line:
+            plate = (display_name(named.names[0]), number + 1)
+            continue
+        if plate[1] == number:
+            # The message goes on past this text's rows.
+            speaker = plate[0]
+            plate = (speaker, number + len(record["live_pointers"]))
+        elif named is not None:
+            speaker = display_name(named.names[0])
+        if speaker:
+            found.append((record, speaker))
+    return found
+
+
+def _voice_items(
+    manifest: dict[str, Any],
+    context: dict[str, Any],
+    reviewed: _Reviewed | None = None,
+    char_budget: int = DEFAULT_SCREEN_CHAR_BUDGET,
+    line_limit: int = DEFAULT_SCREEN_ITEM_LIMIT,
+    shown: dict[str, str] | None = None,
+) -> tuple[list[dict[str, Any]], dict[str, dict[str, str]]]:
+    """Each main speaker's messages from across the game as one item
+    (util/qa/voice), with the index of its lines' clusters. A line reviewed
+    earlier is left out, as it is no scene's target either. *shown* names
+    the place of each cluster a screened scene targets, where deep review
+    reads a line the item's reviewer reports."""
+    cluster_ids = _cluster_by_identity(manifest)
+    lines = [
+        {
+            "id": cluster_ids[record["identity"]],
+            "identity": record["identity"],
+            "speaker": speaker,
+            "source": record["source"],
+            "translation": record["live"],
+            "scene": scene_id,
+            "order": (_play_order(scene_id), position),
+        }
+        for scene_id, records in _scene_records(manifest).items()
+        for position, (record, speaker) in enumerate(_speeches(records))
+        if not (reviewed and reviewed.line(record["source"], record["live"]))
+    ]
+    items, targets = voice.voice_items(
+        lines,
+        context["glossary"]["text"],
+        char_budget=char_budget,
+        line_limit=line_limit,
+    )
+    return items, {
+        target: {
+            "cluster_id": str(line["id"]),
+            "representative_identity": str(
+                (shown or {}).get(line["id"], line["identity"])
+            ),
+        }
+        for target, line in targets.items()
+    }
+
+
 # The lint families' reading of the last task's game, which one command may
 # need several times: a large game's glossary takes a second or two to read.
 _LINT_GAMES: dict[tuple[str, str], lint.Game] = {}
@@ -779,7 +882,14 @@ def _screen_items(
     data_root: Path,
     lint_fixes: dict[str, dict[str, Any]],
     reviewed: _Reviewed | None = None,
+    char_budget: int = DEFAULT_SCREEN_CHAR_BUDGET,
+    item_limit: int = DEFAULT_SCREEN_ITEM_LIMIT,
+    held: set[str] | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, dict[str, str]]]:
+    """A task's screen items and the index of their lines' clusters; a voice
+    item is sized to one bundle of *char_budget* and *item_limit*. *held*,
+    the items of another task's screen, leaves out a voice item that screen
+    lacked, so a screen from before voice items is made again as it was."""
     compact_items = _compact_items(manifest, context)
     compact = {item["id"]: item for item in compact_items}
     items: list[dict[str, Any]] = []
@@ -818,13 +928,28 @@ def _screen_items(
 
     if manifest["focus"] in {"dialogue", "release"}:
         items.extend(_motif_items(manifest, context, compact, data_root, reviewed))
+        voices, voice_index = _voice_items(
+            manifest, context, reviewed, char_budget, item_limit,
+            {
+                entry["cluster_id"]: entry["representative_identity"]
+                for target, entry in screen_index.items()
+                if target.startswith("scene-target-")
+            },
+        )
+        if held is not None:
+            voices = [item for item in voices if item["id"] in held]
+        items.extend(voices)
+        kept = {line["id"] for item in voices for line in item["lines"]}
+        screen_index.update({
+            target: entry for target, entry in voice_index.items() if target in kept
+        })
 
     # Preserve deterministic load balancing while assigning exact coverage ordinals.
     items.sort(key=lambda item: _sha256("rpgmaker-qa-screen-v3\0" + item["id"]))
     ordinal = 1
     for item in items:
         item["ordinal"] = ordinal
-        if item["kind"] == "scene":
+        if item["kind"] in LINE_TARGETS:
             for line in item["lines"]:
                 if "id" in line:
                     line["ordinal"] = ordinal

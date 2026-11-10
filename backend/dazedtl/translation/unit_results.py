@@ -33,6 +33,12 @@ VERSION = 1
 # of its requests (run_compiler); the operation's compile record freezes it,
 # so an organize started before keeps every unit.
 POLICY = "unit-results-v1"
+# An organize given the option to send cold lines again, which its compile
+# record freezes under this name, packs again each line whose current
+# translation came from a request that started without the lines before it
+# (cold), so it is translated with them; an organize frozen without it
+# keeps every current translation.
+COLD = "cold-lines-v1"
 # The provenance of a receipt of lines imported from a translation file
 # (save_import), which holds its own index entry, since no run plan holds
 # its request.
@@ -125,9 +131,12 @@ def current(source, units, language, target, found, listing):
     """The request whose saved receipt answers each of units (organize's)
     with a current translation, by unit ID: of the receipts of found (entries)
     whose requests held the unit with the same source text in this language
-    pair, the newest that gives it a translation, not its source text
+    pair, the one that gave it its translation last, not its source text
     (results.untranslated), keeping the unit's protected tokens and layout
-    bounds. Guided's newest compatible run wins the same way."""
+    bounds. Guided's newest compatible run wins the same way. A correction
+    gave its receipt's lines their text only where it changed them
+    (Results.given), so it never brings back lines a newer request
+    translated again."""
     wanted = {unit["id"]: unit for unit in units}
     holding = {}
     for fingerprint, value in found.items():
@@ -141,24 +150,24 @@ def current(source, units, language, target, found, listing):
         if identities:
             holding[fingerprint] = identities
     results = Results(source)
-    answered = {}
+    answered, newest = {}, {}
     for fingerprint in sorted(
         holding, key=lambda key: listing[key][1][3], reverse=True
     ):
+        request = indexed(fingerprint, found[fingerprint])
         try:
-            value = results.get(
-                indexed(fingerprint, found[fingerprint]), listing[fingerprint][0]
-            )
+            value = results.get(request, listing[fingerprint][0])
         except OSError, ValueError:
             value = None
         if not value:
             continue
+        given = results.given(value, listing[fingerprint][1][3])
         for identity in holding[fingerprint]:
             unit = wanted[identity]
             text = value["translations"][identity]
-            if identity in answered or untranslated(
-                unit["source"], text, language, target
-            ):
+            if (
+                identity in answered and given[identity] <= newest[identity]
+            ) or untranslated(unit["source"], text, language, target):
                 continue
             try:
                 result_value(
@@ -170,8 +179,49 @@ def current(source, units, language, target, found, listing):
                 )
             except ValueError:
                 continue
-            answered[identity] = fingerprint
+            answered[identity], newest[identity] = fingerprint, given[identity]
     return answered
+
+
+def cold(store, project_id, source, units, answered, language, target, quotes):
+    """The unit IDs of answered (current) whose translation came from a
+    request that started cold: one a run compiled without source context
+    although its first line in play order follows lines of its group
+    (organize._before under organize.LEAD_IN), as every request but a split
+    scene's later parts of an organize frozen before that policy did. Lines
+    before count as organize's layout quotes them, without those DazedTL
+    writes itself (organize.unsent), even one an earlier receipt answers,
+    which layout would quote, so each line sent again gets context.
+    A line a correction gave its text keeps it (Results.corrected),
+    as does one imported from a translation file, one without source
+    letters, or one answered by a request no run plan holds any more."""
+    unsent = organize.unsent(units, language, target, quotes)
+    quoted = [unit for unit in units if unit["id"] not in unsent]
+    position = {unit["id"]: index for index, unit in enumerate(quoted)}
+    results = Results(source)
+    found = set()
+    for fingerprint, request in held(store, project_id, set(answered.values())).items():
+        if request["context"].get("preceding_japanese_source_context"):
+            continue
+        first = min(
+            (
+                position[identity]
+                for identity in request["sources"]
+                if identity in position
+            ),
+            default=None,
+        )
+        if first is None or not organize._before(quoted, first, True):
+            continue
+        corrected = results.corrected(request)
+        found.update(
+            identity
+            for identity in request["sources"]
+            if answered.get(identity) == fingerprint
+            and identity in position
+            and identity not in corrected
+        )
+    return found
 
 
 def record(units, answered, found):
