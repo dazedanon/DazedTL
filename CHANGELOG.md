@@ -3,6 +3,25 @@
 Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 [release.mjs](scripts/release.mjs) writes each entry from [release/notes.md](release/notes.md).
 
+## [2.73.0] - 2026-11-10
+
+### Added
+
+- **Text QA:** Assistant-led's Options can narrow its review or skip it, and both methods say how much of your assistant's plan a review takes.
+- **Text QA:** each main character's lines are now also read together across scenes against their glossary voice note, so drifting voices get corrected.
+- **Assistant-led:** a game translated before requests carried the lines before them can translate again the lines sent without them, keeping your corrections.
+- **Tool feedback:** your assistant ends each translation with a short note on what DazedTL could do better, to copy or save and post on Discord.
+- **Text QA:** Assistant-led games on engines other than RPG Maker now get the same review, its corrections saved for your assistant to write in.
+
+### Changed
+
+- **Assistant-led:** each request now carries the lines just before it in its map or area, so a conversation split across requests reads as one.
+- **Set up:** voice notes now fix one English choice for each archaic pronoun, ending or tic, so a character sounds the same in every request.
+
+### Fixed
+
+- **Assistant-led:** Progress no longer lists speaker names as unextracted when their glossary rows carry a note.
+
 ## [2.72.0] - 2026-11-09
 
 ### Added
@@ -1798,6 +1817,7 @@ Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachan
 - The first release of DazedTL as a desktop app, installed from a ZIP with a START launcher and updated from inside the app.
 - **Guided steps** for RPG Maker MV, MZ and VX Ace games, and **Assistant-led** for any game.
 
+[2.73.0]: https://github.com/dazedanon/DazedTL/compare/v2.72.0...v2.73.0
 [2.72.0]: https://github.com/dazedanon/DazedTL/compare/v2.71.1...v2.72.0
 [2.71.1]: https://github.com/dazedanon/DazedTL/compare/v2.71.0...v2.71.1
 [2.71.0]: https://github.com/dazedanon/DazedTL/compare/v2.70.0...v2.71.0
