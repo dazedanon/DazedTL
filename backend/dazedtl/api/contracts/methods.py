@@ -376,6 +376,21 @@ class InputPathRequest(TypedDict):
     input_path: str
 
 
+class ToolFeedbackRequest(TypedDict):
+    project_id: str
+    input_path: NotRequired[str]
+
+
+class ToolFeedbackReply(TypedDict):
+    """The helper's `feedback`: the instruction and the saved feedback's
+    text, or where the given feedback was saved."""
+
+    instructions: NotRequired[str]
+    saved: NotRequired[str | None]
+    path: NotRequired[str]
+    characters: NotRequired[int]
+
+
 class TranslationFileRequest(TypedDict):
     project_id: str
     path: str
@@ -964,6 +979,7 @@ METHODS: dict[str, Method] = {
     "translation_translator_prompt": Method(RunRequest, PreparedHandoff, refresh=False),
     "translation_review": Method(TranslationReviewRequest, Saved),
     "translation_progress": Method(InputPathRequest, TranslationProgress),
+    "translation_feedback": Method(ToolFeedbackRequest, ToolFeedbackReply),
     "translation_operation": Method(TranslationOperationRequest, TranslationJob),
     "project_start_over": Method(StartOverRequest, TranslationJob),
     # Translation files, for every method (translation/exchange), and the

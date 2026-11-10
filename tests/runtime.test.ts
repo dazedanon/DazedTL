@@ -328,6 +328,37 @@ test("Share a fix's task opens with the open game's facts and nothing else the a
   );
 });
 
+test("shared tool feedback opens with the facts and fits one Discord message", async (t) => {
+  const checkout = fs.mkdtempSync(path.join(os.tmpdir(), "dazedtl-feedback-"));
+  t.after(() => fs.rmSync(checkout, { recursive: true, force: true }));
+  const diagnostics = new Diagnostics(
+    path.join(checkout, "diagnostics"),
+    { app: "fixture" },
+    checkout,
+  );
+  const text = await diagnostics.toolFeedback(
+    { game: "Sword Quest", engine: "RPG Maker MV / MZ", mode: "Assistant-led" },
+    "**How it went:** Fine.\n",
+  );
+  assert.equal(
+    text.replace(/^\*\*System:\*\* .+$/m, "**System:** -"),
+    "**DazedTL tool feedback**\n**DazedTL version:** fixture\n**System:** -\n" +
+      "**Game:** Sword Quest (RPG Maker MV / MZ)\n**Mode:** Assistant-led\n\n" +
+      "**How it went:** Fine.",
+  );
+  // The longest facts with the longest feedback tool_feedback saves
+  // (LIMIT) stay within Discord's 2,000 characters.
+  const longest = await diagnostics.toolFeedback(
+    {
+      game: "あ".repeat(200),
+      engine: "RPG Maker MV / MZ",
+      mode: "Assistant-led",
+    },
+    "x".repeat(1600),
+  );
+  assert.ok(longest.length <= 2000, `${longest.length} characters`);
+});
+
 test("a forced backend stop also ends workers in sessions of their own and the commands it waits on", async (t) => {
   // Stands in for the backend: a worker in its own session and a hung Git
   // command, both idle until stopped.

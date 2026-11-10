@@ -1103,6 +1103,7 @@ def routes(app):
         "translator_prompt",
         "review",
         "progress",
+        "feedback",
         "operation",
         "attach_batch",
         "resolve_uncertain",

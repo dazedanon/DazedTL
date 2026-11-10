@@ -12,6 +12,8 @@ from unittest import mock
 from dazedtl.api.contracts.guided import TextQaCheck, TextQaStatus
 from dazedtl.api.contracts.validation import _close_contracts
 from dazedtl.translation import census, progress_report, qa_size
+from dazedtl.translation.guided_context import GuidedContext
+from dazedtl.translation.helper_command import helper_command
 from dazedtl.translation.operations import census_path
 from dazedtl.translation.project import WORK
 from dazedtl.translation.result_checks import CHECK_FILE, CHECK_STEP, CHECK_VERSION
@@ -70,6 +72,27 @@ def fake_guided(folder, qa, method="guided"):
 
 
 class TextQATests(unittest.TestCase):
+    def test_the_copied_task_ends_the_guided_translation_with_tool_feedback(self):
+        # Text QA, with MV/MZ's final check, is a Guided translation's last
+        # assistant task, so it ends by asking for tool feedback.
+        with (
+            TemporaryDirectory() as folder,
+            mock.patch(
+                "dazedtl.compatibility.text.qa_handoff", return_value="QA's handoff\n"
+            ),
+        ):
+            task = Path(folder) / "qa-task"
+            guided, _calls = fake_guided(folder, {"task": str(task), "current": True})
+            command = helper_command(guided.translation.workspace, "p", "feedback")
+            for engine in ("MVMZ", "ACE"):
+                text = GuidedContext(guided).qa_task(
+                    "p", {"id": "native", "engine": engine}
+                )["text"]
+                closing = text.split("\n## Tool feedback\n")
+                self.assertEqual(len(closing), 2, engine)
+                self.assertIn(f"run `{command}` and follow what it prints", closing[1])
+                self.assertEqual("## Playtest" in closing[0], engine == "MVMZ")
+
     def test_apply_publishes_every_finding_as_one_batch(self):
         # The assistant once applied corrections with engine commands that
         # wrote the game directly, so History could not restore them.

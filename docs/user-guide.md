@@ -365,10 +365,14 @@ If a page fails, its panel offers **Try again** and **Reload interface**; reload
 
 ## Contributing
 
-If you and your assistant fixed something in your game that DazedTL got wrong, such as speaker names it missed or plugin text it skipped, share it so DazedTL can handle games like it by itself.
-Click **Share a fix** in the sidebar with the game open and paste the task into the assistant chat where you made the fix.
-It fills in your DazedTL version, system and game, and your assistant writes a short report: the problem, what changed, how you tested it in the game and whether other games share the pattern.
-Read it over, then post it on [Discord](https://discord.gg/StsRWHPupu).
-It leaves out API keys and long stretches of game text.
+If you and your assistant fixed something DazedTL got wrong in your game, share it so DazedTL can handle games like it by itself.
+Click **Share a fix** with the game open and paste the task into the assistant chat where you made the fix.
+It fills in your DazedTL version, system and game, and your assistant writes a short report.
+
+Ending a translation, your assistant also writes **Tool feedback** on what DazedTL could do better.
+It shows under Assistant-led's patch ZIP on **Progress** or on Guided's **Release**; **Copy for Discord** adds the same facts.
+
+Read either over, then post it on [Discord](https://discord.gg/StsRWHPupu).
+Both leave out API keys and long stretches of game text.
 
 If you know Git, [Development](development.md#contributing-a-change) says how to send a change.

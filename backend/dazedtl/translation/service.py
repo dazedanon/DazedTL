@@ -28,6 +28,7 @@ from dazedtl.settings.execution import (
     connection_summary,
     entries_per_request,
     runnable_mode,
+    saved_secrets,
 )
 from dazedtl.settings.preferences import BATTLE_MESSAGE_USERS
 from dazedtl.storage import write_bytes, write_json
@@ -45,6 +46,7 @@ from . import (
     repricing,
     run_compiler,
     skill_users,
+    tool_feedback,
     unit_results,
     units_qa,
 )
@@ -53,7 +55,13 @@ from .census import HELP_SEGMENT
 from .compilation import verify_compilation
 from .files import digest, evidence, project_path, read_json, verify_evidence
 from .game_update import GameUpdate
-from .helper_command import LOOPBACK_NOTE, helper_command, task_opening, windows_note
+from .helper_command import (
+    CONNECTION,
+    LOOPBACK_NOTE,
+    helper_command,
+    task_opening,
+    windows_note,
+)
 from .jobs import Jobs, declined_message, finished_message, now
 from .operations import (
     census_stale,
@@ -584,6 +592,7 @@ class Translation:
             "statusText": status.read_text(encoding="utf-8")[:250_000]
             if status.is_file() and status.stat().st_size <= 5_000_000
             else "",
+            "toolFeedback": tool_feedback.read(project.root),
             "providerEnabled": self.settings.adapter.allow_providers,
             "connection": connection_summary(self.settings),
             "batchUnavailable": unavailable,
@@ -724,7 +733,7 @@ class Translation:
             if selected["include_images"]
             else ""
         )
-        injection, qa = ("10", "11") if images else ("9", "10")
+        injection, qa, feedback = ("10", "11", "12") if images else ("9", "10", "11")
         # Text QA's review as the Options choose it, for the engines it reads.
         if review_focus(selected):
             playtest_text = "leave `text-qa` problems, its findings in translated text, to text QA, which reviews them"
@@ -760,7 +769,7 @@ class Translation:
             opening = f"Official update {json.dumps(update, ensure_ascii=False)} is applied to this game. Translate the text it added or changed and deliver a verified local patch again using Len's maintained game-translation skills."
             resume = f"""
 
-Game update: preparation is done and the update keeps it, so after step 1's state read continue from step 4, without recording the original, setting up Git, running the canary or investigating again. Run census again, since the scope is now the new version's text. Reuse your extractor and injector in .dazedtl/len-method/work, adapting them to anything the update changed, extract the updated game's units with current source mappings and run organize --complete: requests whose lines and context are unchanged keep their translations, so only new and changed requests are left. {approval} Then {"translate its images as step 9 says, " if images else ""}inject, run QA and the playtest, and package the patch, as steps {injection} and {qa} say."""
+Game update: preparation is done and the update keeps it, so after step 1's state read continue from step 4, without recording the original, setting up Git, running the canary or investigating again. Run census again, since the scope is now the new version's text. Reuse your extractor and injector in .dazedtl/len-method/work, adapting them to anything the update changed, extract the updated game's units with current source mappings and run organize --complete: requests whose lines and context are unchanged keep their translations, so only new and changed requests are left. {approval} Then {"translate its images as step 9 says, " if images else ""}inject, run QA and the playtest, package the patch and give tool feedback, as steps {injection} to {feedback} say."""
             first = "extraction"
         return f"""{pair_note(source, target)}{opening}
 
@@ -798,6 +807,7 @@ After a connection failure, inspect state and the relevant run before retrying a
 8. Save translation records and report progress after each saved milestone, before waits, and at least every ten minutes. Use progress --input <project-relative report> for the maintained Len progress format. Routine progress reporting is lightweight. DazedTL saves your changes to the game in its Git history itself, as checkpoints: each operation that writes the game, each progress report for the phase you were in and each run's end. Don't commit them yourself. Keep detailed evidence in status.md. Translation counts, source-checked review, images, injection, runtime QA and packaging are separate. Check every accepted line mechanically with scripts: IDs, protected tokens, layout bounds and untranslated text. Review accepted requests with review only after actually checking them, and any qa_notes they carry, against the {source}; review the ones you are willing to read, record the rest as not reviewed in status.md, and go on. Preserve intentional ambiguity in the translation; retain any unresolved blocker in status.md. Fingerprints are evidence, not counters to fabricate. For a correction, include the current result_sha256 as replaces_sha256 in the receipt and use accept again. It archives the previous result and invalidates affected review/QA; ordinary retries cannot overwrite accepted translations.{images}
 {injection}. Get the translations with results --run <id>, which writes them by line ID to a file, and inject from that file with scripts. For RPG Maker, first measure the game's message and help windows as text-fitting describes (width, faceWidth, listWidth, noteWidth, messageRows), then confirm the widths you find on screen. {layout} Note and plugin windows still need your own check. For VX Ace, which that check can't play, confirm them by running the game yourself, since its scripts often change the stock windows' {ace_widths}. Then write all five confirmed widths as JSON and save that file's project-relative path as widths with operation line_widths, which also fits text you wrote earlier to them, and put each message's lines in the commands that held its {source}, stage translated JSON and use operation write_rpgmaker with matching source, translated and output paths (or with backup_id, a commit of refs/dazedtl/originals or a backup from backups, naming the saved original the source path is read from). This preserves _original, refuses unsafe structural remapping and fits the text to the saved Line widths, laying each message out over its own commands, so don't wrap it yourself; shorten the text its result lists under misfits, which a window of fixed height cuts off, join the words of each plugin command or note tag it lists under split_commands as the helper's word-spacing describes, and write that file again. After an official source update, use rebase_rpgmaker with the current expected_original_commit when old metadata needs rebasing; it requires source bytes matching that exact original-branch file. Ordinary corrections keep their existing {source}. Other engines retain native source/injection sidecars, fit using the actual engine/renderer and use their own verified reconstruction tools. Record unresolved extraction explicitly.
 {qa}. Inject and verify the actual installed game. Keep the runtime manifest complete: every file the patch changes or adds, which checkpoints take into the patch. Complete targeted structural, source/live and runtime QA; unavailable checks remain pending. For RPG Maker MV/MZ, the release playtest is DazedTL's too: after injection, run playtest --run --wait 20, which checks the game's files and plays it in a hidden window without writing to it, and read the report playtest --report names. Each problem names its fix: translate `plugin-files` and `translate` problems, {source} a plugin or the game's data still holds, through your extraction and injection steps; {playtest_text}; and a `game` problem is {fixes} Run it again with --stops FILE for places its report lists as not reached when you know the event or map that leads there. Report anything still out of reach as a coverage gap; never ask the user to play. {text_qa} {others} {CHECK_STEP} Use operation package for a local Git patch after QA is complete; it needs organize --complete after the latest census, with every unit it accepted in your text export. Public publishing, uploads, remotes and pushes remain separate requests.
+{feedback}. Tool feedback is the translation's last step: once the patch is packaged, run {command} feedback and follow what it prints. If you must stop before packaging for a reason no answer from the user can fix, give it then.
 
 For official updates, use stage_update with the new official folder/version to record its files in the game's Git and create a working copy. A folder holding fewer than half of the game's files is staged as a patch, whose files are copied over the game while every file it leaves out stays; pass patch true or false to override that, and check the returned layout for the folder that lined up with the game. It applies shared preparation to MV/MZ; complete the relevant skill's decryption, conversion or other prerequisites for other engines in the returned copy. Preview that prepared original with version_preview, inspect its saved result, then version_apply with that preview_id. Preserve conflict recovery and continue/abort through the helper. After a completed update, version_handoff returns the task that finishes it. Extract the updated game's units with current source mappings and organize them again; requests whose lines and context are unchanged keep their translations, and positional offsets alone are not stable across releases.
 
@@ -2149,6 +2159,28 @@ If you won't translate a request, skip it and go on; it stays declined. Use the 
         return progress_report.publish(
             self.workspace, project_id, self.engine, project.root, options, report
         )
+
+    def feedback(self, project_id, input_path=None):
+        """The helper's `feedback`: the tool feedback instruction and what is
+        saved, or with *input_path*, the assistant's feedback saved
+        (tool_feedback). Every method's last assistant task runs it."""
+        _record, project = self.project(project_id)
+        if input_path is None:
+            return tool_feedback.show(
+                project.root, helper_command(self.workspace, project_id, "feedback")
+            )
+        return tool_feedback.save(project.root, input_path, self.secrets())
+
+    def secrets(self):
+        """What DazedTL holds that must never leave this computer: the saved
+        connections' keys and the project helper's connection token."""
+        found = saved_secrets(self.settings)
+        try:
+            token = read_json(self.workspace / CONNECTION)["token"]
+            found += [token] if isinstance(token, str) else []
+        except ValueError, OSError, KeyError, TypeError:
+            pass
+        return found
 
     def operation(self, project_id, action, arguments):
         if action not in OPERATIONS:

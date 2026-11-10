@@ -469,6 +469,19 @@ class Diagnostics {
     const facts = (await this.facts(context)).join("\n");
     return task.replace("{facts}", () => facts);
   }
+  /**
+   * The tool feedback the user shares, as Copy for Discord and Save file
+   * give it: a title, the same facts, then what the assistant saved, which
+   * tool_feedback keeps short enough for one Discord message with them.
+   */
+  async toolFeedback(context = {}, feedback = "") {
+    return [
+      "**DazedTL tool feedback**",
+      ...(await this.facts(context)),
+      "",
+      String(feedback).trim(),
+    ].join("\n");
+  }
 }
 
 module.exports = { Diagnostics };

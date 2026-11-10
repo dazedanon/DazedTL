@@ -279,6 +279,16 @@ export async function reviewQa({ page, state }, ...options) {
 
 const qa = ["Review and apply Text QA as an assistant does", reviewQa];
 
+const guidedFeedback = [
+  "The assistant gives tool feedback as Text QA's copied task ends, which Release shows to copy, view and save",
+  async ({ page, state }) => {
+    // Copying the task here would leave it waiting on the assistant; its
+    // closing is tests/test_text_qa.py's.
+    await page.click(/^5Release/);
+    await toolFeedbackShown(page, state, "Guided steps");
+  },
+];
+
 // The voice-drift game's princess: her glossary line with its voice note, as
 // a setup investigation saves it, and the casual line of her second event,
 // which the scripted reviewer reports from her voice item alone.
@@ -2252,6 +2262,47 @@ async function copyTask(page, state, name) {
   }
 }
 
+/**
+ * The assistant gives tool feedback as the translation's last step, and the
+ * row where the method's work ends shows it: Copy for Discord and View give
+ * DazedTL's facts and then the feedback, and Save file writes the same. The
+ * caller opens the screen first; `mode` is the method's name as it reads.
+ */
+async function toolFeedbackShown(page, state, mode) {
+  // Windows prints the assistant's lines with CRLF endings.
+  const saved = (await assistant(page, state, "feedback"))
+    .replace(/\r\n/g, "\n")
+    .trim();
+  await page.waitText("Tool feedback");
+  const copied = await copyTask(page, state, "Copy for Discord");
+  const game = (await page.call("workspace_snapshot")).application.project.name;
+  if (
+    !copied.startsWith("**DazedTL tool feedback**\n**DazedTL version:** ") ||
+    !copied.includes(`\n**Game:** ${game} (`) ||
+    !copied.includes(`\n**Mode:** ${mode}\n\n${saved}`) ||
+    !copied.endsWith(saved)
+  )
+    throw new Error(`Copy for Discord gave ${JSON.stringify(copied)}.`);
+  await page.waitText("Copied. Paste it into DazedTL's Discord.");
+  await page.shot(path.join(state.work, "logs", "tool-feedback-row.png"));
+  await page.click("View");
+  const shown = await until("the tool feedback dialog", () =>
+    page.evaluate(
+      `document.querySelector("dialog[open] pre.translation-report")?.textContent`,
+    ),
+  );
+  if (shown !== copied)
+    throw new Error(`View shows ${JSON.stringify(shown)}, not what Copy gave.`);
+  const file = path.join(state.work, "logs", "tool feedback.md");
+  await chooseFile({ root: state.root, inspect: state.app.inspect }, file);
+  await page.click("Save file");
+  await page.waitText(`Saved to ${file}.`);
+  if (fs.readFileSync(file, "utf8") !== copied + "\n")
+    throw new Error("Save file wrote other text than Copy for Discord gave.");
+  await page.shot(path.join(state.work, "logs", "tool-feedback-dialog.png"));
+  await page.click("Close");
+}
+
 /** Ticks an image's tile in Images to translate, as a click on its box. */
 async function tickImage(page, filename) {
   const at = await page.evaluate(`(() => {
@@ -2669,8 +2720,8 @@ export const scenarios = {
   },
   "qa-done": {
     description:
-      "Translated and applied, then Text QA reviewed by a scripted assistant, one correction applied.",
-    steps: () => [open, ...setup, ...translateAll, qa],
+      "Translated and applied, then Text QA reviewed by a scripted assistant, one correction applied, and tool feedback given as its copied task's last step, which Release shows to copy, view and save.",
+    steps: () => [open, ...setup, ...translateAll, qa, guidedFeedback],
   },
   "qa-voice": {
     description:
@@ -2995,7 +3046,7 @@ export const scenarios = {
   },
   "assistant-released": {
     description:
-      "An Assistant-led project the assistant translated and wrote, but for one line its extractor missed, then played, that line translated through its extraction and injection once Text QA counted it never translated, reviewed with Text QA through the project helper, one correction applied, and played again before packaging; Progress holds QA at Final check until that playtest settles, the Playtest tab then reads Skipped for the game it could not play, its Patch phase shows the patch ZIP, and Release builds a clean game ZIP and saves the patch ZIP, with QA's correction and that line, where it suggests.",
+      "An Assistant-led project the assistant translated and wrote, but for one line its extractor missed, then played, that line translated through its extraction and injection once Text QA counted it never translated, reviewed with Text QA through the project helper, one correction applied, and played again before packaging; Progress holds QA at Final check until that playtest settles, the Playtest tab then reads Skipped for the game it could not play, its Patch phase shows the patch ZIP and then the tool feedback the assistant gives last, to copy, view and save, and Release builds a clean game ZIP and saves the patch ZIP, with QA's correction and that line, where it suggests.",
     steps: () => [
       [
         "Open the game Assistant-led, the assistant translating, without image text",
@@ -3066,6 +3117,13 @@ export const scenarios = {
           ),
       ],
       [
+        "The assistant gives tool feedback last, which Progress shows under the patch to copy, view and save",
+        async ({ page, state }) => {
+          await page.waitText("Patch ZIP\nDone");
+          await toolFeedbackShown(page, state, "Assistant-led");
+        },
+      ],
+      [
         "Progress shows the patch; Release builds a clean game ZIP and the patch ZIP, which holds QA's correction",
         async ({ page, state }) => {
           await page.waitText("Patch ZIP\nDone");
@@ -3121,6 +3179,13 @@ export const scenarios = {
           );
           if (!patch.get("data/Actors.json")?.equals(written))
             throw new Error("The patch ZIP lacks the translated Actors.json.");
+          // Nor does the patch hold DazedTL's files, the tool feedback the
+          // assistant saved before it was built among them.
+          const tools = [...patch.keys()].filter((entry) =>
+            entry.startsWith(".dazedtl/"),
+          );
+          if (tools.length)
+            throw new Error(`The patch ZIP holds ${tools.join(", ")}.`);
           const corrected = [...patch].filter(
             ([entry, data]) =>
               entry.endsWith(".json") && data.includes(qaCorrection),

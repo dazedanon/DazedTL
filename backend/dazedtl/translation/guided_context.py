@@ -14,7 +14,13 @@ from dazedtl.freshness import Basis, compare
 from dazedtl.settings import language_pair
 from dazedtl.storage import write_json
 
-from . import context_setup, header_review, reference_folders, speaker_setup
+from . import (
+    context_setup,
+    header_review,
+    reference_folders,
+    speaker_setup,
+    tool_feedback,
+)
 from .files import digest, project_path, read_json
 from .helper_command import helper_command, task_opening
 from .playtest import final_check
@@ -256,6 +262,9 @@ class GuidedContext:
             handoff["finish"] = (
                 Path(self.guided.backend.workflows.folder(native["id"])) / POINTER
             )
+        # Text QA, with the final check, is a Guided translation's last
+        # assistant task; Release is the user's own.
+        text += tool_feedback.closing(helper_command(workspace, project_id, "feedback"))
         return {"text": text, "handoff": handoff}
 
     def event_text_request(self, project_id, apply=False):

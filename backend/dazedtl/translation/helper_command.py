@@ -10,6 +10,9 @@ from util.paths import GAME_NOTES_FILENAME, game_notes_files
 from dazedtl import system
 
 HELPER = Path(__file__).resolve().parents[3] / "scripts/project.py"
+# Where the workspace keeps the helper's port and token (api/local), which
+# the helper reads too.
+CONNECTION = "agent-connection.json"
 # Every prompt that hands the helper to an assistant says this.
 LOOPBACK_NOTE = (
     "The helper connects to the running app over authenticated loopback HTTP (127.0.0.1). "

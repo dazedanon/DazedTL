@@ -487,6 +487,13 @@ class ManualLoad(TranslationFileImport):
     loaded: ManualFile
 
 
+class ToolFeedback(TypedDict):
+    """The tool feedback the assistant saved (translation/tool_feedback)."""
+
+    text: str
+    savedAt: str
+
+
 class TranslationState(ProjectOptions):
     engine: str
     legacyRun: LegacyRun | None
@@ -518,6 +525,8 @@ class TranslationState(ProjectOptions):
     # "" when it takes them.
     checkoutIssue: str
     statusText: str
+    # The assistant's tool feedback, saved as a translation's last step.
+    toolFeedback: ToolFeedback | None
     providerEnabled: bool
     connection: ConnectionSummary | None
     # Why the connection cannot run Batch, "" when it can or none is ready;

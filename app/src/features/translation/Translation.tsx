@@ -49,6 +49,7 @@ import { useOperationEnd } from "../../state/useOperationEnd";
 import { TextQaTab } from "./TextQaTab";
 import { PlaytestTab } from "./PlaytestTab";
 import { ReleaseTab } from "./ReleaseTab";
+import { ToolFeedbackRow } from "../assistant/ToolFeedback";
 import { jobTime } from "../guided/workspace/model";
 import { playtestActions } from "../guided/playtestView";
 import { finalCheckOpen } from "../guided/qaView";
@@ -371,6 +372,14 @@ function Workspace({
                 finalCheck={finalCheck}
                 checksOnly={checksOnly}
                 openQa={() => void show("qa")}
+                feedback={
+                  state.toolFeedback && (
+                    <ToolFeedbackRow
+                      project={project}
+                      feedback={state.toolFeedback}
+                    />
+                  )
+                }
               />
             </PageBody>
             <ActionBar feedback={<Feedback dirty={draft.dirty} />}>

@@ -284,6 +284,15 @@ def saved_connections(workspace):
     return [item for item in value.get("connections", []) if isinstance(item, dict)]
 
 
+def saved_secrets(settings):
+    """Every saved connection's key, which nothing DazedTL shares may hold."""
+    return [
+        item["secret"]
+        for item in settings._read().get("connections", [])
+        if isinstance(item, dict) and isinstance(item.get("secret"), str)
+    ]
+
+
 def worker_secret(workspace, frozen):
     connection = next(
         (
