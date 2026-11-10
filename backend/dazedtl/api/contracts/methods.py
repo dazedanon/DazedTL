@@ -392,6 +392,7 @@ class TranslationOrganizeRequest(TypedDict):
     project_id: str
     input_path: str
     complete: NotRequired[bool]
+    resend_cold: NotRequired[bool]
 
 
 class RunRequest(TypedDict):

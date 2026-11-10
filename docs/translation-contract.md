@@ -7,15 +7,15 @@ No API credentials belong in adapter files or prompts.
 ## Project helper
 
 The assistant runs the generated command prefix with `scripts/project.py`, which talks only to the running app's authenticated loopback endpoint, never through a proxy or redirects.
-Keep DazedTL open; after it reopens, the same command reads the new connection and resumes saved state.
+Keep DazedTL open; after it reopens, the same command reconnects and resumes saved state.
 
 - Start with `state`: it reports the portable options, Git state, whether the original game files are recorded, saved progress, drafts, frozen runs and any run that needs recovery.
 - Record the engine with `identify` and a project-relative investigation report.
-- Commands that start work return a saved job ID, and `run --wait MINUTES` waits in one command until its state changes.
+- Commands that start work return a saved job ID, and `run --wait MINUTES` waits until its state changes.
 - A lost reply may follow a completed action: read the saved state, runs and the task's active request before retrying a change or a paid submission.
 - The helper can't approve spending, publish plugin files or start what only the user starts, such as Start over, going back or undoing.
 
-The helper also drives the tasks the app hands out:
+The helper also drives the app's tasks:
 
 | Command | What it does |
 | --- | --- |
@@ -27,8 +27,8 @@ The helper also drives the tasks the app hands out:
 ### Sandboxed connections
 
 A network sandbox can block loopback even while DazedTL is running.
-The starting prompt includes the permission and recovery steps, and the helper repeats them on a connection failure.
-Use the assistant's normal permission flow for the helper, and check access with the read-only `state` command before diagnosing an app outage.
+The starting prompt gives the permission and recovery steps, which the helper repeats on a connection failure.
+Use the assistant's normal permission flow for the helper, and check access with read-only `state` before diagnosing an app outage.
 
 ## Game setup
 
@@ -40,7 +40,7 @@ Use the assistant's normal permission flow for the helper, and check access with
 
 ## Source units
 
-Len's extractor saves everything in scope as source units, and organize groups them into requests, so the assistant never reads or rewrites the game's text to group it.
+Len's extractor saves everything in scope as source units, and organize groups them into requests, so the assistant never touches the game's text to group it.
 A unit is one message as the player reads it, with lines the engine stores separately, such as RPG Maker's consecutive 401 commands, joined by newlines.
 `units-format` prints an example, and [organize.py](../backend/dazedtl/translation/organize.py) holds the validator and the grouping.
 The file is an object with `version` 1 and `units`, a list in play order:
@@ -65,6 +65,7 @@ The file is an object with `version` 1 and `units`, a list in play order:
 - A request holds at most the model's entries per request and 8,000 source characters in the API modes, or 250 lines and 12,000 characters in Assistant only.
   In API modes a scene over 10 lines gets its own request; a larger one splits.
 - Each request carries up to 8 lines before it in its group as context, across scenes except field tables.
+  `--resend-cold` translates again each line a request sent without them, except corrected and imported lines (`cold` in [unit_results](../backend/dazedtl/translation/unit_results.py)).
 - A unit without source letters, such as 「……」 or ！？, joins no request: DazedTL writes it in its English form (`unsent_line` in [results](../backend/dazedtl/translation/results.py)).
 - organize refuses units that split most multi-line RPG Maker messages line by line.
 
@@ -170,7 +171,7 @@ Its runs freeze `method: manual`: the user's tools decide the scope and write th
 - Save the measured Line widths with `line_widths`, then stage MV/MZ JSON and run `write_rpgmaker`, which keeps `_original` and fits the text; saving widths again refits what it wrote.
 - When the official source changes, `rebase_rpgmaker` needs the expected original commit and source bytes identical to it; native formats use their own source and injection sidecars.
 
-Every change DazedTL makes to the game, through these operations or the app, is a [checkpoint](architecture.md#checkpoints).
+Every change DazedTL makes to the game is a [checkpoint](architecture.md#checkpoints).
 
 - The app also checkpoints the assistant's own work at each progress report and when a translation run ends, named for the phase the last report named, and `write_rpgmaker` and `rebase_rpgmaker` wait for that checkpoint.
 - Undoing a phase's checkpoint, or going back past it, reopens that phase and every later one, and a game update reopens extraction and the phases after it ([progress_report](../backend/dazedtl/translation/progress_report.py)).

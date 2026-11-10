@@ -21,6 +21,8 @@ from .requests import (
 )
 
 ACCEPTED = WORK + "/work/accepted"
+# Each receipt a correction replaced, by its request's fingerprint (_replace).
+HISTORY = WORK + "/work/accepted-history/"
 # The rules an export writes its lines by (exported_line): 1, recorded by
 # none, Guided's automatic lint fixes; 2, also Guided's reply cleanup; 3,
 # also its repair of small kana left in a line (util/target_text
@@ -639,18 +641,47 @@ class Results:
             return previous
         return self._replace(request, previous, output, provenance)
 
+    def corrected(self, request):
+        """The IDs of the request's lines whose saved translation a
+        correction changed, read back through the receipts its corrections
+        archived (_replace); every line of a correction whose earlier
+        receipt is gone."""
+        value = self._receipt(request)
+        archived, seen, changed = None, set(), set()
+        while value and value.get("provenance", {}).get("correction"):
+            if archived is None:
+                folder = project_path(
+                    self.source, HISTORY + request["fingerprint"], exists=False
+                )
+                archived = {}
+                for path in sorted(folder.glob("*.json")) if folder.is_dir() else ():
+                    try:
+                        item = read_json(path)
+                    except OSError, ValueError:
+                        continue
+                    if isinstance(item, dict) and isinstance(
+                        item.get("translations"), dict
+                    ):
+                        archived.setdefault(item.get("result_sha256"), item)
+            seen.add(value["result_sha256"])
+            previous = archived.get(value.get("previous_result_sha256"))
+            if previous is None:
+                return set(value["translations"])
+            changed.update(
+                identity
+                for identity, text in value["translations"].items()
+                if previous["translations"].get(identity) != text
+            )
+            if previous.get("result_sha256") in seen:
+                break
+            value = previous
+        return changed
+
     def _replace(self, request, previous, output, provenance):
         """Saves output in place of the previous receipt, which it archives.
         A line it leaves as it was keeps its review, which names the
         translation it covers."""
-        history = (
-            WORK
-            + "/work/accepted-history/"
-            + request["fingerprint"]
-            + "/"
-            + digest(previous)
-            + ".json"
-        )
+        history = HISTORY + request["fingerprint"] + "/" + digest(previous) + ".json"
         path = project_path(self.source, history, exists=False)
         if path.exists() and read_json(path) != previous:
             raise ValueError(

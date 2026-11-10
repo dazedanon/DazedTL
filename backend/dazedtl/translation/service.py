@@ -1060,7 +1060,15 @@ Additional project instructions:
         return self._prepare(project_id, "compile", {"input_path": input_path})
 
     def _prepare(
-        self, project_id, action, arguments, *, mode=None, finishes=None, method=None
+        self,
+        project_id,
+        action,
+        arguments,
+        *,
+        mode=None,
+        finishes=None,
+        method=None,
+        resend_cold=False,
     ):
         """Starts the operation that compiles a run. Only drafts, ownership
         and the settings the run freezes are read here: compiling, pricing and
@@ -1068,7 +1076,9 @@ Additional project instructions:
         not hold the dispatch the interface and the helper share. A run that
         finishes another run's declined requests uses the API mode given, as
         does a Manual project's (*method* MANUAL), which runs in it whatever
-        mode Assistant-led saved."""
+        mode Assistant-led saved. An organize with *resend_cold* sends again
+        the lines a request sent without the lines before them
+        (unit_results.COLD)."""
         if self.jobs.running(project_id, "operation"):
             # An assistant whose command timed out may organize again.
             preparing = next(
@@ -1153,6 +1163,10 @@ Additional project instructions:
                 # scene's own earlier lines.
                 lead_in=organize.LEAD_IN,
             )
+            if resend_cold:
+                # Lines a request sent without the lines before them are
+                # packed again; an organize frozen without it keeps them.
+                frozen["resend"] = unit_results.COLD
         job = self.jobs.store.create(
             project_id,
             {
@@ -1199,19 +1213,26 @@ Additional project instructions:
             batch_provider = self.engine.batch_supported(cfg)
         return cfg, batch_provider
 
-    def organize(self, project_id, input_path, complete=False):
+    def organize(self, project_id, input_path, complete=False, resend_cold=False):
         """Starts compiling a run from the lines Len's extractor saved, so the
         assistant never reads or rewrites the game's text to group it; the
-        helper waits for the run."""
+        helper waits for the run. With *resend_cold*, the lines a request
+        sent without the lines before them are translated again with them
+        (unit_results.cold)."""
         if type(complete) is not bool:
             raise ValueError("Say whether the line inventory is complete.")
+        if type(resend_cold) is not bool:
+            raise ValueError("Say whether to send cold lines again.")
         _record, project = self.project(project_id)
         if project.read()["options"]["mode"] != "agent" and not complete:
             raise ValueError(
                 "API estimates need every line extracted. Run census, cover it, then organize again with --complete."
             )
         return self._prepare(
-            project_id, "organize", {"input_path": input_path, "complete": complete}
+            project_id,
+            "organize",
+            {"input_path": input_path, "complete": complete},
+            resend_cold=resend_cold,
         )
 
     def organize_manual(self, project_id, input_path, mode):

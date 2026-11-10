@@ -26,6 +26,7 @@ from dazedtl.translation import (
     organize,
     progress_report,
     publication,
+    unit_results,
 )
 from dazedtl.translation.assistant_release import PackageRefusal
 from dazedtl.translation.compilation import compile_requests
@@ -874,6 +875,130 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(plan["preceding"], {"e/1/0": ["e/0/0"]})
         self.assertNotEqual(
             plan["requests"][1]["fingerprint"], older["requests"][1]["fingerprint"]
+        )
+
+    def test_resending_cold_lines_translates_again_only_those_sent_without_context(
+        self,
+    ):
+        # A game translated before LEAD_IN kept every line a request had sent
+        # without the lines before it, since a line keeps its translation
+        # while its unit ID and source stay the same, so organizing again
+        # never gave those lines their context.
+        selected = self.project.read()
+        self.service.save(
+            self.identity, selected["revision"], {**selected["options"], "mode": "live"}
+        )
+        units = WORK + "/work/source-units.json"
+        write_json(
+            self.game / units,
+            {
+                "version": 1,
+                "units": [
+                    {
+                        "id": "e/0/0",
+                        "scene": "e/0",
+                        "group": "level",
+                        "source": "大事なのは二つよ。",
+                        "speaker": "フリアナ",
+                    },
+                    *(
+                        {
+                            "id": f"e/1/{n}",
+                            "scene": "e/1",
+                            "group": "level",
+                            "source": f"{n}つ目。",
+                        }
+                        for n in range(11)
+                    ),
+                ],
+            },
+        )
+        results = Results(self.game)
+
+        def organized(resend=False, older=False):
+            operation = self.service.organize(
+                self.identity, units, True, resend_cold=resend
+            )
+            job, plan = self.service.jobs.store.load(operation["id"], self.identity)
+            self.assertEqual(
+                plan["compile"].get("resend"), unit_results.COLD if resend else None
+            )
+            if older:
+                # As an organize prepared before LEAD_IN, with requests of
+                # 6 lines, so the block splits and its later part quotes the
+                # lines before it.
+                del plan["compile"]["lead_in"]
+                plan["compile"]["lines"] = 6
+            # The worker reads only the operation's frozen record, as when
+            # it resumes.
+            with patch("dazedtl.translation.run_compiler.require_coverage"):
+                result = execute(self.engine, self.profile, job, plan, lambda: False)
+            run = self.service.run(self.identity, result["run"])
+            return run, self.service.jobs.store.load(run["id"])[1]
+
+        def accept(plan, replies):
+            for request in plan["requests"]:
+                results.accept(
+                    request,
+                    {identity: replies(identity) for identity in request["sources"]},
+                    {"run_id": "test"},
+                )
+
+        _run, plan = organized(older=True)
+        self.assertEqual(
+            [
+                (row["id"], bool(row["context"]["preceding_japanese_source_context"]))
+                for row in plan["requests"]
+            ],
+            [("e/0/0", False), ("e/1/0", False), ("e/1/6", True)],
+        )
+        accept(plan, lambda identity: "Cold " + identity)
+        # A correction since keeps its line, and a correction's unchanged
+        # lines are still cold.
+        cold = plan["requests"][1]
+        saved = results.get(cold)
+        results.correct(
+            cold,
+            {**saved["translations"], "e/1/2": "Fixed."},
+            saved["result_sha256"],
+            {"correction": True},
+        )
+        # A plain organize keeps every translation.
+        run, _plan = organized()
+        self.assertEqual(run["quote"]["requests"], 0)
+        # The option quotes exactly the cold request's other lines, packed
+        # again among the kept ones, and their request quotes the lines
+        # before it.
+        run, plan = organized(resend=True)
+        resent = ["e/1/0", "e/1/1", "e/1/3", "e/1/4", "e/1/5"]
+        self.assertEqual(
+            [identity for row in plan["requests"] for identity in row["sources"]],
+            resent,
+        )
+        self.assertEqual((run["quote"]["requests"], run["quote"]["units"]), (1, 5))
+        self.assertEqual(
+            plan["requests"][0]["context"]["preceding_japanese_source_context"],
+            "フリアナ: 大事なのは二つよ。",
+        )
+        accept(plan, lambda identity: "Warm " + identity)
+        # The next organize, with the option or without, keeps the new
+        # translations and quotes nothing.
+        for resend in (False, True):
+            run, plan = organized(resend=resend)
+            self.assertEqual(run["quote"]["requests"], 0)
+        index = read_json(self.game / EXPORT)
+        self.assertEqual(
+            {
+                row["source_id"]: row.get("translation")
+                for part in index["parts"]
+                for row in read_json(self.game / part)["units"]
+            },
+            {
+                "e/0/0": "Cold e/0/0",
+                **{f"e/1/{n}": f"Warm e/1/{n}" for n in (0, 1, 3, 4, 5)},
+                "e/1/2": "Fixed.",
+                **{f"e/1/{n}": f"Cold e/1/{n}" for n in range(6, 11)},
+            },
         )
 
     def test_the_newest_run_corrects_a_line_it_reused_from_an_earlier_run(self):

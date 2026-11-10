@@ -465,6 +465,11 @@ def main():
         action="store_true",
         help="Only after auditing that the units cover every line in scope",
     )
+    organize.add_argument(
+        "--resend-cold",
+        action="store_true",
+        help="Translate again the lines whose translation came from a request sent without the lines before it in its group, as organizes before DazedTL added that context sent them; a corrected or imported line keeps its translation, and later organizes keep the new ones",
+    )
     for name in (
         "run",
         "stop",
@@ -644,6 +649,8 @@ def main():
                 params["input_path"] = args.input
             if args.command == "organize":
                 params["complete"] = args.complete
+                if args.resend_cold:
+                    params["resend_cold"] = True
             if args.command in {"accept", "decline", "review", "resolve-uncertain"}:
                 params["batch_id"] = args.batch
             if args.command == "decline":

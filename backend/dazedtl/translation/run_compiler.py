@@ -289,6 +289,15 @@ def _organize(engine, workspace, job, plan, progress):
         answered = unit_results.current(
             root, units, run_source(cfg), cfg["language"], found, listing
         )
+        if frozen.get("resend") == unit_results.COLD:
+            # Lines a request sent without the lines before them are packed
+            # again, so they are translated with them; corrected lines keep
+            # their correction.
+            progress("Finding the lines translated without the lines before them")
+            for identity in unit_results.cold(
+                RunStore(workspace), project_id, root, units, answered
+            ):
+                del answered[identity]
         left = [unit for unit in units if unit["id"] not in answered]
         if answered:
             reused = unit_results.record(units, answered, found)

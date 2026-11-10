@@ -33,6 +33,12 @@ VERSION = 1
 # of its requests (run_compiler); the operation's compile record freezes it,
 # so an organize started before keeps every unit.
 POLICY = "unit-results-v1"
+# An organize given the option to send cold lines again, which its compile
+# record freezes under this name, packs again each line whose current
+# translation came from a request that started without the lines before it
+# (cold), so it is translated with them; an organize frozen without it
+# keeps every current translation.
+COLD = "cold-lines-v1"
 # The provenance of a receipt of lines imported from a translation file
 # (save_import), which holds its own index entry, since no run plan holds
 # its request.
@@ -172,6 +178,37 @@ def current(source, units, language, target, found, listing):
                 continue
             answered[identity] = fingerprint
     return answered
+
+
+def cold(store, project_id, source, units, answered):
+    """The unit IDs of answered (current) whose translation came from a
+    request that started cold: one a run compiled without source context
+    although its first line in play order follows lines of its group
+    (organize._before under organize.LEAD_IN), as every request but a split
+    scene's later parts of an organize frozen before that policy did. A line
+    a correction changed keeps its translation (Results.corrected), as does
+    one imported from a translation file or answered by a request no run
+    plan holds any more."""
+    position = {unit["id"]: index for index, unit in enumerate(units)}
+    results = Results(source)
+    found = set()
+    for fingerprint, request in held(store, project_id, set(answered.values())).items():
+        if request["context"].get("preceding_japanese_source_context"):
+            continue
+        first = min(
+            position[identity]
+            for identity in request["sources"]
+            if identity in position
+        )
+        if not organize._before(units, first, True):
+            continue
+        corrected = results.corrected(request)
+        found.update(
+            identity
+            for identity in request["sources"]
+            if answered.get(identity) == fingerprint and identity not in corrected
+        )
+    return found
 
 
 def record(units, answered, found):

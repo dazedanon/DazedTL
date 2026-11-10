@@ -3422,6 +3422,7 @@ export type TranslationOrganizeRequest = {
   project_id: string;
   input_path: string;
   complete?: boolean;
+  resend_cold?: boolean;
 };
 
 export type RunRequest = {
