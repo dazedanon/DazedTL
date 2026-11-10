@@ -37,7 +37,9 @@ qa-applied (report the
 qa phase complete once Text QA's
 apply saved its work, as qa's next step says), final-check (play the game
 again after QA's apply, require the playtest to settle and report its
-problems and coverage) or package (report QA done and package the patch).
+problems and coverage), package (report QA done and package the patch) or
+feedback (give tool feedback as the translation's last step, for a Guided
+project too).
 Each step reports the phase it enters, as the starting prompt asks, and
 write reports QA once it is done.
 HELPER is a JSON list: the project helper's command without its subcommand.
@@ -1146,6 +1148,53 @@ def reply(identity, source, target="English"):
     )
 
 
+def helper(command: list[str], *args: str) -> dict:
+    """The project helper's reply to *args*."""
+    result = subprocess.run(
+        [*command, *args], capture_output=True, text=True, encoding="utf-8", check=False
+    )
+    if result.returncode:
+        raise SystemExit(f"helper {' '.join(args)} failed: {result.stderr.strip()}")
+    return json.loads(result.stdout)
+
+
+def feedback(command: list[str], game: Path) -> str:
+    """Gives tool feedback as a translation's last step: follows what the
+    helper's feedback prints, its home folder first refused, and returns
+    the feedback DazedTL saved. A Guided project's helper takes it too, so it
+    needs no Assistant, whose work folder is Assistant-led's."""
+    shown = helper(command, "feedback")
+    draft = re.search(
+        r"Write the feedback in UTF-8 to `([^`]+)`", shown["instructions"]
+    )
+    if not draft:
+        raise SystemExit("The feedback instruction names no draft file.")
+    path = game / draft.group(1)
+    text = (
+        "**How it went:** Every line translated, written and packaged; the playtest"
+        " could not play the fixture game.\n"
+        "**Problems:**\n- qa (RPG Maker MZ): the playtest named no reason it could"
+        " not start the game; naming the missing engine scripts would have helped.\n"
+        "**Missing engine support:** None\n**Ideas:**\n- None"
+    )
+    path.write_text(f"{text}\nSee {Path.home()}/notes.", encoding="utf-8")
+    refused = subprocess.run(
+        [*command, "feedback", "--input", draft.group(1)],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=False,
+    )
+    if not refused.returncode or "home folder" not in refused.stderr:
+        raise SystemExit("The feedback with the home folder was saved.")
+    path.write_text(text, encoding="utf-8")
+    helper(command, "feedback", "--input", draft.group(1))
+    saved = helper(command, "feedback")["saved"]
+    if saved != text or path.exists():
+        raise SystemExit("The feedback was not saved as written.")
+    return saved
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=str(__doc__).split("\n", 1)[0])
     parser.add_argument(
@@ -1167,6 +1216,7 @@ def main() -> None:
             "qa-applied",
             "final-check",
             "package",
+            "feedback",
         ],
     )
     parser.add_argument("--helper-json")
@@ -1186,6 +1236,9 @@ def main() -> None:
         return
     if not args.helper_json:
         parser.error(f"{args.step} needs --helper-json")
+    if args.step == "feedback":
+        print(feedback(json.loads(args.helper_json), args.game))
+        return
     assistant = Assistant(json.loads(args.helper_json), args.game)
     if args.step == "translate":
         print(json.dumps(assistant.translate(args.requests), ensure_ascii=False))
