@@ -45,8 +45,11 @@ CJK_ALLOWED = 30
 RUN = re.compile(r"(?<![\w.-])[\w-]+(?:\.[\w-]+)*", re.ASCII)
 # A file's extension, which a file's name, such as a plugin's, ends with.
 EXTENSION = re.compile(r"\.[A-Za-z]{1,5}$")
-# The openings of common providers' keys and tokens.
-KEY_PREFIX = re.compile(r"(sk|pk|rk)[-_]|AIza|gh[pousr]_|github_pat_|xox[abpr]-|eyJ")
+# The openings of common providers' keys and tokens; a bare sk_, pk_ or rk_
+# opens a key only with a capital or digit after it, as a name holds neither.
+KEY_PREFIX = re.compile(
+    r"(?:sk|pk|rk)[-_](?=[\w.-]*[A-Z0-9])|AIza|gh[pousr]_|github_pat_|xox[abpr]-|eyJ"
+)
 # Saved secrets shorter than this, which ordinary words could match, are not
 # looked for.
 SECRET_FLOOR = 6
@@ -181,18 +184,23 @@ def problems(text, secrets=()):
 def _random(run):
     """Whether a run of at least 24 letters and digits reads as a key, token,
     ID or hash rather than a name: one opening as common keys do, hex digits
-    or digits alone, letters with digits scattered through them, or letters
-    whose case changes as often as random ones do. A name such as a plugin's,
-    VisuMZ_1_ElementStatusCore, holds a short digit group or two and a few
-    capitals."""
+    or digits alone, parts that mix letters with digits again and again, or
+    letters whose case changes as often as random ones do. A name holds a
+    digit group or two inside its parts, such as VisuMZ_1_ElementStatusCore
+    or nwjs-sdk-v0.49.2-linux-x64, whose versions and dates are parts of
+    their own, and a few capitals."""
     if len(run) < 24:
         return False
     if KEY_PREFIX.match(run):
         return True
-    digits = re.findall(r"\d+", run)
-    if digits and re.fullmatch(r"[0-9A-Fa-f.-]+", run):
+    if re.search(r"\d", run) and re.fullmatch(r"[0-9A-Fa-f.-]+", run):
         return True
-    if len(digits) >= 3 and re.search(r"[A-Za-z]", run):
+    mixed = [
+        part
+        for part in re.split(r"[._-]", run)
+        if re.search(r"\d", part) and re.search(r"[A-Za-z]", part)
+    ]
+    if sum(len(re.findall(r"\d+", part)) for part in mixed) >= 3:
         return True
     letters = re.sub(r"[^A-Za-z]", "", run)
     changes = sum(a.isupper() != b.isupper() for a, b in pairwise(letters))

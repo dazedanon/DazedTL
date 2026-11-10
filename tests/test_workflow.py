@@ -2175,6 +2175,25 @@ class WorkflowTests(unittest.TestCase):
                     self.service.feedback(self.identity, tool_feedback.DRAFT)
                 self.assertTrue((self.game / tool_feedback.DRAFT).is_file())
                 self.assertFalse((self.game / tool_feedback.PATH).exists())
+        # Keys DazedTL doesn't hold are told by their shape, names aren't,
+        # and a short saved secret is looked for too.
+        for run in (
+            "sk-ant-AbcdefGhijklMnopqrStuvwx",
+            "AbCdEfGhIjKlMnOpQrStUvWxYz",
+            "hunter2",
+        ):
+            with self.subTest(run):
+                self.assertTrue(
+                    tool_feedback.problems(f"{good} {run}", ["hunter2"]), run
+                )
+        for name in (
+            "gemini-2.5-flash-preview-09-2025",
+            "DazedTL-2.72.0-linux-x64.AppImage",
+            "claude-opus-4-5-20251101",
+            "sk_message_window_extension_core.js",
+        ):
+            with self.subTest(name):
+                self.assertEqual(tool_feedback.problems(f"{good} {name}"), [], name)
         # A plugin's name is no key, even with digits in it.
         good = good.replace(
             "- None",
