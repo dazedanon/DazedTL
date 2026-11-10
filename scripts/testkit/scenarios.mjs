@@ -369,6 +369,94 @@ const voiceQa = [
   },
 ];
 
+/** Text QA's review of a game it reads by its units, the TyranoScript game's,
+ * after the assistant wrote it: the starting prompt's QA step for other
+ * engines, its findings saved as correction receipts and written into the
+ * game again with the assistant's injector. */
+const unitsQa = [
+  "Text QA reviews the units' scene with Lili's name, Progress shows it, and the farewell line's correction is saved as a receipt, written into the game, undone in the Text QA tab and applied again",
+  async ({ page, state }) => {
+    const prepared = await helper(page, state, "qa", "--prepare");
+    if (prepared.stage !== "screen")
+      throw new Error(`Text QA prepared no review: ${prepared.next}`);
+    const screen = path.join(prepared.task, "bundles/screen");
+    const scene = fs
+      .readdirSync(screen)
+      .flatMap(
+        (name) => JSON.parse(fs.readFileSync(path.join(screen, name))).items,
+      )
+      .find((item) => item.kind === "scene" && item.scene_id === "first");
+    const read = (scene?.lines || []).map((line) => [
+      line.unit,
+      line.command,
+      line.speaker || "",
+      line.source,
+    ]);
+    console.log(`\n  Scene first: ${JSON.stringify(read)}`);
+    if (
+      JSON.stringify(read) !==
+      JSON.stringify([
+        ["first/3", 0, "リリ", "エルフの森へようこそ。"],
+        ["first/5", 1, "", "宿代は100ゴールドだよ。"],
+        ["first/7", 2, "リリ", "エルフの森はいつも静かなの。"],
+        ["first/8", 3, "リリ", "おやすみなさい。"],
+      ])
+    )
+      throw new Error("Text QA's scene holds other lines or speakers.");
+    const farewell = scene.lines[3].translation;
+    if (!scene.lines.every((line) => line.translation))
+      throw new Error("A scene line has no English.");
+    // Progress reads QA's stage and counts from the task.
+    await page.click("Progress");
+    await until("Progress's QA phase to show the review", async () =>
+      /^(Lint review|Screening) \d+ of \d+/.test(
+        (await progressQa(page))?.detail,
+      ),
+    );
+    console.log(`  Progress: QA ${(await progressQa(page)).detail}`);
+    await page.shot(path.join(state.work, "logs", "qa-units-progress.png"));
+    const corrections = path.join(state.work, "units-corrections.json");
+    fs.writeFileSync(
+      corrections,
+      JSON.stringify([
+        {
+          translation: farewell,
+          correction: "Good night.",
+          category: "meaning",
+          summary: "Lili's farewell reads as a test line.",
+        },
+      ]),
+    );
+    await reviewQa({ page, state }, "--corrections", corrections);
+    const status = await helper(page, state, "qa");
+    if (!status.next.startsWith("Text QA's findings are saved as correction"))
+      throw new Error(`qa's next step after apply: ${status.next}`);
+    const game = path.join(state.game, "data/scenario/first.ks");
+    const holds = (line) => fs.readFileSync(game, "utf8").includes(line);
+    // The receipt is the translation's; the injector writes it in.
+    await assistant(page, state, "write");
+    if (!holds("Good night.[p]") || holds(`${farewell}[p]`))
+      throw new Error("The game lacks the corrected farewell.");
+    await page.click("Text QA");
+    await page.waitText("Good night.");
+    await page.shot(path.join(state.work, "logs", "qa-units-applied.png"));
+    await page.click("Undo");
+    await page.waitText("Apply again");
+    await assistant(page, state, "write");
+    if (holds("Good night.[p]") || !holds(`${farewell}[p]`))
+      throw new Error("Undo left the corrected farewell in the game.");
+    const { report } = await helper(page, state, "qa", "--report");
+    const { id } = JSON.parse(fs.readFileSync(report)).findings.find(
+      (row) => row.correction === "Good night.",
+    );
+    await helper(page, state, "qa", "--apply-again", id);
+    await assistant(page, state, "write");
+    if (!holds("Good night.[p]"))
+      throw new Error("Applying again left the farewell uncorrected.");
+    console.log(`  ${id} corrected, written, undone and applied again`);
+  },
+];
+
 const plugins = [
   "Translate and apply Plugin files as an assistant does",
   async ({ page, state }) => {
@@ -3084,7 +3172,7 @@ export const scenarios = {
   },
   "assistant-checked": {
     description:
-      "assistant-written on the TyranoScript game, which Text QA can't read: qa --check lists its two forest lines missing the glossary's name and its inn price's changed number; the assistant corrects two through correction receipts, answers the third and writes the game again, and no hit is open.",
+      "assistant-written on the TyranoScript game, which Text QA reads by its units: qa --check lists its two forest lines missing the glossary's name and its inn price's changed number; the assistant corrects two through correction receipts, answers the third and writes the game again, and no hit is open. Then qa --prepare reviews the units' scene in play order with Lili's name, Progress shows the screening, and the farewell line a scripted reviewer corrects is saved as a correction receipt, listed in the Text QA tab, written into the game, undone there and applied again.",
     game: "tyrano",
     steps: () => [
       ...assistantLed.slice(0, 2),
@@ -3114,6 +3202,7 @@ export const scenarios = {
               throw new Error(`first.ks lacks the corrected line ${line}`);
         },
       ],
+      unitsQa,
     ],
   },
   "assistant-updated": {
