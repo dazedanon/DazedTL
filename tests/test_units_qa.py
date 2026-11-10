@@ -318,8 +318,16 @@ class UnitsTextQATests(unittest.TestCase):
         # QA accepted a correction that accept refuses in a receipt, so the
         # task's apply failed on it.
         self.translate(
-            [{"id": "b/1", "scene": "b", "source": "おやすみなさい。"}],
-            {"b/1": "Good mornin."},
+            [
+                {"id": "b/1", "scene": "b", "source": "おやすみなさい。"},
+                {
+                    "id": "c/1",
+                    "scene": "c",
+                    "source": "またね。",
+                    "max_characters": 12,
+                },
+            ],
+            {"b/1": "Good mornin.", "c/1": "Bye bye now."},
         )
         task = Path(self.step("prepare")["task"])
         refused = (
@@ -327,13 +335,47 @@ class UnitsTextQATests(unittest.TestCase):
             "give this line English of its own"
         )
         with self.assertRaisesRegex(QAResultError, refused):
-            review(task, {"Good mornin.": "."})
-        # Deep review took it before QA checked so; its editor can't accept it.
+            review(task, {"Good mornin.": ".", "Bye bye now.": "Bye."})
+        # The unit's request holds it to 12 characters, as its receipt must.
+        with self.assertRaisesRegex(QAResultError, "longer than its max_characters"):
+            review(
+                task,
+                {"Good mornin.": "Good night.", "Bye bye now.": "See you tomorrow!"},
+            )
+        # A deep result accepted before QA checked so reaches its editor, who
+        # can't accept it, rather than stopping the task.
+        accept = rpgmaker_qa.accept_result
+
+        def before(task, path):
+            if not Path(path).name.startswith("deep"):
+                return accept(task, path)
+            with mock.patch.object(fitting, "_translation_problems", return_value=[]):
+                return accept(task, path)
+
         with (
-            mock.patch.object(fitting, "_content_problems", return_value=[]),
+            mock.patch.object(rpgmaker_qa, "accept_result", before),
             self.assertRaisesRegex(QAResultError, refused + ".*Revise it"),
         ):
-            review(task, {"Good mornin.": "."})
+            review(task, {"Good mornin.": ".", "Bye bye now.": "Bye."})
+        (row,) = rpgmaker_qa.read_task(task)[2]["editorial"]["bundles"]
+        bundle = json.loads(Path(row["path"]).read_text(encoding="utf-8"))
+        path = task.parent / "withdrawn.json"
+        write_json(
+            path,
+            {
+                "bundle_id": row["id"],
+                "bundle_sha256": row["sha256"],
+                "schema": rpgmaker_qa.EDITORIAL_RESULT_SCHEMA,
+                "reviews": [
+                    {"id": item["id"], "verdict": "withdraw", "note": "No fix fits."}
+                    for item in bundle["items"]
+                ],
+            },
+        )
+        rpgmaker_qa.accept_result(task, path)
+        review(task, {})
+        state = self.step("status")
+        self.assertEqual((state["stage"], state["findings"]), ("complete", 0))
 
     def test_a_correction_reads_and_undoes_as_the_game_gets_it(self):
         # The export writes a reviewer's curly apostrophe and dash in its own

@@ -40,8 +40,8 @@ def classification(field: str | None) -> str:
 
 def inventory(lines: Iterable[Mapping[str, Any]], focus: str) -> dict[str, Any]:
     """The QA inventory of *focus* over *lines* in play order, each a unit's
-    `id`, `scene`, `group`, `kind`, `speaker`, `field`, `source` and
-    `translation`; a line whose translation is None is left out, keeping
+    `id`, `scene`, `group`, `kind`, `speaker`, `field`, `source`,
+    `translation` and any `constraints`; a line whose translation is None is left out, keeping
     the numbers of the lines after it in its scene."""
     if focus not in FOCUSES:
         raise ValueError(f"unknown focus: {focus!r}")
@@ -91,6 +91,10 @@ def inventory(lines: Iterable[Mapping[str, Any]], focus: str) -> dict[str, Any]:
         }
         if field:
             record["field"] = str(field)
+        if line.get("constraints"):
+            # What its translation request holds it to, which a receipt of
+            # its correction must keep (fitting.receipt_constraints).
+            record["constraints"] = dict(line["constraints"])
         records.append(record)
     clusters, review_sequence = clustered(records, focus)
     groups = sorted({record["file"] for record in records})

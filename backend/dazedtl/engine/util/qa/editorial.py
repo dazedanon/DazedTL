@@ -15,10 +15,11 @@ from util.qa.bundles import _bundle_items, _declined_items, _write_bundles
 from util.qa.findings import _draft_document, _number_findings
 from util.qa.fitting import (
     _box,
-    _content_problems,
     _fit_corrections,
     _record_problems,
+    _translation_problems,
     correction_problems,
+    receipt_constraints,
 )
 from util.qa.interface import _interface_after
 from util.qa.pace import _not_translated_report, status
@@ -72,6 +73,11 @@ def _editorial_target(record: dict[str, Any], layout: dict[str, Any]) -> dict[st
         "live_pointers": record["live_pointers"],
         "live_transform": record["live_transform"],
         **({"box": box} if (box := _box(record, layout)) else {}),
+        **(
+            {"constraints": constraints}
+            if (constraints := receipt_constraints(record)) is not None
+            else {}
+        ),
     }
 
 
@@ -297,7 +303,7 @@ def _validate_scene_revision(review: dict[str, Any], item: dict[str, Any]) -> No
             problems = correction_problems(
                 line["source"], line["current"], row["replacement"],
                 target["event_code"], target["live_pointers"], target["live_transform"],
-                box=target.get("box"),
+                box=target.get("box"), constraints=target.get("constraints"),
             )
             if problems:
                 raise QAResultError(
@@ -307,18 +313,25 @@ def _validate_scene_revision(review: dict[str, Any], item: dict[str, Any]) -> No
 
 
 def _accepted_problems(item: dict[str, Any]) -> list[str]:
-    """Why translation's content check refuses a correction an editorial
-    item proposes, line by line for a scene correction; a Show Text fix
-    changes no text."""
+    """Why the check translated text passes (fitting._translation_problems)
+    refuses a correction an editorial item proposes at one of its places,
+    line by line for a scene correction; a Show Text fix changes no text."""
     finding = item["finding"]
     if finding.get("kind") == "show-text":
         return []
-    lines = finding["lines"] if finding.get("kind") == "scene" else [finding]
-    return [
-        (f"line #{line['command']}: " if "command" in line else "") + problem
-        for line in lines
-        for problem in _content_problems(line["source"], line["correction"])
-    ]
+    scene = finding.get("kind") == "scene"
+    problems: list[str] = []
+    for line in finding["lines"] if scene else [finding]:
+        for target in item["targets"]:
+            if scene and target["position"] != line["position"]:
+                continue
+            for _reason, problem in _translation_problems(
+                line["source"], line["correction"], target.get("constraints")
+            ):
+                problem = (f"line #{line['command']}: " if scene else "") + problem
+                if problem not in problems:
+                    problems.append(problem)
+    return problems
 
 
 def _validate_editorial_result(bundle: dict, result: dict, worker: str) -> None:
@@ -381,7 +394,7 @@ def _validate_editorial_result(bundle: dict, result: dict, worker: str) -> None:
                 finding["source"], finding["current"], replacement,
                 target["event_code"], target["live_pointers"], target["live_transform"],
                 frozenset(finding.get("allowed_flags") or ()),
-                box=target.get("box"),
+                box=target.get("box"), constraints=target.get("constraints"),
             )
             if problems:
                 raise QAResultError(

@@ -204,6 +204,11 @@ def _target_shape(locator: dict[str, Any]) -> dict[str, Any]:
         "pointers": len(locator["live_pointers"]),
         "transform": locator.get("live_transform", "identity"),
         **({"box": locator["box"]} if locator.get("box") else {}),
+        **(
+            {"constraints": locator["constraints"]}
+            if "constraints" in locator
+            else {}
+        ),
     }
 
 
@@ -223,6 +228,7 @@ def _shape_problems(
         shape["transform"],
         allowed,
         box=shape.get("box"),
+        constraints=shape.get("constraints"),
     )
 
 

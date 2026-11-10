@@ -85,8 +85,9 @@ UNITS_APPLIED = (
 # the last apply left out, since the receipt check refuses them
 # (units_qa.correct).
 LEFT_OUT_STEP = (
-    "Apply left out the corrections listed under left_out, each with the line "
-    "the receipt check refused and why; the others are saved. Read each such "
+    "Text QA left the corrections listed under left_out as they were, each "
+    "with the line the receipt check refused and why; the others are saved. "
+    "Read each such "
     "line in its scene: if its translation still needs the fix, correct it "
     "with a receipt of your own that accept takes, before you get the run's "
     "results again."

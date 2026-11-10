@@ -21,7 +21,7 @@ from util.game_settings import (
     game_wrap_widths,
     normalize_wrap_widths,
 )
-from util.qa import mechanical
+from util.qa import mechanical, units
 from util.qa.schema import (
     _QUOTED_VALUE_RE,
     ADDED_BATTLER_NAME,
@@ -301,8 +301,19 @@ def _record_problems(
     return correction_problems(
         record["source"], record["live"], correction, record.get("event_code"),
         record["live_pointers"], record["live_transform"], allowed,
-        box=_box(record, layout),
+        box=_box(record, layout), constraints=receipt_constraints(record),
     )
+
+
+def receipt_constraints(record: dict[str, Any]) -> dict[str, Any] | None:
+    """The constraints a unit's translation request holds for its line,
+    which an Assistant-led apply's receipt of its correction keeps: a units
+    task's record carries them, one prepared before it did none; None for a
+    line of an RPG Maker game, whose apply writes no receipt. A bundle's
+    locator and an editorial target carry them as `constraints`."""
+    if not units.held(record):
+        return None
+    return dict(record.get("constraints") or {})
 
 
 def correction_problems(
@@ -315,6 +326,7 @@ def correction_problems(
     allowed: frozenset[str] = frozenset(),
     *,
     box: dict[str, Any] | None,
+    constraints: dict[str, Any] | None = None,
 ) -> list[str]:
     """Why applying one correction would fail or trip the post-apply regression.
 
@@ -325,6 +337,9 @@ def correction_problems(
     text uses; a correction it cannot rewrap may not have a line wider than
     both the box and the current text. Into a script string it writes the
     correction escaped as translation writes the string (see _as_written).
+    It must also pass the check translated text passes (_translation_problems):
+    accept's of a receipt for a unit's line, whose request's *constraints*
+    are given, and translation's content check for any other.
     """
     problems = []
     written = _as_written(
@@ -339,7 +354,6 @@ def correction_problems(
         problems.append(
             "reads as a refusal or a note about the task, not as game text"
         )
-    problems += _content_problems(source, correction)
     lines = correction.split("\n")
     if live_transform in _SCRIPT_QUOTES and _BREAK_BEFORE_CODE.search(correction):
         # Written as "\n", the break would start a code such as \n[1] instead.
@@ -385,27 +399,74 @@ def correction_problems(
             f"width is {box['width']}"
         )
     problems += _blocking_problems(source, live, written, event_code, allowed)
+    found = " ".join(problems)
+    problems += [
+        problem
+        for reason, problem in _translation_problems(source, correction, constraints)
+        # QA's own rules already name these.
+        if not (
+            "refusal" in reason and "refusal" in found
+            or "Source-language" in reason and "source-language-residue" in found
+            or "control codes" in reason and "runtime-token-mismatch" in found
+        )
+    ]
     return problems
 
 
-def _content_problems(source: str, correction: str) -> list[str]:
-    """Why translation's content check, which accept also runs on every
-    receipt, refuses *correction* as a translation of *source*, read in the
-    active languages (util/translation `content_problems`), for a reviewer:
-    a units task's apply saves it as a receipt, and Guided's own translation
-    of the line passes the same check."""
+def _translation_problems(
+    source: str, correction: str, constraints: dict[str, Any] | None = None
+) -> list[tuple[str, str]]:
+    """Why the check translated text passes refuses *correction* as a
+    translation of *source*, read in the active languages, each as the
+    check's reason and as a reviewer reads it. A unit's line, whose request's
+    *constraints* are given, gets accept's check of each line of a receipt
+    (results `line_problems`), which a units task's apply saves; any other
+    line translation's content check (util/translation `content_problems`),
+    which Guided's own translation of it passes."""
     from util.languages import active_source, active_target
-    from util.translation import content_problems
 
     if correction == source:
         return []
+    if constraints is None:
+        from util.translation import content_problems
+
+        reasons = list(
+            content_problems(
+                [source], [correction], active_source(), active_target()
+            ).values()
+        )
+        check = "translation's content check"
+    else:
+        from dazedtl.translation.results import line_problems
+
+        reasons = list(
+            line_problems(
+                {
+                    "sources": {"line": source},
+                    "constraints": {"line": constraints},
+                    "context": {
+                        "source_language": active_source(),
+                        "target_language": active_target(),
+                    },
+                },
+                {"line": correction},
+            ).values()
+        )
+        check = "accept's check of the receipt apply saves"
     return [
-        f"{reason[:1].lower()}{reason[1:]}, which translation's content check "
-        "refuses; give this line English of its own, even when its sentence "
-        "starts on an earlier line"
-        for reason in content_problems(
-            [source], [correction], active_source(), active_target()
-        ).values()
+        (
+            reason,
+            f"{reason[:1].lower()}{reason[1:].rstrip('.')}, which {check} refuses"
+            + (
+                # A line collapsed to a mark, as where its sentence began on
+                # an earlier line.
+                "; give this line English of its own, even when its sentence "
+                "starts on an earlier line"
+                if "short (" in reason
+                else ""
+            ),
+        )
+        for reason in reasons
     ]
 
 

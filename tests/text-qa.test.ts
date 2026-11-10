@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   qaActivity,
+  qaGroups,
   qaPhase,
   qaStages,
   qaStartOver,
@@ -95,6 +96,17 @@ test("the QA strip marks one current stage and the activity line reads the engin
       ),
     ),
     "1 correction applied · 1 left out · 20 lines checked · 790 unchanged since earlier QA",
+  );
+  // A correction apply left out leads its category, which shows its first
+  // rows only, so a long task's summary count leads to it.
+  const row = (id: string, family: string, state?: string) =>
+    ({ id, family, category: "meaning", state }) as never;
+  assert.deepEqual(
+    qaGroups([
+      row("QA-0001", "a", "applied"),
+      row("QA-0002", "b", "left-out"),
+    ])[0]!.findings.map((finding) => finding.id),
+    ["QA-0002", "QA-0001"],
   );
 });
 

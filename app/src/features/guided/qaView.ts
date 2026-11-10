@@ -276,7 +276,10 @@ const categoryOrder = [
   "other",
 ];
 
-/** The audit log's groups: by category, findings of one family together. */
+/**
+ * The audit log's groups: by category, findings apply left out first, so a
+ * category's preview shows them, then findings of one family together.
+ */
 export function qaGroups(findings: QaFinding[]) {
   const groups = new Map<string, QaFinding[]>();
   for (const row of findings) {
@@ -293,6 +296,8 @@ export function qaGroups(findings: QaFinding[]) {
       title: category === "ui" ? "Interface" : sentence(category),
       findings: [...rows].sort(
         (left, right) =>
+          Number(right.state === "left-out") -
+            Number(left.state === "left-out") ||
           left.family.localeCompare(right.family) ||
           left.id.localeCompare(right.id),
       ),

@@ -22,7 +22,9 @@ from util.qa.bundles import (
 from util.qa.fitting import (
     _adds_only_battler_name,
     _record_problems,
+    _translation_problems,
     nameplate_problems,
+    receipt_constraints,
 )
 from util.qa.records import (
     LINE_TARGETS,
@@ -238,7 +240,13 @@ def _simulate_apply(
     records: dict[str, dict[str, Any]],
     layout: dict[str, Any],
 ) -> None:
-    """Refuse findings whose corrections the post-apply regression would reject."""
+    """Refuse findings whose corrections the post-apply regression would reject.
+
+    Not for the check translated text passes alone (fitting
+    _translation_problems): a reviewer's result accepted before QA checked
+    it so may hold one it refuses, which the editor then revises or
+    withdraws, and a units task's apply leaves out what still holds one, so
+    the task finishes either way."""
     problems = []
     for finding in findings:
         if finding.get("kind") == "show-text":
@@ -248,12 +256,25 @@ def _simulate_apply(
             continue
         for change in _changes(finding):
             for identity in change["identities"]:
-                found = _record_problems(
-                    records[identity],
-                    change["correction"],
-                    layout,
-                    frozenset(finding.get("allowed_flags") or ()),
-                )
+                record = records[identity]
+                translation = {
+                    problem
+                    for _reason, problem in _translation_problems(
+                        record["source"],
+                        change["correction"],
+                        receipt_constraints(record),
+                    )
+                }
+                found = [
+                    problem
+                    for problem in _record_problems(
+                        record,
+                        change["correction"],
+                        layout,
+                        frozenset(finding.get("allowed_flags") or ()),
+                    )
+                    if problem not in translation
+                ]
                 if found:
                     problems.append(
                         f"{finding['id']} at {identity}: " + "; ".join(found)

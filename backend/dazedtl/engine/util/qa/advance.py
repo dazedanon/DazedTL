@@ -14,7 +14,7 @@ from util.qa.bundles import (
     _load_screen_index,
     _write_bundles,
 )
-from util.qa.fitting import _box, _record_problems
+from util.qa.fitting import _box, _record_problems, receipt_constraints
 from util.qa.interface import _capture_folder, _fit_checks, _interface_checks
 from util.qa.pace import status
 from util.qa.records import _latest_deep_reviews, _record_maps
@@ -160,6 +160,11 @@ def _deep_items(
                 **(
                     {"box": box}
                     if (box := _box(record, layout)) else {}
+                ),
+                **(
+                    {"constraints": constraints}
+                    if (constraints := receipt_constraints(record)) is not None
+                    else {}
                 ),
                 **(
                     {"database_values": sorted(

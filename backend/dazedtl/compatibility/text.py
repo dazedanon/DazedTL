@@ -449,6 +449,10 @@ def qa_state(plan, reader=None):
         if row["id"] not in left:
             return reason(row)
         kind, why = left[row["id"]]
+        # The row names its one line itself.
+        targets = row.get("target_identities") or []
+        if len(targets) == 1:
+            why = why.removeprefix(targets[0] + ": ")
         step = (
             "Apply left this correction out"
             if kind == "qa_apply"
