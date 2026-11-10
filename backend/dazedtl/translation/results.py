@@ -654,7 +654,7 @@ class Results:
         if not value or not value.get("provenance", {}).get("correction"):
             return set()
         if "accepted_ns" in value:
-            return set(value["given_ns"])
+            return set(value.get("given_ns", {}))
         folder = project_path(
             self.source, HISTORY + request["fingerprint"], exists=False
         )
@@ -690,7 +690,7 @@ class Results:
         if "accepted_ns" not in value:
             return dict.fromkeys(value["translations"], saved)
         return {
-            identity: value["given_ns"].get(identity, value["accepted_ns"])
+            identity: value.get("given_ns", {}).get(identity, value["accepted_ns"])
             for identity in value["translations"]
         }
 

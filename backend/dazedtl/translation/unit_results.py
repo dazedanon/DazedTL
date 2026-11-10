@@ -192,7 +192,7 @@ def cold(store, project_id, source, units, answered, language, target, quotes):
     before count as organize's layout quotes them, without those DazedTL
     writes itself (organize.unsent), even one an earlier receipt answers,
     which layout would quote, so each line sent again gets context.
-    A line a correction changed keeps its translation (Results.corrected),
+    A line a correction gave its text keeps it (Results.corrected),
     as does one imported from a translation file, one without source
     letters, or one answered by a request no run plan holds any more."""
     unsent = organize.unsent(units, language, target, quotes)
