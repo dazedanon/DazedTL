@@ -17,6 +17,7 @@ import getpass
 import os
 import re
 from datetime import UTC, datetime
+from itertools import pairwise
 from pathlib import Path
 
 from util.skills.setup import load_clipboard_skill
@@ -40,9 +41,15 @@ PARTS = (
 # game text, whichever side of the translation it is on.
 CJK = re.compile("[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af\uff66-\uff9f]")
 CJK_ALLOWED = 30
-# A run long enough to be a key, token, ID or hash; a file's name, such as a
-# plugin's, ends in its extension, so it is no such run.
-RUN = re.compile(r"(?<![\w.-])[A-Za-z0-9_-]{24,}(?![\w-])(?!\.[A-Za-z])", re.ASCII)
+# A run of letters and digits, its dot-joined parts together, such as a JWT's.
+RUN = re.compile(r"(?<![\w.-])[\w-]+(?:\.[\w-]+)*", re.ASCII)
+# A file's extension, which a file's name, such as a plugin's, ends with.
+EXTENSION = re.compile(r"\.[A-Za-z]{1,5}$")
+# The openings of common providers' keys and tokens.
+KEY_PREFIX = re.compile(r"(sk|pk|rk)[-_]|AIza|gh[pousr]_|github_pat_|xox[abpr]-|eyJ")
+# Saved secrets shorter than this, which ordinary words could match, are not
+# looked for.
+SECRET_FLOOR = 6
 EMAIL = re.compile(r"[\w.+-]+@[\w-]+\.[A-Za-z]{2,}")
 
 
@@ -131,7 +138,7 @@ def problems(text, secrets=()):
     def line(index):
         return text.count("\n", 0, index) + 1
 
-    held = [text.find(secret) for secret in secrets if len(secret) >= 8]
+    held = [text.find(secret) for secret in secrets if len(secret) >= SECRET_FLOOR]
     if any(index >= 0 for index in held):
         found.append(
             "Leave out the saved API key or connection token on line"
@@ -151,7 +158,10 @@ def problems(text, secrets=()):
             f"Leave out the path with the user name on line {line(named.start())}:"
             " write paths inside the game folder relative to it."
         )
-    token = next((run for run in RUN.finditer(text) if _random(run.group())), None)
+    token = next(
+        (run for run in RUN.finditer(text) if _random(EXTENSION.sub("", run.group()))),
+        None,
+    )
     if token:
         found.append(
             f"Leave out keys, tokens, IDs and hashes, such as the one on line"
@@ -169,15 +179,24 @@ def problems(text, secrets=()):
 
 
 def _random(run):
-    """Whether a long run of letters and digits reads as a key, token, ID or
-    hash: hex digits or digits alone, or letters with digits scattered
-    through them, as random keys have; a name such as a plugin's,
-    VisuMZ_1_ElementStatusCore, holds a short group or two."""
-    if not re.search(r"\d", run):
+    """Whether a run of at least 24 letters and digits reads as a key, token,
+    ID or hash rather than a name: one opening as common keys do, hex digits
+    or digits alone, letters with digits scattered through them, or letters
+    whose case changes as often as random ones do. A name such as a plugin's,
+    VisuMZ_1_ElementStatusCore, holds a short digit group or two and a few
+    capitals."""
+    if len(run) < 24:
         return False
-    return bool(re.fullmatch(r"[0-9A-Fa-f-]+", run)) or (
-        len(re.findall(r"\d+", run)) >= 3 and bool(re.search(r"[A-Za-z]", run))
-    )
+    if KEY_PREFIX.match(run):
+        return True
+    digits = re.findall(r"\d+", run)
+    if digits and re.fullmatch(r"[0-9A-Fa-f.-]+", run):
+        return True
+    if len(digits) >= 3 and re.search(r"[A-Za-z]", run):
+        return True
+    letters = re.sub(r"[^A-Za-z]", "", run)
+    changes = sum(a.isupper() != b.isupper() for a, b in pairwise(letters))
+    return len(letters) >= 24 and changes >= len(letters) * 0.4
 
 
 def _homes():

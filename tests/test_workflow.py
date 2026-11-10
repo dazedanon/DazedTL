@@ -2160,6 +2160,12 @@ class WorkflowTests(unittest.TestCase):
             ("saved key", good + " Key fixture-private-value.", "saved API key"),
             ("token", good + " Key sk-proj-a1B2c3D4e5F6g7H8i9J0k1L2", "line 6"),
             ("hash", good + " Run 87660c1d2b154a3e980dc6ac8a018f38.", "keys, tokens"),
+            (
+                "jwt",
+                good
+                + " Token eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.dozjgNryP4J3jVmNHl0w5N",
+                "keys",
+            ),
             ("e-mail", good + " Mail me@example.com.", "e-mail"),
             ("game text", good + " 「" + "魔法少女の冒険" * 5 + "」", "game text"),
         ):
