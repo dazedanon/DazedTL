@@ -1,21 +1,24 @@
 import { useState } from "react";
+import { Check } from "lucide-react";
 import type { Project, ToolFeedback } from "../../api/contracts";
 import { reportContext } from "../../app/ShareActions";
 import { useAction } from "../../state/useAction";
 import { ActionBar } from "../../ui/ActionBar";
-import { ActionControl } from "../../ui/ActionControl";
 import { ActionRow } from "../../ui/ActionList";
+import { Button } from "../../ui/Button";
 import { DialogBody, DialogHeader } from "../../ui/Dialog";
+import { FadingNote } from "../../ui/FadingNote";
+import { Feedback } from "../../ui/Feedback";
 import { Modal } from "../../ui/Modal";
-
-const copied = "Copied. Paste it into DazedTL's Discord.";
 
 /**
  * The tool feedback the assistant saved as a translation's last step, as a
  * row where each method's work ends: Assistant-led's Progress and Guided's
  * Release. View shows the exact text Copy for Discord and Save file give,
  * DazedTL's facts about the open game and then the feedback, which the main
- * process puts together as it does Share a fix's.
+ * process puts together as it does Share a fix's. A copy or save that went
+ * well says so in a note that fades away, and a failure stays; neither
+ * moves the buttons.
  */
 export function ToolFeedbackRow({
   project,
@@ -31,7 +34,7 @@ export function ToolFeedbackRow({
   const copy = (key: string) =>
     void action.run(
       async () => window.dazedtl.copyText(await shared()),
-      copied,
+      "Copied. Paste it into DazedTL's Discord.",
       key,
     );
   const save = async () => {
@@ -48,38 +51,56 @@ export function ToolFeedbackRow({
     if (result.ok && result.value)
       action.succeed(`Saved to ${result.value}.`, "feedback-save");
   };
-  const view = () =>
-    void action.run(async () => setShown(await shared()), "", "feedback-view");
-  const control = (
-    key: string,
-    label: string,
-    onClick: () => void,
-    pendingText: string,
-    variant?: "primary",
-  ) => (
-    <ActionControl
-      label={label}
-      variant={variant}
+  // The outcome of the actions in the row, or in the dialog while it shows.
+  const outcome = (keys: string[]) =>
+    !keys.includes(action.key) || action.busy ? null : action.error ? (
+      <Feedback error={action.error} />
+    ) : (
+      action.notice && (
+        // A new copy clears the notice first, so its note mounts afresh.
+        <FadingNote className="feedback" onGone={action.clear}>
+          <Check size={15} className="feedback-mark" />
+          {action.notice}
+        </FadingNote>
+      )
+    );
+  const button = (key: string, label: string, onClick: () => void) => (
+    <Button
       disabled={action.busy}
       pending={action.busy && action.key === key}
-      pendingText={pendingText}
-      error={action.key === key ? action.error : ""}
-      notice={action.key === key ? action.notice : ""}
       onClick={onClick}
-    />
+    >
+      {label}
+    </Button>
   );
   return (
     <>
       <ActionRow
-        title="Tool feedback"
-        description={`What your assistant thinks DazedTL could do better, to share on DazedTL's Discord · Saved ${new Date(feedback.savedAt).toLocaleString()}`}
+        name="Tool feedback"
+        label={
+          <>
+            <strong>Tool feedback</strong>
+            <small>
+              What your assistant thinks DazedTL could do better, to share on
+              DazedTL&apos;s Discord · Saved{" "}
+              {new Date(feedback.savedAt).toLocaleString()}
+            </small>
+            {shown === null && outcome(["feedback-view", "feedback-copy"])}
+          </>
+        }
       >
-        {control("feedback-view", "View", view, "Opening…")}
-        {control(
-          "feedback-copy",
-          "Copy for Discord",
-          () => copy("feedback-copy"),
-          "Copying…",
+        {button(
+          "feedback-view",
+          "View",
+          () =>
+            void action.run(
+              async () => setShown(await shared()),
+              "",
+              "feedback-view",
+            ),
+        )}
+        {button("feedback-copy", "Copy for Discord", () =>
+          copy("feedback-copy"),
         )}
       </ActionRow>
       {shown !== null && (
@@ -98,20 +119,18 @@ export function ToolFeedbackRow({
           <DialogBody>
             <pre className="translation-report">{shown}</pre>
           </DialogBody>
-          <ActionBar feedback={null}>
-            {control(
-              "feedback-save",
-              "Save file",
-              () => void save(),
-              "Saving…",
-            )}
-            {control(
-              "feedback-dialog-copy",
-              "Copy for Discord",
-              () => copy("feedback-dialog-copy"),
-              "Copying…",
-              "primary",
-            )}
+          <ActionBar
+            feedback={outcome(["feedback-save", "feedback-dialog-copy"])}
+          >
+            {button("feedback-save", "Save file", () => void save())}
+            <Button
+              variant="primary"
+              disabled={action.busy}
+              pending={action.busy && action.key === "feedback-dialog-copy"}
+              onClick={() => copy("feedback-dialog-copy")}
+            >
+              Copy for Discord
+            </Button>
           </ActionBar>
         </Modal>
       )}
