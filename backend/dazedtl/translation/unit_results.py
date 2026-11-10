@@ -131,9 +131,13 @@ def current(source, units, language, target, found, listing):
     """The request whose saved receipt answers each of units (organize's)
     with a current translation, by unit ID: of the receipts of found (entries)
     whose requests held the unit with the same source text in this language
-    pair, the newest that gives it a translation, not its source text
+    pair, the one that gave it its translation last, not its source text
     (results.untranslated), keeping the unit's protected tokens and layout
-    bounds. Guided's newest compatible run wins the same way."""
+    bounds. Guided's newest compatible run wins the same way. A receipt gave
+    its lines their translation when it was saved, but a correction only
+    the lines it changed (Results.corrected): the others keep the time they
+    were accepted, so a correction never brings back lines a newer request
+    translated again."""
     wanted = {unit["id"]: unit for unit in units}
     holding = {}
     for fingerprint, value in found.items():
@@ -147,22 +151,28 @@ def current(source, units, language, target, found, listing):
         if identities:
             holding[fingerprint] = identities
     results = Results(source)
-    answered = {}
+    answered, newest = {}, {}
     for fingerprint in sorted(
         holding, key=lambda key: listing[key][1][3], reverse=True
     ):
+        request = indexed(fingerprint, found[fingerprint])
         try:
-            value = results.get(
-                indexed(fingerprint, found[fingerprint]), listing[fingerprint][0]
-            )
+            value = results.get(request, listing[fingerprint][0])
         except OSError, ValueError:
             value = None
         if not value:
             continue
+        saved = listing[fingerprint][1][3]
+        changed = results.corrected(request, value) if "accepted_ns" in value else None
         for identity in holding[fingerprint]:
+            given = (
+                saved
+                if changed is None or identity in changed
+                else value["accepted_ns"]
+            )
             unit = wanted[identity]
             text = value["translations"][identity]
-            if identity in answered or untranslated(
+            if (identity in answered and given <= newest[identity]) or untranslated(
                 unit["source"], text, language, target
             ):
                 continue
@@ -176,37 +186,46 @@ def current(source, units, language, target, found, listing):
                 )
             except ValueError:
                 continue
-            answered[identity] = fingerprint
+            answered[identity], newest[identity] = fingerprint, given
     return answered
 
 
-def cold(store, project_id, source, units, answered):
+def cold(store, project_id, source, units, answered, language, target, quotes):
     """The unit IDs of answered (current) whose translation came from a
     request that started cold: one a run compiled without source context
     although its first line in play order follows lines of its group
     (organize._before under organize.LEAD_IN), as every request but a split
-    scene's later parts of an organize frozen before that policy did. A line
-    a correction changed keeps its translation (Results.corrected), as does
-    one imported from a translation file or answered by a request no run
-    plan holds any more."""
-    position = {unit["id"]: index for index, unit in enumerate(units)}
+    scene's later parts of an organize frozen before that policy did. Lines
+    before count as organize's layout quotes them, without those DazedTL
+    writes itself (organize.unsent), so each line sent again gets context.
+    A line a correction changed keeps its translation (Results.corrected),
+    as does one imported from a translation file, one without source
+    letters, or one answered by a request no run plan holds any more."""
+    unsent = organize.unsent(units, language, target, quotes)
+    quoted = [unit for unit in units if unit["id"] not in unsent]
+    position = {unit["id"]: index for index, unit in enumerate(quoted)}
     results = Results(source)
     found = set()
     for fingerprint, request in held(store, project_id, set(answered.values())).items():
         if request["context"].get("preceding_japanese_source_context"):
             continue
         first = min(
-            position[identity]
-            for identity in request["sources"]
-            if identity in position
+            (
+                position[identity]
+                for identity in request["sources"]
+                if identity in position
+            ),
+            default=None,
         )
-        if not organize._before(units, first, True):
+        if first is None or not organize._before(quoted, first, True):
             continue
         corrected = results.corrected(request)
         found.update(
             identity
             for identity in request["sources"]
-            if answered.get(identity) == fingerprint and identity not in corrected
+            if answered.get(identity) == fingerprint
+            and identity in position
+            and identity not in corrected
         )
     return found
 

@@ -295,7 +295,14 @@ def _organize(engine, workspace, job, plan, progress):
             # their correction.
             progress("Finding the lines translated without the lines before them")
             for identity in unit_results.cold(
-                RunStore(workspace), project_id, root, units, answered
+                RunStore(workspace),
+                project_id,
+                root,
+                units,
+                answered,
+                run_source(cfg),
+                cfg["language"],
+                frozen.get(QUOTES, True),
             ):
                 del answered[identity]
         left = [unit for unit in units if unit["id"] not in answered]

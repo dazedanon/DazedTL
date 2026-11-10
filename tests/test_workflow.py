@@ -910,6 +910,23 @@ class WorkflowTests(unittest.TestCase):
                         }
                         for n in range(11)
                     ),
+                    # Another group opening with a line DazedTL writes
+                    # itself, which no request quotes.
+                    {
+                        "id": "f/0/0",
+                        "scene": "f/0",
+                        "group": "hall",
+                        "source": "「……」",
+                    },
+                    *(
+                        {
+                            "id": f"f/1/{n}",
+                            "scene": "f/1",
+                            "group": "hall",
+                            "source": f"{n}本目。",
+                        }
+                        for n in range(3)
+                    ),
                 ],
             },
         )
@@ -950,7 +967,7 @@ class WorkflowTests(unittest.TestCase):
                 (row["id"], bool(row["context"]["preceding_japanese_source_context"]))
                 for row in plan["requests"]
             ],
-            [("e/0/0", False), ("e/1/0", False), ("e/1/6", True)],
+            [("e/0/0", False), ("e/1/0", False), ("e/1/6", True), ("f/1/0", False)],
         )
         accept(plan, lambda identity: "Cold " + identity)
         # A correction since keeps its line, and a correction's unchanged
@@ -968,7 +985,8 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(run["quote"]["requests"], 0)
         # The option quotes exactly the cold request's other lines, packed
         # again among the kept ones, and their request quotes the lines
-        # before it.
+        # before it; f/1's request follows no line a request could quote, so
+        # sending it again would give it no context.
         run, plan = organized(resend=True)
         resent = ["e/1/0", "e/1/1", "e/1/3", "e/1/4", "e/1/5"]
         self.assertEqual(
@@ -981,23 +999,40 @@ class WorkflowTests(unittest.TestCase):
             "フリアナ: 大事なのは二つよ。",
         )
         accept(plan, lambda identity: "Warm " + identity)
+        # Correcting the kept line again, through the newest run as the
+        # helper does, leaves the lines sent again as they were.
+        run, _plan = organized()
+        saved = results.get(cold)
+        receipt = WORK + "/work/correction.json"
+        write_json(
+            self.game / receipt,
+            {
+                "request_sha256": cold["fingerprint"],
+                "replaces_sha256": saved["result_sha256"],
+                "translations": {**saved["translations"], "e/1/2": "Fixed again."},
+            },
+        )
+        self.service.accept(self.identity, run["id"], "e/1/0", receipt)
         # The next organize, with the option or without, keeps the new
         # translations and quotes nothing.
         for resend in (False, True):
             run, plan = organized(resend=resend)
             self.assertEqual(run["quote"]["requests"], 0)
         index = read_json(self.game / EXPORT)
+        exported = {
+            row["source_id"]: row.get("translation")
+            for part in index["parts"]
+            for row in read_json(self.game / part)["units"]
+        }
+        exported.pop("f/0/0")
         self.assertEqual(
-            {
-                row["source_id"]: row.get("translation")
-                for part in index["parts"]
-                for row in read_json(self.game / part)["units"]
-            },
+            exported,
             {
                 "e/0/0": "Cold e/0/0",
                 **{f"e/1/{n}": f"Warm e/1/{n}" for n in (0, 1, 3, 4, 5)},
-                "e/1/2": "Fixed.",
+                "e/1/2": "Fixed again.",
                 **{f"e/1/{n}": f"Cold e/1/{n}" for n in range(6, 11)},
+                **{f"f/1/{n}": f"Cold f/1/{n}" for n in range(3)},
             },
         )
 
