@@ -133,10 +133,9 @@ def current(source, units, language, target, found, listing):
     whose requests held the unit with the same source text in this language
     pair, the one that gave it its translation last, not its source text
     (results.untranslated), keeping the unit's protected tokens and layout
-    bounds. Guided's newest compatible run wins the same way. A receipt gave
-    its lines their translation when it was saved, but a correction only
-    the lines it changed (Results.corrected): the others keep the time they
-    were accepted, so a correction never brings back lines a newer request
+    bounds. Guided's newest compatible run wins the same way. A correction
+    gave its receipt's lines their text only where it changed them
+    (Results.given), so it never brings back lines a newer request
     translated again."""
     wanted = {unit["id"]: unit for unit in units}
     holding = {}
@@ -162,19 +161,13 @@ def current(source, units, language, target, found, listing):
             value = None
         if not value:
             continue
-        saved = listing[fingerprint][1][3]
-        changed = results.corrected(request, value) if "accepted_ns" in value else None
+        given = results.given(value, listing[fingerprint][1][3])
         for identity in holding[fingerprint]:
-            given = (
-                saved
-                if changed is None or identity in changed
-                else value["accepted_ns"]
-            )
             unit = wanted[identity]
             text = value["translations"][identity]
-            if (identity in answered and given <= newest[identity]) or untranslated(
-                unit["source"], text, language, target
-            ):
+            if (
+                identity in answered and given[identity] <= newest[identity]
+            ) or untranslated(unit["source"], text, language, target):
                 continue
             try:
                 result_value(
@@ -186,7 +179,7 @@ def current(source, units, language, target, found, listing):
                 )
             except ValueError:
                 continue
-            answered[identity], newest[identity] = fingerprint, given
+            answered[identity], newest[identity] = fingerprint, given[identity]
     return answered
 
 
@@ -197,7 +190,8 @@ def cold(store, project_id, source, units, answered, language, target, quotes):
     (organize._before under organize.LEAD_IN), as every request but a split
     scene's later parts of an organize frozen before that policy did. Lines
     before count as organize's layout quotes them, without those DazedTL
-    writes itself (organize.unsent), so each line sent again gets context.
+    writes itself (organize.unsent), even one an earlier receipt answers,
+    which layout would quote, so each line sent again gets context.
     A line a correction changed keeps its translation (Results.corrected),
     as does one imported from a translation file, one without source
     letters, or one answered by a request no run plan holds any more."""

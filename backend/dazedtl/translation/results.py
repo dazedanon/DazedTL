@@ -2,6 +2,7 @@
 
 import os
 import stat
+import time
 from collections import Counter
 from functools import partial
 from pathlib import Path
@@ -641,48 +642,64 @@ class Results:
             return previous
         return self._replace(request, previous, output, provenance)
 
-    def _archived(self, request):
-        """The receipts the request's corrections archived (_replace), by
-        result hash."""
-        folder = project_path(
-            self.source, HISTORY + request["fingerprint"], exists=False
-        )
-        archived = {}
-        for path in sorted(folder.glob("*.json")) if folder.is_dir() else ():
-            try:
-                item = read_json(path)
-            except OSError, ValueError:
-                continue
-            if isinstance(item, dict) and isinstance(item.get("translations"), dict):
-                archived.setdefault(item.get("result_sha256"), item)
-        return archived
-
     def corrected(self, request, value=None):
-        """The IDs of the request's lines whose saved translation (*value*,
-        else its receipt) a correction changed from the one first accepted,
-        read back through the receipts its corrections archived; every line
-        of a correction whose earlier receipt is gone. A line corrected back
-        to its first translation reads unchanged."""
+        """The IDs of the request's lines that a correction gave their saved
+        translation (*value*, else its receipt), even one that put a line
+        back as it was first accepted, since that was the corrector's
+        choice too. A correction records them (_replace); for one saved
+        before corrections recorded them, they are the lines that differ
+        from the receipt it archived last that was no correction, and every
+        line when that receipt is gone."""
         value = value or self._receipt(request)
         if not value or not value.get("provenance", {}).get("correction"):
             return set()
-        archived, seen, first = self._archived(request), set(), value
-        while first.get("provenance", {}).get("correction"):
-            seen.add(first["result_sha256"])
-            first = archived.get(first.get("previous_result_sha256"))
-            if first is None or first.get("result_sha256") in seen:
-                return set(value["translations"])
+        if "accepted_ns" in value:
+            return set(value["given_ns"])
+        folder = project_path(
+            self.source, HISTORY + request["fingerprint"], exists=False
+        )
+        found = None
+        for path in folder.glob("*.json") if folder.is_dir() else ():
+            try:
+                item = read_json(path)
+                saved = path.stat().st_mtime_ns
+            except OSError, ValueError:
+                continue
+            if (
+                isinstance(item, dict)
+                and isinstance(item.get("translations"), dict)
+                and not item.get("provenance", {}).get("correction")
+                and (found is None or saved > found[0])
+            ):
+                found = (saved, item["translations"])
+        if found is None:
+            return set(value["translations"])
         return {
             identity
             for identity, text in value["translations"].items()
-            if first["translations"].get(identity) != text
+            if found[1].get(identity) != text
         }
 
-    def _accepted(self, request, previous):
-        """When the lines of the request that its correction leaves as they
-        were got their translation: what the previous receipt recorded, or
-        the time it was saved; a correction saved before receipts recorded
-        it reads as its request's first correction."""
+    def given(self, value, saved):
+        """When each line of the receipt *value*, saved at *saved* (its
+        file's mtime in nanoseconds), got its translation, by line ID: when
+        it was saved, but for a correction (_replace), when it gave each line
+        it changed its text and when the others were accepted, so a
+        correction never makes the lines it left newer than another
+        request's (unit_results.current)."""
+        if "accepted_ns" not in value:
+            return dict.fromkeys(value["translations"], saved)
+        return {
+            identity: value["given_ns"].get(identity, value["accepted_ns"])
+            for identity in value["translations"]
+        }
+
+    def _accepted(self, request, previous, saved):
+        """When the lines of the request that a correction of *previous*,
+        saved at *saved*, leaves as they were first got their translation:
+        what *previous* recorded, or for a correction saved before
+        corrections recorded it, the request's first correction, else
+        *saved*."""
         if "accepted_ns" in previous:
             return previous["accepted_ns"]
         if previous.get("provenance", {}).get("correction"):
@@ -692,27 +709,20 @@ class Results:
             times = [path.stat().st_mtime_ns for path in folder.glob("*.json")]
             if times:
                 return min(times)
-        return (
-            project_path(self.source, self.relative(request), exists=False)
-            .stat()
-            .st_mtime_ns
-        )
+        return saved
 
     def _replace(self, request, previous, output, provenance):
         """Saves output in place of the previous receipt, which it archives.
         A line it leaves as it was keeps its review, which names the
-        translation it covers."""
+        translation it covers. A correction records when each line a
+        correction gave its text got it, and when the others were accepted
+        (given)."""
         history = HISTORY + request["fingerprint"] + "/" + digest(previous) + ".json"
         path = project_path(self.source, history, exists=False)
         if path.exists() and read_json(path) != previous:
             raise ValueError(
                 "The previous result's recovery record is inconsistent. It was not overwritten."
             )
-        accepted = (
-            self._accepted(request, previous) if provenance.get("correction") else None
-        )
-        if not path.exists():
-            write_project_json(self.source, history, previous)
         value = {
             "version": 1,
             "request_sha256": request["fingerprint"],
@@ -723,10 +733,30 @@ class Results:
             "refusal_rules": RULES_VERSION,
             "provenance": provenance,
         }
-        if accepted is not None:
-            # A newer receipt of another request answers the lines it left
-            # as they were (unit_results.current).
-            value["accepted_ns"] = accepted
+        if provenance.get("correction"):
+            saved = (
+                project_path(self.source, self.relative(request), exists=False)
+                .stat()
+                .st_mtime_ns
+            )
+            before = self.given(previous, saved)
+            now = time.time_ns()
+            value.update(
+                accepted_ns=self._accepted(request, previous, saved),
+                given_ns={
+                    **{
+                        identity: before[identity]
+                        for identity in self.corrected(request, previous)
+                    },
+                    **{
+                        identity: now
+                        for identity, text in output.items()
+                        if text != previous["translations"].get(identity)
+                    },
+                },
+            )
+        if not path.exists():
+            write_project_json(self.source, history, previous)
         reviewed = {
             identity: review
             for identity, review in previous.get("reviewed", {}).items()

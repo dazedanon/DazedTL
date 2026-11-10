@@ -980,6 +980,10 @@ class WorkflowTests(unittest.TestCase):
             saved["result_sha256"],
             {"correction": True},
         )
+        # As a correction saved before corrections recorded their lines.
+        legacy = read_json(self.game / results.relative(cold))
+        del legacy["accepted_ns"], legacy["given_ns"]
+        write_json(self.game / results.relative(cold), legacy)
         # A plain organize keeps every translation.
         run, _plan = organized()
         self.assertEqual(run["quote"]["requests"], 0)
@@ -1000,7 +1004,8 @@ class WorkflowTests(unittest.TestCase):
         )
         accept(plan, lambda identity: "Warm " + identity)
         # Correcting the kept line again, through the newest run as the
-        # helper does, leaves the lines sent again as they were.
+        # helper does, even back to its first translation, leaves the lines
+        # sent again as they were, and the line keeps the corrector's choice.
         run, _plan = organized()
         saved = results.get(cold)
         receipt = WORK + "/work/correction.json"
@@ -1009,7 +1014,7 @@ class WorkflowTests(unittest.TestCase):
             {
                 "request_sha256": cold["fingerprint"],
                 "replaces_sha256": saved["result_sha256"],
-                "translations": {**saved["translations"], "e/1/2": "Fixed again."},
+                "translations": {**saved["translations"], "e/1/2": "Cold e/1/2"},
             },
         )
         self.service.accept(self.identity, run["id"], "e/1/0", receipt)
@@ -1030,7 +1035,7 @@ class WorkflowTests(unittest.TestCase):
             {
                 "e/0/0": "Cold e/0/0",
                 **{f"e/1/{n}": f"Warm e/1/{n}" for n in (0, 1, 3, 4, 5)},
-                "e/1/2": "Fixed again.",
+                "e/1/2": "Cold e/1/2",
                 **{f"e/1/{n}": f"Cold e/1/{n}" for n in range(6, 11)},
                 **{f"f/1/{n}": f"Cold f/1/{n}" for n in range(3)},
             },
