@@ -50,35 +50,78 @@ def scene(name, spoken):
         unit
         for number, (source, english) in enumerate(spoken)
         for unit in (
-            {"id": f"{name}/{2 * number:03d}", "speaker": "シャル",
-             "source": source, "translation": english},
-            {"id": f"{name}/{2 * number + 1:03d}", "speaker": "リリ",
-             "source": "なるほど。", "translation": "I see."},
+            {
+                "id": f"{name}/{2 * number:03d}",
+                "speaker": "シャル",
+                "source": source,
+                "translation": english,
+            },
+            {
+                "id": f"{name}/{2 * number + 1:03d}",
+                "speaker": "リリ",
+                "source": "なるほど。",
+                "translation": "I see.",
+            },
         )
     ]
 
 
-lines = [
-    {"scene": "scenario/first.ks", "group": "scenario/first.ks", "kind": "dialogue",
-     "field": None, **unit}
-    for unit in scene("first.ks", LORDLY)
-] + [
-    {"scene": "scenario/second.ks", "group": "scenario/second.ks", "kind": "dialogue",
-     "field": None, **unit}
-    for unit in scene("second.ks", CASUAL)
-] + [
-    # A menu table, read as database text rather than a scene, and a line
-    # not translated yet, which keeps the numbers of the lines after it.
-    {"id": "menu/1", "scene": "menu", "group": "system", "kind": "ui",
-     "speaker": None, "field": "database.item", "source": "薬草",
-     "translation": "Herb"},
-    {"id": "menu/2", "scene": "menu", "group": "system", "kind": "ui",
-     "speaker": None, "field": "database.item", "source": "毒消し",
-     "translation": None},
-    {"id": "menu/3", "scene": "menu", "group": "system", "kind": "ui",
-     "speaker": None, "field": "database.item", "source": "聖水",
-     "translation": "Holy Water"},
-]
+lines = (
+    [
+        {
+            "scene": "scenario/first.ks",
+            "group": "scenario/first.ks",
+            "kind": "dialogue",
+            "field": None,
+            **unit,
+        }
+        for unit in scene("first.ks", LORDLY)
+    ]
+    + [
+        {
+            "scene": "scenario/second.ks",
+            "group": "scenario/second.ks",
+            "kind": "dialogue",
+            "field": None,
+            **unit,
+        }
+        for unit in scene("second.ks", CASUAL)
+    ]
+    + [
+        # A menu table, read as database text rather than a scene, and a line
+        # not translated yet, which keeps the numbers of the lines after it.
+        {
+            "id": "menu/1",
+            "scene": "menu",
+            "group": "system",
+            "kind": "ui",
+            "speaker": None,
+            "field": "database.item",
+            "source": "薬草",
+            "translation": "Herb",
+        },
+        {
+            "id": "menu/2",
+            "scene": "menu",
+            "group": "system",
+            "kind": "ui",
+            "speaker": None,
+            "field": "database.item",
+            "source": "毒消し",
+            "translation": None,
+        },
+        {
+            "id": "menu/3",
+            "scene": "menu",
+            "group": "system",
+            "kind": "ui",
+            "speaker": None,
+            "field": "database.item",
+            "source": "聖水",
+            "translation": "Holy Water",
+        },
+    ]
+)
 
 manifest = units.inventory(lines, "release")
 assert units.verify(manifest)["valid"], units.verify(manifest)
@@ -101,16 +144,25 @@ work.mkdir(parents=True)
 (game / ".dazedtl/glossary.txt").write_text(GLOSSARY, encoding="utf-8")
 # Nothing in the work folder is game data, whatever its name.
 (work / "Map001.json").write_text("not json", encoding="utf-8")
-task, state = qa.prepare_task(game, work, "release", temporary / "storage", inventory=manifest)
+task, state = qa.prepare_task(
+    game, work, "release", temporary / "storage", inventory=manifest
+)
 task_json = json.loads((task / "task.json").read_text(encoding="utf-8"))
 assert units.of_task(task_json) and task_json["counts"]["records"] == 26, task_json
-assert state["screen"]["voice"] == {"items": 1, "lines": 12, "speakers": ["Char"]}, state
+assert state["screen"]["voice"] == {"items": 1, "lines": 12, "speakers": ["Char"]}, (
+    state
+)
 assert "Units: this game's engine" in (task / "README.md").read_text(encoding="utf-8")
 # The same units prepare the same task; changed English makes another.
-again, _state = qa.prepare_task(game, work, "release", temporary / "storage", inventory=manifest)
+again, _state = qa.prepare_task(
+    game, work, "release", temporary / "storage", inventory=manifest
+)
 assert again == task, again
 changed = units.inventory(
-    [{**line, "translation": "Hi."} if line["id"] == "menu/1" else line for line in lines],
+    [
+        {**line, "translation": "Hi."} if line["id"] == "menu/1" else line
+        for line in lines
+    ],
     "release",
 )
 assert not qa.inventory_matches(task, changed) and qa.inventory_matches(task, manifest)
@@ -122,9 +174,7 @@ def bundle_of(row):
 
 checkpoint = json.loads((task / "checkpoint.json").read_text(encoding="utf-8"))
 items = [
-    item
-    for row in checkpoint["screen"]["bundles"]
-    for item in bundle_of(row)["items"]
+    item for row in checkpoint["screen"]["bundles"] for item in bundle_of(row)["items"]
 ]
 scenes = {item["scene_id"]: item for item in items if item["kind"] == "scene"}
 assert set(scenes) == {"scenario/first.ks", "scenario/second.ks"}, set(scenes)
@@ -151,15 +201,22 @@ assert {item["id"] for item in items if item["kind"] == "cluster"} >= {
 (row,) = [
     row
     for row in checkpoint["screen"]["bundles"]
-    if any(item.get("scene_id") == "scenario/second.ks" for item in bundle_of(row)["items"])
+    if any(
+        item.get("scene_id") == "scenario/second.ks" for item in bundle_of(row)["items"]
+    )
 ]
 shown = qa.render_bundle(task, row["id"])
-assert "   #0 [T " in shown and "(second.ks/000) JP: <シャル> そなたは遅いのう。" in shown, shown
+assert (
+    "   #0 [T " in shown and "(second.ks/000) JP: <シャル> そなたは遅いのう。" in shown
+), shown
 assert "EN: You're late." in shown, shown
 # Context names a line by its unit, and reads no game file.
 context = qa.context_view(task, "second.ks/004")
 assert context.splitlines()[0] == "scenario/second.ks lines 0-11", context
-assert ">>#4 (second.ks/004) JP=<シャル> そなたの剣を見せよ。 EN=Show me your sword." in context, context
+assert (
+    ">>#4 (second.ks/004) JP=<シャル> そなたの剣を見せよ。 EN=Show me your sword."
+    in context
+), context
 
 
 def accept(row, result):
@@ -197,33 +254,45 @@ while row := qa.next_bundle(task, "screen-a") or qa.next_bundle(task, "screen-b"
         break
     bundle = bundle_of(row)
     exceptions = [
-        {"id": line["id"], "verdict": "suspect", "categories": ["voice"],
-         "note": "Plain 'you' where her note fixes thou."}
-        for item in bundle["items"] if item["kind"] == "voice"
-        for line in item["lines"] if line["translation"] in FIXES
+        {
+            "id": line["id"],
+            "verdict": "suspect",
+            "categories": ["voice"],
+            "note": "Plain 'you' where her note fixes thou.",
+        }
+        for item in bundle["items"]
+        if item["kind"] == "voice"
+        for line in item["lines"]
+        if line["translation"] in FIXES
     ]
     observations = []
     if not observed and any(item.get("kind") == "scene" for item in bundle["items"]):
         observed = True
         own = {
-            line.get("unit") for item in bundle["items"] for line in item.get("lines") or []
+            line.get("unit")
+            for item in bundle["items"]
+            for line in item.get("lines") or []
         }
         other = "first.ks/001" if "first.ks/001" not in own else "second.ks/001"
         observations = [
             {"identity": other, "categories": ["fluency"], "note": "Flat reply."}
         ]
-    accept(row, {
-        "schema": qa.SCREEN_RESULT_SCHEMA,
-        "reviewed_all": True,
-        "exceptions": exceptions,
-        "motif_reviews": [],
-        "lint_reviews": [
-            {"id": item["id"], "rejected": [], "note": ""}
-            for item in bundle["items"] if item["kind"] == "lint-family"
-        ],
-        "declined": [],
-        "observations": observations,
-    })
+    accept(
+        row,
+        {
+            "schema": qa.SCREEN_RESULT_SCHEMA,
+            "reviewed_all": True,
+            "exceptions": exceptions,
+            "motif_reviews": [],
+            "lint_reviews": [
+                {"id": item["id"], "rejected": [], "note": ""}
+                for item in bundle["items"]
+                if item["kind"] == "lint-family"
+            ],
+            "declined": [],
+            "observations": observations,
+        },
+    )
 assert observed
 # Deep: the first casual line's review corrects both her casual lines of its
 # scene together, named by their numbers there; the rest are clean.
@@ -238,54 +307,75 @@ while row := qa.next_bundle(task, "deep-a"):
         reviewed.append(item)
         if item["translation"] == "You're late.":
             (key,) = [
-                key for key, value in bundle["scenes"].items()
+                key
+                for key, value in bundle["scenes"].items()
                 if value["scene_id"] == "scenario/second.ks"
             ]
-            reviews.append({
-                **clean(item),
-                "disposition": "actionable",
-                "severity": "medium",
-                "category": "voice",
-                "family_key": "voice:char",
-                "summary": "Char says a plain 'you' here.",
-                "evidence": "Her glossary line fixes そなた as thou.",
-                "editorial_basis": {
-                    "defect": "Her register changes between scenes.",
-                    "source_support": "The Japanese keeps そなた.",
-                    "not_preference": True,
-                },
-                "scene_correction": {
-                    "scene": key,
-                    "lines": [
-                        {"command": 0, "current": "You're late.",
-                         "correction": FIXES["You're late."]},
-                        {"command": 4, "current": "Show me your sword.",
-                         "correction": FIXES["Show me your sword."]},
-                    ],
-                },
-            })
+            reviews.append(
+                {
+                    **clean(item),
+                    "disposition": "actionable",
+                    "severity": "medium",
+                    "category": "voice",
+                    "family_key": "voice:char",
+                    "summary": "Char says a plain 'you' here.",
+                    "evidence": "Her glossary line fixes そなた as thou.",
+                    "editorial_basis": {
+                        "defect": "Her register changes between scenes.",
+                        "source_support": "The Japanese keeps そなた.",
+                        "not_preference": True,
+                    },
+                    "scene_correction": {
+                        "scene": key,
+                        "lines": [
+                            {
+                                "command": 0,
+                                "current": "You're late.",
+                                "correction": FIXES["You're late."],
+                            },
+                            {
+                                "command": 4,
+                                "current": "Show me your sword.",
+                                "correction": FIXES["Show me your sword."],
+                            },
+                        ],
+                    },
+                }
+            )
         elif item["translation"] in FIXES:
-            reviews.append({**clean(item), "evidence": "The scene correction fixes it."})
+            reviews.append(
+                {**clean(item), "evidence": "The scene correction fixes it."}
+            )
         else:
             reviews.append(clean(item))
     accept(row, {"schema": qa.DEEP_RESULT_SCHEMA, "reviews": reviews})
 assert {item["translation"] for item in reviewed} >= {*FIXES, "I see."}, reviewed
 while row := qa.next_bundle(task, "editor-a"):
     if row["id"].startswith("sweep"):
-        accept(row, {"schema": qa.SWEEP_RESULT_SCHEMA, "reviews": [
-            {"id": item["id"], "rejected": [], "note": ""}
-            for item in bundle_of(row)["items"]
-        ], "declined": []})
+        accept(
+            row,
+            {
+                "schema": qa.SWEEP_RESULT_SCHEMA,
+                "reviews": [
+                    {"id": item["id"], "rejected": [], "note": ""}
+                    for item in bundle_of(row)["items"]
+                ],
+                "declined": [],
+            },
+        )
         continue
     shown = qa.render_bundle(task, row["id"])
     assert "(second.ks/004) JP: <シャル> そなたの剣を見せよ。" in shown, shown
-    accept(row, {
-        "schema": qa.EDITORIAL_RESULT_SCHEMA,
-        "reviews": [
-            {"id": item["id"], "verdict": "accept", "note": ""}
-            for item in bundle_of(row)["items"]
-        ],
-    })
+    accept(
+        row,
+        {
+            "schema": qa.EDITORIAL_RESULT_SCHEMA,
+            "reviews": [
+                {"id": item["id"], "verdict": "accept", "note": ""}
+                for item in bundle_of(row)["items"]
+            ],
+        },
+    )
 assert qa.status(task)["stage"] == "complete", qa.status(task)
 findings = json.loads((task / "findings.json").read_text(encoding="utf-8"))
 (finding,) = findings["findings"]

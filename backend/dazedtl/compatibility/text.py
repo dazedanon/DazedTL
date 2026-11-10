@@ -373,7 +373,12 @@ def qa_start_over(plan):
         system.unlink(pointer)
 
 
-def qa_state(plan):
+def qa_state(plan, text=None, history=None):
+    """The focus's prepared task as the Text QA page and the helper read it.
+    For a task of an Assistant-led game's units (translation/units_qa),
+    *text* gives, by the task's rules version, the text_digest of the text
+    the game holds now, and *history* its applies and undos, in place of the
+    game's data folder and its publications."""
     from util import rpgmaker_qa as qa
 
     from dazedtl.plugins.service import kept_settings
@@ -399,7 +404,7 @@ def qa_state(plan):
     prepared = datetime.fromisoformat(task["created_at"]).timestamp()
     rows = [
         row
-        for row in publication.history(plan["folder"])
+        for row in (publication.history(plan["folder"]) if history is None else history)
         if row["kind"] in {"qa_apply", "qa_undo"}
         and row["state"] == "complete"
         and (row["task"] == str(root) if "task" in row else row["created"] >= prepared)
@@ -494,10 +499,12 @@ def qa_state(plan):
                 "text": qa.game_text(
                     plan["project"]["data"], _focus(plan), rules=qa.task_rules(task)
                 )
+                if text is None
+                else text(qa.task_rules(task))
             },
         ),
     )
-    if current:
+    if current and text is None:
         # Plugin files decides what it keeps in Japanese without changing the
         # game's files; the never-translated report follows its decisions.
         qa.refresh_kept(root, kept_settings(plan["project"]["source"]))
@@ -702,14 +709,14 @@ def not_corrected(document):
     ]
 
 
-def qa_report(plan):
+def qa_report(plan, state=None):
     """What QA could not cover, for the History inspector: lines no reviewer
     judged, defects no correction could fix, Japanese never translated, by
     file and plugin, and text the game squeezes or cuts off that QA holds no
-    line of."""
+    line of. *state* is the task's qa_state where its caller read it."""
     from util.rpgmaker_qa_preflight import read_sources
 
-    state = qa_state(plan)
+    state = qa_state(plan) if state is None else state
     if not state.get("task"):
         raise ValueError("Prepare text QA first.")
     root = Path(state["task"])
@@ -728,6 +735,31 @@ def qa_report(plan):
         ],
         **({"interface_error": interface["error"]} if "error" in interface else {}),
     }
+
+
+def qa_prepared(plan, task, text):
+    """Saves the focus's record of the task preparing QA made or resumed: its
+    folder, the digests of its evidence, which must not change, and its
+    binding to *text*, the text_digest of the inventory it reviews."""
+    immutable = {
+        name: digest(project_path(task, name).read_bytes())
+        for name in (
+            "task.json",
+            "inventory.json",
+            "context.json",
+            "screen-index.json",
+        )
+    }
+    pointer = _pointer(plan)
+    with _pointer_lock(pointer):
+        write_json(
+            pointer,
+            {
+                "task": str(task),
+                "binding": binding(plan, text),
+                "immutable": immutable,
+            },
+        )
 
 
 def run_qa(plan, log):
@@ -777,25 +809,7 @@ def run_qa(plan, log):
             raise ValueError(
                 "The cached QA inventory changed. Retain it for investigation and prepare a fresh task."
             )
-        immutable = {
-            name: digest(project_path(task, name).read_bytes())
-            for name in (
-                "task.json",
-                "inventory.json",
-                "context.json",
-                "screen-index.json",
-            )
-        }
-        pointer = folder / ("text-qa-" + focus + ".json")
-        with _pointer_lock(pointer):
-            write_json(
-                pointer,
-                {
-                    "task": str(task),
-                    "binding": binding(plan, qa.text_digest(manifest)),
-                    "immutable": immutable,
-                },
-            )
+        qa_prepared(plan, task, qa.text_digest(manifest))
         handoff = qa_handoff(task)
     else:
         handoff = None

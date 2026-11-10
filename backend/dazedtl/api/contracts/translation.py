@@ -5,7 +5,12 @@ from typing import Literal, NotRequired, TypedDict
 import typing_extensions
 
 from dazedtl.api.contracts.common import DocumentDrafts, Documents
-from dazedtl.api.contracts.guided import PackageSummary, ReleaseArtifact, ReleaseNames
+from dazedtl.api.contracts.guided import (
+    PackageSummary,
+    QaState,
+    ReleaseArtifact,
+    ReleaseNames,
+)
 from dazedtl.api.contracts.runs import LegacyRun
 from dazedtl.api.contracts.settings import Forge
 
@@ -524,6 +529,10 @@ class TranslationState(ProjectOptions):
     legacyAvailable: bool
     # A Manual project's loaded file; None for another method's.
     manual: ManualState | None
+    # Text QA's task of an Assistant-led game it reads by its units, an
+    # engine other than RPG Maker; None for another, whose task the Guided
+    # workspace's readiness holds.
+    textQa: QaState | None
 
 
 class UpdateTask(TypedDict):

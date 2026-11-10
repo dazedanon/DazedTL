@@ -169,11 +169,23 @@ def owners(workspace):
 
 def workflow_game(folder):
     """The game folder of the project whose Guided workspace holds folder,
-    a path inside `<workspace>/engine/workflows/<id>/`, or None."""
+    a path inside `<workspace>/engine/workflows/<id>/`, or whose own records
+    hold it, a path inside `<workspace>/translation/projects/<id>/`, such as
+    the Text QA tasks of an Assistant-led game Text QA reads by its units;
+    None for another path."""
     folder = Path(folder).resolve()
     for parent in folder.parents:
         if parent.parent.name == "workflows" and parent.parent.parent.name == "engine":
             return owners(parent.parent.parent.parent).get(parent.name)
+        if (
+            parent.parent.name == "projects"
+            and parent.parent.parent.name == "translation"
+        ):
+            workspace = parent.parent.parent.parent
+            return next(
+                (p["source"] for p in store.saved(workspace) if p["id"] == parent.name),
+                None,
+            )
     return None
 
 

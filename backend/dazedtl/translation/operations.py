@@ -225,6 +225,20 @@ def execute(engine, workspace, job, plan, stopped, progress=lambda _message: Non
     if plan["action"] in run_compiler.ACTIONS:
         # Compiling a run changes no lifecycle record, so it never writes one.
         return run_compiler.prepare(engine, workspace, job, plan, progress)
+    if plan["action"] == "text_qa":
+        # Text QA's task of a game it reads by its units writes neither the
+        # game nor a lifecycle record.
+        from . import units_qa
+
+        arguments = plan["arguments"]
+        return units_qa.prepare(
+            workspace,
+            job["project_id"],
+            Path(plan["source"]),
+            arguments["focus"],
+            arguments.get("everything") is True,
+            progress,
+        )
     # The helper's own operations are an assistant's, in Assistant-led.
     change = for_action(plan["action"], plan.get("label"), "Assistant-led")
     # An assistant writes the game's text one file at a time; those writes

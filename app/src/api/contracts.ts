@@ -1932,6 +1932,7 @@ export type TranslationState = ProjectOptions & {
   batchUnread: string;
   legacyAvailable: boolean;
   manual: ManualState | null;
+  textQa: QaState | null;
 };
 
 export type UpdateTask = {

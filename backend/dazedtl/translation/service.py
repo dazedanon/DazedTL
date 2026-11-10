@@ -36,6 +36,7 @@ from . import (
     backups,
     checkpoint_records,
     delivery,
+    exchange,
     manual,
     name_codes,
     organize,
@@ -45,6 +46,7 @@ from . import (
     run_compiler,
     skill_users,
     unit_results,
+    units_qa,
 )
 from .assistant_release import AssistantRelease, PackageRefusal
 from .census import HELP_SEGMENT
@@ -217,6 +219,12 @@ OPERATIONS = {
 
 GUIDED_OPERATIONS = {
     "release_patch": (history_label("release_patch"), {"plan", "sha256"}),
+}
+
+# Text QA's own step for a game it reads by its units, which only its qa
+# command starts (text_qa), never the helper's operation command.
+QA_OPERATIONS = {
+    "text_qa": ("Prepare text QA", {"focus", "everything"}),
 }
 
 # The Image Manager's progress as Len image records, which the app writes.
@@ -518,7 +526,8 @@ class Translation:
         if refused:
             warnings.append(refused)
         self.jobs.reconcile()
-        saved_jobs = self.jobs.store.list(project_id)[:30]
+        listed = self.jobs.store.list(project_id)
+        saved_jobs = listed[:30]
         warnings.extend(self.jobs.store.warnings)
         status = project_path(project.root, WORK + "/status.md", exists=False)
         identification = (
@@ -602,6 +611,20 @@ class Translation:
             ),
             "manual": {"loaded": manual.loaded(project.root)}
             if record.get("method") == MANUAL
+            else None,
+            # Text QA's task of a game it reads by its units; an RPG Maker
+            # game's is its Guided workspace's.
+            "textQa": units_qa.state(
+                self.jobs.store,
+                self.workspace,
+                project_id,
+                project.root,
+                review_focus(selected["options"]),
+                listed,
+            )
+            if units_qa.applies(
+                record.get("method"), record.get("backend_id"), project.root
+            )
             else None,
         }
 
@@ -1768,6 +1791,112 @@ Additional project instructions:
             all(row["state"] == "accepted" for row in job["states"].values()),
         )
 
+    def correct_lines(self, project_id, changes, provenance):
+        """Saves corrections of lines by unit ID, each a pair of the English
+        the game gets now and its correction, as correction receipts of the
+        requests the run's export reads them from, through the run organize
+        compiled last, as accept saves an assistant's: Text QA's findings on
+        a game it reads by its units (units_qa). A line organize kept from an
+        earlier request is corrected through that request within the
+        constraints organize kept it by (correct_reused). Every receipt is
+        checked before any is saved, and a line whose English is no longer
+        the one given raises LookupError naming it."""
+        from .results import _within, exported_translations, translated
+
+        self.idle(project_id)
+        _record, project = self.project(project_id)
+        found = exchange.assistant_run(self.jobs.store, project_id)
+        if found is None:
+            raise ValueError(
+                "No organized run holds these lines; organize the units first."
+            )
+        job, plan = self.jobs.store.load(found[0]["id"], project_id)
+        job = self.jobs.store.settled(job)
+        rows = {
+            row["source_id"]: row
+            for row in exported_translations(project.root)
+            if not row.get("converted")
+        }
+        grouped: dict[str, dict[str, tuple[str, str]]] = {}
+        for identity, change in changes.items():
+            row = rows.get(identity)
+            if row is None or "request_sha256" not in row:
+                raise LookupError(identity)
+            grouped.setdefault(row["request_sha256"], {})[identity] = change
+        own = {
+            request["fingerprint"]: index
+            for index, request in enumerate(plan["requests"])
+        }
+        reused = (plan.get("reused") or {"requests": {}})["requests"]
+        results = Results(project.root)
+        quotes = run_quotes(plan)
+        units = None
+        writes = []
+        for fingerprint, lines in grouped.items():
+            if fingerprint in own:
+                index = own[fingerprint]
+                self.validate_current(project_id, plan, index=index)
+                request, kept = plan["requests"][index], None
+                if job["states"][request["id"]]["state"] in {
+                    "sending",
+                    "queued",
+                    "uncertain",
+                }:
+                    raise ValueError(
+                        "Reconcile in-flight work before importing a replacement result."
+                    )
+            elif (
+                fingerprint in reused
+                and (found := self.reused_request(project_id, plan, fingerprint))
+                is not None
+            ):
+                self.validate_current(project_id, plan, compiled=False)
+                request, identities = found
+                if units is None:
+                    units = organize.laid_out(plan["source"], plan["input_path"])
+                kept = {
+                    unit["id"]: unit["constraints"]
+                    for unit in units
+                    if unit["id"] in set(identities)
+                }
+            else:
+                raise ValueError(
+                    "A corrected line's English comes from a run organize no longer "
+                    "reads. Get the latest run's results with results --run, then try again."
+                )
+            self.jobs.store.overlapping(project_id, {fingerprint}, exclude=job["id"])
+            value = results.get(request)
+            if not value:
+                raise LookupError(next(iter(lines)))
+            shown = exported(request, value, quotes)
+            translations = dict(value["translations"])
+            for identity, (expected, text) in lines.items():
+                if shown.get(identity) != expected:
+                    raise LookupError(identity)
+                translations[identity] = text
+            # Checked as Results.correct checks it, before anything is saved.
+            if kept is None:
+                translated(request, translations)
+            else:
+                _within(request, value, translations, kept)
+            writes.append((request, translations, value["result_sha256"], kept))
+        mode = (
+            "agent" if plan["configuration"]["mode"] == "agent" else "reviewed_import"
+        )
+        for request, translations, replaces, kept in writes:
+            results.correct(
+                request,
+                translations,
+                replaces,
+                {"run_id": job["id"], "mode": mode, "correction": True, **provenance},
+                lines=kept,
+            )
+        self.receipt_saved(
+            project_id,
+            plan,
+            all(row["state"] == "accepted" for row in job["states"].values()),
+        )
+
     def reused_request(self, project_id, plan, fingerprint, batch_id=None):
         """The earlier request of fingerprint whose lines organize kept for
         this run, as the run that sent it compiled it, and the IDs of those
@@ -2025,6 +2154,17 @@ If you won't translate a request, skip it and go on; it stays declined. Use the 
         project helper cannot reach, such as Release's builds."""
         return self._operation(project_id, action, arguments, USER_OPERATIONS[action])
 
+    def qa_operation(self, project_id, focus, everything):
+        """Prepares or resumes Text QA's task of *focus* over the units of an
+        Assistant-led game it can't read otherwise (units_qa), in an
+        operation worker; *everything* reviews every line again."""
+        return self._operation(
+            project_id,
+            "text_qa",
+            {"focus": focus, "everything": everything},
+            QA_OPERATIONS["text_qa"],
+        )
+
     def guided_operation(self, project_id, action, arguments):
         # Called only after the UI's one-use guided preview is consumed. This
         # entrypoint is deliberately absent from the RPC/helper method table.
@@ -2099,7 +2239,13 @@ If you won't translate a request, skip it and go on; it stays declined. Use the 
                 "Required operation arguments: " + ", ".join(sorted(required))
             )
         for key, value in arguments.items():
-            if key in {"untranslated", "patch", "patch_overlay", "keep_context"}:
+            if key in {
+                "untranslated",
+                "patch",
+                "patch_overlay",
+                "keep_context",
+                "everything",
+            }:
                 if type(value) is not bool:
                     raise ValueError("Operation flags must be true or false.")
             elif not isinstance(value, str) or len(value) > 10000 or "\0" in value:

@@ -79,6 +79,21 @@ def of_census(path) -> dict[str, Any]:
     )
 
 
+def of_units(lines: Iterable[dict[str, Any]]) -> dict[str, Any]:
+    """The review's size from the units of an Assistant-led game Text QA
+    reads by them (units_qa.lines), each in the class and scene its review
+    reads it in (engine util/qa/units), translated or not, since the review
+    reads every one once it is."""
+    from util.qa.units import classification
+
+    return {
+        "counting": False,
+        "focuses": count(
+            (classification(line["field"]), line["scene"]) for line in lines
+        ),
+    }
+
+
 def count(rows: Iterable[tuple[str, str | None]]) -> dict[str, Any] | None:
     """Each focus's lines and scenes from *rows* of a line's classification
     and the command list it plays in; None when no line counts."""

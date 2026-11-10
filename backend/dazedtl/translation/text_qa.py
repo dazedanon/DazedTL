@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Any
 from dazedtl import system
 from dazedtl.storage import write_json
 
+from . import units_qa
 from .files import read_json
 from .project import CHECKS, WORK
 from .result_checks import CHECK_STEP
@@ -71,6 +72,14 @@ UNTRANSLATED_STEP = (
 REVIEW_OFF = (
     "Text QA's review is off in this project's Options, so it prepares no "
     "review task and qa --prepare refuses. " + CHECK_STEP
+)
+# What an Assistant-led assistant does once Text QA's findings on a game it
+# reads by its units are saved as correction receipts (units_qa).
+UNITS_APPLIED = (
+    "Text QA's findings are saved as correction receipts of your "
+    "translation; get the run's results again with results --run and write "
+    "them into the game with your injector and a checkpoint, then report the "
+    "qa phase complete."
 )
 
 
@@ -154,10 +163,9 @@ def untranslated(
 
 
 def _reads(source) -> bool:
-    """Whether Text QA reads the game at *source*: RPG Maker MV/MZ or VX Ace."""
-    from util.project_preparation import rpgmaker_layout
-
-    return rpgmaker_layout(source) is not None
+    """Whether Text QA reads the game at *source* itself: RPG Maker MV/MZ or
+    VX Ace; it reads any other by its units (units_qa)."""
+    return not units_qa.reads(source)
 
 
 def _unreadable_step(qa) -> str:
@@ -354,17 +362,24 @@ class TextQA:
             self.choose(project_id, native, question, choice)
         return self.status(project_id, native, report=step == "report")
 
+    def by_units(self, project_id) -> bool:
+        """Whether Text QA reads the project's game by its units: an
+        Assistant-led game on an engine it doesn't read itself (units_qa)."""
+        record, project = self.guided.translation.project(project_id)
+        return units_qa.applies(
+            record.get("method"),
+            self.guided.projects.get(project_id).get("backend_id"),
+            project.root,
+        )
+
     def native(self, project_id):
         """The game's QA workspace; an Assistant-led game gets the one Guided
-        would use, which holds its QA tasks and text batches."""
+        would use, which holds its QA tasks and text batches, and None when
+        Text QA reads it by its units, whose tasks its own records hold."""
+        if self.by_units(project_id):
+            return None
         project = self.guided.projects.get(project_id)
         if not project.get("backend_id"):
-            if not _reads(project["source"]):
-                raise ValueError(
-                    "Text QA reads RPG Maker MV/MZ and VX Ace data; run qa --check, "
-                    "which checks this game's exported translations with its "
-                    "text-only rules, and Len's runtime QA."
-                )
             self.guided.open(project_id)
         return self.guided.record(project_id)[1]
 
@@ -404,6 +419,15 @@ class TextQA:
         return focus
 
     def qa(self, project_id, native):
+        if native is None:
+            translation = self.guided.translation
+            return units_qa.state(
+                translation.jobs.store,
+                translation.workspace,
+                project_id,
+                translation.project(project_id)[1].root,
+                self.focus(project_id),
+            )
         return self.guided.backend.guided_text_state(native, self.focus(project_id))[
             "qa"
         ]
@@ -412,6 +436,22 @@ class TextQA:
         """Prepare or resume the task; *since* names a version or revision
         whose text was checked before, which QA then reads only as context,
         and *everything* reviews all text again."""
+        if self.by_units(project_id):
+            if since:
+                raise ValueError(
+                    "qa --prepare --since reads earlier text from the game's own "
+                    "files, which DazedTL reads only for RPG Maker; prepare without "
+                    "it, and QA builds on its earlier reviews of this game."
+                )
+            self.started(
+                project_id,
+                "prepare",
+                self.guided.translation.qa_operation(
+                    project_id, self.reviewed(project_id), everything
+                ),
+                "translation",
+            )
+            return
         preview = self.guided.preview(
             project_id,
             "qa_prepare",
@@ -454,19 +494,36 @@ class TextQA:
         ]
         if not chosen + proposals:
             raise ValueError("QA found nothing to correct.")
-        preview = self.guided.preview(
+        self.publish(
             project_id,
-            "qa_apply",
-            None,
-            {
-                "focus": self.focus(project_id),
-                "task": qa["task"],
-                "findings": chosen,
-                "proposals": proposals,
-            },
+            native,
+            "apply",
+            {"task": qa["task"], "findings": chosen, "proposals": proposals},
+        )
+
+    def publish(self, project_id, native, kind, options):
+        """Applies, undoes or applies again the corrections *options* name:
+        as a reviewed text batch of an RPG Maker game, which writes its files
+        in an operation, or as correction receipts of a game Text QA reads by
+        its units, at once (units_qa.correct)."""
+        action = "qa_undo" if kind == "undo" else "qa_apply"
+        if native is None:
+            translation = self.guided.translation
+            units_qa.correct(
+                translation,
+                project_id,
+                translation.project(project_id)[1].root,
+                self.focus(project_id),
+                action,
+                options,
+            )
+            self.started(project_id, kind, {"id": ""}, "inline")
+            return
+        preview = self.guided.preview(
+            project_id, action, None, {"focus": self.focus(project_id), **options}
         )
         self.started(
-            project_id, "apply", self.guided.execute(project_id, preview["token"])
+            project_id, kind, self.guided.execute(project_id, preview["token"])
         )
 
     def batch(self, project_id, native, findings, kind):
@@ -491,19 +548,15 @@ class TextQA:
                 + ("undo." if kind == "undo" else "apply again.")
             )
         questions = {row["id"] for row in qa["questions"]}
-        preview = self.guided.preview(
+        self.publish(
             project_id,
-            "qa_undo" if kind == "undo" else "qa_apply",
-            None,
+            native,
+            kind,
             {
-                "focus": self.focus(project_id),
                 "task": qa["task"],
                 "findings": [value for value in findings if value not in questions],
                 "proposals": [value for value in findings if value in questions],
             },
-        )
-        self.started(
-            project_id, kind, self.guided.execute(project_id, preview["token"])
         )
 
     def choose(self, project_id, native, question, choice):
@@ -523,14 +576,22 @@ class TextQA:
     def size(self, project_id):
         """How much the game's review reads, for the usage note both methods
         show before it starts (qa_size): an Assistant-led project's from its
-        census, a Guided one's from the game's translated text."""
+        census, or from its units on a game Text QA reads by them, a Guided
+        one's from the game's translated text."""
         from . import qa_size
         from .operations import census_path
 
-        if self.guided.projects.get(project_id).get("method") == "len":
-            return qa_size.of_census(
-                census_path(self.guided.translation.workspace, project_id)
+        translation = self.guided.translation
+        if self.by_units(project_id):
+            return qa_size.of_units(
+                units_qa.lines(
+                    translation.jobs.store,
+                    project_id,
+                    translation.project(project_id)[1].root,
+                )
             )
+        if self.guided.projects.get(project_id).get("method") == "len":
+            return qa_size.of_census(census_path(translation.workspace, project_id))
         return qa_size.of_game(self.guided.record(project_id)[1]["data"])
 
     def report(self, project_id):
@@ -538,6 +599,8 @@ class TextQA:
 
         focus = self.reviewed(project_id)
         native = self.native(project_id)
+        if native is None:
+            return qa_report(self.units_plan(project_id), self.qa(project_id, None))
         return qa_report(
             {
                 "project_id": native["id"],
@@ -546,6 +609,17 @@ class TextQA:
                 "guard": self.guided.backend.guided_guard(native, self.folder(native)),
                 "options": {"focus": focus},
             }
+        )
+
+    def units_plan(self, project_id):
+        """The record the shared QA readers take for the task of a game
+        Text QA reads by its units (units_qa.plan)."""
+        translation = self.guided.translation
+        return units_qa.plan(
+            translation.workspace,
+            project_id,
+            translation.project(project_id)[1].root,
+            self.focus(project_id),
         )
 
     def start_over(self, project_id, playtest=False):
@@ -562,26 +636,35 @@ class TextQA:
 
         focus = self.reviewed(project_id)
         native = self.native(project_id)
-        folder = self.folder(native)
-        operations = self.guided.backend.operations
-        # No QA step or play starts while the task goes.
-        with operations.lock:
-            if operations.running():
-                job = operations.jobs.get(operations.active) or {}
+        if native is None:
+            # Its task prepares in an Assistant-led operation, and no
+            # playtest plays its game.
+            if (self.operation(project_id) or {}).get("status") == "running":
                 raise ValueError(
-                    f"Wait for {job.get('label') or 'the running step'} to "
-                    "finish, then start QA over."
+                    "Wait for Text QA's step to finish, then start QA over."
                 )
-            qa_start_over(
-                {
-                    "folder": str(folder),
-                    "project_id": native["id"],
-                    "project": native,
-                    "options": {"focus": focus},
-                }
-            )
-            if playtest:
-                clear(folder)
+            qa_start_over(self.units_plan(project_id))
+        else:
+            folder = self.folder(native)
+            operations = self.guided.backend.operations
+            # No QA step or play starts while the task goes.
+            with operations.lock:
+                if operations.running():
+                    job = operations.jobs.get(operations.active) or {}
+                    raise ValueError(
+                        f"Wait for {job.get('label') or 'the running step'} to "
+                        "finish, then start QA over."
+                    )
+                qa_start_over(
+                    {
+                        "folder": str(folder),
+                        "project_id": native["id"],
+                        "project": native,
+                        "options": {"focus": focus},
+                    }
+                )
+                if playtest:
+                    clear(folder)
         translation = self.guided.translation
         record, project = translation.project(project_id)
         if record.get("method") == "len":
@@ -595,10 +678,13 @@ class TextQA:
             )
         return self.status(project_id, native)
 
-    def started(self, project_id, kind, job):
+    def started(self, project_id, kind, job, runner="native"):
+        """Records the QA step the helper started last: a Guided operation
+        (native), an Assistant-led one (translation), or one that finished
+        as it started (inline)."""
         write_json(
             self.guided.path(project_id, "text-qa-operation"),
-            {"kind": kind, "id": job["id"], "runner": "native"},
+            {"kind": kind, "id": job["id"], "runner": runner},
         )
 
     def operation(self, project_id) -> dict[str, Any] | None:
@@ -615,10 +701,15 @@ class TextQA:
             # step waits for the worker.
             if operations.active == saved["id"]:
                 state = "running"
+        elif saved["runner"] == "inline":
+            state, message = "complete", ""
         else:
-            # A checkpoint run before each apply was its own checkpoint.
+            # A checkpoint run before each apply was its own checkpoint, and
+            # a game Text QA reads by its units prepares in an operation.
             job = self.guided.translation.run(project_id, saved["id"])
             state, message = job["status"], job.get("message", "")
+            if state in {"ready", "waiting"}:
+                state = "running"
         return {
             "kind": saved["kind"],
             "id": saved["id"],
@@ -647,7 +738,11 @@ class TextQA:
         elif not qa.get("task"):
             following = "Run qa --prepare."
         elif qa["applied"]:
-            following = "Findings are applied; report the qa phase complete."
+            following = (
+                UNITS_APPLIED
+                if native is None
+                else "Findings are applied; report the qa phase complete."
+            )
         elif qa.get("rules_changed") and stage not in {"", "screen", "complete"}:
             # Its finished screening may carry over to a task under the new
             # rules; a complete task's review does anyway, as later tasks
@@ -659,8 +754,10 @@ class TextQA:
             )
         elif not qa["current"]:
             following = qa["message"] + " Run qa --prepare."
-        elif stage not in {"", "complete"} and qa_capture_outdated(
-            qa["task"], native["data"]
+        elif (
+            native is not None
+            and stage not in {"", "complete"}
+            and qa_capture_outdated(qa["task"], native["data"])
         ):
             # The assistant's own fixes, such as the playtest's, change the
             # game's plugins during review.
@@ -687,8 +784,11 @@ class TextQA:
             following = (
                 "Review with the task README's commands until status reports complete."
             )
+        # A game Text QA reads by its units has no screens QA captured, and
+        # its census sends what was never translated back to the assistant.
         assistant = (
-            self.guided.translation.project(project_id)[0].get("method") == "len"
+            native is not None
+            and self.guided.translation.project(project_id)[0].get("method") == "len"
         )
         task = qa.get("task") if qa["current"] else ""
         # Guided's Plugin files shortens these; an Assistant-led assistant

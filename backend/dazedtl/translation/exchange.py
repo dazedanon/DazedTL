@@ -84,25 +84,49 @@ def units_file(root, relative):
     return organize.units_input(read_json(project_path(root, relative)))
 
 
+# The units file of each run organize compiled, by its record's ID and plan:
+# a plan of a large game takes long to read, and a state poll asks often.
+_ORGANIZED: dict[tuple[str, str], str | None] = {}
+
+
+def assistant_run(store, project_id, jobs=None):
+    """The newest run the assistant's organize compiled and the game-relative
+    path of the units file it was laid out from, or None before one or when
+    that file can't be named. *jobs*, the project's runs newest first, spares
+    listing them again."""
+    for job in store.list(project_id) if jobs is None else jobs:
+        if job["kind"] != "translation":
+            continue
+        key = (job["id"], job["plan_sha256"])
+        if key not in _ORGANIZED:
+            try:
+                _job, plan = store.load(job["id"], project_id)
+            except OSError, ValueError:
+                continue
+            relative = plan.get("input_path")
+            if plan.get("method") or not relative or not organize.owns(relative):
+                _ORGANIZED[key] = None
+            else:
+                try:
+                    inputs = read_json(project_path(plan["source"], relative))["inputs"]
+                    _ORGANIZED[key] = str(inputs[0])
+                except OSError, ValueError, KeyError, IndexError, TypeError:
+                    return None
+        if _ORGANIZED[key] is not None:
+            return job, _ORGANIZED[key]
+    return None
+
+
 def assistant_units(store, project_id, root):
     """The units the assistant last organized: the units file of the newest
     run its organize compiled, or None before one."""
-    for job in store.list(project_id):
-        if job["kind"] != "translation":
-            continue
-        try:
-            _job, plan = store.load(job["id"], project_id)
-        except OSError, ValueError:
-            continue
-        relative = plan.get("input_path")
-        if plan.get("method") or not relative or not organize.owns(relative):
-            continue
-        try:
-            inputs = read_json(project_path(root, relative))["inputs"]
-            return units_file(root, inputs[0])
-        except OSError, ValueError, KeyError, IndexError, TypeError:
-            return None
-    return None
+    found = assistant_run(store, project_id)
+    if found is None:
+        return None
+    try:
+        return units_file(root, found[1])
+    except OSError, ValueError, KeyError, IndexError, TypeError:
+        return None
 
 
 def glossary_entries(root):
