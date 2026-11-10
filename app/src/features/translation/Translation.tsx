@@ -432,7 +432,7 @@ function Workspace({
           <TextQaTab
             projectId={project.id}
             qa={qa}
-            byUnits={!own}
+            byUnits={state.qaByUnits}
             playtest={playtest}
             action={action}
             disabled={disabled}
