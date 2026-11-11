@@ -2099,6 +2099,7 @@ export type HookProbes = {
   next: string;
   probes?: string;
   results?: string;
+  kept?: string;
   unclean?: number;
   problems?: HookProbeProblem[];
 };
@@ -3642,6 +3643,7 @@ export type WindowTitleProjectRequest = {
 export type HookProbesRequest = {
   project_id: string;
   check?: boolean;
+  keep?: string;
 };
 
 export type SettingsModelDefaultsRequest = {

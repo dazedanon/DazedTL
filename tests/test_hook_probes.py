@@ -111,6 +111,20 @@ class ProblemTests(unittest.TestCase):
         probe = {"speaker": None, "text": "HP 101/101", "values": ["101"]}
         self.assertIsNone(hook_probes.problem(probe, None))
 
+    def test_marks_the_game_keeps_on_purpose_pass_and_no_others(self):
+        # Labyrinth City Asylum draws ＜＞ around telepathy.
+        self.assertIsNone(
+            hook_probes.problem(PROBE, "＜Can you hear me? 101＞", kept="＜＞")
+        )
+        self.assertEqual(
+            hook_probes.problem(PROBE, "＜……101＞", kept="＜＞"),
+            "its English still shows …",
+        )
+        self.assertEqual(
+            hook_probes.problem(PROBE, "＜Can you hear me? 101＞"),
+            "its English still shows ＜＞",
+        )
+
     def test_marks_a_translation_keeps_are_no_untranslated_text(self):
         # Ideographic space and the censor glyphs stay out of the class.
         self.assertIsNone(hook_probes.problem(PROBE, "Got 101　〇〇 ●"))

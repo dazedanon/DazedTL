@@ -571,6 +571,8 @@ class HookProbesRequest(TypedDict):
     project_id: str
     # Judge the self-test's answers instead of writing the probe list.
     check: NotRequired[bool]
+    # With check: the Japanese marks the game's English keeps on purpose.
+    keep: NotRequired[str]
 
 
 class SettingsModelDefaultsRequest(TypedDict):

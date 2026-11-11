@@ -194,6 +194,7 @@ A letters-only class such as `[぀-ヿ一-鿿]` misses lines like `……。`, `
 The shipped English holds none of these marks; tidy them to ASCII (`…` to `...`, `！` to `!`, `─` to `-`) before the residual check.
 English that keeps one would also make a runtime hook look the string up again on every character a typewriter effect adds.
 A mark the English keeps on purpose stays out of the class for that game and is recorded in its notes: U+3000 padding in menus and moans, the `〇` and `●` censor glyphs, a bracket the game uses for a voice (Asylum's `＜＞` telepathy).
+For a runtime hook, name the same marks to the project helper's `hook-probes --check --keep`, which judges the game's English with them left out; it takes punctuation and symbols only.
 Classes about letters alone, such as the stranded-kana check, stay letters only.
 
 ## Commit messages never carry spoilers

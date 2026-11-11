@@ -1029,10 +1029,11 @@ Additional project instructions:
         _record, project = self.project(project_id)
         return self.engine.word_spacing(project.root)
 
-    def hook_probes(self, project_id, check=False):
+    def hook_probes(self, project_id, check=False, keep=""):
         """Writes the probe list a runtime hook's self-test answers, or with
-        *check* judges its answers, which a patch carrying a BepInEx plugin
-        waits for (hook_probes)."""
+        *check* judges its answers, *keep* naming the Japanese marks the
+        game's English keeps on purpose, which a patch carrying a BepInEx
+        plugin waits for (hook_probes)."""
         _record, project = self.project(project_id)
         manifest = runtime_manifest(project.root, self.patch_manifest(project_id))
         paths = self.engine.runtime_paths(manifest)
@@ -1044,7 +1045,7 @@ Additional project instructions:
 
         if check:
             return hook_probes.check(
-                self.workspace, project_id, project.root, paths, held
+                self.workspace, project_id, project.root, paths, held, keep
             )
         return hook_probes.write(project.root, paths, held)
 

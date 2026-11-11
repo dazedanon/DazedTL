@@ -117,11 +117,15 @@ def write(source, paths, held):
     }
 
 
-def check(workspace, project_id, source, paths, held):
+def check(workspace, project_id, source, paths, held, keep=""):
     """Judges the self-test's answers to the current probe list and saves the
     judgement, bound to the export and the plugin's files, for `require`.
-    Refuses answers to another probe list, or older than a plugin file."""
+    Refuses answers to another probe list, or older than a plugin file.
+    *keep* names the Japanese marks this game's English keeps on purpose,
+    such as Labyrinth City Asylum's ＜＞ around telepathy: punctuation and
+    symbols only, saved with the judgement and named in its answer."""
     _covering(paths)
+    kept = _kept(keep)
     units, probed, content = _current(source, held)
     if not probed:
         raise ValueError(
@@ -161,7 +165,7 @@ def check(workspace, project_id, source, paths, held):
         for identity, probe in probed.items()
         if (
             reason := (
-                problem(probe, answers[identity])
+                problem(probe, answers[identity], kept)
                 if identity in answers
                 else "the self-test gave no answer for it"
             )
@@ -172,6 +176,7 @@ def check(workspace, project_id, source, paths, held):
         {
             "version": VERSION,
             "files": files,
+            "kept": kept,
             "lines": len(probed),
             "unclean": len(unclean),
             "problems": unclean[:KEPT],
@@ -179,6 +184,7 @@ def check(workspace, project_id, source, paths, held):
     )
     return {
         "lines": len(probed),
+        "kept": kept,
         "unclean": len(unclean),
         "problems": unclean[:NAMED],
         "next": (
@@ -254,18 +260,19 @@ def probes(units):
     }
 
 
-def problem(probe, shown):
+def problem(probe, shown, kept=""):
     """Why the game's answer *shown* for *probe* is no clean English, in the
     assistant's terms, or None: no English (a miss), a carriage return, text
-    still untranslated by the skill's class, or a filled value it drops. A
-    line holding no untranslated text needs no English of its own."""
+    still untranslated by the skill's class, other than the *kept* marks the
+    game's English keeps on purpose, or a filled value it drops. A line
+    holding no untranslated text needs no English of its own."""
     if shown is None:
         if not UNTRANSLATED.search(probe["text"]):
             return None
         return "the game finds no English for it"
     if "\r" in shown:
         return "its English holds a carriage return"
-    if marks := UNTRANSLATED.findall(shown):
+    if marks := [mark for mark in UNTRANSLATED.findall(shown) if mark not in kept]:
         return "its English still shows " + "".join(dict.fromkeys(marks))
     if lost := [value for value in probe["values"] if value not in shown]:
         return "its English drops the value the game fills in (" + ", ".join(lost) + ")"
@@ -331,6 +338,25 @@ def _formatted(value, spec):
     if kind == "X":
         return format(number, spec[0]).zfill(int(digits or 0))
     return value
+
+
+def _kept(keep):
+    """The marks of *keep*, once each, refusing any that is no Japanese
+    punctuation mark or symbol of the class, such as kana or kanji, which an
+    English line never keeps."""
+    marks = "".join(dict.fromkeys(keep or ""))
+    if wrong := [
+        mark
+        for mark in marks
+        if not UNTRANSLATED.fullmatch(mark) or unicodedata.category(mark)[0] not in "PS"
+    ]:
+        raise ValueError(
+            "--keep takes only the Japanese punctuation and symbols this game's English keeps on purpose, "
+            "such as ＜＞, never kana, kanji or other letters: "
+            + "".join(wrong)
+            + " is not one."
+        )
+    return marks
 
 
 def _covering(paths):

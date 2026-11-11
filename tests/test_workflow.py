@@ -2272,6 +2272,9 @@ class WorkflowTests(unittest.TestCase):
         )
         # Stored as a pattern, its English holds the amount: the old answers
         # are out of date, and new ones from before the store changed refuse.
+        # Its English keeps the ＜＞ the game draws around telepathy, which
+        # passes only while the check is told the game keeps them.
+        english = "＜Quest clear!＞\nReceived {0} gold."
         write_json(
             store, {"exact": {}, "patterns": {reward.replace("\r", ""): english}}
         )
@@ -2281,10 +2284,21 @@ class WorkflowTests(unittest.TestCase):
             self.service.hook_probes(self.identity, check=True)
         self_test((self.game / runtime[1]).stat().st_mtime_ns + 1)
         self.assertEqual(
-            self.service.hook_probes(self.identity, check=True)["unclean"], 0
+            self.service.hook_probes(self.identity, check=True)["problems"][0][
+                "problem"
+            ],
+            "its English still shows ＜＞",
         )
+        with self.assertRaisesRegex(ValueError, "never kana, kanji"):
+            self.service.hook_probes(self.identity, check=True, keep="＜＞ア")
+        kept = self.service.hook_probes(self.identity, check=True, keep="＜＞＜")
+        self.assertEqual((kept["kept"], kept["unclean"]), ("＜＞", 0))
         with self.assertRaisesRegex(RuntimeError, "built"):
             self.service.operation(self.identity, "package", {})
+        # Judged again without them, the line holds the patch again.
+        self.service.hook_probes(self.identity, check=True)
+        self.assertIn("still shows ＜＞", package())
+        self.service.hook_probes(self.identity, check=True, keep="＜＞")
         # A new export is another probe list, and answers that leave its new
         # line out refuse that line.
         rows = read_json(self.game / part)
@@ -2311,7 +2325,9 @@ class WorkflowTests(unittest.TestCase):
         )
         os.utime(self.game / hook_probes.RESULTS, ns=(later * 2, later * 2))
         self.assertEqual(
-            self.service.hook_probes(self.identity, check=True)["problems"],
+            self.service.hook_probes(self.identity, check=True, keep="＜＞")[
+                "problems"
+            ],
             [
                 {
                     "unit": "level3/dots",

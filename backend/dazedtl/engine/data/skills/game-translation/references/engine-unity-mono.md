@@ -182,7 +182,7 @@ Packaging a patch that carries a BepInEx plugin waits for the plugin's coverage 
 
 1. Run the project helper's `hook-probes` after each export: it writes every exported line as the game shows it, each `{0}`-style item and placeholder token filled with a number no line holds, to `.dazedtl/len-method/work/hook-probes.jsonl`.
 2. Start the game once with the plugin installed. Copy `CoverageSelfTest.cs` from the template or NTR Soccer's mod and call `CoverageSelfTest.Run(Paths.GameRootPath)` once the store loads: it looks each probe up through the store the hooks use and writes what the game would show to `hook-results.jsonl` beside the list. If the game's own hooks gate or rewrite text before the store, do the same in it.
-3. Run `hook-probes --check`. It names each line that misses, keeps Japanese by `SKILL.md`'s class, holds a carriage return or drops its filled value; fix the store, start the game again and check again.
+3. Run `hook-probes --check`, with `--keep` and the marks this game's English keeps on purpose, if any (`SKILL.md`, "What counts as untranslated text"). It names each line that misses, keeps Japanese by `SKILL.md`'s class, holds a carriage return or drops its filled value; fix the store, start the game again and check again.
 
 Packaging also refuses once the export or the plugin's files change after the check, so check again after either.
 

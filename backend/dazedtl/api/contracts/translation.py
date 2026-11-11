@@ -707,6 +707,7 @@ class HookProbes(TypedDict):
     next: str
     probes: NotRequired[str]
     results: NotRequired[str]
+    kept: NotRequired[str]
     unclean: NotRequired[int]
     problems: NotRequired[list[HookProbeProblem]]
 

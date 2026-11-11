@@ -414,6 +414,10 @@ def main():
         action="store_true",
         help="Judge the self-test's answers to the current probe list",
     )
+    hook_probes.add_argument(
+        "--keep",
+        help="With --check: the Japanese punctuation this game's English keeps on purpose, such as ＜＞, which its notes record",
+    )
     speakers = commands.add_parser(
         "speakers",
         help="Read speaker discovery results; --scan applies evidenced rules and runs the local parser without API calls",
@@ -596,8 +600,12 @@ def main():
                     params["root"] = args.root
             if args.command == "window-title" and args.title is not None:
                 params["title"] = args.title
+            if args.command == "hook-probes" and args.keep and not args.check:
+                parser.error("--keep goes with --check")
             if args.command == "hook-probes" and args.check:
                 params["check"] = True
+                if args.keep:
+                    params["keep"] = args.keep
             if args.command == "qa" and args.answers and not args.check:
                 parser.error("--answers goes with --check")
             if args.command == "qa" and args.check:
