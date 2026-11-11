@@ -12,6 +12,7 @@ from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from dazedtl.compatibility import original_files
 from dazedtl.compatibility.checkpoint_commits import for_action, running
 from dazedtl.compatibility.dazedmtl import ExistingBackend
 from dazedtl.compatibility.game_write import write_game
@@ -28,6 +29,17 @@ from util.rpgmaker_plugin_registry import plugin_entries
 from util.translation_update_check.installer import is_game_plugin
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def git(game, *arguments, input=None):
+    return subprocess.run(
+        ["git", "-C", str(game), *arguments],
+        capture_output=True,
+        text=True,
+        check=True,
+        encoding="utf-8",
+        input=input,
+    ).stdout
 
 
 def named(name):
@@ -113,7 +125,31 @@ class WindowTitleTests(unittest.TestCase):
         with TemporaryDirectory() as temporary:
             game = Path(temporary) / "game"
             shutil.copytree(ROOT / "tests/fixtures/mz-game", game)
+            # Windows line endings stay through DazedTL's edits.
+            plugins = game / "js/plugins.js"
+            plugins.write_bytes(
+                plugins.read_bytes().replace(b"\r\n", b"\n").replace(b"\n", b"\r\n")
+            )
+            # The app records the game's original files as it opens it.
+            original_files.ensure_found(game)
             setup_git(LenProject(game), version="1.0.9", current_is_untranslated=True)
+            # A Guided game's `original` branch holds only its patch's files.
+            tree = git(game, "ls-tree", "original")
+            kept = "".join(
+                line + "\n"
+                for line in tree.splitlines()
+                if not line.endswith(("\tpackage.json", "\tindex.html"))
+            )
+            stripped = git(
+                game,
+                "commit-tree",
+                git(game, "mktree", input=kept).strip(),
+                "-p",
+                "original",
+                "-m",
+                "Original\n\nDazedTL-Version: 1.0.9",
+            ).strip()
+            git(game, "update-ref", "refs/heads/original", stripped)
             system = json.loads((game / "data/System.json").read_text(encoding="utf-8"))
             system["gameTitle"] = "Magical Girl Adventure"
             translated = json.dumps(system, ensure_ascii=False).encode("utf-8")
@@ -134,7 +170,18 @@ class WindowTitleTests(unittest.TestCase):
             self.assertFalse((game / "js/plugins/DazedTLWindowTitle.js").exists())
 
             with named("Tester"):
+                # Setting the name leaves the title waiting for the next write.
+                self.assertEqual(
+                    sorted(window_title.pending(game)),
+                    [
+                        "index.html",
+                        "js/plugins.js",
+                        "js/plugins/DazedTLWindowTitle.js",
+                        "package.json",
+                    ],
+                )
                 write(translated.replace(b"Adventure", b"Adventures"))
+            self.assertNotIn(b"\n", plugins.read_bytes().replace(b"\r\n", b""))
             title = "Magical Girl Adventures v1.0.9 | TL: Tester"
             package = json.loads((game / "package.json").read_text(encoding="utf-8"))
             self.assertEqual(
@@ -211,6 +258,12 @@ class WindowTitleTests(unittest.TestCase):
             game = Path(temporary)
             ini = game / "Game.ini"
             ini.write_bytes(b"[Game]\r\nRTP=RPGVXAce\r\nTitle=\x83Q\x81[\x83\x80\r\n")
+            (game / "Data").mkdir()
+            (game / "Data/System.rvdata2").write_bytes(b"")
+            (game / "ace_json").mkdir()
+            (game / "ace_json/System.json").write_text(
+                '{"gameTitle": "Cafe Quest"}', encoding="utf-8"
+            )
             with named("Tester"):
                 # A game whose Git is not set up, such as a staged update, keeps the title.
                 self.assertEqual(
@@ -245,6 +298,8 @@ class WindowTitleTests(unittest.TestCase):
                         window_title.ini_title(game, "Cafe Quest", "Japanese"),
                         "Cafe Quest v2.0 | TL: 翻訳者",
                     )
+                # Packing System is what brings Game.ini's title up to date.
+                self.assertEqual(window_title.pending(game), ["Game.ini"])
                 title = window_title.ini_title(game, "Café ♥ Quest")
                 self.assertEqual(title, "Café ♥ Quest v2.0 | TL: Tester")
                 self.assertTrue(game_ini.write_title(ini, title, lambda _line: None))

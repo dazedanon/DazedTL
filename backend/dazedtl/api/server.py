@@ -785,10 +785,12 @@ class Application:
         return self.translation.game_update.act(project_id, action, repo)
 
     def sync_game_update(self):
-        """The open game's GameUpdate config follows Settings and its remotes."""
+        """The open game's GameUpdate config follows Settings and its
+        remotes, and its window title Settings' translator name."""
         project = self.projects.current
         if project and self.locations.holds(project):
             self.translation.game_update.sync(project["id"])
+            self.translation.window_titles.sync(project["id"])
 
     def settings_draft(self, revision, connection_id, values, model_options):
         return self.settings.draft(revision, connection_id, values, model_options)

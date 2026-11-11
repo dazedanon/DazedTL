@@ -115,17 +115,17 @@ def run(
         )
         ini = game_ini.find(root)
         system_json = root / "ace_json/System.json"
-        if ini is None or (
-            only is not None and "system" not in {name.casefold() for name in only}
-        ):
+        if ini is None or not system_json.is_file():
             return written
-        if system_json.is_file():
-            title = json.loads(system_json.read_text(encoding="utf-8-sig")).get("gameTitle")
-            # The window title once the translator's name is set; the drawn
-            # title stays in the System data.
-            language = game_target_language(root)
-            title = window_title.ini_title(root, title, language)
-            game_ini.write_title(ini, title, log, language)
+        title = json.loads(system_json.read_text(encoding="utf-8-sig")).get("gameTitle")
+        # The window title once the translator's name is set, written by
+        # every pack so it follows the name and version; the drawn title
+        # stays in the System data.
+        language = game_target_language(root)
+        full = window_title.ini_title(root, title, language)
+        if full == title and only is not None and "system" not in {name.casefold() for name in only}:
+            return written
+        game_ini.write_title(ini, full, log, language)
         return [*written, ini]
     else:
         raise ValueError("Unknown Ace action: " + action)

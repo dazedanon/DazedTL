@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "../../api/client";
+import { useApplication } from "../../app/ApplicationProvider";
 import type { Forge, PublishingSettings as Values } from "../../api/contracts";
 import {
   shortcutKeys,
@@ -78,9 +79,11 @@ export default function PublishingSettings({
             label="Translator"
             help="Shown in each translated game's window title. Leave it empty to keep games' own titles."
             note={
-              values.translator.trim()
-                ? `Window title: ${title}`
-                : "Window title: each game keeps its own."
+              !values.translator.trim()
+                ? "Window title: each game keeps its own."
+                : title
+                  ? `Window title: ${title}`
+                  : undefined
             }
           >
             {(control) => (
@@ -191,9 +194,12 @@ export default function PublishingSettings({
 
 /**
  * The window title `translator` gives the open game, as the backend forms
- * it, read again a moment after typing stops.
+ * it, read again a moment after typing stops and whenever the workspace
+ * changes, such as another game opening or a game update registering its
+ * version; empty until the first answer.
  */
 function useWindowTitle(translator: string) {
+  const snapshot = useApplication().snapshot;
   const [title, setTitle] = useState("");
   useEffect(() => {
     if (!translator.trim()) return;
@@ -208,6 +214,6 @@ function useWindowTitle(translator: string) {
       current = false;
       window.clearTimeout(timer);
     };
-  }, [translator]);
+  }, [translator, snapshot]);
   return title;
 }

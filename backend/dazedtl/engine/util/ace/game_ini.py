@@ -169,19 +169,35 @@ def write_title(
 ) -> bool:
     """Sets the ini's Title to the game title, translated into *language*;
     False when it already shows that title or there is none to write."""
-    if not isinstance(title, str):
+    output = titled(path, title, log, language)
+    if output is None:
         return False
+    path.write_bytes(output)
+    log(f"Set the window title in {path.name}")
+    return True
+
+
+def titled(
+    path: Path,
+    title: object,
+    log: Callable[[str], None] = print,
+    language: str = "English",
+) -> bytes | None:
+    """The ini's bytes with Title set as `write_title` sets it, or None when
+    it already shows that title or there is none to write."""
+    if not isinstance(title, str):
+        return None
     # An ini value is one line, and Windows trims the spaces around it.
     value = re.sub(r"[\x00-\x1f]+", " ", title).strip()
     if not value:
-        return False
+        return None
     data = path.read_bytes()
     codec = next((name for bom, name in BOMS.items() if data.startswith(bom)), None)
     if codec:
         text = data[2:].decode(codec)
         updated, previous = _with_title(text, value)
         if previous == value:
-            return False
+            return None
         output = data[:2] + updated.encode(codec)
     else:
         # Latin-1 maps every byte to one character, so lines split and join
@@ -192,7 +208,7 @@ def write_title(
             try:
                 # The title the editor wrote: the game is untranslated.
                 if previous.encode("latin-1").decode(EDITOR_ENCODING) == value:
-                    return False
+                    return None
             except UnicodeDecodeError:
                 pass
         if script(language) == "japanese":
@@ -201,16 +217,14 @@ def write_title(
                 value = value.encode(EDITOR_ENCODING).decode("latin-1")
             except UnicodeEncodeError:
                 log(f"{path.name} keeps its title: Shift-JIS can't write the new one")
-                return False
+                return None
         else:
             value = ascii_title(value)
             if not value:
                 log(f"{path.name} keeps its title: most of the new one has no ASCII form")
-                return False
+                return None
         updated, previous = _with_title(text, value)
         if previous == value:
-            return False
+            return None
         output = updated.encode("latin-1")
-    path.write_bytes(output)
-    log(f"Set the window title in {path.name}")
-    return True
+    return output

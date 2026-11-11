@@ -167,7 +167,7 @@ def sync(root: str | Path, put: Callable[[str, bytes | None], None], checkout=No
     elif plugin.is_file() and game_git_set_up(root):
         wanted = "the game's own"
         changes = {plugin: _REMOVED, plugins_js: _registry(plugins_js, None)}
-        original = _originals(root, checkout)
+        original = _originals(root)
         if (title := _package_title(original(package))) is not None:
             changes[package] = _package(package, title)
         if found := _TITLE_TAG.search(original(index) or ""):
@@ -188,19 +188,48 @@ def sync(root: str | Path, put: Callable[[str, bytes | None], None], checkout=No
     return written
 
 
-def _originals(root: Path, checkout) -> Callable[[Path], str | None]:
-    """Reads a game file as the `original` branch holds it."""
-    from util.version_update.git_workflow import _run_git, read_checkout
+def pending(root: str | Path, checkout=None) -> list[str]:
+    """The game files bringing its window title up to date would change
+    now, read without writing: `sync`'s on MV/MZ, and on VX Ace Game.ini,
+    which packing System writes."""
+    from util.project_preparation import rpgmaker_layout
 
-    checkout = checkout if checkout is not None else read_checkout(root)
+    root = Path(root)
+    layout = rpgmaker_layout(root)
+    if layout and layout["engine"] == "MVMZ":
+        return sync(root, lambda *_: None, checkout)
+    if not layout or not (root / "ace_json/System.json").is_file():
+        return []
+    from util.ace import game_ini
+    from util.game_settings import game_target_language
+
+    ini = game_ini.find(root)
+    try:
+        title = json.loads((root / "ace_json/System.json").read_text(encoding="utf-8-sig")).get("gameTitle")
+    except (OSError, ValueError, AttributeError):
+        return []
+    language = game_target_language(root)
+    full = ini_title(root, title, language)
+    if ini is None or full == title:
+        return []
+    return [ini.name] if game_ini.titled(ini, full, lambda _line: None, language) is not None else []
+
+
+def _originals(root: Path) -> Callable[[Path], str | None]:
+    """Reads a game file as the record of its current version's original
+    files holds it, which restoring a checkpoint reads too; a Guided game's
+    `original` branch holds only its patch's files."""
+    from dazedtl.compatibility import original_files
+
+    row = original_files.prepared_record(root) or original_files.found_record(root)
+    entries = original_files.files(root, row.commit) if row else {}
 
     def read(path: Path) -> str | None:
-        if checkout is None or not checkout.original_commit:
+        entry = entries.get(path.relative_to(root).as_posix())
+        if entry is None:
             return None
-        relative = path.relative_to(root).as_posix()
-        name = f"{checkout.prefix}/{relative}" if checkout.prefix else relative
-        shown = _run_git(checkout.repo, "show", f"{checkout.original_commit}:{name}", check=False)
-        return shown.stdout if shown.returncode == 0 else None
+        _mode, blob, size = entry
+        return original_files.peek(root, blob, size).decode("utf-8", errors="replace")
 
     return read
 
@@ -238,7 +267,8 @@ def _registry(path: Path, title: str | None) -> bytes | None:
     )
 
     try:
-        content = path.read_text(encoding="utf-8")
+        # As bytes, so Windows line endings stay.
+        content = path.read_bytes().decode("utf-8")
     except (OSError, UnicodeDecodeError):
         return None
     newline = "\r\n" if "\r\n" in content else "\n"
@@ -271,7 +301,7 @@ def _package(path: Path, title: str) -> bytes | None:
     """NW.js's package.json with `window.title` set and every other byte
     kept; None when the game has none NW.js reads."""
     try:
-        content = path.read_text(encoding="utf-8-sig")
+        content = path.read_bytes().decode("utf-8-sig")
         value = json.loads(content)
     except (OSError, ValueError):
         return None
@@ -303,7 +333,7 @@ def _package(path: Path, title: str) -> bytes | None:
 def _index(path: Path, title: str) -> bytes | None:
     """index.html with its `<title>` set to the HTML `title`; None without one."""
     try:
-        content = path.read_text(encoding="utf-8")
+        content = path.read_bytes().decode("utf-8")
     except (OSError, UnicodeDecodeError):
         return None
     found = _TITLE_TAG.search(content)

@@ -100,6 +100,7 @@ from .results import (
     review_digest,
     run_quotes,
 )
+from .window_title import WindowTitle
 
 # The lifecycle record's fields the renderer reads; a ZIP's file stamps stay
 # in the backend, which compares them.
@@ -274,6 +275,7 @@ class Translation:
         # And the Image Manager's progress for Assistant-led image records.
         self.image_units: Callable[[str], dict | None] | None = None
         self.game_update = GameUpdate(self)
+        self.window_titles = WindowTitle(self)
         self.releases = AssistantRelease(self)
 
     def project(self, identity):
