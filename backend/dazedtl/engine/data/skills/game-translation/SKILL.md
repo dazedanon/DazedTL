@@ -188,6 +188,7 @@ JP_TEXT = (r"[\u3040-\u30FF\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF"  # kana (wit
 ```
 
 The same escapes work in a C# `Regex`, so a runtime hook uses the class unchanged.
+DazedTL defines it once as `UNTRANSLATED_TEXT` in its `engine/util/languages.py` and reads a runtime hook's coverage answers by it, so English that a narrower class lets through still holds the patch.
 
 A letters-only class such as `[぀-ヿ一-鿿]` misses lines like `……。`, `…ZZZ…。` and `────!!!`: in Labyrinth City Asylum a hook gated that way never looked up 586 such lines, its log and coverage test used the same gate, and the dialogue font drew `…` as centered dots.
 The shipped English holds none of these marks; tidy them to ASCII (`…` to `...`, `！` to `!`, `─` to `-`) before the residual check.

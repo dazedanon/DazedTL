@@ -181,6 +181,22 @@ JAPANESE_PATTERNS = {
     "evaluation": r"[一-龠々〆〤ぁ-ゔァ-ヴーａ-ｚＡ-Ｚ０-９\uFF61-\uFF9F]",
     "playtest": "[ぁ-ゔァ-ヴ一-龠々〆〤]",
 }
+# Japanese text a runtime hook's English must not show: a Japanese letter or
+# any Japanese punctuation mark, ellipsis or dash. It is the game-translation
+# skill's JP_TEXT ("What counts as untranslated text"), which an assistant's
+# own tools copy, a hook's C# Regex unchanged, and DazedTL's coverage check
+# reads the game's answers by (translation/coverage). Unlike util/source_text's
+# letters, which Guided sends and counts by, the marks count: a hook looks a
+# line up as the game shows it, so a line such as ……。 needs English too.
+# U+3000 and the censor glyphs 〇 and ● are out of it, as a translation keeps
+# them.
+UNTRANSLATED_TEXT = (
+    r"[぀-ヿ㐀-䶿一-鿿豈-﫿"
+    r"、-〆〈-〿"
+    r"！-ﾟ"
+    r"‥…⋯"
+    r"―─━]"
+)
 # Japanese letters, util/source_text's rule: 々〆〇, kana, kanji and
 # half-width kana. The middle dot and long vowel mark (・ー), which English
 # uses as bullets and dashes, are not letters, nor are the voicing marks
