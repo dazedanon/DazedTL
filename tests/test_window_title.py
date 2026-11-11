@@ -189,6 +189,22 @@ class WindowTitleTests(unittest.TestCase):
                 self.assertEqual(
                     window_title.sync(game, lambda *_: self.fail("wrote")), []
                 )
+            # Clearing the name gives the game its own title back at the next write.
+            with named(""):
+                write(translated)
+            self.assertEqual(
+                (game / "package.json").read_bytes(),
+                (ROOT / "tests/fixtures/mz-game/package.json").read_bytes(),
+            )
+            self.assertIn(
+                "<title>魔法少女の冒険</title>",
+                (game / "index.html").read_text(encoding="utf-8"),
+            )
+            self.assertFalse((game / "js/plugins/DazedTLWindowTitle.js").exists())
+            self.assertNotIn(
+                window_title.PLUGIN_NAME,
+                (game / "js/plugins.js").read_text(encoding="utf-8"),
+            )
 
     def test_vx_ace_game_ini_takes_the_title_in_ascii(self):
         with TemporaryDirectory() as temporary:
@@ -219,6 +235,15 @@ class WindowTitleTests(unittest.TestCase):
                         ["git", "-C", str(game), *arguments],
                         check=True,
                         capture_output=True,
+                    )
+                with named("翻訳者"):
+                    # Game.ini holds ASCII, so a name with none gives no credit.
+                    self.assertEqual(
+                        window_title.ini_title(game, "Cafe Quest"), "Cafe Quest"
+                    )
+                    self.assertEqual(
+                        window_title.ini_title(game, "Cafe Quest", "Japanese"),
+                        "Cafe Quest v2.0 | TL: 翻訳者",
                     )
                 title = window_title.ini_title(game, "Café ♥ Quest")
                 self.assertEqual(title, "Café ♥ Quest v2.0 | TL: Tester")

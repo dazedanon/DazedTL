@@ -31,6 +31,8 @@ PLUGIN_SOURCE = Path(__file__).with_name(f"{PLUGIN_NAME}.js")
 _PLUGIN_DESCRIPTION = "Translation window title"
 _TITLE_TAG = re.compile(r"(<title[^>]*>)(.*?)(</title\s*>)", re.IGNORECASE | re.DOTALL)
 _WINDOW_KEY = re.compile(r'"window"\s*:\s*\{')
+# What `sync` puts for a file it takes out.
+_REMOVED = object()
 # Registered versions by repository and `original` commit, which fixes them.
 _versions: dict[tuple[str, str], str | None] = {}
 _TITLE_KEY = re.compile(r'"title"\s*:\s*"(?:[^"\\]|\\.)*"')
@@ -114,48 +116,101 @@ def preview(root: str | Path | None, name: str) -> str:
     return form(title or "<English title>", version(checkout), name)
 
 
-def ini_title(root: str | Path, title: object) -> object:
+def ini_title(root: str | Path, title: object, language: str = "English") -> object:
     """The title a VX Ace game's Game.ini gets for its `gameTitle`: the
     window title when the game gets one, else `title` as it is. The
-    title the game draws stays in its System data."""
-    return (text(root, title) if isinstance(title, str) else "") or title
+    title the game draws stays in its System data. Game.ini holds ASCII
+    for a target language outside Japanese script (game_ini.write_title),
+    so a name with no ASCII form gives no credit there."""
+    from util.ace.game_ini import ascii_title
+    from util.languages import script
+
+    if not isinstance(title, str):
+        return title
+    name = translator()
+    if script(language) != "japanese":
+        name = ascii_title(name)
+    return text(root, title, name=name) or title
 
 
-def sync(root: str | Path, put: Callable[[str, bytes], None], checkout=None,
+def sync(root: str | Path, put: Callable[[str, bytes | None], None], checkout=None,
          log: Callable[[str], None] = lambda _line: None) -> list[str]:
     """Shows the window title in an RPG Maker MV/MZ game: its plugin, which
     keeps the title once the game boots, with the title in plugins.js, and
     NW.js's `package.json` `window.title` and `index.html` `<title>`, shown
-    while it loads. `put(relative, raw)` writes one game file. Returns the
-    files it changed; none while the game gets no title."""
+    while it loads. Once the name is cleared, the next write takes the
+    plugin out and gives those two the original game's titles back.
+    `put(relative, raw)` writes one game file, or takes it out for None.
+    Returns the files it changed; none while the game gets no title."""
+    from util.paths import game_git_set_up
     from util.project_preparation import rpgmaker_layout
 
     root = Path(root)
-    name = translator()
-    layout = rpgmaker_layout(root) if name else None
+    layout = rpgmaker_layout(root)
     if not layout or layout["engine"] != "MVMZ":
         return []
-    wanted = text(root, checkout=checkout, name=name)
-    if not wanted:
-        return []
     plugins_js = layout["plugins_js"]
-    web = plugins_js.parent.parent
-    changes = {
-        plugins_js.parent / "plugins" / f"{PLUGIN_NAME}.js": PLUGIN_SOURCE.read_bytes(),
-        plugins_js: _registry(plugins_js, wanted),
-        root / "package.json": _package(root / "package.json", wanted),
-        web / "index.html": _index(web / "index.html", wanted),
-    }
+    plugin = plugins_js.parent / "plugins" / f"{PLUGIN_NAME}.js"
+    package = root / "package.json"
+    index = plugins_js.parent.parent / "index.html"
+    name = translator()
+    if name:
+        wanted = text(root, checkout=checkout, name=name)
+        if not wanted:
+            return []
+        changes = {
+            plugin: PLUGIN_SOURCE.read_bytes(),
+            plugins_js: _registry(plugins_js, wanted),
+            package: _package(package, wanted),
+            index: _index(index, html.escape(wanted, quote=False)),
+        }
+    elif plugin.is_file() and game_git_set_up(root):
+        wanted = "the game's own"
+        changes = {plugin: _REMOVED, plugins_js: _registry(plugins_js, None)}
+        original = _originals(root, checkout)
+        if (title := _package_title(original(package))) is not None:
+            changes[package] = _package(package, title)
+        if found := _TITLE_TAG.search(original(index) or ""):
+            changes[index] = _index(index, found.group(2))
+    else:
+        return []
     written = []
     for path, raw in changes.items():
-        if raw is None or (path.is_file() and path.read_bytes() == raw):
+        if raw is None or (raw is _REMOVED and not path.is_file()):
+            continue
+        if raw is not _REMOVED and path.is_file() and path.read_bytes() == raw:
             continue
         relative = path.relative_to(root).as_posix()
-        put(relative, raw)
+        put(relative, None if raw is _REMOVED else raw)
         written.append(relative)
     if written:
         log(f"Window title: {wanted}")
     return written
+
+
+def _originals(root: Path, checkout) -> Callable[[Path], str | None]:
+    """Reads a game file as the `original` branch holds it."""
+    from util.version_update.git_workflow import _run_git, read_checkout
+
+    checkout = checkout if checkout is not None else read_checkout(root)
+
+    def read(path: Path) -> str | None:
+        if checkout is None or not checkout.original_commit:
+            return None
+        relative = path.relative_to(root).as_posix()
+        name = f"{checkout.prefix}/{relative}" if checkout.prefix else relative
+        shown = _run_git(checkout.repo, "show", f"{checkout.original_commit}:{name}", check=False)
+        return shown.stdout if shown.returncode == 0 else None
+
+    return read
+
+
+def _package_title(content: str | None) -> str | None:
+    try:
+        title = json.loads(content.lstrip("\ufeff"))["window"]["title"] if content else None
+    except (ValueError, KeyError, TypeError):
+        return None
+    return title if isinstance(title, str) else None
 
 
 def _game_title(root: Path) -> str:
@@ -172,8 +227,9 @@ def _game_title(root: Path) -> str:
     return value if isinstance(value, str) else ""
 
 
-def _registry(path: Path, title: str) -> bytes | None:
-    """plugins.js with the plugin on, its title `title`, kept in its place."""
+def _registry(path: Path, title: str | None) -> bytes | None:
+    """plugins.js with the plugin on, its title `title`, kept in its place,
+    or taken out for None."""
     from util.rpgmaker_plugin_registry import (
         PluginRegistryError,
         entry_texts,
@@ -186,6 +242,11 @@ def _registry(path: Path, title: str) -> bytes | None:
     except (OSError, UnicodeDecodeError):
         return None
     newline = "\r\n" if "\r\n" in content else "\n"
+    if title is None:
+        try:
+            return update_plugin_entry(content, PLUGIN_NAME, None, newline).encode("utf-8")
+        except PluginRegistryError:
+            return None
     entry = json.dumps(
         {"name": PLUGIN_NAME, "status": True, "description": _PLUGIN_DESCRIPTION,
          "parameters": {"title": title}},
@@ -220,14 +281,16 @@ def _package(path: Path, title: str) -> bytes | None:
     if window is None:
         return None
     encoded = json.dumps(title, ensure_ascii=False)
+    # In the file's own style: NW.js's default writes no space after colons.
+    pair = f'"title": {encoded}' if '": ' in content else f'"title":{encoded}'
     start = window.end()
     if "title" in value["window"]:
         found = _TITLE_KEY.search(content, start)
         if found is None:
             return None
-        updated = content[: found.start()] + f'"title": {encoded}' + content[found.end():]
+        updated = content[: found.start()] + pair + content[found.end():]
     else:
-        updated = content[:start] + f'"title": {encoded}, ' + content[start:]
+        updated = content[:start] + pair + ", " + content[start:]
     try:
         if json.loads(updated)["window"].get("title") != title:
             return None
@@ -238,7 +301,7 @@ def _package(path: Path, title: str) -> bytes | None:
 
 
 def _index(path: Path, title: str) -> bytes | None:
-    """index.html with its `<title>` text set; None without one."""
+    """index.html with its `<title>` set to the HTML `title`; None without one."""
     try:
         content = path.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError):
@@ -246,5 +309,5 @@ def _index(path: Path, title: str) -> bytes | None:
     found = _TITLE_TAG.search(content)
     if found is None:
         return None
-    updated = content[: found.start(2)] + html.escape(title, quote=False) + content[found.end(2):]
+    updated = content[: found.start(2)] + title + content[found.end(2):]
     return updated.encode("utf-8")

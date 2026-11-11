@@ -580,6 +580,8 @@ pre {
   font-size: var(--font-small);
   margin-top: var(--space-1);
   line-height: 1.5;
+  /* A typed value it repeats, such as a long name, wraps within the field. */
+  overflow-wrap: anywhere;
 }
 .action-bar {
   flex-shrink: 0;

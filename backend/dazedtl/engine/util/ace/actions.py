@@ -123,8 +123,9 @@ def run(
             title = json.loads(system_json.read_text(encoding="utf-8-sig")).get("gameTitle")
             # The window title once the translator's name is set; the drawn
             # title stays in the System data.
-            title = window_title.ini_title(root, title)
-            game_ini.write_title(ini, title, log, game_target_language(root))
+            language = game_target_language(root)
+            title = window_title.ini_title(root, title, language)
+            game_ini.write_title(ini, title, log, language)
         return [*written, ini]
     else:
         raise ValueError("Unknown Ace action: " + action)
