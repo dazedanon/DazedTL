@@ -3,6 +3,12 @@
 Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 [release.mjs](scripts/release.mjs) writes each entry from [release/notes.md](release/notes.md).
 
+## [2.74.0] - 2026-11-11
+
+### Added
+
+- **Settings > Publishing:** a Translator name titles each translated game's window with its English title, version and your name.
+
 ## [2.73.1] - 2026-11-10
 
 ### Fixed
@@ -1824,6 +1830,7 @@ Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachan
 - The first release of DazedTL as a desktop app, installed from a ZIP with a START launcher and updated from inside the app.
 - **Guided steps** for RPG Maker MV, MZ and VX Ace games, and **Assistant-led** for any game.
 
+[2.74.0]: https://github.com/dazedanon/DazedTL/compare/v2.73.1...v2.74.0
 [2.73.1]: https://github.com/dazedanon/DazedTL/compare/v2.73.0...v2.73.1
 [2.73.0]: https://github.com/dazedanon/DazedTL/compare/v2.72.0...v2.73.0
 [2.72.0]: https://github.com/dazedanon/DazedTL/compare/v2.71.1...v2.72.0
