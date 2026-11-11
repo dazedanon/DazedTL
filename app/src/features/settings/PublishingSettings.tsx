@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import { api } from "../../api/client";
 import { useApplication } from "../../app/ApplicationProvider";
 import type { Forge, PublishingSettings as Values } from "../../api/contracts";
@@ -46,7 +46,7 @@ export default function PublishingSettings({
 }) {
   const form = useRef<HTMLFormElement>(null);
   useSaveForm(form);
-  const title = useWindowTitle(values.translator);
+  const title = useWindowTitle(values.translator, form);
   const chooseForge = (forge: Forge) => {
     // A host left at the previous forge's usual one follows the new forge.
     const previous = forges.find((item) => item.value === values.forge);
@@ -194,11 +194,27 @@ export default function PublishingSettings({
 
 /**
  * The window title `translator` gives the open game, as the backend forms
- * it, read again a moment after typing stops and when another game opens
- * or the game registers another version; empty until the first answer.
+ * it, read again a moment after typing stops, when another game opens or
+ * the game registers another version, and when the tab in `shown` comes
+ * into view, since Settings stays mounted while the game's title changes;
+ * empty until the first answer.
  */
-function useWindowTitle(translator: string) {
+function useWindowTitle(
+  translator: string,
+  shown: RefObject<HTMLElement | null>,
+) {
   const snapshot = useApplication().snapshot;
+  const [views, setViews] = useState(0);
+  useEffect(() => {
+    const element = shown.current;
+    if (!element || typeof IntersectionObserver === "undefined") return;
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting))
+        setViews((count) => count + 1);
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [shown]);
   const game = [
     snapshot?.application.project?.id ?? "",
     snapshot?.translation?.git?.original_version ?? "",
@@ -217,6 +233,6 @@ function useWindowTitle(translator: string) {
       current = false;
       window.clearTimeout(timer);
     };
-  }, [translator, game]);
+  }, [translator, game, views]);
   return title;
 }
