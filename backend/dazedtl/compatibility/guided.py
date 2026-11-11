@@ -745,7 +745,17 @@ def pack_ace(native, folder, log, touched=None, restored=()):
     if receipt is not None:
         outputs = list(receipt["outputs"])
         if not only and not change:
-            return []
+            from util import window_title
+
+            # Nothing to pack, but the window title waits: it changes
+            # Game.ini alone, which the receipt keeps.
+            if not window_title.pending(root):
+                return []
+            written = actions.write_window_title(root, log, system=False)
+            _save_receipt(
+                native, folder, [*map(root.joinpath, outputs), *written], inputs
+            )
+            return written
     elif touched is not None:
         only, outputs = {packing_target(name) for name in touched}, None
     else:

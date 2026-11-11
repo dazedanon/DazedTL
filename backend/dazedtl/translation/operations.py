@@ -259,23 +259,7 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
 
     def save(change, manifest_path=None):
         """A checkpoint of the changes waiting in the patch, whose scope takes
-        a runtime manifest's files the patch lacks, after one bringing an
-        MV/MZ game's window title up to date, such as after a game update,
-        so a patch built now carries it (engine/util/window_title)."""
-        from util import window_title
-
-        from dazedtl.compatibility.game_write import write_game
-
-        if not (source / "ace_json").is_dir() and (
-            changed := window_title.pending(source)
-        ):
-            with write_game(
-                source,
-                paths=changed,
-                summary="Update the window title",
-                stage="Release",
-            ):
-                pass
+        a runtime manifest's files the patch lacks."""
         named = ()
         if manifest_path:
             named = engine.runtime_paths(runtime_manifest(source, manifest_path))

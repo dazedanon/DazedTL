@@ -113,23 +113,30 @@ def run(
         written = rv2json.update(
             root, skip_backup=True, edit=ruby_text_variables(log), only=only, log=log
         )
-        ini = game_ini.find(root)
-        system_json = root / "ace_json/System.json"
-        if ini is None or not system_json.is_file():
-            return written
-        title = json.loads(system_json.read_text(encoding="utf-8-sig")).get("gameTitle")
-        # The window title once the translator's name is set, written by
-        # every pack so it follows the name and version; the drawn title
-        # stays in the System data.
-        language = game_target_language(root)
-        full = window_title.ini_title(root, title, language)
-        if full == title and only is not None and "system" not in {name.casefold() for name in only}:
-            return written
-        game_ini.write_title(ini, full, log, language)
-        return [*written, ini]
+        packs_system = only is None or "system" in {name.casefold() for name in only}
+        return [*written, *write_window_title(root, log, packs_system)]
     else:
         raise ValueError("Unknown Ace action: " + action)
     return []
+
+
+def write_window_title(root: Path, log: Callable[[str], None], system: bool = True) -> list[Path]:
+    """Sets Game.ini's Title, the window's, to the game title, or once the
+    translator's name is set to the window title (util/window_title), which
+    every pack writes so it follows the name and version; the drawn title
+    stays in the System data. Without `system`, packing System, only the
+    window title is written. Returns Game.ini when it wrote it."""
+    ini = game_ini.find(root)
+    system_json = root / "ace_json/System.json"
+    if ini is None or not system_json.is_file():
+        return []
+    title = json.loads(system_json.read_text(encoding="utf-8-sig")).get("gameTitle")
+    language = game_target_language(root)
+    full = window_title.ini_title(root, title, language)
+    if full == title and not system:
+        return []
+    game_ini.write_title(ini, full, log, language)
+    return [ini]
 
 
 def packed_files(root: Path) -> list[Path]:

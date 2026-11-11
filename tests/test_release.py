@@ -618,6 +618,7 @@ class ReleaseTests(unittest.TestCase):
                         SimpleNamespace(root=game, read=lambda: {"options": {}}),
                     ),
                     game_update=SimpleNamespace(require_ready=Mock()),
+                    window_titles=SimpleNamespace(sync=Mock()),
                     idle=Mock(),
                     unfinished_reasons=ready,
                 )

@@ -14,6 +14,7 @@ from dazedtl.storage import write_json
 
 from . import preparation
 from .files import digest, evidence, project_path, read_json, verify_evidence
+from .window_title import refresh as refresh_window_title
 
 if TYPE_CHECKING:
     from .guided import Guided
@@ -236,6 +237,13 @@ class GuidedActions:
         if (row.tools or action == "playtest_status") and native["engine"] != "MVMZ":
             raise ValueError("TL Inspector and Forge support RPG Maker MV/MZ games.")
         if action in {"release", "release_patch"}:
+            # Its title is the game's before the review reads it.
+            refresh_window_title(
+                native["source"],
+                lambda **write: self.guided.backend.game_write(
+                    native["source"], native["id"], **write
+                ),
+            )
             release_status = self.guided.release_ready(project_id, native, value)
         else:
             release_status = None

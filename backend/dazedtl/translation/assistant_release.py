@@ -195,8 +195,10 @@ class AssistantRelease:
         engine = self.translation.engine
         if kind not in KINDS:
             raise ValueError("Choose a clean game ZIP or a patch ZIP.")
-        # A review reads the game while no operation changes it.
+        # A review reads the game while no operation changes it, with its
+        # window title brought up to date first.
         self.translation.idle(project_id)
+        self.translation.window_titles.sync(project_id)
         path = destination(root, self.translation.workspace, engine.source, output)
         state = lifecycle(self.translation.workspace, project_id)
         options = project.read()["options"]
