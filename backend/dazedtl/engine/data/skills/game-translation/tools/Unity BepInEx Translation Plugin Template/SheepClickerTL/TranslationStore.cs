@@ -83,14 +83,20 @@ namespace SheepClickerTL
                     foreach (var kv in pairs)
                     {
                         if (string.IsNullOrEmpty(kv.Value)) { empty++; continue; }
+                        // English never keeps a CR: TMP sends the pen back to the
+                        // line's left edge on one and draws the rest over the start
+                        var value = WithoutCr(kv.Value);
+                        // the key decides, whatever the string is: a dialogue line
+                        // the code fills (string.Format on "報酬{0}ゴールド") is a
+                        // pattern too, matched with CRs removed on both sides
                         if (PlaceholderRe.IsMatch(kv.Key))
                         {
-                            _patterns.Add(BuildPattern(kv.Key, kv.Value));
+                            _patterns.Add(BuildPattern(WithoutCr(kv.Key), value));
                             patterns++;
                         }
                         else
                         {
-                            _map[kv.Key] = kv.Value;
+                            _map[kv.Key] = value;
                             _normIndex[Normalize(kv.Key)] = kv.Key;
                             added++;
                         }
@@ -115,7 +121,8 @@ namespace SheepClickerTL
             // build the compose-prefix list: every exact-match key,
             // sorted by length descending so longer prefixes win.
             _composePrefixes.Clear();
-            foreach (var kv in _map) _composePrefixes.Add(kv);
+            foreach (var kv in _map)
+                _composePrefixes.Add(new KeyValuePair<string, string>(WithoutCr(kv.Key), kv.Value));
             _composePrefixes.Sort((a, b) => b.Key.Length.CompareTo(a.Key.Length));
 
             Plugin.Log.LogInfo($"translations: {total} active, {skipped} pending");
@@ -157,13 +164,17 @@ namespace SheepClickerTL
                 return true;
             }
 
+            // everything below works on the text without CRs, as the pattern and
+            // compose keys were stored, so CRLF and LF forms of a line both match
+            var text = WithoutCr(original);
+
             // format-pattern sweep — patterns are sorted most-specific first
             for (int pi = 0; pi < _patterns.Count; pi++)
             {
                 var p = _patterns[pi];
                 if (p.FirstLiteral.Length > 0 &&
-                    !original.StartsWith(p.FirstLiteral, StringComparison.Ordinal)) continue;
-                var m = p.Regex.Match(original);
+                    !text.StartsWith(p.FirstLiteral, StringComparison.Ordinal)) continue;
+                var m = p.Regex.Match(text);
                 if (!m.Success) continue;
 
                 // resolve each capture: if it contains JP, try to recursively
@@ -219,7 +230,7 @@ namespace SheepClickerTL
             // game's `tmp.text = "-資産　" + value + "円"` style where each
             // piece lives as a separate ldstr but the runtime concat never
             // matches any single pattern.
-            if (depth < MaxRecursion && TryCompose(original, depth, out translated))
+            if (depth < MaxRecursion && TryCompose(text, depth, out translated))
             {
                 if (depth == 0) _hitCache[original] = translated;
                 return true;
@@ -227,11 +238,11 @@ namespace SheepClickerTL
 
             if (Plugin.CfgFallbackContains?.Value == true)
             {
-                foreach (var kv in _map)
+                foreach (var kv in _composePrefixes)
                 {
-                    if (original.Contains(kv.Key))
+                    if (text.Contains(kv.Key))
                     {
-                        translated = original.Replace(kv.Key, kv.Value);
+                        translated = text.Replace(kv.Key, kv.Value);
                         if (depth == 0) _hitCache[original] = translated;
                         return true;
                     }
@@ -414,6 +425,10 @@ namespace SheepClickerTL
                 LiteralLen = literalLen,
             };
         }
+
+        // CRLF -> LF, and a bare CR dropped
+        private static string WithoutCr(string s)
+            => s.IndexOf('\r') < 0 ? s : s.Replace("\r\n", "\n").Replace("\r", "");
 
         // collapse "\\n" / CRLF to single \n; trim whitespace
         private static string Normalize(string s)

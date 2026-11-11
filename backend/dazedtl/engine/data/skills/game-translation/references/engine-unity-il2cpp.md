@@ -126,6 +126,11 @@ Copy `SheepClickerTL`; take registration and harvesting from `LoserLifeATest`. `
 
 - `BasePlugin` + `Load()`, `internal static new ManualLogSource Log` (the `new` is required).
 - `TranslationStore` with a hand-rolled flat JSON parser (`System.Text.Json` is not available). Exact + normalized + `{0}`-format-pattern + compose matching, capped caches.
+- Keep the store's rules in anything that builds or checks its payload, as `engine-unity-mono.md` Step 4 explains with the Labyrinth City Asylum case each one prevents:
+  a key with a placeholder is a pattern whatever kind of unit it came from, including a dialogue line the code fills with `string.Format`;
+  a coverage or self-test fills every placeholder before it looks a line up, since an unfilled template matches its own literal key;
+  and no English value holds a CR, which TextMeshPro treats as a return to the line's left edge.
+  The template drops CRs from loaded values and matches patterns with CRs removed on both sides.
 - Numbered payload files, later wins: `00_dialogue.json`, `10_ui.json`, `…`, `99_overrides.json`. **Caveat: "last file wins" is only true for keys WITHOUT a `{0}`-style placeholder** - those go to an append-only `_patterns` list sorted by literal length, so an override of a placeholder key does not reliably win.
 - Log at `LogInfo`, not `LogDebug`: BepInEx's default disk `LogLevels` excludes Debug, so the template's debug calls look broken.
 - Custom `MonoBehaviour`s need `ClassInjector.RegisterTypeInIl2Cpp<T>()` and an `IntPtr` constructor.
@@ -184,3 +189,4 @@ Bake the covered codepoint set into a QA gate: any character in a translation ou
 - Report expansion (JP→EN runs ~2.1x here) as a **box-fit** signal only. A per-line threshold below ~3x flags most of the corpus and is measuring how dense Japanese is, not how good the translation is.
 - Window title: `WindowTitle.cs` in `SheepClickerTL`, called from `Load()`, its `Title` the project helper's `window-title` text. Never change `productName` or `companyName`, which name the save folder; `engine-unity-mono.md` Step 8 says how it finds the window.
 - Release: ship `winhttp.dll`, `.doorstop_version`, `doorstop_config.ini`, `dotnet/` (the bundled runtime is why no .NET install is needed), `BepInEx/core`, `BepInEx/config/BepInEx.cfg`, `BepInEx/plugins/<Name>/`. **Exclude** `BepInEx/interop/` (~100 MB, regenerated on first launch - that IS the 30-90s first start), `BepInEx/cache/*.dat`, all `*.log`, `untranslated.txt`, `*.pdb`, and the plugin's own `.cfg`.
+- Translated readme files beside the game: key them by file name, never by position among the folder's `*.txt` files, because the publish step writes `repo-description.txt` there; `engine-unity-mono.md` Step 8 has the rule and the case.

@@ -140,6 +140,12 @@ Postfix UI.Text.OnEnable
 The Awake/OnEnable postfixes catch text Unity wrote directly to the `m_text` backing field during scene deserialization (never goes through the setter). Re-assigning `t.text` there routes through the setter prefix.
 
 `TranslationStore` (dict lookup): exact match, newline-normalized match (`\\n`/CRLF/trim), `{0}`-format-pattern matching (compile JP `得点 {0}/{1}` → regex, splice captures into EN template, **slot-aware** so `{1}は{0}`→`{0} is {1}` maps correctly), and a compose walk for concatenated strings.
+**A key with a format placeholder is a pattern whatever kind of unit it came from**, so a per-game builder or store must decide by the key, as the template's `LoadAll` does, never by the unit's kind.
+Labyrinth City Asylum's `GuildQuest.RewardPlayer` runs `string.Format` on a serialized dialogue line, `クエストクリア！\r\n報酬{0}ゴールドをもらった。`, before the typewriter shows it; its builder filed dialogue units as whole lines, so the key held a literal `{0}` and every reward amount stayed Japanese.
+Match patterns with CRs removed from both the key and the game's text, as the template does, so the CRLF a scene serializes and the LF a script writes meet the same key.
+**Test coverage with every placeholder filled** (`報酬1000ゴールド`, not `報酬{0}ゴールド`): that game's in-game sweep looked up the unfilled template, which matched the literal key, so it reported full coverage while the dialogue box showed Japanese.
+**No English value holds a CR**, bare or in CRLF: TextMeshPro sets the pen back to the line's left edge on one (`if (charCode == 13) m_xAdvance = 0 + tag_Indent` in Unity 2022.3's `TextMeshProUGUI`), so the rest of the line draws over its start.
+The same builder joined each dialogue translation into one paragraph by replacing LF only, and the source's CRLF left a CR in 13 English lines (`Quest Clear!\r Received a reward of 2000 gold.`); the template's store drops CRs from every value it loads, and a per-game builder must not write them.
 **Give the store one `IsUntranslated` predicate built from `SKILL.md`'s `JP_TEXT` class**, and use it for the lookup gate, the untranslated log and the coverage test alike.
 A gate on kana and kanji alone never looks up a punctuation-only line: Labyrinth City Asylum's dictionary had `……。` -> `...`, but its `HasJapanese` gate let 586 lines such as `……。` and `────!!!` through as Japanese, and its log and self-test sweep used the same check, so nothing reported them.
 The predicate is true for `……。` and false for `...` and `♡`, so the English the store returns is never looked up again; leave out only the marks this game's English keeps on purpose.
@@ -171,6 +177,8 @@ against what you extracted. On a real run this was **131 of 132 already extracte
 and the one exception was built at runtime by joining two FSM variables - both of
 which *were* extracted separately, and which the store's compose fallback splices.
 So coverage was effectively total, and the test proved it rather than assuming it.
+
+A self-test that looks lines up without playing must fill each placeholder the code fills, with a value no fixed line in the game holds, before it looks the line up; Step 4 has the Asylum case that an unfilled lookup hid.
 
 The logger uses the store's predicate, so punctuation-only lines reach the diff; check that at least one seen in the game, such as `……。`, shows up as translated.
 
@@ -218,6 +226,10 @@ Ship **two** artefacts. The patch-only archive (plugin + `translations/` + confi
 readme, laid out to extract over a game folder) is a couple of hundred KB and is the
 one you can hand out. A full repack is the game itself and a licensing question, not
 a technical one.
+
+**Key the translated readme files by file name, never by position**, and give the extractor and the builder one list of them that names the files it leaves out.
+Labyrinth City Asylum's tools numbered readme units by position among the game folder's sorted `*.txt` files; the publish step then wrote `repo-description.txt` beside the game, which sorts first, so a plain rebuild would have written the cheat readme's English into it and the credits' English into the cheat readme.
+Have the builder stop before writing anything when a readme line lands on no line with text.
 
 Verify by running the distribution copy and confirming no `LogOutput.log` and no
 `untranslated.txt` appear. The general release discipline, including what a
