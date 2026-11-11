@@ -3235,6 +3235,95 @@ export const scenarios = {
       nameCodesWritten,
     ],
   },
+  "assistant-hook-probes": {
+    description:
+      "An Assistant-led project on the Unity game, its patch a BepInEx plugin: the assistant translates all the text and builds the plugin's store with the quest reward line the game fills in kept whole, as Labyrinth City Asylum's builder did. hook-probes fills the line's amount, the plugin's self-test misses it, and packaging and Release's patch review name the line; stored as a pattern, the self-test answers every line in English and the patch packages.",
+    game: "unity",
+    steps: () => [
+      [
+        "Open the game Assistant-led, the assistant translating, without image text or GameUpdate",
+        async (context) => {
+          await assistantLed[0][1](context);
+          const { page } = context;
+          const project_id = (await page.call("workspace_snapshot")).application
+            .project.id;
+          const current = await page.call("translation_state", { project_id });
+          await page.call("translation_save", {
+            project_id,
+            revision: current.revision,
+            values: {
+              ...current.options,
+              include_images: false,
+              install_gameupdate: false,
+            },
+          });
+        },
+      ],
+      assistantLed[1],
+      [
+        "The assistant translates all the text and builds the plugin's store, the reward line kept whole",
+        async ({ page, state }) => {
+          await assistant(page, state, "organize", "--complete");
+          const run = JSON.parse(await assistant(page, state, "translate"));
+          if (run.status !== "complete")
+            throw new Error(
+              `Run ${run.id}: ${run.status}, ${run.message || ""}`,
+            );
+          await assistant(page, state, "write", "--whole-keys");
+        },
+      ],
+      [
+        "hook-probes fills the reward line's amount; the self-test misses it, and --check and packaging name the line",
+        async ({ page, state }) => {
+          const { probe, check, refused } = JSON.parse(
+            await assistant(page, state, "hook-probes"),
+          );
+          console.log(`\n  Probe: ${JSON.stringify(probe)}`);
+          console.log(`  Check: ${JSON.stringify(check.problems)}`);
+          console.log(`  Package: ${refused}`);
+          if (probe !== "クエストクリア！\r\n報酬101ゴールドをもらった。")
+            throw new Error("The probe doesn't fill the reward's amount.");
+          if (
+            check.unclean !== 1 ||
+            check.problems[0].unit !== "level97/reward"
+          )
+            throw new Error("--check doesn't name the reward line alone.");
+          if (!refused.includes("level97/reward"))
+            throw new Error("Packaging doesn't name the reward line.");
+        },
+      ],
+      [
+        "Release's patch review lists the line in the user's words",
+        async ({ page, state }) => {
+          await page.click("Release");
+          await page.click(/^Patch ZIP/);
+          await page.click("Review & build patch ZIP");
+          await page.waitText(
+            "The game would show 1 line without clean English, such as 「クエストクリア！ 報酬{0}ゴールドをもらった。」. Your assistant fixes it first.",
+          );
+          await page.shot(
+            path.join(state.work, "logs", "hook-probes-release.png"),
+          );
+          await page.click("Cancel");
+          await page.click("Progress");
+        },
+      ],
+      [
+        "Stored as a pattern, the self-test answers every line in English and the patch packages",
+        async ({ page, state }) => {
+          await assistant(page, state, "write");
+          const { check, refused } = JSON.parse(
+            await assistant(page, state, "hook-probes"),
+          );
+          if (check.unclean || refused)
+            throw new Error(
+              `The patch still waits: ${JSON.stringify(check.problems)} ${refused}`,
+            );
+          await page.waitText("Patch ZIP\nDone");
+        },
+      ],
+    ],
+  },
   "assistant-checked": {
     description:
       "assistant-written on the TyranoScript game, which Text QA reads by its units: qa --check lists its two forest lines missing the glossary's name and its inn price's changed number; the assistant corrects two through correction receipts, answers the third and writes the game again, and no hit is open. Then qa --prepare reviews the units' scene in play order with Lili's name, Progress shows the screening, and the farewell line a scripted reviewer corrects is saved as a correction receipt, listed in the Text QA tab, written into the game, undone there and applied again.",

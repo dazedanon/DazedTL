@@ -71,6 +71,18 @@ LATIN = re.compile(r"[A-Za-z]")
 IDENTIFIER = re.compile(r"(?=[\w./-]*[\d_./])[\w./-]+")
 WORK = ".dazedtl/len-method/work"
 MANIFEST = f"{WORK}/manifest.json"
+# The Unity game's text and the BepInEx plugin its patch ships.
+LINES = "Fixture_Data/StreamingAssets/lines.json"
+PLUGIN = "BepInEx/plugins/FixtureEnglish"
+STORE = f"{PLUGIN}/translation.json"
+# The ASCII form of the Japanese marks an export's English may keep, which a
+# runtime hook's English must not (SKILL.md, "What counts as untranslated
+# text").
+ASCII_MARKS = str.maketrans(
+    {"…": "...", "‥": "..", "！": "!", "？": "?", "。": ".", "、": ",", "─": "-"}
+)
+# A .NET format item, which the game's code fills before showing the line.
+FORMAT_ITEM = re.compile(r"\{\d+(?:,-?\d+)?(?::[^{}]*)?\}")
 # The folder a WOLF game's Data/Picture.wolf is decoded into, which the game
 # doesn't read.
 DECODED = "decoded/Picture"
@@ -104,6 +116,9 @@ class Assistant:
         self.tyrano = (game / "tyrano").is_dir()
         # A KiriKiri game keeps its files in xp3 archives beside its exe.
         self.kirikiri = any(game.glob("*.xp3"))
+        # A Unity game's English comes from a BepInEx plugin's store, which
+        # its hooks look the game's text up in at run time.
+        self.unity = any(path.is_dir() for path in game.glob("*_Data"))
         self.data = "ace_json" if self.ace else "data"
         # The game's language pair, which the game's own settings may name.
         settings = game / ".dazedtl/settings.json"
@@ -178,6 +193,8 @@ class Assistant:
         evidence.write_text(
             "WOLF RPG Editor: Game.exe and Data/*.wolf archives.\n"
             if self.wolf
+            else "Unity Mono: Fixture_Data and a BepInEx 5 plugin.\n"
+            if self.unity
             else "KiriKiri: Game.exe and data.xp3.\n"
             if self.kirikiri
             else "TyranoScript: tyrano and data/scenario/*.ks.\n"
@@ -190,6 +207,8 @@ class Assistant:
         engine = (
             "WOLF RPG Editor"
             if self.wolf
+            else "Unity Mono"
+            if self.unity
             else "KiriKiri"
             if self.kirikiri
             else "TyranoScript"
@@ -207,6 +226,21 @@ class Assistant:
         if events.is_file() and "\\\\N[1]" in events.read_text(encoding="utf-8-sig"):
             # It names the actor the text shows by her code with her ID.
             self.glossary("ミカ (Mika) - Female, actor ID 1")
+        if self.unity:
+            # The plugin the patch ships: its build and its store, which
+            # write() fills from the translation.
+            (self.game / PLUGIN).mkdir(parents=True, exist_ok=True)
+            (self.game / PLUGIN / "FixtureEnglish.dll").write_bytes(b"MZ stand-in")
+            (self.game / STORE).write_text("{}", encoding="utf-8")
+            (self.game / MANIFEST).write_text(
+                json.dumps({"files": [f"{PLUGIN}/FixtureEnglish.dll", STORE]}),
+                encoding="utf-8",
+            )
+            self.operation(
+                "git_setup",
+                {"version": "1.0", "untranslated": True, "manifest": MANIFEST},
+            )
+            return
         if self.wolf or self.tyrano or self.kirikiri:
             # The archives the translation packs again, or the scenarios it
             # writes, are its patch; a KiriKiri game's is the patch.xp3 it
@@ -750,6 +784,55 @@ class Assistant:
         self.finished("patch")
         print("Packaged:", self.operation("package")["result"]["path"])
 
+    def hook_probes(self):
+        """Writes the hook's probes, answers them as the plugin's coverage
+        self-test does at startup, checks the answers and reports QA done;
+        returns the first probe, the check and packaging's refusal, if any."""
+        written = self.helper("hook-probes")
+        listed = (self.game / written["probes"]).read_bytes()
+        store = json.loads((self.game / STORE).read_text(encoding="utf-8"))
+        answers = [json.dumps({"probes": sha256(listed)})]
+        probes = [json.loads(line) for line in listed.decode("utf-8").splitlines()]
+        for probe in probes:
+            shown = store["exact"].get(probe["text"])
+            text = probe["text"].replace("\r", "")
+            for key, english in store["patterns"].items():
+                pattern = re.escape(key)
+                for item in FORMAT_ITEM.findall(key):
+                    pattern = pattern.replace(re.escape(item), "(.*?)")
+                match = re.fullmatch(pattern, text)
+                if match:
+                    shown = english
+                    for item, value in zip(FORMAT_ITEM.findall(key), match.groups()):
+                        shown = shown.replace(item, value)
+            answer = {"id": probe["id"]}
+            answers.append(json.dumps({**answer, "shown": shown} if shown else answer))
+        (self.game / written["results"]).write_text(
+            "\n".join(answers) + "\n", encoding="utf-8"
+        )
+        checked = self.helper("hook-probes", "--check")
+        self.finished("patch")
+        path = self.work / "op-package.json"
+        path.write_text("{}", encoding="utf-8")
+        result = subprocess.run(
+            [*self.command, "operation", "package", "--arguments-file", str(path)],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            check=False,
+        )
+        refused = result.stderr.strip() if result.returncode else ""
+        if not result.returncode:
+            # The package started; its run says whether it built.
+            job = json.loads(result.stdout)
+            run = self.helper("run", "--run", job["id"], "--wait", "10")
+            if run["status"] != "complete":
+                raise SystemExit(
+                    f"package: {json.dumps(run, ensure_ascii=False)[:2000]}"
+                )
+        reward = next(probe for probe in probes if probe["unit"] == "level97/reward")
+        return {"probe": reward["text"], "check": checked, "refused": refused}
+
     def help_markers(self):
         """The comment heads MPP_ChoiceEX shows as a choice's help, from its
         Choice Help Commands parameter, as the game's plugins.js sets it."""
@@ -769,6 +852,22 @@ class Assistant:
 
     def units(self, miss=None):
         """The game data's units, without the one whose ID is `miss`."""
+        if self.unity:
+            lines = json.loads((self.game / LINES).read_text(encoding="utf-8"))
+            return [
+                {
+                    "id": identity,
+                    "group": "dialogue",
+                    "scene": "dialogue",
+                    "source": text,
+                    "kind": "dialogue",
+                    "speaker": None,
+                    # The values the game fills in keep their place.
+                    "tokens": sorted(set(FORMAT_ITEM.findall(text))),
+                }
+                for identity, text in lines.items()
+                if identity != miss
+            ]
         if self.tyrano:
             return [
                 {
@@ -804,6 +903,12 @@ class Assistant:
         return rows
 
     def answer(self, identity, source):
+        if self.unity:
+            # The English keeps each value the game fills in.
+            return "\n".join(
+                " ".join([f"Tested line {number}.", *FORMAT_ITEM.findall(line)])
+                for number, line in enumerate(source.split("\n"))
+            )
         return reply(identity, source, self.target)
 
     def organize(self, complete=False, miss=None):
@@ -900,10 +1005,34 @@ class Assistant:
             index += 1
         return self.helper("run", "--run", run)
 
-    def write(self):
+    def write(self, whole=False):
         self.report("injection")
         saved = self.helper("results", "--run", self.remembered()["run"])
         results = json.loads((self.game / saved["path"]).read_text(encoding="utf-8"))
+        if self.unity:
+            # The plugin's store: a line the game fills in is a pattern, unless
+            # *whole*, as Labyrinth City Asylum's builder kept every dialogue
+            # line as a whole-string key.
+            sources = {unit["id"]: unit["source"] for unit in self.units()}
+            store = {"exact": {}, "patterns": {}}
+            for identity, english in results.get("translations", results).items():
+                source = sources.get(identity)
+                if source is None:
+                    continue
+                # The skill's step before the residual check: Japanese marks
+                # in the English go to ASCII, as the export keeps them for
+                # RPG Maker's fonts.
+                english = english.translate(ASCII_MARKS)
+                if FORMAT_ITEM.search(source) and not whole:
+                    store["patterns"][source.replace("\r", "")] = english
+                else:
+                    store["exact"][source] = english
+            (self.game / STORE).write_text(
+                json.dumps(store, ensure_ascii=False), encoding="utf-8"
+            )
+            self.checkpoint()
+            self.report("qa")
+            return
         if self.tyrano:
             # Len's injector writes each line's text back before its tags.
             files: dict[Path, list[str]] = {}
@@ -1216,6 +1345,7 @@ def main() -> None:
             "qa-applied",
             "final-check",
             "package",
+            "hook-probes",
             "feedback",
         ],
     )
@@ -1226,6 +1356,11 @@ def main() -> None:
     parser.add_argument("--miss")
     parser.add_argument("--request", type=Path)
     parser.add_argument("--error", action="append", default=[])
+    parser.add_argument(
+        "--whole-keys",
+        action="store_true",
+        help="write: keep every line the game fills in as a whole-string key",
+    )
     args = parser.parse_args()
     if args.step == "edit-images":
         # A Guided task's editing request, which needs no project helper.
@@ -1244,7 +1379,16 @@ def main() -> None:
         print(json.dumps(assistant.translate(args.requests), ensure_ascii=False))
     elif args.step == "organize":
         assistant.organize(args.complete, args.miss)
-    elif args.step in {"play", "untranslated", "check", "checks-only", "final-check"}:
+    elif args.step == "write":
+        assistant.write(args.whole_keys)
+    elif args.step in {
+        "play",
+        "untranslated",
+        "check",
+        "checks-only",
+        "final-check",
+        "hook-probes",
+    }:
         result = getattr(assistant, args.step.replace("-", "_"))()
         print(json.dumps(result, ensure_ascii=False))
     else:

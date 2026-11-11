@@ -2259,13 +2259,15 @@ class WorkflowTests(unittest.TestCase):
             (1, "the game finds no English for it"),
         )
         self.assertIn(
-            "level97/reward 「クエストクリア！⏎報酬{0}ゴールドをもらった。」", package()
+            "level97/reward 「クエストクリア！ 報酬{0}ゴールドをもらった。」", package()
         )
         self.assertEqual(
             self.service.unfinished_reasons(self.identity),
             [
-                "The game would show 1 line without clean English, such as "
-                "「クエストクリア！⏎報酬{0}ゴールドをもらった。」. Your assistant fixes it first."
+                (
+                    "The game would show 1 line without clean English, such as "
+                    "「クエストクリア！ 報酬{0}ゴールドをもらった。」. Your assistant fixes it first."
+                )
             ],
         )
         # Stored as a pattern, its English holds the amount: the old answers

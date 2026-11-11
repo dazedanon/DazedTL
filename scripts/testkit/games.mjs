@@ -28,6 +28,15 @@ const bases = {
     "A TyranoScript game, its runtime a stand-in: data/scenario/first.ks holds a few lines of dialogue, two naming its forest and one an inn's price.",
   kirikiri:
     "A KiriKiri game, its runtime a stand-in: an unencrypted data.xp3 holds scenario/first.ks, the TyranoScript game's lines, a title screen with lettering as a BMP, a lettered menu as a TLG and a CG as a PNG.",
+  unity:
+    "A Unity game, its runtime a stand-in: Fixture_Data/StreamingAssets/lines.json holds its dialogue by ID, among it Labyrinth City Asylum's quest reward line, which the game fills with string.Format, and a line of punctuation alone.",
+};
+
+/** The Unity game's lines by ID, as its assets hold them. */
+const unityLines = {
+  "guild/welcome": "ギルドへようこそ。",
+  "level97/reward": "クエストクリア！\r\n報酬{0}ゴールドをもらった。",
+  "level3/dots": "……。",
 };
 
 /** The TyranoScript and KiriKiri games' scenario, which Text QA can't read. */
@@ -456,6 +465,18 @@ export async function makeGame(names, game, change) {
       path.join(game, "index.html"),
       '<!doctype html><script src="tyrano/tyrano.js"></script>\n',
     );
+    return {};
+  }
+  if (base === "unity") {
+    if (rest.length) throw new Error("No variant applies to the Unity game.");
+    if (change) throw new Error("The Unity game has no database to edit.");
+    const assets = path.join(game, "Fixture_Data/StreamingAssets");
+    fs.mkdirSync(assets, { recursive: true });
+    fs.writeFileSync(
+      path.join(assets, "lines.json"),
+      JSON.stringify(unityLines, null, 2),
+    );
+    fs.writeFileSync(path.join(game, "Fixture.exe"), "Fixture.exe stand-in");
     return {};
   }
   if (base === "kirikiri") {

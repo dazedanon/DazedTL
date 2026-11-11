@@ -221,7 +221,7 @@ def require(workspace, project_id, source, paths):
     return (
         (
             f"The game's self-test found {total:,} {lines} without clean English: {named}. "
-            "Fix them in the plugin's store, start the game again so its self-test answers, then run hook-probes --check."
+            f"Fix {'it' if total == 1 else 'them'} in the plugin's store, start the game again so its self-test answers, then run hook-probes --check."
         ),
         f"The game would show {total:,} {lines} without clean English, such as "
         f"{_quoted(evidence['problems'][0]['source'])}. Your assistant fixes "
@@ -438,5 +438,5 @@ def _record(workspace, project_id, name):
 
 
 def _quoted(text):
-    line = re.sub(r"\r\n|\r|\n", "⏎", text)
+    line = re.sub(r"\r\n|\r|\n", " ", text)
     return "「" + (line if len(line) <= 30 else line[:30] + "…") + "」"
