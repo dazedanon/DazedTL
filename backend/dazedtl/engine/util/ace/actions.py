@@ -133,7 +133,7 @@ def write_window_title(root: Path, log: Callable[[str], None], system: bool = Tr
     title = json.loads(system_json.read_text(encoding="utf-8-sig")).get("gameTitle")
     language = game_target_language(root)
     full = window_title.ini_title(root, title, language)
-    if full == title and not system:
+    if not system and not window_title.ace_titles(root, ini, title, full):
         return []
     game_ini.write_title(ini, full, log, language)
     return [ini]

@@ -25,7 +25,12 @@ import re
 from collections.abc import Callable
 from pathlib import Path
 
+from util.paths import game_git_set_up
+
 SETTING = "translatorName"
+# What DazedTL's window title holds and a game's own title does not, so a
+# cleared name finds the title it gave a VX Ace game's Game.ini.
+CREDIT = " | TL: "
 PLUGIN_NAME = "DazedTLWindowTitle"
 PLUGIN_SOURCE = Path(__file__).with_name(f"{PLUGIN_NAME}.js")
 _PLUGIN_DESCRIPTION = "Translation window title"
@@ -48,7 +53,7 @@ def form(title: object, version: object, translator: object) -> str:
     if not title or not translator:
         return ""
     version = version[1:] if version[:1] in {"v", "V"} and version[1:2].isdigit() else version
-    return f"{title}{f' v{version}' if version else ''} | TL: {translator}"
+    return f"{title}{f' v{version}' if version else ''}{CREDIT}{translator}"
 
 
 def translator() -> str:
@@ -84,8 +89,6 @@ def text(root: str | Path, title: str | None = None, checkout=None, name: str | 
     its Git not set up, or no title. `title` defaults to the RPG Maker
     game's translated `gameTitle`; `checkout` is the game's `read_checkout`
     when the caller has it; `name` the translator's when known."""
-    from util.paths import game_git_set_up
-
     name = translator() if name is None else name
     if not name or not game_git_set_up(root):
         return ""
@@ -105,8 +108,6 @@ def preview(root: str | Path | None, name: str) -> str:
     show while the name is typed, or an example without a game; a
     placeholder stands for a title DazedTL can't read, such as one an
     assistant translates."""
-    from util.paths import game_git_set_up
-
     title = _game_title(Path(root)) if root else ""
     checkout = None
     if root and game_git_set_up(root):
@@ -142,7 +143,6 @@ def sync(root: str | Path, put: Callable[[str, bytes | None], None], checkout=No
     plugin out and gives those two the original game's titles back.
     `put(relative, raw)` writes one game file, or takes it out for None.
     Returns the files it changed; none while the game gets no title."""
-    from util.paths import game_git_set_up
     from util.project_preparation import rpgmaker_layout
 
     root = Path(root)
@@ -210,9 +210,18 @@ def pending(root: str | Path, checkout=None) -> list[str]:
         return []
     language = game_target_language(root)
     full = ini_title(root, title, language)
-    if ini is None or full == title:
+    if ini is None or not ace_titles(root, ini, title, full):
         return []
     return [ini.name] if game_ini.titled(ini, full, lambda _line: None, language) is not None else []
+
+
+def ace_titles(root: Path, ini: Path, title: object, full: object) -> bool:
+    """Whether DazedTL keeps the VX Ace game's Game.ini Title: while it gives
+    the game a window title, and once the name is cleared while Game.ini
+    still holds that title, which then goes back to the game title."""
+    from util.ace import game_ini
+
+    return full != title or (game_git_set_up(root) and CREDIT in game_ini.read_title(ini))
 
 
 def _originals(root: Path) -> Callable[[Path], str | None]:

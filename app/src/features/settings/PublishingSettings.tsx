@@ -194,12 +194,15 @@ export default function PublishingSettings({
 
 /**
  * The window title `translator` gives the open game, as the backend forms
- * it, read again a moment after typing stops and whenever the workspace
- * changes, such as another game opening or a game update registering its
- * version; empty until the first answer.
+ * it, read again a moment after typing stops and when another game opens
+ * or the game registers another version; empty until the first answer.
  */
 function useWindowTitle(translator: string) {
   const snapshot = useApplication().snapshot;
+  const game = [
+    snapshot?.application.project?.id ?? "",
+    snapshot?.translation?.git?.original_version ?? "",
+  ].join("\n");
   const [title, setTitle] = useState("");
   useEffect(() => {
     if (!translator.trim()) return;
@@ -214,6 +217,6 @@ function useWindowTitle(translator: string) {
       current = false;
       window.clearTimeout(timer);
     };
-  }, [translator, snapshot]);
+  }, [translator, game]);
   return title;
 }

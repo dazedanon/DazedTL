@@ -177,6 +177,15 @@ def write_title(
     return True
 
 
+def read_title(path: Path) -> str:
+    """The ini's Title as it stands, its bytes read as Latin-1 unless the
+    file has a byte-order mark; empty without one."""
+    data = path.read_bytes()
+    codec = next((name for bom, name in BOMS.items() if data.startswith(bom)), None)
+    text = data[2:].decode(codec) if codec else data.decode("latin-1")
+    return _with_title(text, "")[1] or ""
+
+
 def titled(
     path: Path,
     title: object,

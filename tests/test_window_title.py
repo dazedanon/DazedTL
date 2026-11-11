@@ -21,6 +21,7 @@ from dazedtl.storage import write_json
 from desktop.backend.settings import validate_values
 from util import window_title
 from util.ace import game_ini
+from util.ace.actions import write_window_title
 from util.len_git import setup_git
 from util.len_patch_scope import setup_files
 from util.len_translation import LenProject
@@ -303,9 +304,19 @@ class WindowTitleTests(unittest.TestCase):
                 title = window_title.ini_title(game, "Café ♥ Quest")
                 self.assertEqual(title, "Café ♥ Quest v2.0 | TL: Tester")
                 self.assertTrue(game_ini.write_title(ini, title, lambda _line: None))
+                self.assertEqual(window_title.pending(game), [])
             self.assertIn(
                 b"\r\nTitle=Cafe Quest v2.0 | TL: Tester\r\n", ini.read_bytes()
             )
+            # Clearing the name gives Game.ini the game title back, which a
+            # pack writes even with nothing else to pack.
+            with named(""):
+                self.assertEqual(window_title.pending(game), ["Game.ini"])
+                self.assertEqual(
+                    write_window_title(game, lambda _line: None, system=False), [ini]
+                )
+                self.assertEqual(window_title.pending(game), [])
+            self.assertIn(b"\r\nTitle=Cafe Quest\r\n", ini.read_bytes())
             with named(""):
                 self.assertEqual(
                     window_title.ini_title(game, "Cafe Quest"), "Cafe Quest"
