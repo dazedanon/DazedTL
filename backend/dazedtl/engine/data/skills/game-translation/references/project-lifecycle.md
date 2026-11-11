@@ -211,6 +211,8 @@ Set it through the field or runtime call that sets the visible caption (`playtes
 An empty title means Settings has no translator name: leave the window title as the game sets it.
 DazedTL writes it itself on RPG Maker MV/MZ and VX Ace (`engine-rpgmaker.md`), and WOLF keeps its own (`engine-wolf.md`).
 
+A patch that carries a BepInEx plugin also waits for the plugin's coverage self-test: run `hook-probes`, start the game once so the self-test answers, then `hook-probes --check` (`engine-unity-mono.md` Step 6).
+
 Use the engine-compatible delivery route: GameUpdate where the project supports it,
 otherwise the reference pipeline's validated patch/install/restore procedure. Verify
 the actual packaged payload, repeat installation and recovery path, and record any

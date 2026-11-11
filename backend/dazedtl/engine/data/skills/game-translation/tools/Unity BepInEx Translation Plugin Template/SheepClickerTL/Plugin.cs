@@ -33,6 +33,8 @@ namespace SheepClickerTL
             Log.LogInfo($"{NAME} v{VERSION} loading");
 
             TranslationStore.LoadAll();
+            // answers DazedTL's coverage probes when the game's work folder holds them
+            CoverageSelfTest.Run(Paths.GameRootPath);
 
             _harmony = new Harmony(GUID);
             _harmony.PatchAll(typeof(TextPatches));

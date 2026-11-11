@@ -12,6 +12,7 @@ SheepClickerTL/
 ├─ TranslationStore.cs  # JSON loader + lookup
 ├─ TextPatches.cs       # Harmony patches on text setters
 ├─ WindowTitle.cs       # the window title from the project helper's window-title
+├─ CoverageSelfTest.cs  # answers the project helper's hook-probes at startup
 ├─ SheepClickerTL.csproj
 └─ translations/
    ├─ dialogues.json    # output of parse_dialogues.py

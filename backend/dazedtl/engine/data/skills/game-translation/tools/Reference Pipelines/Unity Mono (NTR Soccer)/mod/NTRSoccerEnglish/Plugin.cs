@@ -64,6 +64,8 @@ namespace NTRSoccerEnglish
             if (CfgTextHook.Value)
             {
                 TranslationStore.LoadAll();
+                // answers DazedTL's coverage probes when the game's work folder holds them
+                CoverageSelfTest.Run(Paths.GameRootPath);
             }
 
             _harmony = new Harmony(GUID);

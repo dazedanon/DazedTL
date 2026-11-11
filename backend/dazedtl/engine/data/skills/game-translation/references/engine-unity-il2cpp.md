@@ -185,6 +185,7 @@ Bake the covered codepoint set into a QA gate: any character in a translation ou
 ## Coverage, layout, release
 
 - A-test plugin: replace every known extracted string with `"A"` at runtime; anything still Japanese on screen is unextracted.
+- Coverage self-test: packaging waits for it. Run the project helper's `hook-probes`, start the game once with `SheepClickerTL`'s `CoverageSelfTest.cs` called from `Load()`, then run `hook-probes --check`; `engine-unity-mono.md` Step 6 has the steps.
 - Layout: `tools/Unity BepInEx Text Layout Plugin/VBV` - postfix `GenerateTextMesh` for auto-sizing. Its `References/` DLLs are not bundled: copy them from the game's `Managed/` and BepInEx `core/` before building. Enable auto-sizing but **do not set `overflowMode = Ellipsis` globally**: right for a button, wrong for a subtitle, where it silently drops words.
 - Report expansion (JP→EN runs ~2.1x here) as a **box-fit** signal only. A per-line threshold below ~3x flags most of the corpus and is measuring how dense Japanese is, not how good the translation is.
 - Window title: `WindowTitle.cs` in `SheepClickerTL`, called from `Load()`, its `Title` the project helper's `window-title` text. Never change `productName` or `companyName`, which name the save folder; `engine-unity-mono.md` Step 8 says how it finds the window.

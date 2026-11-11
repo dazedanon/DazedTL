@@ -42,10 +42,23 @@ namespace NTRSoccerEnglish
         private static readonly Regex PlaceholderRe = new Regex(
             @"\{\d+(?:,-?\d+)?(?::[^{}]*)?\}", RegexOptions.Compiled);
 
-        // captured runtime values can't contain Japanese — that's the
-        // signature of a pattern over-matching.
+        // captured runtime values can't contain Japanese letters — that's the
+        // signature of a pattern over-matching. Letters only, so a value the
+        // game writes in full-width digits still fills a pattern.
         private static readonly Regex JpRe = new Regex(
             @"[぀-ゟ゠-ヿ一-鿿]", RegexOptions.Compiled);
+
+        // SKILL.md's JP_TEXT: a Japanese letter or any Japanese punctuation
+        // mark, so a punctuation-only line such as ……。 is looked up, logged
+        // and answered in the coverage self-test like any other.
+        private static readonly Regex UntranslatedRe = new Regex(
+            @"[぀-ヿ㐀-䶿一-鿿豈-﫿、-〆〈-〿！-ﾟ‥…⋯―─━]",
+            RegexOptions.Compiled);
+
+        /// <summary>Whether text still needs English: the hooks' lookup gate,
+        /// the untranslated log and the coverage self-test share it.</summary>
+        public static bool IsUntranslated(string s)
+            => !string.IsNullOrEmpty(s) && UntranslatedRe.IsMatch(s);
 
         private static readonly ConcurrentDictionary<string, string> _hitCache =
             new ConcurrentDictionary<string, string>(StringComparer.Ordinal);
@@ -137,7 +150,7 @@ namespace NTRSoccerEnglish
         public static void ReportIfUntranslated(string s)
         {
             if (Plugin.CfgLogUntranslated?.Value != true) return;
-            if (string.IsNullOrEmpty(s) || !JpRe.IsMatch(s)) return;
+            if (!IsUntranslated(s)) return;
             if (_reported.Count >= 2000) return;   // dynamic-value variants could spam forever
             if (!_reported.TryAdd(s, 0)) return;
             var line = s.Replace("\r", "").Replace("\n", "\\n");
@@ -201,7 +214,7 @@ namespace NTRSoccerEnglish
             // everything below only makes sense for inputs that contain Japanese;
             // gating here keeps unique English strings (most of what the game sets
             // once language is forced) off the O(n*keys) compose walk
-            bool hasJp = JpRe.IsMatch(original);
+            bool hasJp = IsUntranslated(original);
 
             // everything below works on the text without CRs, as the pattern and
             // compose keys were stored, so CRLF and LF forms of a line both match

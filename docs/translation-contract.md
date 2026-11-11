@@ -184,6 +184,8 @@ Packaging:
 - `package` needs current reported QA, saves outstanding changes and builds a local patch from the files the translation branch tracks; it creates no remote and never pushes or uploads.
 - Checkpoints, packages and QA records carry DazedTL's own files the game holds, such as GameUpdate's files, the update check, Forge and the playtest's fixes plugin, so manifests need not list them; `gameupdate/patch-config.txt` ships only in a release of the verified public version (`public_version` in [release](../backend/dazedtl/translation/release.py)).
 - A package refuses a `plugins.js` that loads a plugin neither the patch nor the original game holds, and a `js/main.js` that doesn't match the fixes plugin, since players' game would stop at start.
+- A patch whose runtime manifest carries a BepInEx plugin also needs the plugin's coverage self-test: `hook-probes` writes the export's lines as the game shows them, placeholders filled, to `.dazedtl/len-method/work/hook-probes.jsonl`; the self-test writes what the game would show beside it; and `hook-probes --check` saves a judgement that `package` refuses while it is missing, older than the export or the plugin's files, or names a line without clean English ([hook_probes](../backend/dazedtl/translation/hook_probes.py)).
+  A project translated before this rule packages as it did until its next new translations.
 - TL Inspector stays on the translator's computer: no patch carries it, and `plugins.js` never lists it.
 
 For an official update, `stage_update` records the new release in the game's Git as a separate working copy, as a patch when it holds fewer than half the game's files unless `patch` says otherwise.
