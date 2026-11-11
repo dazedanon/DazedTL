@@ -22,7 +22,7 @@ Both of these report "no Japanese anywhere" rather than failing, which is the wo
   ```python
   sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
   ```
-- Working JP class for this environment: `[぀-ヿ一-鿿ｦ-ﾟ]` (kana, CJK, halfwidth katakana).
+- Working class for this environment: `SKILL.md`'s `JP_TEXT` ("What counts as untranslated text"), in Python. It covers halfwidth katakana and the Japanese punctuation a kana-and-kanji class misses, so a punctuation-only line such as `……。` still reaches the census, the hook's gate and `untranslated.txt`.
 
 ## Step 1 - dump types
 

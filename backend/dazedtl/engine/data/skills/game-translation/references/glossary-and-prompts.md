@@ -425,11 +425,11 @@ source-guarded ledger rather than a broad number-drift waiver or speaker rule.
 
 ## QA / validation patterns
 
-Automatic (block injection): completeness, residual-JP (`[぀-ヿ一-鿿]` in output), placeholder-set integrity, byte and width limits.
+Automatic (block injection): completeness, residual-JP (`SKILL.md`'s `JP_TEXT` class in output, run after the offline punctuation tidy, so a stray `……` or `！` blocks as well as kana), placeholder-set integrity, byte and width limits.
 Soft (review): misgender, over-expansion, stranded kana (っ/ッ/・), punctuation drift.
 
 Two exclusions worth hardcoding.
-**`〇` (U+3007) and `●` are censor glyphs, not residual Japanese** - they are supposed to survive.
+**`〇` (U+3007) and `●` are censor glyphs, not residual Japanese** - they are supposed to survive, and `JP_TEXT` leaves them out.
 A **trailing `\r`** in a CSV cell is not an extra line, so normalise CRLF and drop one terminator before counting, or correct 2-line translations get flagged as collapsed.
 
 Cheap scan worth adding: translations that are literally `placeholder`, `TODO`, `N/A`.

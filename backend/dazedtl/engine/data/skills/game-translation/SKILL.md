@@ -174,6 +174,27 @@ If you won't translate something, decline its request instead: its lines stay co
 Keep age evidence accurate in the translation itself: cartoony, chibi and super-deformed art styles are common across adult casts, so do not infer that a character is underage from stylized proportions, short stature, a youthful face or an ambiguous label such as “girl”, "child", "kid", etc.
 Use established lore and the complete scene context, never invent ages or change characterization, and see `references/review-decisions.md` when a decision is disputed or reversed.
 
+## What counts as untranslated text
+
+Text still needs English when it holds a Japanese letter or any Japanese punctuation mark.
+Use this one class wherever a tool decides that: the census search, a runtime hook's lookup gate, its untranslated log, the coverage test, an extraction filter and the residual-Japanese check on output.
+
+```python
+JP_TEXT = (r"[\u3040-\u30FF\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF"  # kana (with ・ ー), kanji
+           r"\u3001-\u3006\u3008-\u303F"  # CJK punctuation 、。「」『』【】〜 (not U+3000, not 〇)
+           r"\uFF01-\uFF9F"  # full-width forms ！？：（）～＜＞０-９, half-width ｡｢｣ and katakana
+           r"\u2025\u2026\u22EF"  # ellipses ‥ … ⋯
+           r"\u2015\u2500\u2501]")  # dashes ― ─ ━
+```
+
+The same escapes work in a C# `Regex`, so a runtime hook uses the class unchanged.
+
+A letters-only class such as `[぀-ヿ一-鿿]` misses lines like `……。`, `…ZZZ…。` and `────!!!`: in Labyrinth City Asylum a hook gated that way never looked up 586 such lines, its log and coverage test used the same gate, and the dialogue font drew `…` as centered dots.
+The shipped English holds none of these marks; tidy them to ASCII (`…` to `...`, `！` to `!`, `─` to `-`) before the residual check.
+English that keeps one would also make a runtime hook look the string up again on every character a typewriter effect adds.
+A mark the English keeps on purpose stays out of the class for that game and is recorded in its notes: U+3000 padding in menus and moans, the `〇` and `●` censor glyphs, a bracket the game uses for a voice (Asylum's `＜＞` telepathy).
+Classes about letters alone, such as the stranded-kana check, stay letters only.
+
 ## Commit messages never carry spoilers
 
 A game's commit messages become public once its repository is pushed, so they never carry a spoiler.

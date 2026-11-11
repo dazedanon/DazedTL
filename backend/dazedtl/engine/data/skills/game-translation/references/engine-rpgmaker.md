@@ -822,9 +822,11 @@ glossary changes nothing and the no-op test still holds).
 The same shape applies to a speaker written as its own rendered ROW rather than
 a field. Then the plate **costs one of the window's rows** - wrap the body to
 `max_rows - 1` whenever a speaker is present - and a box whose body is
-`「………」` holds no source language, so a `has_jp` gate drops the whole unit and
-its plate never gets translated. Extract when the body has Japanese **OR** there
-is a speaker, pre-fill such a body with itself, and lock it.
+`「………」` holds no Japanese letters, so a letters-only `has_jp` gate drops the whole unit and
+its plate never gets translated. Gate on `SKILL.md`'s `JP_TEXT` class, which
+counts that body's `「」` and `…` as untranslated, or extract whenever there is a
+speaker; pre-fill a punctuation-only body with itself, lock it, and let the
+offline punctuation tidy turn it into English (`"......"`).
 
 For the MV inline forms, reshape `Name\nbody` into `[Name]: body` for translation and restore the original markup on inject - byte-safe both ways. Substitute an actor code into that transport prefix in **display-only form with no reverse-map entry**, or the restore pass writes a control code into the prefix.
 

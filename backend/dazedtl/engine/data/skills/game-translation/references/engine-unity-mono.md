@@ -16,7 +16,7 @@ For DazedTL's census, `tools/Unity Text Dump/unity_dump.py` dumps every TextAsse
 
 ## Step 2 - find where the JP text lives
 
-Search the export for Japanese `[぀-ヿ一-鿿]`. It is almost never in `.cs` code - it's in serialized assets. The usual homes:
+Search the export for untranslated text with the `JP_TEXT` class in `SKILL.md` ("What counts as untranslated text"), which counts Japanese punctuation as well as kana and kanji. It is almost never in `.cs` code - it's in serialized assets. The usual homes:
 - **A dialogue database** - Pixel Crushers Dialogue System stores everything in one big `MonoBehaviour/*.asset` YAML (NTR Soccer: `Dialogue Database.asset`, 8 MB). Entries have base + per-language fields (`Dialogue Text` / `ja` / `zh` / `ko`).
 - **A UI text table** - `MonoBehaviour/UI Localization Text Table.asset` (Pixel Crushers TextTable): `m_languageKeys` + `m_fieldValues`, each field with a value per language.
 - **TextMeshPro components** in scenes/prefabs - `m_text:` fields (dominant. NTR Soccer had 79 TMP prefabs, 0 legacy `UI.Text`).
@@ -140,9 +140,12 @@ Postfix UI.Text.OnEnable
 The Awake/OnEnable postfixes catch text Unity wrote directly to the `m_text` backing field during scene deserialization (never goes through the setter). Re-assigning `t.text` there routes through the setter prefix.
 
 `TranslationStore` (dict lookup): exact match, newline-normalized match (`\\n`/CRLF/trim), `{0}`-format-pattern matching (compile JP `得点 {0}/{1}` → regex, splice captures into EN template, **slot-aware** so `{1}は{0}`→`{0} is {1}` maps correctly), and a compose walk for concatenated strings.
-**Gate the compose/pattern paths behind "input contains JP"** and **reject a compose result that leaves any JP in the passthrough** - otherwise a 2-char key like `ん？` corrupts novel strings mid-word (`さん？`→`さHm?`).
+**Give the store one `IsUntranslated` predicate built from `SKILL.md`'s `JP_TEXT` class**, and use it for the lookup gate, the untranslated log and the coverage test alike.
+A gate on kana and kanji alone never looks up a punctuation-only line: Labyrinth City Asylum's dictionary had `……。` -> `...`, but its `HasJapanese` gate let 586 lines such as `……。` and `────!!!` through as Japanese, and its log and self-test sweep used the same check, so nothing reported them.
+The predicate is true for `……。` and false for `...` and `♡`, so the English the store returns is never looked up again; leave out only the marks this game's English keeps on purpose.
+**Gate the compose/pattern paths behind that predicate** and **reject a compose result that leaves any of it in the passthrough** - otherwise a 2-char key like `ん？` corrupts novel strings mid-word (`さん？`→`さHm?`).
 Cap the hit/miss caches (dynamic timers/counters grow them unbounded).
-Log unmatched JP to `untranslated.txt` for the QA loop.
+Log every string the predicate matches but the store cannot translate to `untranslated.txt` for the QA loop.
 Hand-rolled flat JSON parser (`{ "<jp>": "<en>" }`) - no external deps.
 
 ## Step 5 - build & install
@@ -168,6 +171,8 @@ against what you extracted. On a real run this was **131 of 132 already extracte
 and the one exception was built at runtime by joining two FSM variables - both of
 which *were* extracted separately, and which the store's compose fallback splices.
 So coverage was effectively total, and the test proved it rather than assuming it.
+
+The logger uses the store's predicate, so punctuation-only lines reach the diff; check that at least one seen in the game, such as `……。`, shows up as translated.
 
 Normalise both sides before diffing (unescape the logger's `\n`, strip BOM and CRLF)
 or you will chase phantom misses. That same diff is what surfaced the U+FEFF bug.
