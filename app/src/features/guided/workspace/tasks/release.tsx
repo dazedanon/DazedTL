@@ -191,7 +191,7 @@ export function packageView(w: GuidedWorkspace): TaskView {
         projectId={project.id}
         status={translation.gameUpdate}
         disabled={disabled}
-        openSettings={() => settings("gameupdate")}
+        openSettings={() => settings("publishing")}
       />
     </>
   );

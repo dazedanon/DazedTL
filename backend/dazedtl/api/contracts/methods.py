@@ -90,9 +90,11 @@ from dazedtl.api.contracts.settings import (
     Settings,
     SourceLanguage,
     ThinkingEffort,
+    WindowTitlePreview,
 )
 from dazedtl.api.contracts.translation import (
     AssistantReleaseForm,
+    AssistantWindowTitle,
     BackupCatalog,
     CheckpointChanges,
     CheckpointTimeline,
@@ -554,6 +556,16 @@ class LanguagesLock(TypedDict):
     reason: str
 
 
+class WindowTitleRequest(TypedDict):
+    translator: str
+
+
+class WindowTitleProjectRequest(TypedDict):
+    project_id: str
+    # The game's translated title, where DazedTL can't read one.
+    title: NotRequired[str]
+
+
 class SettingsModelDefaultsRequest(TypedDict):
     connection_id: str
     model: str
@@ -811,12 +823,13 @@ class PreferencesRequest(TypedDict):
     model_options: dict[str, ModelOptions]
 
 
-class GameUpdateDefaultsRequest(TypedDict):
+class PublishingSettingsRequest(TypedDict):
     revision: int
     forge: Forge
     host: str
     owner: str
     branch: str
+    translator: str
 
 
 class ManualGameUpdateRequest(TypedDict):
@@ -863,8 +876,13 @@ METHODS: dict[str, Method] = {
         PreferencesRequest, Saved, refresh=False, during_close=True
     ),
     "settings_revert": Method(ConnectionRequest, Settings, refresh=False),
-    # GameUpdate's defaults; the open game's config follows them.
-    "settings_game_update": Method(GameUpdateDefaultsRequest, Settings),
+    # GameUpdate's defaults, whose config the open game follows, and the
+    # translator's name in window titles.
+    "settings_publishing": Method(PublishingSettingsRequest, Settings),
+    # Read while the translator's name is typed.
+    "settings_window_title": Method(
+        WindowTitleRequest, WindowTitlePreview, refresh=False
+    ),
     "connection_save": Method(ConnectionSaveRequest, Settings, during_close=True),
     "connection_select": Method(ConnectionRequest, Settings),
     "connection_check": Method(ConnectionRequest, Settings),
@@ -963,6 +981,9 @@ METHODS: dict[str, Method] = {
     "translation_backups": Method(ProjectRequest, BackupCatalog, refresh=False),
     # How an assistant's injector joins words in plugin commands and note tags.
     "translation_word_spacing": Method(ProjectRequest, WordSpacing, refresh=False),
+    "translation_window_title": Method(
+        WindowTitleProjectRequest, AssistantWindowTitle, refresh=False
+    ),
     # The assistant's task for the text an applied update brought in.
     "translation_update_task": Method(ProjectRequest, UpdateTask, refresh=False),
     # How a new official release's folder lines up with the game, before staging.

@@ -38,6 +38,8 @@ namespace SheepClickerTL
             _harmony.PatchAll(typeof(TextPatches));
             _harmony.PatchAll(typeof(BubblePatches));
 
+            WindowTitle.Keep();
+
             Log.LogInfo($"{NAME} ready: {TranslationStore.Count} translations active");
         }
 

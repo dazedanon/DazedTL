@@ -52,6 +52,13 @@ def runtime_data_profile(profile):
         _RUNTIME_DATA_PROFILE.reset(token)
 
 
+def runtime_profile() -> Path | None:
+    """The desktop profile the running operation names, or a child process's
+    environment selects; None outside the app."""
+    selected = _RUNTIME_DATA_PROFILE.get() or os.getenv("DAZEDTL_DESKTOP_WORKSPACE")
+    return Path(selected) if selected else None
+
+
 @contextmanager
 def runtime_data_files_pinned():
     """Locate each runtime file once while the block runs, such as a compile
@@ -77,7 +84,7 @@ def runtime_data_file(default: Path, profile=None) -> Path:
     processes may explicitly select a desktop profile through their environment.
     """
     default = Path(default)
-    selected = profile or _RUNTIME_DATA_PROFILE.get() or os.getenv("DAZEDTL_DESKTOP_WORKSPACE")
+    selected = profile or runtime_profile()
     if not selected:
         return default
     try:

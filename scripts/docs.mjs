@@ -22,7 +22,7 @@ const limits = {
   "docs/text-qa-redesign.md": 4000,
   "docs/translation-contract.md": 3200,
   "docs/ui-design.md": 2400,
-  "docs/user-guide.md": 3980,
+  "docs/user-guide.md": 4010,
 };
 const noteLineLimit = 25;
 

@@ -11,6 +11,7 @@ SheepClickerTL/
 ├─ Plugin.cs            # BepInEx entry point
 ├─ TranslationStore.cs  # JSON loader + lookup
 ├─ TextPatches.cs       # Harmony patches on text setters
+├─ WindowTitle.cs       # the window title from the project helper's window-title
 ├─ SheepClickerTL.csproj
 └─ translations/
    ├─ dialogues.json    # output of parse_dialogues.py

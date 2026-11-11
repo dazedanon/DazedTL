@@ -95,7 +95,7 @@ def check_defaults(values: dict[str, str], *, owner_required=True) -> dict[str, 
     if not _HOST.fullmatch(host) or "." not in host.split(":")[0]:
         raise ValueError("Enter the GameUpdate host name, such as gitgud.io.")
     if (owner_required or username) and (not username or placeholder(username)):
-        raise ValueError("Set the GameUpdate owner in Settings > GameUpdate.")
+        raise ValueError("Set the GameUpdate owner in Settings > Publishing.")
     if username and not _PATH.fullmatch(username):
         raise ValueError(
             "Use letters, numbers, dots, dashes and underscores for the GameUpdate owner."
@@ -331,7 +331,7 @@ def _evaluate(saved, defaults, data, found, suggested):
 
 
 _MESSAGES = {
-    "unconfigured": "Set the GameUpdate owner in Settings > GameUpdate.",
+    "unconfigured": "Set the GameUpdate owner in Settings > Publishing.",
     "needs_repo": "Enter the game's GameUpdate repository on the Project page.",
 }
 

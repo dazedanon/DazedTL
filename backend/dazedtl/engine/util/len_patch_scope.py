@@ -88,15 +88,16 @@ def _held(root: Path, relative: str) -> bool:
 def setup_files(root: Path) -> list[str]:
     """The runtime files of DazedTL's own that Set up installed in the game:
     GameUpdate's launchers and scripts, and the MV/MZ plugins for the update
-    check and Forge, which the game stops at boot without once its plugins.js
-    loads them."""
+    check, the window title and Forge, which the game stops at boot without
+    once its plugins.js loads them."""
     from util.forge.config import PLUGIN_BY_ENGINE
     from util.translation_update_check.installer import PLUGIN_NAME
+    from util.window_title import PLUGIN_NAME as WINDOW_TITLE
 
     template = PROJECT_ROOT / "gameupdate"
     skip = RPG_GAMEUPDATE_COPY_SKIP_NAMES if rpgmaker_layout(root) else GAMEUPDATE_COPY_SKIP_NAMES
     names = [f"{web}js/plugins/{name}.js" for web in ("www/", "")
-             for name in (PLUGIN_NAME, *PLUGIN_BY_ENGINE.values())]
+             for name in (PLUGIN_NAME, WINDOW_TITLE, *PLUGIN_BY_ENGINE.values())]
     for path in template.rglob("*"):
         relative = path.relative_to(template)
         # The installation README is repository metadata, handled separately.
@@ -146,11 +147,12 @@ def _plugin_refusal(root: Path, scope: Collection[str], original: Iterable[str],
     from util.rpgmaker_plugin_registry import PluginRegistryError, plugin_entries
     from util.tl_inspector.installer import PLUGIN_NAME as INSPECTOR
     from util.translation_update_check.installer import PLUGIN_NAME
+    from util.window_title import PLUGIN_NAME as WINDOW_TITLE
 
     registries = [registry for registry in _PLUGIN_REGISTRIES if registry in scope]
     if not registries:
         return None
-    own = {name.casefold() for name in (PLUGIN_NAME, INSPECTOR, FIXES_PLUGIN, *PLUGIN_BY_ENGINE.values())}
+    own = {name.casefold() for name in (PLUGIN_NAME, WINDOW_TITLE, INSPECTOR, FIXES_PLUGIN, *PLUGIN_BY_ENGINE.values())}
     patch = {path.casefold() for path in scope}
     known = {path.casefold() for path in original}
     for registry in registries:

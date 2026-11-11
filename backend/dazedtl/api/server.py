@@ -758,13 +758,28 @@ class Application:
             return {"reason": ""}
         return {"reason": self.languages.locked(project)}
 
-    def settings_game_update(self, revision, forge, host, owner, branch):
-        settings = self.settings.save_game_update(
+    def settings_publishing(self, revision, forge, host, owner, branch, translator):
+        settings = self.settings.save_publishing(
             revision,
-            {"forge": forge, "host": host, "username": owner, "branch": branch},
+            {
+                "forge": forge,
+                "host": host,
+                "username": owner,
+                "branch": branch,
+                "translator": translator,
+            },
         )
         self.sync_game_update()
         return settings
+
+    def settings_window_title(self, translator):
+        """The window title `translator` gives the open game, for Settings'
+        preview."""
+        from util import window_title
+
+        project = self.projects.current
+        root = project["source"] if project and self.locations.holds(project) else None
+        return {"title": window_title.preview(root, translator)}
 
     def project_game_update(self, project_id, action, repo=None):
         return self.translation.game_update.act(project_id, action, repo)
@@ -961,11 +976,15 @@ def routes(app):
             lambda value, _params: value,
         ),
         "settings_draft": (app.settings_draft, lambda value, _params: value),
-        "settings_game_update": (
-            app.settings_game_update,
+        "settings_publishing": (
+            app.settings_publishing,
             lambda value, _params: views.settings(value),
         ),
         "project_game_update": (app.project_game_update, lambda value, _params: value),
+        "settings_window_title": (
+            app.settings_window_title,
+            lambda value, _params: value,
+        ),
         "settings_model_defaults": (
             app.settings_model_defaults,
             lambda value, _params: value,
@@ -1086,6 +1105,7 @@ def routes(app):
         "prepare",
         "backups",
         "word_spacing",
+        "window_title",
         "update_task",
         "release",
         "compile",

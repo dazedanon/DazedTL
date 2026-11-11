@@ -115,13 +115,23 @@ class SettingsDraft(TypedDict):
 type Forge = Literal["gitlab", "forgejo", "github"]
 
 
-class GameUpdateDefaults(TypedDict):
-    """Where players' GameUpdate downloads patches; each game adds its repository."""
+class PublishingSettings(TypedDict):
+    """Where players' GameUpdate downloads patches, each game adding its
+    repository, and the translator's name in translated games' window
+    titles, empty to leave games' own titles."""
 
     forge: Forge
     host: str
     owner: str
     branch: str
+    translator: str
+
+
+class WindowTitlePreview(TypedDict):
+    """The window title a translator name gives the open game, or an
+    example without one; empty for an empty name."""
+
+    title: str
 
 
 class Settings(TypedDict):
@@ -135,7 +145,7 @@ class Settings(TypedDict):
     connections: list[Connection]
     providers: list[SettingsProvider]
     checksEnabled: bool
-    gameUpdate: GameUpdateDefaults
+    publishing: PublishingSettings
     draft: NotRequired[SettingsDraft]
 
 

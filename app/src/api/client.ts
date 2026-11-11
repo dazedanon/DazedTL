@@ -19,7 +19,7 @@ import type {
   SettingsPayload,
   ConnectionInput,
   EffortLevel,
-  GameUpdateDefaults,
+  PublishingSettings,
   TranslationOptions,
 } from "./contracts";
 
@@ -513,8 +513,10 @@ export const api = {
       model_options: modelOptions,
       connection_id: activeConnectionId,
     }),
-  saveGameUpdateDefaults: (revision: number, values: GameUpdateDefaults) =>
-    request("settings_game_update", { revision, ...values }),
+  savePublishing: (revision: number, values: PublishingSettings) =>
+    request("settings_publishing", { revision, ...values }),
+  windowTitle: (translator: string) =>
+    request("settings_window_title", { translator }),
   saveConnection: (revision: number, input: ConnectionInput) =>
     request("connection_save", { revision, ...input }),
   selectConnection: (revision: number, connection_id: string) =>

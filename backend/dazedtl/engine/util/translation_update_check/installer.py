@@ -15,8 +15,11 @@ PLUGIN_NAME = "TranslationUpdateCheck"
 
 def is_game_plugin(name: str) -> bool:
     """Whether the plugin `name` is the game's, not DazedTL's own update
-    check, whose text is no game text for a scan or check to read."""
-    return name != PLUGIN_NAME
+    check or window title, whose text is no game text for a scan or check
+    to read."""
+    from util.window_title import PLUGIN_NAME as WINDOW_TITLE
+
+    return name not in {PLUGIN_NAME, WINDOW_TITLE}
 
 
 PLUGIN_DESCRIPTION = "Translation update warning"

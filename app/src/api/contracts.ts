@@ -2078,6 +2078,13 @@ export type NbspCoverage = {
   unread?: string;
 };
 
+/** The exact window title an assistant gives the game, empty when it
+leaves the game's own, and its next step (engine/util/window_title). */
+export type AssistantWindowTitle = {
+  title: string;
+  next: string;
+};
+
 export type WordSpacing = {
   rule: string;
   nbsp: NbspCoverage;
@@ -2221,12 +2228,21 @@ export type SettingsDraft = {
 
 export type Forge = "gitlab" | "forgejo" | "github";
 
-/** Where players' GameUpdate downloads patches; each game adds its repository. */
-export type GameUpdateDefaults = {
+/** Where players' GameUpdate downloads patches, each game adding its
+repository, and the translator's name in translated games' window
+titles, empty to leave games' own titles. */
+export type PublishingSettings = {
   forge: Forge;
   host: string;
   owner: string;
   branch: string;
+  translator: string;
+};
+
+/** The window title a translator name gives the open game, or an
+example without one; empty for an empty name. */
+export type WindowTitlePreview = {
+  title: string;
 };
 
 export type Settings = {
@@ -2240,7 +2256,7 @@ export type Settings = {
   connections: Connection[];
   providers: SettingsProvider[];
   checksEnabled: boolean;
-  gameUpdate: GameUpdateDefaults;
+  publishing: PublishingSettings;
   draft?: SettingsDraft;
 };
 
@@ -3596,6 +3612,15 @@ export type LanguagesLock = {
   reason: string;
 };
 
+export type WindowTitleRequest = {
+  translator: string;
+};
+
+export type WindowTitleProjectRequest = {
+  project_id: string;
+  title?: string;
+};
+
 export type SettingsModelDefaultsRequest = {
   connection_id: string;
   model: string;
@@ -3844,12 +3869,13 @@ export type PreferencesRequest = {
   model_options: Record<string, ModelOptions>;
 };
 
-export type GameUpdateDefaultsRequest = {
+export type PublishingSettingsRequest = {
   revision: number;
   forge: Forge;
   host: string;
   owner: string;
   branch: string;
+  translator: string;
 };
 
 export type ManualGameUpdateRequest = {
@@ -3883,9 +3909,13 @@ export type RpcContract = {
   settings_save: { request: PreferencesRequest; response: Settings };
   settings_draft: { request: PreferencesRequest; response: Saved };
   settings_revert: { request: ConnectionRequest; response: Settings };
-  settings_game_update: {
-    request: GameUpdateDefaultsRequest;
+  settings_publishing: {
+    request: PublishingSettingsRequest;
     response: Settings;
+  };
+  settings_window_title: {
+    request: WindowTitleRequest;
+    response: WindowTitlePreview;
   };
   connection_save: { request: ConnectionSaveRequest; response: Settings };
   connection_select: { request: ConnectionRequest; response: Settings };
@@ -4039,6 +4069,10 @@ export type RpcContract = {
   translation_results: { request: RunRequest; response: TranslationResults };
   translation_backups: { request: ProjectRequest; response: BackupCatalog };
   translation_word_spacing: { request: ProjectRequest; response: WordSpacing };
+  translation_window_title: {
+    request: WindowTitleProjectRequest;
+    response: AssistantWindowTitle;
+  };
   translation_update_task: { request: ProjectRequest; response: UpdateTask };
   translation_release: {
     request: TranslationReleaseRequest;

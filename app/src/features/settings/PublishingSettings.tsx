@@ -1,5 +1,6 @@
-import { useRef } from "react";
-import type { Forge, GameUpdateDefaults } from "../../api/contracts";
+import { useEffect, useRef, useState } from "react";
+import { api } from "../../api/client";
+import type { Forge, PublishingSettings as Values } from "../../api/contracts";
 import {
   shortcutKeys,
   shortcutLabel,
@@ -19,10 +20,11 @@ export const forges: { value: Forge; label: string; host: string }[] = [
 ];
 
 /**
- * Where players' GameUpdate downloads the published patches. Each game adds
- * its own repository on its Project page.
+ * The translator's name in translated games' window titles, and where
+ * players' GameUpdate downloads the published patches; each game adds its
+ * own repository on its Project page.
  */
-export default function GameUpdateSettings({
+export default function PublishingSettings({
   values,
   dirty,
   busy,
@@ -32,17 +34,18 @@ export default function GameUpdateSettings({
   save,
   revert,
 }: {
-  values: GameUpdateDefaults;
+  values: Values;
   dirty: boolean;
   busy: boolean;
   error: string;
   notice: string;
-  edit: (values: GameUpdateDefaults) => void;
+  edit: (values: Values) => void;
   save: () => void;
   revert: () => void;
 }) {
   const form = useRef<HTMLFormElement>(null);
   useSaveForm(form);
+  const title = useWindowTitle(values.translator);
   const chooseForge = (forge: Forge) => {
     // A host left at the previous forge's usual one follows the new forge.
     const previous = forges.find((item) => item.value === values.forge);
@@ -64,11 +67,34 @@ export default function GameUpdateSettings({
     >
       <PageBody>
         <p className="settings-intro">
-          Players run GameUpdate to download your latest published patch. Each
+          Your name in every translated game&apos;s window title, and where
+          players&apos; GameUpdate downloads your latest published patch. Each
           game&apos;s repository is set in its Release task, or on Options for
           Assistant-led and Manual.
         </p>
         <fieldset disabled={busy}>
+          <FieldRow
+            id="publishing-translator"
+            label="Translator"
+            help="Shown in each translated game's window title. Leave it empty to keep games' own titles."
+            note={
+              values.translator.trim()
+                ? `Window title: ${title}`
+                : "Window title: each game keeps its own."
+            }
+          >
+            {(control) => (
+              <input
+                {...control}
+                value={values.translator}
+                maxLength={80}
+                spellCheck={false}
+                onChange={(event) =>
+                  edit({ ...values, translator: event.target.value })
+                }
+              />
+            )}
+          </FieldRow>
           <FieldRow id="gameupdate-forge" label="Forge">
             {(control) => (
               <select
@@ -152,13 +178,36 @@ export default function GameUpdateSettings({
         <Button
           type="submit"
           variant="primary"
-          title={`Save GameUpdate settings (${shortcutLabel.save})`}
+          title={`Save publishing settings (${shortcutLabel.save})`}
           aria-keyshortcuts={shortcutKeys.save}
           disabled={!dirty || busy}
         >
-          Save GameUpdate settings
+          Save publishing settings
         </Button>
       </ActionBar>
     </form>
   );
+}
+
+/**
+ * The window title `translator` gives the open game, as the backend forms
+ * it, read again a moment after typing stops.
+ */
+function useWindowTitle(translator: string) {
+  const [title, setTitle] = useState("");
+  useEffect(() => {
+    if (!translator.trim()) return;
+    let current = true;
+    const timer = window.setTimeout(() => {
+      api.windowTitle(translator).then(
+        (value) => current && setTitle(value.title),
+        () => undefined,
+      );
+    }, 150);
+    return () => {
+      current = false;
+      window.clearTimeout(timer);
+    };
+  }, [translator]);
+  return title;
 }

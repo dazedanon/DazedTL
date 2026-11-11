@@ -5,7 +5,7 @@ import type {
   PreferenceValues,
   ModelOptions,
   ConnectionInput,
-  GameUpdateDefaults,
+  PublishingSettings,
 } from "../../api/contracts";
 import { useDraft } from "../../state/useDraft";
 import type { Commit } from "../../state/DraftSession";
@@ -154,9 +154,7 @@ export function useSettingsDraft(report: (error: unknown) => void) {
         api.removeConnection(revision, id, unfinished),
       ),
     // Its own save, which keeps unsaved translation defaults as they are.
-    saveGameUpdate: (values: GameUpdateDefaults) =>
-      connectionAction((revision) =>
-        api.saveGameUpdateDefaults(revision, values),
-      ),
+    savePublishing: (values: PublishingSettings) =>
+      connectionAction((revision) => api.savePublishing(revision, values)),
   };
 }

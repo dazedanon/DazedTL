@@ -206,6 +206,11 @@ verification pending instead of treating it as passed.
 Check speaker-to-line binding and the final restored nameplates as well as dialogue
 bodies; metadata separated from a text unit must not disappear from injection QA.
 
+Before packaging, run the project helper's `window-title`, with `--title` and the game's translated title where it says DazedTL can't read one, and make the game's window show exactly the title it prints, on every engine.
+Set it through the field or runtime call that sets the visible caption (`playtesting-and-release.md`), never through a value that names the save folder or that saves are matched by.
+An empty title means Settings has no translator name: leave the window title as the game sets it.
+DazedTL writes it itself on RPG Maker MV/MZ and VX Ace (`engine-rpgmaker.md`), and WOLF keeps its own (`engine-wolf.md`).
+
 Use the engine-compatible delivery route: GameUpdate where the project supports it,
 otherwise the reference pipeline's validated patch/install/restore procedure. Verify
 the actual packaged payload, repeat installation and recovery path, and record any

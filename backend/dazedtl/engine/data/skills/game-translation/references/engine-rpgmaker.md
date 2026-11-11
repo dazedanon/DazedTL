@@ -314,6 +314,10 @@ and taskbar show `package.json` `window.title`, and the page shows
 `index.html`'s `<title>` - both still Japanese unless you patch them. All three
 must agree; take the English from the store rather than retyping it.
 
+Once Settings has a translator name, DazedTL writes the window title itself with each write to a game whose Git is set up: its `DazedTLWindowTitle.js` plugin keeps the title after boot, and `package.json` `window.title` and `index.html` `<title>` get the same text, the one `window-title` prints.
+`gameTitle` stays the translated title, since the title screen draws it, and `package.json` `name` names the save folder, so leave both.
+On VX Ace, `Game.ini` `Title` gets the window title in ASCII whenever DazedTL packs System; the drawn title stays in the System data.
+
 **And check `optDrawTitle` before giving `gameTitle` a width budget.** When it
 is `false` the title screen is an image, `Scene_Title.drawGameTitle` never runs,
 and the string is *only* a window caption - which has no pixel bound at all.

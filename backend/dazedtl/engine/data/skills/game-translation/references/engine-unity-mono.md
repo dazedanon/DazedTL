@@ -208,6 +208,12 @@ Exclude from the copy: your `tools/`, the AssetRipper export, `BepInEx/cache/`
 Keep `winhttp.dll`, `doorstop_config.ini` and `.doorstop_version` - drop those and
 BepInEx never loads, and the game just runs in Japanese with no error.
 
+Title the window with the project helper's `window-title` text.
+Unity titles it with `productName`, which with `companyName` names the save folder (`persistentDataPath`), so never change either: set the window's own text with `WindowTitle.cs` from `tools/Unity BepInEx Translation Plugin Template/SheepClickerTL`, called from the plugin's `Awake`, its `Title` the helper's text.
+It calls `SetWindowTextW` on this process's visible `UnityWndClass` window and checks it every second, so the title lands once the window exists and returns if the game resets it.
+Labyrinth City Asylum (Unity 2022.3 Mono, BepInEx 5) ran the same calls from a hidden `DontDestroyOnLoad` object's coroutine, because coroutines on BepInEx's manager object never ran there; the template's timer needs no Unity object at all.
+Read the title from the running window before shipping.
+
 Ship **two** artefacts. The patch-only archive (plugin + `translations/` + config +
 readme, laid out to extract over a game folder) is a couple of hundred KB and is the
 one you can hand out. A full repack is the game itself and a licensing question, not

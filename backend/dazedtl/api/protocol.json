@@ -1,5 +1,5 @@
 {
-  "version": "5774a38fcb2ec727",
+  "version": "9f3035972ce19d1d",
   "methods": {
     "workspace_snapshot": {
       "refresh": false,
@@ -65,8 +65,12 @@
       "refresh": false,
       "duringClose": false
     },
-    "settings_game_update": {
+    "settings_publishing": {
       "refresh": true,
+      "duringClose": false
+    },
+    "settings_window_title": {
+      "refresh": false,
       "duringClose": false
     },
     "connection_save": {
@@ -338,6 +342,10 @@
       "duringClose": false
     },
     "translation_word_spacing": {
+      "refresh": false,
+      "duringClose": false
+    },
+    "translation_window_title": {
       "refresh": false,
       "duringClose": false
     },

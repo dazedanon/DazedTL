@@ -1020,6 +1020,37 @@ class TranslationEngine:
 
         return Layout.of_game(root)
 
+    def window_title(self, root, title=None):
+        """The game's window title and what the assistant does with it
+        (util/window_title): empty while Settings has no translator name,
+        or while no title is known, which `title` gives."""
+        from util import window_title
+
+        if title is not None and not isinstance(title, str):
+            raise ValueError("Enter the game's translated title as text.")
+        if self.detect(root) == "WOLF":
+            return {
+                "title": "",
+                "next": "WOLF's window title is the Game.dat title its saves are matched by, so leave it as the translated title (engine-wolf.md).",
+            }
+        if not window_title.translator():
+            return {
+                "title": "",
+                "next": "Settings has no translator name, so leave the game's window title as the game sets it.",
+            }
+        text = window_title.text(root, title or None)
+        if not text:
+            return {
+                "title": "",
+                "next": "Run window-title again with --title and the game's translated title; it needs the game's Git set up.",
+            }
+        return {
+            "title": text,
+            "next": "Make the game's window show exactly this title before you package the patch, as the "
+            "game-translation skill's delivery step says; never change a value that names the save "
+            "folder or that saves are matched by.",
+        }
+
     def word_spacing(self, root):
         """The rule for joining a translation's words in plugin commands and
         note tags, and whether the game's main font draws U+00A0."""

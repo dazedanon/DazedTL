@@ -266,7 +266,7 @@ def settings(value):
             "connections",
             "providers",
             "checksEnabled",
-            "gameUpdate",
+            "publishing",
         ),
     )
 

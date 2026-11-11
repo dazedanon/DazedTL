@@ -391,10 +391,10 @@ When Git LFS is used, verify the working payload contains the real binary;
 a Git pointer is not a usable drop-in file. Use repository-local settings and
 the established binary policy without changing global Git configuration.
 
-Window-title credits belong in the field or runtime call that sets the visible
-caption. Preserve separate internal project IDs and save-directory names, then
-read the exact title from the running process. A title change does not imply a
-logo redraw. See [engine-gamemaker.md](engine-gamemaker.md) for the measured case.
+The window title is `<English title> v<game version> | TL: <translator>`, which the project helper's `window-title` prints exactly from Settings and the game's registered version; it belongs in the field or runtime call that sets the visible caption.
+Preserve separate internal project IDs and save-directory names, then read the exact title from the running process.
+A title change does not imply a logo redraw.
+See [engine-gamemaker.md](engine-gamemaker.md) for the measured case.
 
 ## Release archives are DazedTL's
 

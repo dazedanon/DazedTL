@@ -8,7 +8,7 @@ import { useSettingsDraft } from "./useSettingsDraft";
 import ConnectionEditor from "./ConnectionEditor";
 import { ModelMenu } from "./ModelMenu";
 import TranslationDefaults from "./TranslationDefaults";
-import GameUpdateSettings from "./GameUpdateSettings";
+import PublishingSettings from "./PublishingSettings";
 import Updates from "./Updates";
 import Notifications from "./Notifications";
 import Credits from "./Credits";
@@ -27,12 +27,12 @@ import { Button } from "../../ui/Button";
 import { ActionBar } from "../../ui/ActionBar";
 import { ActionControl } from "../../ui/ActionControl";
 import { Message } from "../../ui/Feedback";
-import type { GameUpdateDefaults } from "../../api/contracts";
+import type { PublishingSettings as PublishingValues } from "../../api/contracts";
 
 const sections = [
   { id: "api", label: "API connections" },
   { id: "preferences", label: "Translation defaults" },
-  { id: "gameupdate", label: "GameUpdate" },
+  { id: "publishing", label: "Publishing" },
   { id: "notifications", label: "Notifications" },
   { id: "updates", label: "Updates" },
   { id: "credits", label: "Credits" },
@@ -52,15 +52,15 @@ export default function Settings({
   const action = useAction();
   const draft = useSettingsDraft(action.report);
   const { config } = draft;
-  // Unsaved GameUpdate edits stay here, so switching tabs keeps them.
-  const [gameUpdate, setGameUpdate] = useState<GameUpdateDefaults | null>(null);
-  const gameUpdateDirty =
-    !!gameUpdate &&
+  // Unsaved Publishing edits stay here, so switching tabs keeps them.
+  const [publishing, setPublishing] = useState<PublishingValues | null>(null);
+  const publishingDirty =
+    !!publishing &&
     !!config &&
-    JSON.stringify(gameUpdate) !== JSON.stringify(config.gameUpdate);
+    JSON.stringify(publishing) !== JSON.stringify(config.publishing);
   useEffect(
-    () => onDirty?.(draft.dirty || gameUpdateDirty),
-    [onDirty, draft.dirty, gameUpdateDirty],
+    () => onDirty?.(draft.dirty || publishingDirty),
+    [onDirty, draft.dirty, publishingDirty],
   );
   const [section, setSection] = useState<SettingsSection>(
     () => request?.section ?? "api",
@@ -394,32 +394,32 @@ export default function Settings({
               }
             />
           ),
-          gameupdate: !config ? (
+          publishing: !config ? (
             loading
           ) : (
-            <GameUpdateSettings
-              values={gameUpdate || config.gameUpdate}
-              dirty={gameUpdateDirty}
+            <PublishingSettings
+              values={publishing || config.publishing}
+              dirty={publishingDirty}
               busy={busy}
-              error={action.key === "gameupdate" ? action.error : ""}
-              notice={action.key === "gameupdate" ? action.notice : ""}
+              error={action.key === "publishing" ? action.error : ""}
+              notice={action.key === "publishing" ? action.notice : ""}
               edit={(values) => {
-                if (action.key === "gameupdate") action.clear();
-                setGameUpdate(values);
+                if (action.key === "publishing") action.clear();
+                setPublishing(values);
               }}
               save={() =>
                 action.run(
                   async () => {
-                    await draft.saveGameUpdate(gameUpdate || config.gameUpdate);
-                    setGameUpdate(null);
+                    await draft.savePublishing(publishing || config.publishing);
+                    setPublishing(null);
                   },
-                  "GameUpdate settings saved.",
-                  "gameupdate",
+                  "Publishing settings saved.",
+                  "publishing",
                 )
               }
               revert={() => {
                 action.clear();
-                setGameUpdate(null);
+                setPublishing(null);
               }}
             />
           ),

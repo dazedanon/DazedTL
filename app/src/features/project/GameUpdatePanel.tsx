@@ -146,7 +146,7 @@ export function GameUpdatePanel({
             your patch repositories is set in Settings.
           </span>
           <Button variant="link" onClick={openSettings}>
-            Open GameUpdate settings
+            Open Publishing settings
           </Button>
         </Notice>
       </Section>

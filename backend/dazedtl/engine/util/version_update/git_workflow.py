@@ -961,6 +961,11 @@ def read_checkout(game_root: str | Path) -> Checkout | None:
     )
 
 
+def original_version(checkout: Checkout) -> str | None:
+    """The game version the `original` branch of `checkout` registers."""
+    return _version_from_history(checkout.repo, ORIGINAL_BRANCH, checkout.original_commit)
+
+
 def inspect_repository(game_root: str | Path) -> RepositoryStatus:
     return read_repository(game_root)[0]
 

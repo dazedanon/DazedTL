@@ -26,6 +26,10 @@ skills), runs inside `write_game`, which holds the rules such writes share:
   records: it refuses until the [background record](original_record.py)
   is done, which it starts again after a stop or a failure. A write in an
   operation's worker records, waiting for a background record first.
+- The outermost write to a game whose Git is set up, but for a restore, also
+  keeps an RPG Maker MV/MZ game's window title current
+  ([window_title](../engine/util/window_title/__init__.py)), so its files
+  join the same checkpoint.
 - Once the outermost write to a game whose Git is set up succeeds, its change
   is one checkpoint commit on the translation branch
   ([checkpoint_commits](checkpoint_commits.py)), so every change DazedTL
@@ -314,6 +318,8 @@ def write_game(
     try:
         yield game
         pending = game.touched
+        if point is not None and not restores:
+            _window_title(root, game, status, log)
         if ace:
             game._settle()
             _packed(native, folder, game, log, subject)
@@ -325,6 +331,18 @@ def write_game(
         writing.reset(token)
         if point is not None:
             point.close(pending)
+
+
+def _window_title(root, game, status, log):
+    """Keeps an RPG Maker MV/MZ game's window title current in the write's
+    checkpoint ([window_title](../engine/util/window_title/__init__.py)); a
+    failure leaves the title for the next write and never fails this one."""
+    from util import window_title
+
+    try:
+        window_title.sync(root, game.put, status, log)
+    except (OSError, ValueError) as error:
+        log(f"Window title not updated: {error}")
 
 
 def _packed(native, folder, game, log, subject):

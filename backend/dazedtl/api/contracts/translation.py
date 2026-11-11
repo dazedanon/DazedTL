@@ -683,6 +683,14 @@ class NbspCoverage(TypedDict):
     unread: NotRequired[str]
 
 
+class AssistantWindowTitle(TypedDict):
+    """The exact window title an assistant gives the game, empty when it
+    leaves the game's own, and its next step (engine/util/window_title)."""
+
+    title: str
+    next: str
+
+
 class WordSpacing(TypedDict):
     rule: str
     nbsp: NbspCoverage

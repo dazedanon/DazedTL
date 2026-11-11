@@ -34,6 +34,21 @@ def efforts(connection, state, configured):
             )
 
 
+def saved_translator(workspace) -> str:
+    """The translator's name saved in the profile at `workspace`, read where
+    only the profile is known, such as the engine's game writes
+    (engine/util/window_title); empty when none is saved or the settings
+    can't be read."""
+    try:
+        value = json.loads(
+            (Path(workspace) / "settings" / "settings.json").read_text(encoding="utf-8")
+        )
+        name = value["legacy"]["values"].get("translatorName", "")
+    except OSError, ValueError, KeyError, TypeError, AttributeError:
+        return ""
+    return name if isinstance(name, str) else ""
+
+
 class Settings:
     def __init__(self, workspace, adapter):
         from dazedtl.languages import DEFAULT_SOURCE
@@ -393,15 +408,31 @@ class Settings:
             "branch": values.get("gameUpdateBranch", "main"),
         }
 
-    def save_game_update(self, revision, values):
+    def translator(self, state=None):
+        """The translator's name for translated games' window titles; empty
+        leaves every game's own title (engine/util/window_title)."""
+        return self._values(state or self._read()).get("translatorName", "")
+
+    def save_publishing(self, revision, values):
+        """Saves Settings' Publishing tab: GameUpdate's defaults and the
+        translator's name."""
         state = self._read()
         self._revision(state, revision)
+        translator = (
+            values.pop("translator", None) if isinstance(values, dict) else None
+        )
+        if not isinstance(translator, str) or len(translator) > 2000:
+            raise ValueError("Enter the translator name as short text.")
+        translator = " ".join(translator.split())
+        if len(translator) > 80:
+            raise ValueError("Enter a translator name of up to 80 characters.")
         checked = self.adapter.check_game_update(values)
         state["legacy"]["values"].update(
             gameUpdateForge=checked["forge"],
             gameUpdateHost=checked["host"],
             gameUpdateUsername=checked["username"],
             gameUpdateBranch=checked["branch"],
+            translatorName=translator,
         )
         self._write(state)
         return self.describe()
@@ -506,11 +537,12 @@ class Settings:
                 for name, definition in providers.PROVIDERS.items()
             ],
             "checksEnabled": self.adapter.allow_providers,
-            "gameUpdate": {
+            "publishing": {
                 "forge": update["forge"],
                 "host": update["host"],
                 "owner": update["username"],
                 "branch": update["branch"],
+                "translator": self.translator(state),
             },
         }
         pending = self._pending(state)

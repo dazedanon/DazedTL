@@ -1026,6 +1026,12 @@ Additional project instructions:
         _record, project = self.project(project_id)
         return self.engine.word_spacing(project.root)
 
+    def window_title(self, project_id, title=None):
+        """The exact window title the assistant gives the game as a delivery
+        step, from its translated `title` where DazedTL can't read one."""
+        _record, project = self.project(project_id)
+        return self.engine.window_title(project.root, title)
+
     def checkpoints(self, project_id):
         """The Checkpoints tab's timeline; read when the tab opens and after
         each write, never by a poll."""

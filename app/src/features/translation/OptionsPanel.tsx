@@ -70,8 +70,8 @@ export function GameUpdateField({
           <>
             {purpose} DazedTL sets it up once the owner of your patch
             repositories is set in Settings.{" "}
-            <Button variant="link" onClick={() => settings("gameupdate")}>
-              Open GameUpdate settings
+            <Button variant="link" onClick={() => settings("publishing")}>
+              Open Publishing settings
             </Button>
           </>
         ) : (
@@ -108,7 +108,7 @@ export function GameUpdateConfig({
       projectId={project.id}
       status={state.gameUpdate}
       disabled={disabled}
-      openSettings={() => settings("gameupdate")}
+      openSettings={() => settings("publishing")}
       releases={project.method !== "manual"}
     />
   );

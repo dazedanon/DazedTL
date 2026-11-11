@@ -157,6 +157,8 @@ If the game changes afterwards, the ZIP reads **Outdated**; build it again.
 **Player walkthrough** copies an optional task for your assistant to write a walkthrough for players.
 To let players update from your repository, see [Publishing with GameUpdate](#publishing-with-gameupdate).
 
+Your name under **Translator** in **Settings > Publishing** titles each translated game's window like `Game Title v1.0.9 | TL: Your Name`; WOLF games keep their own title, which saves need.
+
 For VX Ace games, name the clean game ZIP in English letters: the name becomes the game's folder, and the game won't start on English Windows from a folder named in Japanese.
 
 ## Assistant-led
@@ -281,7 +283,7 @@ Upload only what you may store: a private repository isn't permission to share s
 GameUpdate updates players to your latest translation from a public Git repository on GitGud, GitHub or a Forgejo server such as Codeberg.
 Set up, or **Options** in Manual, adds `GameUpdate.bat`, its scripts and a `README.md` for players to the game.
 
-1. In **Settings > GameUpdate**, choose the site and enter the owner of your repositories, such as `dazed-translations`.
+1. In **Settings > Publishing**, choose the site and enter the owner of your repositories, such as `dazed-translations`.
    Leave the owner empty if you don't use GameUpdate.
 2. Confirm the game's repository under **GameUpdate**, in the **Release** task or on **Options**; DazedTL fills it in from the game's Git remote when it can.
 3. Push the translation to that repository before you build a ZIP; see [Make a remote repository](#make-a-remote-repository), and make it public when you release.

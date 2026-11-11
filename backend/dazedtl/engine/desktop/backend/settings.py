@@ -59,6 +59,7 @@ FIELDS = (
     field("gameUpdateHost", "GameUpdate host", "Game updates", "gitgud.io"),
     field("gameUpdateUsername", "GameUpdate username", "Game updates", ""),
     field("gameUpdateBranch", "GameUpdate branch", "Game updates", "main"),
+    field("translatorName", "Translator", "Game updates", "", help="Shown in each translated game's window title; empty leaves games' own titles."),
     field("tlEditorCmd", "Playtest editor", "Playtest", "auto"),
     field("tlHotkey", "TL Inspector hotkey", "Playtest", "F9"),
     field("forgeHotkey", "Forge hotkey", "Playtest", "F10"),
@@ -106,6 +107,9 @@ def validate_values(values):
     if thinking and not re.fullmatch(r"-1|\d+", thinking):
         raise ValueError("The thinking budget must be blank, -1, or a nonnegative integer.")
     result["faceWidth"] = min(result["width"], result["faceWidth"])
+    result["translatorName"] = " ".join(result["translatorName"].split())
+    if len(result["translatorName"]) > 80:
+        raise ValueError("Enter a translator name of up to 80 characters.")
     for key in ('wolfDbIncludeGroups', 'wolfDbIncludeTiers'):
         if result[key].strip():
             try:

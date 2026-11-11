@@ -397,6 +397,14 @@ def main():
         "word-spacing",
         help="Print how to join a translation's words in RPG Maker plugin commands and note tags, and whether this game's font draws U+00A0",
     )
+    window_title = commands.add_parser(
+        "window-title",
+        help="Print the exact window title to give the game before packaging: its English title, version and translator",
+    )
+    window_title.add_argument(
+        "--title",
+        help="The game's translated title, for engines whose title DazedTL can't read",
+    )
     speakers = commands.add_parser(
         "speakers",
         help="Read speaker discovery results; --scan applies evidenced rules and runs the local parser without API calls",
@@ -577,6 +585,8 @@ def main():
                     params["step"] = args.image_step
                 if args.root:
                     params["root"] = args.root
+            if args.command == "window-title" and args.title is not None:
+                params["title"] = args.title
             if args.command == "qa" and args.answers and not args.check:
                 parser.error("--answers goes with --check")
             if args.command == "qa" and args.check:
