@@ -143,6 +143,11 @@ class WindowTitleTests(unittest.TestCase):
             )
             stripped = git(
                 game,
+                # CI's Git has no identity of its own.
+                "-c",
+                "user.name=Fixture",
+                "-c",
+                "user.email=fixture@dazedtl.invalid",
                 "commit-tree",
                 git(game, "mktree", input=kept).strip(),
                 "-p",
