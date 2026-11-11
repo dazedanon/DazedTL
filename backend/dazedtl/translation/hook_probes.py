@@ -206,7 +206,7 @@ def require(workspace, project_id, source, paths):
         evidence = read_json(_record(workspace, project_id, EVIDENCE))
     except OSError, ValueError:
         evidence = None
-    if not isinstance(evidence, dict) or evidence.get("version") != VERSION:
+    if not isinstance(evidence, dict) or not _readable(evidence):
         return UNCHECKED
     try:
         current = {*_export_files(source), *_plugin_files(source, paths)}
@@ -266,15 +266,19 @@ def problem(probe, shown, kept=""):
     still untranslated by the skill's class, other than the *kept* marks the
     game's English keeps on purpose, or a filled value it drops. A line
     holding no untranslated text needs no English of its own."""
-    if shown is None:
-        if not UNTRANSLATED.search(probe["text"]):
-            return None
+    if shown is None and not UNTRANSLATED.search(probe["text"]):
+        return None
+    if shown is None or not shown.strip():
         return "the game finds no English for it"
     if "\r" in shown:
         return "its English holds a carriage return"
     if marks := [mark for mark in UNTRANSLATED.findall(shown) if mark not in kept]:
         return "its English still shows " + "".join(dict.fromkeys(marks))
-    if lost := [value for value in probe["values"] if value not in shown]:
+    if lost := [
+        value
+        for value in probe["values"]
+        if not re.search(rf"(?<!\d){re.escape(value)}(?!\d)", shown)
+    ]:
         return "its English drops the value the game fills in (" + ", ".join(lost) + ")"
     return None
 
@@ -284,16 +288,27 @@ class _Free:
     found as a probe first needs them."""
 
     def __init__(self, runs):
-        self.runs = runs
+        self.runs = set(runs)
+        self.held = {}
         self.values = []
         self.candidates = map(str, count(FIRST_VALUE))
 
     def __getitem__(self, index):
         while len(self.values) <= index:
             value = next(self.candidates)
-            if not any(value in run for run in self.runs if len(run) >= len(value)):
+            if value not in self._held(len(value)):
                 self.values.append(value)
         return self.values[index]
+
+    def _held(self, length):
+        """Every run of *length* digits the runs hold."""
+        if length not in self.held:
+            self.held[length] = {
+                run[start : start + length]
+                for run in self.runs
+                for start in range(len(run) - length + 1)
+            }
+        return self.held[length]
 
 
 def _filled(unit, free):
@@ -313,6 +328,9 @@ def _filled(unit, free):
         return text.rjust(width) if width > 0 else text.ljust(-width)
 
     text = FORMAT_ITEM.sub(item, unit["source"])
+    if shown:
+        # string.Format shows a doubled brace as one.
+        text = text.replace("{{", "{").replace("}}", "}")
     for token in dict.fromkeys(unit.get("tokens") or ()):
         if FORMAT_ITEM.fullmatch(token) or MARKUP.fullmatch(token) or token not in text:
             continue
@@ -338,6 +356,29 @@ def _formatted(value, spec):
     if kind == "X":
         return format(number, spec[0]).zfill(int(digits or 0))
     return value
+
+
+def _readable(evidence):
+    """Whether *evidence* is a judgement `check` saved by these rules."""
+    return (
+        isinstance(evidence, dict)
+        and evidence.get("version") == VERSION
+        and isinstance(evidence.get("files"), dict)
+        and all(
+            isinstance(entry, list) and len(entry) == 3
+            for entry in evidence["files"].values()
+        )
+        and type(evidence.get("unclean")) is int
+        and isinstance(evidence.get("problems"), list)
+        and all(
+            isinstance(line, dict)
+            and all(
+                isinstance(line.get(key), str) for key in ("unit", "source", "problem")
+            )
+            for line in evidence["problems"]
+        )
+        and (not evidence["unclean"] or bool(evidence["problems"]))
+    )
 
 
 def _kept(keep):
@@ -465,4 +506,4 @@ def _record(workspace, project_id, name):
 
 def _quoted(text):
     line = re.sub(r"\r\n|\r|\n", " ", text)
-    return "「" + (line if len(line) <= 30 else line[:30] + "…") + "」"
+    return "“" + (line if len(line) <= 30 else line[:30] + "…") + "”"

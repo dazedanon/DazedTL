@@ -2,8 +2,11 @@
 game shows it, its placeholders filled, and what makes the game's answer for
 one no clean English."""
 
+import json
 import re
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from dazedtl.translation import hook_probes
 from util.languages import UNTRANSLATED_TEXT
@@ -69,7 +72,8 @@ class ProbeTests(unittest.TestCase):
                 "padded": "[  101]",
                 "zeros": "No.00101",
                 "custom": "101円",
-                "literal": "{{0}}は101",
+                # string.Format shows a doubled brace as one.
+                "literal": "{0}は101",
             },
         )
         self.assertEqual(probes["padded"]["values"], ["101"])
@@ -102,6 +106,9 @@ class ProblemTests(unittest.TestCase):
             "……。": "still shows …。",
             "Received ───101": "still shows ─",
             "Received {0} gold.": "drops the value the game fills in (101)",
+            "Received 1101 gold.": "drops the value the game fills in (101)",
+            # A store that holds an empty English shows a blank line.
+            " ": "no English",
         }.items():
             with self.subTest(shown=shown):
                 self.assertIn(expected, hook_probes.problem(PROBE, shown))
@@ -128,6 +135,24 @@ class ProblemTests(unittest.TestCase):
     def test_marks_a_translation_keeps_are_no_untranslated_text(self):
         # Ideographic space and the censor glyphs stay out of the class.
         self.assertIsNone(hook_probes.problem(PROBE, "Got 101　〇〇 ●"))
+
+
+class GateTests(unittest.TestCase):
+    def test_a_damaged_judgement_reads_as_none(self):
+        # Release's review must name the check, not fail on the record.
+        with TemporaryDirectory() as folder:
+            records = Path(folder) / "translation/projects/p"
+            records.mkdir(parents=True)
+            (records / hook_probes.REQUIRED).write_text("{}", encoding="utf-8")
+            (records / hook_probes.EVIDENCE).write_text(
+                json.dumps({"version": hook_probes.VERSION}), encoding="utf-8"
+            )
+            self.assertEqual(
+                hook_probes.require(
+                    folder, "p", folder, ["BepInEx/plugins/Mod/Mod.dll"]
+                ),
+                hook_probes.UNCHECKED,
+            )
 
 
 class UntranslatedClassTests(unittest.TestCase):

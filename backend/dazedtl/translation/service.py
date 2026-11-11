@@ -1402,9 +1402,11 @@ Additional project instructions:
             unmet.append(
                 PackageRefusal(str(error), "The patch waits for your assistant's QA.")
             )
+        from util.version_update.git_workflow import GitWorkflowError
+
         try:
             paths = self.engine.runtime_paths(runtime_manifest(project.root, manifest))
-        except OSError, ValueError:
+        except OSError, ValueError, GitWorkflowError:
             # Packaging, which reads the manifest, says what is wrong with it.
             paths = []
         if refusal := hook_probes.require(

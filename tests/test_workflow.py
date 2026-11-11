@@ -67,6 +67,7 @@ from dazedtl.translation.run_compiler import (
 from dazedtl.translation.service import IMAGE_UNITS, Translation
 from dazedtl.translation.skill_users import for_batch
 from util import provider_costs
+from util.version_update.git_workflow import GitWorkflowError
 
 from tests.fixtures import old_backup
 
@@ -2259,14 +2260,14 @@ class WorkflowTests(unittest.TestCase):
             (1, "the game finds no English for it"),
         )
         self.assertIn(
-            "level97/reward 「クエストクリア！ 報酬{0}ゴールドをもらった。」", package()
+            "level97/reward “クエストクリア！ 報酬{0}ゴールドをもらった。”", package()
         )
         self.assertEqual(
             self.service.unfinished_reasons(self.identity),
             [
                 (
                     "The game would show 1 line without clean English, such as "
-                    "「クエストクリア！ 報酬{0}ゴールドをもらった。」. Your assistant fixes it first."
+                    "“クエストクリア！ 報酬{0}ゴールドをもらった。”. Your assistant fixes it first."
                 )
             ],
         )
@@ -2336,7 +2337,15 @@ class WorkflowTests(unittest.TestCase):
                 }
             ],
         )
+
+        # A manifest the engine refuses leaves the refusal to packaging.
+        def rejected(_manifest):
+            raise GitWorkflowError("The manifest names a path outside the game.")
+
+        self.engine.runtime_paths = rejected
+        self.service.unfinished(self.identity)
         # A patch without a BepInEx plugin looks nothing up at run time.
+        self.engine.runtime_paths = lambda _manifest: paths
         paths[:] = ["source.json"]
         with self.assertRaisesRegex(ValueError, "carries no BepInEx plugin"):
             self.service.hook_probes(self.identity)

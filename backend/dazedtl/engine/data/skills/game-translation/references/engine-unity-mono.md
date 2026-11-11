@@ -185,6 +185,7 @@ Packaging a patch that carries a BepInEx plugin waits for the plugin's coverage 
 3. Run `hook-probes --check`, with `--keep` and the marks this game's English keeps on purpose, if any (`SKILL.md`, "What counts as untranslated text"). It names each line that misses, keeps Japanese by `SKILL.md`'s class, holds a carriage return or drops its filled value; fix the store, start the game again and check again.
 
 Packaging also refuses once the export or the plugin's files change after the check, so check again after either.
+Any DLL in the patch's `BepInEx/plugins/` counts, a layout plugin's too: a game whose English is in its own files has nothing for the self-test to look up, so its patch waits, and the user builds it from Release, whose review names this check.
 
 The logger uses the store's predicate, so punctuation-only lines reach the diff; check that at least one seen in the game, such as `……。`, shows up as translated.
 

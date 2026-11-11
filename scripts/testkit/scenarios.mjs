@@ -3299,7 +3299,7 @@ export const scenarios = {
           await page.click(/^Patch ZIP/);
           await page.click("Review & build patch ZIP");
           await page.waitText(
-            "The game would show 1 line without clean English, such as 「クエストクリア！ 報酬{0}ゴールドをもらった。」. Your assistant fixes it first.",
+            "The game would show 1 line without clean English, such as “クエストクリア！ 報酬{0}ゴールドをもらった。”. Your assistant fixes it first.",
           );
           await page.shot(
             path.join(state.work, "logs", "hook-probes-release.png"),
