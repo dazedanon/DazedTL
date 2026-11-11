@@ -18,6 +18,7 @@ from typing import Any
 
 from dazedtl.compatibility.checkpoint_commits import Change
 from dazedtl.storage import exclusive, write_json
+from dazedtl.translation import hook_probes
 from dazedtl.translation.files import project_path, read_json, verify_evidence
 from dazedtl.translation.project import MANUAL, WORK
 from dazedtl.translation.results import Results
@@ -230,6 +231,9 @@ def refresh(workspace, project_id, engine, plan, *, started=False):
         phases = report.setdefault("phases", {})
         if changed:
             phases.update(injection="pending", qa="pending", patch="pending")
+            # From now on a patch carrying a runtime hook waits for its
+            # self-test; one translated before packages as before till here.
+            hook_probes.required_from_now(workspace, project_id)
         if started:
             report["blocker"] = ""
         if changed or started:

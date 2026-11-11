@@ -405,6 +405,15 @@ def main():
         "--title",
         help="The game's translated title, for engines whose title DazedTL can't read",
     )
+    hook_probes = commands.add_parser(
+        "hook-probes",
+        help="For a patch carrying a BepInEx plugin: write each exported line as the game shows it, placeholders filled, for the plugin's self-test to answer; --check judges its answers, which packaging waits for",
+    )
+    hook_probes.add_argument(
+        "--check",
+        action="store_true",
+        help="Judge the self-test's answers to the current probe list",
+    )
     speakers = commands.add_parser(
         "speakers",
         help="Read speaker discovery results; --scan applies evidenced rules and runs the local parser without API calls",
@@ -587,6 +596,8 @@ def main():
                     params["root"] = args.root
             if args.command == "window-title" and args.title is not None:
                 params["title"] = args.title
+            if args.command == "hook-probes" and args.check:
+                params["check"] = True
             if args.command == "qa" and args.answers and not args.check:
                 parser.error("--answers goes with --check")
             if args.command == "qa" and args.check:

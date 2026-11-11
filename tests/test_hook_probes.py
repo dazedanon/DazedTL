@@ -1,11 +1,11 @@
-"""A runtime hook's coverage probes (translation/coverage): each line as the
+"""A runtime hook's coverage probes (translation/hook_probes): each line as the
 game shows it, its placeholders filled, and what makes the game's answer for
 one no clean English."""
 
 import re
 import unittest
 
-from dazedtl.translation import coverage
+from dazedtl.translation import hook_probes
 from util.languages import UNTRANSLATED_TEXT
 from util.paths import SKILLS_DIR
 
@@ -15,7 +15,7 @@ PROBE = {"speaker": None, "text": "報酬101ゴールド", "values": ["101"]}
 
 class ProbeTests(unittest.TestCase):
     def test_each_placeholder_takes_a_value_no_line_holds(self):
-        probes = coverage.probes(
+        probes = hook_probes.probes(
             [
                 {"id": "reward", "source": REWARD, "speaker": None},
                 # The lowest values are held: in a source, full-width, and
@@ -45,7 +45,7 @@ class ProbeTests(unittest.TestCase):
         )
 
     def test_a_format_item_shows_as_net_formats_it(self):
-        probes = coverage.probes(
+        probes = hook_probes.probes(
             [
                 {"id": identity, "source": source, "speaker": None}
                 for identity, source in {
@@ -75,7 +75,7 @@ class ProbeTests(unittest.TestCase):
         self.assertEqual(probes["padded"]["values"], ["101"])
 
     def test_a_token_is_filled_unless_it_is_markup(self):
-        probe = coverage.probes(
+        probe = hook_probes.probes(
             [
                 {
                     "id": "line",
@@ -91,7 +91,7 @@ class ProbeTests(unittest.TestCase):
 
 class ProblemTests(unittest.TestCase):
     def test_clean_english_holding_the_filled_value_passes(self):
-        self.assertIsNone(coverage.problem(PROBE, "Received 101 gold."))
+        self.assertIsNone(hook_probes.problem(PROBE, "Received 101 gold."))
 
     def test_each_kind_of_unclean_answer_refuses(self):
         for shown, expected in {
@@ -104,11 +104,16 @@ class ProblemTests(unittest.TestCase):
             "Received {0} gold.": "drops the value the game fills in (101)",
         }.items():
             with self.subTest(shown=shown):
-                self.assertIn(expected, coverage.problem(PROBE, shown))
+                self.assertIn(expected, hook_probes.problem(PROBE, shown))
+
+    def test_a_line_without_untranslated_text_needs_no_english_of_its_own(self):
+        # The hook's gate never looks it up, so the game shows it as it is.
+        probe = {"speaker": None, "text": "HP 101/101", "values": ["101"]}
+        self.assertIsNone(hook_probes.problem(probe, None))
 
     def test_marks_a_translation_keeps_are_no_untranslated_text(self):
         # Ideographic space and the censor glyphs stay out of the class.
-        self.assertIsNone(coverage.problem(PROBE, "Got 101　〇〇 ●"))
+        self.assertIsNone(hook_probes.problem(PROBE, "Got 101　〇〇 ●"))
 
 
 class UntranslatedClassTests(unittest.TestCase):

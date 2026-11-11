@@ -38,6 +38,7 @@ from . import (
     checkpoint_records,
     delivery,
     exchange,
+    hook_probes,
     manual,
     name_codes,
     organize,
@@ -1028,6 +1029,25 @@ Additional project instructions:
         _record, project = self.project(project_id)
         return self.engine.word_spacing(project.root)
 
+    def hook_probes(self, project_id, check=False):
+        """Writes the probe list a runtime hook's self-test answers, or with
+        *check* judges its answers, which a patch carrying a BepInEx plugin
+        waits for (hook_probes)."""
+        _record, project = self.project(project_id)
+        manifest = runtime_manifest(project.root, self.patch_manifest(project_id))
+        paths = self.engine.runtime_paths(manifest)
+
+        def held(fingerprints):
+            return unit_results.held(
+                self.jobs.store, project_id, fingerprints, project.root
+            )
+
+        if check:
+            return hook_probes.check(
+                self.workspace, project_id, project.root, paths, held
+            )
+        return hook_probes.write(project.root, paths, held)
+
     def window_title(self, project_id, title=None):
         """The exact window title the assistant gives the game as a delivery
         step, from its translated `title` where DazedTL can't read one."""
@@ -1381,6 +1401,15 @@ Additional project instructions:
             unmet.append(
                 PackageRefusal(str(error), "The patch waits for your assistant's QA.")
             )
+        try:
+            paths = self.engine.runtime_paths(runtime_manifest(project.root, manifest))
+        except OSError, ValueError:
+            # Packaging, which reads the manifest, says what is wrong with it.
+            paths = []
+        if refusal := hook_probes.require(
+            self.workspace, project_id, project.root, paths
+        ):
+            unmet.append(PackageRefusal(*refusal))
         return unmet
 
     def package_ready(self, project_id):

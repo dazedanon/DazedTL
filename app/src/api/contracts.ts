@@ -2085,6 +2085,24 @@ export type AssistantWindowTitle = {
   next: string;
 };
 
+/** A line a runtime hook's self-test found without clean English. */
+export type HookProbeProblem = {
+  unit: string;
+  source: string;
+  problem: string;
+};
+
+/** The probe list a runtime hook's self-test answers, or the judgement of
+its answers, with the assistant's next step (translation/hook_probes). */
+export type HookProbes = {
+  lines: number;
+  next: string;
+  probes?: string;
+  results?: string;
+  unclean?: number;
+  problems?: HookProbeProblem[];
+};
+
 export type WordSpacing = {
   rule: string;
   nbsp: NbspCoverage;
@@ -3621,6 +3639,11 @@ export type WindowTitleProjectRequest = {
   title?: string;
 };
 
+export type HookProbesRequest = {
+  project_id: string;
+  check?: boolean;
+};
+
 export type SettingsModelDefaultsRequest = {
   connection_id: string;
   model: string;
@@ -4073,6 +4096,7 @@ export type RpcContract = {
     request: WindowTitleProjectRequest;
     response: AssistantWindowTitle;
   };
+  translation_hook_probes: { request: HookProbesRequest; response: HookProbes };
   translation_update_task: { request: ProjectRequest; response: UpdateTask };
   translation_release: {
     request: TranslationReleaseRequest;

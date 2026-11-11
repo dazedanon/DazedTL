@@ -3,6 +3,7 @@
 import getpass
 import json
 import os
+import re
 import shutil
 import unittest
 from copy import deepcopy
@@ -23,6 +24,7 @@ from dazedtl.settings.store import Settings
 from dazedtl.storage import WorkspaceLock, write_json
 from dazedtl.translation import (
     delivery,
+    hook_probes,
     name_codes,
     organize,
     progress_report,
@@ -2151,6 +2153,178 @@ class WorkflowTests(unittest.TestCase):
                     self.identity, "package", reviewed([qa.reason])
                 )
 
+    def test_a_runtime_hooks_patch_waits_for_its_self_test(self):
+        # Labyrinth City Asylum's game filled its quest reward line with
+        # string.Format; its plugin held the line as a whole-string key, so
+        # the dialogue box showed Japanese while a lookup of the unfilled
+        # line read as covered.
+        reward = "クエストクリア！\r\n報酬{0}ゴールドをもらった。"
+        part = WORK + "/work/translation-units/part-0001.json"
+        write_json(
+            self.game / EXPORT, {"complete": True, "parts": [part], "version": 3}
+        )
+        write_json(
+            self.game / part,
+            {
+                "units": [
+                    {
+                        "id": "row",
+                        "source_id": "level97/reward",
+                        "source": reward,
+                        "speaker": None,
+                        "translation": "Quest clear!\nReceived {0} gold.",
+                    }
+                ]
+            },
+        )
+        plugin = "BepInEx/plugins/AsylumEnglish/"
+        store = self.game / plugin / "translation.json"
+        runtime = [plugin + "AsylumEnglish.dll", plugin + "translation.json"]
+        (self.game / runtime[0]).parent.mkdir(parents=True)
+        (self.game / runtime[0]).write_bytes(b"MZ")
+        english = "Quest clear!\nReceived {0} gold."
+        write_json(store, {"exact": {reward: english}, "patterns": {}})
+        manifest = WORK + "/work/patch-files.json"
+        write_json(self.game / manifest, runtime)
+        write_json(
+            lifecycle_path(self.profile, self.identity),
+            {**lifecycle(self.profile, self.identity), "runtime_manifest": manifest},
+        )
+        paths = list(runtime)
+        self.engine.runtime_paths = lambda _manifest: paths
+        self.engine.setup_mismatch = lambda *_args: None
+        self.engine.progress = lambda *_args, **_kwargs: {
+            "phases": {"qa": "complete"},
+            "metrics": {"text": {"total": 1, "translated": 1}},
+        }
+        delivery.record(self.game, manifest, runtime)
+        self.enterContext(patch.object(self.service, "require_inventory"))
+        self.enterContext(
+            patch.object(
+                self.service.game_update, "sync", side_effect=RuntimeError("built")
+            )
+        )
+
+        def package():
+            with self.assertRaises(ValueError) as refused:
+                self.service.operation(self.identity, "package", {})
+            return str(refused.exception)
+
+        def self_test(at):
+            # The plugin's self-test, as the template's: each probe through
+            # the store, a whole-string key or a {n} pattern, and the answer
+            # written after the plugin's files changed.
+            listed = (self.game / hook_probes.PROBES).read_bytes()
+            keys = read_json(store)
+            lines = [json.dumps({"probes": digest(listed)})]
+            for line in listed.decode("utf-8").splitlines():
+                probe = json.loads(line)
+                shown = keys["exact"].get(probe["text"])
+                for key, english in keys["patterns"].items():
+                    pattern = re.escape(key).replace(r"\{0\}", "(.*?)")
+                    match = re.fullmatch(pattern, probe["text"].replace("\r", ""))
+                    shown = english.replace("{0}", match[1]) if match else shown
+                answer = {"id": probe["id"]}
+                lines.append(
+                    json.dumps({**answer, "shown": shown} if shown else answer)
+                )
+            results = self.game / hook_probes.RESULTS
+            results.write_text("\n".join(lines) + "\n", encoding="utf-8")
+            os.utime(results, ns=(at, at))
+
+        # A project translated before this rule packages as it did.
+        with self.assertRaisesRegex(RuntimeError, "built"):
+            self.service.operation(self.identity, "package", {})
+        # New translations start the rule, which waits for the self-test.
+        hook_probes.required_from_now(self.profile, self.identity)
+        self.assertIn("run hook-probes", package())
+        self.assertEqual(
+            self.service.unfinished_reasons(self.identity),
+            ["Your assistant checks in the game that every line shows English first."],
+        )
+        written = self.service.hook_probes(self.identity)
+        probe = json.loads((self.game / hook_probes.PROBES).read_text(encoding="utf-8"))
+        self.assertEqual(
+            (written["lines"], probe["unit"], probe["text"]),
+            (1, "level97/reward", "クエストクリア！\r\n報酬101ゴールドをもらった。"),
+        )
+        with self.assertRaisesRegex(ValueError, "No self-test answers yet"):
+            self.service.hook_probes(self.identity, check=True)
+        # The whole-string key misses the filled line.
+        later = (self.game / runtime[1]).stat().st_mtime_ns + 1
+        self_test(later)
+        checked = self.service.hook_probes(self.identity, check=True)
+        self.assertEqual(
+            (checked["unclean"], checked["problems"][0]["problem"]),
+            (1, "the game finds no English for it"),
+        )
+        self.assertIn(
+            "level97/reward 「クエストクリア！⏎報酬{0}ゴールドをもらった。」", package()
+        )
+        self.assertEqual(
+            self.service.unfinished_reasons(self.identity),
+            [
+                "The game would show 1 line without clean English, such as "
+                "「クエストクリア！⏎報酬{0}ゴールドをもらった。」. Your assistant fixes it first."
+            ],
+        )
+        # Stored as a pattern, its English holds the amount: the old answers
+        # are out of date, and new ones from before the store changed refuse.
+        write_json(
+            store, {"exact": {}, "patterns": {reward.replace("\r", ""): english}}
+        )
+        delivery.record(self.game, manifest, runtime)
+        self.assertIn("changed since hook-probes --check", package())
+        with self.assertRaisesRegex(ValueError, "changed after the self-test ran"):
+            self.service.hook_probes(self.identity, check=True)
+        self_test((self.game / runtime[1]).stat().st_mtime_ns + 1)
+        self.assertEqual(
+            self.service.hook_probes(self.identity, check=True)["unclean"], 0
+        )
+        with self.assertRaisesRegex(RuntimeError, "built"):
+            self.service.operation(self.identity, "package", {})
+        # A new export is another probe list, and answers that leave its new
+        # line out refuse that line.
+        rows = read_json(self.game / part)
+        rows["units"].append(
+            {
+                **rows["units"][0],
+                "id": "dots",
+                "source_id": "level3/dots",
+                "source": "……。",
+            }
+        )
+        write_json(self.game / part, rows)
+        self.assertIn("changed since hook-probes --check", package())
+        with self.assertRaisesRegex(ValueError, "written for an earlier export"):
+            self.service.hook_probes(self.identity, check=True)
+        self.service.hook_probes(self.identity)
+        with self.assertRaisesRegex(ValueError, "answered an earlier probe list"):
+            self.service.hook_probes(self.identity, check=True)
+        listed = (self.game / hook_probes.PROBES).read_bytes()
+        answered = (self.game / hook_probes.RESULTS).read_text(encoding="utf-8")
+        (self.game / hook_probes.RESULTS).write_text(
+            json.dumps({"probes": digest(listed)}) + answered[answered.index("\n") :],
+            encoding="utf-8",
+        )
+        os.utime(self.game / hook_probes.RESULTS, ns=(later * 2, later * 2))
+        self.assertEqual(
+            self.service.hook_probes(self.identity, check=True)["problems"],
+            [
+                {
+                    "unit": "level3/dots",
+                    "source": "……。",
+                    "problem": "the self-test gave no answer for it",
+                }
+            ],
+        )
+        # A patch without a BepInEx plugin looks nothing up at run time.
+        paths[:] = ["source.json"]
+        with self.assertRaisesRegex(ValueError, "carries no BepInEx plugin"):
+            self.service.hook_probes(self.identity)
+        with self.assertRaisesRegex(RuntimeError, "built"):
+            self.service.operation(self.identity, "package", {})
+
     def test_an_api_run_answers_its_approval_and_keeps_later_questions(self):
         selected = self.project.read()
         self.service.save(
@@ -2237,7 +2411,17 @@ class WorkflowTests(unittest.TestCase):
                 "translations": {"line": "Yes."},
             },
         )
+        # New translations reopen the phases after them, and from then on a
+        # patch carrying a runtime hook waits for its self-test; a project
+        # translated before this rule, whose export a refresh leaves as it
+        # is, packages as before.
+        required = self.profile / "translation/projects" / self.identity
+        required /= hook_probes.REQUIRED
+        required.unlink()
+        progress_report.refresh(self.profile, self.identity, self.engine, plan)
+        self.assertFalse(required.exists())
         self.service.accept(self.identity, run["id"], "scene", receipt)
+        self.assertTrue(required.exists())
         latest = self.engine.reports[-1]
         self.assertEqual(
             (latest["blocker"], latest["next_action"], latest["phases"]),

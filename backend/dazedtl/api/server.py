@@ -1108,6 +1108,7 @@ def routes(app):
         "backups",
         "word_spacing",
         "window_title",
+        "hook_probes",
         "update_task",
         "release",
         "compile",

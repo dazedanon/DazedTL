@@ -691,6 +691,26 @@ class AssistantWindowTitle(TypedDict):
     next: str
 
 
+class HookProbeProblem(TypedDict):
+    """A line a runtime hook's self-test found without clean English."""
+
+    unit: str
+    source: str
+    problem: str
+
+
+class HookProbes(TypedDict):
+    """The probe list a runtime hook's self-test answers, or the judgement of
+    its answers, with the assistant's next step (translation/hook_probes)."""
+
+    lines: int
+    next: str
+    probes: NotRequired[str]
+    results: NotRequired[str]
+    unclean: NotRequired[int]
+    problems: NotRequired[list[HookProbeProblem]]
+
+
 class WordSpacing(TypedDict):
     rule: str
     nbsp: NbspCoverage

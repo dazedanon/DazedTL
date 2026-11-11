@@ -99,6 +99,7 @@ from dazedtl.api.contracts.translation import (
     CheckpointChanges,
     CheckpointTimeline,
     GameUpdateStatus,
+    HookProbes,
     ManualLoad,
     PreparedHandoff,
     ProjectOptions,
@@ -566,6 +567,12 @@ class WindowTitleProjectRequest(TypedDict):
     title: NotRequired[str]
 
 
+class HookProbesRequest(TypedDict):
+    project_id: str
+    # Judge the self-test's answers instead of writing the probe list.
+    check: NotRequired[bool]
+
+
 class SettingsModelDefaultsRequest(TypedDict):
     connection_id: str
     model: str
@@ -984,6 +991,8 @@ METHODS: dict[str, Method] = {
     "translation_window_title": Method(
         WindowTitleProjectRequest, AssistantWindowTitle, refresh=False
     ),
+    # A runtime hook's coverage probes, and the judgement of its self-test.
+    "translation_hook_probes": Method(HookProbesRequest, HookProbes, refresh=False),
     # The assistant's task for the text an applied update brought in.
     "translation_update_task": Method(ProjectRequest, UpdateTask, refresh=False),
     # How a new official release's folder lines up with the game, before staging.
